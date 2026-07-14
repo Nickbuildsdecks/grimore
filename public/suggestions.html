@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grimore</title>
+  <meta name="description" content="EDHREC card recommendations and synergy stats for your deck builder.">
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="stylesheet" href="style.css?v=16">
+</head>
+<body>
+  <script>
+    if (localStorage.getItem('theme-mode') === 'light') {
+      document.body.classList.add('light-theme');
+    }
+  </script>
+  <!-- Fullscreen Background Canvas for Logged In Views -->
+  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: -1; background: #050508;"></canvas>
+
+  <!-- Top Progress Bar -->
+  <div id="top-progress-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, #00f2fe, #4facfe, #8a2be2); width: 0%; transition: width 0.3s ease, opacity 0.3s ease; opacity: 0; z-index: 9999; pointer-events: none; box-shadow: 0 0 8px rgba(0,242,254,0.6);"></div>
+
+  <div class="app-layout sidebar-hidden" id="app-layout">
+    <!-- Occupies full width and height with no sidebar -->
+    <div class="main-content" id="main-content" style="margin-left: 0; flex-grow: 1; width: 100%; height: 100vh; overflow: hidden; display: flex; flex-direction: column;">
+      
+      <!-- Main Standalone Container -->
+      <div style="display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; box-sizing: border-box; width: 100%;">
+        
+        <!-- Row 1: Suggestions Header -->
+        <div style="display: flex; gap: 1rem; align-items: center; background: rgba(12, 13, 20, 0.45); border-bottom: 1px solid rgba(168, 85, 247, 0.25); padding: 0.6rem 1.25rem; flex-shrink: 0; backdrop-filter: blur(8px); box-shadow: 0 4px 20px rgba(0,0,0,0.15); min-height: 64px; height: auto; box-sizing: border-box; width: 100%; flex-wrap: wrap; position: relative;">
+          
+          <!-- Left: Logo / Back Button -->
+          <div style="display: flex; align-items: center; gap: 1rem; z-index: 2;">
+            <!-- Clickable Grimore Logo Back Button -->
+            <a href="index.html" class="grimore-back-button" id="btn-return-to-deck" title="Back to Deck Builder">
+              <img src="logo.svg" alt="Grimore Logo">
+            </a>
+          </div>
+
+          <!-- Center: DECK SUGGESTIONS Header -->
+          <div style="position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 1;">
+            <span style="font-family:'Cinzel', serif; font-size: 1.1rem; text-transform: uppercase; font-weight: 700; color: var(--color-primary); letter-spacing: 0.05em; white-space: nowrap;">💡 DECK SUGGESTIONS</span>
+          </div>
+
+          <!-- Right: Target Deck Selector & Return Button -->
+          <div style="margin-left: auto; display: flex; align-items: center; gap: 0.8rem; z-index: 2; flex-shrink: 0;">
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Active Deck:</span>
+              <span id="active-deck-name-display" style="font-size: 0.8rem; font-weight: 700; color: var(--color-secondary);">Loading...</span>
+            </div>
+            
+            <a href="index.html" id="btn-return-deck-link" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0 0.6rem; height: 28px; font-size: 0.72rem; font-weight: 700; margin: 0;">
+              Back to Builder
+            </a>
+          </div>
+        </div>
+
+        <!-- Row 2: Split Content (Sidebar Categories + Suggestions Grid + Inspector) -->
+        <div class="search-split-container" style="display: flex; flex-grow: 1; overflow: hidden; height: 100%; width: 100%;">
+          
+          <!-- Left: Categories Sidebar -->
+          <div id="suggestions-categories-panel" class="search-filters-sidebar" style="display: flex; flex-direction: column; width: 240px; border-radius: 0; border-top: none; border-bottom: none; border-left: none; height: 100%; flex-shrink: 0; background: rgba(10, 10, 15, 0.5); backdrop-filter: blur(10px); border-right: 1px solid rgba(168, 85, 247, 0.15);">
+            <div class="filters-sidebar-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.15); padding: 0.8rem 1rem;">
+              <h4 style="margin: 0; font-weight: 700; color: var(--text-pure); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Categories</h4>
+            </div>
+
+            <div id="categories-list" class="filters-sidebar-scroll" style="display: flex; flex-direction: column; gap: 0.2rem; padding: 0.6rem; overflow-y: auto; flex-grow: 1;">
+              <!-- Categories populated via JS -->
+              <div style="padding: 1rem; text-align: center; color: var(--text-muted); font-size: 0.75rem;">Loading categories...</div>
+            </div>
+          </div>
+
+          <!-- Middle: Suggestions Results -->
+          <div class="search-results-section" style="flex-grow: 1; display: flex; flex-direction: column; height: 100%; overflow: hidden; background: transparent;">
+            <!-- Category Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.25rem; background: rgba(12, 13, 20, 0.2); border-bottom: 1px solid rgba(168, 85, 247, 0.1); flex-shrink: 0;">
+              <div>
+                <h2 id="current-category-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: var(--text-pure);">Select a Category</h2>
+                <span id="current-category-count" style="font-size: 0.72rem; color: var(--text-muted);">0 cards found</span>
+              </div>
+              <!-- Zoom Toggle Option -->
+              <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <button id="btn-zoom-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleSuggestionsZoom()" style="margin: 0; display: flex; align-items: center; gap: 0.3rem; font-weight: 600; padding: 2px 8px; font-size: 0.7rem; border-radius: 4px; height: 24px;">
+                  🔍 Zoom In
+                </button>
+              </div>
+            </div>
+
+            <!-- Scrollable Suggestions Grid -->
+            <div class="search-results-scroll" style="flex-grow: 1; overflow-y: auto; padding: 1.25rem; box-sizing: border-box;">
+              <!-- Grid Container -->
+              <div id="suggestions-grid" class="search-results-grid">
+                <!-- Recommendations cards populated via JS -->
+                <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; text-align: center; gap: 0.75rem;">
+                  <div style="font-size: 1.5rem; animation: pulse 1.5s infinite;">💡</div>
+                  <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-high);">Fetching card suggestions from EDHREC...</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); max-width: 320px;">Analyzing your deck's commander to fetch synergy recommendations.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Card Inspector Drawer -->
+          <div id="card-inspector-drawer" class="card-inspector-drawer">
+            <!-- Header -->
+            <div class="drawer-header">
+              <h3 id="inspector-card-name" style="margin:0; font-size: 1rem; font-weight: 700; color: var(--text-pure);">Card Details</h3>
+              <button class="drawer-close" onclick="window.closeInspectorDrawer()">✕</button>
+            </div>
+
+            <!-- Scrollable Body -->
+            <div class="drawer-body">
+              <!-- Visual Card Frame -->
+              <div style="position: relative; margin-bottom: 1rem; border-radius: var(--radius-md); overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
+                <img id="inspector-card-img" src="logo.svg" alt="Card Artwork" style="width: 100%; display: block; aspect-ratio: 2.5/3.5; object-fit: contain; background: #0c0d14;" onerror="this.src='logo.svg'">
+                
+                <!-- Double Faced Flip Trigger Overlay -->
+                <div id="inspector-flip-overlay" style="display: none; position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); border: 1px solid var(--border-color); border-radius: 50%; width: 36px; height: 36px; align-items: center; justify-content: center; cursor: pointer; z-index: 10;" onclick="window.toggleInspectorCardFace()" title="Flip Card">
+                  <span style="font-size: 1.1rem; user-select: none;">🔄</span>
+                </div>
+              </div>
+
+              <!-- General Info Grid -->
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(168, 85, 247, 0.15); border-radius: var(--radius-sm); padding: 0.75rem; margin-bottom: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 600;">Type:</span>
+                  <span id="inspector-type" style="font-size: 0.72rem; color: var(--text-high); font-weight: 600; text-align: right;">-</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 600;">Database Price:</span>
+                  <span id="inspector-price" style="font-size: 0.72rem; color: var(--color-primary); font-weight: 700;">-</span>
+                </div>
+              </div>
+
+              <!-- Add to Target Deck Button -->
+              <button id="inspector-add-to-deck-btn" class="btn btn-gold" style="width: 100%; margin-bottom: 0.75rem; font-weight: 700; height: 32px; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 0.25rem;" onclick="window.addActivePrintingToDeck()">
+                ➕ Add Selected Printing to Deck
+              </button>
+
+              <!-- Printing Version Picker -->
+              <div style="margin-bottom: 1rem;">
+                <h4 style="margin: 0 0 0.4rem 0; font-size: 0.75rem; font-weight: 700; color: var(--text-high); text-transform: uppercase; letter-spacing: 0.05em;">Print Versions</h4>
+                <div id="inspector-version-list" class="drawer-version-list">
+                  <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center; padding: 0.5rem 0;">No printing variants cached.</div>
+                </div>
+              </div>
+
+              <!-- Oracle Rulings Section -->
+              <div style="margin-top: 1rem;">
+                <h4 style="margin: 0 0 0.4rem 0; font-size: 0.75rem; font-weight: 700; color: var(--text-high); text-transform: uppercase; letter-spacing: 0.05em;">Oracle Rulings</h4>
+                <div id="inspector-rulings-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 250px; overflow-y: auto; padding-right: 2px;">
+                  <div style="font-size: 0.7rem; color: var(--text-muted); font-style: italic; padding: 0.4rem 0;">No rulings cached.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Global Arcane Progress Overlay -->
+  <div id="arcane-progress-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(5,5,8,0.7); backdrop-filter: blur(15px); z-index: 99999; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; pointer-events: auto;">
+    <div style="position: relative; width: 100px; height: 100px;">
+      <svg width="100" height="100" viewBox="0 0 100 100" style="transform: rotate(-90deg);">
+        <circle cx="50" cy="50" r="42" stroke="rgba(168, 85, 247, 0.15)" stroke-width="6" fill="transparent"/>
+        <circle id="arcane-progress-ring" cx="50" cy="50" r="42" stroke="url(#arcane-ring-gradient)" stroke-width="6" fill="transparent" stroke-dasharray="263.89" stroke-dashoffset="263.89" style="transition: stroke-dashoffset 0.1s ease;"/>
+        <defs>
+          <linearGradient id="arcane-ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#00f2fe"/>
+            <stop offset="100%" stop-color="#8a2be2"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div id="arcane-progress-percent" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: 'Outfit', sans-serif; font-size: 1.25rem; font-weight: 800; color: var(--text-pure);">0%</div>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 0.35rem; text-align: center; max-width: 300px; padding: 0 1rem;">
+      <h3 id="arcane-progress-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 1rem; color: var(--color-primary); text-transform: uppercase; letter-spacing: 0.05em;">Synchronizing Arcane Core</h3>
+      <p id="arcane-progress-status" style="margin: 0; font-size: 0.72rem; color: var(--text-muted); line-height: 1.4;">Preparing metadata resolution...</p>
+    </div>
+  </div>
+
+  <!-- Background Magic Canvas logic import -->
+  <script>
+    // Simple magic canvas background emulation in case full engine is not loaded
+    function initMagicCanvas(id) {
+      const canvas = document.getElementById(id);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      let width = canvas.width = window.innerWidth;
+      let height = canvas.height = window.innerHeight;
+      window.addEventListener('resize', () => {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+      });
+      const circles = [];
+      for (let i = 0; i < 6; i++) {
+        circles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: Math.random() * 200 + 100,
+          dx: (Math.random() - 0.5) * 0.4,
+          dy: (Math.random() - 0.5) * 0.4,
+          color: i % 2 === 0 ? 'rgba(168, 85, 247, 0.03)' : 'rgba(0, 242, 254, 0.02)'
+        });
+      }
+      function draw() {
+        const isLight = document.body.classList.contains('light-theme');
+        ctx.fillStyle = isLight ? '#f5f4f0' : '#050508';
+        ctx.fillRect(0, 0, width, height);
+        circles.forEach((c, i) => {
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+          ctx.fillStyle = c.color;
+          ctx.fill();
+          c.x += c.dx;
+          c.y += c.dy;
+          if (c.x - c.r > width) c.x = -c.r;
+          if (c.x + c.r < 0) c.x = width + c.r;
+          if (c.y - c.r > height) c.y = -c.r;
+          if (c.y + c.r < 0) c.y = height + c.r;
+        });
+        requestAnimationFrame(draw);
+      }
+      draw();
+    }
+    document.addEventListener('DOMContentLoaded', () => initMagicCanvas('app-bg-canvas'));
+  </script>
+  <script src="suggestions.js?v=16"></script>
+</body>
+</html>

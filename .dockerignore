@@ -1,0 +1,8 @@
+node_modules
+*.db
+.git
+.agents
+*.log
+scratch
+fly.toml
+Dockerfile

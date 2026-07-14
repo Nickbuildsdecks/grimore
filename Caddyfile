@@ -1,0 +1,7 @@
+grimore.gg, www.grimore.gg {
+    reverse_proxy app:3000
+}
+
+http://136.65.140.33 {
+    reverse_proxy app:3000
+}

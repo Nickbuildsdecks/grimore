@@ -1,0 +1,18 @@
+{
+  "name": "grimoire",
+  "version": "1.0.0",
+  "description": "Premium Commander League & MTG Tournament Manager Web Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --max-old-space-size=768 server.js",
+    "dev": "node --max-old-space-size=768 server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "sqlite3": "^5.1.7"
+  },
+  "author": "Antigravity",
+  "license": "ISC"
+}

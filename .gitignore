@@ -1,0 +1,39 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Local databases (SQLite)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# API Keys & Environment configuration
+.env
+.env.local
+.env.*.local
+
+# Temporary files & backups
+.tmp/
+grimore-gcp-export.zip
+gcp-export/
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
