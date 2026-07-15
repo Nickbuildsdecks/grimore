@@ -1,44 +1,709 @@
 /* Grimoire Cyberpunk Mythic Theme: Obsidian, Electric Violet, and Cyber Gold */
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Outfit:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
 
 :root {
   --bg-dark: #050508;           /* Obsidian Black */
   --bg-card: rgba(8, 8, 12, 0.85); /* More opaque Deep Purple-Black card background */
   --bg-surface: rgba(18, 19, 30, 0.7); /* Space Slate glass */
   --bg-surface-hover: rgba(30, 31, 48, 0.9); /* Hover Slate glass */
-  
+
   --bg-glass-card: rgba(8, 8, 12, 0.75);
-  
+
   --color-primary: #a855f7;     /* Electric Violet / Mythic Purple */
   --color-secondary: #f59e0b;   /* Cyber Gold / Amber Sparks */
   --color-accent: #2563eb;      /* Dark Cobalt Accent */
-  
+  --color-gold: #fbbf24;
+
   --text-pure: #ffffff;
-  --text-high: #f8fafc;         
+  --text-high: #f8fafc;
   --text-medium: #c084fc;       /* Lavender Accent Text */
-  --text-muted: #94a3b8;        /* Lighter, much more readable slate-grey text */
-  
-  --color-win: #10b981;         
+  --text-muted: #a9b2c3;        /* High-clarity cool grey */
+
+  --color-win: #10b981;
   --color-win-bg: rgba(16, 185, 129, 0.1);
   --color-loss: #ef4444;
   --color-loss-bg: rgba(239, 68, 68, 0.1);
-  
-  --border-light: rgba(168, 85, 247, 0.26);   /* Stronger violet borders */
-  --border-medium: rgba(168, 85, 247, 0.45);  /* Stronger medium borders */
+
+  --border-light: rgba(255, 255, 255, 0.10);  /* Quiet structural edges */
+  --border-medium: rgba(168, 85, 247, 0.30);  /* Violet reserved for emphasis */
   --border-accent: rgba(245, 158, 11, 0.45);  /* Stronger accent borders */
-  
-  --glow-cyan: 0 0 20px rgba(168, 85, 247, 0.35);
-  --glow-gold: 0 0 20px rgba(245, 158, 11, 0.25);
-  
+
+  --glow-cyan: 0 4px 14px rgba(0, 0, 0, 0.28);
+  --glow-gold: 0 4px 14px rgba(0, 0, 0, 0.22);
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
-  
+
   --transition-fast: 0.15s ease;
   --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+
+  font-family: 'Outfit', system-ui, -apple-system, sans-serif;
   color-scheme: dark;
+}
+
+/* ==========================================================================
+   Facelift v26 — arcane tabletop instruments
+   ========================================================================== */
+
+/* Card library: one compact command deck with maximum result space. */
+.search-page .search-header-bar {
+  gap: 0 !important;
+  padding: 0.8rem 1rem !important;
+  background:
+    linear-gradient(100deg, rgba(168, 85, 247, 0.07), transparent 28%),
+    rgba(7, 7, 13, 0.72) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.09) !important;
+  backdrop-filter: blur(22px) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(145%) !important;
+}
+
+.search-page .search-command-row {
+  grid-template-columns: minmax(260px, 1.6fr) minmax(170px, 0.8fr) auto auto minmax(160px, 210px) !important;
+  gap: 0.55rem !important;
+  align-items: center;
+}
+
+.search-page .search-primary-field .input-field,
+.search-page .search-oracle-field .input-field,
+.search-page .search-target-control .input-field {
+  height: 52px !important;
+  background: rgba(17, 17, 27, 0.76) !important;
+  border-color: rgba(255, 255, 255, 0.13) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.search-page .search-primary-field .input-field:focus,
+.search-page .search-oracle-field .input-field:focus,
+.search-page .search-target-control .input-field:focus {
+  border-color: rgba(251, 191, 36, 0.72) !important;
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.09) !important;
+}
+
+.search-page .search-submit-button,
+.search-page .search-filter-button {
+  min-height: 52px !important;
+  border-radius: 13px !important;
+}
+
+.search-page .search-submit-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(245, 158, 11, 0.26);
+}
+
+.search-page .search-filters-sidebar {
+  width: 248px !important;
+  min-width: 248px !important;
+  padding: 0.85rem !important;
+  background:
+    linear-gradient(145deg, rgba(168, 85, 247, 0.055), transparent 34%),
+    rgba(8, 8, 15, 0.72) !important;
+  border-right-color: rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 18px 0 45px rgba(0, 0, 0, 0.18) !important;
+  backdrop-filter: blur(22px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(140%) !important;
+}
+
+.search-page .filters-sidebar-header {
+  min-height: 42px;
+  margin-bottom: 0.4rem !important;
+  padding: 0 0 0.65rem !important;
+}
+
+.search-page .filters-sidebar-scroll {
+  gap: 0.25rem;
+}
+
+.search-page details.adv-group {
+  margin: 0 !important;
+  background: rgba(255, 255, 255, 0.018) !important;
+  border: 1px solid rgba(255, 255, 255, 0.055) !important;
+  border-radius: 10px !important;
+}
+
+.search-page details.adv-group[open] {
+  background: rgba(18, 18, 29, 0.68) !important;
+  border-color: rgba(168, 85, 247, 0.16) !important;
+}
+
+.search-page details.adv-group summary {
+  min-height: 42px !important;
+  padding: 0.65rem 0.72rem !important;
+  font-weight: 700 !important;
+}
+
+.search-page .adv-group-content {
+  padding: 0 0.72rem 0.75rem !important;
+}
+
+.search-page .search-results-pane {
+  padding: 0.85rem 1rem 0.75rem !important;
+}
+
+.search-page .search-results-toolbar {
+  min-height: 48px !important;
+  background: rgba(10, 10, 18, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  backdrop-filter: blur(18px) saturate(135%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
+}
+
+.search-page .search-results-grid {
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)) !important;
+  gap: 0.85rem !important;
+}
+
+.search-page .search-discovery-state {
+  grid-template-columns: minmax(260px, 0.95fr) minmax(260px, 1.05fr) !important;
+  min-height: calc(100vh - 190px) !important;
+}
+
+.search-page .search-discovery-copy h2 {
+  font-size: clamp(2.2rem, 5vw, 4.6rem) !important;
+  max-width: 10ch;
+}
+
+/* Profile & Settings: edit on the left, identity preview on the right. */
+#profile-view.view-section.active {
+  position: relative;
+  z-index: 2;
+  color: var(--text-pure);
+  overflow: hidden;
+}
+
+#profile-view .profile-scroll-wrapper {
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 1.7rem 2rem 3rem !important;
+  scrollbar-gutter: stable;
+}
+
+.profile-stage-intro {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.profile-stage-eyebrow {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #fbbf24;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.profile-stage-intro h2 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(2rem, 4vw, 3.3rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.profile-stage-intro p {
+  max-width: 620px;
+  margin: 0.65rem 0 0;
+  color: #aab2c3;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.profile-preview-status {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.8rem;
+  color: #cbd5e1;
+  background: rgba(12, 12, 20, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  backdrop-filter: blur(14px);
+}
+
+.profile-preview-status i {
+  width: 7px;
+  height: 7px;
+  background: #34d399;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.7);
+}
+
+#profile-view .profile-layout-grid {
+  grid-template-columns: minmax(360px, 0.86fr) minmax(440px, 1.14fr) !important;
+  gap: 1.1rem !important;
+}
+
+#profile-view .profile-settings-panel,
+#profile-view #profile-showcase-card,
+#profile-view .profile-history-panel,
+#profile-view #profile-featured-deck-widget {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.045), transparent 35%),
+    rgba(11, 11, 19, 0.78) !important;
+  border: 1px solid rgba(255, 255, 255, 0.11) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(22px) saturate(135%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(135%) !important;
+}
+
+#profile-view .profile-settings-panel {
+  padding: 0.9rem !important;
+}
+
+#profile-view .profile-settings-panel > div:first-child {
+  gap: 0.35rem !important;
+  margin-bottom: 1rem !important;
+  padding: 0.25rem !important;
+  background: rgba(0, 0, 0, 0.23);
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 12px;
+}
+
+#profile-view #profile-btn-tab-customize,
+#profile-view #profile-btn-tab-account {
+  min-height: 42px !important;
+  height: 42px !important;
+  color: #9ea7b8;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  font-size: 0.75rem !important;
+}
+
+#profile-view #profile-btn-tab-customize.active,
+#profile-view #profile-btn-tab-account.active {
+  color: #fff !important;
+  background: rgba(168, 85, 247, 0.17) !important;
+  box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.28);
+}
+
+#profile-view form {
+  gap: 0.9rem !important;
+  padding: 0.25rem 0.35rem 0.35rem;
+}
+
+#profile-view .form-label {
+  margin-bottom: 0.35rem !important;
+  color: #cbd2df !important;
+  font-size: 0.68rem !important;
+  font-weight: 750;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+#profile-view .input-field {
+  min-height: 44px !important;
+  height: 44px !important;
+  padding: 0 0.8rem !important;
+  color: #fff;
+  background: rgba(4, 4, 9, 0.56) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 10px !important;
+  font-size: 0.82rem !important;
+}
+
+#profile-view textarea.input-field {
+  min-height: 100px !important;
+  padding: 0.75rem !important;
+}
+
+#profile-view .input-field:focus {
+  border-color: rgba(168, 85, 247, 0.68) !important;
+  box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.09) !important;
+}
+
+#profile-view .profile-save-button {
+  min-height: 46px !important;
+  height: 46px !important;
+  border-radius: 11px !important;
+}
+
+#profile-view .profile-preview-column {
+  gap: 1.1rem !important;
+}
+
+#profile-view #profile-showcase-card {
+  padding: 0.75rem !important;
+}
+
+#profile-view #showcase-banner {
+  height: 190px !important;
+  border-radius: 13px 13px 4px 4px;
+}
+
+#profile-view .profile-history-panel {
+  padding: 1rem !important;
+}
+
+/* Life Counter: high-contrast player fields designed to be tapped, not read. */
+#lifetracker-view.view-section.active {
+  position: relative;
+  z-index: 2;
+  gap: 0.75rem;
+  padding: 0.85rem !important;
+  color: #fff;
+}
+
+#lifetracker-view .life-tracker-toolbar {
+  min-height: 60px;
+  padding: 0 0.25rem 0.75rem !important;
+  border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+#lifetracker-view .life-tracker-home img {
+  width: 42px !important;
+  height: 42px !important;
+}
+
+#lifetracker-view .life-tracker-home > span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+#lifetracker-view .life-tracker-home small {
+  margin-bottom: 0.2rem;
+  color: #fbbf24;
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.life-reset-group {
+  padding: 0.3rem;
+  background: rgba(10, 10, 18, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  backdrop-filter: blur(16px);
+}
+
+.life-reset-group > span {
+  padding: 0 0.45rem;
+  color: #8f98aa;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.life-reset-group .btn {
+  min-height: 38px;
+  margin: 0;
+  border-radius: 8px;
+}
+
+#lifetracker-view .life-tracker-grid {
+  gap: 0.75rem !important;
+  margin-top: 0 !important;
+}
+
+#lifetracker-view .life-player-card {
+  min-width: 0;
+  min-height: 0 !important;
+  padding: 0.8rem !important;
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--player-accent) 20%, transparent), transparent 46%),
+    linear-gradient(155deg, color-mix(in srgb, var(--player-accent) 9%, rgba(15, 15, 24, 0.88)), rgba(7, 7, 12, 0.9)) !important;
+  border: 1px solid color-mix(in srgb, var(--player-accent) 52%, rgba(255, 255, 255, 0.1)) !important;
+  border-top-width: 1px !important;
+  border-radius: 18px !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 50px color-mix(in srgb, var(--player-accent) 6%, transparent),
+    0 16px 38px rgba(0, 0, 0, 0.24) !important;
+  backdrop-filter: blur(18px) saturate(135%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
+}
+
+#lifetracker-view .life-player-card:hover {
+  border-color: color-mix(in srgb, var(--player-accent) 72%, white 8%) !important;
+  transform: translateY(-1px);
+}
+
+#lifetracker-view .life-player-card > input {
+  width: min(220px, 68%) !important;
+  min-height: 38px;
+  color: #fff !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--player-accent) 48%, transparent) !important;
+  font-size: 0.92rem !important;
+  font-weight: 750 !important;
+}
+
+#lifetracker-view .life-player-card > div:nth-of-type(1) {
+  gap: clamp(1rem, 3vw, 3rem) !important;
+  margin: 0.3rem 0 !important;
+}
+
+#lifetracker-view .life-display-value {
+  min-width: 120px !important;
+  color: #fff !important;
+  font-size: clamp(4.8rem, 10vw, 8rem) !important;
+  letter-spacing: -0.075em;
+  text-shadow: 0 0 26px color-mix(in srgb, var(--player-accent) 38%, transparent) !important;
+}
+
+#lifetracker-view .life-control-btn {
+  width: 62px !important;
+  height: 62px !important;
+  flex: 0 0 62px;
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  border-radius: 16px !important;
+  font-size: 2rem !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+#lifetracker-view .life-control-btn:hover,
+#lifetracker-view .life-control-btn:active {
+  background: color-mix(in srgb, var(--player-accent) 72%, #111827) !important;
+  border-color: color-mix(in srgb, var(--player-accent) 80%, white 10%) !important;
+  transform: scale(1.04);
+}
+
+#lifetracker-view .life-player-card > div:last-child {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  padding-top: 0.65rem !important;
+  border-top-color: rgba(255, 255, 255, 0.09) !important;
+}
+
+#lifetracker-view .life-player-card > div:last-child > div,
+#lifetracker-view .life-player-card > div:last-child > button {
+  min-width: 0;
+  min-height: 38px;
+  justify-content: center;
+  padding: 0.25rem !important;
+  background: rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 9px !important;
+}
+
+#lifetracker-view .life-player-card > div:last-child .btn-xs {
+  min-width: 26px;
+  min-height: 30px;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  font-size: 0.88rem;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--player-accent) 12%, transparent), transparent 35%),
+    rgba(5, 5, 10, 0.96) !important;
+  backdrop-filter: blur(22px);
+}
+
+@media (max-width: 1180px) and (min-width: 769px) {
+  .search-page .search-command-row {
+    grid-template-columns: minmax(260px, 1fr) auto auto !important;
+  }
+
+  .search-page .search-oracle-field,
+  .search-page .search-target-control {
+    display: none !important;
+  }
+
+  .search-page .search-discovery-state {
+    grid-template-columns: 1fr !important;
+    min-height: calc(100vh - 180px) !important;
+  }
+
+  .search-page .search-discovery-visual {
+    position: absolute;
+    right: 1rem;
+    width: min(48%, 360px);
+    opacity: 0.48;
+  }
+
+  .search-page .search-discovery-copy {
+    position: relative;
+    z-index: 2;
+  }
+
+  #profile-view .profile-layout-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #profile-view .profile-preview-column {
+    display: grid !important;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  #profile-view .profile-scroll-wrapper {
+    padding: 1rem 0.75rem 2rem !important;
+  }
+
+  .profile-stage-intro {
+    align-items: flex-start;
+  }
+
+  .profile-stage-intro h2 {
+    font-size: 2rem;
+  }
+
+  .profile-stage-intro p,
+  .profile-preview-status {
+    display: none;
+  }
+
+  #profile-view .profile-layout-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  #profile-view .profile-settings-panel {
+    padding: 0.65rem !important;
+  }
+
+  #profile-view form > div[style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  #profile-view #showcase-banner {
+    height: 165px !important;
+  }
+
+  #lifetracker-view.view-section.active {
+    height: 100dvh !important;
+    padding: 0.45rem !important;
+    overflow: hidden !important;
+  }
+
+  #lifetracker-view .life-tracker-toolbar {
+    position: static !important;
+    min-height: 52px;
+    padding: 0 0.15rem 0.4rem !important;
+    background: transparent !important;
+  }
+
+  #lifetracker-view .life-tracker-home img {
+    width: 34px !important;
+    height: 34px !important;
+  }
+
+  #lifetracker-view .life-tracker-home > span {
+    font-size: 0.86rem;
+  }
+
+  #lifetracker-view .life-tracker-home small,
+  .life-reset-group > span {
+    display: none;
+  }
+
+  .life-reset-group {
+    gap: 0.25rem !important;
+    padding: 0.2rem;
+  }
+
+  .life-reset-group .btn {
+    min-width: 58px;
+    min-height: 42px;
+    padding: 0 0.45rem;
+    font-size: 0.68rem;
+  }
+
+  #lifetracker-view .life-tracker-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.4rem !important;
+    flex: 1 !important;
+    overflow: hidden !important;
+    padding-bottom: max(0.2rem, env(safe-area-inset-bottom));
+  }
+
+  #lifetracker-view .life-player-card {
+    width: auto !important;
+    min-height: 0 !important;
+    padding: 0.45rem !important;
+    border-radius: 13px !important;
+  }
+
+  #lifetracker-view .life-player-card > input {
+    width: 86% !important;
+    min-height: 32px;
+    font-size: 0.74rem !important;
+  }
+
+  #lifetracker-view .life-player-card > div:nth-of-type(1) {
+    gap: 0.35rem !important;
+    margin: 0 !important;
+  }
+
+  #lifetracker-view .life-display-value {
+    min-width: 62px !important;
+    font-size: clamp(3.6rem, 16vw, 5.2rem) !important;
+  }
+
+  #lifetracker-view .life-control-btn {
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    min-height: 46px !important;
+    flex-basis: 46px;
+    border-radius: 12px !important;
+    font-size: 1.45rem !important;
+  }
+
+  #lifetracker-view .life-player-card > div:last-child {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem;
+    padding-top: 0.35rem !important;
+  }
+
+  #lifetracker-view .life-player-card > div:last-child > div,
+  #lifetracker-view .life-player-card > div:last-child > button {
+    min-height: 34px;
+    padding: 0.1rem !important;
+  }
+
+  #lifetracker-view .life-player-card > div:last-child .btn-xs {
+    min-width: 24px !important;
+    min-height: 30px !important;
+  }
+
+  #lifetracker-view .life-player-card > div:last-child > button span {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lifetracker-view .life-player-card,
+  #lifetracker-view .life-control-btn,
+  .search-page .search-submit-button {
+    transition: none !important;
+  }
+}
+
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Reset & Base Styles */
@@ -53,7 +718,7 @@ body {
   color: var(--text-high);
   height: 100vh;
   overflow: hidden;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Outfit', system-ui, sans-serif;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -171,6 +836,52 @@ h1, h2, h3, h4, h5, h6 {
   gap: 1rem;
 }
 
+.sidebar-account-actions,
+.sidebar-utility-actions {
+  position: relative;
+  flex-direction: column;
+  gap: 0.55rem;
+  width: 100%;
+}
+
+.sidebar-utility-actions {
+  display: flex;
+}
+
+.sidebar-account-action {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 42px;
+  padding: 0.55rem 0.75rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.sidebar-account-action:hover,
+.sidebar-account-action.active {
+  color: var(--text-pure);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.16), rgba(37, 99, 235, 0.07));
+  border-color: rgba(168, 85, 247, 0.34);
+  transform: translateY(-1px);
+}
+
+.sidebar-account-action svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  fill: currentColor;
+}
+
 .main-content {
   margin-left: 260px;
   flex-grow: 1;
@@ -178,7 +889,24 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   background-color: transparent;
-  transition: margin-left var(--transition-normal);
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid #fbbf24 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 2px var(--bg-dark) !important;
 }
 
 .sidebar-hidden .sidebar {
@@ -359,7 +1087,7 @@ main {
   background-color: transparent;
   box-sizing: border-box;
 }
- 
+
 /* Fullscreen Deckbuilder Section active state */
 #deckbuilder-view.view-section.active {
   display: flex;
@@ -513,6 +1241,54 @@ main {
 }
 
 @media (max-width: 768px) {
+  #auth-view.view-section.active {
+    align-items: flex-start;
+    min-height: 100dvh;
+    height: auto;
+    padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .sidebar-hidden .form-card-split {
+    transform: none;
+  }
+
+  .form-card-split {
+    min-height: 0;
+    margin: auto 0 !important;
+  }
+
+  .auth-showcase {
+    padding: 1rem;
+  }
+
+  .auth-showcase-content img {
+    width: 56px !important;
+    height: 56px !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .auth-showcase-content h2 {
+    font-size: 1.5rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .auth-form-side {
+    padding: 1.5rem;
+  }
+
+  .auth-form-side .input-field,
+  .auth-form-side .btn,
+  .auth-form-side a {
+    min-height: 44px;
+  }
+
+  .auth-form-side a {
+    display: inline-flex;
+    align-items: center;
+  }
+
   .form-card-split {
     flex-direction: column;
     max-width: 450px;
@@ -554,9 +1330,8 @@ main {
 }
 
 .input-field:focus {
-  outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 15px rgba(168, 85, 247, 0.25);
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
   background-color: rgba(12, 13, 20, 0.8) !important;
 }
 
@@ -933,7 +1708,7 @@ main {
   border-radius: var(--radius-md);
   background: rgba(168, 85, 247, 0.02);
   border: 1px dashed rgba(168, 85, 247, 0.1);
-  overflow: visible;
+  overflow: clip;
 }
 
 /* Graphic Cards Styling */
@@ -1147,6 +1922,7 @@ main {
   position: relative;
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
   transition: var(--transition-normal);
+  border-top: 2px solid var(--player-accent, var(--border-medium));
 }
 
 .life-player-card:hover {
@@ -1187,6 +1963,18 @@ main {
   color: white;
 }
 
+.life-tracker-home {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 0.25rem;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
 /* Notifications bell & dropdown */
 .notifications-bell-container {
   position: relative;
@@ -1211,8 +1999,9 @@ main {
 
 .notifications-dropdown {
   position: absolute;
-  top: 50px;
-  right: 0;
+  right: auto;
+  bottom: 0;
+  left: calc(100% + 14px);
   width: 320px;
   background: var(--bg-card);
   border: 1px solid var(--border-medium);
@@ -1233,6 +2022,18 @@ main {
   background: rgba(255, 255, 255, 0.01);
 }
 
+.notifications-header > span {
+  color: var(--text-high);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.notifications-header .btn {
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+
 .notifications-list {
   max-height: 280px;
   overflow-y: auto;
@@ -1250,12 +2051,494 @@ main {
 }
 
 .notification-item.unread {
-  border-left: 3px solid var(--color-primary);
+  box-shadow: inset 0 2px 0 var(--color-primary);
   background: rgba(168, 85, 247, 0.02);
 }
 
 .mobile-only-inline {
   display: none;
+}
+
+.mobile-filter-actions {
+  display: none;
+}
+
+.empty-state {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-state h3 {
+  font-size: 1.2rem;
+}
+
+.empty-state p {
+  max-width: 34rem;
+  line-height: 1.5;
+}
+
+.empty-state-icon {
+  font-size: 2rem;
+  color: var(--color-secondary);
+}
+
+.empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.empty-state-actions .btn {
+  min-height: 44px;
+}
+
+/* Deck collection: artwork-first, zero-cost Scryfall presentation */
+.deck-library-panel {
+  padding: 0.4rem 0 1.5rem;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.deck-library-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: clamp(1.5rem, 3vw, 2.5rem);
+}
+
+.deck-library-heading {
+  min-width: 0;
+}
+
+.deck-library-kicker,
+.deck-empty-kicker {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.deck-library-heading h2 {
+  margin: 0;
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+
+.deck-library-heading p {
+  margin-top: 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.94rem;
+}
+
+.deck-library-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.65rem;
+}
+
+.deck-library-actions .btn {
+  min-height: 44px;
+  padding-inline: 1rem;
+}
+
+.deck-library-actions svg,
+.deck-empty-actions svg,
+.deck-import-link svg,
+.deck-share-button svg,
+.deck-privacy-pill svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.deck-import-panel {
+  flex: 1 1 520px;
+  max-width: 620px;
+  padding: 0.75rem;
+  background: rgba(17, 17, 24, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.deck-empty-experience {
+  position: relative;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(340px, 1.05fr);
+  align-items: center;
+  min-height: min(540px, calc(100vh - 250px));
+  overflow: hidden;
+  padding: clamp(2rem, 5vw, 4.5rem);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.deck-empty-experience::before {
+  display: none;
+}
+
+.deck-empty-copy {
+  position: relative;
+  z-index: 3;
+  max-width: 590px;
+}
+
+.deck-empty-copy h3 {
+  max-width: 560px;
+  margin: 0;
+  font-size: clamp(2.25rem, 4.4vw, 4.35rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+  text-shadow: none;
+}
+
+.deck-empty-copy > p {
+  max-width: 530px;
+  margin-top: 1.25rem;
+  color: #aeb6c8;
+  font-size: clamp(0.95rem, 1.5vw, 1.08rem);
+  line-height: 1.65;
+}
+
+.deck-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.btn-lg {
+  min-height: 48px;
+  padding: 0.75rem 1.05rem;
+  font-size: 0.9rem;
+}
+
+.btn-ghost {
+  color: var(--text-high);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.deck-import-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.15rem;
+  min-height: 40px;
+  padding: 0;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.deck-import-link:hover {
+  color: var(--text-pure);
+}
+
+.deck-empty-art {
+  position: relative;
+  min-height: 420px;
+  pointer-events: none;
+  perspective: 1100px;
+}
+
+.deck-art-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: clamp(190px, 18vw, 250px);
+  aspect-ratio: 0.72;
+  overflow: hidden;
+  background-image:
+    linear-gradient(180deg, transparent 55%, rgba(4, 4, 7, 0.78)),
+    var(--deck-art);
+  background-position: center;
+  background-size: cover;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 18px;
+  box-shadow: 0 32px 70px rgba(0, 0, 0, 0.58);
+  transform-origin: 50% 90%;
+}
+
+.deck-art-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 20%, rgba(255,255,255,0.14) 42%, transparent 57%);
+  transform: translateX(-90%);
+  transition: transform 0.7s ease;
+}
+
+.deck-empty-experience:hover .deck-art-card::after {
+  transform: translateX(90%);
+}
+
+.deck-art-card-left {
+  z-index: 1;
+  transform: translate(-105%, -43%) rotate(-12deg) translateZ(-55px);
+  opacity: 0.72;
+}
+
+.deck-art-card-center {
+  z-index: 3;
+  transform: translate(-50%, -52%) rotate(2deg);
+  box-shadow: 0 40px 85px rgba(0, 0, 0, 0.62), 0 0 45px rgba(168, 85, 247, 0.17);
+}
+
+.deck-art-card-right {
+  z-index: 2;
+  transform: translate(5%, -43%) rotate(13deg) translateZ(-40px);
+  opacity: 0.78;
+}
+
+.deck-art-orbit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(34vw, 470px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(168, 85, 247, 0.17);
+  border-radius: 50%;
+  box-shadow: inset 0 0 80px rgba(168, 85, 247, 0.07);
+  transform: translate(-50%, -50%) rotateX(70deg);
+}
+
+.deck-card {
+  position: relative;
+  min-width: 0;
+  min-height: 390px;
+  overflow: hidden;
+  padding: 0;
+  background: #0b0b10;
+  border-color: rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  cursor: pointer;
+}
+
+.deck-card:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 24px 55px rgba(0, 0, 0, 0.45);
+  transform: translateY(-4px);
+}
+
+.deck-card-art {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 305px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem;
+  background-image:
+    linear-gradient(180deg, rgba(2,2,4,0.16) 18%, rgba(5,5,8,0.08) 42%, rgba(5,5,8,0.96) 100%),
+    var(--deck-cover);
+  background-position: center;
+  background-size: cover;
+}
+
+.deck-card-art-fallback {
+  background-image:
+    radial-gradient(circle at 72% 24%, rgba(245, 158, 11, 0.3), transparent 24%),
+    radial-gradient(circle at 28% 64%, rgba(168, 85, 247, 0.35), transparent 34%),
+    linear-gradient(145deg, #17121f, #090a11 72%);
+}
+
+.deck-card-art-topline,
+.deck-card-details,
+.deck-card-stats {
+  display: flex;
+  align-items: center;
+}
+
+.deck-card-art-topline {
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.deck-privacy-pill,
+.deck-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-height: 28px;
+  padding: 0.3rem 0.55rem;
+  color: rgba(255,255,255,0.88);
+  background: rgba(4, 4, 7, 0.64);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 999px;
+  backdrop-filter: blur(12px);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.deck-privacy-pill svg {
+  width: 13px;
+  height: 13px;
+}
+
+.deck-status-pill > span {
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.deck-status-pill.is-legal { color: #6ee7b7; }
+.deck-status-pill.is-illegal { color: #fca5a5; }
+
+.deck-card-art-copy > span {
+  display: block;
+  overflow: hidden;
+  margin-bottom: 0.38rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.deck-card-art-copy h3 {
+  overflow: hidden;
+  margin: 0;
+  color: white;
+  font-size: 1.45rem;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+}
+
+.deck-card-details {
+  min-height: 78px;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem;
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+
+.deck-card-stats {
+  flex: 1;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.deck-card-stats > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.deck-card-stats strong {
+  overflow: hidden;
+  color: var(--text-pure);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+}
+
+.deck-card-stats span {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+}
+
+.deck-share-button {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-high);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.deck-share-button:hover {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.2);
+  transform: translateY(-1px);
+}
+
+.deck-share-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+@media (min-width: 769px) and (max-width: 1120px) {
+  .deck-empty-experience {
+    display: block;
+    min-height: 560px;
+    padding: 2rem;
+  }
+
+  .deck-empty-copy {
+    z-index: 4;
+    width: 100%;
+    max-width: 330px;
+  }
+
+  .deck-empty-copy h3 {
+    font-size: clamp(2.45rem, 5.15vw, 2.85rem);
+  }
+
+  .deck-empty-art {
+    position: absolute;
+    top: 52%;
+    right: -10%;
+    z-index: 1;
+    width: 58%;
+    min-height: 430px;
+    opacity: 0.66;
+    transform: translateY(-50%);
+  }
+
+  .deck-art-card {
+    width: clamp(165px, 19vw, 215px);
+  }
+
+  .deck-art-card-left {
+    transform: translate(-84%, -40%) rotate(-11deg) translateZ(-55px);
+  }
+
+  .deck-art-card-right {
+    transform: translate(-16%, -40%) rotate(12deg) translateZ(-40px);
+  }
 }
 
 /* Responsive Mobile Layout Overrides */
@@ -1268,24 +2551,24 @@ main {
     z-index: 1000;
     box-shadow: 10px 0 35px rgba(0,0,0,0.8);
   }
-  
+
   .sidebar.mobile-active {
     transform: translateX(0);
   }
-  
+
   .main-content {
     margin-left: 0 !important;
     width: 100vw;
   }
-  
+
   main {
     padding: 1rem !important;
   }
-  
+
   .content-header {
     padding: 1rem 1.25rem !important;
   }
-  
+
   .content-header h1 {
     font-size: 1.45rem !important;
   }
@@ -1293,65 +2576,86 @@ main {
   .mobile-menu-toggle {
     display: inline-flex !important;
   }
-  
+
   /* 2. Grid & Panel structures */
   .dashboard-grid {
     grid-template-columns: 1fr !important;
     gap: 1rem !important;
   }
-  
+
   .active-roster-layout {
     grid-template-columns: 1fr !important;
     gap: 1.25rem !important;
   }
-  
+
   /* 3. My Decks & Discover visual spoilers grids */
   .decks-grid {
     grid-template-columns: 1fr !important;
   }
-  
+
   .visual-spoilers-grid {
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
     gap: 0.5rem !important;
   }
-  
+
   /* 4. Playtest Layout */
   .playtest-layout {
     grid-template-columns: 1fr !important;
     gap: 1rem !important;
   }
-  
+
   /* 5. Life Tracker Grid spacing */
-  .life-tracker-grid {
-    grid-template-columns: 1fr !important;
-    gap: 0.75rem !important;
+  #lifetracker-view.view-section.active {
+    height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0.75rem;
   }
-  
+
+  #lifetracker-view .panel-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg-dark);
+    padding: 0.5rem 0 0.75rem !important;
+  }
+
+  .life-tracker-grid {
+    display: flex !important;
+    flex-direction: column;
+    flex: none;
+    overflow: visible;
+    gap: 0.75rem !important;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
   .life-player-card {
-    min-height: 220px !important;
+    width: 100%;
+    min-height: 280px !important;
     padding: 0.75rem !important;
   }
-  
+
+  .life-player-card .btn-xs,
+  .life-player-card button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
   .life-display-value {
     font-size: 4.5rem !important;
   }
-  
+
   /* 6. Modals responsiveness */
   .modal {
     width: 96% !important;
     max-height: 85vh !important;
     padding: 1.25rem !important;
   }
-  
+
   /* profile grid layout stack */
   .profile-layout {
     grid-template-columns: 1fr !important;
     gap: 1.25rem !important;
-  }
-  
-  /* hide profile header elements that overlap or position absolute on mobile */
-  #header-profile-container {
-    right: 1rem !important;
   }
 
   /* 7. Deck Builder Column-tab Drawer overrides */
@@ -1374,7 +2678,7 @@ main {
     margin-bottom: 0 !important;
     border-radius: 0 !important;
   }
-  
+
   .builder-mobile-tabs .btn-tab {
     display: flex;
     flex-direction: column;
@@ -1404,7 +2708,7 @@ main {
     letter-spacing: 0.5px;
     font-size: 0.6rem;
   }
-  
+
   .builder-mobile-tabs .btn-tab.active {
     color: var(--color-primary) !important;
     background: transparent !important;
@@ -1494,7 +2798,7 @@ main {
     border-radius: 24px 24px 0 0 !important;
     padding: 1.25rem !important;
     box-sizing: border-box !important;
-    
+
     /* Animation transition */
     transform: translateY(100%);
     visibility: hidden;
@@ -1506,6 +2810,23 @@ main {
     transform: translateY(0) !important;
     visibility: visible !important;
     pointer-events: auto !important;
+  }
+
+  .mobile-filter-actions {
+    position: sticky;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 0.75rem;
+    margin: 0.75rem -0.25rem -0.25rem;
+    padding: 0.75rem 0.25rem max(0.75rem, env(safe-area-inset-bottom));
+    background: rgba(12, 13, 20, 0.98);
+    border-top: 1px solid var(--border-medium);
+    z-index: 2;
+  }
+
+  .mobile-filter-actions .btn {
+    min-height: 48px;
   }
 
   /* Filters header adjustments on mobile */
@@ -1529,13 +2850,13 @@ main {
     gap: 0.4rem !important;
     min-height: auto !important;
   }
-  
+
   .search-header-title,
   .search-header-divider,
   .oracle-search-header-container {
     display: none !important;
   }
-  
+
   .search-input-group {
     min-width: 100% !important;
     width: 100% !important;
@@ -1556,7 +2877,7 @@ main {
     gap: 0.4rem !important;
     padding: 0.4rem 0.5rem !important;
   }
-  
+
   .search-results-toolbar > div {
     font-size: 0.65rem !important;
   }
@@ -1586,7 +2907,7 @@ main {
     z-index: 10000 !important;
     border-left: none !important;
   }
-  
+
   .search-split-container .card-inspector-drawer.open,
   .deckbuilder-workspace .card-inspector-drawer.open,
   .deck-view-grid .card-inspector-drawer.open,
@@ -1634,8 +2955,7 @@ main {
   /* Tighten fullscreen subsections inside the modal container */
   #deck-view-view.view-section.active,
   #deckbuilder-view.view-section.active,
-  #playtest-view.view-section.active,
-  #lifetracker-view.view-section.active {
+  #playtest-view.view-section.active {
     height: 100% !important;
     max-height: 100% !important;
     display: flex !important;
@@ -1645,6 +2965,20 @@ main {
     padding: 0 !important;
     background: transparent !important;
     backdrop-filter: none !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  #lifetracker-view.view-section.active {
+    height: 100% !important;
+    max-height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    margin: 0 !important;
+    padding: 0.75rem !important;
+    background: transparent !important;
     border: none !important;
     box-shadow: none !important;
   }
@@ -1670,7 +3004,7 @@ main {
     background: var(--color-primary) !important;
     color: var(--text-pure) !important;
   }
-  
+
   #builder-card-count-mobile {
     display: inline !important;
   }
@@ -1749,23 +3083,23 @@ body.light-theme {
   --bg-card: rgba(255, 255, 255, 0.82); /* Semi-translucent Frosted Alabaster Surface */
   --bg-surface: rgba(248, 246, 240, 0.75); /* Parchment glass surface */
   --bg-surface-hover: rgba(255, 255, 255, 0.95); /* Hover surface */
-  
+
   --color-primary: #7c3aed;     /* Deep Wizard Violet */
   --color-secondary: #d97706;   /* Amber Ochre Accent */
   --color-accent: #0284c7;      /* Clean sky blue */
-  
+
   --text-pure: #111827;         /* Deep Obsidian charcoal text */
   --text-high: #1f2937;         /* High-contrast charcoal text */
   --text-medium: #6d28d9;       /* Rich dark purple accent text */
   --text-muted: #4b5563;        /* Muted steel grey text */
-  
+
   --border-light: rgba(124, 58, 237, 0.15); /* Soft purple border lines */
   --border-medium: rgba(124, 58, 237, 0.3); /* Stronger purple separation lines */
   --border-accent: rgba(217, 119, 6, 0.35); /* Soft amber accents */
-  
+
   --glow-cyan: 0 0 20px rgba(124, 58, 237, 0.12);
   --glow-gold: 0 0 20px rgba(217, 119, 6, 0.1);
-  
+
   background-color: #f5f4f0 !important;
   background-image: none !important;
 }
@@ -1905,7 +3239,6 @@ details.adv-group {
   border-radius: var(--radius-sm);
   margin-bottom: 0.5rem;
   overflow: hidden;
-  transition: max-height 0.2s ease-out;
 }
 details.adv-group summary {
   font-size: 0.72rem;
@@ -1916,7 +3249,6 @@ details.adv-group summary {
   cursor: pointer;
   background: rgba(255, 255, 255, 0.02);
   user-select: none;
-  outline: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1964,7 +3296,7 @@ details.adv-group .adv-group-content {
 }
 
 /* 🚀 ANIMATED HOVER LIFTS ON DECKS, PODS & CARDS */
-.decks-grid > div,
+.decks-grid > .deck-card,
 .pods-grid > div,
 .visual-spoilers-grid > div {
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -1972,7 +3304,7 @@ details.adv-group .adv-group-content {
               box-shadow 0.25s ease !important;
 }
 
-.decks-grid > div:hover,
+.decks-grid > .deck-card:hover,
 .pods-grid > div:hover,
 .visual-spoilers-grid > div:hover {
   transform: translateY(-4px) scale(1.015);
@@ -1982,7 +3314,7 @@ details.adv-group .adv-group-content {
 
 /* ✨ PREMIUM TEXT SHADOW GLOWS FOR HEADINGS */
 h1, h2, h3 {
-  text-shadow: 0 0 12px rgba(168, 85, 247, 0.15);
+  text-shadow: none;
 }
 
 /* ==========================================================================
@@ -2115,6 +3447,10 @@ h1, h2, h3 {
   flex-direction: column;
   transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(20px);
+}
+
+.card-inspector-drawer[hidden] {
+  display: none !important;
 }
 
 .card-inspector-drawer.open {
@@ -2328,24 +3664,28 @@ h1, h2, h3 {
     position: relative;
     top: auto;
     right: auto;
-    width: 0;
-    min-width: 0;
+    display: none;
+    width: 340px;
+    min-width: 340px;
     max-width: 340px;
     height: 100%;
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, border-color 0.3s ease;
+    transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
     overflow: hidden;
     opacity: 0;
+    transform: translateX(12px);
     z-index: 100;
     border-left: 1px solid transparent;
     box-shadow: none; /* Avoid shadow overlapping container when closed */
   }
-  
+
   .search-split-container .card-inspector-drawer.open,
   .deckbuilder-workspace .card-inspector-drawer.open,
   .deck-view-grid .card-inspector-drawer.open {
+    display: flex;
     width: 340px;
     min-width: 340px;
     opacity: 1;
+    transform: translateX(0);
     right: auto;
     border-left: 1px solid rgba(168, 85, 247, 0.25);
     box-shadow: -8px 0 32px rgba(0, 0, 0, 0.6);
@@ -2358,14 +3698,14 @@ h1, h2, h3 {
     flex-direction: row !important;
     gap: 0.5rem !important;
   }
-  
+
   .deckbuilder-workspace .deckbuilder-col-search {
     width: 135px !important;
     min-width: 135px !important;
     flex-shrink: 0 !important;
     display: flex !important;
   }
-  
+
   .deckbuilder-workspace .deckbuilder-col-decklist {
     flex-grow: 1 !important;
     min-width: 0 !important;
@@ -2378,20 +3718,20 @@ h1, h2, h3 {
     flex-direction: row !important;
     gap: 1.5rem !important;
   }
-  
+
   /* Panel 1: Commander Showroom & Analytics */
   #deck-view-view .deck-view-grid > div:nth-child(1) {
     width: 310px !important;
     min-width: 310px !important;
     flex-shrink: 0 !important;
   }
-  
+
   /* Panel 2: Decklist columns */
   #deck-view-view .deck-view-grid > div:nth-child(2) {
     flex-grow: 2.3 !important;
     min-width: 0 !important;
   }
-  
+
   /* Panel 3: Social Feed & Collaboration */
   #deck-view-view .deck-view-grid > div:nth-child(3) {
     flex-grow: 0.5 !important;
@@ -2400,4 +3740,4098 @@ h1, h2, h3 {
   }
 }
 
+@media (max-width: 768px) {
+  .deck-library-panel {
+    padding: 0.9rem !important;
+    border: 0;
+    border-radius: 0;
+  }
 
+  .deck-library-header {
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .deck-library-heading p,
+  .deck-library-kicker {
+    display: none;
+  }
+
+  .deck-library-heading h2 {
+    font-size: 1.55rem;
+  }
+
+  .deck-library-actions {
+    gap: 0.45rem;
+  }
+
+  .deck-library-actions .btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 0.7rem;
+    font-size: 0.78rem;
+  }
+
+  .deck-import-panel {
+    order: 3;
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .deck-import-panel .input-field,
+  .deck-import-panel textarea.input-field,
+  .deck-import-panel form .btn {
+    min-height: 44px !important;
+    height: 44px !important;
+    font-size: 0.8rem !important;
+  }
+
+  .deck-import-panel > div:first-child .btn {
+    min-height: 36px !important;
+    height: 36px !important;
+    padding-inline: 0.65rem !important;
+    font-size: 0.72rem !important;
+  }
+
+  .deck-import-panel a {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .deck-empty-experience {
+    display: flex;
+    min-height: 610px;
+    flex-direction: column-reverse;
+    justify-content: flex-end;
+    gap: 0;
+    padding: 1.15rem;
+    border-radius: 16px;
+  }
+
+  .deck-empty-experience::before {
+    mask-image: linear-gradient(180deg, black, transparent 72%);
+  }
+
+  .deck-empty-art {
+    width: 100%;
+    min-height: 235px;
+    margin-bottom: 0.65rem;
+  }
+
+  .deck-art-card {
+    width: 132px;
+    border-radius: 12px;
+  }
+
+  .deck-art-card-left {
+    transform: translate(-112%, -42%) rotate(-12deg) translateZ(-55px);
+  }
+
+  .deck-art-card-center {
+    transform: translate(-50%, -50%) rotate(2deg);
+  }
+
+  .deck-art-card-right {
+    transform: translate(12%, -42%) rotate(13deg) translateZ(-40px);
+  }
+
+  .deck-art-orbit {
+    width: 270px;
+  }
+
+  .deck-empty-copy {
+    text-align: left;
+  }
+
+  .deck-empty-kicker {
+    margin-bottom: 0.55rem;
+    font-size: 0.65rem;
+  }
+
+  .deck-empty-copy h3 {
+    font-size: clamp(2rem, 10vw, 2.7rem);
+    line-height: 1;
+  }
+
+  .deck-empty-copy > p {
+    margin-top: 0.85rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .deck-empty-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    margin-top: 1.15rem;
+  }
+
+  .deck-empty-actions .btn {
+    width: 100%;
+  }
+
+  .deck-import-link {
+    width: 100%;
+    align-items: flex-start;
+    padding-block: 0.2rem;
+    line-height: 1.35;
+    text-align: left;
+  }
+
+  .deck-card {
+    min-height: 430px;
+  }
+
+  .deck-card-art {
+    min-height: 345px;
+  }
+}
+
+/* ==========================================================================
+   Open page stages — the canvas is the environment, not another panel
+   ========================================================================== */
+#app-bg-canvas {
+  z-index: 0 !important;
+}
+
+#app-layout {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+body:not(.light-theme) .sidebar {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.025), transparent 36%),
+    rgba(6, 6, 11, 0.42) !important;
+  border-right-color: rgba(168, 85, 247, 0.2);
+  box-shadow:
+    inset -1px 0 0 rgba(255,255,255,0.025),
+    18px 0 54px rgba(0,0,0,0.12);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+}
+
+#discover-view > .panel,
+#tournaments-view #tournament-hub > .panel {
+  padding: 0.4rem 0 1.5rem;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+#discover-view > .panel:hover,
+#decks-view > .deck-library-panel:hover,
+#tournaments-view #tournament-hub > .panel:hover {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 768px) {
+  body:not(.light-theme) .sidebar {
+    background: rgba(7, 7, 12, 0.84) !important;
+    backdrop-filter: blur(18px) saturate(125%);
+    -webkit-backdrop-filter: blur(18px) saturate(125%);
+  }
+
+  .app-layout:not(.auth-mode) .main-content {
+    width: 100vw !important;
+    height: 100dvh !important;
+    margin: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .app-layout:not(.auth-mode) .content-header {
+    background: transparent !important;
+    border-bottom: 0 !important;
+    box-shadow: none !important;
+  }
+}
+
+/* ==========================================================================
+   Interface refinement — one arcane instrument system across every view
+   ========================================================================== */
+.sidebar {
+  overflow: visible;
+  transition:
+    width 0.26s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 0.26s cubic-bezier(0.4, 0, 0.2, 1),
+    transform var(--transition-normal);
+}
+
+.main-content {
+  transition: margin-left 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-collapse-toggle {
+  position: absolute;
+  top: 88px;
+  right: -16px;
+  z-index: 4;
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #ddd6fe;
+  background: rgba(12,12,20,0.92);
+  border: 1px solid rgba(168,85,247,0.38);
+  border-radius: 50%;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35), 0 0 16px rgba(168,85,247,0.12);
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.26s cubic-bezier(0.4,0,0.2,1);
+}
+
+.sidebar-collapse-toggle:hover {
+  color: #fff;
+  border-color: rgba(251,191,36,0.62);
+  transform: scale(1.06);
+}
+
+.sidebar-collapse-toggle svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.26s cubic-bezier(0.4,0,0.2,1);
+}
+
+#app-layout.sidebar-collapsed .sidebar {
+  width: 84px;
+  padding-inline: 0.75rem;
+}
+
+#app-layout.sidebar-collapsed:not(.sidebar-hidden) .main-content {
+  margin-left: 84px;
+}
+
+#app-layout.sidebar-collapsed .sidebar-collapse-toggle {
+  top: 70px;
+}
+
+#app-layout.sidebar-collapsed .sidebar-collapse-toggle svg {
+  transform: rotate(180deg);
+}
+
+#app-layout.sidebar-collapsed .sidebar-header {
+  margin-bottom: 1.65rem;
+}
+
+#app-layout.sidebar-collapsed .logo-container {
+  gap: 0;
+}
+
+#app-layout.sidebar-collapsed .logo-container img {
+  width: 46px !important;
+  height: 46px !important;
+}
+
+#app-layout.sidebar-collapsed .logo-text,
+#app-layout.sidebar-collapsed .sidebar-nav .nav-btn span,
+#app-layout.sidebar-collapsed .sidebar-footer-label,
+#app-layout.sidebar-collapsed .sidebar-account-label {
+  display: none;
+}
+
+#app-layout.sidebar-collapsed .sidebar-nav {
+  align-items: center;
+  gap: 0.6rem;
+}
+
+#app-layout.sidebar-collapsed .sidebar-nav .nav-btn {
+  width: 52px;
+  min-height: 48px;
+  justify-content: center;
+  gap: 0;
+  padding: 0.7rem;
+}
+
+#app-layout.sidebar-collapsed .sidebar-nav .nav-btn svg {
+  width: 21px;
+  height: 21px;
+}
+
+#app-layout.sidebar-collapsed .sidebar-footer {
+  align-items: center;
+  gap: 0.55rem;
+  padding-top: 1rem;
+}
+
+#app-layout.sidebar-collapsed .sidebar-footer-action {
+  position: relative;
+  width: 48px !important;
+  min-width: 48px;
+  min-height: 40px;
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+}
+
+#app-layout.sidebar-collapsed .sidebar-footer-action svg {
+  width: 17px !important;
+  height: 17px !important;
+  flex: 0 0 17px;
+}
+
+#app-layout.sidebar-collapsed .sidebar-account-actions,
+#app-layout.sidebar-collapsed .sidebar-utility-actions {
+  align-items: center;
+}
+
+#app-layout.sidebar-collapsed .sidebar-account-action {
+  width: 48px;
+  min-width: 48px;
+  min-height: 42px;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+}
+
+#app-layout.sidebar-collapsed .notifications-badge {
+  top: -5px;
+  right: -5px;
+}
+
+#app-layout.sidebar-collapsed #inbox-unread-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  margin: 0 !important;
+}
+
+.sidebar-nav .nav-btn {
+  position: relative;
+  min-height: 48px;
+  overflow: hidden;
+  border-radius: 14px;
+}
+
+.sidebar-nav .nav-btn::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 2px;
+  background: transparent;
+  border-radius: 0 2px 2px 0;
+  box-shadow: none;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sidebar-nav .nav-btn:hover {
+  background: rgba(255,255,255,0.045);
+  transform: translateX(2px);
+}
+
+.sidebar-nav .nav-btn.active {
+  background:
+    linear-gradient(90deg, rgba(168,85,247,0.16), rgba(37,99,235,0.055)),
+    rgba(255,255,255,0.025);
+  border-color: rgba(168,85,247,0.34);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 10px 28px rgba(0,0,0,0.12);
+}
+
+.sidebar-nav .nav-btn.active::before {
+  background: #fbbf24;
+  box-shadow: 0 0 12px rgba(251,191,36,0.52);
+}
+
+.header-icon-button {
+  color: #d8c7ff !important;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.06), transparent),
+    rgba(10,10,17,0.48) !important;
+  border-color: rgba(255,255,255,0.13) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), 0 10px 28px rgba(0,0,0,0.16) !important;
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+}
+
+.header-icon-button:hover {
+  color: #fff !important;
+  border-color: rgba(168,85,247,0.42) !important;
+  transform: translateY(-2px);
+}
+
+.discover-stage-header {
+  margin-bottom: 1.1rem;
+  padding-bottom: 1rem;
+  border-bottom-color: rgba(255,255,255,0.085);
+}
+
+.discover-stage-header h2 {
+  font-family: 'Outfit', sans-serif !important;
+  font-size: clamp(1.45rem, 2.4vw, 2rem) !important;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+}
+
+.discover-stage-header > div:first-child span {
+  display: block;
+  max-width: 42rem;
+  margin-top: 0.25rem;
+  color: var(--text-muted) !important;
+  font-size: 0.84rem !important;
+  line-height: 1.5;
+}
+
+.discover-stage-header .input-field,
+.discover-stage-header .btn {
+  min-height: 42px;
+  border-radius: 11px;
+}
+
+.discover-empty-state {
+  position: relative;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(340px, 1.15fr);
+  align-items: center;
+  min-height: min(620px, calc(100vh - 245px));
+  overflow: clip;
+  padding: clamp(2rem, 5vw, 4.5rem);
+}
+
+.discover-empty-copy {
+  position: relative;
+  z-index: 3;
+  max-width: 560px;
+}
+
+.discover-empty-copy > span {
+  display: block;
+  margin-bottom: 0.7rem;
+  color: #fbbf24;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.discover-empty-copy h3 {
+  margin: 0;
+  font-size: clamp(2.55rem, 5vw, 5rem);
+  line-height: 0.96;
+  letter-spacing: -0.06em;
+  text-wrap: balance;
+}
+
+.discover-empty-copy p {
+  max-width: 500px;
+  margin-top: 1rem;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.discover-empty-copy .empty-state-actions {
+  justify-content: flex-start;
+  margin-top: 1.4rem;
+}
+
+.discover-empty-art {
+  position: relative;
+  min-height: 430px;
+  perspective: 1100px;
+}
+
+.discover-empty-art > div {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: clamp(180px, 18vw, 250px);
+  aspect-ratio: 0.72;
+  background-image: linear-gradient(180deg, transparent 55%, rgba(3,3,5,0.74)), var(--community-art);
+  background-position: center;
+  background-size: cover;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 18px;
+  box-shadow: 0 34px 76px rgba(0,0,0,0.56);
+}
+
+.discover-empty-art > div:nth-child(1) {
+  z-index: 1;
+  opacity: 0.72;
+  transform: translate(-112%, -42%) rotate(-13deg) translateZ(-50px);
+}
+
+.discover-empty-art > div:nth-child(2) {
+  z-index: 3;
+  transform: translate(-50%, -52%) rotate(1.5deg);
+}
+
+.discover-empty-art > div:nth-child(3) {
+  z-index: 2;
+  opacity: 0.78;
+  transform: translate(11%, -42%) rotate(12deg) translateZ(-45px);
+}
+
+.events-stage-grid {
+  gap: clamp(1rem, 2.2vw, 1.75rem) !important;
+}
+
+.events-board {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.035), transparent 38%),
+    rgba(8,8,14,0.46) !important;
+  border-color: rgba(255,255,255,0.11) !important;
+  border-radius: 16px !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 18px 46px rgba(0,0,0,0.14);
+  backdrop-filter: blur(12px) saturate(128%);
+  -webkit-backdrop-filter: blur(12px) saturate(128%);
+}
+
+.event-list-item {
+  min-height: 66px;
+  padding: 0.8rem !important;
+  background: rgba(255,255,255,0.025);
+  border-radius: 11px !important;
+}
+
+.event-list-item:hover {
+  background: rgba(255,255,255,0.055);
+  transform: translateY(-1px);
+}
+
+#tournament-hub > .events-hub-stage > div:first-child h2 {
+  font-size: clamp(1.45rem, 2.6vw, 2rem) !important;
+  letter-spacing: -0.04em;
+}
+
+#hub-registration-panel {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.035), transparent 42%),
+    rgba(8,8,14,0.56) !important;
+  border-color: rgba(168,85,247,0.3) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 22px 58px rgba(0,0,0,0.18);
+  backdrop-filter: blur(14px) saturate(125%);
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
+}
+
+.suggestions-page {
+  background: #050508 !important;
+}
+
+.suggestions-page .main-content,
+.suggestions-page .search-split-container,
+.suggestions-page .search-results-section {
+  background: transparent !important;
+}
+
+.suggestions-header-bar {
+  min-height: 82px !important;
+  padding: 0.8rem 1.25rem !important;
+  background:
+    linear-gradient(110deg, rgba(255,255,255,0.035), transparent 34%),
+    rgba(8,8,14,0.42) !important;
+  border-bottom-color: rgba(255,255,255,0.11) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 14px 40px rgba(0,0,0,0.14) !important;
+  backdrop-filter: blur(14px) saturate(135%) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(135%) !important;
+}
+
+.suggestions-title {
+  text-align: center;
+}
+
+.suggestions-title span {
+  display: block;
+  margin-bottom: 0.12rem;
+  color: #c4b5fd;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.suggestions-title h1 {
+  margin: 0;
+  font-size: 1.2rem;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+
+.suggestions-page #suggestions-categories-panel {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.03), transparent 40%),
+    rgba(8,8,14,0.4) !important;
+  border-right-color: rgba(255,255,255,0.1) !important;
+  backdrop-filter: blur(12px) saturate(128%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(128%) !important;
+}
+
+.suggestions-results-toolbar {
+  margin: 0.75rem 1rem 0;
+  padding: 0.65rem 0.8rem !important;
+  background: rgba(10,10,17,0.34) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  border-radius: 12px;
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+}
+
+@media (max-width: 768px) {
+  .sidebar-collapse-toggle {
+    display: none;
+  }
+
+  #app-layout.sidebar-collapsed .sidebar {
+    width: 260px;
+    padding: 1.75rem 1.5rem;
+  }
+
+  #app-layout.sidebar-collapsed .logo-container {
+    gap: 0.75rem;
+  }
+
+  #app-layout.sidebar-collapsed .logo-container img {
+    width: 64px !important;
+    height: 64px !important;
+  }
+
+  #app-layout.sidebar-collapsed .logo-text,
+  #app-layout.sidebar-collapsed .sidebar-nav .nav-btn span,
+  #app-layout.sidebar-collapsed .sidebar-footer-label,
+  #app-layout.sidebar-collapsed .sidebar-account-label {
+    display: initial;
+  }
+
+  #app-layout.sidebar-collapsed .sidebar-nav {
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  #app-layout.sidebar-collapsed .sidebar-nav .nav-btn {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+  }
+
+  #app-layout.sidebar-collapsed .sidebar-footer {
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  #app-layout.sidebar-collapsed .sidebar-footer-action {
+    width: 100% !important;
+    min-height: 44px;
+    padding: 0.25rem 0.5rem !important;
+  }
+
+  #app-layout.sidebar-collapsed .sidebar-account-actions,
+  #app-layout.sidebar-collapsed .sidebar-utility-actions {
+    align-items: stretch;
+  }
+
+  #app-layout.sidebar-collapsed .sidebar-account-action {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 0.7rem;
+    padding: 0.55rem 0.75rem;
+  }
+
+  .notifications-dropdown {
+    position: fixed;
+    right: 0.75rem;
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    left: 0.75rem;
+    width: auto;
+    max-height: min(420px, 70dvh);
+  }
+
+  .discover-stage-header > div:last-child {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: 1fr auto;
+  }
+
+  .discover-stage-header #discover-sort {
+    grid-column: 1;
+    width: 100% !important;
+  }
+
+  .discover-stage-header #discover-search {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100% !important;
+  }
+
+  .discover-empty-state {
+    display: flex;
+    min-height: 610px;
+    flex-direction: column-reverse;
+    justify-content: flex-end;
+    padding: 1.1rem 0.5rem 2rem;
+  }
+
+  .discover-empty-art {
+    width: 100%;
+    min-height: 245px;
+  }
+
+  .discover-empty-art > div {
+    width: 138px;
+    border-radius: 12px;
+  }
+
+  .discover-empty-copy h3 {
+    font-size: clamp(2.2rem, 11vw, 3.1rem);
+  }
+
+  .discover-empty-copy p {
+    font-size: 0.9rem;
+  }
+
+  .events-stage-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .events-board {
+    min-height: auto;
+    height: auto !important;
+  }
+
+  .suggestions-header-bar {
+    min-height: 72px !important;
+    padding: max(0.65rem, env(safe-area-inset-top)) 0.75rem 0.65rem !important;
+  }
+
+  .suggestions-title {
+    position: static !important;
+    transform: none !important;
+    margin-right: auto;
+    text-align: left;
+  }
+
+  .suggestions-title span,
+  .suggestions-context > div:first-child {
+    display: none;
+  }
+
+  .suggestions-title h1 {
+    font-size: 1rem;
+  }
+
+  .suggestions-context {
+    margin-left: 0 !important;
+  }
+
+  .suggestions-page #suggestions-categories-panel {
+    background: rgba(8,8,14,0.9) !important;
+  }
+
+  .suggestions-results-toolbar {
+    margin: 0.55rem 0.65rem 0;
+  }
+}
+
+/* ==========================================================================
+   Search workspace — command-first card discovery
+   ========================================================================== */
+.search-page {
+  background: #050508 !important;
+}
+
+.search-page #app-bg-canvas {
+  z-index: 0 !important;
+}
+
+.search-page #app-layout {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+.search-app-layout .main-content {
+  min-width: 0;
+}
+
+@media (min-width: 769px) {
+  .app-layout:not(.auth-mode) > .main-content > .content-header {
+    position: static !important;
+    min-height: 0 !important;
+    height: 0 !important;
+    padding: 0 !important;
+    overflow: visible;
+  }
+}
+
+.search-global-sidebar .nav-btn {
+  text-decoration: none;
+}
+
+.search-page .main-content {
+  overflow: clip !important;
+  background: transparent !important;
+}
+
+.search-header-bar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.05rem 1.5rem 1.15rem;
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.035), transparent 32%),
+    rgba(8, 8, 14, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 14px 40px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+.search-brand-row,
+.search-command-row,
+.search-results-toolbar,
+.search-results-toolbar-options,
+.search-sort-control,
+.search-pagination,
+.search-card-footer {
+  display: flex;
+  align-items: center;
+}
+
+.search-brand-row {
+  display: none;
+  gap: 0.8rem;
+}
+
+.grimore-back-button {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.grimore-back-button:hover {
+  background: rgba(255, 255, 255, 0.075);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.grimore-back-button img {
+  width: 27px;
+  height: 27px;
+}
+
+.search-header-title {
+  min-width: 0;
+}
+
+.search-header-title > span {
+  display: block;
+  margin-bottom: 0.12rem;
+  color: #c4b5fd;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.search-header-title h1 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.45rem;
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+  text-shadow: none;
+}
+
+.search-return-link {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.search-command-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.35fr) minmax(180px, 0.72fr) auto auto minmax(180px, 230px);
+  gap: 0.65rem;
+}
+
+.search-primary-field,
+.search-oracle-field {
+  position: relative;
+  min-width: 0;
+}
+
+.search-primary-field > svg {
+  position: absolute;
+  top: 50%;
+  left: 1rem;
+  z-index: 2;
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: #a7afc0;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.search-primary-field .input-field,
+.search-oracle-field .input-field,
+.search-target-control .input-field {
+  width: 100%;
+  height: 48px;
+  margin: 0;
+  color: var(--text-pure);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+
+.search-primary-field .input-field {
+  padding: 0 3rem 0 3rem;
+}
+
+.search-oracle-field .input-field {
+  padding: 0 0.9rem;
+}
+
+.search-primary-field .input-field:focus,
+.search-oracle-field .input-field:focus,
+.search-target-control .input-field:focus {
+  border-color: rgba(168, 85, 247, 0.65);
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.search-primary-field kbd {
+  position: absolute;
+  top: 50%;
+  right: 0.8rem;
+  padding: 0.12rem 0.42rem;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 5px;
+  font: 600 0.72rem 'Fira Code', monospace;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.search-submit-button,
+.search-filter-button {
+  min-height: 48px;
+  padding: 0 1.05rem;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.search-submit-button {
+  color: #170e03;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  border-color: rgba(251,191,36,0.8);
+  box-shadow: 0 8px 22px rgba(245, 158, 11, 0.18);
+}
+
+.search-filter-button {
+  gap: 0.45rem;
+  color: var(--text-high);
+  background: rgba(255,255,255,0.045);
+  border-color: rgba(255,255,255,0.1);
+}
+
+.search-filter-button svg,
+.search-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.search-filter-button.active {
+  color: #ddd6fe;
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.28);
+}
+
+.search-target-control {
+  position: relative;
+}
+
+.search-target-control label {
+  position: absolute;
+  top: 6px;
+  left: 0.8rem;
+  z-index: 2;
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.search-target-control .input-field {
+  padding: 1rem 2rem 0 0.75rem;
+  font-size: 0.77rem;
+}
+
+.search-page .search-split-container {
+  background: transparent;
+}
+
+.search-page .search-filters-sidebar {
+  width: 260px;
+  min-width: 260px;
+  padding: 1rem;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.035), transparent 38%),
+    rgba(9, 9, 16, 0.38);
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset -1px 0 0 rgba(255,255,255,0.025),
+    16px 0 42px rgba(0,0,0,0.12);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+}
+
+.search-page .filters-sidebar-header {
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(255,255,255,0.075);
+}
+
+.search-page .filters-sidebar-header h2 {
+  font-size: 0.75rem !important;
+  letter-spacing: 0.1em !important;
+}
+
+.search-page .search-filters-sidebar .input-field {
+  min-height: 36px !important;
+  height: 36px !important;
+  color: var(--text-high);
+  background: rgba(255,255,255,0.045) !important;
+  border-color: rgba(255,255,255,0.09) !important;
+  border-radius: 8px !important;
+  font-size: 0.75rem !important;
+}
+
+.search-page .color-checkbox-label span {
+  width: 34px;
+  height: 34px;
+}
+
+.search-page details.adv-group {
+  background: transparent;
+  border-bottom-color: rgba(255,255,255,0.07);
+}
+
+.search-page details.adv-group summary {
+  min-height: 38px;
+  align-content: center;
+  color: #c6ccda;
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.search-page .search-results-pane {
+  gap: 0.8rem !important;
+  padding: 1rem 1.2rem 0.75rem !important;
+}
+
+.search-results-toolbar {
+  min-height: 50px;
+  flex: 0 0 auto;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0.45rem 0.35rem 0.75rem;
+  background:
+    linear-gradient(110deg, rgba(255,255,255,0.04), transparent 42%),
+    rgba(12, 12, 20, 0.3);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.055),
+    0 10px 30px rgba(0,0,0,0.12);
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+}
+
+.search-results-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.search-results-summary #adv-results-count {
+  color: var(--text-pure);
+  font: 700 1rem 'Fira Code', monospace;
+}
+
+.search-results-toolbar-options {
+  gap: 0.55rem;
+}
+
+.search-sort-control {
+  gap: 0.35rem;
+}
+
+.search-sort-control label {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.search-sort-control .input-field {
+  width: auto;
+  min-height: 38px;
+  height: 38px;
+  margin: 0;
+  padding: 0 1.75rem 0 0.65rem;
+  color: var(--text-high);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 9px;
+  font-size: 0.72rem;
+}
+
+.search-icon-button {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-high);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.search-icon-button:hover:not(:disabled),
+.search-icon-button.active {
+  color: #fff;
+  background: rgba(139,92,246,0.16);
+  border-color: rgba(139,92,246,0.32);
+}
+
+.search-icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.search-pagination {
+  gap: 0.35rem;
+}
+
+.search-pagination span {
+  min-width: 56px;
+  color: var(--text-muted);
+  font: 600 0.68rem 'Fira Code', monospace;
+  text-align: center;
+}
+
+.search-results-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  align-items: start;
+  gap: 0.75rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0.1rem 0.25rem 0.75rem 0;
+}
+
+.search-discovery-state {
+  position: relative;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(350px, 1.1fr);
+  align-items: center;
+  min-height: min(610px, calc(100vh - 235px));
+  overflow: visible;
+  padding: clamp(2rem, 5vw, 5rem);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.search-discovery-copy {
+  position: relative;
+  z-index: 4;
+  max-width: 620px;
+}
+
+.search-discovery-copy > span {
+  color: #fbbf24;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.search-discovery-copy h2 {
+  max-width: 600px;
+  margin: 0.8rem 0 0;
+  font-size: clamp(2.8rem, 5.2vw, 5.4rem);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+  text-wrap: balance;
+  text-shadow: none;
+}
+
+.search-discovery-copy p {
+  max-width: 520px;
+  margin-top: 1.1rem;
+  color: #aab2c3;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.search-starter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 1.4rem;
+}
+
+.search-starter-chips button {
+  min-height: 40px;
+  padding: 0.5rem 0.8rem;
+  color: #d8dbe5;
+  background: rgba(255,255,255,0.045);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 999px;
+  font: 600 0.76rem 'Outfit', sans-serif;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.search-starter-chips button:hover {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.18);
+  transform: translateY(-1px);
+}
+
+.search-discovery-art {
+  position: relative;
+  min-height: 440px;
+  perspective: 1000px;
+}
+
+.search-discovery-art > div {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: clamp(185px, 18vw, 260px);
+  aspect-ratio: 0.72;
+  background-image: linear-gradient(180deg, transparent 55%, rgba(3,3,5,0.72)), var(--search-art);
+  background-position: center;
+  background-size: cover;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 18px;
+  box-shadow: 0 35px 70px rgba(0,0,0,0.58);
+}
+
+.search-discovery-art > div:nth-child(1) {
+  z-index: 1;
+  transform: translate(-112%, -43%) rotate(-12deg) translateZ(-50px);
+  opacity: 0.72;
+}
+
+.search-discovery-art > div:nth-child(2) {
+  z-index: 3;
+  transform: translate(-50%, -52%) rotate(1deg);
+}
+
+.search-discovery-art > div:nth-child(3) {
+  z-index: 2;
+  transform: translate(10%, -43%) rotate(12deg) translateZ(-45px);
+  opacity: 0.78;
+}
+
+.search-card-item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgba(10, 10, 17, 0.56);
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-card-item:hover {
+  border-color: rgba(255,255,255,0.2);
+  box-shadow: 0 18px 38px rgba(0,0,0,0.42);
+  transform: translateY(-3px);
+}
+
+.search-card-image-wrap {
+  width: 100%;
+  aspect-ratio: 2.5 / 3.5;
+  overflow: hidden;
+  background: rgba(255,255,255,0.03);
+}
+
+.search-card-image-wrap img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  transition: transform 0.3s ease;
+}
+
+.search-card-item:hover .search-card-image-wrap img {
+  transform: scale(1.025);
+}
+
+.search-card-in-deck {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  z-index: 3;
+  padding: 0.3rem 0.5rem;
+  color: #1a1003;
+  background: #fbbf24;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.search-card-footer {
+  min-height: 68px;
+  gap: 0.65rem;
+  padding: 0.65rem;
+  background: rgba(9, 9, 15, 0.7);
+  border-top: 1px solid rgba(255,255,255,0.11);
+  backdrop-filter: blur(16px) saturate(135%);
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+}
+
+.search-card-meta {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.16rem;
+}
+
+.search-card-meta strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-high);
+  font-size: 0.78rem;
+  min-height: 1.9em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.search-card-meta span {
+  color: #fbbf24;
+  font: 600 0.7rem 'Fira Code', monospace;
+}
+
+.search-card-add {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #170e03;
+  background: #fbbf24;
+  border: 0;
+  border-radius: 10px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.search-card-add:hover {
+  background: #fcd34d;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 900px) and (min-width: 769px) {
+  .search-command-row {
+    grid-template-columns: minmax(260px, 1fr) auto auto;
+  }
+
+  .search-oracle-field,
+  .search-target-control {
+    display: none;
+  }
+
+  .search-discovery-state {
+    grid-template-columns: 1fr;
+  }
+
+  .search-discovery-copy {
+    max-width: 520px;
+  }
+
+  .search-discovery-art {
+    position: absolute;
+    top: 50%;
+    right: -7%;
+    z-index: 1;
+    width: 48%;
+    opacity: 0.42;
+    transform: translateY(-50%);
+  }
+}
+
+@media (max-width: 768px) {
+  .search-page .app-layout:not(.auth-mode) .main-content {
+    width: 100vw !important;
+    height: 100dvh !important;
+    margin: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .search-header-bar {
+    gap: 0.7rem !important;
+    padding: max(0.65rem, env(safe-area-inset-top)) 0.75rem 0.75rem !important;
+    background:
+      linear-gradient(110deg, rgba(255,255,255,0.04), transparent 40%),
+      rgba(8,8,14,0.46) !important;
+  }
+
+  .search-brand-row {
+    display: flex;
+    min-height: 40px;
+  }
+
+  .search-mobile-menu {
+    display: inline-flex !important;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    border-radius: 11px !important;
+  }
+
+  .search-command-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px 48px;
+    gap: 0.5rem;
+  }
+
+  .search-primary-field {
+    grid-column: 1 / -1;
+  }
+
+  .search-primary-field .input-field {
+    height: 50px;
+    padding-right: 1rem;
+    font-size: 0.88rem;
+  }
+
+  .search-primary-field kbd,
+  .oracle-search-header-container {
+    display: none !important;
+  }
+
+  .search-submit-button,
+  .search-filter-button {
+    min-width: 48px;
+    width: 48px;
+    min-height: 48px;
+    height: 48px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .search-submit-button::before {
+    content: 'Go';
+    font-size: 0.8rem;
+    font-weight: 800;
+  }
+
+  .search-filter-button svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .search-target-control {
+    grid-column: 1;
+    grid-row: 2;
+    display: block !important;
+  }
+
+  .search-target-control .input-field {
+    height: 48px;
+  }
+
+  .search-page .search-results-pane {
+    gap: 0.55rem !important;
+    padding: 0.6rem 0.65rem max(0.65rem, env(safe-area-inset-bottom)) !important;
+  }
+
+  .search-results-toolbar {
+    min-height: 46px;
+    flex-wrap: nowrap !important;
+    gap: 0.45rem !important;
+    padding: 0.25rem 0.3rem 0.25rem 0.65rem !important;
+  }
+
+  .search-results-summary {
+    flex-shrink: 0;
+  }
+
+  .search-results-toolbar-options {
+    width: auto !important;
+    min-width: 0;
+    flex: 1;
+    justify-content: flex-end !important;
+    gap: 0.3rem !important;
+  }
+
+  .search-sort-control label,
+  #adv-sort-dir-select,
+  #btn-zoom-toggle {
+    display: none;
+  }
+
+  .search-sort-control .input-field {
+    width: 88px;
+    min-height: 38px;
+    height: 38px;
+    padding-right: 1.3rem;
+  }
+
+  .search-pagination {
+    gap: 0.2rem;
+  }
+
+  .search-pagination .search-icon-button {
+    width: 38px;
+    height: 38px;
+  }
+
+  .search-pagination span {
+    min-width: 42px;
+    font-size: 0.62rem;
+  }
+
+  .search-discovery-state {
+    display: flex;
+    min-height: 600px;
+    flex-direction: column-reverse;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 1.1rem;
+    border-radius: 16px;
+  }
+
+  .search-discovery-art {
+    width: 100%;
+    min-height: 245px;
+  }
+
+  .search-discovery-art > div {
+    width: 138px;
+    border-radius: 12px;
+  }
+
+  .search-discovery-copy > span {
+    font-size: 0.62rem;
+  }
+
+  .search-discovery-copy h2 {
+    margin-top: 0.55rem;
+    font-size: clamp(2.1rem, 10.5vw, 3rem);
+    line-height: 0.98;
+  }
+
+  .search-discovery-copy p {
+    margin-top: 0.8rem;
+    font-size: 0.88rem;
+    line-height: 1.5;
+  }
+
+  .search-starter-chips {
+    gap: 0.45rem;
+    margin-top: 1rem;
+  }
+
+  .search-starter-chips button {
+    min-height: 44px;
+  }
+
+  .search-card-footer {
+    min-height: 62px;
+  }
+
+  .search-card-add {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+
+  .search-page .search-filters-sidebar .input-field {
+    min-height: 44px !important;
+    height: 44px !important;
+  }
+
+  .search-page .filters-sidebar-header > .btn {
+    display: none !important;
+  }
+
+  .search-page .close-filters-btn {
+    display: inline-flex !important;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .search-page .color-checkbox-label span {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Final responsive precedence for the v26 command deck. */
+@media (max-width: 768px) {
+  .search-page .search-command-row {
+    grid-template-columns: minmax(0, 1fr) 48px 48px !important;
+    gap: 0.5rem !important;
+  }
+
+  .search-page .search-primary-field {
+    grid-column: 1 / -1;
+  }
+
+  .search-page .search-target-control {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  .search-page .search-submit-button {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .search-page .search-filter-button {
+    grid-column: 3;
+    grid-row: 2;
+  }
+}
+
+/* ==========================================================================
+   Life Counter v28 — table-first interaction model
+   ========================================================================== */
+#lifetracker-view.view-section.active {
+  position: relative;
+  gap: 0 !important;
+  padding: 4px !important;
+  background: rgba(2, 2, 5, 0.46) !important;
+}
+
+#lifetracker-view .life-tracker-toolbar {
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  z-index: 120;
+  width: auto;
+  min-width: 0 !important;
+  min-height: 48px !important;
+  gap: 0.25rem;
+  padding: 0.3rem !important;
+  background: rgba(4, 4, 9, 0.94) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
+#lifetracker-view .life-tracker-home {
+  min-width: 42px;
+  min-height: 42px;
+  justify-content: center;
+  padding: 0 !important;
+  border-radius: 10px;
+}
+
+#lifetracker-view .life-tracker-home:hover {
+  background: rgba(168, 85, 247, 0.14);
+}
+
+#lifetracker-view .life-tracker-home img {
+  width: 30px !important;
+  height: 30px !important;
+}
+
+#lifetracker-view .life-tracker-home > span,
+#lifetracker-view .life-reset-group > span {
+  display: none !important;
+}
+
+#lifetracker-view .life-reset-group {
+  gap: 0.25rem !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  backdrop-filter: none !important;
+}
+
+#lifetracker-view .life-reset-group .btn {
+  min-width: 54px;
+  min-height: 40px;
+  height: 40px;
+  padding: 0 0.65rem;
+  color: #d7dce7;
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+#lifetracker-view #life-orientation-toggle[aria-pressed="true"] {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.24);
+}
+
+#lifetracker-view .life-tracker-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+  gap: 4px !important;
+  width: 100%;
+  height: 100%;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+#lifetracker-view .life-player-card {
+  width: auto !important;
+  min-width: 0;
+  min-height: 0 !important;
+  padding: 0.55rem !important;
+  border-radius: 11px !important;
+  transform-origin: 50% 50%;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease, box-shadow 0.2s ease !important;
+  touch-action: manipulation;
+}
+
+#lifetracker-view.life-table-mode .life-player-card:nth-child(-n + 2) {
+  transform: rotate(180deg) !important;
+}
+
+#lifetracker-view.life-table-mode .life-player-card:nth-child(-n + 2):hover {
+  transform: rotate(180deg) !important;
+}
+
+#lifetracker-view.life-screen-mode .life-player-card,
+#lifetracker-view.life-screen-mode .life-player-card:hover {
+  transform: none !important;
+}
+
+#lifetracker-view .life-player-card > input {
+  position: relative;
+  z-index: 30 !important;
+  width: min(180px, 44%) !important;
+  min-height: 34px;
+  padding: 0 0.4rem;
+  border-bottom-style: solid !important;
+  border-radius: 0;
+  font-size: 0.82rem !important;
+  touch-action: auto;
+}
+
+#lifetracker-view .life-player-card:nth-child(odd) > input {
+  align-self: flex-start;
+  margin-left: 0.45rem;
+  text-align: left !important;
+}
+
+#lifetracker-view .life-player-card:nth-child(even) > input {
+  align-self: flex-end;
+  margin-right: 0.45rem;
+  text-align: right !important;
+}
+
+#lifetracker-view.life-table-mode .life-player-card:nth-child(1) > input {
+  align-self: flex-end;
+  margin-right: 0.45rem;
+  text-align: right !important;
+}
+
+#lifetracker-view.life-table-mode .life-player-card:nth-child(2) > input {
+  align-self: flex-start;
+  margin-left: 0.45rem;
+  text-align: left !important;
+}
+
+#lifetracker-view .life-player-card > div:nth-of-type(1) {
+  position: absolute !important;
+  inset: 38px 0 48px !important;
+  z-index: 5 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  margin: 0 !important;
+  gap: 0 !important;
+}
+
+#lifetracker-view .life-display-value {
+  position: relative;
+  z-index: 8;
+  min-width: 0 !important;
+  margin: 0 !important;
+  font-size: clamp(5.7rem, 13vw, 9.5rem) !important;
+  line-height: 0.82 !important;
+  pointer-events: none;
+}
+
+#lifetracker-view .life-control-btn {
+  position: absolute !important;
+  top: 0;
+  bottom: 0;
+  width: 50% !important;
+  height: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 clamp(1rem, 4vw, 3rem) !important;
+  color: rgba(255, 255, 255, 0.38) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-size: clamp(1.55rem, 3vw, 2.25rem) !important;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#lifetracker-view .life-control-btn:first-child {
+  left: 0;
+  justify-content: flex-start;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.18), transparent 45%) !important;
+}
+
+#lifetracker-view .life-control-btn:last-child {
+  right: 0;
+  justify-content: flex-end;
+  background: linear-gradient(270deg, color-mix(in srgb, var(--player-accent) 9%, transparent), transparent 45%) !important;
+}
+
+#lifetracker-view .life-control-btn:hover,
+#lifetracker-view .life-control-btn:active {
+  color: rgba(255, 255, 255, 0.96) !important;
+  transform: none !important;
+}
+
+#lifetracker-view .life-control-btn:first-child:hover,
+#lifetracker-view .life-control-btn:first-child:active {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.18), transparent 68%) !important;
+}
+
+#lifetracker-view .life-control-btn:last-child:hover,
+#lifetracker-view .life-control-btn:last-child:active {
+  background: linear-gradient(270deg, color-mix(in srgb, var(--player-accent) 22%, transparent), transparent 68%) !important;
+}
+
+#lifetracker-view .life-player-card > div:last-child {
+  position: relative;
+  z-index: 30 !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 0.28rem !important;
+  width: 100%;
+  padding-top: 0.35rem !important;
+  touch-action: manipulation;
+}
+
+#lifetracker-view .life-player-card > div:last-child > div,
+#lifetracker-view .life-player-card > div:last-child > button {
+  min-width: 0 !important;
+  min-height: 34px !important;
+  padding: 0.12rem !important;
+  background: rgba(1, 1, 4, 0.34) !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 7px !important;
+}
+
+#lifetracker-view .life-player-card > div:last-child .btn-xs {
+  min-width: 25px !important;
+  min-height: 28px !important;
+  padding: 0 !important;
+  color: #b9c0cf;
+}
+
+.life-delta-feedback {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 25;
+  min-width: 48px;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(5, 5, 10, 0.84);
+  font: 800 0.88rem 'Fira Code', monospace;
+  text-align: center;
+  opacity: 0;
+  transform: translate(78px, -76px) scale(0.86);
+  transition: opacity 0.16s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.life-delta-feedback.visible {
+  opacity: 1;
+  transform: translate(78px, -86px) scale(1);
+}
+
+.life-delta-feedback.is-gain {
+  color: #6ee7b7;
+  border-color: rgba(52, 211, 153, 0.28);
+}
+
+.life-delta-feedback.is-loss {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+@keyframes lifeGainPulse {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 16px 38px rgba(0,0,0,0.24); }
+  50% { box-shadow: inset 0 0 80px rgba(16,185,129,0.18), 0 0 28px rgba(16,185,129,0.12); }
+}
+
+@keyframes lifeLossPulse {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 16px 38px rgba(0,0,0,0.24); }
+  50% { box-shadow: inset 0 0 80px rgba(239,68,68,0.18), 0 0 28px rgba(239,68,68,0.12); }
+}
+
+#lifetracker-view .life-player-card.life-gain-pulse {
+  animation: lifeGainPulse 0.28s ease;
+}
+
+#lifetracker-view .life-player-card.life-loss-pulse {
+  animation: lifeLossPulse 0.28s ease;
+}
+
+@media (max-width: 768px) {
+  #lifetracker-view.view-section.active {
+    padding: 3px !important;
+  }
+
+  #lifetracker-view .life-tracker-toolbar {
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    width: auto !important;
+    min-height: 44px !important;
+    padding: 0.22rem !important;
+    transform: translate(-50%, -50%) !important;
+  }
+
+  #lifetracker-view .life-tracker-home {
+    min-width: 38px;
+    min-height: 38px;
+  }
+
+  #lifetracker-view .life-tracker-home img {
+    width: 27px !important;
+    height: 27px !important;
+  }
+
+  #lifetracker-view .life-reset-group .btn {
+    min-width: 48px;
+    min-height: 38px;
+    height: 38px;
+    padding: 0 0.42rem;
+    font-size: 0.62rem;
+  }
+
+  #lifetracker-view .life-tracker-grid {
+    gap: 3px !important;
+    padding: 0 !important;
+  }
+
+  #lifetracker-view .life-player-card {
+    padding: 0.38rem !important;
+    border-radius: 9px !important;
+  }
+
+  #lifetracker-view .life-player-card > input {
+    width: 44% !important;
+    min-height: 30px;
+    font-size: 0.7rem !important;
+  }
+
+  #lifetracker-view .life-player-card > div:nth-of-type(1) {
+    inset: 32px 0 72px !important;
+  }
+
+  #lifetracker-view .life-display-value {
+    font-size: clamp(4.3rem, 21vw, 6rem) !important;
+  }
+
+  #lifetracker-view .life-control-btn {
+    width: 50% !important;
+    height: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    padding: 0 0.55rem !important;
+    font-size: 1.5rem !important;
+  }
+
+  #lifetracker-view .life-player-card > div:last-child {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.2rem !important;
+    padding-top: 0.25rem !important;
+  }
+
+  #lifetracker-view .life-player-card > div:last-child > div,
+  #lifetracker-view .life-player-card > div:last-child > button {
+    min-height: 31px !important;
+  }
+
+  .life-delta-feedback,
+  .life-delta-feedback.visible {
+    transform: translate(42px, -62px) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lifetracker-view .life-player-card,
+  .life-delta-feedback {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ==========================================================================
+   Mobile system v29 — compact, edge-safe, and consistent across every route
+   ========================================================================== */
+@media (max-width: 768px) {
+  :root {
+    --mobile-gutter: clamp(0.7rem, 3.2vw, 0.9rem);
+    --mobile-control: 44px;
+  }
+
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  body {
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  img,
+  svg,
+  canvas,
+  video {
+    max-width: 100%;
+  }
+
+  .app-layout:not(.auth-mode),
+  .app-layout:not(.auth-mode) .main-content,
+  .app-layout:not(.auth-mode) main {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .app-layout:not(.auth-mode) .main-content {
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-layout:not(.auth-mode) > .main-content > .content-header {
+    min-height: 50px !important;
+    height: 50px !important;
+    flex: 0 0 50px;
+    padding: max(0.25rem, env(safe-area-inset-top)) var(--mobile-gutter) 0 !important;
+  }
+
+  .mobile-menu-toggle {
+    width: 42px;
+    height: 42px;
+    margin: 0 !important;
+    padding: 0.55rem !important;
+    border-radius: 10px !important;
+  }
+
+  .app-layout:not(.auth-mode) main {
+    height: calc(100dvh - 50px) !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .view-section.active:not(#auth-view):not(#deckbuilder-view):not(#playtest-view):not(#lifetracker-view):not(#deck-view-view) {
+    min-width: 0;
+    gap: 0.75rem !important;
+    padding: 0 var(--mobile-gutter) max(1rem, env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .view-section.active > *,
+  .panel,
+  .decks-grid,
+  .dashboard-grid,
+  .events-stage-grid,
+  .profile-layout-grid,
+  .search-split-container,
+  .search-results-pane,
+  .search-results-section {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .panel {
+    padding: 0.8rem !important;
+    border-radius: 14px;
+  }
+
+  .btn,
+  .input-field,
+  button,
+  select,
+  input {
+    max-width: 100%;
+  }
+
+  .modal-content,
+  .drawer-content {
+    width: calc(100vw - (var(--mobile-gutter) * 2)) !important;
+    max-width: calc(100vw - (var(--mobile-gutter) * 2)) !important;
+    max-height: calc(100dvh - 1.5rem) !important;
+    margin: auto !important;
+    overflow-y: auto;
+  }
+
+  .table-container {
+    width: 100%;
+    max-width: 100%;
+    margin-inline: 0;
+    overscroll-behavior-inline: contain;
+  }
+
+  /* Collection: preserve the artwork, but stop it consuming half the screen. */
+  .deck-library-panel {
+    padding: 0.1rem 0 0.75rem !important;
+  }
+
+  .deck-library-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    margin-bottom: 0.45rem;
+  }
+
+  .deck-library-heading h2 {
+    font-size: clamp(1.35rem, 6vw, 1.55rem);
+  }
+
+  .deck-library-actions {
+    align-self: center;
+  }
+
+  .deck-library-actions .btn {
+    min-height: 40px;
+    height: 40px;
+    padding-inline: 0.6rem;
+    font-size: 0.74rem;
+  }
+
+  .deck-empty-experience {
+    min-height: 0;
+    gap: 0;
+    padding: 0.25rem 0 0.75rem;
+    border-radius: 0;
+  }
+
+  .deck-empty-art {
+    min-height: 178px;
+    margin-bottom: 0.25rem;
+  }
+
+  .deck-art-card {
+    width: 108px;
+    border-radius: 10px;
+  }
+
+  .deck-art-orbit {
+    width: 225px;
+  }
+
+  .deck-empty-kicker {
+    margin-bottom: 0.4rem;
+    font-size: 0.6rem;
+  }
+
+  .deck-empty-copy h3 {
+    max-width: 12ch;
+    font-size: clamp(1.9rem, 9.2vw, 2.35rem);
+    line-height: 0.98;
+  }
+
+  .deck-empty-copy > p {
+    margin-top: 0.65rem;
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .deck-empty-actions {
+    gap: 0.5rem;
+    margin-top: 0.8rem;
+  }
+
+  .deck-empty-actions .btn {
+    min-height: 46px;
+  }
+
+  .deck-import-link {
+    min-height: 38px;
+    margin-top: 0.55rem;
+    font-size: 0.76rem;
+  }
+
+  .deck-card {
+    min-height: 0;
+  }
+
+  .deck-card-art {
+    min-height: 260px;
+  }
+
+  /* Discover: compact command controls and a shorter empty state. */
+  #discover-view > .panel {
+    padding: 0 !important;
+  }
+
+  .discover-stage-header {
+    gap: 0.65rem !important;
+    margin-bottom: 0.45rem;
+    padding: 0 0 0.65rem !important;
+  }
+
+  .discover-stage-header h2 {
+    font-size: clamp(1.35rem, 6.5vw, 1.65rem) !important;
+  }
+
+  .discover-stage-header > div:first-child span {
+    font-size: 0.76rem !important;
+    line-height: 1.4;
+  }
+
+  .discover-stage-header .input-field,
+  .discover-stage-header .btn {
+    min-height: 42px;
+    height: 42px !important;
+  }
+
+  .discover-empty-state {
+    min-height: 0;
+    padding: 0.35rem 0 1rem;
+  }
+
+  .discover-empty-art {
+    min-height: 184px;
+  }
+
+  .discover-empty-art > div {
+    width: 108px;
+    border-radius: 10px;
+  }
+
+  .discover-empty-copy h3 {
+    font-size: clamp(2rem, 10vw, 2.55rem);
+    line-height: 0.98;
+  }
+
+  .discover-empty-copy p {
+    margin-top: 0.7rem;
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .discover-empty-copy .empty-state-actions {
+    margin-top: 0.85rem;
+  }
+
+  /* Events: turn the desktop rail into a compact mobile summary. */
+  .events-stage-grid {
+    min-height: 0 !important;
+    gap: 0.75rem !important;
+  }
+
+  .events-board {
+    gap: 0.7rem !important;
+    padding: 0.8rem !important;
+    border-radius: 13px !important;
+  }
+
+  .events-board > div:nth-child(2) {
+    max-height: none !important;
+    gap: 0.7rem !important;
+    overflow: visible !important;
+  }
+
+  .event-list-item {
+    min-height: 54px;
+    padding: 0.65rem !important;
+  }
+
+  #tournament-hub,
+  #tournament-hub > .events-hub-stage {
+    min-height: 0 !important;
+  }
+
+  #tournament-hub > .events-hub-stage {
+    gap: 0.7rem !important;
+    padding: 0.8rem 0 !important;
+  }
+
+  #tournament-hub > .events-hub-stage > div:first-child {
+    gap: 0.55rem !important;
+    padding-bottom: 0.65rem !important;
+  }
+
+  #tournament-hub > .events-hub-stage > div:first-child h2 {
+    font-size: 1.35rem !important;
+  }
+
+  #hub-registration-panel {
+    margin-top: 0.55rem !important;
+    padding: 1.15rem 0.9rem !important;
+    border-radius: 13px !important;
+  }
+
+  #hub-registration-panel h2,
+  #hub-registration-panel h3 {
+    font-size: clamp(1.25rem, 6.8vw, 1.75rem) !important;
+  }
+
+  /* Profile: move meaningful controls into the first screenful. */
+  #profile-view .profile-scroll-wrapper {
+    padding: 0.25rem 0 1rem !important;
+    scrollbar-gutter: auto;
+  }
+
+  .profile-stage-intro {
+    margin-bottom: 0.8rem;
+  }
+
+  .profile-stage-eyebrow {
+    margin-bottom: 0.25rem;
+    font-size: 0.6rem;
+  }
+
+  .profile-stage-intro h2 {
+    font-size: clamp(1.75rem, 8vw, 2rem);
+  }
+
+  #profile-view .profile-layout-grid {
+    gap: 0.75rem !important;
+  }
+
+  #profile-view .profile-settings-panel {
+    padding: 0.55rem !important;
+    border-radius: 14px !important;
+  }
+
+  #profile-view form {
+    gap: 0.72rem !important;
+    padding: 0.15rem !important;
+  }
+
+  #profile-view textarea.input-field {
+    min-height: 88px !important;
+  }
+
+  /* Search: place the menu beside search instead of burning an entire row. */
+  .search-page .search-header-bar {
+    position: relative;
+    gap: 0.45rem !important;
+    padding: max(0.55rem, env(safe-area-inset-top)) 0.65rem 0.55rem !important;
+  }
+
+  .search-page .search-brand-row {
+    position: absolute;
+    top: max(0.55rem, env(safe-area-inset-top));
+    left: 0.65rem;
+    z-index: 5;
+    width: 44px;
+    min-height: 44px;
+  }
+
+  .search-page .search-command-row {
+    gap: 0.4rem !important;
+  }
+
+  .search-page .search-primary-field {
+    margin-left: 52px;
+  }
+
+  .search-page .search-primary-field,
+  .search-page .search-primary-field .input-field {
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .search-page .search-primary-field .input-field {
+    font-size: 0.82rem;
+  }
+
+  .search-page .search-submit-button,
+  .search-page .search-filter-button,
+  .search-page .search-target-control .input-field {
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .search-page .search-results-pane {
+    padding: 0.45rem var(--mobile-gutter) max(0.6rem, env(safe-area-inset-bottom)) !important;
+  }
+
+  .search-page .search-results-toolbar {
+    min-height: 42px !important;
+    padding: 0.2rem 0.25rem 0.2rem 0.55rem !important;
+  }
+
+  .search-page .search-discovery-state {
+    min-height: 0 !important;
+    padding: 0.75rem;
+    border-radius: 13px;
+  }
+
+  .search-page .search-discovery-art {
+    min-height: 190px;
+  }
+
+  .search-page .search-discovery-art > div {
+    width: 112px;
+  }
+
+  .search-page .search-discovery-copy h2 {
+    font-size: clamp(1.95rem, 9.8vw, 2.65rem) !important;
+  }
+
+  .search-page .search-discovery-copy p {
+    margin-top: 0.65rem;
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  .search-page .search-starter-chips {
+    margin-top: 0.75rem;
+  }
+
+  /* Suggestions: compact the standalone header and let results own the space. */
+  .suggestions-page .suggestions-header-bar {
+    min-height: 58px !important;
+    gap: 0.55rem !important;
+    padding: max(0.45rem, env(safe-area-inset-top)) 0.65rem 0.45rem !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .suggestions-page .grimore-back-button {
+    width: 42px;
+    height: 42px;
+  }
+
+  .suggestions-page .suggestions-context {
+    min-width: 0;
+  }
+
+  .suggestions-page #btn-return-deck-link {
+    min-height: 40px;
+    height: 40px !important;
+    padding-inline: 0.55rem !important;
+    white-space: nowrap;
+  }
+
+  .suggestions-page .suggestions-results-toolbar {
+    margin: 0.45rem var(--mobile-gutter) 0;
+    padding: 0.5rem 0.65rem !important;
+  }
+
+  .suggestions-page .search-results-scroll {
+    padding: var(--mobile-gutter) !important;
+  }
+
+  .suggestions-page .search-results-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.65rem !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .deck-library-actions .btn {
+    width: 40px;
+    min-width: 40px;
+    padding: 0 !important;
+    font-size: 0;
+  }
+
+  .deck-library-actions .btn svg {
+    margin: 0;
+  }
+
+  .profile-stage-intro h2 {
+    font-size: 1.7rem;
+  }
+
+  .suggestions-title h1 {
+    font-size: 0.9rem;
+  }
+}
+
+/* Search workspace v30 — balanced compact-desktop composition.
+   At tablet/compact desktop widths the filter inspector stays useful without
+   forcing the discovery stage into a narrow, overlapping single column. */
+@media (min-width: 769px) and (max-width: 1180px) {
+  .search-page .search-filters-sidebar {
+    width: 216px !important;
+    min-width: 216px !important;
+    padding: 0.7rem !important;
+  }
+
+  .search-page .filters-sidebar-header {
+    min-height: 38px;
+  }
+
+  .search-page details.adv-group summary {
+    min-height: 36px;
+    padding-inline: 0.65rem;
+  }
+
+  .search-page details.adv-group .adv-group-content {
+    padding: 0.65rem;
+    gap: 0.6rem;
+  }
+
+  .search-page .search-results-pane {
+    gap: 0.55rem !important;
+    padding: 0.75rem 0.8rem 0.6rem !important;
+  }
+
+  .search-page .search-results-toolbar {
+    min-height: 46px !important;
+    gap: 0.4rem;
+    padding: 0.25rem 0.3rem 0.25rem 0.65rem !important;
+  }
+
+  .search-page .search-results-toolbar-options {
+    min-width: 0;
+    gap: 0.3rem;
+  }
+
+  .search-page .search-sort-control {
+    min-width: 0;
+    gap: 0.25rem;
+  }
+
+  .search-page .search-sort-control label {
+    display: none;
+  }
+
+  .search-page #adv-sort-select {
+    width: 104px;
+  }
+
+  .search-page #adv-sort-dir-select {
+    width: 104px;
+  }
+
+  .search-page .search-sort-control .input-field {
+    min-height: 36px;
+    height: 36px;
+    padding-right: 1.4rem;
+  }
+
+  .search-page .search-icon-button {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+
+  .search-page .search-pagination {
+    gap: 0.2rem;
+  }
+
+  .search-page .search-pagination span {
+    min-width: 42px;
+  }
+
+  .search-page .search-discovery-state {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(190px, 0.68fr) !important;
+    gap: clamp(0.65rem, 2vw, 1.4rem);
+    min-height: calc(100vh - 170px) !important;
+    overflow: hidden;
+    padding: clamp(1.4rem, 3.2vw, 2.35rem) !important;
+  }
+
+  .search-page .search-discovery-copy {
+    max-width: 430px;
+  }
+
+  .search-page .search-discovery-copy h2 {
+    max-width: 8.5ch;
+    margin-top: 0.6rem;
+    font-size: clamp(2.65rem, 5.4vw, 3.75rem) !important;
+    line-height: 0.94;
+  }
+
+  .search-page .search-discovery-copy p {
+    max-width: 390px;
+    margin-top: 0.85rem;
+    font-size: 0.88rem;
+    line-height: 1.48;
+  }
+
+  .search-page .search-starter-chips {
+    gap: 0.4rem;
+    margin-top: 1rem;
+  }
+
+  .search-page .search-starter-chips button {
+    min-height: 38px;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.7rem;
+  }
+
+  .search-page .search-discovery-art {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    z-index: 2;
+    width: 100% !important;
+    min-height: 360px;
+    opacity: 0.9 !important;
+    transform: none !important;
+    mask-image: linear-gradient(90deg, transparent 0, #000 18%, #000 100%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 18%, #000 100%);
+  }
+
+  .search-page .search-discovery-art > div {
+    width: clamp(142px, 15vw, 190px);
+    border-radius: 14px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 940px) {
+  .search-page .search-command-row {
+    grid-template-columns: minmax(0, 1fr) auto auto !important;
+  }
+
+  .search-page .search-primary-field .input-field {
+    height: 48px !important;
+  }
+
+  .search-page .search-submit-button,
+  .search-page .search-filter-button {
+    min-height: 48px !important;
+  }
+}
+
+/* Life Counter v31 — four resource instruments, one in each player corner. */
+#lifetracker-view .life-player-card > .life-corner-counters {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 30 !important;
+  display: block !important;
+  width: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  pointer-events: none;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > div,
+#lifetracker-view .life-player-card > .life-corner-counters > button {
+  position: absolute !important;
+  z-index: 31;
+  display: flex !important;
+  width: auto !important;
+  min-width: 74px !important;
+  min-height: 38px !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12rem !important;
+  padding: 0.18rem 0.25rem !important;
+  background: rgba(2, 2, 7, 0.55) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  border-radius: 9px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(10px) saturate(125%);
+  -webkit-backdrop-filter: blur(10px) saturate(125%);
+  pointer-events: auto;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(1) {
+  top: 0.45rem;
+  left: 0.45rem;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(2) {
+  top: 0.45rem;
+  right: 0.45rem;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(3) {
+  bottom: 0.45rem;
+  left: 0.45rem;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+  right: 0.45rem;
+  bottom: 0.45rem;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters .btn-xs {
+  width: 27px !important;
+  min-width: 27px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > button {
+  min-width: 74px !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > button span {
+  font-size: 0.58rem !important;
+}
+
+#lifetracker-view .life-player-card > input {
+  display: none !important;
+}
+
+#lifetracker-view .life-player-card > div:nth-of-type(1) {
+  inset: 48px 0 !important;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div {
+  justify-content: center !important;
+  gap: 0.85rem;
+}
+
+#lifetracker-view .cmd-damage-source {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  background: currentColor;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  border-radius: 50%;
+  box-shadow: 0 0 14px currentColor;
+}
+
+@media (max-width: 768px) {
+  #lifetracker-view .life-player-card > .life-corner-counters > div,
+  #lifetracker-view .life-player-card > .life-corner-counters > button {
+    width: 84px !important;
+    min-width: 84px !important;
+    min-height: 36px !important;
+    padding: 0.12rem 0.18rem !important;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(1),
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(3) {
+    left: 0.28rem;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(2),
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+    right: 0.28rem;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(1),
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(2) {
+    top: 0.28rem;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(3),
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+    bottom: 0.28rem;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters .btn-xs {
+    width: 25px !important;
+    min-width: 25px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > button.btn-xs {
+    width: 84px !important;
+    min-width: 84px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    gap: 0.28rem !important;
+    padding: 0.12rem 0.35rem !important;
+  }
+
+  #lifetracker-view .life-player-card > div:nth-of-type(1) {
+    inset: 44px 0 !important;
+  }
+
+  #lifetracker-view .cmd-damage-source {
+    width: 20px;
+    height: 20px;
+    flex-basis: 20px;
+  }
+}
+
+/* Life Counter v34 — centered circular instruments that disclose controls. */
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument,
+#lifetracker-view .life-player-card > .life-corner-counters > button {
+  width: 48px !important;
+  min-width: 48px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  padding: 0 !important;
+  border-color: color-mix(in srgb, currentColor 22%, rgba(255, 255, 255, 0.08)) !important;
+  border-radius: 50% !important;
+  cursor: pointer;
+  transition:
+    width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.22s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument:hover,
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument:focus-visible,
+#lifetracker-view .life-player-card > .life-corner-counters > button:hover,
+#lifetracker-view .life-player-card > .life-corner-counters > button:focus-visible {
+  background: rgba(13, 13, 23, 0.84) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  outline: none;
+  transform: scale(1.04);
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument > svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  filter: drop-shadow(0 0 7px currentColor);
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument > span {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: inline-flex;
+  min-width: 20px !important;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.25rem;
+  color: #fff;
+  background: rgba(5, 5, 10, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  font: 800 0.64rem 'Fira Code', monospace;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument .btn-xs {
+  width: 0 !important;
+  min-width: 0 !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.72);
+  transition: width 0.18s ease, min-width 0.18s ease, opacity 0.14s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument.is-expanded {
+  z-index: 42;
+  width: 112px !important;
+  min-width: 112px !important;
+  padding: 0 0.2rem !important;
+  background: rgba(7, 7, 14, 0.94) !important;
+  border-color: color-mix(in srgb, currentColor 38%, rgba(255, 255, 255, 0.12)) !important;
+  border-radius: 999px !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42), 0 0 18px color-mix(in srgb, currentColor 18%, transparent) !important;
+  transform: none;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument.is-expanded > svg {
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument.is-expanded > span {
+  position: static;
+  min-width: 14px !important;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument.is-expanded .btn-xs {
+  width: 30px !important;
+  min-width: 30px !important;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > button > span {
+  display: none;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(1) {
+  top: 0.8rem;
+  left: 0.8rem;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(2) {
+  top: 0.8rem;
+  right: 0.8rem;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(3) {
+  bottom: 0.8rem;
+  left: 0.8rem;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+  right: 0.8rem;
+  bottom: 0.8rem;
+}
+
+@media (max-width: 768px) {
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(1) {
+    top: 0.62rem;
+    left: 0.62rem;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(2) {
+    top: 0.62rem;
+    right: 0.62rem;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(3) {
+    bottom: 0.62rem;
+    left: 0.62rem;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+    right: 0.62rem;
+    bottom: 0.62rem;
+  }
+}
+
+/* Commander Damage v35 — a corner tray that grows left from the sword. */
+@keyframes commanderDamageTrayIn {
+  from {
+    opacity: 0;
+    transform: scaleX(0.32) translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1) translateY(0);
+  }
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] {
+  top: auto !important;
+  right: 0.8rem !important;
+  bottom: 0.8rem !important;
+  left: auto !important;
+  width: calc(100% - 1.6rem) !important;
+  height: auto !important;
+  min-height: 132px;
+  justify-content: flex-start !important;
+  padding: 0.55rem !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.045), transparent 45%),
+    rgba(4, 4, 10, 0.96) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 17px;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform-origin: right bottom;
+  animation: commanderDamageTrayIn 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:first-child {
+  min-height: 30px;
+  margin: 0 0 0.35rem !important;
+  padding: 0 0 0.35rem !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:first-child > span {
+  font-size: 0.6rem !important;
+  letter-spacing: 0.08em !important;
+  white-space: nowrap;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:first-child > button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 !important;
+  border-radius: 50%;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem !important;
+  width: 100%;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div {
+  position: relative;
+  display: flex !important;
+  min-width: 0;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 0.4rem !important;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div > div {
+  order: 1;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem !important;
+  width: 100%;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div > div > button {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 !important;
+  border-radius: 9px;
+  font-size: 1rem;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div > div > span {
+  position: absolute;
+  right: calc(50% - 27px);
+  bottom: -2px;
+  z-index: 2;
+  display: inline-flex;
+  min-width: 18px !important;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(3, 3, 8, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  font: 800 0.58rem 'Fira Code', monospace;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] .cmd-damage-source {
+  order: 2;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-width: 2px;
+}
+
+@media (max-width: 768px) {
+  #lifetracker-view [id^="cmd-damage-drawer-"] {
+    right: 0.62rem !important;
+    bottom: 0.62rem !important;
+    width: calc(100% - 1.24rem) !important;
+    min-height: 126px;
+    padding: 0.45rem !important;
+    border-radius: 15px;
+  }
+
+  #lifetracker-view [id^="cmd-damage-drawer-"] > div:first-child {
+    min-height: 27px;
+    margin-bottom: 0.3rem !important;
+    padding-bottom: 0.3rem !important;
+  }
+
+  #lifetracker-view [id^="cmd-damage-drawer-"] > div:first-child > span {
+    font-size: 0.52rem !important;
+  }
+
+  #lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) {
+    gap: 0.28rem !important;
+  }
+
+  #lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div > div {
+    gap: 0.15rem !important;
+  }
+
+  #lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div > div > button {
+    height: 30px;
+    min-height: 30px;
+    border-radius: 8px;
+  }
+
+  #lifetracker-view [id^="cmd-damage-drawer-"] .cmd-damage-source {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+  }
+}
+
+/* Commander Damage v36 — no container, the sword reveals floating colors. */
+@keyframes commanderDamageColorsIn {
+  from {
+    opacity: 0;
+    transform: translateX(34px) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes commanderDamageColorsOut {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(34px) scale(0.86);
+  }
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+  z-index: 60;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > button.btn-xs {
+  width: 48px !important;
+  min-width: 48px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] {
+  top: auto !important;
+  right: 0.62rem !important;
+  bottom: 0.62rem !important;
+  left: auto !important;
+  z-index: 50 !important;
+  width: calc(100% - 1.24rem) !important;
+  height: 72px !important;
+  min-height: 0 !important;
+  justify-content: flex-end !important;
+  padding: 0 54px 0 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transform-origin: right center;
+  animation: commanderDamageColorsIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  pointer-events: none;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"].is-closing {
+  animation: commanderDamageColorsOut 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:first-child {
+  display: none !important;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 0.2rem !important;
+  width: 100%;
+  height: 72px;
+  pointer-events: auto;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div {
+  display: flex !important;
+  height: 72px;
+  min-width: 0;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 0.15rem !important;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div > div {
+  order: 1;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px !important;
+  width: 100%;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div > div > button {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 !important;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(5, 5, 10, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  backdrop-filter: blur(10px);
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div > div > span {
+  right: calc(50% - 18px);
+  bottom: -1px;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] .cmd-damage-source {
+  order: 2;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-width: 2px;
+}
+
+@media (min-width: 769px) {
+  #lifetracker-view [id^="cmd-damage-drawer-"] {
+    right: 0.8rem !important;
+    bottom: 0.8rem !important;
+    width: calc(100% - 1.6rem) !important;
+    height: 80px !important;
+    padding-right: 62px !important;
+  }
+
+  #lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2),
+  #lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div {
+    height: 80px;
+  }
+
+  #lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div > div > button {
+    height: 30px;
+    min-height: 30px;
+  }
+
+  #lifetracker-view [id^="cmd-damage-drawer-"] .cmd-damage-source {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lifetracker-view [id^="cmd-damage-drawer-"],
+  #lifetracker-view [id^="cmd-damage-drawer-"].is-closing {
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Life Counter rules feedback v39. */
+#lifetracker-view .life-display-value.has-loss-state {
+  color: #fee2e2 !important;
+  text-shadow: 0 0 28px rgba(239, 68, 68, 0.72) !important;
+}
+
+#lifetracker-view .life-display-value.has-loss-state::after {
+  content: attr(data-status);
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 50%;
+  display: inline-flex;
+  min-width: max-content;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.55rem;
+  color: #fecaca;
+  background: rgba(69, 10, 10, 0.78);
+  border: 1px solid rgba(248, 113, 113, 0.38);
+  border-radius: 999px;
+  font: 800 0.58rem 'Fira Code', monospace;
+  letter-spacing: 0.04em;
+  transform: translateX(-50%);
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument.is-lethal {
+  color: #34d399 !important;
+  border-color: rgba(52, 211, 153, 0.72) !important;
+  box-shadow: 0 0 22px rgba(52, 211, 153, 0.32) !important;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] > div:nth-child(2) > div.is-lethal .cmd-damage-source {
+  border-color: #fff !important;
+  box-shadow: 0 0 24px currentColor, 0 0 0 3px rgba(239, 68, 68, 0.28);
+}
+
+/* Life Counter v40 — logo-first game hub and configurable table layouts. */
+#lifetracker-view .life-center-hub {
+  position: absolute;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+#lifetracker-view .life-hub-trigger {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 64px;
+  min-width: 64px;
+  height: 64px;
+  min-height: 64px;
+  place-items: center;
+  padding: 0;
+  background: rgba(3, 3, 9, 0.5);
+  border: 1px solid rgba(210, 115, 255, 0.28);
+  border-radius: 50%;
+  box-shadow: 0 0 0 5px rgba(168, 85, 247, 0.045), 0 12px 36px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity 0.18s ease, transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
+}
+
+#lifetracker-view .life-hub-trigger:hover,
+#lifetracker-view .life-hub-trigger:focus-visible {
+  border-color: rgba(224, 130, 255, 0.65);
+  outline: none;
+  transform: scale(1.06);
+}
+
+#lifetracker-view .life-hub-trigger[aria-expanded="true"] {
+  opacity: 0;
+  transform: scale(0.76);
+  pointer-events: none;
+}
+
+#lifetracker-view .life-hub-trigger img {
+  width: 46px;
+  height: 46px;
+  filter: drop-shadow(0 0 9px rgba(219, 85, 247, 0.72));
+}
+
+#lifetracker-view .life-game-menu {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  width: min(390px, calc(100vw - 24px));
+  padding: 0.75rem;
+  color: #f7f4ff;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(168, 85, 247, 0.16), transparent 38%),
+    rgba(7, 6, 14, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 20px;
+  box-shadow: 0 26px 72px rgba(0, 0, 0, 0.66), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.86);
+  transform-origin: center;
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.22s;
+}
+
+#lifetracker-view .life-game-menu.is-open {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+#lifetracker-view .life-game-menu-head,
+#lifetracker-view .life-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+#lifetracker-view .life-game-menu-head {
+  margin-bottom: 0.6rem;
+  padding: 0.1rem 0.1rem 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lifetracker-view .life-game-menu-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+#lifetracker-view .life-game-menu-head > .life-game-menu-actions {
+  flex-direction: row;
+  gap: 0.35rem;
+}
+
+#lifetracker-view .life-game-menu-head span {
+  color: #d58aff;
+  font: 800 0.54rem 'Fira Code', monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+#lifetracker-view .life-game-menu-head strong {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+#lifetracker-view .life-menu-icon {
+  display: grid;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  place-items: center;
+  padding: 0;
+  color: #f7f4ff;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+#lifetracker-view .life-menu-icon:hover,
+#lifetracker-view .life-menu-icon:focus-visible {
+  background: rgba(168, 85, 247, 0.18);
+  border-color: rgba(210, 115, 255, 0.38);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+#lifetracker-view .life-menu-icon svg,
+#lifetracker-view .life-orientation-options svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#lifetracker-view .life-setting-row {
+  min-height: 50px;
+  padding: 0.25rem 0.1rem;
+}
+
+#lifetracker-view .life-setting-row + .life-setting-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+#lifetracker-view .life-setting-row-stack {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-block: 0.55rem;
+}
+
+#lifetracker-view .life-setting-label {
+  color: rgba(232, 230, 242, 0.68);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+#lifetracker-view .life-segmented-control,
+#lifetracker-view .life-orientation-options {
+  display: grid;
+  gap: 4px;
+}
+
+#lifetracker-view .life-segmented-control {
+  grid-template-columns: repeat(3, minmax(44px, 1fr));
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 13px;
+}
+
+#lifetracker-view .life-segmented-control button,
+#lifetracker-view .life-orientation-options button {
+  min-width: 44px;
+  min-height: 44px;
+  color: rgba(240, 237, 248, 0.72);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+#lifetracker-view .life-segmented-control button:hover,
+#lifetracker-view .life-segmented-control button:focus-visible,
+#lifetracker-view .life-orientation-options button:hover,
+#lifetracker-view .life-orientation-options button:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+  outline: none;
+}
+
+#lifetracker-view .life-segmented-control button[aria-pressed="true"],
+#lifetracker-view .life-segmented-control button.is-primary,
+#lifetracker-view .life-orientation-options button[aria-pressed="true"] {
+  color: #fff;
+  background: linear-gradient(145deg, rgba(168, 85, 247, 0.28), rgba(111, 43, 168, 0.18));
+  border-color: rgba(213, 138, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+#lifetracker-view .life-orientation-options {
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#lifetracker-view .life-orientation-options button {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+#lifetracker-view .life-starting-life button {
+  font-family: 'Fira Code', monospace;
+}
+
+#lifetracker-view .life-player-card.is-player-hidden,
+#lifetracker-view .is-player-source-hidden {
+  display: none !important;
+}
+
+#lifetracker-view .life-tracker-grid {
+  place-items: center;
+}
+
+#lifetracker-view .life-player-card {
+  width: min(46vw, 44vh) !important;
+  height: auto !important;
+  aspect-ratio: 1;
+  justify-self: center;
+  align-self: center;
+  background:
+    radial-gradient(circle at 50% 43%, color-mix(in srgb, var(--player-accent) 12%, transparent), transparent 45%),
+    radial-gradient(circle at 50% 115%, rgba(255, 255, 255, 0.055), transparent 48%),
+    rgba(4, 4, 10, 0.62) !important;
+  border: 1px solid color-mix(in srgb, var(--player-accent) 34%, rgba(255, 255, 255, 0.1)) !important;
+  border-radius: 50% !important;
+  box-shadow:
+    inset 0 0 0 5px rgba(255, 255, 255, 0.018),
+    inset 0 0 52px color-mix(in srgb, var(--player-accent) 7%, transparent),
+    0 18px 46px rgba(0, 0, 0, 0.34),
+    0 0 22px color-mix(in srgb, var(--player-accent) 10%, transparent) !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(1) {
+  top: 11%;
+  left: 11%;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(2) {
+  top: 11%;
+  right: 11%;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(3) {
+  bottom: 11%;
+  left: 11%;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+  right: 11%;
+  bottom: 11%;
+}
+
+#lifetracker-view[data-player-count="2"] .life-player-card {
+  width: min(86vw, 42vh) !important;
+}
+
+#lifetracker-view[data-player-count="3"] .life-player-card {
+  width: min(44vw, 42vh) !important;
+}
+
+#lifetracker-view[data-player-count="2"] .life-tracker-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+}
+
+#lifetracker-view[data-player-count="3"] .life-tracker-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+}
+
+#lifetracker-view[data-player-count="3"] #life-player-card-1 {
+  grid-column: 1 / -1;
+}
+
+#lifetracker-view.life-table-mode[data-player-count="2"] .life-player-card,
+#lifetracker-view.life-table-mode[data-player-count="3"] .life-player-card {
+  transform: none !important;
+}
+
+#lifetracker-view.life-table-mode[data-player-count="2"] #life-player-card-1,
+#lifetracker-view.life-table-mode[data-player-count="3"] #life-player-card-1,
+#lifetracker-view.life-table-mode[data-player-count="2"] #life-player-card-1:hover,
+#lifetracker-view.life-table-mode[data-player-count="3"] #life-player-card-1:hover {
+  transform: rotate(180deg) !important;
+}
+
+#lifetracker-view.life-around-mode .life-player-card,
+#lifetracker-view.life-around-mode .life-player-card:hover {
+  transform-origin: center !important;
+}
+
+#lifetracker-view.life-around-mode #life-player-card-1,
+#lifetracker-view.life-around-mode #life-player-card-1:hover {
+  transform: rotate(180deg) !important;
+}
+
+#lifetracker-view.life-around-mode[data-player-count="4"] #life-player-card-2,
+#lifetracker-view.life-around-mode[data-player-count="4"] #life-player-card-2:hover {
+  transform: rotate(-90deg) !important;
+}
+
+#lifetracker-view.life-around-mode[data-player-count="4"] #life-player-card-3,
+#lifetracker-view.life-around-mode[data-player-count="4"] #life-player-card-3:hover {
+  transform: rotate(90deg) !important;
+}
+
+#lifetracker-view.life-around-mode[data-player-count="3"] #life-player-card-2,
+#lifetracker-view.life-around-mode[data-player-count="3"] #life-player-card-2:hover {
+  transform: rotate(90deg) !important;
+}
+
+#lifetracker-view.life-around-mode[data-player-count="3"] #life-player-card-3,
+#lifetracker-view.life-around-mode[data-player-count="3"] #life-player-card-3:hover {
+  transform: rotate(-90deg) !important;
+}
+
+#lifetracker-view.life-around-mode #life-player-card-4,
+#lifetracker-view.life-around-mode #life-player-card-4:hover,
+#lifetracker-view.life-around-mode[data-player-count="2"] #life-player-card-2,
+#lifetracker-view.life-around-mode[data-player-count="2"] #life-player-card-2:hover {
+  transform: none !important;
+}
+
+@media (max-width: 480px) {
+  #lifetracker-view .life-hub-trigger {
+    width: 58px;
+    min-width: 58px;
+    height: 58px;
+    min-height: 58px;
+  }
+
+  #lifetracker-view .life-hub-trigger img {
+    width: 42px;
+    height: 42px;
+  }
+
+  #lifetracker-view .life-game-menu {
+    width: min(352px, calc(100vw - 18px));
+    padding: 0.65rem;
+    border-radius: 17px;
+  }
+
+  #lifetracker-view .life-orientation-options button {
+    min-height: 50px;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-size: 0.62rem;
+  }
+
+  #lifetracker-view .life-orientation-options svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  #lifetracker-view .life-player-card {
+    width: min(46vw, 44vh) !important;
+  }
+
+  #lifetracker-view[data-player-count="2"] .life-player-card {
+    width: min(86vw, 42vh) !important;
+  }
+
+  #lifetracker-view[data-player-count="3"] .life-player-card {
+    width: min(44vw, 42vh) !important;
+  }
+}
+
+/* Life Counter v44 — independent radial orientation handles. */
+#lifetracker-view .life-player-card,
+#lifetracker-view .life-player-card:hover {
+  transform: rotate(var(--life-player-rotation, 0deg)) !important;
+  transform-origin: center !important;
+}
+
+#lifetracker-view .life-player-card.is-rotation-dragging {
+  border-color: color-mix(in srgb, var(--player-accent) 72%, #fff) !important;
+  box-shadow:
+    inset 0 0 0 5px rgba(255, 255, 255, 0.035),
+    inset 0 0 58px color-mix(in srgb, var(--player-accent) 12%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--player-accent) 24%, transparent),
+    0 20px 52px rgba(0, 0, 0, 0.42),
+    0 0 34px color-mix(in srgb, var(--player-accent) 24%, transparent) !important;
+  transition: none !important;
+}
+
+#lifetracker-view .life-rotation-handle {
+  position: absolute;
+  top: 2%;
+  left: 50%;
+  z-index: 82;
+  display: grid;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  place-items: center;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.72);
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.12), transparent 46%),
+    rgba(4, 4, 10, 0.82);
+  border: 1px solid color-mix(in srgb, var(--player-accent) 42%, rgba(255, 255, 255, 0.12));
+  border-radius: 50%;
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.36), 0 0 12px color-mix(in srgb, var(--player-accent) 13%, transparent);
+  transform: translateX(-50%);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, scale 0.16s ease;
+}
+
+#lifetracker-view .life-rotation-handle:hover,
+#lifetracker-view .life-rotation-handle:focus-visible,
+#lifetracker-view .life-player-card.is-rotation-dragging .life-rotation-handle {
+  color: #fff;
+  background-color: rgba(18, 12, 28, 0.96);
+  border-color: color-mix(in srgb, var(--player-accent) 78%, #fff);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.44), 0 0 19px color-mix(in srgb, var(--player-accent) 30%, transparent);
+  outline: none;
+  scale: 1.07;
+}
+
+#lifetracker-view .life-player-card.is-rotation-dragging .life-rotation-handle {
+  cursor: grabbing;
+}
+
+#lifetracker-view .life-rotation-handle svg {
+  width: 23px;
+  height: 23px;
+  fill: currentColor;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--player-accent) 62%, transparent));
+  pointer-events: none;
+}
+
+#lifetracker-view .life-rotation-handle::after {
+  content: attr(data-angle);
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  display: inline-flex;
+  min-width: 32px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.25rem;
+  color: #fff;
+  background: rgba(3, 3, 8, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  font: 800 0.52rem 'Fira Code', monospace;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-3px);
+  transition: opacity 0.14s ease, transform 0.16s ease;
+  pointer-events: none;
+}
+
+#lifetracker-view .life-rotation-handle:focus-visible::after,
+#lifetracker-view .life-player-card.is-rotation-dragging .life-rotation-handle::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Life Counter v45 — instruments float above the outer rim, never under it. */
+#lifetracker-view .life-player-card {
+  z-index: 20;
+  overflow: visible !important;
+}
+
+#lifetracker-view .life-player-card:hover,
+#lifetracker-view .life-player-card:focus-within,
+#lifetracker-view .life-player-card.is-rotation-dragging {
+  z-index: 70 !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters {
+  z-index: 130 !important;
+  overflow: visible !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > div,
+#lifetracker-view .life-player-card > .life-corner-counters > button {
+  z-index: 100 !important;
+  background: rgba(5, 5, 12, 0.9) !important;
+  border-color: color-mix(in srgb, currentColor 34%, rgba(255, 255, 255, 0.15)) !important;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.48),
+    0 0 15px color-mix(in srgb, currentColor 13%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument.is-expanded {
+  z-index: 140 !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument:focus-within {
+  z-index: 140 !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(1) {
+  top: calc(14.65% - 34px) !important;
+  left: calc(14.65% - 34px) !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(2) {
+  top: calc(14.65% - 34px) !important;
+  right: calc(14.65% - 34px) !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(3) {
+  bottom: calc(14.65% - 34px) !important;
+  left: calc(14.65% - 34px) !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+  right: calc(14.65% - 34px) !important;
+  bottom: calc(14.65% - 34px) !important;
+  z-index: 118 !important;
+}
+
+#lifetracker-view [id^="cmd-damage-drawer-"] {
+  z-index: 108 !important;
+  overflow: visible !important;
+}
+
+#lifetracker-view .life-rotation-handle {
+  top: -10px;
+  z-index: 124;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.16), transparent 46%),
+    rgba(5, 5, 12, 0.94);
+}
+
+/* Life Counter v48 — viewport-safe radial sizing in every orientation. */
+#lifetracker-view .life-game-menu {
+  max-height: calc(100dvh - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(213, 138, 255, 0.32) transparent;
+}
+
+/* Put each 48px instrument's center on the circle, leaving half outside the rim. */
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(1) {
+  top: calc(14.65% - 24px) !important;
+  left: calc(14.65% - 24px) !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(2) {
+  top: calc(14.65% - 24px) !important;
+  right: calc(14.65% - 24px) !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(3) {
+  bottom: calc(14.65% - 24px) !important;
+  left: calc(14.65% - 24px) !important;
+}
+
+#lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+  right: calc(14.65% - 24px) !important;
+  bottom: calc(14.65% - 24px) !important;
+}
+
+@media (max-width: 480px), (max-height: 430px) {
+  #lifetracker-view .life-player-card > .life-corner-counters > .life-resource-instrument,
+  #lifetracker-view .life-player-card > .life-corner-counters > button,
+  #lifetracker-view .life-player-card > .life-corner-counters > button.btn-xs {
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(1) {
+    top: calc(14.65% - 22px) !important;
+    left: calc(14.65% - 22px) !important;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(2) {
+    top: calc(14.65% - 22px) !important;
+    right: calc(14.65% - 22px) !important;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(3) {
+    bottom: calc(14.65% - 22px) !important;
+    left: calc(14.65% - 22px) !important;
+  }
+
+  #lifetracker-view .life-player-card > .life-corner-counters > :nth-child(4) {
+    right: calc(14.65% - 22px) !important;
+    bottom: calc(14.65% - 22px) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  #lifetracker-view.view-section.active {
+    box-sizing: border-box;
+    padding:
+      max(0.45rem, env(safe-area-inset-top))
+      max(0.45rem, env(safe-area-inset-right))
+      max(0.45rem, env(safe-area-inset-bottom))
+      max(0.45rem, env(safe-area-inset-left)) !important;
+  }
+}
+
+@media (max-height: 430px) {
+  #lifetracker-view .life-display-value {
+    min-width: 0 !important;
+    font-size: clamp(3rem, 18vh, 4.5rem) !important;
+  }
+
+  #lifetracker-view .life-hub-trigger {
+    width: 54px;
+    min-width: 54px;
+    height: 54px;
+    min-height: 54px;
+  }
+
+  #lifetracker-view .life-hub-trigger img {
+    width: 40px;
+    height: 40px;
+  }
+
+  #lifetracker-view .life-game-menu {
+    width: min(390px, calc(100vw - 16px));
+    max-height: calc(100dvh - 12px);
+    padding: 0.5rem;
+    border-radius: 16px;
+  }
+
+  #lifetracker-view .life-game-menu-head {
+    min-height: 44px;
+    margin-bottom: 0.25rem;
+    padding: 0 0 0.35rem;
+  }
+
+  #lifetracker-view .life-setting-row {
+    min-height: 44px;
+    padding-block: 0.15rem;
+  }
+
+  #lifetracker-view .life-setting-row-stack {
+    gap: 0.2rem;
+    padding-block: 0.3rem;
+  }
+
+  #lifetracker-view .life-orientation-options button {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lifetracker-view .life-hub-trigger,
+  #lifetracker-view .life-game-menu,
+  #lifetracker-view .life-menu-icon,
+  #lifetracker-view .life-segmented-control button,
+  #lifetracker-view .life-orientation-options button {
+    transition-duration: 0.01ms !important;
+  }
+
+  #lifetracker-view .life-rotation-handle,
+  #lifetracker-view .life-rotation-handle::after {
+    transition-duration: 0.01ms !important;
+  }
+}

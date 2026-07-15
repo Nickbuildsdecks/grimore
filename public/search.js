@@ -6,14 +6,14 @@
     const msgEl = document.getElementById('arcane-progress-message');
     const fillEl = document.getElementById('arcane-progress-bar-fill');
     const pctEl = document.getElementById('arcane-progress-pct-center');
-    
+
     if (!overlay) return;
-    
+
     if (titleEl) titleEl.textContent = title || 'Loading...';
     if (msgEl) msgEl.textContent = message || 'Please wait.';
-    if (fillEl) fillEl.style.width = `${initialPct}%`;
+    if (fillEl) fillEl.style.transform = `scaleX(${Math.max(0, Math.min(100, initialPct)) / 100})`;
     if (pctEl) pctEl.textContent = `${initialPct}%`;
-    
+
     overlay.style.display = 'flex';
     overlay.offsetHeight; // trigger reflow
     overlay.style.opacity = '1';
@@ -23,8 +23,8 @@
     const fillEl = document.getElementById('arcane-progress-bar-fill');
     const pctEl = document.getElementById('arcane-progress-pct-center');
     const msgEl = document.getElementById('arcane-progress-message');
-    
-    if (fillEl) fillEl.style.width = `${pct}%`;
+
+    if (fillEl) fillEl.style.transform = `scaleX(${Math.max(0, Math.min(100, pct)) / 100})`;
     if (pctEl) pctEl.textContent = `${pct}%`;
     if (msgEl && message) msgEl.textContent = message;
   };
@@ -41,13 +41,13 @@
   window.startTopProgress = function() {
     const bar = document.getElementById('top-loading-bar');
     if (!bar) return;
-    bar.style.transition = 'width 0.4s ease, opacity 0.3s ease';
-    bar.style.width = '0%';
+    bar.style.transition = 'transform 0.4s ease, opacity 0.3s ease';
+    bar.style.transform = 'scaleX(0)';
     bar.style.opacity = '1';
     setTimeout(() => {
-      bar.style.width = '35%';
+      bar.style.transform = 'scaleX(0.35)';
       setTimeout(() => {
-        bar.style.width = '75%';
+        bar.style.transform = 'scaleX(0.75)';
       }, 500);
     }, 50);
   };
@@ -55,11 +55,11 @@
   window.completeTopProgress = function() {
     const bar = document.getElementById('top-loading-bar');
     if (!bar) return;
-    bar.style.width = '100%';
+    bar.style.transform = 'scaleX(1)';
     setTimeout(() => {
       bar.style.opacity = '0';
       setTimeout(() => {
-        bar.style.width = '0%';
+        bar.style.transform = 'scaleX(0)';
       }, 300);
     }, 200);
   };
@@ -72,6 +72,7 @@
   let searchZoomed = false;
   let searchLastQuery = '';
   let activeInspectorCard = null;
+  let lastInspectorTrigger = null;
   let selectedInspectorPrinting = null;
   let currentCardFaceIdx = 0;
   let inspectorActiveTab = 'details';
@@ -383,7 +384,7 @@
     alertEl.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.4)';
     alertEl.style.border = '1px solid rgba(255, 255, 255, 0.1)';
     alertEl.style.transform = 'translateX(120%)';
-    alertEl.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+    alertEl.style.transition = 'transform 0.25s cubic-bezier(0.25, 1, 0.5, 1)';
     alertEl.style.display = 'flex';
     alertEl.style.alignItems = 'center';
     alertEl.style.gap = '0.5rem';
@@ -403,7 +404,7 @@
     }
 
     container.appendChild(alertEl);
-    
+
     // Slide in
     setTimeout(() => {
       alertEl.style.transform = 'translateX(0)';
@@ -433,7 +434,7 @@
       } else {
         document.body.classList.remove('light-theme');
       }
-      
+
       // Show Return to Deck button if url parameter deckId is present
       const urlParams = new URLSearchParams(window.location.search);
       const urlDeckId = urlParams.get('deckId');
@@ -452,20 +453,32 @@
   }
 
   // ── SEARCH INTERACTIVE ENGINE ────────────────────────────────────────
+  function setFilterPanelAccessibility(isOpen) {
+    const panel = document.getElementById('adv-filters-panel');
+    const toggleBtn = document.getElementById('btn-adv-toggle');
+    if (!panel) return;
+
+    panel.setAttribute('aria-hidden', String(!isOpen));
+    if (isOpen) panel.removeAttribute('inert');
+    else panel.setAttribute('inert', '');
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', String(isOpen));
+  }
+
   window.toggleAdvFilters = function() {
     const panel = document.getElementById('adv-filters-panel');
     const toggleBtn = document.getElementById('btn-adv-toggle');
     if (!panel) return;
-    
+
     panel.classList.toggle('open');
     const isOpen = panel.classList.contains('open');
-    
+    setFilterPanelAccessibility(isOpen);
+
     if (isOpen) {
       if (toggleBtn) toggleBtn.classList.add('active');
     } else {
       if (toggleBtn) toggleBtn.classList.remove('active');
     }
-    
+
     // For desktop inline toggle fallback
     if (window.innerWidth >= 769) {
       panel.style.display = isOpen ? 'flex' : 'none';
@@ -490,7 +503,7 @@
       // Try URL parameter first, then cookie saved selection, else first deck
       const urlParams = new URLSearchParams(window.location.search);
       const urlDeckId = urlParams.get('deckId');
-      
+
       if (urlDeckId && decks.some(d => d.id === urlDeckId)) {
         select.value = urlDeckId;
         window.setCookie('search_target_deck_id', urlDeckId, 7);
@@ -547,7 +560,7 @@
   window.clearAdvFilters = function() {
     const textInput = document.getElementById('adv-search-input');
     if (textInput) textInput.value = '';
-    
+
     const textBoxVal = document.getElementById('adv-search-text');
     if (textBoxVal) textBoxVal.value = '';
 
@@ -556,32 +569,32 @@
 
     const setVal = document.getElementById('adv-set');
     if (setVal) setVal.value = '';
-    
+
     const typeVal = document.getElementById('adv-type');
     if (typeVal) typeVal.value = '';
-    
+
     const formatVal = document.getElementById('adv-format');
     if (formatVal) formatVal.value = 'commander';
-    
+
     const rarityVal = document.getElementById('adv-rarity');
     if (rarityVal) rarityVal.value = '';
-    
+
     // Clear colors
     document.querySelectorAll('input[id^="adv-colors-"]').forEach(cb => cb.checked = false);
-    
+
     const colorIdentity = document.getElementById('adv-color-identity');
     if (colorIdentity) colorIdentity.value = '=';
-    
+
     // Stats
     const cmcVal = document.getElementById('adv-mana'); if (cmcVal) cmcVal.value = '';
     const powerVal = document.getElementById('adv-power'); if (powerVal) powerVal.value = '';
     const toughnessVal = document.getElementById('adv-toughness'); if (toughnessVal) toughnessVal.value = '';
     const loyaltyVal = document.getElementById('adv-loyalty'); if (loyaltyVal) loyaltyVal.value = '';
-    
+
     // Year & Price
     const yearVal = document.getElementById('adv-year'); if (yearVal) yearVal.value = '';
     const priceVal = document.getElementById('adv-price'); if (priceVal) priceVal.value = '';
-    
+
     // Extra Attributes
     document.querySelectorAll('.custom-checkbox-container input').forEach(cb => {
       if (cb.id === 'adv-attr-funny') {
@@ -594,17 +607,18 @@
 
   window.performAdvSearch = async function(page) {
     searchCurrentPage = page || 1;
-    
+
     // Auto-close filters panel on mobile after search
     if (window.innerWidth < 769) {
       const panel = document.getElementById('adv-filters-panel');
       const toggleBtn = document.getElementById('btn-adv-toggle');
       if (panel) {
         panel.classList.remove('open');
+        setFilterPanelAccessibility(false);
         if (toggleBtn) toggleBtn.classList.remove('active');
       }
     }
-    
+
     const textInput = document.getElementById('adv-search-input').value.trim();
     const textBoxVal = document.getElementById('adv-search-text')?.value?.trim();
     const typeVal = document.getElementById('adv-type').value;
@@ -615,7 +629,7 @@
     const oracleVal = document.getElementById('adv-oracle')?.value?.trim();
     const setVal = document.getElementById('adv-set')?.value?.trim();
     const colorMode = document.getElementById('adv-color-identity')?.value || '=';
-    
+
     const colors = [];
     ['w', 'u', 'b', 'r', 'g', 'c'].forEach(c => {
       const cb = document.getElementById(`adv-colors-${c}`);
@@ -662,7 +676,7 @@
     if (rarityVal) queryParts.push(`r:${rarityVal}`);
     if (oracleVal) queryParts.push(`o:"${oracleVal}"`);
     if (setVal) queryParts.push(`s:${setVal}`);
-    
+
     if (colors.length > 0) {
       const colorString = colors.join('');
       if (colorString === 'c') {
@@ -710,21 +724,21 @@
     try {
       const res = await fetch(`/api/cards/search?q=${encodeURIComponent(query)}&sort=${encodeURIComponent(sortVal)}&dir=${encodeURIComponent(dirVal)}&page=${searchCurrentPage}&limit=100`);
       const data = await res.json();
-      
+
       const cards = data.cards || [];
       searchTotalCards = data.totalCards || 0;
       searchHasMore = data.hasMore || false;
-      
+
       window.lastSearchModalResults = cards;
       if (countSpan) countSpan.textContent = searchTotalCards;
-      
+
       // Update page indicators
       const pageIndicator = document.getElementById('search-page-indicator');
       if (pageIndicator) {
         const totalPages = Math.max(1, Math.ceil(searchTotalCards / 100));
         pageIndicator.textContent = `${searchCurrentPage} / ${totalPages}`;
       }
-      
+
       const prevBtn = document.getElementById('btn-search-prev');
       const nextBtn = document.getElementById('btn-search-next');
       if (prevBtn) prevBtn.disabled = (searchCurrentPage <= 1);
@@ -738,7 +752,7 @@
           grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 5rem 0;">No matching cards found. Please adjust filters.</div>`;
           return;
         }
-        
+
         renderSearchGrid(cards);
       }
     } catch (e) {
@@ -768,33 +782,37 @@
     searchZoomed = !searchZoomed;
     const btn = document.getElementById('btn-zoom-toggle');
     if (btn) {
-      if (searchZoomed) {
-        btn.textContent = '🔍 Zoom Out';
-        btn.classList.add('btn-primary');
-        btn.classList.remove('btn-secondary');
-      } else {
-        btn.textContent = '🔍 Zoom In';
-        btn.classList.add('btn-secondary');
-        btn.classList.remove('btn-primary');
-      }
+      btn.classList.toggle('active', searchZoomed);
+      btn.setAttribute('aria-label', searchZoomed ? 'Show smaller cards' : 'Show larger cards');
+      btn.setAttribute('title', searchZoomed ? 'Show smaller cards' : 'Show larger cards');
     }
     if (window.lastSearchModalResults && window.lastSearchModalResults.length > 0) {
       renderSearchGrid(window.lastSearchModalResults);
     }
   };
 
+  window.runQuickSearch = function(query) {
+    const input = document.getElementById('adv-search-input');
+    if (!input) return;
+    input.value = query;
+    input.focus({ preventScroll: true });
+    const mainContent = document.getElementById('main-content');
+    if (mainContent) mainContent.scrollTop = 0;
+    window.performAdvSearch(1);
+  };
+
   function renderSearchGrid(cards) {
     const grid = document.getElementById('adv-results-grid');
     if (!grid) return;
     grid.innerHTML = '';
-    
+
     const isMobile = window.innerWidth <= 480;
     const isTablet = window.innerWidth <= 768 && window.innerWidth > 480;
-    
+
     grid.style.display = 'grid';
     grid.style.alignItems = 'start';
     grid.style.gridAutoRows = 'max-content';
-    
+
     if (isMobile) {
       if (searchZoomed) {
         grid.style.gridTemplateColumns = 'repeat(1, minmax(0, 1fr))';
@@ -812,59 +830,41 @@
         grid.style.gap = '0.45rem';
       }
     } else {
-      if (searchZoomed) {
-        grid.style.gridTemplateColumns = 'repeat(6, minmax(0, 1fr))';
-        grid.style.gap = '0.75rem';
-      } else {
-        grid.style.gridTemplateColumns = 'repeat(10, minmax(0, 1fr))';
-        grid.style.gap = '0.5rem';
-      }
+      grid.style.gridTemplateColumns = searchZoomed
+        ? 'repeat(auto-fill, minmax(190px, 1fr))'
+        : 'repeat(auto-fill, minmax(135px, 1fr))';
+      grid.style.gap = searchZoomed ? '1rem' : '0.75rem';
     }
-    
+
     cards.forEach((card, index) => {
       const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
       const imgUrl = card.image_uri || fallbackUrl;
-      
+
       const cardEl = document.createElement('div');
       cardEl.className = 'search-card-item';
-      cardEl.style.cssText = 'position: relative !important; border-radius: 8px !important; overflow: hidden !important; background: rgba(12, 13, 20, 0.4) !important; border: 1px solid rgba(168, 85, 247, 0.15) !important; transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important; cursor: pointer !important; width: 100% !important; display: flex !important; flex-direction: column !important; box-sizing: border-box !important; container-type: inline-size;';
-      
-      cardEl.onmouseover = function() {
-        this.style.transform = 'translateY(-4px)';
-        this.style.boxShadow = '0 8px 16px rgba(0,0,0,0.3)';
-        this.style.borderColor = 'rgba(168, 85, 247, 0.35)';
-      };
-      cardEl.onmouseout = function() {
-        this.style.transform = 'none';
-        this.style.boxShadow = 'none';
-        this.style.borderColor = 'rgba(168, 85, 247, 0.15)';
-      };
-      
+
       cardEl.onclick = function() {
         window.openCardInspectorDrawer(card);
       };
 
       const qtyInTarget = window.targetDeckCardsMap ? (window.targetDeckCardsMap[card.name.toLowerCase()] || 0) : 0;
       const inDeckBadge = qtyInTarget > 0 ? `
-        <div style="position: absolute; top: 6px; left: 6px; background: rgba(245, 158, 11, 0.9) !important; border: 1px solid rgba(245, 158, 11, 0.4) !important; color: white !important; font-family: 'Outfit', sans-serif !important; font-size: 0.62rem !important; font-weight: 800 !important; padding: 2px 6px !important; border-radius: 4px !important; box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important; z-index: 5 !important; text-transform: uppercase !important; pointer-events: none !important;">
+        <div class="search-card-in-deck">
           ${qtyInTarget} in Deck
         </div>
       ` : '';
 
       cardEl.innerHTML = `
         ${inDeckBadge}
-        <div style="width: 100% !important; aspect-ratio: 2.5/3.5 !important; overflow: hidden !important; position: relative !important;">
-          <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100% !important; height: 100% !important; object-fit: fill !important; transition: transform 0.2s ease !important; display: block !important;" 
-               onmouseover="this.style.transform='scale(1.03)'"
-               onmouseout="this.style.transform='none'"
-               onerror="this.src='logo.svg'">
+        <div class="search-card-image-wrap">
+          <img src="${imgUrl}" alt="${card.name}" loading="lazy" onerror="this.src='logo.svg'">
         </div>
-        <!-- Footer row with Add Button & Price Badge scaling dynamically -->
-        <div style="display: flex !important; align-items: center !important; gap: 4cqw !important; padding: 4cqw !important; background: rgba(12, 13, 20, 0.9) !important; border-top: 1px solid rgba(168, 85, 247, 0.2) !important; box-sizing: border-box !important; width: 100% !important;" onclick="event.stopPropagation();">
-          <button type="button" class="btn btn-primary" onclick="window.addCardFromSearchByIndex(${index})" style="width: 18cqw !important; height: 18cqw !important; padding: 0 !important; font-size: 10cqw !important; display: flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; border-radius: 50% !important; margin: 0 !important; border: 1px solid rgba(255,255,255,0.25) !important; background: var(--color-primary) !important; color: white !important; box-shadow: 0 2px 8px rgba(0,0,0,0.6) !important; cursor: pointer !important; transition: transform 0.15s ease;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='none'" title="Add to target deck">+</button>
-          <div style="background: rgba(12, 13, 20, 0.85) !important; border: 1px solid rgba(168, 85, 247, 0.35) !important; padding: 0 4cqw !important; border-radius: 3cqw !important; display: flex !important; align-items: center !important; height: 18cqw !important; box-sizing: border-box !important; justify-content: center !important;">
-            <span style="font-size: 7cqw !important; color: var(--color-secondary) !important; font-weight: 700 !important; white-space: nowrap !important;">$${(card.price || 0.10).toFixed(2)}</span>
+        <div class="search-card-footer" onclick="event.stopPropagation();">
+          <div class="search-card-meta">
+            <strong>${card.name}</strong>
+            <span>$${(card.price || 0.10).toFixed(2)}</span>
           </div>
+          <button type="button" class="search-card-add" onclick="window.addCardFromSearchByIndex(${index})" aria-label="Add ${card.name} to target deck" title="Add to target deck">+</button>
         </div>
       `;
       grid.appendChild(cardEl);
@@ -872,6 +872,7 @@
   }
 
   window.openCardInspectorDrawer = async function(card) {
+    lastInspectorTrigger = document.activeElement;
     activeInspectorCard = card;
     currentCardFaceIdx = 0;
     inspectorActiveTab = 'details';
@@ -883,7 +884,7 @@
       colors: card.colors || [],
       rarity: card.rarity || 'common'
     };
-    
+
     // Reset Add to Deck button style
     const addBtn = document.getElementById('inspector-add-to-deck-btn');
     if (addBtn) {
@@ -892,44 +893,49 @@
       addBtn.style.background = '';
       addBtn.style.color = '';
     }
-    
+
     const drawer = document.getElementById('card-inspector-drawer');
     if (!drawer) return;
-    
+
+    drawer.removeAttribute('inert');
+    drawer.removeAttribute('hidden');
+    drawer.setAttribute('aria-hidden', 'false');
     drawer.classList.add('open');
-    
+    const closeButton = drawer.querySelector('.close-drawer-btn');
+    if (closeButton) closeButton.focus({ preventScroll: true });
+
     // Set basic text details immediately
     document.getElementById('inspector-card-name').textContent = card.name;
     document.getElementById('inspector-card-mana').textContent = card.mana_cost || '';
     document.getElementById('inspector-card-type').textContent = card.type_line || '';
     document.getElementById('inspector-card-oracle').textContent = card.oracle_text || '';
-    
+
     const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
     const imgUrl = card.image_uri || fallbackUrl;
     document.getElementById('inspector-card-image').src = imgUrl;
-    
+
     const flipBtn = document.getElementById('inspector-flip-btn');
     if (card.name.includes(' // ')) {
       flipBtn.style.display = 'block';
     } else {
       flipBtn.style.display = 'none';
     }
-    
+
     window.switchInspectorTab('details');
     renderInspectorLegalities(null);
-    
+
     try {
       const res = await fetch(`/api/cards/details?name=${encodeURIComponent(card.name)}`);
       const details = await res.json();
-      
+
       document.getElementById('inspector-card-mana').textContent = details.mana_cost || '';
       document.getElementById('inspector-card-type').textContent = details.type_line || '';
       document.getElementById('inspector-card-oracle').textContent = details.oracle_text || 'No oracle text available.';
-      
+
       if (details.scryfallId) {
         activeInspectorCard.scryfallId = details.scryfallId;
       }
-      
+
       renderInspectorLegalities(details.legalities);
     } catch (e) {
       console.error("Failed to load full card details:", e);
@@ -939,17 +945,26 @@
 
   window.closeCardInspectorDrawer = function() {
     const drawer = document.getElementById('card-inspector-drawer');
-    if (drawer) drawer.classList.remove('open');
+    if (drawer) {
+      drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden', 'true');
+      drawer.setAttribute('inert', '');
+      drawer.setAttribute('hidden', '');
+    }
     activeInspectorCard = null;
+    if (lastInspectorTrigger && lastInspectorTrigger.isConnected) {
+      lastInspectorTrigger.focus({ preventScroll: true });
+    }
+    lastInspectorTrigger = null;
   };
 
   window.flipInspectorCard = function() {
     if (!activeInspectorCard || !activeInspectorCard.name.includes(' // ')) return;
-    
+
     currentCardFaceIdx = currentCardFaceIdx === 0 ? 1 : 0;
     const scryfallId = activeInspectorCard.scryfallId;
     const imgElement = document.getElementById('inspector-card-image');
-    
+
     if (scryfallId) {
       imgElement.src = `https://api.scryfall.com/cards/${scryfallId}?format=image&version=normal${currentCardFaceIdx === 1 ? '&face=back' : ''}`;
     } else {
@@ -961,16 +976,16 @@
     const container = document.getElementById('inspector-legality-grid');
     if (!container) return;
     container.innerHTML = '';
-    
+
     const formats = ['commander', 'standard', 'modern', 'legacy', 'pioneer', 'pauper'];
     formats.forEach(fmt => {
       const item = document.createElement('div');
       item.className = 'legality-item';
-      
+
       const status = legalities ? (legalities[fmt] || 'not_legal') : 'loading';
       let statusText = 'Loading';
       let statusClass = 'loading';
-      
+
       if (status === 'legal' || status === 'restricted') {
         statusText = 'Legal';
         statusClass = 'legal';
@@ -978,7 +993,7 @@
         statusText = status === 'banned' ? 'Banned' : 'Not Legal';
         statusClass = 'not_legal';
       }
-      
+
       item.innerHTML = `
         <span class="legality-format">${fmt}</span>
         <span class="legality-status ${statusClass}">${statusText}</span>
@@ -989,19 +1004,19 @@
 
   window.switchInspectorTab = function(tab) {
     inspectorActiveTab = tab;
-    
+
     document.querySelectorAll('.drawer-tab-btn').forEach(btn => {
       btn.classList.remove('active');
     });
     const activeBtn = document.getElementById(`tab-btn-${tab}`);
     if (activeBtn) activeBtn.classList.add('active');
-    
+
     document.querySelectorAll('.drawer-tab-pane').forEach(pane => {
       pane.classList.remove('active');
     });
     const activePane = document.getElementById(`pane-${tab}`);
     if (activePane) activePane.classList.add('active');
-    
+
     if (tab === 'versions') {
       loadInspectorVersions();
     } else if (tab === 'rulings') {
@@ -1013,21 +1028,21 @@
     const list = document.getElementById('inspector-versions-list');
     const loading = document.getElementById('inspector-versions-loading');
     if (!list || !loading) return;
-    
+
     list.innerHTML = '';
     loading.style.display = 'block';
-    
+
     try {
       const res = await fetch(`/api/cards/versions?name=${encodeURIComponent(activeInspectorCard.name)}`);
       const prints = await res.json();
       window.lastSearchVersionsResults = prints;
-      
+
       loading.style.display = 'none';
       if (prints.length === 0) {
         list.innerHTML = `<div style="text-align:center; padding:1rem; font-size:0.72rem; color:var(--text-muted);">No printings found.</div>`;
         return;
       }
-      
+
       prints.forEach((version, index) => {
         const item = document.createElement('div');
         item.style.display = 'flex';
@@ -1038,18 +1053,18 @@
         item.style.padding = '6px 8px';
         item.style.borderRadius = '6px';
         item.style.cursor = 'pointer';
-        
+
         if (selectedInspectorPrinting && selectedInspectorPrinting.scryfallId === version.id) {
           item.style.borderColor = 'var(--color-primary)';
           item.style.background = 'rgba(168, 85, 247, 0.08)';
         }
-        
+
         item.onclick = (e) => {
           if (e.target.tagName.toLowerCase() === 'button') return;
-          
+
           const imgEl = document.getElementById('inspector-card-image');
           if (imgEl) imgEl.src = version.image_uri;
-          
+
           selectedInspectorPrinting = {
             name: version.name,
             price: version.price,
@@ -1058,7 +1073,7 @@
             colors: activeInspectorCard.colors || [],
             rarity: version.rarity
           };
-          
+
           // Clear highlight from siblings
           const siblings = item.parentNode.children;
           for (let i = 0; i < siblings.length; i++) {
@@ -1073,7 +1088,7 @@
             loadInspectorRulings();
           }
         };
-        
+
         item.innerHTML = `
           <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex-grow: 1; margin-right: 8px;">
             <div style="font-weight:700; font-size:0.75rem; color:var(--text-pure); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${version.set_name}">${version.set} - ${version.set_name}</div>
@@ -1097,27 +1112,27 @@
     const list = document.getElementById('inspector-rulings-list');
     const loading = document.getElementById('inspector-rulings-loading');
     if (!list || !loading) return;
-    
+
     list.innerHTML = '';
     loading.style.display = 'block';
-    
+
     const scryfallId = activeInspectorCard.scryfallId;
     if (!scryfallId) {
       loading.style.display = 'none';
       list.innerHTML = `<div style="text-align:center; padding:1rem; font-size:0.72rem; color:var(--text-muted);">No rules clarifications found for this card.</div>`;
       return;
     }
-    
+
     try {
       const res = await fetch(`/api/cards/rulings?id=${encodeURIComponent(scryfallId)}`);
       const rulings = await res.json();
-      
+
       loading.style.display = 'none';
       if (rulings.length === 0) {
         list.innerHTML = `<div style="text-align:center; padding:1rem; font-size:0.72rem; color:var(--text-muted);">No rules clarifications found for this card.</div>`;
         return;
       }
-      
+
       rulings.forEach(rule => {
         const item = document.createElement('div');
         item.style.background = 'rgba(255,255,255,0.01)';
@@ -1125,9 +1140,9 @@
         item.style.padding = '8px';
         item.style.borderRadius = '6px';
         item.style.marginBottom = '4px';
-        
+
         const pubDate = new Date(rule.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-        
+
         item.innerHTML = `
           <div style="font-weight:700; font-size:0.68rem; color:var(--color-secondary); margin-bottom:4px;">${pubDate}</div>
           <div style="font-size:0.72rem; color:var(--text-medium); line-height:1.4;">${rule.comment}</div>
@@ -1388,7 +1403,7 @@
   window.addCardVersionFromSearch = async function(index) {
     const version = window.lastSearchVersionsResults[index];
     if (!version) return;
-    
+
     const card = {
       name: version.name,
       price: version.price,
@@ -1397,7 +1412,7 @@
       colors: [],
       rarity: version.rarity
     };
-    
+
     const targetDeckSelect = document.getElementById('adv-target-deck');
     const targetDeckId = targetDeckSelect ? targetDeckSelect.value : null;
 
@@ -1412,7 +1427,7 @@
 
   window.addActivePrintingToDeck = async function() {
     if (!selectedInspectorPrinting) return;
-    
+
     const targetDeckSelect = document.getElementById('adv-target-deck');
     const targetDeckId = targetDeckSelect ? targetDeckSelect.value : null;
 
@@ -1430,21 +1445,95 @@
     await window.saveCardToTargetDeck(selectedInspectorPrinting, targetDeckId, btn);
   };
 
+  function syncSearchSidebarControl() {
+    const layout = document.getElementById('app-layout');
+    const button = document.getElementById('sidebar-collapse-toggle');
+    if (!layout || !button) return;
+    const isCollapsed = layout.classList.contains('sidebar-collapsed');
+    button.setAttribute('aria-expanded', String(!isCollapsed));
+    button.setAttribute('aria-label', isCollapsed ? 'Expand navigation' : 'Collapse navigation');
+    button.setAttribute('title', isCollapsed ? 'Expand navigation' : 'Collapse navigation');
+  }
+
+  function applySearchSidebarPreference() {
+    const layout = document.getElementById('app-layout');
+    if (!layout) return;
+    let shouldCollapse = false;
+    try {
+      shouldCollapse = localStorage.getItem('grimore-sidebar-collapsed') === 'true';
+    } catch (e) {}
+    layout.classList.toggle('sidebar-collapsed', window.innerWidth < 1180 || shouldCollapse);
+    syncSearchSidebarControl();
+  }
+
+  window.toggleSearchDesktopSidebar = function() {
+    if (window.matchMedia('(max-width: 768px)').matches) return;
+    const layout = document.getElementById('app-layout');
+    if (!layout) return;
+    const isCollapsed = layout.classList.toggle('sidebar-collapsed');
+    try {
+      localStorage.setItem('grimore-sidebar-collapsed', String(isCollapsed));
+    } catch (e) {}
+    syncSearchSidebarControl();
+
+    if (!isCollapsed && window.innerWidth < 1180) {
+      const filtersPanel = document.getElementById('adv-filters-panel');
+      const filtersButton = document.getElementById('btn-adv-toggle');
+      if (filtersPanel) {
+        filtersPanel.classList.remove('open');
+        filtersPanel.style.display = 'none';
+        setFilterPanelAccessibility(false);
+      }
+      if (filtersButton) filtersButton.classList.remove('active');
+    }
+  };
+
+  window.toggleSearchMobileSidebar = function(toggleButton) {
+    const sidebar = document.getElementById('app-sidebar');
+    if (!sidebar) return;
+    sidebar.classList.toggle('mobile-active');
+    const isOpen = sidebar.classList.contains('mobile-active');
+    if (toggleButton) toggleButton.setAttribute('aria-expanded', String(isOpen));
+  };
+
   // Window resize observer to adapt columns dynamically
   let lastWidthCategory = window.innerWidth <= 480 ? 'mobile' : (window.innerWidth <= 768 ? 'tablet' : 'desktop');
   window.addEventListener('resize', () => {
     const currentCategory = window.innerWidth <= 480 ? 'mobile' : (window.innerWidth <= 768 ? 'tablet' : 'desktop');
     if (currentCategory !== lastWidthCategory) {
       lastWidthCategory = currentCategory;
-      if (currentSearchResults && currentSearchResults.length > 0) {
-        renderSearchGrid(currentSearchResults);
+      const panel = document.getElementById('adv-filters-panel');
+      const layout = document.getElementById('app-layout');
+      const navExpanded = layout && !layout.classList.contains('sidebar-collapsed');
+      const filtersOpen = window.innerWidth >= 769 && !(navExpanded && window.innerWidth < 1180);
+      if (panel) {
+        panel.classList.toggle('open', filtersOpen);
+        panel.style.display = '';
       }
+      setFilterPanelAccessibility(filtersOpen);
+      if (window.lastSearchModalResults && window.lastSearchModalResults.length > 0) {
+        renderSearchGrid(window.lastSearchModalResults);
+      }
+      if (window.innerWidth >= 769) {
+        const sidebar = document.getElementById('app-sidebar');
+        const menuButton = document.querySelector('.search-mobile-menu');
+        if (sidebar) sidebar.classList.remove('mobile-active');
+        if (menuButton) menuButton.setAttribute('aria-expanded', 'false');
+      }
+      syncSearchSidebarControl();
     }
   });
 
   // ── INIT ─────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     initMagicCanvas('app-bg-canvas');
+    applySearchSidebarPreference();
+    const filtersPanel = document.getElementById('adv-filters-panel');
+    const layout = document.getElementById('app-layout');
+    const navExpanded = layout && !layout.classList.contains('sidebar-collapsed');
+    const filtersOpen = window.innerWidth >= 769 && !(navExpanded && window.innerWidth < 1180);
+    if (filtersPanel) filtersPanel.classList.toggle('open', filtersOpen);
+    setFilterPanelAccessibility(filtersOpen);
     checkAuthAndLoad();
   });
 })();

@@ -7,14 +7,14 @@
     const msgEl = document.getElementById('arcane-progress-message');
     const fillEl = document.getElementById('arcane-progress-bar-fill');
     const pctEl = document.getElementById('arcane-progress-pct-center');
-    
+
     if (!overlay) return;
-    
+
     if (titleEl) titleEl.textContent = title || 'Loading...';
     if (msgEl) msgEl.textContent = message || 'Please wait.';
-    if (fillEl) fillEl.style.width = `${initialPct}%`;
+    if (fillEl) fillEl.style.transform = `scaleX(${Math.max(0, Math.min(100, initialPct)) / 100})`;
     if (pctEl) pctEl.textContent = `${initialPct}%`;
-    
+
     overlay.style.display = 'flex';
     overlay.offsetHeight; // trigger reflow
     overlay.style.opacity = '1';
@@ -24,8 +24,8 @@
     const fillEl = document.getElementById('arcane-progress-bar-fill');
     const pctEl = document.getElementById('arcane-progress-pct-center');
     const msgEl = document.getElementById('arcane-progress-message');
-    
-    if (fillEl) fillEl.style.width = `${pct}%`;
+
+    if (fillEl) fillEl.style.transform = `scaleX(${Math.max(0, Math.min(100, pct)) / 100})`;
     if (pctEl) pctEl.textContent = `${pct}%`;
     if (msgEl && message) msgEl.textContent = message;
   };
@@ -42,13 +42,13 @@
   window.startTopProgress = function() {
     const bar = document.getElementById('top-loading-bar');
     if (!bar) return;
-    bar.style.transition = 'width 0.4s ease, opacity 0.3s ease';
-    bar.style.width = '0%';
+    bar.style.transition = 'transform 0.4s ease, opacity 0.3s ease';
+    bar.style.transform = 'scaleX(0)';
     bar.style.opacity = '1';
     setTimeout(() => {
-      bar.style.width = '35%';
+      bar.style.transform = 'scaleX(0.35)';
       setTimeout(() => {
-        bar.style.width = '75%';
+        bar.style.transform = 'scaleX(0.75)';
       }, 500);
     }, 50);
   };
@@ -56,11 +56,11 @@
   window.completeTopProgress = function() {
     const bar = document.getElementById('top-loading-bar');
     if (!bar) return;
-    bar.style.width = '100%';
+    bar.style.transform = 'scaleX(1)';
     setTimeout(() => {
       bar.style.opacity = '0';
       setTimeout(() => {
-        bar.style.width = '0%';
+        bar.style.transform = 'scaleX(0)';
       }, 300);
     }, 200);
   };
@@ -90,6 +90,8 @@
   // Initial Load
   window.addEventListener('DOMContentLoaded', () => {
     applyThemePreference();
+    installLifeHoldControls();
+    installLifeResourceControls();
     checkAuthStatus();
 
     // Parse recovery tokens if present in page URL
@@ -126,7 +128,7 @@
     const isLight = !document.body.classList.contains('light-theme');
     localStorage.setItem('theme-mode', isLight ? 'light' : 'dark');
     applyThemePreference();
-    
+
     // Auto sync state of checkbox in view if present
     const toggleInput = document.getElementById('profile-theme-toggle2');
     if (toggleInput) {
@@ -426,10 +428,13 @@
         document.getElementById('auth-view').classList.remove('active');
         document.getElementById('app-layout').classList.remove('sidebar-hidden');
         document.getElementById('app-layout').classList.remove('auth-mode');
-        document.getElementById('header-profile-container').style.display = 'flex';
+        applyDesktopSidebarPreference();
+        const sidebarAccountActions = document.getElementById('sidebar-account-actions');
+        if (sidebarAccountActions) sidebarAccountActions.style.display = 'flex';
         renderUserBadge();
         const urlParams = new URLSearchParams(window.location.search);
         const urlDeckId = urlParams.get('deckId');
+        const urlView = urlParams.get('view');
         if (urlDeckId) {
           window.openVisualDeckbuilder(urlDeckId, 'Loading Deck...', 0, null, 'commander', 0, false);
           try {
@@ -441,6 +446,11 @@
               builderDeckName: ''
             }, "", window.location.pathname);
           } catch (e) {}
+        } else if (['discover', 'decks', 'tournaments', 'lifetracker', 'profile'].includes(urlView)) {
+          showSection(urlView, false);
+          try {
+            window.history.replaceState({ section: urlView }, '', window.location.pathname);
+          } catch (e) {}
         } else {
           showSection(activeSection, false);
         }
@@ -450,16 +460,17 @@
         // Stop app background canvas, start login canvas (exactly as before)
         if (appBgCleanup) { appBgCleanup(); appBgCleanup = null; }
         if (!authMagicCleanup) { authMagicCleanup = initMagicCanvas('auth-magic-canvas'); }
-        
+
         // Deactivate all view sections
         document.querySelectorAll('.view-section').forEach(el => {
           el.classList.remove('active');
         });
-        
+
         document.getElementById('app-layout').classList.add('sidebar-hidden');
         document.getElementById('app-layout').classList.add('auth-mode');
         document.getElementById('auth-view').classList.add('active');
-        document.getElementById('header-profile-container').style.display = 'none';
+        const sidebarAccountActions = document.getElementById('sidebar-account-actions');
+        if (sidebarAccountActions) sidebarAccountActions.style.display = 'none';
         const titleEl = document.getElementById('page-title');
         if (titleEl) titleEl.textContent = 'Grimore';
       }
@@ -474,22 +485,25 @@
     if (!container) return;
     const showAdminBtn = currentUser && currentUser.username && currentUser.username.toLowerCase() === 'nickbuildsdecks';
     const adminBtnHtml = showAdminBtn ? `
-      <button class="btn btn-sm" id="btn-admin-console" onclick="switchHubTab('admin'); showSection('tournaments');" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(168,85,247,0.15); border: 1px solid var(--color-primary); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem; font-weight: bold; text-shadow: 0 0 4px rgba(168,85,247,0.3);">
+      <button class="btn btn-sm sidebar-footer-action" id="btn-admin-console" aria-label="Admin Console" title="Admin Console" onclick="switchHubTab('admin'); showSection('tournaments');" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(168,85,247,0.15); border: 1px solid var(--color-primary); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem; font-weight: bold; text-shadow: 0 0 4px rgba(168,85,247,0.3);">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>
-        Admin Console
+        <span class="sidebar-footer-label">Admin Console</span>
       </button>
     ` : '';
     container.innerHTML = `
       ${adminBtnHtml}
-      <button class="btn btn-sm" id="btn-feedback" onclick="openFeedbackModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.3); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
+      <button class="btn btn-sm sidebar-footer-action" id="btn-feedback" aria-label="Feedback" title="Feedback" onclick="openFeedbackModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.3); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
-        Feedback
+        <span class="sidebar-footer-label">Feedback</span>
       </button>
-      <button class="btn btn-sm" id="btn-inbox" onclick="openInboxModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(56,189,248,0.06); border: 1px solid rgba(56,189,248,0.25); color: var(--color-secondary); display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
+      <button class="btn btn-sm sidebar-footer-action" id="btn-inbox" aria-label="Inbox" title="Inbox" onclick="openInboxModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(56,189,248,0.06); border: 1px solid rgba(56,189,248,0.25); color: var(--color-secondary); display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
-        Inbox <span id="inbox-unread-badge" style="display:none; background:var(--color-loss); color:#fff; border-radius:999px; font-size:0.65rem; padding:1px 5px; margin-left:2px;">0</span>
+        <span class="sidebar-footer-label">Inbox</span><span id="inbox-unread-badge" style="display:none; background:var(--color-loss); color:#fff; border-radius:999px; font-size:0.65rem; padding:1px 5px; margin-left:2px;">0</span>
       </button>
-      <button class="btn btn-sm btn-danger" style="width: 100%; border: 1px solid rgba(239,68,68,0.25); background: rgba(239,68,68,0.04); font-size: 0.75rem;" onclick="handleLogout()">Logout</button>
+      <button class="btn btn-sm btn-danger sidebar-footer-action" aria-label="Logout" title="Logout" style="width: 100%; border: 1px solid rgba(239,68,68,0.25); background: rgba(239,68,68,0.04); font-size: 0.75rem;" onclick="handleLogout()">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></svg>
+        <span class="sidebar-footer-label">Logout</span>
+      </button>
     `;
     // Load unread count
     loadInboxUnreadCount();
@@ -760,7 +774,7 @@
     const accountForm = document.getElementById('profile-form-account');
     const btnCustomize = document.getElementById('profile-btn-tab-customize');
     const btnAccount = document.getElementById('profile-btn-tab-account');
-    
+
     if (tab === 'customize') {
       if (customizeForm) customizeForm.style.display = 'flex';
       if (accountForm) accountForm.style.display = 'none';
@@ -779,7 +793,7 @@
     const showcase = document.getElementById('profile-showcase-card');
     const widget = document.getElementById('profile-featured-deck-widget');
     if (!showcase) return;
-    
+
     let glow, border, text;
     switch (theme) {
       case 'crimson':
@@ -817,7 +831,7 @@
         border = 'rgba(168, 85, 247, 0.35)';
         text = '#c084fc';
     }
-    
+
     showcase.style.setProperty('--theme-glow', glow);
     showcase.style.setProperty('--theme-border', border);
     showcase.style.setProperty('--theme-text', text);
@@ -863,7 +877,7 @@
   // Load profile settings view
   async function loadProfileView() {
     if (!currentUser) return;
-    
+
     const themeToggle = document.getElementById('profile-theme-toggle2');
     if (themeToggle) {
       themeToggle.checked = document.body.classList.contains('light-theme');
@@ -872,9 +886,9 @@
     try {
       const res = await fetch(`/api/players/${currentUser.id}/profile`);
       const data = await res.json();
-      
+
       const prof = data.profile || {};
-      
+
       // Populate Customization Form
       document.getElementById('profile-nickname').value = prof.store_nickname || '';
       document.getElementById('profile-commander').value = prof.profile_commander || '';
@@ -946,7 +960,7 @@
           document.getElementById('featured-deck-name').textContent = data.featuredDeck.deck_name;
           document.getElementById('featured-deck-price').textContent = `$${(data.featuredDeck.cheapest_total_price || 0).toFixed(2)}`;
           document.getElementById('featured-deck-format').textContent = data.featuredDeck.format || 'commander';
-          
+
           const cardArt = document.getElementById('featured-deck-art');
           const commanderScryfallId = data.featuredDeck.commander_scryfall_id;
           const featuredCommanderName = data.featuredDeck.commander_name || data.featuredDeck.featured_card_name;
@@ -1041,15 +1055,15 @@
       const res = await fetch('/api/players/profile/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          storeNickname, 
-          avatarUrl, 
-          profileCommander, 
-          profileBio, 
-          profileTheme, 
-          featuredDeckId, 
-          discordHandle, 
-          moxfieldUsername 
+        body: JSON.stringify({
+          storeNickname,
+          avatarUrl,
+          profileCommander,
+          profileBio,
+          profileTheme,
+          featuredDeckId,
+          discordHandle,
+          moxfieldUsername
         })
       });
       const data = await res.json();
@@ -1128,7 +1142,7 @@
         feedback.style.display = 'block';
         feedback.style.background = 'rgba(16, 185, 129, 0.1)';
         feedback.style.borderColor = 'rgba(16, 185, 129, 0.25)';
-        
+
         let msg = data.message;
         if (data.devResetLink) {
           msg += `<br><br><strong style="color:var(--color-secondary);">Dev Reset Link:</strong><br><a href="${data.devResetLink}" style="color:var(--color-primary); word-break:break-all;">${data.devResetLink}</a>`;
@@ -1175,7 +1189,7 @@
       if (res.ok && data.success) {
         alert("Your password has been reset successfully! You can now log in.");
         document.getElementById('modal-reset-password').classList.remove('active');
-        
+
         const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
         window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
       } else {
@@ -1186,10 +1200,47 @@
     }
   };
 
-  window.toggleMobileSidebar = function() {
+  function updateDesktopSidebarControl() {
+    const layout = document.getElementById('app-layout');
+    const button = document.getElementById('sidebar-collapse-toggle');
+    if (!layout || !button) return;
+    const isCollapsed = layout.classList.contains('sidebar-collapsed');
+    button.setAttribute('aria-expanded', String(!isCollapsed));
+    button.setAttribute('aria-label', isCollapsed ? 'Expand navigation' : 'Collapse navigation');
+    button.setAttribute('title', isCollapsed ? 'Expand navigation' : 'Collapse navigation');
+  }
+
+  function applyDesktopSidebarPreference() {
+    const layout = document.getElementById('app-layout');
+    if (!layout) return;
+    let shouldCollapse = false;
+    try {
+      shouldCollapse = localStorage.getItem('grimore-sidebar-collapsed') === 'true';
+    } catch (e) {}
+    layout.classList.toggle('sidebar-collapsed', window.innerWidth < 1180 || shouldCollapse);
+    updateDesktopSidebarControl();
+  }
+
+  window.toggleDesktopSidebar = function() {
+    if (window.matchMedia('(max-width: 768px)').matches) return;
+    const layout = document.getElementById('app-layout');
+    if (!layout) return;
+    const isCollapsed = layout.classList.toggle('sidebar-collapsed');
+    try {
+      localStorage.setItem('grimore-sidebar-collapsed', String(isCollapsed));
+    } catch (e) {}
+    updateDesktopSidebarControl();
+  };
+
+  window.addEventListener('resize', updateDesktopSidebarControl);
+
+  window.toggleMobileSidebar = function(toggleButton) {
     const sidebar = document.getElementById('app-sidebar');
     if (sidebar) {
       sidebar.classList.toggle('mobile-active');
+      const isOpen = sidebar.classList.contains('mobile-active');
+      const button = toggleButton || document.querySelector('.mobile-menu-toggle');
+      if (button) button.setAttribute('aria-expanded', String(isOpen));
     }
   };
 
@@ -1199,6 +1250,9 @@
     const drawer = document.getElementById('card-inspector-drawer');
     if (drawer) {
       drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden', 'true');
+      drawer.setAttribute('inert', '');
+      drawer.setAttribute('hidden', '');
       if (drawer.parentElement !== document.body) {
         document.body.appendChild(drawer);
       }
@@ -1206,12 +1260,15 @@
 
     activeSection = sectionName;
     document.querySelectorAll('.sidebar-nav .nav-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.sidebar-account-action').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
 
     // Auto-close mobile sidebar if open
     const sidebar = document.getElementById('app-sidebar');
     if (sidebar) {
       sidebar.classList.remove('mobile-active');
+      const menuButton = document.querySelector('.mobile-menu-toggle');
+      if (menuButton) menuButton.setAttribute('aria-expanded', 'false');
     }
 
     // Highlight nav button
@@ -1275,6 +1332,10 @@
     } else if (sectionName === 'profile') {
       loadProfileView();
     } else if (sectionName === 'lifetracker') {
+      installLifeRotationHandles();
+      applyLifeOrientationMode();
+      applyLifePlayerCount();
+      window.toggleLifeGameMenu(false);
       loadLifeTrackerState();
     }
   };
@@ -1384,18 +1445,45 @@
     try {
       const res = await fetch('/api/decks/my-decks');
       myDecks = await res.json();
- 
+
       const container = document.getElementById('decks-cards-container');
       container.innerHTML = '';
- 
+
       if (myDecks.length === 0) {
-        container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 2rem;">No registered decks yet. Import a Moxfield deck or build a custom deck above!</div>`;
+        container.innerHTML = `
+          <div class="deck-empty-experience">
+            <div class="deck-empty-copy">
+              <span class="deck-empty-kicker">Your next favorite deck starts here</span>
+              <h3>Build something worth remembering.</h3>
+              <p>Start from a clean canvas, or bring over a list you already love. Grimore handles the visuals, prices, and table-ready details.</p>
+              <div class="deck-empty-actions">
+                <button type="button" class="btn btn-gold btn-lg" onclick="openVisualDeckbuilder()">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  Create your first deck
+                </button>
+                <button type="button" class="btn btn-ghost btn-lg" onclick="showSection('discover')">
+                  Explore community decks
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
+              </div>
+              <button type="button" class="deck-import-link" onclick="toggleImportForm()">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+                Already have a list? Import from Moxfield or paste one in
+              </button>
+            </div>
+            <div class="deck-empty-art" aria-hidden="true">
+              <div class="deck-art-card deck-art-card-left" style="--deck-art: url('https://api.scryfall.com/cards/named?exact=Muldrotha%2C%20the%20Gravetide&format=image&version=art_crop')"></div>
+              <div class="deck-art-card deck-art-card-center" style="--deck-art: url('https://api.scryfall.com/cards/named?exact=Atraxa%2C%20Praetors%27%20Voice&format=image&version=art_crop')"></div>
+              <div class="deck-art-card deck-art-card-right" style="--deck-art: url('https://api.scryfall.com/cards/named?exact=Isshin%2C%20Two%20Heavens%20as%20One&format=image&version=art_crop')"></div>
+              <div class="deck-art-orbit"></div>
+            </div>
+          </div>`;
         window.completeTopProgress();
         return;
       }
- 
+
       myDecks.forEach(d => {
-        let posterUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500';
+        let posterUrl = '';
         if (d.commander_scryfall_id) {
           posterUrl = `https://api.scryfall.com/cards/${d.commander_scryfall_id}?format=image&version=art_crop`;
         } else if (d.commander_name) {
@@ -1403,60 +1491,43 @@
         } else if (d.featured_card_name) {
           posterUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(d.featured_card_name)}&format=image&version=art_crop`;
         }
-          
+
         const isVisual = d.moxfield_url && d.moxfield_url.startsWith('visual-');
         const moxfieldBtnHtml = isVisual
           ? ''
           : `<a href="${d.moxfield_url}" target="_blank" class="btn btn-sm btn-secondary" style="text-decoration:none; flex: 1; font-size: 0.7rem; text-align: center; line-height: 20px;">Moxfield</a>`;
 
-        const legalBadge = d.is_legal === 0 
-          ? `<span style="font-size: 0.65rem; color: var(--color-loss); font-weight: 700; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); padding: 2px 6px; border-radius: 4px;" title="${d.legality_reason || 'Does not match tournament rules'}">⚠️ Illegal</span>`
-          : `<span style="font-size: 0.65rem; color: var(--color-win); font-weight: 700; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); padding: 2px 6px; border-radius: 4px;">✔ Legal</span>`;
+        const legalBadge = d.is_legal === 0
+          ? `<span class="deck-status-pill is-illegal" title="${d.legality_reason || 'Does not match tournament rules'}"><span></span>Needs review</span>`
+          : `<span class="deck-status-pill is-legal"><span></span>Legal</span>`;
+
+        const privacyBadge = d.is_public === 1
+          ? `<span class="deck-privacy-pill"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg>Public</span>`
+          : `<span class="deck-privacy-pill"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Private</span>`;
 
         container.innerHTML += `
-          <div class="deck-card" style="position: relative; overflow: hidden; background: var(--bg-card); display: flex; flex-direction: column; height: 320px; border: 1px solid var(--border-medium); border-radius: var(--radius-md); transition: var(--transition-normal); cursor: pointer;" onclick="openVisualDeckbuilder('${d.id}', '${d.deck_name.replace(/'/g, "\\'")}', ${d.is_public}, '${d.featured_card_name ? d.featured_card_name.replace(/'/g, "\\'") : ''}', '${d.format ? d.format : 'commander'}')">
-            <!-- Art Crop Header Banner -->
-            <div style="height: 140px; width: 100%; background-image: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(3,3,5,0.9) 100%), url('${posterUrl}'); background-size: cover; background-position: center; border-bottom: none; flex-shrink: 0; position: relative;">
-              <!-- Public / Private Status Overlay -->
-              <span class="badge" style="position: absolute; top: 0.75rem; right: 0.75rem; font-size: 0.65rem; background-color: ${d.is_public === 1 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(239, 68, 68, 0.95)'}; color: white; border: none; font-weight:700;">
-                ${d.is_public === 1 ? '🌐 Public' : '🔒 Private'}
-              </span>
-            </div>
-            
-            <!-- Info Section -->
-            <div style="padding: 1rem; display: flex; flex-grow: 1; flex-direction: column; justify-content: space-between; gap: 0.5rem; overflow: hidden;">
-              <div>
-                <h4 style="font-size: 1.05rem; font-family: 'Cinzel', serif; font-weight: 800; color: var(--text-pure); margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                  ${d.deck_name}
-                </h4>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <span style="font-size: 1rem; font-weight: 700; color: var(--color-primary);">$${(d.cheapest_total_price || 0).toFixed(2)}</span>
-                  ${legalBadge}
-                </div>
+          <article class="deck-card" onclick="openVisualDeckbuilder('${d.id}', '${d.deck_name.replace(/'/g, "\\'")}', ${d.is_public}, '${d.featured_card_name ? d.featured_card_name.replace(/'/g, "\\'") : ''}', '${d.format ? d.format : 'commander'}')">
+            <div class="deck-card-art${posterUrl ? '' : ' deck-card-art-fallback'}"${posterUrl ? ` style="--deck-cover: url('${posterUrl}')"` : ''}>
+              <div class="deck-card-art-topline">
+                ${privacyBadge}
+                ${legalBadge}
               </div>
-              
-              <!-- Stats breakdown -->
-              <div style="display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; font-size: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border-light); flex-shrink: 0;">
-                <div>
-                  <div style="font-weight: 700; color: var(--color-primary);">${d.total_points || 0}</div>
-                  <div style="font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase;">Points</div>
-                </div>
-                <div>
-                  <div style="font-weight: 700; color: var(--color-secondary);">${d.total_wins || 0}</div>
-                  <div style="font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase;">Wins</div>
-                </div>
-                <div>
-                  <div style="font-weight: 700; color: var(--text-high);">${d.total_kills || 0}</div>
-                  <div style="font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase;">Kills</div>
-                </div>
-              </div>
-              
-              <!-- Actions block -->
-              <div style="display: flex; gap: 0.4rem; margin-top: 0.25rem; z-index: 10; flex-shrink: 0;" onclick="event.stopPropagation()">
-                <button class="btn btn-sm btn-secondary" style="flex: 1; font-size: 0.72rem; padding: 4px 0; font-weight: 700;" onclick="window.shareDeck('${d.id}', '${d.deck_name.replace(/'/g, "\\'")}')">🔗 Share</button>
+              <div class="deck-card-art-copy">
+                <span>${d.commander_name || d.format || 'Commander'}</span>
+                <h3>${d.deck_name}</h3>
               </div>
             </div>
-          </div>
+            <div class="deck-card-details">
+              <div class="deck-card-stats">
+                <div><strong>$${(d.cheapest_total_price || 0).toFixed(2)}</strong><span>Value</span></div>
+                <div><strong>${d.total_wins || 0}</strong><span>Wins</span></div>
+                <div><strong>${d.total_points || 0}</strong><span>Points</span></div>
+              </div>
+              <button class="deck-share-button" type="button" aria-label="Share ${d.deck_name}" onclick="event.stopPropagation(); window.shareDeck('${d.id}', '${d.deck_name.replace(/'/g, "\\'")}')">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></svg>
+              </button>
+            </div>
+          </article>
         `;
       });
       window.completeTopProgress();
@@ -1532,11 +1603,11 @@
     event.preventDefault();
     const url = document.getElementById('deck-moxfield-url').value;
     const btn = event.target.querySelector('button[type="submit"]');
-    
+
     btn.disabled = true;
     btn.style.position = 'relative';
     btn.style.overflow = 'hidden';
-    
+
     const originalText = btn.textContent;
     const originalBg = btn.style.background;
     btn.textContent = "Analyzing...";
@@ -1574,7 +1645,7 @@
       // 2. Loop through cards sequentially (price validation progress bar)
       for (let i = 0; i < total; i++) {
         const cardName = cardNames[i];
-        
+
         const pct = Math.round((i / total) * 100);
         btn.textContent = pct + "%";
         btn.style.background = `linear-gradient(to right, var(--color-primary) 0%, var(--color-primary) ${pct}%, var(--bg-surface) ${pct}%, var(--bg-surface) 100%)`;
@@ -1594,7 +1665,7 @@
 
       const finRes = await fetch(`/api/decks/reprice-finalize/${deckId}`, { method: 'POST' });
       const finData = await finRes.json();
-      
+
       if (finData.success) {
         window.updateArcaneProgress(100, "Import successful!");
         alert("Deck registered and validated successfully!");
@@ -1621,9 +1692,9 @@
   window.shareDeck = function(deckId, deckName) {
     const recipient = prompt(`Enter the username of the player you want to share "${deckName}" with:`);
     if (!recipient || recipient.trim() === '') return;
-    
+
     window.showArcaneProgress("Sharing Deck", `Sending "${deckName}" to ${recipient}...`, 30);
-    
+
     fetch('/api/decks/' + deckId + '/share', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1652,7 +1723,7 @@
     btnElement.disabled = true;
     btnElement.style.position = 'relative';
     btnElement.style.overflow = 'hidden';
-    
+
     // Save original styles
     const originalText = btnElement.textContent;
     const originalBg = btnElement.style.background;
@@ -1673,7 +1744,7 @@
 
       const cardNames = initData.cardNames || [];
       const total = cardNames.length;
-      
+
       if (total === 0) {
         alert("No cards found in deck mainboard.");
         resetBtn();
@@ -1686,11 +1757,11 @@
       // 2. Loop through cards sequentially
       for (let i = 0; i < total; i++) {
         const cardName = cardNames[i];
-        
+
         // Show progress percentage
         const pct = Math.round((i / total) * 100);
         btnElement.textContent = pct + "%";
-        
+
         // Fills with blue/cyan color from left to right
         btnElement.style.background = `linear-gradient(to right, var(--color-primary) 0%, var(--color-primary) ${pct}%, var(--bg-surface) ${pct}%, var(--bg-surface) 100%)`;
         window.updateArcaneProgress(pct, `Resolving card legality and cheapest print: ${cardName} (${i + 1}/${total})`);
@@ -1711,7 +1782,7 @@
       // 3. Finalize reprice
       const finRes = await fetch(`/api/decks/reprice-finalize/${deckId}`, { method: 'POST' });
       const finData = await finRes.json();
-      
+
       if (finData.success) {
         window.updateArcaneProgress(100, "Reprice successful!");
         loadMyDecks();
@@ -1752,7 +1823,7 @@
 
       currentInspectorCards = cards || [];
       document.getElementById('inspector-deck-title').textContent = deckName;
-      
+
       // Keep track of previous section
       if (activeSection && activeSection !== 'deck-view') {
         previousDeckViewSection = activeSection;
@@ -1790,7 +1861,7 @@
       document.getElementById('inspector-sort-by').value = 'mana';
 
       filterAndSortInspectorCards();
-      
+
       // Render stats & curves analytics tab
       if (window.renderInspectorAnalytics) window.renderInspectorAnalytics(currentInspectorCards);
 
@@ -1812,7 +1883,7 @@
     let nonLandCount = 0;
     let totalCmc = 0;
     let landCount = 0;
-    
+
     const curveCounts = [0, 0, 0, 0, 0, 0, 0];
     const colorCounts = { W: 0, U: 0, B: 0, R: 0, G: 0 };
     const typeCounts = {
@@ -1825,23 +1896,23 @@
       Land: 0,
       Other: 0
     };
-    
+
     cards.forEach(c => {
       const qty = c.quantity || 1;
       const price = parseFloat(c.cheapest_card_price) || 0;
       totalPrice += price * qty;
       totalCount += qty;
-      
+
       const type = (c.type_line || "").toLowerCase();
       const isLand = type.includes("land");
-      
+
       if (isLand) {
         landCount += qty;
         typeCounts.Land += qty;
       } else {
         nonLandCount += qty;
         totalCmc += (c.cmc || 0) * qty;
-        
+
         const cmc = c.cmc || 0;
         if (cmc <= 1) curveCounts[0] += qty;
         else if (cmc === 2) curveCounts[1] += qty;
@@ -1850,7 +1921,7 @@
         else if (cmc === 5) curveCounts[4] += qty;
         else if (cmc === 6) curveCounts[5] += qty;
         else curveCounts[6] += qty;
-        
+
         if (type.includes("creature")) typeCounts.Creature += qty;
         else if (type.includes("instant")) typeCounts.Instant += qty;
         else if (type.includes("sorcery")) typeCounts.Sorcery += qty;
@@ -1859,7 +1930,7 @@
         else if (type.includes("planeswalker")) typeCounts.Planeswalker += qty;
         else typeCounts.Other += qty;
       }
-      
+
       let colors = [];
       try {
         if (c.colors) {
@@ -1876,9 +1947,9 @@
         });
       }
     });
-    
+
     const avgCmc = nonLandCount > 0 ? (totalCmc / nonLandCount) : 0;
-    
+
     if (document.getElementById('inspector-stats-price')) {
       document.getElementById('inspector-stats-price').textContent = totalPrice.toFixed(2);
     }
@@ -1891,7 +1962,7 @@
     if (document.getElementById('inspector-stats-lands-spells')) {
       document.getElementById('inspector-stats-lands-spells').textContent = `${landCount} / ${totalCount - landCount}`;
     }
-    
+
     const curveChart = document.getElementById('inspector-mana-curve-chart');
     if (curveChart) {
       curveChart.innerHTML = '';
@@ -1906,7 +1977,7 @@
         `;
       });
     }
-    
+
     const colorsBars = document.getElementById('inspector-color-identity-bars');
     if (colorsBars) {
       colorsBars.innerHTML = '';
@@ -1918,9 +1989,9 @@
         R: '#ef4444',
         G: '#10b981'
       };
-      
+
       const totalColorRefs = Object.values(colorCounts).reduce((a, b) => a + b, 0) || 1;
-      
+
       Object.keys(colorCounts).forEach(col => {
         const count = colorCounts[col];
         if (count === 0) return;
@@ -1944,7 +2015,7 @@
         colorsBars.innerHTML = '<span style="font-size:0.75rem; color:var(--text-muted);">Colorless</span>';
       }
     }
-    
+
     const typeList = document.getElementById('inspector-type-distribution-list');
     if (typeList) {
       typeList.innerHTML = '';
@@ -1958,7 +2029,7 @@
         Land: '#10b981',
         Other: '#6b7280'
       };
-      
+
       Object.keys(typeCounts).forEach(type => {
         const count = typeCounts[type];
         if (count === 0) return;
@@ -1986,19 +2057,19 @@
     const viewMode = document.getElementById('inspector-view-mode').value;
     const groupBy = document.getElementById('inspector-group-by').value;
     const sortBy = document.getElementById('inspector-sort-by').value;
-    
+
     // Filter
     let filtered = currentInspectorCards.filter(c => {
       return c.card_name.toLowerCase().includes(searchVal);
     });
-    
+
     // Filter out commanders from Panel 2 list since they are showcased in Panel 1
     const displayCards = filtered.filter(c => c.is_commander !== 1);
-    
+
     const mZone = document.getElementById('inspector-cards-grid');
     if (!mZone) return;
     mZone.innerHTML = '';
-    
+
     // Set grid columns based on view mode
     if (viewMode === 'visual-spoiler') {
       mZone.style.display = 'grid';
@@ -2013,12 +2084,12 @@
       mZone.style.alignItems = 'start';
       mZone.style.gap = '0.5rem';
     }
-    
+
     if (displayCards.length === 0) {
       mZone.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 2rem 0;">No cards found.</div>`;
       return;
     }
-    
+
     // Grouping helpers
     function getCardCategory(c) {
       const type = (c.type_line || "").toLowerCase();
@@ -2031,7 +2102,7 @@
       if (type.includes("land")) return "Lands";
       return "Other";
     }
-    
+
     function getCardColorGroup(c) {
       let colors = [];
       try {
@@ -2042,7 +2113,7 @@
       const names = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green" };
       return names[colors[0]] || "Colorless";
     }
-    
+
     function getSubtype(c) {
       const tl = c.type_line || '';
       const dashIdx = tl.indexOf('—');
@@ -2052,10 +2123,10 @@
       }
       return 'Other';
     }
-    
+
     const rarityOrder = ['mythic', 'rare', 'uncommon', 'common', 'special', 'bonus'];
     function getRarity(c) { return (c.rarity || 'common').toLowerCase(); }
-    
+
     const colorPriority = { W: 0, U: 1, B: 2, R: 3, G: 4 };
     function getColorSortKey(c) {
       let colors = [];
@@ -2066,7 +2137,7 @@
       if (colors.length > 1) return 5;
       return colorPriority[colors[0]] !== undefined ? colorPriority[colors[0]] : 9;
     }
-    
+
     // Group displayCards
     const groups = {};
     displayCards.forEach(c => {
@@ -2087,7 +2158,7 @@
       if (!groups[key]) groups[key] = [];
       groups[key].push(c);
     });
-    
+
     // Sort within each group
     Object.keys(groups).forEach(key => {
       groups[key].sort((a, b) => {
@@ -2114,7 +2185,7 @@
         }
       });
     });
-    
+
     // Sort group headers
     let sortedTags = [];
     if (groupBy === 'type') {
@@ -2152,9 +2223,9 @@
     } else {
       sortedTags = Object.keys(groups).sort((a, b) => a.localeCompare(b));
     }
-    
+
     const rarityColors = { mythic: '#ff8c42', rare: '#f0c040', uncommon: '#a0bfd0', common: '#999', special: '#cc88ff', bonus: '#ff9988' };
-    
+
     sortedTags.forEach(tag => {
       // Group header
       const header = document.createElement('div');
@@ -2169,7 +2240,7 @@
       const groupCount = groups[tag].reduce((s, c) => s + (c.quantity || 1), 0);
       header.textContent = `${tag} (${groupCount})`;
       mZone.appendChild(header);
-      
+
       if (viewMode === 'visual-spoiler') {
         groups[tag].forEach(c => {
           const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.card_name)}&format=image&version=normal`;
@@ -2177,7 +2248,7 @@
           const qty = c.quantity || 1;
           const cardPrice = c.cheapest_card_price || 0;
           const totalDisplay = cardPrice === 0 ? "Free" : `$${(cardPrice * qty).toFixed(2)}`;
-          
+
           const cardEl = document.createElement('div');
           cardEl.style.position = 'relative';
           cardEl.style.display = 'flex';
@@ -2189,7 +2260,7 @@
           cardEl.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease';
           cardEl.style.cursor = 'pointer';
           cardEl.onclick = () => window.openCardInspectorDrawer({ name: c.card_name, scryfallId: c.scryfall_id });
-          
+
           cardEl.onmouseover = function() {
             this.style.transform = 'translateY(-4px)';
             this.style.boxShadow = '0 8px 16px rgba(0,0,0,0.3)';
@@ -2198,11 +2269,11 @@
             this.style.transform = 'none';
             this.style.boxShadow = 'none';
           };
-          
+
           cardEl.innerHTML = `
             ${qty > 1 ? `<div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.85); color: var(--color-primary); font-size: 0.75rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; z-index: 2; border: 1px solid var(--border-color);">x${qty}</div>` : ''}
             <div style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #121212; position: relative;">
-              <img src="${imgUrl}" alt="${c.card_name}" loading="lazy" style="width: 100%; height: 100%; object-fit: fill; transition: transform 0.2s ease;" 
+              <img src="${imgUrl}" alt="${c.card_name}" loading="lazy" style="width: 100%; height: 100%; object-fit: fill; transition: transform 0.2s ease;"
                    onmouseover="this.style.transform='scale(1.05)'"
                    onmouseout="this.style.transform='none'"
                    onerror="this.src='logo.svg'">
@@ -2225,7 +2296,7 @@
           const qty = c.quantity || 1;
           const cardPrice = c.cheapest_card_price || 0;
           const totalDisplay = cardPrice === 0 ? "Free" : `$${(cardPrice * qty).toFixed(2)}`;
-          
+
           const cardEl = document.createElement('div');
           cardEl.className = 'playtest-card';
           cardEl.style.width = '100%';
@@ -2240,9 +2311,9 @@
           cardEl.style.borderRadius = '4px';
           cardEl.style.cursor = 'pointer';
           cardEl.onclick = () => window.openCardInspectorDrawer({ name: c.card_name, scryfallId: c.scryfall_id });
-          
+
           const rarityDot = c.rarity ? `<span title="${c.rarity}" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${rarityColors[c.rarity.toLowerCase()] || '#888'};margin-right:4px;flex-shrink:0;"></span>` : '';
-          
+
           cardEl.innerHTML = `
             <span style="font-size:0.75rem; font-weight:700; color:var(--text-high); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center;" title="${c.card_name}">
               <span style="color:var(--text-muted); margin-right:0.25rem; font-weight:normal;">${qty}x</span>${rarityDot}${c.card_name}
@@ -2253,7 +2324,7 @@
         });
       }
     });
-    
+
     // Update count in the header
     const totalCount = currentInspectorCards.reduce((s, c) => s + (c.quantity || 1), 0);
     document.getElementById('inspector-card-count').textContent = totalCount;
@@ -2323,11 +2394,11 @@
         myEvents.forEach(s => {
           const isActive = s.is_active === 1;
           const isSelected = s.id === selectedSeasonId;
-          const selectClass = isSelected ? 'border-color: var(--color-primary); background-color: rgba(37, 99, 235, 0.08);' : '';
+          const selectClass = isSelected ? 'border-color: var(--color-primary); background-color: rgba(168, 85, 247, 0.11);' : '';
           const badgeColor = isActive ? 'background-color: var(--color-win-bg); color: var(--color-win); border: 1px solid rgba(16, 185, 129, 0.2);' : 'background-color: rgba(255,255,255,0.05); color: var(--text-muted);';
-          
+
           listMy.innerHTML += `
-            <div style="padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-light); cursor: pointer; display: flex; flex-direction: column; gap: 0.25rem; transition: var(--transition-fast); ${selectClass}"
+            <div class="event-list-item" style="padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-light); cursor: pointer; display: flex; flex-direction: column; gap: 0.25rem; transition: var(--transition-fast); ${selectClass}"
                  onclick="selectSeason('${s.id}')"
                  onmouseover="this.style.borderColor='rgba(255,255,255,0.15)'"
                  onmouseout="this.style.borderColor='${isSelected ? 'var(--color-primary)' : 'var(--border-light)'}'">
@@ -2349,11 +2420,11 @@
         findEvents.forEach(s => {
           const isActive = s.is_active === 1;
           const isSelected = s.id === selectedSeasonId;
-          const selectClass = isSelected ? 'border-color: var(--color-primary); background-color: rgba(37, 99, 235, 0.08);' : '';
+          const selectClass = isSelected ? 'border-color: var(--color-primary); background-color: rgba(168, 85, 247, 0.11);' : '';
           const badgeColor = isActive ? 'background-color: var(--color-win-bg); color: var(--color-win); border: 1px solid rgba(16, 185, 129, 0.2);' : 'background-color: rgba(255,255,255,0.05); color: var(--text-muted);';
-          
+
           listFind.innerHTML += `
-            <div style="padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-light); cursor: pointer; display: flex; flex-direction: column; gap: 0.25rem; transition: var(--transition-fast); ${selectClass}"
+            <div class="event-list-item" style="padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-light); cursor: pointer; display: flex; flex-direction: column; gap: 0.25rem; transition: var(--transition-fast); ${selectClass}"
                  onclick="selectSeason('${s.id}')"
                  onmouseover="this.style.borderColor='rgba(255,255,255,0.15)'"
                  onmouseout="this.style.borderColor='${isSelected ? 'var(--color-primary)' : 'var(--border-light)'}'">
@@ -2385,8 +2456,8 @@
     if (!season) return;
 
     document.getElementById('hub-tournament-title').textContent = season.name;
-    
-    const statusText = season.is_active === 1 
+
+    const statusText = season.is_active === 1
       ? `Active Event • Rules: Win=${season.points_win} pts, Kill=${season.points_kill} pts, Entry=${season.points_entry} pts`
       : `Completed Event • Created on ${new Date(season.created_at).toLocaleDateString()}`;
     document.getElementById('hub-tournament-status').textContent = statusText;
@@ -2397,13 +2468,13 @@
     if (!season.isRegistered) {
       // Unregistered season: show registration screen
       innerNav.style.display = 'none';
-      
+
       // Hide all standard tab panels
       document.getElementById('hub-section-standings').style.display = 'none';
       document.getElementById('hub-section-pairings').style.display = 'none';
       document.getElementById('hub-section-attend').style.display = 'none';
       document.getElementById('hub-section-admin').style.display = 'none';
-      
+
       regPanel.style.display = 'block';
       regPanel.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:1.25rem; align-items:center; text-align:center; padding: 1rem 0;">
@@ -2551,7 +2622,7 @@
           `;
         });
       }
-      
+
       // Load Metagame & Matchup Matrix
       renderHubMetagame();
       renderHubMatchupMatrix();
@@ -2584,7 +2655,7 @@
           <div class="pod-card ${isFinished ? 'completed' : ''}">
             <div class="pod-header-badge">Table ${pod.label}</div>
             <h3 style="font-size:1.1rem; margin-bottom:0.75rem;">Pod ${pod.label}</h3>
-            
+
             <div class="pod-players-list">
         `;
 
@@ -2606,7 +2677,7 @@
               <span>Score Reported</span>
               <button class="btn btn-sm btn-secondary" onclick="toggleEditScore('${pod.id}')">Edit Score</button>
             </div>
-            
+
             <!-- Hidden reporting form for edit toggle -->
             <div id="edit-form-${pod.id}" style="display:none;" class="reporting-sheet">
               ${renderScoreForm(pod)}
@@ -2670,15 +2741,15 @@
     event.preventDefault();
     const form = event.target;
     const isDraw = form.querySelector('.score-input-draw').checked;
-    
+
     const results = [];
     const rows = form.querySelectorAll('.report-row');
-    
+
     rows.forEach(row => {
       const pId = row.querySelector('.score-input-kills').getAttribute('data-player-id');
       const kills = parseInt(row.querySelector('.score-input-kills').value, 10) || 0;
       const isWinner = row.querySelector('.score-input-winner').checked && !isDraw;
-      
+
       results.push({
         player_id: pId,
         kills,
@@ -2708,14 +2779,14 @@
       // Load player decks
       const dRes = await fetch('/api/decks/my-decks');
       myDecks = await dRes.json();
-      
+
       const selectDeck = document.getElementById('hub-select-checkin-deck');
       if (selectDeck) {
         selectDeck.innerHTML = '';
         if (Array.isArray(myDecks)) {
           const season = allSeasons.find(s => s.id === selectedSeasonId);
           const limit = season ? season.budget_limit : null;
-          
+
           myDecks.forEach(d => {
             let statusLabel = '';
             if (limit !== null && limit !== undefined) {
@@ -2820,7 +2891,7 @@
 
       const list = document.getElementById('admin-roster-list');
       list.innerHTML = '';
-      
+
       playersArr.forEach(p => {
         const inRoster = rosterArr.find(r => r.player_id === p.player_id);
         const btnClass = inRoster ? 'btn-danger' : 'btn-primary';
@@ -2929,7 +3000,7 @@
   window.adminHubCheckInPrompt = async function(playerId) {
     const res = await fetch(`/api/players/${playerId}/profile`);
     const data = await res.json();
-    
+
     const decksRes = await fetch(`/api/leaderboards/decks?seasonId=${selectedSeasonId}`);
     const allDecks = await decksRes.json();
     const playerDecks = allDecks.filter(d => d.store_nickname === data.profile.store_nickname);
@@ -2943,16 +3014,16 @@
     playerDecks.forEach((d, idx) => {
       promptMsg += `${idx}: ${d.deck_name} ($${d.cheapest_total_price.toFixed(2)}) ${d.is_legal ? '[Legal]' : '[Illegal]'}\n`;
     });
-    
+
     const idxInput = prompt(promptMsg, "0");
     if (idxInput === null) return;
-    
+
     const idx = parseInt(idxInput, 10);
     if (isNaN(idx) || idx < 0 || idx >= playerDecks.length) {
       alert("Invalid selection.");
       return;
     }
-    
+
     const selectedDeck = playerDecks[idx];
 
     const cinRes = await fetch('/api/roster/admin-checkin', {
@@ -3071,14 +3142,14 @@
 
   async function renderTvMode() {
     document.getElementById('tv-round-title').textContent = `Round ${activeRoundNum}`;
-    
+
     // Load pods
     const pRes = await fetch(`/api/pairings/round/${activeRoundNum}`);
     const pods = await pRes.json();
-    
+
     const tvPods = document.getElementById('tv-pairings-list');
     tvPods.innerHTML = '';
-    
+
     if (pods.length === 0) {
       tvPods.innerHTML = `<div class="tv-row"><span class="tv-pod-title">Registration / Lobby Open</span></div>`;
     } else {
@@ -3100,10 +3171,10 @@
     // Load Standings
     const sRes = await fetch('/api/leaderboards/season');
     const standings = await sRes.json();
-    
+
     const tvStandings = document.getElementById('tv-standings-list');
     tvStandings.innerHTML = '';
-    
+
     standings.forEach((s, idx) => {
       tvStandings.innerHTML += `
         <div class="tv-row">
@@ -3125,12 +3196,12 @@
       const data = await res.json();
       const panel = document.getElementById('dashboard-active-match-panel');
       if (!panel) return;
-      
+
       if (data.hasActiveMatch) {
         panel.style.display = 'block';
         document.getElementById('active-match-round').textContent = data.roundNum;
         document.getElementById('active-match-table').textContent = data.podLabel;
-        
+
         const statusBadge = document.getElementById('active-match-status-badge');
         if (data.completed) {
           statusBadge.textContent = "Completed";
@@ -3144,7 +3215,7 @@
         let html = `
           <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem;">
         `;
-        
+
         data.players.forEach(p => {
           const winOrDrawBadge = p.placed_first === 1 ? '<span class="badge badge-win">Winner</span>' : (p.placed_draw === 1 ? '<span class="badge badge-neutral">Draw</span>' : '');
           html += `
@@ -3185,7 +3256,7 @@
             </div>
           `;
         }
-        
+
         detailContainer.innerHTML = html;
       } else {
         panel.style.display = 'none';
@@ -3228,19 +3299,19 @@
       const container = document.getElementById('hub-meta-container');
       if (!container) return;
       container.innerHTML = '';
-      
+
       if (!data.breakdown || data.breakdown.length === 0) {
         container.innerHTML = `<span style="font-size:0.85rem; color:var(--text-muted)">Not enough deck data for metagame tracker yet.</span>`;
         return;
       }
-      
+
       let html = `
         <div style="font-size:0.85rem; font-weight:600; display:flex; justify-content:space-between; margin-bottom: 0.75rem;">
           <span>Avg Budget: <strong style="color:var(--color-secondary);">$${(data.averagePrice || 0).toFixed(2)}</strong></span>
           <span>Legality Rate: <strong style="color:var(--color-primary);">${data.legalityRate}%</strong></span>
         </div>
       `;
-      
+
       data.breakdown.forEach(b => {
         html += `
           <div style="margin-bottom:0.5rem;">
@@ -3267,25 +3338,25 @@
       const container = document.getElementById('hub-matrix-container');
       if (!container) return;
       container.innerHTML = '';
-      
+
       if (!data.archetypes || data.archetypes.length === 0) {
         container.innerHTML = `<span style="font-size:0.85rem; color:var(--text-muted)">Matchup matrix updates after round pods complete.</span>`;
         return;
       }
-      
+
       const archs = data.archetypes;
       const matrix = data.matrix;
-      
+
       let html = `
         <div class="matrix-container">
           <div class="matrix-grid" style="grid-template-columns: repeat(${archs.length + 1}, minmax(75px, 1fr));">
             <div class="matrix-cell matrix-header-cell">vs.</div>
       `;
-      
+
       archs.forEach(a => {
         html += `<div class="matrix-cell matrix-header-cell">${a}</div>`;
       });
-      
+
       archs.forEach(a1 => {
         html += `<div class="matrix-cell matrix-header-cell" style="text-align:left;">${a1}</div>`;
         archs.forEach(a2 => {
@@ -3300,7 +3371,7 @@
           }
         });
       });
-      
+
       html += `
           </div>
         </div>
@@ -3319,7 +3390,7 @@
       const tbody = document.getElementById('admin-staff-list');
       if (!tbody) return;
       tbody.innerHTML = '';
-      
+
       list.forEach(p => {
         const selectedRole = p.role || 'player';
         tbody.innerHTML += `
@@ -3364,7 +3435,7 @@
     try {
       const res = await fetch(`/api/decks/${deckId}/social`);
       const data = await res.json();
-      
+
       document.getElementById('deck-likes-count').textContent = data.likes;
       const likeBtn = document.getElementById('btn-deck-like');
       if (data.hasLiked) {
@@ -3403,10 +3474,10 @@
       } else {
         data.comments.forEach(c => {
           const time = new Date(c.created_at).toLocaleDateString();
-          const avatarHtml = c.avatar_url 
-            ? `<img src="${c.avatar_url}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;" alt="avatar">` 
+          const avatarHtml = c.avatar_url
+            ? `<img src="${c.avatar_url}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;" alt="avatar">`
             : `<svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: var(--color-primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>`;
-            
+
           list.innerHTML += `
             <div class="comment-bubble" style="display: flex; flex-direction: row; gap: 0.75rem; align-items: flex-start; margin-bottom: 0.75rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 0.75rem 1rem;">
               <div style="flex-shrink: 0; margin-top: 2px;">
@@ -3440,12 +3511,12 @@
     const input = document.getElementById('input-new-comment');
     const commentText = input.value;
     if (!commentText.trim()) return;
-    
+
     if (isProfane(commentText)) {
       alert("Inappropriate content detected. Please choose different words.");
       return;
     }
-    
+
     try {
       const res = await fetch(`/api/decks/${activeInspectorDeckId}/comment`, {
         method: 'POST',
@@ -3497,7 +3568,7 @@
     const textTab = document.getElementById('tab-import-text');
     const moxContent = document.getElementById('import-moxfield-content');
     const textContent = document.getElementById('import-text-content');
-    
+
     if (tab === 'moxfield') {
       moxTab.className = 'btn btn-sm btn-gold';
       textTab.className = 'btn btn-sm btn-secondary';
@@ -3517,26 +3588,26 @@
     const nameInput = document.getElementById('import-text-name');
     const formatInput = document.getElementById('import-text-format');
     const listInput = document.getElementById('import-text-list');
-    
+
     const deckName = nameInput.value.trim();
     const format = formatInput.value;
     const textList = listInput.value;
-    
+
     if (!deckName) {
       alert("Please enter a deck name.");
       return;
     }
-    
+
     const lines = textList.split('\n');
     const commanderCards = [];
     const mainboardCards = [];
-    
+
     let currentSection = 'mainboard';
-    
+
     for (let line of lines) {
       line = line.trim();
       if (!line) continue;
-      
+
       const lower = line.toLowerCase();
       if (lower === 'commander' || lower === 'commanders' || lower === 'sideboard' || lower === 'companion') {
         currentSection = lower.startsWith('commander') ? 'commander' : 'sideboard';
@@ -3545,34 +3616,34 @@
         currentSection = 'mainboard';
         continue;
       }
-      
+
       const match = line.match(/^(\d+x?)\s+(.+)$/i) || line.match(/^([a-zA-Z].+)$/);
       if (!match) continue;
-      
+
       let qty = 1;
       let cardName = '';
-      
+
       if (match[2]) {
         qty = parseInt(match[1].replace('x', ''), 10) || 1;
         cardName = match[2];
       } else {
         cardName = match[1];
       }
-      
+
       cardName = cardName.replace(/\s*\([^)]+\)\s*\d*$/, '').trim();
       cardName = cardName.replace(/\s*\d+$/, '').trim();
-      
+
       if (cardName) {
         const targetList = currentSection === 'commander' ? commanderCards : mainboardCards;
         targetList.push({ name: cardName, qty });
       }
     }
-    
+
     if (commanderCards.length === 0 && mainboardCards.length === 0) {
       alert("Could not find any valid card lines in your decklist.");
       return;
     }
-    
+
     if (format === 'commander' && commanderCards.length === 0) {
       if (confirm("No 'Commander' section header found. Would you like to use the first card as your commander?")) {
         const first = mainboardCards.shift();
@@ -3582,11 +3653,11 @@
         }
       }
     }
-    
+
     btn.disabled = true;
     const originalText = btn.textContent;
     btn.textContent = "Importing...";
-    
+
     try {
       const res = await fetch('/api/decks/builder-save', {
         method: 'POST',
@@ -3599,7 +3670,7 @@
           format
         })
       });
-      
+
       const data = await res.json();
       if (res.ok && data.success) {
         alert("Decklist imported successfully!");
@@ -3632,7 +3703,7 @@
     const ws = document.getElementById('deckbuilder-workspace');
     if (!ws) return;
     ws.className = `deckbuilder-workspace active-tab-${tabName}`;
-    
+
     // Manage active states on switcher buttons
     document.querySelectorAll('.builder-mobile-tabs .btn-tab').forEach(btn => {
       btn.classList.remove('active');
@@ -3677,7 +3748,7 @@
           builderKeepCheapest = meta.keep_cheapest === 1 ? 1 : 0;
           builderFeaturedCardName = meta.featured_card_name || builderFeaturedCardName;
           format = meta.format || format;
-          
+
           if (tagsInput) {
             const parsedTags = JSON.parse(meta.custom_tags || '[]');
             tagsInput.value = parsedTags.join(', ');
@@ -3691,7 +3762,7 @@
     builderCommander = [];
     builderMainboard = [];
     builderActivePreviewCard = null;
-    
+
     const searchInput = document.getElementById('builder-search-input');
     if (searchInput) searchInput.value = '';
     const resultsPanel = document.getElementById('builder-search-results-list');
@@ -3699,7 +3770,7 @@
       resultsPanel.innerHTML = `<span style="color:var(--text-muted); font-size:0.75rem; text-align: center; margin-top: 2rem;">Search to view matching cards.</span>`;
     }
     document.getElementById('builder-deck-name').value = deckName;
-    
+
     const formatSelect = document.getElementById('builder-deck-format');
     if (formatSelect) formatSelect.value = format || 'commander';
 
@@ -3726,7 +3797,7 @@
       try {
         const res = await fetch(`/api/decks/${deckId}/cards`);
         const cards = await res.json();
-        
+
         cards.forEach(c => {
           let colorsArr = [];
           if (c.colors) {
@@ -3751,7 +3822,7 @@
             rarity: c.rarity || "common",
             is_commander: c.is_commander
           };
-          
+
           if (c.is_commander === 1) {
             builderCommander.push(cardObj);
           } else {
@@ -3762,7 +3833,7 @@
         console.error("Failed to load cards for editing:", e);
       }
     }
-    
+
     document.getElementById('app-layout').classList.add('sidebar-hidden');
     showSection('deckbuilder', pushHistory);
     renderBuilderDecklist();
@@ -3854,7 +3925,7 @@
     clearTimeout(builderSearchTimeout);
     const query = document.getElementById('builder-search-input').value;
     const resultsPanel = document.getElementById('builder-search-results-list');
-    
+
     if (!resultsPanel) return;
     if (!query.trim()) {
       resultsPanel.innerHTML = `<span style="color:var(--text-muted); font-size:0.75rem; text-align: center; margin-top: 2rem;">Search to view matching cards.</span>`;
@@ -3866,13 +3937,13 @@
         resultsPanel.innerHTML = `<span style="color:var(--text-muted); font-size:0.75rem; text-align: center; margin-top: 2rem;">Searching...</span>`;
         const res = await fetch(`/api/cards/search?q=${encodeURIComponent(query)}`);
         const list = await res.json();
-        
+
         resultsPanel.innerHTML = '';
         if (!list || list.length === 0) {
           resultsPanel.innerHTML = `<span style="color:var(--text-muted); font-size:0.75rem; text-align: center; margin-top: 2rem;">No matching cards found.</span>`;
           return;
         }
-        
+
         list.forEach(card => {
           const div = document.createElement('div');
           div.className = 'playtest-card';
@@ -3886,10 +3957,10 @@
           div.style.background = 'rgba(255,255,255,0.01)';
           div.style.border = '1px solid var(--border-light)';
           div.style.borderRadius = 'var(--radius-sm)';
-          
+
           div.ondragstart = (event) => handleDragStart(event, card.name, false);
           div.onclick = () => addCardDirectly(card);
-          
+
           div.innerHTML = `
             <span style="font-size:0.75rem; font-weight:700; color:var(--text-high); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events: none;" title="${card.name}">${card.name}</span>
             <span style="font-size:0.7rem; color:var(--color-primary); font-weight:700; pointer-events: none;">+$${card.price.toFixed(2)}</span>
@@ -3984,7 +4055,7 @@
   window.autoTagBuilderDeck = async function() {
     const btn = document.getElementById('builder-autotag-btn');
     const originalText = btn ? btn.innerHTML : '🏷️ Auto Tag';
-    
+
     if (btn) {
       btn.disabled = true;
       btn.innerHTML = '🏷️ Tagging...';
@@ -4001,7 +4072,7 @@
     try {
       // 1. Force an auto-save first so the server has the current decklist
       await window.triggerAutoSave();
-      
+
       if (!builderDeckId) {
         clearInterval(progressInterval);
         window.hideArcaneProgress();
@@ -4019,10 +4090,10 @@
       const res = await fetch(`/api/decks/${builderDeckId}/autotag`, {
         method: 'POST'
       });
-      
+
       if (res.ok) {
         const data = await res.json();
-        
+
         window.updateArcaneProgress(90, "Applying functional tags (Ramp, Removal, Draw)...");
 
         // 3. Reload cards from server to reflect new custom tags
@@ -4031,7 +4102,7 @@
           const cards = await cardsRes.json();
           builderCommander = [];
           builderMainboard = [];
-          
+
           cards.forEach(c => {
             let colorsArr = [];
             if (c.colors) {
@@ -4052,14 +4123,14 @@
               rarity: c.rarity || "common",
               is_commander: c.is_commander
             };
-            
+
             if (c.is_commander === 1) {
               builderCommander.push(cardObj);
             } else {
               builderMainboard.push(cardObj);
             }
           });
-          
+
           const groupSelect = document.getElementById('builder-group-by');
           if (groupSelect) {
             groupSelect.value = 'tag';
@@ -4126,7 +4197,7 @@
       if (cardIdx !== -1) {
         const cardObj = builderCommander[cardIdx];
         builderCommander.splice(cardIdx, 1);
-        
+
         const existing = builderMainboard.find(c => c.name === name);
         if (existing) {
           existing.qty += 1;
@@ -4150,7 +4221,7 @@
     if (type.includes("enchantment")) return "Enchantments";
     if (type.includes("battle")) return "Battles";
     if (type.includes("land")) return "Lands";
-    
+
     if (c.type_line) {
       let cleanType = c.type_line.split("—")[0].split("-")[0].trim();
       cleanType = cleanType
@@ -4180,7 +4251,7 @@
     const groupByEl = document.getElementById('builder-group-by');
     const sortByEl = document.getElementById('builder-sort-by');
     const showPricesEl = document.getElementById('builder-show-prices');
-    
+
     if (viewModeEl) localStorage.setItem(`grimore_deck_${builderDeckId}_view_mode`, viewModeEl.value);
     if (groupByEl) localStorage.setItem(`grimore_deck_${builderDeckId}_group_by`, groupByEl.value);
     if (sortByEl) localStorage.setItem(`grimore_deck_${builderDeckId}_sort_by`, sortByEl.value);
@@ -4193,16 +4264,16 @@
     const groupBy = localStorage.getItem(`grimore_deck_${deckId}_group_by`) || 'type';
     const sortBy = localStorage.getItem(`grimore_deck_${deckId}_sort_by`) || 'mana';
     const showPrices = localStorage.getItem(`grimore_deck_${deckId}_show_prices`) !== '0';
-    
+
     const viewSelect = document.getElementById('builder-view-mode');
     if (viewSelect) viewSelect.value = viewMode;
-    
+
     const groupSelect = document.getElementById('builder-group-by');
     if (groupSelect) groupSelect.value = groupBy;
-    
+
     const sortSelect = document.getElementById('builder-sort-by');
     if (sortSelect) sortSelect.value = sortBy;
-    
+
     const priceChk = document.getElementById('builder-show-prices');
     if (priceChk) priceChk.checked = showPrices;
   }
@@ -4211,13 +4282,13 @@
     const mZone = document.getElementById('builder-zone-mainboard');
     if (!mZone) return;
     saveBuilderLayoutOptions();
-    
+
     mZone.innerHTML = '';
     const showPrices = document.getElementById('builder-show-prices') ? document.getElementById('builder-show-prices').checked : true;
-    
+
     let totalCount = builderCommander.length;
     let totalPrice = 0;
-    
+
     // Render Command Zone Images (Column 1 Top)
     const cZoneImg = document.getElementById('builder-commander-image-container');
     if (cZoneImg) {
@@ -4238,7 +4309,7 @@
         cZoneImg.innerHTML = `<span style="color:var(--text-muted); font-size:0.75rem; text-align: center;">Drag commanders here.</span>`;
       }
     }
-    
+
     // Get view/group/sort configurations from selectors
     const viewMode = document.getElementById('builder-view-mode') ? document.getElementById('builder-view-mode').value : 'visual-spoiler';
     const groupBy = document.getElementById('builder-group-by') ? document.getElementById('builder-group-by').value : 'type';
@@ -4452,7 +4523,7 @@
           const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=normal` : fallbackUrl;
           stackEl.innerHTML = `
             ${qtyBadge}
-            <img 
+            <img
               src="${imgUrl}"
               style="width:100px;border-radius:5px;border:1px solid var(--border-medium);display:block;box-shadow:2px 2px 6px rgba(0,0,0,0.5);"
               title="${c.name}"
@@ -4562,7 +4633,7 @@
           const isBasic = ["plains","island","swamp","mountain","forest","wastes"].some(b => lowerName === b || lowerName === `snow-covered ${b}`);
           const priceVal = isBasic ? 0.00 : c.price;
           totalPrice += priceVal * c.qty;
-          
+
           const cardEl = document.createElement('div');
           cardEl.className = 'playtest-card';
           cardEl.setAttribute('draggable', 'true');
@@ -4584,9 +4655,9 @@
             window.openCardInspectorDrawer({ name: c.name, scryfallId: c.scryfallId });
           };
           cardEl.style.transition = 'background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease';
-          
+
           cardEl.ondragstart = (event) => handleDragStart(event, c.name, false);
-          
+
           // Hover states
           cardEl.onmouseenter = () => {
             cardEl.style.backgroundColor = 'rgba(168, 85, 247, 0.08)';
@@ -4598,7 +4669,7 @@
             cardEl.style.borderColor = builderFeaturedCardName === c.name ? 'var(--color-secondary)' : 'rgba(255, 255, 255, 0.04)';
             cardEl.style.transform = 'none';
           };
-          
+
           const rarityDot = c.rarity ? `<span title="${c.rarity}" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${rarityColors[c.rarity.toLowerCase()] || '#888'};margin-right:4px;flex-shrink:0;"></span>` : '';
 
           cardEl.innerHTML = `
@@ -4617,7 +4688,7 @@
         mZone.appendChild(colPanel);
       }
     });
-    
+
     document.getElementById('builder-card-count').textContent = totalCount;
     const countMobile = document.getElementById('builder-card-count-mobile-val');
     if (countMobile) countMobile.textContent = totalCount;
@@ -4636,7 +4707,7 @@
       const cmc = c.cmc || 0;
       const qty = c.qty || 1;
       const isLand = (c.type_line || "").toLowerCase().includes("land");
-      
+
       if (!isLand) {
         if (cmc <= 1) curveCounts[0] += qty;
         else if (cmc === 2) curveCounts[1] += qty;
@@ -4685,9 +4756,9 @@
         R: '#ef4444',
         G: '#10b981'
       };
-      
+
       const totalColorRefs = Object.values(colorCounts).reduce((a, b) => a + b, 0) || 1;
-      
+
       Object.keys(colorCounts).forEach(col => {
         const count = colorCounts[col];
         if (count === 0) return; // Only show if applicable
@@ -4719,9 +4790,9 @@
     const format = document.getElementById('builder-deck-format') ? document.getElementById('builder-deck-format').value : 'commander';
     const warningEl = document.getElementById('builder-legality-warning');
     if (!warningEl) return;
-    
+
     const totalQty = builderCommander.reduce((sum, c) => sum + (c.qty || 1), 0) + builderMainboard.reduce((sum, c) => sum + (c.qty || 1), 0);
-    
+
     if (format === 'commander') {
       if (totalQty !== 100) {
         warningEl.innerHTML = `⚠️ <span style="color: #f59e0b;">Commander warning: Deck must have exactly 100 cards (currently ${totalQty}).</span>`;
@@ -4804,7 +4875,7 @@
     }
 
     if (progressBar && progressText) {
-      progressBar.style.width = '0%';
+      progressBar.style.transform = 'scaleX(0)';
       progressText.textContent = '0%';
     }
 
@@ -4859,7 +4930,7 @@
         completed++;
         const percent = Math.round((completed / total) * 100);
         if (progressBar && progressText) {
-          progressBar.style.width = `${percent}%`;
+          progressBar.style.transform = `scaleX(${percent / 100})`;
           progressText.textContent = `${percent}%`;
         }
         window.updateArcaneProgress(percent, `Checked ${cardName} (${completed}/${total})`);
@@ -4877,7 +4948,7 @@
       if (finalizeData.success) {
         const cardsRes = await fetch(`/api/decks/${builderDeckId}/cards`);
         const cards = await cardsRes.json();
-        
+
         const names = cards.map(c => c.card_name);
         const batchRes = await fetch('/api/cards/details-batch', {
           method: 'POST',
@@ -4904,7 +4975,7 @@
             rarity: det.rarity || "common",
             is_commander: c.is_commander
           };
-          
+
           if (c.is_commander === 1) {
             builderCommander.push(cardObj);
           } else {
@@ -4942,7 +5013,7 @@
       btn.disabled = true;
       btn.textContent = '🔄 Syncing...';
     }
-    
+
     try {
       // 1. Fetch metadata to check if this deck is from Moxfield
       const metaRes = await fetch(`/api/decks/${builderDeckId}`);
@@ -4961,7 +5032,7 @@
       if (btn) btn.textContent = '🔄 Loading...';
       const res = await fetch(`/api/decks/${builderDeckId}/cards`);
       const cards = await res.json();
-      
+
       const names = cards.map(c => c.card_name);
       const batchRes = await fetch('/api/cards/details-batch', {
         method: 'POST',
@@ -4988,7 +5059,7 @@
           rarity: det.rarity || "common",
           is_commander: c.is_commander
         };
-        
+
         if (c.is_commander === 1) {
           builderCommander.push(cardObj);
         } else {
@@ -5057,7 +5128,7 @@
     document.getElementById('cmd-dmg-0').textContent = cmdDmg[0];
     document.getElementById('cmd-dmg-1').textContent = cmdDmg[1];
     document.getElementById('cmd-dmg-2').textContent = cmdDmg[2];
-    
+
     for (let i = 0; i < 3; i++) {
       const label = document.getElementById(`cmd-dmg-${i}`);
       if (label) {
@@ -5090,7 +5161,7 @@
   window.playtestNextTurn = function() {
     sandboxTurn += 1;
     playtestBattlefield.forEach(c => c.tapped = false);
-    
+
     let drawLog = '';
     if (playtestDeck.length > 0) {
       const drawnCard = playtestDeck.shift();
@@ -5099,7 +5170,7 @@
     } else {
       drawLog = ' - Empty Library (No card drawn)';
     }
-    
+
     logSandboxAction(`Started Turn ${sandboxTurn}${drawLog}`);
     updateSandboxCountersUI();
     renderPlaytestZones();
@@ -5113,9 +5184,9 @@
     playtestExile = [];
     playtestCommander = [];
     resetSandboxCounters();
-    
+
     const rawCards = currentInspectorCards || [];
-    
+
     if (rawCards.length > 0) {
       playtestCommander.push(rawCards[0]);
       for (let i = 1; i < rawCards.length; i++) {
@@ -5125,9 +5196,9 @@
         }
       }
     }
-    
+
     document.getElementById('playtest-deck-title').textContent = `${activeInspectorDeckName} Playtest Sandbox`;
-    
+
     document.getElementById('app-layout').classList.add('sidebar-hidden');
     showSection('playtest', pushHistory);
     playtestReset();
@@ -5155,11 +5226,11 @@
     try {
       const data = JSON.parse(event.dataTransfer.getData("text/plain"));
       const { idx, sourceZone } = data;
-      
+
       if (sourceZone === destZone) return;
       if (sourceZone === 'battlefield' && destZone === 'lands') return;
       if (sourceZone === 'lands' && destZone === 'battlefield') return;
-      
+
       let card;
       if (sourceZone === 'hand') {
         card = playtestHand.splice(idx, 1)[0];
@@ -5169,9 +5240,9 @@
       } else if (sourceZone === 'battlefield') {
         card = playtestBattlefield.splice(idx, 1)[0];
       }
-      
+
       if (!card) return;
-      
+
       if (destZone === 'battlefield' || destZone === 'lands') {
         card.tapped = false;
         card.counters = 0;
@@ -5187,7 +5258,7 @@
         playtestExile.push(card);
         logSandboxAction(`Exiled ${card.card_name}.`);
       }
-      
+
       renderPlaytestZones();
     } catch(e) {
       console.error("Drop error:", e);
@@ -5199,21 +5270,21 @@
     playtestBattlefield = [];
     playtestGraveyard = [];
     playtestExile = [];
-    
+
     const cardsToShuffle = [...playtestDeck];
     for (let i = cardsToShuffle.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [cardsToShuffle[i], cardsToShuffle[j]] = [cardsToShuffle[j], cardsToShuffle[i]];
     }
-    
+
     playtestDeck = cardsToShuffle;
-    
+
     for (let i = 0; i < 7; i++) {
       if (playtestDeck.length > 0) {
         playtestHand.push(playtestDeck.shift());
       }
     }
-    
+
     renderPlaytestZones();
   };
 
@@ -5234,15 +5305,15 @@
       playtestReset();
       return;
     }
-    
+
     playtestDeck.push(...playtestHand);
     playtestHand = [];
-    
+
     for (let i = playtestDeck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [playtestDeck[i], playtestDeck[j]] = [playtestDeck[j], playtestDeck[i]];
     }
-    
+
     for (let i = 0; i < count - 1; i++) {
       if (playtestDeck.length > 0) {
         playtestHand.push(playtestDeck.shift());
@@ -5268,7 +5339,7 @@
   window.playtestPlayCard = function(name, idx) {
     const card = playtestHand[idx];
     playtestHand.splice(idx, 1);
-    
+
     card.tapped = false;
     playtestBattlefield.push(card);
     renderPlaytestZones();
@@ -5334,11 +5405,11 @@
       list = playtestExile;
       title = 'Exile Pile';
     }
-    
+
     document.getElementById('playtest-list-title').textContent = `${title} (${list.length})`;
     const content = document.getElementById('playtest-list-content');
     content.innerHTML = '';
-    
+
     if (list.length === 0) {
       content.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:2rem; font-style:italic;">Empty Zone</div>';
     } else {
@@ -5363,11 +5434,11 @@
     if (zoneName === 'library') sourceList = playtestDeck;
     else if (zoneName === 'graveyard') sourceList = playtestGraveyard;
     else if (zoneName === 'exile') sourceList = playtestExile;
-    
+
     if (!sourceList || sourceList.length <= idx) return;
-    
+
     const card = sourceList.splice(idx, 1)[0];
-    
+
     if (dest === 'hand') {
       playtestHand.push(card);
       logSandboxAction(`Moved ${card.card_name} from ${zoneName} to Hand.`);
@@ -5380,7 +5451,7 @@
       playtestGraveyard.push(card);
       logSandboxAction(`Moved ${card.card_name} from ${zoneName} to Graveyard.`);
     }
-    
+
     renderPlaytestZones();
     openPlaytestZoneList(zoneName);
   };
@@ -5396,7 +5467,7 @@
     document.getElementById('playtest-hand-count').textContent = playtestHand.length;
     document.getElementById('playtest-graveyard-count').textContent = playtestGraveyard.length;
     document.getElementById('playtest-exile-count').textContent = playtestExile.length;
-    
+
     // 1. Commanders
     const commBox = document.getElementById('playtest-commander-box');
     commBox.innerHTML = '';
@@ -5452,7 +5523,7 @@
       const isLand = isLandCard(c.card_name);
       const target = isLand ? lZone : pZone;
       const counterVal = c.counters || 0;
-      
+
       const cardHtml = `
         <div class="playtest-card-wrapper" data-card-name="${c.card_name}" draggable="true" ondragstart="playtestDragStart(event, ${idx}, 'battlefield')">
           <div class="playtest-card ${c.tapped ? 'tapped' : ''}" onclick="playtestTapCard(${idx})">
@@ -5520,9 +5591,9 @@
     alertBox.style.padding = '1rem';
     alertBox.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
     alertBox.style.transform = 'translateX(120%)';
-    alertBox.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+    alertBox.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)';
     alertBox.style.position = 'relative';
-    
+
     alertBox.innerHTML = `
       <div style="font-weight:700; font-size:0.9rem; color:var(--color-primary); display:flex; align-items:center; gap:0.4rem;">
         <span class="pulse-indicator"></span> ${title}
@@ -5530,10 +5601,10 @@
       <div style="font-size:0.8rem; color:var(--text-high); margin-top:0.4rem; line-height:1.3;">${message}</div>
       <button style="position:absolute; top:0.5rem; right:0.5rem; background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.8rem;" onclick="this.parentElement.remove()">✕</button>
     `;
-    
+
     container.appendChild(alertBox);
     setTimeout(() => { alertBox.style.transform = 'translateX(0)'; }, 100);
-    
+
     setTimeout(() => {
       alertBox.style.transform = 'translateX(120%)';
       setTimeout(() => { alertBox.remove(); }, 500);
@@ -5542,7 +5613,7 @@
 
   // Community Discover Feed
   let discoverDecksCache = [];
-  
+
   window.loadDiscoverDecks = async function() {
     window.startTopProgress();
     try {
@@ -5557,25 +5628,36 @@
       window.completeTopProgress();
     }
   };
-  
+
   function renderDiscoverDecks(decks) {
     const container = document.getElementById('discover-decks-container');
     if (!container) return;
     container.innerHTML = '';
-    
+
     if (decks.length === 0) {
       container.innerHTML = `
-        <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-muted);">
-          <span style="font-size: 2rem; display: block; margin-bottom: 0.5rem;">📖</span>
-          No community decks found. Be the first to build and share a deck list!
+        <div class="discover-empty-state">
+          <div class="discover-empty-copy">
+            <span>Community library</span>
+            <h3>Be the first deck on the shelf.</h3>
+            <p>Publish a build to share its commander, strategy, and card list with the Grimore community.</p>
+            <div class="empty-state-actions">
+              <button type="button" class="btn btn-gold" onclick="showSection('decks'); openVisualDeckbuilder();">Create a public deck</button>
+            </div>
+          </div>
+          <div class="discover-empty-art" aria-hidden="true">
+            <div style="--community-art: url('https://api.scryfall.com/cards/named?exact=Breya%2C%20Etherium%20Shaper&format=image&version=art_crop')"></div>
+            <div style="--community-art: url('https://api.scryfall.com/cards/named?exact=Yuriko%2C%20the%20Tiger%27s%20Shadow&format=image&version=art_crop')"></div>
+            <div style="--community-art: url('https://api.scryfall.com/cards/named?exact=Chatterfang%2C%20Squirrel%20General&format=image&version=art_crop')"></div>
+          </div>
         </div>
       `;
       return;
     }
-    
+
     decks.forEach(deck => {
       const tagsHtml = (deck.customTags || []).map(t => `<span class="tag-badge" style="font-size: 0.65rem; padding: 2px 6px; background: rgba(168, 85, 247, 0.08); border: 1px solid var(--border-light); border-radius: 4px; color: var(--color-primary);">${t}</span>`).join(' ');
-      
+
       const cardEl = document.createElement('div');
       cardEl.className = 'deck-card panel';
       cardEl.style.display = 'flex';
@@ -5586,8 +5668,8 @@
       cardEl.style.overflow = 'hidden';
       cardEl.style.cursor = 'pointer';
       cardEl.onclick = () => inspectDeckCards(deck.id, deck.deckName);
-      
-      const avatarHtml = deck.creatorAvatar 
+
+      const avatarHtml = deck.creatorAvatar
         ? `<img src="${deck.creatorAvatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-light);" alt="Avatar">`
         : `<img src="logo.svg" style="width: 24px; height: 24px; border-radius: 50%; object-fit: contain; border: 1px solid var(--border-light); background: var(--bg-dark);" alt="Avatar">`;
 
@@ -5618,7 +5700,7 @@
               <h3 style="font-size: 1.05rem; margin: 0; font-family: 'Cinzel', serif; font-weight: 800; color: var(--text-pure); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1;">${deck.deckName}</h3>
               <span class="badge ${legalClass}" style="flex-shrink: 0;" title="${legalTitle}">${legalLabel}</span>
             </div>
-            
+
             <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">
               ${avatarHtml}
               <div>
@@ -5627,23 +5709,23 @@
                 ${deck.originalCreator ? `<span style="font-size:0.65rem; display:block;">Cloned from <strong>${deck.originalCreator}</strong></span>` : ''}
               </div>
             </div>
-            
+
             <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.25rem; max-height: 48px; overflow: hidden;">
               ${tagsHtml || '<span style="font-size: 0.7rem; color: var(--text-muted); font-style: italic;">No tags</span>'}
             </div>
           </div>
-          
+
           <div style="border-top: 1px solid var(--border-light); padding-top: 0.5rem; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
             <span style="font-size: 0.95rem; font-weight: 700; color: var(--text-high);">$${deck.price.toFixed(2)}</span>
             <span style="font-size: 0.75rem; color: var(--color-primary); font-weight: 600;">View Deck Details →</span>
           </div>
         </div>
       `;
-      
+
       container.appendChild(cardEl);
     });
   }
-  
+
   window.handleDiscoverSearch = function() {
     const q = document.getElementById('discover-search').value.toLowerCase();
     const filtered = discoverDecksCache.filter(d => {
@@ -5654,7 +5736,7 @@
     });
     renderDiscoverDecks(filtered);
   };
-  
+
   window.likeDiscoverDeck = async function(deckId) {
     try {
       const res = await fetch(`/api/decks/${deckId}/like`, { method: 'POST' });
@@ -5665,7 +5747,7 @@
       console.error("Failed to like deck:", e);
     }
   };
-  
+
   window.cloneDiscoverDeck = async function(deckId) {
     try {
       const res = await fetch(`/api/decks/${deckId}/clone`, { method: 'POST' });
@@ -5731,17 +5813,17 @@
   function positionTooltip(x, y) {
     const tooltip = document.getElementById('card-hover-tooltip');
     if (!tooltip) return;
-    
+
     let top = y + 15;
     let left = x + 15;
-    
+
     if (left + 250 > window.innerWidth) {
       left = x - 260;
     }
     if (top + 340 > window.innerHeight) {
       top = window.innerHeight - 350;
     }
-    
+
     tooltip.style.top = `${top}px`;
     tooltip.style.left = `${left}px`;
   }
@@ -5799,10 +5881,10 @@
       const data = await res.json();
       const list = document.getElementById('notifications-list');
       const countEl = document.getElementById('notifications-unread-count');
-      
+
       if (!list) return;
       list.innerHTML = '';
-      
+
       let unreadCount = 0;
       if (data && data.length > 0) {
         data.forEach(n => {
@@ -5822,7 +5904,7 @@
       } else {
         list.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; font-size: 0.8rem;">No notifications.</div>`;
       }
-      
+
       if (countEl) {
         if (unreadCount > 0) {
           countEl.textContent = unreadCount;
@@ -5875,7 +5957,7 @@
       if (!data || !data.profile) return;
 
       document.getElementById('public-profile-nickname').textContent = data.profile.store_nickname;
-      
+
       // Avatar
       const avatarContainer = document.getElementById('public-profile-avatar-container');
       if (data.profile.avatar_url) {
@@ -5883,11 +5965,11 @@
       } else {
         avatarContainer.innerHTML = `<svg viewBox="0 0 24 24" style="width: 56px; height: 56px; fill: var(--color-primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>`;
       }
-      
+
       // Signature commander
       const commInfo = document.getElementById('public-profile-commander-info');
       commInfo.textContent = data.profile.profile_commander ? `Signature Commander: ${data.profile.profile_commander}` : 'No signature commander';
-      
+
       // Public Decks
       const decksList = document.getElementById('public-profile-decks-list');
       decksList.innerHTML = '';
@@ -5903,7 +5985,7 @@
           `;
         });
       }
-      
+
       // Stats history
       const statsList = document.getElementById('public-profile-stats-list');
       statsList.innerHTML = '';
@@ -5923,7 +6005,7 @@
           `;
         });
       }
-      
+
       // Follow button label check
       const followBtn = document.getElementById('btn-public-follow');
       if (currentUser && currentUser.id === playerId) {
@@ -6036,9 +6118,366 @@
   // ==========================================
   // COMPANION 4-PLAYER LIFE TRACKER
   // ==========================================
+  const lifeDeltaTimers = new Map();
+  const cmdDamageCloseTimers = new Map();
+
+  function getLifePlayerCount() {
+    let count = 4;
+    try {
+      count = Number(localStorage.getItem('grimore-life-player-count') || 4);
+    } catch (e) {}
+    return [2, 3, 4].includes(count) ? count : 4;
+  }
+
+  function applyLifePlayerCount() {
+    const view = document.getElementById('lifetracker-view');
+    if (!view) return;
+    const count = getLifePlayerCount();
+    view.dataset.playerCount = String(count);
+
+    for (let player = 1; player <= 4; player++) {
+      const card = document.getElementById(`life-player-card-${player}`);
+      const isActive = player <= count;
+      if (card) {
+        card.classList.toggle('is-player-hidden', !isActive);
+        card.setAttribute('aria-hidden', String(!isActive));
+      }
+
+      if (!isActive) {
+        const drawer = document.getElementById(`cmd-damage-drawer-p${player}`);
+        if (drawer) drawer.style.display = 'none';
+      }
+
+      for (let source = 1; source <= 4; source++) {
+        if (source === player) continue;
+        const label = document.getElementById(`cmd-p${player}-from-p${source}-label`);
+        const sourceRow = label?.parentElement;
+        const sourceIsActive = isActive && source <= count;
+        sourceRow?.classList.toggle('is-player-source-hidden', !sourceIsActive);
+        if (sourceRow) sourceRow.setAttribute('aria-hidden', String(!sourceIsActive));
+      }
+    }
+
+    document.querySelectorAll('[data-life-player-count]').forEach(button => {
+      button.setAttribute('aria-pressed', String(Number(button.dataset.lifePlayerCount) === count));
+    });
+
+    for (let player = 1; player <= count; player++) updateLifeTrackerStatus(player);
+  }
+
+  window.setLifePlayerCount = function(count) {
+    const normalizedCount = [2, 3, 4].includes(Number(count)) ? Number(count) : 4;
+    try {
+      localStorage.setItem('grimore-life-player-count', String(normalizedCount));
+    } catch (e) {}
+    applyLifePlayerCount();
+    applyLifeOrientationMode();
+  };
+
+  function normalizeLifeRotation(value) {
+    let rotation = Math.round(Number(value) || 0) % 360;
+    if (rotation > 180) rotation -= 360;
+    if (rotation <= -180) rotation += 360;
+    return rotation;
+  }
+
+  function getLifePresetRotations(mode, count) {
+    if (mode === 'screen') return [0, 0, 0, 0];
+    if (mode === 'around') {
+      if (count === 3) return [180, 90, -90, 0];
+      if (count === 2) return [180, 0, 0, 0];
+      return [180, -90, 90, 0];
+    }
+    if (count <= 3) return [180, 0, 0, 0];
+    return [180, 180, 0, 0];
+  }
+
+  function getStoredLifeRotations() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('grimore-life-player-rotations') || '{}');
+      return [1, 2, 3, 4].map(player => normalizeLifeRotation(saved[`p${player}`]));
+    } catch (e) {
+      return [0, 0, 0, 0];
+    }
+  }
+
+  function saveLifeRotations() {
+    const rotations = {};
+    for (let player = 1; player <= 4; player++) {
+      const card = document.getElementById(`life-player-card-${player}`);
+      rotations[`p${player}`] = normalizeLifeRotation(card?.dataset.lifeRotation || 0);
+    }
+    try {
+      localStorage.setItem('grimore-life-player-rotations', JSON.stringify(rotations));
+    } catch (e) {}
+  }
+
+  function applyLifePlayerRotation(player, value) {
+    const card = document.getElementById(`life-player-card-${player}`);
+    if (!card) return;
+    const rotation = normalizeLifeRotation(value);
+    card.dataset.lifeRotation = String(rotation);
+    card.style.setProperty('--life-player-rotation', `${rotation}deg`);
+    const handle = card.querySelector('.life-rotation-handle');
+    if (handle) {
+      handle.dataset.angle = `${rotation}°`;
+      handle.setAttribute('aria-label', `Rotate Player ${player} counter. Current angle ${rotation} degrees. Drag around the circle or use arrow keys.`);
+    }
+  }
+
+  function updateLifeOrientationUi(mode) {
+    const view = document.getElementById('lifetracker-view');
+    if (!view) return;
+    view.classList.toggle('life-table-mode', mode === 'table');
+    view.classList.toggle('life-screen-mode', mode === 'screen');
+    view.classList.toggle('life-around-mode', mode === 'around');
+    view.classList.toggle('life-custom-mode', mode === 'custom');
+    document.querySelectorAll('[data-life-orientation]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.lifeOrientation === mode));
+    });
+  }
+
+  function applyLifeOrientationMode() {
+    const view = document.getElementById('lifetracker-view');
+    if (!view) return;
+    let mode = 'table';
+    try {
+      mode = localStorage.getItem('grimore-life-orientation') || 'table';
+    } catch (e) {}
+    if (!['table', 'screen', 'around', 'custom'].includes(mode)) mode = 'table';
+    updateLifeOrientationUi(mode);
+    const rotations = mode === 'custom'
+      ? getStoredLifeRotations()
+      : getLifePresetRotations(mode, getLifePlayerCount());
+    rotations.forEach((rotation, index) => applyLifePlayerRotation(index + 1, rotation));
+    saveLifeRotations();
+  }
+
+  window.setLifeOrientation = function(mode) {
+    const normalizedMode = ['table', 'screen', 'around'].includes(mode) ? mode : 'table';
+    try {
+      localStorage.setItem('grimore-life-orientation', normalizedMode);
+    } catch (e) {}
+    applyLifeOrientationMode();
+  };
+
+  function installLifeRotationHandles() {
+    document.querySelectorAll('#lifetracker-view .life-player-card').forEach((card, index) => {
+      if (card.querySelector('.life-rotation-handle')) return;
+      const player = index + 1;
+      const handle = document.createElement('button');
+      handle.type = 'button';
+      handle.className = 'life-rotation-handle';
+      handle.title = 'Drag to face this counter toward a player';
+      handle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="1.25"></circle><circle cx="16" cy="8" r="1.25"></circle><circle cx="8" cy="12" r="1.25"></circle><circle cx="16" cy="12" r="1.25"></circle><circle cx="8" cy="16" r="1.25"></circle><circle cx="16" cy="16" r="1.25"></circle></svg>';
+      card.appendChild(handle);
+      applyLifePlayerRotation(player, card.dataset.lifeRotation || 0);
+
+      let dragState = null;
+      const pointerAngle = (event, center) => Math.atan2(event.clientY - center.y, event.clientX - center.x) * (180 / Math.PI);
+
+      handle.addEventListener('pointerdown', event => {
+        if (event.button !== undefined && event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = card.getBoundingClientRect();
+        const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        dragState = {
+          pointerId: event.pointerId,
+          center,
+          startAngle: pointerAngle(event, center),
+          startRotation: normalizeLifeRotation(card.dataset.lifeRotation || 0)
+        };
+        handle.setPointerCapture?.(event.pointerId);
+        card.classList.add('is-rotation-dragging');
+      });
+
+      const moveRotation = event => {
+        if (!dragState || event.pointerId !== dragState.pointerId) return;
+        event.preventDefault();
+        let delta = pointerAngle(event, dragState.center) - dragState.startAngle;
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+        const nextRotation = Math.round((dragState.startRotation + delta) / 15) * 15;
+        applyLifePlayerRotation(player, nextRotation);
+      };
+
+      const finishRotation = event => {
+        if (!dragState || (event.pointerId !== undefined && event.pointerId !== dragState.pointerId)) return;
+        try {
+          if (handle.hasPointerCapture?.(dragState.pointerId)) handle.releasePointerCapture(dragState.pointerId);
+        } catch (e) {}
+        dragState = null;
+        card.classList.remove('is-rotation-dragging');
+        try {
+          localStorage.setItem('grimore-life-orientation', 'custom');
+        } catch (e) {}
+        updateLifeOrientationUi('custom');
+        saveLifeRotations();
+      };
+
+      window.addEventListener('pointermove', moveRotation, { passive: false });
+      window.addEventListener('pointerup', finishRotation);
+      window.addEventListener('pointercancel', finishRotation);
+
+      handle.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        event.stopPropagation();
+        const direction = event.key === 'ArrowRight' ? 1 : -1;
+        applyLifePlayerRotation(player, normalizeLifeRotation(card.dataset.lifeRotation || 0) + (direction * 15));
+        try {
+          localStorage.setItem('grimore-life-orientation', 'custom');
+        } catch (e) {}
+        updateLifeOrientationUi('custom');
+        saveLifeRotations();
+      });
+    });
+  }
+
+  window.toggleLifeOrientation = function() {
+    const view = document.getElementById('lifetracker-view');
+    const nextMode = view?.classList.contains('life-table-mode')
+      ? 'screen'
+      : (view?.classList.contains('life-screen-mode') ? 'around' : 'table');
+    window.setLifeOrientation(nextMode);
+  };
+
+  window.toggleLifeGameMenu = function(forceOpen) {
+    const menu = document.getElementById('life-game-menu');
+    const trigger = document.getElementById('life-game-menu-trigger');
+    if (!menu || !trigger) return;
+    const shouldOpen = typeof forceOpen === 'boolean'
+      ? forceOpen
+      : !menu.classList.contains('is-open');
+    menu.classList.toggle('is-open', shouldOpen);
+    menu.setAttribute('aria-hidden', String(!shouldOpen));
+    trigger.setAttribute('aria-expanded', String(shouldOpen));
+    trigger.setAttribute('aria-hidden', String(shouldOpen));
+    trigger.tabIndex = shouldOpen ? -1 : 0;
+    trigger.setAttribute('aria-label', 'Open game settings');
+    if (shouldOpen && document.activeElement === trigger) trigger.blur();
+  };
+
+  document.addEventListener('click', event => {
+    const menu = document.getElementById('life-game-menu');
+    if (!menu?.classList.contains('is-open')) return;
+    if (event.target.closest('.life-center-hub')) return;
+    window.toggleLifeGameMenu(false);
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    const menu = document.getElementById('life-game-menu');
+    if (!menu?.classList.contains('is-open')) return;
+    window.toggleLifeGameMenu(false);
+    document.getElementById('life-game-menu-trigger')?.focus();
+  });
+
+  function showLifeDelta(playerNum, delta) {
+    const card = document.getElementById(`life-player-card-${playerNum}`);
+    if (!card) return;
+    let feedback = card.querySelector('.life-delta-feedback');
+    if (!feedback) {
+      feedback = document.createElement('span');
+      feedback.className = 'life-delta-feedback';
+      feedback.setAttribute('aria-hidden', 'true');
+      card.appendChild(feedback);
+    }
+    const priorDelta = Number(feedback.dataset.delta || 0);
+    const totalDelta = feedback.classList.contains('visible') ? priorDelta + delta : delta;
+    feedback.dataset.delta = String(totalDelta);
+    feedback.textContent = `${totalDelta > 0 ? '+' : ''}${totalDelta}`;
+    feedback.classList.toggle('is-gain', totalDelta > 0);
+    feedback.classList.toggle('is-loss', totalDelta < 0);
+    feedback.classList.add('visible');
+    clearTimeout(lifeDeltaTimers.get(playerNum));
+    lifeDeltaTimers.set(playerNum, setTimeout(() => {
+      feedback.classList.remove('visible');
+      feedback.dataset.delta = '0';
+    }, 1250));
+  }
+
+  function installLifeHoldControls() {
+    document.querySelectorAll('.life-control-btn').forEach(button => {
+      if (button.dataset.holdReady === 'true') return;
+      const action = button.getAttribute('onclick') || '';
+      const match = action.match(/adjustLife\((\d+),\s*(-?\d+)\)/);
+      if (!match) return;
+      const playerNum = Number(match[1]);
+      const delta = Number(match[2]);
+      button.dataset.holdReady = 'true';
+      button.setAttribute('aria-label', `${delta > 0 ? 'Increase' : 'Decrease'} Player ${playerNum} life`);
+      let holdTimer = null;
+      let repeatTimer = null;
+      let didHold = false;
+
+      const stopHold = () => {
+        clearTimeout(holdTimer);
+        clearInterval(repeatTimer);
+        holdTimer = null;
+        repeatTimer = null;
+      };
+
+      button.addEventListener('pointerdown', event => {
+        if (event.button !== undefined && event.button !== 0) return;
+        didHold = false;
+        holdTimer = setTimeout(() => {
+          didHold = true;
+          window.adjustLife(playerNum, delta);
+          repeatTimer = setInterval(() => window.adjustLife(playerNum, delta), 115);
+        }, 430);
+      });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => button.addEventListener(type, stopHold));
+      button.addEventListener('click', event => {
+        if (!didHold) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        didHold = false;
+      }, true);
+    });
+  }
+
+  function installLifeResourceControls() {
+    document.querySelectorAll('.life-corner-counters > div').forEach(instrument => {
+      if (instrument.dataset.instrumentReady === 'true') return;
+      instrument.dataset.instrumentReady = 'true';
+      instrument.classList.add('life-resource-instrument');
+      instrument.tabIndex = 0;
+      instrument.setAttribute('role', 'group');
+      instrument.setAttribute('aria-expanded', 'false');
+      instrument.setAttribute('aria-label', `${instrument.title || 'Resource'} counter. Tap to adjust.`);
+
+      const toggleInstrument = () => {
+        const willExpand = !instrument.classList.contains('is-expanded');
+        const card = instrument.closest('.life-player-card');
+        card?.querySelectorAll('.life-resource-instrument.is-expanded').forEach(other => {
+          if (other === instrument) return;
+          other.classList.remove('is-expanded');
+          other.setAttribute('aria-expanded', 'false');
+        });
+        instrument.classList.toggle('is-expanded', willExpand);
+        instrument.setAttribute('aria-expanded', String(willExpand));
+      };
+
+      instrument.addEventListener('click', event => {
+        if (event.target.closest('button')) return;
+        event.stopPropagation();
+        toggleInstrument();
+      });
+
+      instrument.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        toggleInstrument();
+      });
+    });
+  }
+
   window.exitLifetrackerView = function() {
+    window.toggleLifeGameMenu(false);
     document.getElementById('app-layout').classList.remove('sidebar-hidden');
-    showSection('dashboard');
+    showSection('discover');
   };
 
   window.adjustLife = function(playerNum, delta) {
@@ -6047,21 +6486,19 @@
       let currentVal = parseInt(valEl.textContent) || 0;
       currentVal += delta;
       valEl.textContent = currentVal;
+      updateLifeTrackerStatus(playerNum);
       saveLifeTrackerState();
+      showLifeDelta(playerNum, delta);
 
-      // subtle card flash (red for loss, green for gain)
       const cardEl = document.getElementById(`life-player-card-${playerNum}`);
       if (cardEl) {
-        cardEl.style.transition = 'background-color 0.15s ease';
-        if (delta < 0) {
-          cardEl.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; // faint red
-        } else if (delta > 0) {
-          cardEl.style.backgroundColor = 'rgba(16, 185, 129, 0.15)'; // faint green
-        }
+        const pulseClass = delta < 0 ? 'life-loss-pulse' : 'life-gain-pulse';
+        cardEl.classList.remove('life-loss-pulse', 'life-gain-pulse');
+        void cardEl.offsetWidth;
+        cardEl.classList.add(pulseClass);
         setTimeout(() => {
-          cardEl.style.transition = 'background-color 0.4s ease';
-          cardEl.style.backgroundColor = '';
-        }, 150);
+          cardEl.classList.remove(pulseClass);
+        }, 280);
       }
     }
   };
@@ -6072,6 +6509,7 @@
       let currentVal = parseInt(valEl.textContent) || 0;
       currentVal += delta;
       valEl.textContent = Math.max(0, currentVal);
+      updateLifeTrackerStatus(playerNum);
       saveLifeTrackerState();
     }
   };
@@ -6089,18 +6527,76 @@
   window.adjustCmdDamage = function(playerNum, fromPlayerNum, delta) {
     const valEl = document.getElementById(`cmd-p${playerNum}-from-p${fromPlayerNum}-val`);
     if (valEl) {
-      let currentVal = parseInt(valEl.textContent) || 0;
-      currentVal += delta;
-      valEl.textContent = Math.max(0, currentVal);
+      const currentVal = parseInt(valEl.textContent) || 0;
+      const nextVal = Math.max(0, currentVal + delta);
+      const appliedDelta = nextVal - currentVal;
+      valEl.textContent = nextVal;
+
+      // Commander combat damage is still damage: keep the main life total in sync.
+      if (appliedDelta !== 0) {
+        window.adjustLife(playerNum, -appliedDelta);
+      }
+      updateLifeTrackerStatus(playerNum);
       saveLifeTrackerState();
     }
   };
 
+  function updateLifeTrackerStatus(playerNum) {
+    const card = document.getElementById(`life-player-card-${playerNum}`);
+    const lifeEl = document.getElementById(`life-p${playerNum}-val`);
+    const poisonEl = document.getElementById(`poison-p${playerNum}-val`);
+    if (!card || !lifeEl) return;
+
+    const life = parseInt(lifeEl.textContent) || 0;
+    const poison = parseInt(poisonEl?.textContent || '0') || 0;
+    const playerCount = getLifePlayerCount();
+    let lethalCommander = false;
+
+    for (let source = 1; source <= 4; source++) {
+      if (source === playerNum) continue;
+      const damageEl = document.getElementById(`cmd-p${playerNum}-from-p${source}-val`);
+      const damage = parseInt(damageEl?.textContent || '0') || 0;
+      const sourceRow = damageEl?.closest('[id^="cmd-damage-drawer-"] > div:nth-child(2) > div');
+      const activeSource = source <= playerCount;
+      sourceRow?.classList.toggle('is-lethal', activeSource && damage >= 21);
+      if (activeSource && damage >= 21) lethalCommander = true;
+    }
+
+    const poisonInstrument = poisonEl?.closest('.life-resource-instrument');
+    poisonInstrument?.classList.toggle('is-lethal', poison >= 10);
+
+    let lossReason = '';
+    if (life <= 0) lossReason = 'LIFE TOTAL 0';
+    else if (poison >= 10) lossReason = '10 POISON';
+    else if (lethalCommander) lossReason = '21 COMMANDER';
+
+    card.classList.toggle('has-loss-state', Boolean(lossReason));
+    lifeEl.classList.toggle('has-loss-state', Boolean(lossReason));
+    lifeEl.dataset.status = lossReason;
+    lifeEl.setAttribute('role', 'status');
+    lifeEl.setAttribute('aria-live', 'polite');
+    lifeEl.setAttribute('aria-label', lossReason ? `${life} life. Loss condition: ${lossReason}.` : `${life} life.`);
+  }
+
   window.toggleCmdDamageDrawer = function(playerNum) {
     const drawer = document.getElementById(`cmd-damage-drawer-p${playerNum}`);
     if (drawer) {
-      const isVisible = drawer.style.display === 'flex';
-      drawer.style.display = isVisible ? 'none' : 'flex';
+      const trigger = document.querySelector(`#life-player-card-${playerNum} .life-corner-counters > button`);
+      const isVisible = drawer.style.display === 'flex' && !drawer.classList.contains('is-closing');
+      clearTimeout(cmdDamageCloseTimers.get(playerNum));
+
+      if (isVisible) {
+        drawer.classList.add('is-closing');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        cmdDamageCloseTimers.set(playerNum, setTimeout(() => {
+          drawer.style.display = 'none';
+          drawer.classList.remove('is-closing');
+        }, 200));
+      } else {
+        drawer.classList.remove('is-closing');
+        drawer.style.display = 'flex';
+        if (trigger) trigger.setAttribute('aria-expanded', 'true');
+      }
     }
   };
 
@@ -6109,13 +6605,14 @@
       const nameEl = document.getElementById(`life-p${i}-name`);
       if (!nameEl) continue;
       const name = nameEl.value.trim() || `Player ${i}`;
-      
+
       // Update this player's labels in the other 3 cards
       for (let target = 1; target <= 4; target++) {
         if (target === i) continue;
         const labelEl = document.getElementById(`cmd-p${target}-from-p${i}-label`);
         if (labelEl) {
-          labelEl.textContent = `From ${name}:`;
+          labelEl.textContent = '';
+          labelEl.setAttribute('aria-label', `Commander damage from ${name}`);
         }
       }
     }
@@ -6127,14 +6624,14 @@
       if (val) val.textContent = startingValue;
       const poison = document.getElementById(`poison-p${i}-val`);
       if (poison) poison.textContent = '0';
-      
+
       const energy = document.getElementById(`energy-p${i}-val`);
       if (energy) energy.textContent = '0';
       const xp = document.getElementById(`xp-p${i}-val`);
       if (xp) xp.textContent = '0';
       const tax = document.getElementById(`tax-p${i}-val`);
       if (tax) tax.textContent = '0';
-      
+
       for (let j = 1; j <= 4; j++) {
         if (i === j) continue;
         const cmd = document.getElementById(`cmd-p${i}-from-p${j}-val`);
@@ -6143,8 +6640,13 @@
 
       const drawer = document.getElementById(`cmd-damage-drawer-p${i}`);
       if (drawer) {
+        clearTimeout(cmdDamageCloseTimers.get(i));
+        drawer.classList.remove('is-closing');
         drawer.style.display = 'none';
       }
+      const damageTrigger = document.querySelector(`#life-player-card-${i} .life-corner-counters > button`);
+      if (damageTrigger) damageTrigger.setAttribute('aria-expanded', 'false');
+      updateLifeTrackerStatus(i);
     }
     updateLifeTrackerNames();
     saveLifeTrackerState();
@@ -6153,20 +6655,26 @@
   window.saveLifeTrackerState = function() {
     const trackerState = {};
     for (let i = 1; i <= 4; i++) {
-      const name = document.getElementById(`life-p${i}-name`).value;
-      const val = document.getElementById(`life-p${i}-val`).textContent;
-      const poison = document.getElementById(`poison-p${i}-val`).textContent;
-      
-      const energy = document.getElementById(`energy-p${i}-val`).textContent;
-      const xp = document.getElementById(`xp-p${i}-val`).textContent;
-      const tax = document.getElementById(`tax-p${i}-val`).textContent;
-      
+      const nameEl = document.getElementById(`life-p${i}-name`);
+      const valEl = document.getElementById(`life-p${i}-val`);
+      const poisonEl = document.getElementById(`poison-p${i}-val`);
+      const energyEl = document.getElementById(`energy-p${i}-val`);
+      const xpEl = document.getElementById(`xp-p${i}-val`);
+      const taxEl = document.getElementById(`tax-p${i}-val`);
+      const name = nameEl ? nameEl.value : `Player ${i}`;
+      const val = valEl ? valEl.textContent : '40';
+      const poison = poisonEl ? poisonEl.textContent : '0';
+      const energy = energyEl ? energyEl.textContent : '0';
+      const xp = xpEl ? xpEl.textContent : '0';
+      const tax = taxEl ? taxEl.textContent : '0';
+
       const cmdDamage = {};
       for (let j = 1; j <= 4; j++) {
         if (i === j) continue;
-        cmdDamage[`from_p${j}`] = document.getElementById(`cmd-p${i}-from-p${j}-val`).textContent;
+        const cmdEl = document.getElementById(`cmd-p${i}-from-p${j}-val`);
+        cmdDamage[`from_p${j}`] = cmdEl ? cmdEl.textContent : '0';
       }
-      
+
       trackerState[`p${i}`] = { name, val, poison, energy, xp, tax, cmdDamage };
     }
     localStorage.setItem('grimore_life_tracker_v1', JSON.stringify(trackerState));
@@ -6183,7 +6691,7 @@
             document.getElementById(`life-p${i}-name`).value = state.name;
             document.getElementById(`life-p${i}-val`).textContent = state.val;
             document.getElementById(`poison-p${i}-val`).textContent = state.poison || '0';
-            
+
             if (document.getElementById(`energy-p${i}-val`)) {
               document.getElementById(`energy-p${i}-val`).textContent = state.energy || '0';
             }
@@ -6193,7 +6701,7 @@
             if (document.getElementById(`tax-p${i}-val`)) {
               document.getElementById(`tax-p${i}-val`).textContent = state.tax || '0';
             }
-            
+
             if (state.cmdDamage) {
               for (let j = 1; j <= 4; j++) {
                 if (i === j) continue;
@@ -6205,6 +6713,7 @@
             }
           }
         }
+        for (let i = 1; i <= 4; i++) updateLifeTrackerStatus(i);
         updateLifeTrackerNames();
       } catch (e) {
         console.error("Failed to parse saved lifetracker state:", e);
@@ -6287,6 +6796,7 @@
   let searchViewMode = 'grid'; // 'grid' or 'list'
   let searchLastQuery = '';
   let activeInspectorCard = null;
+  let lastInspectorTrigger = null;
   let selectedInspectorPrinting = null;
   let currentCardFaceIdx = 0;
   let inspectorActiveTab = 'details';
@@ -6341,31 +6851,31 @@
   window.clearAdvFilters = function() {
     const textInput = document.getElementById('adv-search-input');
     if (textInput) textInput.value = '';
-    
+
     const typeVal = document.getElementById('adv-type');
     if (typeVal) typeVal.value = '';
-    
+
     const formatVal = document.getElementById('adv-format');
     if (formatVal) formatVal.value = 'commander';
-    
+
     const rarityVal = document.getElementById('adv-rarity');
     if (rarityVal) rarityVal.value = '';
-    
+
     document.querySelectorAll('input[id^="adv-colors-"]').forEach(cb => cb.checked = false);
-    
+
     const colorIdentity = document.getElementById('adv-color-identity');
     if (colorIdentity) colorIdentity.value = '=';
-    
+
     // Stats
     const cmcVal = document.getElementById('adv-mana'); if (cmcVal) cmcVal.value = '';
     const powerVal = document.getElementById('adv-power'); if (powerVal) powerVal.value = '';
     const toughnessVal = document.getElementById('adv-toughness'); if (toughnessVal) toughnessVal.value = '';
     const loyaltyVal = document.getElementById('adv-loyalty'); if (loyaltyVal) loyaltyVal.value = '';
-    
+
     // Year & Price
     const yearVal = document.getElementById('adv-year'); if (yearVal) yearVal.value = '';
     const priceVal = document.getElementById('adv-price'); if (priceVal) priceVal.value = '';
-    
+
     // Extra Attributes
     document.querySelectorAll('.custom-checkbox-container input').forEach(cb => {
       if (cb.id === 'adv-attr-funny') {
@@ -6378,7 +6888,7 @@
 
   window.performAdvSearch = async function(page) {
     searchCurrentPage = page || 1;
-    
+
     const textInput = document.getElementById('adv-search-input').value.trim();
     const typeVal = document.getElementById('adv-type').value;
     const formatVal = document.getElementById('adv-format')?.value;
@@ -6387,7 +6897,7 @@
     const oracleVal = document.getElementById('adv-oracle')?.value?.trim();
     const setVal = document.getElementById('adv-set')?.value?.trim();
     const colorMode = document.getElementById('adv-color-identity')?.value || '=';
-    
+
     const colors = [];
     ['w', 'u', 'b', 'r', 'g', 'c'].forEach(c => {
       const cb = document.getElementById(`adv-colors-${c}`);
@@ -6433,7 +6943,7 @@
     if (rarityVal) queryParts.push(`r:${rarityVal}`);
     if (oracleVal) queryParts.push(`o:"${oracleVal}"`);
     if (setVal) queryParts.push(`s:${setVal}`);
-    
+
     if (colors.length > 0) {
       const colorString = colors.join('');
       if (colorString === 'c') {
@@ -6482,18 +6992,18 @@
     try {
       const res = await fetch(`/api/cards/search?q=${encodeURIComponent(query)}&sort=${encodeURIComponent(sortVal)}&page=${searchCurrentPage}&limit=60`);
       const data = await res.json();
-      
+
       const cards = data.cards || [];
       searchTotalCards = data.totalCards || 0;
       searchHasMore = data.hasMore || false;
-      
+
       window.lastSearchModalResults = cards;
       if (countSpan) countSpan.textContent = searchTotalCards;
-      
+
       // Update page indicators
       const pageIndicator = document.getElementById('search-page-indicator');
       if (pageIndicator) pageIndicator.textContent = `Page ${searchCurrentPage}`;
-      
+
       const prevBtn = document.getElementById('btn-search-prev');
       const nextBtn = document.getElementById('btn-search-next');
       if (prevBtn) prevBtn.disabled = (searchCurrentPage <= 1);
@@ -6508,7 +7018,7 @@
           window.completeTopProgress();
           return;
         }
-        
+
         renderSearchGrid(cards);
       }
       window.completeTopProgress();
@@ -6540,7 +7050,7 @@
     searchViewMode = mode;
     const gridBtn = document.getElementById('search-view-mode-grid');
     const listBtn = document.getElementById('search-view-mode-list');
-    
+
     if (gridBtn && listBtn) {
       if (mode === 'grid') {
         gridBtn.classList.remove('btn-secondary');
@@ -6554,7 +7064,7 @@
         gridBtn.classList.add('btn-secondary');
       }
     }
-    
+
     if (window.lastSearchModalResults && window.lastSearchModalResults.length > 0) {
       renderSearchGrid(window.lastSearchModalResults);
     }
@@ -6564,16 +7074,16 @@
     const grid = document.getElementById('adv-results-grid');
     if (!grid) return;
     grid.innerHTML = '';
-    
+
     if (searchViewMode === 'grid') {
       grid.style.display = 'grid';
       grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(130px, 1fr))';
       grid.style.gap = '1rem';
-      
+
       cards.forEach((card, index) => {
         const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
         const imgUrl = card.image_uri || fallbackUrl;
-        
+
         const cardEl = document.createElement('div');
         cardEl.className = 'search-card-item';
         cardEl.style.position = 'relative';
@@ -6583,7 +7093,7 @@
         cardEl.style.border = '1px solid rgba(168, 85, 247, 0.15)';
         cardEl.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease';
         cardEl.style.cursor = 'pointer';
-        
+
         cardEl.onmouseover = function() {
           this.style.transform = 'translateY(-4px)';
           this.style.boxShadow = '0 8px 16px rgba(0,0,0,0.3)';
@@ -6594,14 +7104,14 @@
           this.style.boxShadow = 'none';
           this.style.borderColor = 'rgba(168, 85, 247, 0.15)';
         };
-        
+
         cardEl.onclick = function() {
           window.openCardInspectorDrawer(card);
         };
 
         cardEl.innerHTML = `
           <div style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #121212; position: relative;">
-            <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100%; height: 100%; object-fit: fill; transition: transform 0.2s ease;" 
+            <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100%; height: 100%; object-fit: fill; transition: transform 0.2s ease;"
                  onmouseover="this.style.transform='scale(1.03)'"
                  onmouseout="this.style.transform='none'"
                  onerror="this.src='logo.svg'">
@@ -6622,21 +7132,21 @@
       grid.style.display = 'flex';
       grid.style.flexDirection = 'column';
       grid.style.gap = '0.5rem';
-      
+
       cards.forEach((card, index) => {
         const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
         const imgUrl = card.image_uri || fallbackUrl;
-        
+
         const rowEl = document.createElement('div');
         rowEl.className = 'search-card-list-item';
         rowEl.onclick = function() {
           window.openCardInspectorDrawer(card);
         };
-        
+
         rowEl.innerHTML = `
           <!-- Thumbnail -->
           <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 40px; height: 56px; object-fit: fill; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); flex-shrink: 0;" onerror="this.src='logo.svg'">
-          
+
           <!-- Name & Type -->
           <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; flex-basis: 150px;">
             <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-pure); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${card.name}</div>
@@ -6663,6 +7173,7 @@
   }
 
   window.openCardInspectorDrawer = async function(card) {
+    lastInspectorTrigger = document.activeElement;
     activeInspectorCard = card;
     currentCardFaceIdx = 0;
     inspectorActiveTab = 'details';
@@ -6674,7 +7185,7 @@
       colors: card.colors || [],
       rarity: card.rarity || 'common'
     };
-    
+
     // Reset Add to Deck button style
     const addBtn = document.getElementById('inspector-add-to-deck-btn');
     if (addBtn) {
@@ -6683,10 +7194,10 @@
       addBtn.style.background = '';
       addBtn.style.color = '';
     }
-    
+
     const drawer = document.getElementById('card-inspector-drawer');
     if (!drawer) return;
-    
+
     // Relocate the drawer to the active workspace on desktop to support the inline push layout
     const isDesktop = window.innerWidth >= 769;
     if (isDesktop) {
@@ -6711,45 +7222,50 @@
       }
     }
 
+    drawer.removeAttribute('inert');
+    drawer.removeAttribute('hidden');
+    drawer.setAttribute('aria-hidden', 'false');
     drawer.classList.add('open');
-    
+    const closeButton = drawer.querySelector('.close-drawer-btn');
+    if (closeButton) closeButton.focus({ preventScroll: true });
+
     // Set basic text details immediately
     document.getElementById('inspector-card-name').textContent = card.name;
     document.getElementById('inspector-card-mana').textContent = card.mana_cost || '';
     document.getElementById('inspector-card-type').textContent = card.type_line || '';
     document.getElementById('inspector-card-oracle').textContent = card.oracle_text || '';
-    
+
     const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
     const imgUrl = card.image_uri || fallbackUrl;
     document.getElementById('inspector-card-image').src = imgUrl;
-    
+
     const flipBtn = document.getElementById('inspector-flip-btn');
     if (card.name.includes(' // ')) {
       flipBtn.style.display = 'block';
     } else {
       flipBtn.style.display = 'none';
     }
-    
+
     // Switch tab to details
     window.switchInspectorTab('details');
-    
+
     // Renders empty legality template
     renderInspectorLegalities(null);
-    
+
     try {
       const res = await fetch(`/api/cards/details?name=${encodeURIComponent(card.name)}`);
       const details = await res.json();
-      
+
       // Update with detailed info
       document.getElementById('inspector-card-mana').textContent = details.mana_cost || '';
       document.getElementById('inspector-card-type').textContent = details.type_line || '';
       document.getElementById('inspector-card-oracle').textContent = details.oracle_text || 'No oracle text available.';
-      
+
       // Keep scryfallId updated
       if (details.scryfallId) {
         activeInspectorCard.scryfallId = details.scryfallId;
       }
-      
+
       renderInspectorLegalities(details.legalities);
     } catch (e) {
       console.error("Failed to load full card details:", e);
@@ -6761,6 +7277,9 @@
     const drawer = document.getElementById('card-inspector-drawer');
     if (drawer) {
       drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden', 'true');
+      drawer.setAttribute('inert', '');
+      drawer.setAttribute('hidden', '');
       setTimeout(() => {
         if (drawer && !drawer.classList.contains('open') && drawer.parentElement !== document.body) {
           document.body.appendChild(drawer);
@@ -6768,15 +7287,19 @@
       }, 300);
     }
     activeInspectorCard = null;
+    if (lastInspectorTrigger && lastInspectorTrigger.isConnected) {
+      lastInspectorTrigger.focus({ preventScroll: true });
+    }
+    lastInspectorTrigger = null;
   };
 
   window.flipInspectorCard = function() {
     if (!activeInspectorCard || !activeInspectorCard.name.includes(' // ')) return;
-    
+
     currentCardFaceIdx = currentCardFaceIdx === 0 ? 1 : 0;
     const scryfallId = activeInspectorCard.scryfallId;
     const imgElement = document.getElementById('inspector-card-image');
-    
+
     if (scryfallId) {
       imgElement.src = `https://api.scryfall.com/cards/${scryfallId}?format=image&version=normal${currentCardFaceIdx === 1 ? '&face=back' : ''}`;
     } else {
@@ -6788,16 +7311,16 @@
     const container = document.getElementById('inspector-legality-grid');
     if (!container) return;
     container.innerHTML = '';
-    
+
     const formats = ['commander', 'standard', 'modern', 'legacy', 'pioneer', 'pauper'];
     formats.forEach(fmt => {
       const item = document.createElement('div');
       item.className = 'legality-item';
-      
+
       const status = legalities ? (legalities[fmt] || 'not_legal') : 'loading';
       let statusText = 'Loading';
       let statusClass = 'loading';
-      
+
       if (status === 'legal' || status === 'restricted') {
         statusText = 'Legal';
         statusClass = 'legal';
@@ -6805,7 +7328,7 @@
         statusText = status === 'banned' ? 'Banned' : 'Not Legal';
         statusClass = 'not_legal';
       }
-      
+
       item.innerHTML = `
         <span class="legality-format">${fmt}</span>
         <span class="legality-status ${statusClass}">${statusText}</span>
@@ -6816,19 +7339,19 @@
 
   window.switchInspectorTab = function(tab) {
     inspectorActiveTab = tab;
-    
+
     document.querySelectorAll('.drawer-tab-btn').forEach(btn => {
       btn.classList.remove('active');
     });
     const activeBtn = document.getElementById(`tab-btn-${tab}`);
     if (activeBtn) activeBtn.classList.add('active');
-    
+
     document.querySelectorAll('.drawer-tab-pane').forEach(pane => {
       pane.classList.remove('active');
     });
     const activePane = document.getElementById(`pane-${tab}`);
     if (activePane) activePane.classList.add('active');
-    
+
     if (tab === 'versions') {
       loadInspectorVersions();
     } else if (tab === 'rulings') {
@@ -6840,25 +7363,25 @@
     const list = document.getElementById('inspector-versions-list');
     const loading = document.getElementById('inspector-versions-loading');
     if (!list || !loading) return;
-    
+
     list.innerHTML = '';
     loading.style.display = 'block';
     window.startTopProgress();
-    
+
     try {
       const res = await fetch(`/api/cards/versions?name=${encodeURIComponent(activeInspectorCard.name)}`);
       const prints = await res.json();
       window.lastSearchVersionsResults = prints;
-      
+
       loading.style.display = 'none';
       if (prints.length === 0) {
         list.innerHTML = `<div style="text-align:center; padding:1rem; font-size:0.72rem; color:var(--text-muted);">No printings found.</div>`;
         window.completeTopProgress();
         return;
       }
-      
+
       const isBuilderActive = (activeSection === 'deckbuilder');
-      
+
       prints.forEach((version, index) => {
         const item = document.createElement('div');
         item.style.display = 'flex';
@@ -6869,18 +7392,18 @@
         item.style.padding = '6px 8px';
         item.style.borderRadius = '6px';
         item.style.cursor = 'pointer';
-        
+
         if (selectedInspectorPrinting && selectedInspectorPrinting.scryfallId === version.id) {
           item.style.borderColor = 'var(--color-primary)';
           item.style.background = 'rgba(168, 85, 247, 0.08)';
         }
-        
+
         item.onclick = (e) => {
           if (e.target.tagName.toLowerCase() === 'button') return;
-          
+
           const imgEl = document.getElementById('inspector-card-image');
           if (imgEl) imgEl.src = version.image_uri;
-          
+
           selectedInspectorPrinting = {
             name: version.name,
             price: version.price,
@@ -6889,7 +7412,7 @@
             colors: activeInspectorCard.colors || [],
             rarity: version.rarity
           };
-          
+
           // Clear highlight from siblings
           const siblings = item.parentNode.children;
           for (let i = 0; i < siblings.length; i++) {
@@ -6904,7 +7427,7 @@
             loadInspectorRulings();
           }
         };
-        
+
         let actionBtnHtml = '';
         if (isBuilderActive) {
           actionBtnHtml = `
@@ -6915,7 +7438,7 @@
             <button type="button" class="btn btn-primary" onclick="window.addCardVersionFromSearch(${index})" style="width:20px; height:20px; padding:0; font-size:0.75rem; display:flex; align-items:center; justify-content:center; font-weight:700; border-radius:4px; border:none; background:var(--color-primary); color:white; margin:0;" title="Add this version">+</button>
           `;
         }
-        
+
         item.innerHTML = `
           <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex-grow: 1; margin-right: 8px;">
             <div style="font-weight:700; font-size:0.75rem; color:var(--text-pure); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${version.set_name}">${version.set} - ${version.set_name}</div>
@@ -6980,11 +7503,11 @@
     const list = document.getElementById('inspector-rulings-list');
     const loading = document.getElementById('inspector-rulings-loading');
     if (!list || !loading) return;
-    
+
     list.innerHTML = '';
     loading.style.display = 'block';
     window.startTopProgress();
-    
+
     const scryfallId = activeInspectorCard.scryfallId;
     if (!scryfallId) {
       loading.style.display = 'none';
@@ -6992,18 +7515,18 @@
       window.completeTopProgress();
       return;
     }
-    
+
     try {
       const res = await fetch(`/api/cards/rulings?id=${encodeURIComponent(scryfallId)}`);
       const rulings = await res.json();
-      
+
       loading.style.display = 'none';
       if (rulings.length === 0) {
         list.innerHTML = `<div style="text-align:center; padding:1rem; font-size:0.72rem; color:var(--text-muted);">No rules clarifications found for this card.</div>`;
         window.completeTopProgress();
         return;
       }
-      
+
       rulings.forEach(rule => {
         const item = document.createElement('div');
         item.style.background = 'rgba(255,255,255,0.01)';
@@ -7011,9 +7534,9 @@
         item.style.padding = '8px';
         item.style.borderRadius = '6px';
         item.style.marginBottom = '4px';
-        
+
         const pubDate = new Date(rule.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-        
+
         item.innerHTML = `
           <div style="font-weight:700; font-size:0.68rem; color:var(--color-secondary); margin-bottom:4px;">${pubDate}</div>
           <div style="font-size:0.72rem; color:var(--text-medium); line-height:1.4;">${rule.comment}</div>
@@ -7041,24 +7564,24 @@
     const modal = document.getElementById('modal-card-versions');
     const title = document.getElementById('versions-modal-title');
     const grid = document.getElementById('versions-modal-grid');
-    
+
     if (!modal || !grid) return;
-    
+
     title.textContent = `Printings: ${cardName}`;
     modal.classList.add('active');
     grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 4rem 0;"><span class="spinner" style="display: inline-block; width: 24px; height: 24px; border: 3px solid var(--color-primary); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 0.5rem; vertical-align: middle;"></span>Loading card versions...</div>`;
-    
+
     try {
       const res = await fetch(`/api/cards/versions?name=${encodeURIComponent(cardName)}`);
       const prints = await res.json();
       window.lastSearchVersionsResults = prints;
-      
+
       grid.innerHTML = '';
       if (prints.length === 0) {
         grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 2rem;">No versions found for this card.</div>`;
         return;
       }
-      
+
       prints.forEach((version, index) => {
         const itemEl = document.createElement('div');
         itemEl.style.position = 'relative';
@@ -7067,7 +7590,7 @@
         itemEl.style.background = 'rgba(12, 13, 20, 0.4)';
         itemEl.style.border = '1px solid rgba(168, 85, 247, 0.15)';
         itemEl.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease';
-        
+
         itemEl.onmouseover = function() {
           this.style.transform = 'translateY(-4px)';
           this.style.boxShadow = '0 8px 16px rgba(0,0,0,0.3)';
@@ -7078,7 +7601,7 @@
           this.style.boxShadow = 'none';
           this.style.borderColor = 'rgba(168, 85, 247, 0.15)';
         };
-        
+
         itemEl.innerHTML = `
           <img src="${version.image_uri}" alt="${version.name}" loading="lazy" style="width: 100%; display: block; aspect-ratio: 2.5/3.5; object-fit: contain; background: #0c0d14;" onerror="this.src='logo.svg'">
           <div style="padding: 4px 6px; background: rgba(12, 13, 20, 0.85); border-top: 1px solid rgba(168, 85, 247, 0.15); font-size: 0.7rem; display: flex; flex-direction: column; gap: 2px;">
@@ -7180,7 +7703,7 @@
           keepCheapest: deckData.keep_cheapest !== undefined ? deckData.keep_cheapest : 0
         })
       });
-      
+
       if (saveRes.ok) {
         if (buttonEl) {
           buttonEl.disabled = true;
@@ -7209,7 +7732,7 @@
   window.addCardVersionFromSearch = async function(index) {
     const version = window.lastSearchVersionsResults[index];
     if (!version) return;
-    
+
     const card = {
       name: version.name,
       price: version.price,
@@ -7218,7 +7741,7 @@
       colors: [],
       rarity: version.rarity
     };
-    
+
     const targetDeckSelect = document.getElementById('adv-target-deck');
     const targetDeckId = targetDeckSelect ? targetDeckSelect.value : null;
 
@@ -7241,16 +7764,16 @@
 
   window.addActivePrintingToDeck = async function() {
     if (!selectedInspectorPrinting) return;
-    
+
     const isBuilderActive = (activeSection === 'deckbuilder');
     const btn = document.getElementById('inspector-add-to-deck-btn');
-    
+
     if (isBuilderActive) {
       if (btn) {
         btn.disabled = true;
         btn.textContent = 'Adding...';
       }
-      
+
       const cardName = selectedInspectorPrinting.name;
       let found = false;
       builderCommander.forEach(c => {
@@ -7267,7 +7790,7 @@
           found = true;
         }
       });
-      
+
       if (found) {
         window.saveBuilderDeck(true);
         if (window.showSlideNotification) {
@@ -7286,14 +7809,14 @@
           window.showSlideNotification(`Added ${cardName} to active builder deck!`, 'success');
         }
       }
-      
+
       if (btn) {
         btn.disabled = false;
         btn.textContent = '➕ Add Selected Printing to Deck';
       }
       return;
     }
-    
+
     const targetDeckSelect = document.getElementById('adv-target-deck');
     const targetDeckId = targetDeckSelect ? targetDeckSelect.value : null;
 
@@ -7451,7 +7974,7 @@
 
       if (progressContainer) progressContainer.style.display = 'flex';
       statusLabel.textContent = 'Starting sync...';
-      
+
       clearInterval(mtgjsonPollInterval);
       mtgjsonPollInterval = setInterval(pollMTGJSONSyncStatus, 1000);
     } catch (e) {
@@ -7479,16 +8002,16 @@
       }
 
       if (statusLabel) statusLabel.textContent = data.message;
-      
+
       if (data.status === 'downloading' || data.status === 'unzipping') {
         if (syncBtn) syncBtn.disabled = true;
         if (progressContainer) progressContainer.style.display = 'flex';
-        if (progressBar) progressBar.style.width = data.progress + '%';
+        if (progressBar) progressBar.style.transform = `scaleX(${Math.max(0, Math.min(100, data.progress)) / 100})`;
         if (progressText) progressText.textContent = `${data.status.toUpperCase()}: ${data.progress}%`;
       } else if (data.status === 'success') {
         clearInterval(mtgjsonPollInterval);
         if (syncBtn) syncBtn.disabled = false;
-        if (progressBar) progressBar.style.width = '100%';
+        if (progressBar) progressBar.style.transform = 'scaleX(1)';
         if (progressText) progressText.textContent = 'Sync Complete!';
         if (window.showSlideNotification) {
           window.showSlideNotification("MTGJSON Database successfully synced!", "success");

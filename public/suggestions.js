@@ -3,13 +3,13 @@
   window.startTopProgress = function() {
     const bar = document.getElementById('top-progress-bar');
     if (!bar) return;
-    bar.style.transition = 'width 0.4s ease, opacity 0.3s ease';
-    bar.style.width = '0%';
+    bar.style.transition = 'transform 0.4s ease, opacity 0.3s ease';
+    bar.style.transform = 'scaleX(0)';
     bar.style.opacity = '1';
     setTimeout(() => {
-      bar.style.width = '35%';
+      bar.style.transform = 'scaleX(0.35)';
       setTimeout(() => {
-        bar.style.width = '75%';
+        bar.style.transform = 'scaleX(0.75)';
       }, 500);
     }, 50);
   };
@@ -17,11 +17,11 @@
   window.completeTopProgress = function() {
     const bar = document.getElementById('top-progress-bar');
     if (!bar) return;
-    bar.style.width = '100%';
+    bar.style.transform = 'scaleX(1)';
     setTimeout(() => {
       bar.style.opacity = '0';
       setTimeout(() => {
-        bar.style.width = '0%';
+        bar.style.transform = 'scaleX(0)';
       }, 300);
     }, 200);
   };
@@ -29,7 +29,7 @@
   // State Variables
   const urlParams = new URLSearchParams(window.location.search);
   const deckId = urlParams.get('deckId');
-  
+
   if (!deckId) {
     alert("No deck selected. Returning to dashboard.");
     window.location.href = 'index.html';
@@ -52,8 +52,9 @@
   let activeDeckMainboard = [];
   let categories = [];
   let selectedCategoryTag = null;
-  
+
   let activeInspectorCard = null;
+  let lastInspectorTrigger = null;
   let currentCardFaceIdx = 0;
   let suggestionsZoomed = false;
 
@@ -72,7 +73,7 @@
     } else {
       document.body.classList.remove('light-theme');
     }
-    
+
     await loadDeckDetails();
     await loadSuggestions();
     window.completeTopProgress();
@@ -100,7 +101,7 @@
       const resDecks = await fetch('/api/decks/my-decks');
       const decks = await resDecks.json();
       activeDeckData = decks.find(d => d.id === deckId);
-      
+
       if (activeDeckData) {
         document.getElementById('active-deck-name-display').textContent = activeDeckData.deck_name;
       } else {
@@ -135,7 +136,7 @@
     try {
       const grid = document.getElementById('suggestions-grid');
       const catsList = document.getElementById('categories-list');
-      
+
       const res = await fetch(`/api/decks/${deckId}/suggestions`);
       const data = await res.json();
 
@@ -187,7 +188,7 @@
     const catsList = document.getElementById('categories-list');
     if (!catsList) return;
     catsList.innerHTML = '';
-    
+
     categories.forEach((cat) => {
       const filteredCount = cat.cards.filter(card => {
         const inMainboard = activeDeckMainboard.some(c => c.name.toLowerCase() === card.name.toLowerCase());
@@ -207,22 +208,23 @@
       item.style.justifyContent = 'space-between';
       item.style.alignItems = 'center';
       item.style.transition = 'all 0.2s ease';
-      
+
       if (cat.tag === selectedCategoryTag) {
         item.style.background = 'rgba(168, 85, 247, 0.1)';
         item.style.color = 'var(--text-pure)';
-        item.style.borderLeft = '3px solid var(--color-primary)';
+        item.style.outline = '1px solid var(--color-primary)';
+        item.style.outlineOffset = '-1px';
       } else {
         item.style.background = 'transparent';
         item.style.color = 'var(--text-muted)';
-        item.style.borderLeft = 'none';
+        item.style.outline = 'none';
       }
-      
+
       item.innerHTML = `
         <span>${cat.header}</span>
         <span class="category-badge" style="background: rgba(168,85,247,0.15); color: var(--color-primary); font-size: 0.68rem; padding: 1px 6px; border-radius: 10px; font-weight: 700;">${filteredCount}</span>
       `;
-      
+
       item.onclick = () => selectCategory(cat.tag, item);
       catsList.appendChild(item);
     });
@@ -231,25 +233,27 @@
   // Handle category selection
   function selectCategory(tag, element) {
     selectedCategoryTag = tag;
-    
+
     // Highlight category in sidebar
     const items = document.querySelectorAll('#categories-list > div');
     items.forEach(item => {
       item.style.background = 'transparent';
       item.style.color = 'var(--text-muted)';
-      item.style.borderLeft = 'none';
+      item.style.outline = 'none';
     });
-    
+
     if (element) {
       element.style.background = 'rgba(168, 85, 247, 0.1)';
       element.style.color = 'var(--text-pure)';
-      element.style.borderLeft = '3px solid var(--color-primary)';
+      element.style.outline = '1px solid var(--color-primary)';
+      element.style.outlineOffset = '-1px';
     } else {
       const targetEl = document.querySelector(`.filters-sidebar-group[data-tag="${tag}"]`);
       if (targetEl) {
         targetEl.style.background = 'rgba(168, 85, 247, 0.1)';
         targetEl.style.color = 'var(--text-pure)';
-        targetEl.style.borderLeft = '3px solid var(--color-primary)';
+        targetEl.style.outline = '1px solid var(--color-primary)';
+        targetEl.style.outlineOffset = '-1px';
       }
     }
 
@@ -351,7 +355,7 @@
       };
 
       // Check quantity in deck
-      const qtyInTarget = activeDeckMainboard.reduce((acc, c) => c.name.toLowerCase() === card.name.toLowerCase() ? acc + c.quantity : acc, 0) + 
+      const qtyInTarget = activeDeckMainboard.reduce((acc, c) => c.name.toLowerCase() === card.name.toLowerCase() ? acc + c.quantity : acc, 0) +
                           activeDeckCommander.reduce((acc, c) => c.name.toLowerCase() === card.name.toLowerCase() ? acc + c.quantity : acc, 0);
 
       const inDeckBadge = qtyInTarget > 0 ? `
@@ -370,7 +374,7 @@
         ${inDeckBadge}
         ${synergyBadge}
         <div style="width: 100% !important; aspect-ratio: 2.5/3.5 !important; overflow: hidden !important; position: relative !important;">
-          <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100% !important; height: 100% !important; object-fit: fill !important; transition: transform 0.2s ease !important; display: block !important;" 
+          <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100% !important; height: 100% !important; object-fit: fill !important; transition: transform 0.2s ease !important; display: block !important;"
                onmouseover="this.style.transform='scale(1.03)'"
                onmouseout="this.style.transform='none'"
                onerror="this.src='logo.svg'">
@@ -424,7 +428,7 @@
           keepCheapest: activeDeckData ? activeDeckData.keep_cheapest : 0
         })
       });
-      
+
       const saveResult = await saveRes.json();
       window.completeTopProgress();
 
@@ -473,6 +477,7 @@
   let selectedInspectorPrinting = null;
 
   window.openInspector = async function(card) {
+    lastInspectorTrigger = document.activeElement;
     activeInspectorCard = card;
     currentCardFaceIdx = 0;
     selectedInspectorPrinting = {
@@ -483,7 +488,7 @@
       colors: card.colors || [],
       rarity: card.rarity || 'common'
     };
-    
+
     // Reset Add to Deck button style
     const addBtn = document.getElementById('inspector-add-to-deck-btn');
     if (addBtn) {
@@ -492,14 +497,19 @@
       addBtn.style.background = '';
       addBtn.style.color = '';
     }
-    
+
     const drawer = document.getElementById('card-inspector-drawer');
+    drawer.removeAttribute('inert');
+    drawer.removeAttribute('hidden');
+    drawer.setAttribute('aria-hidden', 'false');
     drawer.classList.add('open');
-    
+    const closeButton = drawer.querySelector('.drawer-close');
+    if (closeButton) closeButton.focus({ preventScroll: true });
+
     document.getElementById('inspector-card-name').textContent = card.name;
     document.getElementById('inspector-type').textContent = card.type_line;
     document.getElementById('inspector-price').textContent = `$${Number(card.price).toFixed(2)}`;
-    
+
     const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
     const imgUrl = card.scryfallId ? `https://api.scryfall.com/cards/${card.scryfallId}?format=image&version=normal` : fallbackUrl;
     document.getElementById('inspector-card-img').src = imgUrl;
@@ -520,8 +530,17 @@
 
   window.closeInspectorDrawer = function() {
     const drawer = document.getElementById('card-inspector-drawer');
-    if (drawer) drawer.classList.remove('open');
+    if (drawer) {
+      drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden', 'true');
+      drawer.setAttribute('inert', '');
+      drawer.setAttribute('hidden', '');
+    }
     activeInspectorCard = null;
+    if (lastInspectorTrigger && lastInspectorTrigger.isConnected) {
+      lastInspectorTrigger.focus({ preventScroll: true });
+    }
+    lastInspectorTrigger = null;
   };
 
   window.toggleInspectorCardFace = function() {
@@ -529,7 +548,7 @@
     currentCardFaceIdx = currentCardFaceIdx === 0 ? 1 : 0;
     const imgElement = document.getElementById('inspector-card-img');
     const scryfallId = activeInspectorCard.scryfallId;
-    
+
     if (scryfallId) {
       imgElement.src = `https://api.scryfall.com/cards/${scryfallId}?format=image&version=normal${currentCardFaceIdx === 1 ? '&face=back' : ''}`;
     } else {
@@ -542,7 +561,7 @@
       const res = await fetch(`/api/cards/versions?name=${encodeURIComponent(cardName)}`);
       const data = await res.json();
       const listEl = document.getElementById('inspector-version-list');
-      
+
       if (data.error || !data.versions || data.versions.length === 0) {
         listEl.innerHTML = `<div style="font-size: 0.7rem; color: var(--text-muted); text-align: center; padding: 0.5rem 0;">No printing variants cached.</div>`;
         return;
@@ -561,7 +580,7 @@
         item.style.border = '1px solid rgba(168, 85, 247, 0.08)';
         item.style.fontSize = '0.72rem';
         item.style.cursor = 'pointer';
-        
+
         item.onclick = () => {
           document.getElementById('inspector-card-img').src = v.image_uri;
           document.getElementById('inspector-price').textContent = `$${Number(v.price).toFixed(2)}`;
@@ -598,7 +617,7 @@
       const res = await fetch(`/api/cards/rulings?id=${encodeURIComponent(scryfallId)}`);
       const data = await res.json();
       const listEl = document.getElementById('inspector-rulings-list');
-      
+
       if (data.error || !data.rulings || data.rulings.length === 0) {
         listEl.innerHTML = `<div style="font-size: 0.7rem; color: var(--text-muted); font-style: italic; padding: 0.4rem 0;">No rulings cached.</div>`;
         return;
@@ -613,7 +632,7 @@
         item.style.borderRadius = 'var(--radius-sm)';
         item.style.fontSize = '0.72rem';
         item.style.lineHeight = '1.35';
-        
+
         item.innerHTML = `
           <div style="font-size: 0.65rem; color: var(--color-secondary); font-weight: 700; margin-bottom: 2px;">${r.published_at}</div>
           <div style="color: var(--text-high);">${r.comment}</div>
