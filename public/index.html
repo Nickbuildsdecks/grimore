@@ -135,6 +135,10 @@
               <input type="text" id="reg-nickname" class="input-field" placeholder="e.g. Planeswalker Bob" required autocomplete="off" style="background-color: var(--bg-dark);">
             </div>
             <div class="form-group">
+              <label class="form-label" for="reg-email">Email Address</label>
+              <input type="email" id="reg-email" class="input-field" placeholder="e.g. jace@beleren.com" required autocomplete="email" style="background-color: var(--bg-dark);">
+            </div>
+            <div class="form-group">
               <label class="form-label" for="reg-password">Password</label>
               <input type="password" id="reg-password" class="input-field" required autocomplete="new-password" style="background-color: var(--bg-dark);">
             </div>
@@ -695,17 +699,25 @@
                 <input type="text" id="account-username" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" required autocomplete="off">
               </div>
 
-              <div class="form-group" style="margin: 0;">
-                <label class="form-label" style="font-size: 0.75rem;">Email Association</label>
-                <input type="email" id="account-email" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="your.email@example.com" autocomplete="off">
-                <span style="font-size: 0.875rem; color: var(--text-muted); margin-top: 2px; display: block;">Used exclusively for password recovery and account support.</span>
+              <div style="margin-top: 0.25rem; margin-bottom: 0.25rem;">
+                <button type="button" id="btn-reveal-credentials" class="btn btn-secondary btn-sm" onclick="window.toggleCredentialsFields()" style="width: 100%; font-weight: 700; height: 32px; display: flex; align-items: center; justify-content: center; gap: 0.25rem; font-size: 0.75rem; margin: 0; background: rgba(255,255,255,0.03); border: 1px solid var(--border-medium);">
+                  ⚙️ Edit Email & Password
+                </button>
               </div>
 
-              <div style="border-top: 1px solid var(--border-light); padding-top: 0.75rem; margin-top: 0.25rem;">
-                <span style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Update Password</span>
-                <div class="form-group" style="margin-top: 0.5rem; margin-bottom: 0;">
-                  <label class="form-label" style="font-size: 0.75rem; margin-bottom: 0.25rem;">New Password</label>
-                  <input type="password" id="account-password" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="Leave blank to keep current">
+              <div id="credentials-fields-container" style="display: none; flex-direction: column; gap: 0.85rem;">
+                <div class="form-group" style="margin: 0;">
+                  <label class="form-label" style="font-size: 0.75rem;">Email</label>
+                  <input type="email" id="account-email" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="your.email@example.com" autocomplete="off">
+                  <span style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; display: block;">Used exclusively for password recovery and account support.</span>
+                </div>
+
+                <div style="border-top: 1px solid var(--border-light); padding-top: 0.75rem; margin-top: 0.25rem;">
+                  <span style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Update Password</span>
+                  <div class="form-group" style="margin-top: 0.5rem; margin-bottom: 0;">
+                    <label class="form-label" style="font-size: 0.75rem; margin-bottom: 0.25rem;">New Password</label>
+                    <input type="password" id="account-password" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="Leave blank to keep current">
+                  </div>
                 </div>
               </div>
 
@@ -1983,6 +1995,51 @@
       <!-- Progress Bar Container -->
       <div style="width: 100%; height: 6px; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--border-light); border-radius: 4px; overflow: hidden; position: relative;">
         <div id="arcane-progress-bar-fill" style="width: 100%; height: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transform: scaleX(0); transform-origin: left; transition: transform 0.2s ease-out;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!--  Server Control Modal -->
+  <div id="modal--server" class="modal-overlay" onclick="closeModal(event)">
+    <div class="modal" style="max-width: 480px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 1.75rem; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6);" onclick="event.stopPropagation()">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem; margin-bottom: 1.25rem;">
+        <h3 style="margin: 0; font-size: 1.35rem; font-family: 'Cinzel', serif; color: var(--color-primary); display: flex; align-items: center; gap: 0.5rem;">
+          🎮  Server Manager
+        </h3>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal(null)">Close</button>
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <div style="background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-medium);"> Dedicated Server:</span>
+            <span id="-status-badge" class="badge badge-neutral" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Checking...</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-medium);">playit.gg Tunnel (playitd):</span>
+            <span id="playit-status-badge" class="badge badge-neutral" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Checking...</span>
+          </div>
+        </div>
+
+        <div id="-connection-details" style="display: none; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: var(--radius-sm); padding: 0.75rem; font-size: 0.8rem; color: var(--color-secondary);">
+          ℹ️ Server Port: <strong>8211 (UDP)</strong> is active. Tunnel connection is established.
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; width: 100%;">
+          <button id="btn--start" class="btn btn-primary" style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onclick="handleAction('start')">
+            ▶️ Start Server
+          </button>
+          <button id="btn--stop" class="btn btn-danger" style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onclick="handleAction('stop')">
+            ⏹️ Stop Server
+          </button>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; border-top: 1px solid var(--border-light); padding-top: 0.75rem;">
+          <span style="font-size: 0.7rem; color: var(--text-muted);">Runs silently in the background</span>
+          <button class="btn btn-secondary btn-sm" onclick="checkStatus()" style="font-size: 0.7rem; padding: 2px 8px;">
+            🔄 Refresh Status
+          </button>
+        </div>
       </div>
     </div>
   </div>

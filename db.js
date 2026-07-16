@@ -72,6 +72,7 @@ async function initDb() {
       password_hash TEXT NOT NULL,
       store_nickname TEXT NOT NULL,
       is_admin INTEGER DEFAULT 0,
+      email TEXT DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);

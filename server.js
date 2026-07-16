@@ -335,9 +335,13 @@ function hasRole(player, roles) {
 // ==========================================
 
 app.post('/api/auth/register', async (req, res) => {
-  const { username, password, storeNickname } = req.body;
-  if (!username || !password || !storeNickname) {
+  const { username, password, storeNickname, email } = req.body;
+  if (!username || !password || !storeNickname || !email) {
     return res.status(400).json({ error: "Missing required fields." });
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: "Invalid email format." });
   }
   if (isProfane(username) || isProfane(storeNickname)) {
     return res.status(400).json({ error: "Inappropriate content detected. Please choose a different name." });
@@ -347,11 +351,15 @@ app.post('/api/auth/register', async (req, res) => {
     if (existing) {
       return res.status(400).json({ error: "Username already taken." });
     }
+    const existingEmail = await db.get("SELECT id FROM players WHERE LOWER(email) = LOWER(?)", [email.trim()]);
+    if (existingEmail) {
+      return res.status(400).json({ error: "Email address is already registered." });
+    }
     const hash = await bcrypt.hash(password, 10);
     const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
-      "INSERT INTO players (id, username, password_hash, store_nickname, role) VALUES (?, ?, ?, ?, 'player')",
-      [id, username.toLowerCase(), hash, storeNickname]
+      "INSERT INTO players (id, username, password_hash, store_nickname, role, email) VALUES (?, ?, ?, ?, 'player', ?)",
+      [id, username.toLowerCase(), hash, storeNickname, email.trim()]
     );
 
     // Initialize stats for active seasons
@@ -2419,7 +2427,7 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
           scryfallId,
           price: price !== null && price !== undefined ? price : 0.15,
           type_line: typeLine,
-          synergy: c.synergy ? `+${(c.synergy * 100).toFixed(0)}% synergy` : null
+          synergy: null
         };
       });
 
@@ -3022,7 +3030,18 @@ app.post('/api/players/account/update', async (req, res) => {
     }
 
     if (newEmail !== undefined) {
-      const trimmedEmail = newEmail ? newEmail.trim() : null;
+      const trimmedEmail = newEmail ? newEmail.trim() : "";
+      if (!trimmedEmail) {
+        return res.status(400).json({ error: "Email address cannot be empty." });
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(trimmedEmail)) {
+        return res.status(400).json({ error: "Invalid email format." });
+      }
+      const existingEmail = await db.get("SELECT id FROM players WHERE LOWER(email) = LOWER(?) AND id != ?", [trimmedEmail, playerId]);
+      if (existingEmail) {
+        return res.status(400).json({ error: "Email address is already in use by another account." });
+      }
       await db.run("UPDATE players SET email = ? WHERE id = ?", [trimmedEmail, playerId]);
       req.session.player.email = trimmedEmail;
     }
@@ -3994,6 +4013,84 @@ app.delete('/api/decks/:deckId', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ---  & playit.gg Server Controller API ---
+const { exec, spawn } = require('child_process');
+
+function isAdminOrNick(req) {
+  return req.session.player && (req.session.player.username.toLowerCase() === 'nickbuildsdecks' || req.session.player.isAdmin);
+}
+
+app.get('/api//status', (req, res) => {
+  if (!isAdminOrNick(req)) return res.status(403).json({ error: "Forbidden" });
+
+  exec('tasklist /FI "IMAGENAME eq PalServer-Win64-Shipping-Cmd.exe" /NH', (err1, stdout1) => {
+    const Running = !err1 && stdout1.includes('PalServer-Win64-Shipping-');
+    
+    exec('tasklist /FI "IMAGENAME eq playitd.exe" /NH', (err2, stdout2) => {
+      const playitRunning = !err2 && stdout2.includes('playitd.exe');
+      
+      res.json({
+        : Running,
+        playit: playitRunning
+      });
+    });
+  });
+});
+
+app.post('/api//start', (req, res) => {
+  if (!isAdminOrNick(req)) return res.status(403).json({ error: "Forbidden" });
+
+  exec('tasklist /FI "IMAGENAME eq PalServer-Win64-Shipping-Cmd.exe" /NH', (err1, stdout1) => {
+    const Running = !err1 && stdout1.includes('PalServer-Win64-Shipping-');
+    
+    exec('tasklist /FI "IMAGENAME eq playitd.exe" /NH', (err2, stdout2) => {
+      const playitRunning = !err2 && stdout2.includes('playitd.exe');
+      
+      let spawned = false;
+      let spawnedPlayit = false;
+
+      if (!Running) {
+        const Process = spawn('D:\\Steam\\steamapps\\common\\PalServer\\Pal\\Binaries\\Win64\\PalServer-Win64-Shipping-Cmd.exe', ['-publiclobby'], {
+          cwd: 'D:\\Steam\\steamapps\\common\\PalServer\\Pal\\Binaries\\Win64',
+          detached: true,
+          stdio: 'ignore'
+        });
+        Process.unref();
+        spawned = true;
+      }
+
+      if (!playitRunning) {
+        const playitProcess = spawn('C:\\Program Files\\playit_gg\\bin\\playitd.exe', ['--secret-path', 'C:\\ProgramData\\playit_gg\\playit.toml'], {
+          cwd: 'C:\\Program Files\\playit_gg\\bin',
+          detached: true,
+          stdio: 'ignore'
+        });
+        playitProcess.unref();
+        spawnedPlayit = true;
+      }
+
+      res.json({
+        success: true,
+        spawned,
+        spawnedPlayit,
+        message: 'Background server startup triggered successfully.'
+      });
+    });
+  });
+});
+
+app.post('/api//stop', (req, res) => {
+  if (!isAdminOrNick(req)) return res.status(403).json({ error: "Forbidden" });
+
+  exec('taskkill /F /IM PalServer-Win64-Shipping-Cmd.exe /IM PalServer.exe /IM playitd.exe', (err, stdout, stderr) => {
+    res.json({
+      success: true,
+      message: 'Background server stop commands executed.',
+      details: stdout || stderr
+    });
+  });
 });
 
 // Serving Client SPA Router
