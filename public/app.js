@@ -1245,11 +1245,7 @@
   function applyDesktopSidebarPreference() {
     const layout = document.getElementById('app-layout');
     if (!layout) return;
-    let shouldCollapse = false;
-    try {
-      shouldCollapse = localStorage.getItem('grimore-sidebar-collapsed') === 'true';
-    } catch (e) {}
-    layout.classList.toggle('sidebar-collapsed', window.innerWidth < 1180 || shouldCollapse);
+    layout.classList.add('sidebar-collapsed');
     updateDesktopSidebarControl();
   }
 

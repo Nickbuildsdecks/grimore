@@ -37,6 +37,10 @@ Before writing a script, check `execution/` per your directive. Only create new 
 **3. Update directives as you learn**  
 Directives are living documents. When you discover API constraints, better approaches, common errors, or timing expectations—update the directive. But don't create or overwrite directives without asking unless explicitly told to. Directives are your instruction set and must be preserved (and improved upon over time, not extemporaneously used and then discarded).
 
+**4. Local Verification & Deployment Confirmation**
+- **Test Locally First**: Always implement, run, and verify changes on the local development instance (`http://localhost:3000`) first.
+- **Obtain User Approval**: Once changes are verified locally, explicitly ask the user for permission before pushing commits to GitHub or running the live GCP deployment script (`deploy-gcp.ps1`). Do not auto-push or auto-deploy.
+
 ## Self-annealing loop
 Errors are learning opportunities. When something breaks:
 1. Fix it

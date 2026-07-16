@@ -23,7 +23,7 @@
       </button>
       <div class="sidebar-header">
         <a href="#" class="logo-container" onclick="event.preventDefault(); showSection('decks');">
-          <img src="logo.svg" alt="Grimore Logo" style="width: 64px; height: 64px; filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.65));">
+          <img src="logo.svg" alt="Grimore Logo" style="filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.65));">
           <div class="logo-text">Grimore</div>
         </a>
       </div>
@@ -131,7 +131,7 @@
               <input type="text" id="reg-username" class="input-field" required autocomplete="username" style="background-color: var(--bg-dark);">
             </div>
             <div class="form-group">
-              <label class="form-label" for="reg-nickname">Store Nickname</label>
+              <label class="form-label" for="reg-nickname">Nickname</label>
               <input type="text" id="reg-nickname" class="input-field" placeholder="e.g. Planeswalker Bob" required autocomplete="off" style="background-color: var(--bg-dark);">
             </div>
             <div class="form-group">
@@ -165,7 +165,7 @@
           <div style="display: flex; gap: 0.5rem; align-items: center;">
             <select id="discover-sort" class="input-field" style="margin: 0; width: 140px; background: var(--bg-dark); cursor: pointer;" onchange="loadDiscoverDecks()">
               <option value="recent">Recent Decks</option>
-              <option value="trending">Trending 🔥</option>
+              <option value="trending">Trending</option>
             </select>
             <input type="text" id="discover-search" class="input-field" placeholder="Search tag, card, or creator..." style="margin: 0; width: 250px; background: var(--bg-dark);" oninput="handleDiscoverSearch()">
             <button class="btn btn-secondary" onclick="loadDiscoverDecks()" style="height: 38px;">Refresh</button>
@@ -203,8 +203,8 @@
                 <button type="submit" class="btn btn-primary btn-sm" style="margin: 0; height: 28px; font-size:0.7rem; padding: 0 8px;">Import</button>
               </form>
               <div style="margin-top: 0.35rem; display: flex; justify-content: flex-end;">
-                <a href="#" onclick="handleImportMoxfieldAccount(event)" style="font-size: 0.875rem; color: var(--color-primary); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 0.2rem; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
-                  🔮 Import Entire Moxfield Account
+                <a href="#" onclick="handleImportMoxfieldAccount(event)" style="font-size: 0.875rem; color: var(--color-primary); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                  Import Entire Moxfield Account
                 </a>
               </div>
             </div>
@@ -546,7 +546,7 @@
                   <table class="table">
                     <thead>
                       <tr>
-                        <th>Store Nickname</th>
+                        <th>Nickname</th>
                         <th>Username</th>
                         <th>Current Role</th>
                         <th>Change Role Action</th>
@@ -624,7 +624,7 @@
             <form id="profile-form-customize" onsubmit="handleSaveProfile(event)" style="display: flex; flex-direction: column; gap: 0.75rem;">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                 <div class="form-group" style="margin: 0;">
-                  <label class="form-label" style="font-size: 0.72rem;">Store Nickname</label>
+                  <label class="form-label" style="font-size: 0.72rem;">Nickname</label>
                   <input type="text" id="profile-nickname" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" required autocomplete="off">
                 </div>
                 <div class="form-group" style="margin: 0;">
@@ -680,7 +680,7 @@
               <div style="border-top: 1px solid var(--border-light); padding-top: 0.5rem; margin-top: 0.25rem;">
                 <div class="form-group" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border-light); margin: 0;">
                   <label class="form-label" style="margin: 0; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;" for="profile-theme-toggle2">
-                    📖 Light Mode
+                    Light Mode
                   </label>
                   <div style="position: relative; display: inline-block; width: 36px; height: 18px;">
                     <input type="checkbox" id="profile-theme-toggle2" onclick="toggleThemeMode()" style="opacity: 0; width: 0; height: 0; margin: 0;">
