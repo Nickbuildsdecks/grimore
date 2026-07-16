@@ -489,6 +489,10 @@
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>
         <span class="sidebar-footer-label">Admin Console</span>
       </button>
+      <button class="btn btn-sm sidebar-footer-action" id="btn-palworld" aria-label="Palworld Server" title="Palworld Server" onclick="openPalworldModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.3); color: var(--color-secondary); display: flex; align-items: center; justify-content: center; gap: 0.4rem; font-weight: bold;">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 12h4M8 10v4M15 11v.01M18 13v.01"/></svg>
+        <span class="sidebar-footer-label">Palworld Server</span>
+      </button>
     ` : '';
     container.innerHTML = `
       ${adminBtnHtml}
@@ -775,6 +779,16 @@
     const btnCustomize = document.getElementById('profile-btn-tab-customize');
     const btnAccount = document.getElementById('profile-btn-tab-account');
 
+    // Reset credentials fields to hidden on tab switch
+    const credsContainer = document.getElementById('credentials-fields-container');
+    const btnReveal = document.getElementById('btn-reveal-credentials');
+    if (credsContainer) credsContainer.style.display = 'none';
+    if (btnReveal) {
+      btnReveal.textContent = '⚙️ Edit Email & Password';
+      btnReveal.classList.remove('btn-primary');
+      btnReveal.classList.add('btn-secondary');
+    }
+
     if (tab === 'customize') {
       if (customizeForm) customizeForm.style.display = 'flex';
       if (accountForm) accountForm.style.display = 'none';
@@ -785,6 +799,24 @@
       if (accountForm) accountForm.style.display = 'flex';
       if (btnCustomize) btnCustomize.classList.remove('active');
       if (btnAccount) btnAccount.classList.add('active');
+    }
+  };
+
+  window.toggleCredentialsFields = function() {
+    const container = document.getElementById('credentials-fields-container');
+    const button = document.getElementById('btn-reveal-credentials');
+    if (!container || !button) return;
+
+    if (container.style.display === 'none' || !container.style.display) {
+      container.style.display = 'flex';
+      button.textContent = '🔒 Hide Email & Password';
+      button.classList.remove('btn-secondary');
+      button.classList.add('btn-primary');
+    } else {
+      container.style.display = 'none';
+      button.textContent = '⚙️ Edit Email & Password';
+      button.classList.remove('btn-primary');
+      button.classList.add('btn-secondary');
     }
   };
 
@@ -1380,9 +1412,15 @@
 
   window.handleRegister = async function(event) {
     event.preventDefault();
-    const username = document.getElementById('reg-username').value;
-    const storeNickname = document.getElementById('reg-nickname').value;
+    const username = document.getElementById('reg-username').value.trim();
+    const storeNickname = document.getElementById('reg-nickname').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
     const password = document.getElementById('reg-password').value;
+
+    if (!email) {
+      alert("Email address is required.");
+      return;
+    }
 
     if (isProfane(username) || isProfane(storeNickname)) {
       alert("Inappropriate content detected. Please choose a different name.");
@@ -1393,7 +1431,7 @@
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, storeNickname })
+        body: JSON.stringify({ username, password, storeNickname, email })
       });
       const data = await res.json();
       if (data.success) {
@@ -1843,7 +1881,9 @@
         } else {
           commanderCards.forEach(c => {
             const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.card_name)}&format=image&version=normal`;
-            const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=normal` : fallbackUrl;
+            const imgUrl = c.scryfall_id 
+              ? `https://cards.scryfall.io/normal/front/${c.scryfall_id[0]}/${c.scryfall_id[1]}/${c.scryfall_id}.jpg` 
+              : fallbackUrl;
             showroom.innerHTML += `
               <div style="display:flex; flex-direction:column; align-items:center; gap:0.25rem; flex-shrink:0; cursor:pointer;" onclick="window.openCardInspectorDrawer({ name: '${c.card_name.replace(/'/g, "\\'")}', scryfallId: '${c.scryfall_id || ''}' })">
                 <img src="${imgUrl}" alt="${c.card_name}" style="max-height:130px; width:auto; border-radius:8px; border:1px solid var(--border-medium); box-shadow:0 4px 8px rgba(0,0,0,0.4);" onerror="this.src='logo.svg'">
@@ -2244,7 +2284,9 @@
       if (viewMode === 'visual-spoiler') {
         groups[tag].forEach(c => {
           const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.card_name)}&format=image&version=normal`;
-          const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=normal` : fallbackUrl;
+          const imgUrl = c.scryfall_id 
+            ? `https://cards.scryfall.io/normal/front/${c.scryfall_id[0]}/${c.scryfall_id[1]}/${c.scryfall_id}.jpg` 
+            : fallbackUrl;
           const qty = c.quantity || 1;
           const cardPrice = c.cheapest_card_price || 0;
           const totalDisplay = cardPrice === 0 ? "Free" : `$${(cardPrice * qty).toFixed(2)}`;
@@ -4297,7 +4339,9 @@
         builderCommander.forEach(c => {
           totalPrice += c.price;
           const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.name)}&format=image&version=normal`;
-          const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=normal` : fallbackUrl;
+          const imgUrl = c.scryfallId 
+            ? `https://cards.scryfall.io/normal/front/${c.scryfallId[0]}/${c.scryfallId[1]}/${c.scryfallId}.jpg` 
+            : fallbackUrl;
           cZoneImg.innerHTML += `
             <div style="position: relative; display: inline-block;">
               <img src="${imgUrl}" style="max-height: 175px; border-radius: 8px; border: 1px solid var(--border-medium); cursor: pointer;" onclick="toggleBuilderCommander('${c.name.replace(/'/g, "\\'")}', false)" title="Click to demote to mainboard" data-card-name="${c.name}" onerror="this.src='logo.svg'">
@@ -4520,7 +4564,9 @@
           const qtyBadge = c.qty > 1 ? `<div style="position:absolute;top:-6px;left:-6px;background:var(--color-primary);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;z-index:5;">${c.qty}</div>` : '';
 
           const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.name)}&format=image&version=normal`;
-          const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=normal` : fallbackUrl;
+          const imgUrl = c.scryfallId 
+            ? `https://cards.scryfall.io/normal/front/${c.scryfallId[0]}/${c.scryfallId[1]}/${c.scryfallId}.jpg` 
+            : fallbackUrl;
           stackEl.innerHTML = `
             ${qtyBadge}
             <img
@@ -7301,7 +7347,8 @@
     const imgElement = document.getElementById('inspector-card-image');
 
     if (scryfallId) {
-      imgElement.src = `https://api.scryfall.com/cards/${scryfallId}?format=image&version=normal${currentCardFaceIdx === 1 ? '&face=back' : ''}`;
+      const side = currentCardFaceIdx === 1 ? 'back' : 'front';
+      imgElement.src = `https://cards.scryfall.io/normal/${side}/${scryfallId[0]}/${scryfallId[1]}/${scryfallId}.jpg`;
     } else {
       imgElement.src = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(activeInspectorCard.name)}&format=image&version=normal${currentCardFaceIdx === 1 ? '&face=back' : ''}`;
     }
@@ -8026,4 +8073,106 @@
       console.error("Failed to poll MTGJSON sync status:", e);
     }
   }
+
+  // --- Palworld & playit.gg Controller Frontend Integration ---
+  let palworldPollInterval = null;
+
+  window.openPalworldModal = function() {
+    const modal = document.getElementById('modal-palworld-server');
+    if (modal) {
+      modal.classList.add('active');
+      checkPalworldStatus();
+      // Poll status every 10 seconds while open
+      if (palworldPollInterval) clearInterval(palworldPollInterval);
+      palworldPollInterval = setInterval(checkPalworldStatus, 10000);
+    }
+  };
+
+  window.closePalworldModal = function(event) {
+    if (!event || event.target === event.currentTarget || event.target.tagName === 'BUTTON') {
+      const modal = document.getElementById('modal-palworld-server');
+      if (modal) {
+        modal.classList.remove('active');
+      }
+      if (palworldPollInterval) {
+        clearInterval(palworldPollInterval);
+        palworldPollInterval = null;
+      }
+    }
+  };
+
+  window.checkPalworldStatus = async function() {
+    const palBadge = document.getElementById('palworld-status-badge');
+    const playitBadge = document.getElementById('playit-status-badge');
+    const details = document.getElementById('palworld-connection-details');
+    
+    if (!palBadge || !playitBadge) return;
+
+    try {
+      const res = await fetch('/api/palworld/status');
+      if (res.status === 403) {
+        if (palworldPollInterval) clearInterval(palworldPollInterval);
+        return;
+      }
+      const data = await res.json();
+
+      if (data.palworld) {
+        palBadge.textContent = 'Running';
+        palBadge.className = 'badge badge-win';
+      } else {
+        palBadge.textContent = 'Stopped';
+        palBadge.className = 'badge badge-loss';
+      }
+
+      if (data.playit) {
+        playitBadge.textContent = 'Running';
+        playitBadge.className = 'badge badge-win';
+      } else {
+        playitBadge.textContent = 'Stopped';
+        playitBadge.className = 'badge badge-loss';
+      }
+
+      if (data.palworld && data.playit) {
+        if (details) details.style.display = 'block';
+      } else {
+        if (details) details.style.display = 'none';
+      }
+    } catch (e) {
+      console.error("Error checking Palworld status:", e);
+      palBadge.textContent = 'Error';
+      palBadge.className = 'badge badge-neutral';
+      playitBadge.textContent = 'Error';
+      playitBadge.className = 'badge badge-neutral';
+    }
+  };
+
+  window.handlePalworldAction = async function(action) {
+    const startBtn = document.getElementById('btn-palworld-start');
+    const stopBtn = document.getElementById('btn-palworld-stop');
+    
+    if (startBtn) startBtn.disabled = true;
+    if (stopBtn) stopBtn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/palworld/${action}`, { method: 'POST' });
+      const data = await res.json();
+      
+      if (window.showSlideNotification) {
+        window.showSlideNotification(data.message || `Server action ${action} executed.`, data.success ? "success" : "error");
+      } else {
+        alert(data.message || `Server action ${action} executed.`);
+      }
+
+      setTimeout(async () => {
+        await checkPalworldStatus();
+        if (startBtn) startBtn.disabled = false;
+        if (stopBtn) stopBtn.disabled = false;
+      }, 1500);
+
+    } catch (e) {
+      console.error(`Failed to execute Palworld action ${action}:`, e);
+      if (startBtn) startBtn.disabled = false;
+      if (stopBtn) stopBtn.disabled = false;
+    }
+  };
 })();

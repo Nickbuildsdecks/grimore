@@ -333,7 +333,9 @@
 
     cards.forEach((card, index) => {
       const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
-      const imgUrl = card.scryfallId ? `https://api.scryfall.com/cards/${card.scryfallId}?format=image&version=normal` : fallbackUrl;
+      const imgUrl = card.scryfallId 
+        ? `https://cards.scryfall.io/normal/front/${card.scryfallId[0]}/${card.scryfallId[1]}/${card.scryfallId}.jpg` 
+        : fallbackUrl;
 
       const cardEl = document.createElement('div');
       cardEl.className = 'search-card-item';
@@ -364,15 +366,8 @@
         </div>
       ` : '';
 
-      const synergyBadge = card.synergy ? `
-        <div style="position: absolute; top: 6px; right: 6px; background: rgba(124, 58, 237, 0.95) !important; border: 1px solid rgba(124, 58, 237, 0.4) !important; color: white !important; font-family: 'Outfit', sans-serif !important; font-size: 0.62rem !important; font-weight: 800 !important; padding: 2px 6px !important; border-radius: 4px !important; box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important; z-index: 5 !important; text-transform: uppercase !important; pointer-events: none !important;">
-          ${card.synergy}
-        </div>
-      ` : '';
-
       cardEl.innerHTML = `
         ${inDeckBadge}
-        ${synergyBadge}
         <div style="width: 100% !important; aspect-ratio: 2.5/3.5 !important; overflow: hidden !important; position: relative !important;">
           <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100% !important; height: 100% !important; object-fit: fill !important; transition: transform 0.2s ease !important; display: block !important;"
                onmouseover="this.style.transform='scale(1.03)'"
@@ -511,7 +506,9 @@
     document.getElementById('inspector-price').textContent = `$${Number(card.price).toFixed(2)}`;
 
     const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
-    const imgUrl = card.scryfallId ? `https://api.scryfall.com/cards/${card.scryfallId}?format=image&version=normal` : fallbackUrl;
+    const imgUrl = card.scryfallId 
+      ? `https://cards.scryfall.io/normal/front/${card.scryfallId[0]}/${card.scryfallId[1]}/${card.scryfallId}.jpg` 
+      : fallbackUrl;
     document.getElementById('inspector-card-img').src = imgUrl;
 
     // Check if card is double faced by checking name structure (e.g. "//")
@@ -550,7 +547,8 @@
     const scryfallId = activeInspectorCard.scryfallId;
 
     if (scryfallId) {
-      imgElement.src = `https://api.scryfall.com/cards/${scryfallId}?format=image&version=normal${currentCardFaceIdx === 1 ? '&face=back' : ''}`;
+      const side = currentCardFaceIdx === 1 ? 'back' : 'front';
+      imgElement.src = `https://cards.scryfall.io/normal/${side}/${scryfallId[0]}/${scryfallId[1]}/${scryfallId}.jpg`;
     } else {
       imgElement.src = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(activeInspectorCard.name)}&format=image&version=normal${currentCardFaceIdx === 1 ? '&face=back' : ''}`;
     }
@@ -562,13 +560,13 @@
       const data = await res.json();
       const listEl = document.getElementById('inspector-version-list');
 
-      if (data.error || !data.versions || data.versions.length === 0) {
+      if (data.error || !Array.isArray(data) || data.length === 0) {
         listEl.innerHTML = `<div style="font-size: 0.7rem; color: var(--text-muted); text-align: center; padding: 0.5rem 0;">No printing variants cached.</div>`;
         return;
       }
 
       listEl.innerHTML = '';
-      data.versions.forEach(v => {
+      data.forEach(v => {
         const item = document.createElement('div');
         item.className = 'drawer-version-item';
         item.style.display = 'flex';
@@ -618,13 +616,13 @@
       const data = await res.json();
       const listEl = document.getElementById('inspector-rulings-list');
 
-      if (data.error || !data.rulings || data.rulings.length === 0) {
+      if (data.error || !Array.isArray(data) || data.length === 0) {
         listEl.innerHTML = `<div style="font-size: 0.7rem; color: var(--text-muted); font-style: italic; padding: 0.4rem 0;">No rulings cached.</div>`;
         return;
       }
 
       listEl.innerHTML = '';
-      data.rulings.forEach(r => {
+      data.forEach(r => {
         const item = document.createElement('div');
         item.style.padding = '0.5rem';
         item.style.background = 'rgba(255, 255, 255, 0.02)';
