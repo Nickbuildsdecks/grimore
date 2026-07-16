@@ -1201,64 +1201,98 @@
 
       <!-- Column 2: Interactive Decklists (Mainboard list) -->
       <div class="deckbuilder-col-decklist panel" style="background-color: var(--bg-dark); border-color: var(--border-light); display: flex; flex-direction: column; height: 100%; overflow: hidden; margin: 0; padding: 1.25rem;">
-        <div style="display: flex; flex-shrink: 0; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem; width: 100%;">
-          <div id="builder-controls-dropdown" class="deck-builder-dropdown-options" style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 0.35rem; flex-wrap: wrap;">
-            <!-- Mobile count & options toggle button inline at the beginning of the row! -->
-            <div class="mobile-only-header-row" style="display: none; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
-              <span id="builder-card-count-mobile" style="font-weight: 700; font-size: 0.85rem; color: var(--text-pure);">(<span id="builder-card-count-mobile-val">0</span> cards)</span>
-              <button type="button" class="btn btn-secondary btn-sm mobile-options-toggle" onclick="document.getElementById('builder-controls-dropdown').classList.toggle('active'); this.classList.toggle('active');" style="height: 24px; padding: 0 6px; font-size: 0.65rem; font-weight: 700; margin: 0;">⚙️ Options</button>
-            </div>
-
-            <!-- Left aligned: Name, format, public, reload -->
-            <div class="builder-opt-col" style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
+        <div style="display: flex; flex-shrink: 0; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem; width: 100%; flex-direction: column; gap: 0.5rem;">
+          <!-- Visible controls (Minimalist layout) -->
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 0.5rem; flex-wrap: wrap;">
+            <!-- Left side essential inputs -->
+            <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
               <input type="text" id="builder-deck-name" class="input-field" placeholder="Deck Name" style="width: 140px; height: 26px; margin: 0; padding: 0 0.5rem; font-size: 0.72rem; font-weight: 600; background: var(--bg-surface);" value="My Custom Deck" oninput="window.debouncedAutoSave()">
-              <input type="text" id="builder-deck-tags" class="input-field" placeholder="Deck Tags (e.g. Midrange, Casual)" style="width: 165px; height: 26px; margin: 0; padding: 0 0.5rem; font-size: 0.72rem; background: var(--bg-surface);" oninput="window.debouncedAutoSave()" title="Comma-separated tags describing your deck">
-              <select id="builder-deck-format" class="input-field" style="width: 95px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem;" onchange="validateBuilderDeckLegality(); window.triggerAutoSave()">
-                <option value="commander" selected>Commander</option>
-                <option value="standard">Standard</option>
-                <option value="modern">Modern</option>
-                <option value="legacy">Legacy</option>
-                <option value="pauper">Pauper</option>
-                <option value="custom">Custom/Free</option>
-              </select>
-              <button id="builder-is-public-btn" class="btn btn-secondary btn-sm" onclick="toggleBuilderPublic()" style="height: 26px; font-weight: 600; font-size: 0.72rem; min-width: 65px; padding: 0 0.4rem; margin: 0;">🌐 Public</button>
-              <select id="builder-card-versions" class="input-field" style="width: 110px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem; font-weight: 600;" onchange="window.changeBuilderCardVersions(this.value)" title="Choose card pricing update behavior">
-                <option value="cheapest">🏷️ Cheapest</option>
-                <option value="chosen">🏷️ Chosen</option>
-              </select>
-              <input type="checkbox" id="builder-keep-cheapest" onchange="window.triggerAutoSave()" style="display: none;">
-              <div id="builder-update-cheapest-container" style="display: flex; align-items: center; min-width: 105px; height: 26px; position: relative; margin: 0;">
-                <button id="builder-update-cheapest-btn" class="btn btn-gold btn-sm" onclick="reloadCheapestCardVersions()" style="height: 26px; font-weight: 600; width: 100%; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Search live Scryfall database for cheapest prints">🏷️ Update Cheapest</button>
-                <div id="builder-reload-progress-container" style="display: none; width: 100%; height: 26px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; position: relative; align-items: center; justify-content: center;">
-                  <div id="builder-reload-progress-bar" style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transform: scaleX(0); transform-origin: left; transition: transform 0.1s ease; z-index: 1;"></div>
-                  <span id="builder-reload-progress-text" style="z-index: 2; font-size: 0.6rem; font-weight: 700; color: var(--text-pure); text-shadow: 0 1px 2px rgba(0,0,0,0.85);">0%</span>
-                </div>
-              </div>
-              <button id="builder-reload-btn" class="btn btn-secondary btn-sm" onclick="reloadBuilderDeckState()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Reload deck data from database">🔄 Reload</button>
-              <button id="builder-autotag-btn" class="btn btn-gold btn-sm" onclick="autoTagBuilderDeck()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Automatically classify cards using Scryfall tags">🏷️ Auto Tag</button>
+              <button type="button" class="btn btn-gold btn-sm" onclick="openCardSearchModal()" style="height: 26px; font-size: 0.72rem; padding: 0 0.5rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--radius-sm); margin: 0;">🔍 Search</button>
+              <button id="builder-suggestions-btn" type="button" class="btn btn-secondary btn-sm" onclick="openSuggestionsPage()" style="height: 26px; font-size: 0.72rem; padding: 0 0.5rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--radius-sm); margin: 0;" title="Get card suggestions from EDHREC">💡 Suggestions</button>
             </div>
 
-            <!-- Right aligned: Card count, search cards, price check, view, group, sort -->
-            <div class="builder-opt-col" style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
+            <!-- Right side essential details and settings toggle -->
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
               <div style="display:flex; align-items:center; gap:0.2rem; font-size:0.7rem; font-weight:700; color:var(--text-high);">
                 <span style="font-size:0.875rem; color:var(--text-muted);">Cards:</span>
                 <span id="builder-card-count" style="color: var(--color-primary); font-size: 0.78rem;">0</span>
               </div>
-              <button type="button" class="btn btn-gold btn-sm" onclick="openCardSearchModal()" style="height: 26px; font-size: 0.72rem; padding: 0 0.5rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--radius-sm); margin: 0;">🔍 Search</button>
-              <button id="builder-suggestions-btn" type="button" class="btn btn-secondary btn-sm" onclick="openSuggestionsPage()" style="height: 26px; font-size: 0.72rem; padding: 0 0.5rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--radius-sm); margin: 0;" title="Get card suggestions from EDHREC">💡 Suggestions</button>
-              <div style="display:flex; align-items:center; gap:0.25rem; margin-right:0.1rem;">
-                <span style="font-size:0.75rem; font-weight:700; color:var(--color-primary); line-height:1; user-select:none; cursor:pointer;" onclick="document.getElementById('builder-show-prices').click()">$</span>
-                <input type="checkbox" id="builder-show-prices" checked onchange="renderBuilderDecklist()" style="cursor:pointer; width:12px; height:12px; margin:0;">
+              <button type="button" id="builder-settings-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleBuilderAdvancedSettings()" style="height: 26px; font-size: 0.72rem; font-weight: 700; margin: 0; padding: 0 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+                ⚙️ Settings
+              </button>
+            </div>
+          </div>
+
+          <!-- Expanding niche settings panel -->
+          <div id="builder-advanced-settings-panel" style="display: none; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 0.75rem; flex-direction: column; gap: 0.75rem; width: 100%;">
+            
+            <!-- Metadata & Customization Row -->
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; width: 100%;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Tags</span>
+                <input type="text" id="builder-deck-tags" class="input-field" placeholder="Deck Tags (e.g. Midrange, Casual)" style="width: 165px; height: 26px; margin: 0; padding: 0 0.5rem; font-size: 0.72rem; background: var(--bg-surface);" oninput="window.debouncedAutoSave()" title="Comma-separated tags describing your deck">
               </div>
-              <div style="display:flex; align-items:center; gap:0.2rem;">
-                <span style="font-size:0.875rem; color:var(--text-muted);">View:</span>
-                <select id="builder-view-mode" class="input-field" style="width:90px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
-                  <option value="visual-spoiler" selected>Image Grid</option>
-                  <option value="text">Text</option>
+              
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Format</span>
+                <select id="builder-deck-format" class="input-field" style="width: 95px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem;" onchange="validateBuilderDeckLegality(); window.triggerAutoSave()">
+                  <option value="commander" selected>Commander</option>
+                  <option value="standard">Standard</option>
+                  <option value="modern">Modern</option>
+                  <option value="legacy">Legacy</option>
+                  <option value="pauper">Pauper</option>
+                  <option value="custom">Custom/Free</option>
                 </select>
               </div>
-              <div style="display:flex; align-items:center; gap:0.2rem;">
-                <span style="font-size:0.875rem; color:var(--text-muted);">Group:</span>
+
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Visibility</span>
+                <button id="builder-is-public-btn" class="btn btn-secondary btn-sm" onclick="toggleBuilderPublic()" style="height: 26px; font-weight: 600; font-size: 0.72rem; min-width: 65px; padding: 0 0.4rem; margin: 0;">🌐 Public</button>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Pricing Version</span>
+                <select id="builder-card-versions" class="input-field" style="width: 100px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem; font-weight: 600;" onchange="window.changeBuilderCardVersions(this.value)" title="Choose card pricing update behavior">
+                  <option value="cheapest">🏷️ Cheapest</option>
+                  <option value="chosen">🏷️ Chosen</option>
+                </select>
+              </div>
+              <input type="checkbox" id="builder-keep-cheapest" onchange="window.triggerAutoSave()" style="display: none;">
+
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Actions</span>
+                <div style="display: flex; gap: 0.35rem; align-items: center;">
+                  <div id="builder-update-cheapest-container" style="display: flex; align-items: center; min-width: 105px; height: 26px; position: relative; margin: 0;">
+                    <button id="builder-update-cheapest-btn" class="btn btn-gold btn-sm" onclick="reloadCheapestCardVersions()" style="height: 26px; font-weight: 600; width: 100%; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Search live Scryfall database for cheapest prints">🏷️ Update Cheapest</button>
+                    <div id="builder-reload-progress-container" style="display: none; width: 100%; height: 26px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; position: relative; align-items: center; justify-content: center;">
+                      <div id="builder-reload-progress-bar" style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transform: scaleX(0); transform-origin: left; transition: transform 0.1s ease; z-index: 1;"></div>
+                      <span id="builder-reload-progress-text" style="z-index: 2; font-size: 0.6rem; font-weight: 700; color: var(--text-pure); text-shadow: 0 1px 2px rgba(0,0,0,0.85);">0%</span>
+                    </div>
+                  </div>
+                  <button id="builder-reload-btn" class="btn btn-secondary btn-sm" onclick="reloadBuilderDeckState()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Reload deck data from database">🔄 Reload</button>
+                  <button id="builder-autotag-btn" class="btn btn-gold btn-sm" onclick="autoTagBuilderDeck()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Automatically classify cards using Scryfall tags">🏷️ Auto Tag</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- View Settings & Sorting Row -->
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.5rem; margin-top: 0.25rem;">
+              <div style="display:flex; align-items:center; gap:0.25rem; height: 26px; margin-right: 0.5rem;">
+                <span style="font-size:0.75rem; font-weight:700; color:var(--color-primary); line-height:1; user-select:none; cursor:pointer;" onclick="document.getElementById('builder-show-prices').click()">$</span>
+                <input type="checkbox" id="builder-show-prices" checked onchange="renderBuilderDecklist()" style="cursor:pointer; width:12px; height:12px; margin:0;">
+                <label for="builder-show-prices" style="font-size:0.72rem; color:var(--text-muted); cursor:pointer; user-select:none; font-weight:600; margin-left:2px;">Show Prices</label>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:0.35rem;">
+                <span style="font-size:0.6rem; color:var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">View Mode</span>
+                <select id="builder-view-mode" class="input-field" style="width:100px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
+                  <option value="visual-spoiler" selected>Image Grid</option>
+                  <option value="text">Text List</option>
+                </select>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:0.35rem;">
+                <span style="font-size:0.6rem; color:var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Group By</span>
                 <select id="builder-group-by" class="input-field" style="width:90px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
                   <option value="type" selected>Type</option>
                   <option value="tag">Tag</option>
@@ -1268,9 +1302,10 @@
                   <option value="rarity">Rarity</option>
                 </select>
               </div>
-              <div style="display:flex; align-items:center; gap:0.2rem;">
-                <span style="font-size:0.875rem; color:var(--text-muted);">Sort:</span>
-                <select id="builder-sort-by" class="input-field" style="width:80px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
+
+              <div style="display:flex; align-items:center; gap:0.35rem;">
+                <span style="font-size:0.6rem; color:var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Sort By</span>
+                <select id="builder-sort-by" class="input-field" style="width:95px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
                   <option value="mana" selected>Mana</option>
                   <option value="name">A-Z</option>
                   <option value="price_desc">Price (↑-↓)</option>
@@ -1280,6 +1315,7 @@
                 </select>
               </div>
             </div>
+
           </div>
         </div>
 

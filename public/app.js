@@ -3771,7 +3771,35 @@
     window.triggerAutoSave();
   };
 
+  window.toggleBuilderAdvancedSettings = function() {
+    const panel = document.getElementById('builder-advanced-settings-panel');
+    const button = document.getElementById('builder-settings-toggle');
+    if (!panel || !button) return;
+
+    if (panel.style.display === 'none' || !panel.style.display) {
+      panel.style.display = 'flex';
+      button.textContent = '🔒 Close Settings';
+      button.classList.remove('btn-secondary');
+      button.classList.add('btn-primary');
+    } else {
+      panel.style.display = 'none';
+      button.textContent = '⚙️ Settings';
+      button.classList.remove('btn-primary');
+      button.classList.add('btn-secondary');
+    }
+  };
+
   window.openVisualDeckbuilder = async function(deckId = null, deckName = 'New Deck', isPublic = 0, featuredCardName = null, format = 'commander', keepCheapest = 0, pushHistory = true) {
+    // Reset advanced settings panel to hidden
+    const advPanel = document.getElementById('builder-advanced-settings-panel');
+    const advBtn = document.getElementById('builder-settings-toggle');
+    if (advPanel) advPanel.style.display = 'none';
+    if (advBtn) {
+      advBtn.textContent = '⚙️ Settings';
+      advBtn.classList.remove('btn-primary');
+      advBtn.classList.add('btn-secondary');
+    }
+
     builderDeckId = deckId;
     builderIsPublic = isPublic === 0 ? 0 : 1;
     builderKeepCheapest = keepCheapest === 1 ? 1 : 0;
