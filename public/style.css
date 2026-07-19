@@ -4099,15 +4099,17 @@ body:not(.light-theme) .sidebar {
 }
 
 #app-layout.sidebar-collapsed .logo-container {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   justify-content: center;
+  align-items: center;
   padding: 0;
+  margin: 0 auto;
 }
 
 #app-layout.sidebar-collapsed .logo-container img {
-  width: 32px !important;
-  height: 32px !important;
+  width: 44px !important;
+  height: 44px !important;
 }
 
 #app-layout.sidebar-collapsed .sidebar-nav {
