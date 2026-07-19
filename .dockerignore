@@ -6,3 +6,4 @@ node_modules
 scratch
 fly.toml
 Dockerfile
+data/

@@ -14,6 +14,9 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.error('Error connecting to SQLite database:', err.message);
   } else {
     console.log('Connected to Grimore SQLite database.');
+    db.run("PRAGMA foreign_keys = ON;", (err) => {
+      if (err) console.error("Failed to enable foreign keys:", err.message);
+    });
   }
 });
 
@@ -431,6 +434,67 @@ async function initDb() {
       last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Create Collections Table
+  await run(`
+    CREATE TABLE IF NOT EXISTS collections (
+      id TEXT PRIMARY KEY,
+      player_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      settings TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_collections_player ON collections(player_id)`);
+
+  // Create Collection Cards Table
+  await run(`
+    CREATE TABLE IF NOT EXISTS collection_cards (
+      collection_id TEXT NOT NULL,
+      card_name TEXT NOT NULL,
+      scryfall_id TEXT,
+      quantity INTEGER DEFAULT 1,
+      is_foil INTEGER DEFAULT 0,
+      is_for_trade INTEGER DEFAULT 0,
+      condition TEXT DEFAULT 'NM',
+      language TEXT DEFAULT 'EN',
+      purchase_price REAL DEFAULT NULL,
+      added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (collection_id, card_name, scryfall_id, is_foil, condition, language),
+      FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_collection_cards_id ON collection_cards(collection_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_collection_cards_name ON collection_cards(card_name)`);
+
+  // Create Wishlist Cards Table
+  await run(`
+    CREATE TABLE IF NOT EXISTS wishlist_cards (
+      player_id TEXT NOT NULL,
+      card_name TEXT NOT NULL,
+      scryfall_id TEXT,
+      quantity INTEGER DEFAULT 1,
+      added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (player_id, card_name, scryfall_id),
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_wishlist_cards_player ON wishlist_cards(player_id)`);
+
+  // Create Deleted Items Table (Recovery System)
+  await run(`
+    CREATE TABLE IF NOT EXISTS deleted_items (
+      id TEXT PRIMARY KEY,
+      item_type TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      player_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      data TEXT NOT NULL,
+      deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_deleted_items_player ON deleted_items(player_id)`);
 
   // Index optimization for performance queries
   await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_deck ON deck_cards(deck_id)`);

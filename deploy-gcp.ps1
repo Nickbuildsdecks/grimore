@@ -33,6 +33,10 @@ Copy-Item "public\search.html" -Destination "gcp-export\public\search.html" -For
 Copy-Item "public\search.js" -Destination "gcp-export\public\search.js" -Force
 Copy-Item "public\suggestions.html" -Destination "gcp-export\public\suggestions.html" -Force
 Copy-Item "public\suggestions.js" -Destination "gcp-export\public\suggestions.js" -Force
+Copy-Item "public\collection.html" -Destination "gcp-export\public\collection.html" -Force
+Copy-Item "public\collection.js" -Destination "gcp-export\public\collection.js" -Force
+Copy-Item "public\logo.svg" -Destination "gcp-export\public\logo.svg" -Force
+Copy-Item "public\patreon_cover_cropped.png" -Destination "gcp-export\public\patreon_cover_cropped.png" -Force
 
 Write-Host "2. Creating zip archive..." -ForegroundColor Cyan
 if (Test-Path $LOCAL_ZIP) { Remove-Item $LOCAL_ZIP -Force }

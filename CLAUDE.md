@@ -76,7 +76,7 @@ Be pragmatic. Be reliable. Self-anneal.
 
 ### 📋 Overview
 - **Project Name**: Grimore (formerly Libram / Rostra / Grimoire)
-- **Description**: Premium Commander League & MTG Tournament Manager Web Server
+- **Description**: Premium All-Encompassing MTG Suite Web Server
 - **Core Technology Stack**: Node.js, Express, SQLite3, Vanilla CSS, HTML
 - **Primary Database**: `grimore.db` (main data store), with fallbacks `aetherpair.db`, `grimoire.db`, `libram.db`, `rostra.db`.
 

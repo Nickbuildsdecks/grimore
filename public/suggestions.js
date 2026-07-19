@@ -366,10 +366,15 @@
         </div>
       ` : '';
 
+      const ownedBadge = card.owned ? `
+        <div class="suggestion-owned-badge">Owned</div>
+      ` : '';
+
       cardEl.innerHTML = `
         ${inDeckBadge}
-        <div style="width: 100% !important; aspect-ratio: 2.5/3.5 !important; overflow: hidden !important; position: relative !important;">
-          <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100% !important; height: 100% !important; object-fit: fill !important; transition: transform 0.2s ease !important; display: block !important;"
+        ${ownedBadge}
+        <div style="width: 100% !important; aspect-ratio: 2.5/3.5 !important; overflow: hidden !important; position: relative !important;" data-card-name="${card.name}">
+          <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100% !important; height: 100% !important; object-fit: contain !important; transition: transform 0.2s ease !important; display: block !important;"
                onmouseover="this.style.transform='scale(1.03)'"
                onmouseout="this.style.transform='none'"
                onerror="this.src='logo.svg'">

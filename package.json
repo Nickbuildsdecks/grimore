@@ -1,7 +1,7 @@
 {
   "name": "grimoire",
   "version": "1.0.0",
-  "description": "Premium Commander League & MTG Tournament Manager Web Server",
+  "description": "Premium All-Encompassing MTG Suite Web Server",
   "main": "server.js",
   "scripts": {
     "start": "node --max-old-space-size=768 server.js",

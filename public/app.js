@@ -1571,9 +1571,51 @@
     }
   }
 
+  // STYLISH DELETE CONFIRMATION MODAL LOGIC (Shared globally by collections/decks)
+  let deleteCallback = null;
+  window.askStylishDeleteConfirmation = function(messageText, matchWord, onConfirm) {
+    const modal = document.getElementById('delete-confirm-modal');
+    if (!modal) {
+      if (confirm(messageText)) onConfirm();
+      return;
+    }
+    const textEl = document.getElementById('delete-confirm-text');
+    const inputEl = document.getElementById('delete-confirm-input');
+    const submitBtn = document.getElementById('btn-delete-confirm-submit');
+
+    textEl.innerHTML = `${messageText}<br><br>To confirm, type <strong style="color: var(--text-pure); font-weight:800;">${matchWord}</strong> in the field below.`;
+    inputEl.value = '';
+    submitBtn.disabled = true;
+    deleteCallback = onConfirm;
+
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+
+    inputEl.oninput = function() {
+      submitBtn.disabled = (inputEl.value.trim().toUpperCase() !== matchWord.toUpperCase());
+    };
+
+    submitBtn.onclick = function() {
+      if (deleteCallback) deleteCallback();
+      window.closeDeleteConfirmModal();
+    };
+  };
+
+  window.closeDeleteConfirmModal = function() {
+    const modal = document.getElementById('delete-confirm-modal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+    }
+    deleteCallback = null;
+  };
+
   window.confirmDeleteDeck = function(deckId, deckName) {
-    if (!confirm(`Delete "${deckName}"? This cannot be undone.`)) return;
-    deleteDeck(deckId);
+    window.askStylishDeleteConfirmation(
+      `Are you sure you want to delete the deck "${deckName}"? This will move it to the Recycle Bin.`,
+      "DELETE",
+      () => deleteDeck(deckId)
+    );
   };
 
   async function deleteDeck(deckId) {
@@ -2311,7 +2353,7 @@
           cardEl.innerHTML = `
             ${qty > 1 ? `<div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.85); color: var(--color-primary); font-size: 0.75rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; z-index: 2; border: 1px solid var(--border-color);">x${qty}</div>` : ''}
             <div style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #121212; position: relative;">
-              <img src="${imgUrl}" alt="${c.card_name}" loading="lazy" style="width: 100%; height: 100%; object-fit: fill; transition: transform 0.2s ease;"
+              <img src="${imgUrl}" alt="${c.card_name}" loading="lazy" style="width: 100%; height: 100%; object-fit: contain; transition: transform 0.2s ease;"
                    onmouseover="this.style.transform='scale(1.05)'"
                    onmouseout="this.style.transform='none'"
                    onerror="this.src='logo.svg'">
@@ -5918,7 +5960,12 @@
   document.addEventListener('mousemove', (e) => {
     const tooltip = document.getElementById('card-hover-tooltip');
     if (tooltip && tooltip.style.display === 'block') {
-      positionTooltip(e.clientX, e.clientY);
+      const target = e.target.closest('[data-card-name], .card-item-name, .price-card-name, .playtest-card span');
+      if (!target) {
+        hideCardHoverTooltip();
+      } else {
+        positionTooltip(e.clientX, e.clientY);
+      }
     }
   });
 
@@ -5928,6 +5975,9 @@
       hideCardHoverTooltip();
     }
   });
+
+  window.addEventListener('scroll', hideCardHoverTooltip, { passive: true });
+  document.addEventListener('mouseleave', hideCardHoverTooltip);
 
 
   // ==========================================
@@ -7181,7 +7231,7 @@
 
         cardEl.innerHTML = `
           <div style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #121212; position: relative;">
-            <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100%; height: 100%; object-fit: fill; transition: transform 0.2s ease;"
+            <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100%; height: 100%; object-fit: contain; transition: transform 0.2s ease;"
                  onmouseover="this.style.transform='scale(1.03)'"
                  onmouseout="this.style.transform='none'"
                  onerror="this.src='logo.svg'">
@@ -7215,7 +7265,7 @@
 
         rowEl.innerHTML = `
           <!-- Thumbnail -->
-          <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 40px; height: 56px; object-fit: fill; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); flex-shrink: 0;" onerror="this.src='logo.svg'">
+          <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 40px; height: 56px; object-fit: contain; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); flex-shrink: 0;" onerror="this.src='logo.svg'">
 
           <!-- Name & Type -->
           <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; flex-basis: 150px;">

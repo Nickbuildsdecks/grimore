@@ -27,7 +27,7 @@ function isProfane(text) {
 }
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: function (res, filePath) {
@@ -1714,22 +1714,42 @@ async function fetchCardTags(cardName, scryfallId) {
 function categorizeCardByTags(cardName, typeLine, tags) {
   if (tags && tags.length > 0) {
     const lowercaseTags = tags.map(t => t.toLowerCase());
-    
-    // Check Combos
-    if (lowercaseTags.some(t => t.includes('combo') || t.includes('win-con') || t.includes('win-condition'))) {
-      return 'Combos';
+
+    // 1. Infinite Combos
+    if (lowercaseTags.some(t => t.includes('combo') || t.includes('infinite'))) {
+      return 'Infinite Combos';
     }
-    // Check Removal
-    if (lowercaseTags.some(t => t.includes('removal') || t.includes('sweeper') || t.includes('board-wipe') || t.includes('counterspell') || t.includes('removal-creature') || t.includes('removal-artifact') || t.includes('removal-enchantment'))) {
-      return 'Removal';
+    // 2. Wincons/Finishers
+    if (lowercaseTags.some(t => t.includes('win-con') || t.includes('finisher') || t.includes('win-condition') || t.includes('game-ender'))) {
+      return 'Wincons/Finishers';
     }
-    // Check Ramp
-    if (lowercaseTags.some(t => t.includes('ramp') || t === 'mana-dork' || t === 'mana-rock' || t.includes('mana-multiplier') || t === 'land-ramp')) {
+    // 3. Tutors
+    if (lowercaseTags.some(t => t.includes('tutor') || t.includes('search-library'))) {
+      return 'Tutors';
+    }
+    // 4. Stax
+    if (lowercaseTags.some(t => t.includes('stax') || t.includes('tax') || t.includes('hatebear') || t.includes('prison') || t.includes('pillow-fort'))) {
+      return 'Stax';
+    }
+    // 5. Mass Removal
+    if (lowercaseTags.some(t => t.includes('board-wipe') || t.includes('sweeper') || t.includes('boardwipe') || t.includes('mass-removal'))) {
+      return 'Mass Removal';
+    }
+    // 6. Single Target Removal
+    if (lowercaseTags.some(t => t.includes('removal') || t.includes('counterspell') || t.includes('spot-removal') || t.includes('single-target-removal') || t.includes('removal-creature') || t.includes('removal-artifact') || t.includes('removal-enchantment') || t.includes('removal-planeswalker'))) {
+      return 'Single Target Removal';
+    }
+    // 7. Protection
+    if (lowercaseTags.some(t => t.includes('protection') || t.includes('hexproof') || t.includes('shroud') || t.includes('indestructible') || t.includes('phase-out') || t.includes('flicker') || t.includes('regenerate') || t.includes('counterspell-protection'))) {
+      return 'Protection';
+    }
+    // 8. Ramp
+    if (lowercaseTags.some(t => t.includes('ramp') || t === 'mana-dork' || t === 'mana-rock' || t.includes('mana-multiplier') || t === 'land-ramp' || t.includes('mana-generator') || t.includes('ritual'))) {
       return 'Ramp';
     }
-    // Check Card Draw
-    if (lowercaseTags.some(t => t.includes('card-draw') || t.includes('card-advantage') || t === 'tutor' || t === 'draw-card' || t.includes('draw-card') || t.includes('card draw'))) {
-      return 'Card Draw';
+    // 9. Card Advantage
+    if (lowercaseTags.some(t => t.includes('card-draw') || t.includes('card-advantage') || t === 'draw-card' || t.includes('card draw') || t.includes('looting') || t.includes('rummaging') || t.includes('wheel'))) {
+      return 'Card Advantage';
     }
   }
 
@@ -2415,6 +2435,35 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
       }
     }
 
+    // Intersect suggestions with user's collections to find owned recommendations
+    const playerId = req.session.player.id;
+    const ownedCardsRows = await db.query(
+      `SELECT DISTINCT cc.card_name 
+       FROM collection_cards cc
+       JOIN collections c ON cc.collection_id = c.id
+       WHERE c.player_id = ?`,
+      [playerId]
+    );
+    const ownedSet = new Set(ownedCardsRows.map(r => r.card_name.toLowerCase()));
+
+    const ownedSuggestions = [];
+    namesArray.forEach(name => {
+      if (ownedSet.has(name.toLowerCase())) {
+        const matched = cardMap[name.toLowerCase()];
+        const price = matched ? matched.cheapest_card_price : 0.15;
+        const scryfallId = matched ? matched.scryfall_id : null;
+        const typeLine = matched ? matched.type_line : 'Card';
+        ownedSuggestions.push({
+          name,
+          scryfallId,
+          price: price !== null && price !== undefined ? price : 0.15,
+          type_line: typeLine,
+          synergy: null,
+          owned: true
+        });
+      }
+    });
+
     // Format the response categories
     const categories = cardlists.map(list => {
       const cards = (list.cardviews || []).map(c => {
@@ -2427,7 +2476,8 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
           scryfallId,
           price: price !== null && price !== undefined ? price : 0.15,
           type_line: typeLine,
-          synergy: null
+          synergy: null,
+          owned: ownedSet.has(c.name.toLowerCase())
         };
       });
 
@@ -2437,6 +2487,14 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
         cards
       };
     }).filter(cat => cat.cards.length > 0);
+
+    if (ownedSuggestions.length > 0) {
+      categories.unshift({
+        header: "Owned Suggestions",
+        tag: "owned-suggestions",
+        cards: ownedSuggestions
+      });
+    }
 
     res.json({ success: true, categories });
   } catch (e) {
@@ -4002,8 +4060,17 @@ app.delete('/api/decks/:deckId', async (req, res) => {
   const { deckId } = req.params;
   const playerId = req.session.player.id;
   try {
-    const deck = await db.get('SELECT id FROM decks WHERE id = ? AND player_id = ?', [deckId, playerId]);
+    const deck = await db.get('SELECT * FROM decks WHERE id = ? AND player_id = ?', [deckId, playerId]);
     if (!deck) return res.status(403).json({ error: 'Deck not found or access denied.' });
+    
+    // Archive deck details and cards for soft-deletion recovery
+    const cards = await db.query('SELECT * FROM deck_cards WHERE deck_id = ?', [deckId]);
+    const recoveryId = 'rec_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    await db.run(
+      "INSERT INTO deleted_items (id, item_type, item_id, player_id, name, data) VALUES (?, 'deck', ?, ?, ?, ?)",
+      [recoveryId, deckId, playerId, deck.deck_name, JSON.stringify({ deck, cards })]
+    );
+
     await db.run('DELETE FROM deck_cards WHERE deck_id = ?', [deckId]);
     await db.run('DELETE FROM deck_stats WHERE deck_id = ?', [deckId]);
     await db.run('DELETE FROM deck_likes WHERE deck_id = ?', [deckId]);
@@ -4093,10 +4160,6 @@ app.post('/api//stop', (req, res) => {
   });
 });
 
-// Serving Client SPA Router
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 // ⏰ Daily 6AM CDT Reset & Cheapest Auto-Repricing Cron
 let lastDailyResetDate = '';
@@ -4236,6 +4299,400 @@ async function dailyResetAndCheapestUpdate() {
     console.error("[Daily Reset] Cheapest deck updates failed:", err);
   }
 }
+
+// ==========================================
+// MY COLLECTIONS & WISHLIST API ENDPOINTS
+// ==========================================
+
+// GET all collections for a player (including aggregate totals)
+app.get('/api/collections', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  try {
+    const rows = await db.query(
+      `SELECT c.*, 
+              COALESCE(SUM(cc.quantity), 0) as total_cards,
+              COALESCE(SUM(cc.quantity * COALESCE(pc.price, sc.price, 0.15)), 0) as total_value
+       FROM collections c
+       LEFT JOIN collection_cards cc ON c.id = cc.collection_id
+       LEFT JOIN card_price_cache pc ON cc.card_name = pc.card_name
+       LEFT JOIN scryfall_cards sc ON cc.card_name = sc.card_name
+       WHERE c.player_id = ?
+       GROUP BY c.id
+       ORDER BY c.created_at DESC`,
+      [playerId]
+    );
+    res.json({ success: true, collections: rows });
+  } catch (e) {
+    console.error("Failed to load collections:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// CREATE a new collection
+app.post('/api/collections', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { name, settings } = req.body;
+  if (!name) return res.status(400).json({ error: "Collection name is required." });
+  try {
+    const id = 'col_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    await db.run(
+      "INSERT INTO collections (id, player_id, name, settings) VALUES (?, ?, ?, ?)",
+      [id, playerId, name, JSON.stringify(settings || {})]
+    );
+    res.json({ success: true, collectionId: id });
+  } catch (e) {
+    console.error("Failed to create collection:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// UPDATE collection settings
+app.put('/api/collections/:id', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { id } = req.params;
+  const { name, settings } = req.body;
+  try {
+    const coll = await db.get("SELECT * FROM collections WHERE id = ? AND player_id = ?", [id, playerId]);
+    if (!coll) return res.status(404).json({ error: "Collection not found." });
+    if (name) {
+      await db.run("UPDATE collections SET name = ? WHERE id = ?", [name, id]);
+    }
+    if (settings) {
+      await db.run("UPDATE collections SET settings = ? WHERE id = ?", [JSON.stringify(settings), id]);
+    }
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Failed to update collection:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE a collection
+app.delete('/api/collections/:id', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { id } = req.params;
+  try {
+    const coll = await db.get("SELECT * FROM collections WHERE id = ? AND player_id = ?", [id, playerId]);
+    if (!coll) return res.status(404).json({ error: "Collection not found." });
+    
+    // Archive collection data and cards for soft-deletion recovery
+    const cards = await db.query("SELECT * FROM collection_cards WHERE collection_id = ?", [id]);
+    const recoveryId = 'rec_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    await db.run(
+      "INSERT INTO deleted_items (id, item_type, item_id, player_id, name, data) VALUES (?, 'collection', ?, ?, ?, ?)",
+      [recoveryId, id, playerId, coll.name, JSON.stringify({ collection: coll, cards })]
+    );
+
+    await db.run("DELETE FROM collection_cards WHERE collection_id = ?", [id]);
+    await db.run("DELETE FROM collections WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Failed to delete collection:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET cards in a collection
+app.get('/api/collections/:id/cards', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { id } = req.params;
+  try {
+    const coll = await db.get("SELECT * FROM collections WHERE id = ? AND player_id = ?", [id, playerId]);
+    if (!coll) return res.status(404).json({ error: "Collection not found." });
+    const cards = await db.query(
+      `SELECT cc.*, 
+              COALESCE(pc.price, sc.price, 0.15) as price,
+              COALESCE(pc.type_line, sc.type_line, 'Card') as type_line,
+              COALESCE(pc.oracle_text, sc.oracle_text, '') as oracle_text,
+              COALESCE(pc.colors, sc.colors, '[]') as colors,
+              COALESCE(pc.cmc, sc.cmc, 0) as cmc,
+              COALESCE(cc.scryfall_id, sc.scryfall_id) as scryfall_id
+       FROM collection_cards cc
+       LEFT JOIN card_price_cache pc ON cc.card_name = pc.card_name
+       LEFT JOIN scryfall_cards sc ON cc.card_name = sc.card_name
+       WHERE cc.collection_id = ?
+       ORDER BY cc.card_name ASC`,
+      [id]
+    );
+    res.json({ success: true, cards });
+  } catch (e) {
+    console.error("Failed to get cards from collection:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ADD/INCREMENT card in a collection
+app.post('/api/collections/:id/cards', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { id } = req.params;
+  const { cardName, scryfallId, quantity, isFoil, condition, language, purchasePrice, isForTrade } = req.body;
+  if (!cardName) return res.status(400).json({ error: "Card name is required." });
+
+  try {
+    const coll = await db.get("SELECT * FROM collections WHERE id = ? AND player_id = ?", [id, playerId]);
+    if (!coll) return res.status(404).json({ error: "Collection not found." });
+
+    const qty = quantity || 1;
+    const foil = isFoil ? 1 : 0;
+    const trade = isForTrade ? 1 : 0;
+    const cond = condition || 'NM';
+    const lang = language || 'EN';
+    const price = purchasePrice || null;
+
+    // Check if card matches database scryfall_cards or price cache to fetch scryfallId
+    let resolvedScryfallId = scryfallId || null;
+    if (!resolvedScryfallId) {
+      const match = await db.get("SELECT scryfall_id FROM scryfall_cards WHERE card_name = ? COLLATE NOCASE", [cardName]);
+      if (match) resolvedScryfallId = match.scryfall_id;
+    }
+
+    await db.run(
+      `INSERT INTO collection_cards (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(collection_id, card_name, scryfall_id, is_foil, condition, language) 
+       DO UPDATE SET quantity = quantity + EXCLUDED.quantity`,
+      [id, cardName, resolvedScryfallId, qty, foil, trade, cond, lang, price]
+    );
+
+    // Auto-remove or decrement from wishlist if it exists
+    const wishlistCard = await db.get(
+      "SELECT * FROM wishlist_cards WHERE player_id = ? AND card_name = ? COLLATE NOCASE",
+      [playerId, cardName]
+    );
+    if (wishlistCard) {
+      const newWishQty = wishlistCard.quantity - qty;
+      if (newWishQty <= 0) {
+        await db.run(
+          "DELETE FROM wishlist_cards WHERE player_id = ? AND card_name = ? COLLATE NOCASE",
+          [playerId, cardName]
+        );
+      } else {
+        await db.run(
+          "UPDATE wishlist_cards SET quantity = ? WHERE player_id = ? AND card_name = ? COLLATE NOCASE",
+          [newWishQty, playerId, cardName]
+        );
+      }
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Failed to add card to collection:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// UPDATE collection card properties
+app.put('/api/collections/:id/cards', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { id } = req.params;
+  const { 
+    cardName, scryfallId, isFoil, condition, language,
+    newQuantity, newIsFoil, newIsForTrade, newCondition, newLanguage, newPurchasePrice 
+  } = req.body;
+
+  try {
+    const coll = await db.get("SELECT * FROM collections WHERE id = ? AND player_id = ?", [id, playerId]);
+    if (!coll) return res.status(404).json({ error: "Collection not found." });
+
+    const foil = isFoil ? 1 : 0;
+    const cond = condition || 'NM';
+    const lang = language || 'EN';
+    
+    // Perform update
+    await db.run(
+      `UPDATE collection_cards 
+       SET quantity = ?, is_foil = ?, is_for_trade = ?, condition = ?, language = ?, purchase_price = ?
+       WHERE collection_id = ? AND card_name = ? AND COALESCE(scryfall_id, '') = COALESCE(?, '') AND is_foil = ? AND condition = ? AND language = ?`,
+      [
+        newQuantity, newIsFoil ? 1 : 0, newIsForTrade ? 1 : 0, newCondition, newLanguage, newPurchasePrice || null,
+        id, cardName, scryfallId || null, foil, cond, lang
+      ]
+    );
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Failed to update collection card:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// REMOVE card from a collection
+app.delete('/api/collections/:id/cards', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { id } = req.params;
+  const { cardName, scryfallId, isFoil, condition, language } = req.body;
+
+  try {
+    const coll = await db.get("SELECT * FROM collections WHERE id = ? AND player_id = ?", [id, playerId]);
+    if (!coll) return res.status(404).json({ error: "Collection not found." });
+
+    const foil = isFoil ? 1 : 0;
+    const cond = condition || 'NM';
+    const lang = language || 'EN';
+
+    await db.run(
+      `DELETE FROM collection_cards 
+       WHERE collection_id = ? AND card_name = ? AND COALESCE(scryfall_id, '') = COALESCE(?, '') AND is_foil = ? AND condition = ? AND language = ?`,
+      [id, cardName, scryfallId || null, foil, cond, lang]
+    );
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Failed to remove collection card:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET wishlist cards
+app.get('/api/wishlist', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  try {
+    const wishlist = await db.query(
+      `SELECT w.*, 
+              COALESCE(pc.price, sc.price, 0.15) as price,
+              COALESCE(pc.type_line, sc.type_line, 'Card') as type_line,
+              COALESCE(pc.oracle_text, sc.oracle_text, '') as oracle_text,
+              COALESCE(w.scryfall_id, sc.scryfall_id) as scryfall_id
+       FROM wishlist_cards w
+       LEFT JOIN card_price_cache pc ON w.card_name = pc.card_name
+       LEFT JOIN scryfall_cards sc ON w.card_name = sc.card_name
+       WHERE w.player_id = ?
+       ORDER BY w.card_name ASC`,
+      [playerId]
+    );
+    res.json({ success: true, wishlist });
+  } catch (e) {
+    console.error("Failed to load wishlist:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ADD card to wishlist
+app.post('/api/wishlist', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { cardName, scryfallId, quantity } = req.body;
+  if (!cardName) return res.status(400).json({ error: "Card name is required." });
+  try {
+    const qty = quantity || 1;
+    let resolvedScryfallId = scryfallId || null;
+    if (!resolvedScryfallId) {
+      const match = await db.get("SELECT scryfall_id FROM scryfall_cards WHERE card_name = ? COLLATE NOCASE", [cardName]);
+      if (match) resolvedScryfallId = match.scryfall_id;
+    }
+    await db.run(
+      `INSERT INTO wishlist_cards (player_id, card_name, scryfall_id, quantity)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(player_id, card_name, scryfall_id)
+       DO UPDATE SET quantity = quantity + EXCLUDED.quantity`,
+      [playerId, cardName, resolvedScryfallId, qty]
+    );
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Failed to add to wishlist:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// REMOVE card from wishlist
+app.delete('/api/wishlist/:cardName', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { cardName } = req.params;
+  try {
+    await db.run(
+      "DELETE FROM wishlist_cards WHERE player_id = ? AND card_name = ? COLLATE NOCASE",
+      [playerId, cardName]
+    );
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Failed to delete from wishlist:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==========================================
+// DELETED ITEMS RECOVERY (RECYCLE BIN) API
+// ==========================================
+
+// GET all deleted items for a player
+app.get('/api/recovery/deleted-items', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  try {
+    const items = await db.query(
+      "SELECT id, item_type, item_id, name, deleted_at FROM deleted_items WHERE player_id = ? ORDER BY deleted_at DESC",
+      [playerId]
+    );
+    res.json({ success: true, items });
+  } catch (e) {
+    console.error("Failed to load deleted items:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST to restore a deleted item
+app.post('/api/recovery/restore/:id', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  const { id } = req.params;
+  try {
+    const row = await db.get("SELECT * FROM deleted_items WHERE id = ? AND player_id = ?", [id, playerId]);
+    if (!row) return res.status(404).json({ error: "Deleted item not found." });
+
+    const payload = JSON.parse(row.data);
+    if (row.item_type === 'collection') {
+      const { collection, cards } = payload;
+      // Insert collection metadata
+      await db.run(
+        "INSERT INTO collections (id, player_id, name, settings, created_at) VALUES (?, ?, ?, ?, ?)",
+        [collection.id, playerId, collection.name, collection.settings, collection.created_at]
+      );
+      // Insert cards
+      for (let c of cards) {
+        await db.run(
+          `INSERT INTO collection_cards 
+           (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price, added_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [c.collection_id, c.card_name, c.scryfall_id, c.quantity, c.is_foil, c.is_for_trade, c.condition, c.language, c.purchase_price, c.added_at]
+        );
+      }
+    } else if (row.item_type === 'deck') {
+      const { deck, cards } = payload;
+      // Insert deck metadata
+      await db.run(
+        `INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, keep_cheapest) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [deck.id, playerId, deck.moxfield_url, deck.deck_name, deck.cheapest_total_price, deck.last_checked, deck.is_legal, deck.keep_cheapest]
+      );
+      // Insert cards
+      for (let c of cards) {
+        await db.run(
+          "INSERT INTO deck_cards (deck_id, card_name, cheapest_card_price, quantity, scryfall_id, custom_tag) VALUES (?, ?, ?, ?, ?, ?)",
+          [c.deck_id, c.card_name, c.cheapest_card_price, c.quantity, c.scryfall_id, c.custom_tag]
+        );
+      }
+    }
+
+    await db.run("DELETE FROM deleted_items WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Failed to restore item:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Serving Client SPA Router
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 function checkDailyResetCron() {
   const now = new Date();
