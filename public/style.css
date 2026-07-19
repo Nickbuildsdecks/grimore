@@ -172,8 +172,7 @@
 }
 
 #profile-view .profile-scroll-wrapper {
-  max-width: 1380px;
-  margin: 0 auto;
+  max-width: 100%;
   padding: 1.7rem 2rem 3rem !important;
   scrollbar-gutter: stable;
 }
