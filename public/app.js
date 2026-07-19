@@ -489,10 +489,6 @@
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>
         <span class="sidebar-footer-label">Admin Console</span>
       </button>
-      <button class="btn btn-sm sidebar-footer-action" id="btn-" aria-label=" Server" title=" Server" onclick="openModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.3); color: var(--color-secondary); display: flex; align-items: center; justify-content: center; gap: 0.4rem; font-weight: bold;">
-        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 12h4M8 10v4M15 11v.01M18 13v.01"/></svg>
-        <span class="sidebar-footer-label"> Server</span>
-      </button>
     ` : '';
     container.innerHTML = `
       ${adminBtnHtml}
@@ -8148,105 +8144,5 @@
     }
   }
 
-  // ---  & playit.gg Controller Frontend Integration ---
-  let PollInterval = null;
-
-  window.openModal = function() {
-    const modal = document.getElementById('modal--server');
-    if (modal) {
-      modal.classList.add('active');
-      checkStatus();
-      // Poll status every 10 seconds while open
-      if (PollInterval) clearInterval(PollInterval);
-      PollInterval = setInterval(checkStatus, 10000);
-    }
-  };
-
-  window.closeModal = function(event) {
-    if (!event || event.target === event.currentTarget || event.target.tagName === 'BUTTON') {
-      const modal = document.getElementById('modal--server');
-      if (modal) {
-        modal.classList.remove('active');
-      }
-      if (PollInterval) {
-        clearInterval(PollInterval);
-        PollInterval = null;
-      }
-    }
-  };
-
-  window.checkStatus = async function() {
-    const palBadge = document.getElementById('-status-badge');
-    const playitBadge = document.getElementById('playit-status-badge');
-    const details = document.getElementById('-connection-details');
-    
-    if (!palBadge || !playitBadge) return;
-
-    try {
-      const res = await fetch('/api//status');
-      if (res.status === 403) {
-        if (PollInterval) clearInterval(PollInterval);
-        return;
-      }
-      const data = await res.json();
-
-      if (data.) {
-        palBadge.textContent = 'Running';
-        palBadge.className = 'badge badge-win';
-      } else {
-        palBadge.textContent = 'Stopped';
-        palBadge.className = 'badge badge-loss';
-      }
-
-      if (data.playit) {
-        playitBadge.textContent = 'Running';
-        playitBadge.className = 'badge badge-win';
-      } else {
-        playitBadge.textContent = 'Stopped';
-        playitBadge.className = 'badge badge-loss';
-      }
-
-      if (data. && data.playit) {
-        if (details) details.style.display = 'block';
-      } else {
-        if (details) details.style.display = 'none';
-      }
-    } catch (e) {
-      console.error("Error checking  status:", e);
-      palBadge.textContent = 'Error';
-      palBadge.className = 'badge badge-neutral';
-      playitBadge.textContent = 'Error';
-      playitBadge.className = 'badge badge-neutral';
-    }
-  };
-
-  window.handleAction = async function(action) {
-    const startBtn = document.getElementById('btn--start');
-    const stopBtn = document.getElementById('btn--stop');
-    
-    if (startBtn) startBtn.disabled = true;
-    if (stopBtn) stopBtn.disabled = true;
-
-    try {
-      const res = await fetch(`/api//${action}`, { method: 'POST' });
-      const data = await res.json();
-      
-      if (window.showSlideNotification) {
-        window.showSlideNotification(data.message || `Server action ${action} executed.`, data.success ? "success" : "error");
-      } else {
-        alert(data.message || `Server action ${action} executed.`);
-      }
-
-      setTimeout(async () => {
-        await checkStatus();
-        if (startBtn) startBtn.disabled = false;
-        if (stopBtn) stopBtn.disabled = false;
-      }, 1500);
-
-    } catch (e) {
-      console.error(`Failed to execute  action ${action}:`, e);
-      if (startBtn) startBtn.disabled = false;
-      if (stopBtn) stopBtn.disabled = false;
-    }
-  };
+  
 })();

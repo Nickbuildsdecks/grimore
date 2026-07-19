@@ -2043,50 +2043,7 @@
     </div>
   </div>
 
-  <!--  Server Control Modal -->
-  <div id="modal--server" class="modal-overlay" onclick="closeModal(event)">
-    <div class="modal" style="max-width: 480px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 1.75rem; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6);" onclick="event.stopPropagation()">
-      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem; margin-bottom: 1.25rem;">
-        <h3 style="margin: 0; font-size: 1.35rem; font-family: 'Cinzel', serif; color: var(--color-primary); display: flex; align-items: center; gap: 0.5rem;">
-          🎮  Server Manager
-        </h3>
-        <button class="btn btn-secondary btn-sm" onclick="closeModal(null)">Close</button>
-      </div>
-      
-      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-        <div style="background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-medium);"> Dedicated Server:</span>
-            <span id="-status-badge" class="badge badge-neutral" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Checking...</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-medium);">playit.gg Tunnel (playitd):</span>
-            <span id="playit-status-badge" class="badge badge-neutral" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Checking...</span>
-          </div>
-        </div>
 
-        <div id="-connection-details" style="display: none; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: var(--radius-sm); padding: 0.75rem; font-size: 0.8rem; color: var(--color-secondary);">
-          ℹ️ Server Port: <strong>8211 (UDP)</strong> is active. Tunnel connection is established.
-        </div>
-
-        <div style="display: flex; gap: 0.75rem; width: 100%;">
-          <button id="btn--start" class="btn btn-primary" style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onclick="handleAction('start')">
-            ▶️ Start Server
-          </button>
-          <button id="btn--stop" class="btn btn-danger" style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onclick="handleAction('stop')">
-            ⏹️ Stop Server
-          </button>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; border-top: 1px solid var(--border-light); padding-top: 0.75rem;">
-          <span style="font-size: 0.7rem; color: var(--text-muted);">Runs silently in the background</span>
-          <button class="btn btn-secondary btn-sm" onclick="checkStatus()" style="font-size: 0.7rem; padding: 2px 8px;">
-            🔄 Refresh Status
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- MODAL: Stylish DELETE Confirmation (Shared globally by collections/decks) -->
   <div id="delete-confirm-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 12000;">
