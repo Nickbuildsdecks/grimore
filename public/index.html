@@ -6,50 +6,75 @@
   <title>Grimore</title>
   <meta name="description" content="Sleek, minimalist dark theme manager for Magic: The Gathering Commander decks, visual budget building, social deck sharing, and local store events.">
   <link rel="icon" type="image/svg+xml" href="logo.svg">
-  <link rel="stylesheet" href="style.css?v=17">
+    <link rel="stylesheet" href="style.css?v=50">
 </head>
 <body>
   <!-- Fullscreen Glowing Purple Magic Strands Canvas -->
   <!-- Fullscreen Glowing Purple Magic Strands Canvas (Original for Login Page) -->
   <canvas id="auth-magic-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; background: #08080a; display: none;"></canvas>
   <!-- Fullscreen Background Canvas for Logged In Views -->
-  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: -1; background: #050508; display: none;"></canvas>
+  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; background: #050508; display: none;"></canvas>
 
   <div class="app-layout sidebar-hidden" id="app-layout">
     <!-- Left Navigation Sidebar -->
     <aside class="sidebar" id="app-sidebar">
+      <button type="button" id="sidebar-collapse-toggle" class="sidebar-collapse-toggle" aria-label="Collapse navigation" aria-expanded="true" aria-controls="app-sidebar" onclick="toggleDesktopSidebar()" title="Collapse navigation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>
+      </button>
       <div class="sidebar-header">
         <a href="#" class="logo-container" onclick="event.preventDefault(); showSection('decks');">
-          <img src="logo.svg" alt="Grimore Logo" style="width: 64px; height: 64px; filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.65));">
+          <img src="logo.svg" alt="Grimore Logo" style="filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.65));">
           <div class="logo-text">Grimore</div>
         </a>
       </div>
-      
+
       <nav class="sidebar-nav" id="main-nav-links">
-        <button class="nav-btn" id="nav-btn-discover" onclick="showSection('discover')">
+        <button class="nav-btn" id="nav-btn-discover" aria-label="Discover" title="Discover" onclick="showSection('discover')">
           <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
           <span>Discover</span>
         </button>
-        <button class="nav-btn" id="nav-btn-decks" onclick="showSection('decks')">
+        <button class="nav-btn" id="nav-btn-decks" aria-label="My Decks" title="My Decks" onclick="showSection('decks')">
           <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           <span>My Decks</span>
         </button>
-        <button class="nav-btn" id="nav-btn-search" onclick="window.location.href='search.html'">
+        <button class="nav-btn" id="nav-btn-search" aria-label="Card Search" title="Card Search" onclick="window.location.href='search.html'">
           <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
           <span>Card Search</span>
         </button>
-        <button class="nav-btn" id="nav-btn-tournaments" onclick="showSection('tournaments')">
+        <button class="nav-btn" id="nav-btn-tournaments" aria-label="Events" title="Events" onclick="showSection('tournaments')">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="7"/><path d="M8.21 13.89L7 23l5-3 5 3-1.21-9.12"/></svg>
           <span>Events</span>
         </button>
-        <button class="nav-btn" id="nav-btn-lifetracker" onclick="showSection('lifetracker')">
+        <button class="nav-btn" id="nav-btn-lifetracker" aria-label="Life Tracker" title="Life Tracker" onclick="showSection('lifetracker')">
           <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
           <span>Life Tracker</span>
         </button>
       </nav>
-      
-      <div class="sidebar-footer" id="user-badge-container">
-        <!-- User profile info / Logout generated dynamically -->
+
+      <div class="sidebar-footer">
+        <div class="sidebar-account-actions" id="sidebar-account-actions" style="display: none;">
+          <div class="notifications-bell-container">
+            <button type="button" class="sidebar-account-action" aria-label="Open notifications" title="Notifications" onclick="toggleNotificationsDropdown(event)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+              <span class="sidebar-account-label">Notifications</span>
+              <span id="notifications-unread-count" class="notifications-badge" style="display: none;">0</span>
+            </button>
+          </div>
+          <button id="nav-btn-profile" class="sidebar-account-action" type="button" aria-label="Open profile and settings" title="Profile & Settings" onclick="showSection('profile')">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+            <span class="sidebar-account-label">Profile &amp; Settings</span>
+          </button>
+          <div id="notifications-dropdown" class="notifications-dropdown">
+            <div class="notifications-header">
+              <span>Notifications</span>
+              <button class="btn btn-secondary btn-sm" onclick="markAllNotificationsRead()">Clear All</button>
+            </div>
+            <div id="notifications-list" class="notifications-list"></div>
+          </div>
+        </div>
+        <div id="user-badge-container" class="sidebar-utility-actions">
+          <!-- User utility actions generated dynamically -->
+        </div>
       </div>
     </aside>
 
@@ -57,32 +82,8 @@
     <div class="main-content">
       <header class="content-header" style="position: relative; display: flex; align-items: center; justify-content: space-between; background: transparent !important; border-bottom: none !important; box-shadow: none !important;">
         <div style="display: flex; align-items: center; gap: 0.75rem;">
-          <button class="mobile-menu-toggle" onclick="toggleMobileSidebar()" style="display: none; background: none; border: none; cursor: pointer; color: var(--text-pure); padding: 0.5rem; justify-content: center; align-items: center; z-index: 120;">
+          <button class="mobile-menu-toggle" type="button" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false" onclick="toggleMobileSidebar(this)" style="display: none; background: none; border: none; cursor: pointer; color: var(--text-pure); padding: 0.5rem; justify-content: center; align-items: center; z-index: 120;">
             <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round;"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          </button>
-        </div>
-        <div id="header-profile-container" style="display: none; align-items: center; gap: 1rem; position: absolute; right: 2.5rem; top: 50%; transform: translateY(-50%); z-index: 150;">
-          <!-- Notifications Bell -->
-          <div class="notifications-bell-container" onclick="toggleNotificationsDropdown(event)">
-            <button style="background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 50%; background-color: var(--bg-surface); border: 1px solid var(--border-medium); box-shadow: var(--glow-cyan); transition: var(--transition-fast);">
-              <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: var(--text-medium);"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
-            </button>
-            <span id="notifications-unread-count" class="notifications-badge" style="display: none;">0</span>
-          </div>
-          
-          <!-- Notifications Dropdown -->
-          <div id="notifications-dropdown" class="notifications-dropdown">
-            <div class="notifications-header">
-              <span style="font-weight: 700; font-size: 0.85rem; color: var(--text-high);">Notifications</span>
-              <button class="btn btn-secondary btn-sm" onclick="markAllNotificationsRead()" style="padding: 1px 5px; font-size: 0.65rem; height: auto;">Clear All</button>
-            </div>
-            <div id="notifications-list" class="notifications-list">
-              <!-- Dynamic notifications list -->
-            </div>
-          </div>
-
-          <button class="profile-btn" onclick="showSection('profile')" style="background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; border-radius: 50%; background-color: var(--bg-surface); border: 1px solid var(--border-medium); box-shadow: var(--glow-cyan); transition: var(--transition-fast);">
-            <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: var(--color-primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
           </button>
         </div>
       </header>
@@ -101,21 +102,21 @@
             </p>
           </div>
         </div>
-        
+
         <!-- Right Side: Form Controls -->
         <div class="auth-form-side">
           <div class="panel-header" style="justify-content: center; text-align: center; border-bottom: none; padding-bottom: 0; margin-bottom: 1.5rem;">
-            <h2 id="auth-title" style="text-align: center; width: 100%; font-size: 1.6rem; font-family: 'Cinzel', serif; font-weight: 800; color: #c084fc;">Login</h2>
+            <h2 id="auth-title" style="text-align: center; width: 100%; font-size: 1.6rem; font-family: 'Cinzel', serif; font-weight: 800; color: var(--color-primary);">Login</h2>
           </div>
 
           <form id="form-login" onsubmit="handleLogin(event)">
             <div class="form-group">
-              <label class="form-label">Username</label>
-              <input type="text" id="login-username" class="input-field" required autocomplete="off" style="background-color: var(--bg-dark);">
+              <label class="form-label" for="login-username">Username</label>
+              <input type="text" id="login-username" class="input-field" required autocomplete="username" style="background-color: var(--bg-dark);">
             </div>
             <div class="form-group">
-              <label class="form-label">Password <a href="#" onclick="window.showForgotPasswordModal(event)" style="font-size: 0.72rem; color: var(--color-primary); float: right; font-weight: 500; text-decoration: none;">Forgot?</a></label>
-              <input type="password" id="login-password" class="input-field" required style="background-color: var(--bg-dark);">
+              <label class="form-label" for="login-password">Password <a href="#" onclick="window.showForgotPasswordModal(event)" style="font-size: 0.8rem; color: var(--color-primary); float: right; font-weight: 600; text-decoration: none;">Forgot?</a></label>
+              <input type="password" id="login-password" class="input-field" required autocomplete="current-password" style="background-color: var(--bg-dark);">
             </div>
             <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1.5rem; height: 42px;">Access Grimore</button>
             <div style="text-align: center; margin-top: 1.25rem;">
@@ -126,16 +127,20 @@
 
           <form id="form-register" style="display: none;" onsubmit="handleRegister(event)">
             <div class="form-group">
-              <label class="form-label">Username</label>
-              <input type="text" id="reg-username" class="input-field" required autocomplete="off" style="background-color: var(--bg-dark);">
+              <label class="form-label" for="reg-username">Username</label>
+              <input type="text" id="reg-username" class="input-field" required autocomplete="username" style="background-color: var(--bg-dark);">
             </div>
             <div class="form-group">
-              <label class="form-label">Store Nickname</label>
+              <label class="form-label" for="reg-nickname">Nickname</label>
               <input type="text" id="reg-nickname" class="input-field" placeholder="e.g. Planeswalker Bob" required autocomplete="off" style="background-color: var(--bg-dark);">
             </div>
             <div class="form-group">
-              <label class="form-label">Password</label>
-              <input type="password" id="reg-password" class="input-field" required style="background-color: var(--bg-dark);">
+              <label class="form-label" for="reg-email">Email Address</label>
+              <input type="email" id="reg-email" class="input-field" placeholder="e.g. jace@beleren.com" required autocomplete="email" style="background-color: var(--bg-dark);">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reg-password">Password</label>
+              <input type="password" id="reg-password" class="input-field" required autocomplete="new-password" style="background-color: var(--bg-dark);">
             </div>
             <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1.5rem; height: 42px;">Create Account</button>
             <div style="text-align: center; margin-top: 1.25rem;">
@@ -152,7 +157,7 @@
     <!-- View 1.5: Discover Decks (Community Feed) -->
     <section id="discover-view" class="view-section">
       <div class="panel">
-        <div class="panel-header" style="justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div class="panel-header discover-stage-header" style="justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
           <div>
             <h2 style="font-size: 1.30rem; margin: 0; font-family:'Cinzel', serif;">Community Showcase</h2>
             <span style="font-size: 0.75rem; color: var(--text-muted);">Explore trending decklists, filter by tags, and clone creations directly to your collection.</span>
@@ -160,13 +165,13 @@
           <div style="display: flex; gap: 0.5rem; align-items: center;">
             <select id="discover-sort" class="input-field" style="margin: 0; width: 140px; background: var(--bg-dark); cursor: pointer;" onchange="loadDiscoverDecks()">
               <option value="recent">Recent Decks</option>
-              <option value="trending">Trending 🔥</option>
+              <option value="trending">Trending</option>
             </select>
             <input type="text" id="discover-search" class="input-field" placeholder="Search tag, card, or creator..." style="margin: 0; width: 250px; background: var(--bg-dark);" oninput="handleDiscoverSearch()">
             <button class="btn btn-secondary" onclick="loadDiscoverDecks()" style="height: 38px;">Refresh</button>
           </div>
         </div>
-        
+
         <div id="discover-decks-container" class="decks-grid">
           <!-- Dynamic community decks load here -->
         </div>
@@ -175,10 +180,16 @@
 
     <!-- View 2: My Decks Panel -->
     <section id="decks-view" class="view-section">
-      <div class="panel">
-        <div class="panel-header" style="justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-bottom: none; margin-bottom: 1.5rem; padding-bottom: 0;">
+      <div class="panel deck-library-panel">
+        <div class="deck-library-header">
+          <div class="deck-library-heading">
+            <span class="deck-library-kicker">Your collection</span>
+            <h2>My Decks</h2>
+            <p>Build, tune, and bring your Commander collection to the table.</p>
+          </div>
+
           <!-- Left side: Moxfield Import Panel (fits cleanly in row space) -->
-          <div id="import-deck-wrapper" style="display: none; flex-grow: 1; max-width: 550px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; box-shadow: var(--shadow-sm); margin: 0;">
+          <div id="import-deck-wrapper" class="deck-import-panel" style="display: none;">
             <!-- Tab Headers -->
             <div style="display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.35rem; margin-bottom: 0.5rem; align-items: center;">
               <button type="button" id="tab-import-moxfield" class="btn btn-sm btn-gold" onclick="switchImportTab('moxfield')" style="padding: 2px 8px; font-size: 0.7rem; font-weight: 700;">Moxfield URL</button>
@@ -192,8 +203,8 @@
                 <button type="submit" class="btn btn-primary btn-sm" style="margin: 0; height: 28px; font-size:0.7rem; padding: 0 8px;">Import</button>
               </form>
               <div style="margin-top: 0.35rem; display: flex; justify-content: flex-end;">
-                <a href="#" onclick="handleImportMoxfieldAccount(event)" style="font-size: 0.65rem; color: var(--color-primary); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 0.2rem; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
-                  🔮 Import Entire Moxfield Account
+                <a href="#" onclick="handleImportMoxfieldAccount(event)" style="font-size: 0.875rem; color: var(--color-primary); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                  Import Entire Moxfield Account
                 </a>
               </div>
             </div>
@@ -223,9 +234,15 @@
           </div>
 
           <!-- Actions aligned right -->
-          <div style="display: flex; gap: 0.5rem; align-items: center; margin-left: auto; flex-shrink: 0;">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="toggleImportForm()" style="height: 38px; font-weight:600;">Import Deck</button>
-            <button type="button" class="btn btn-gold btn-sm" onclick="openVisualDeckbuilder()" style="height: 38px; font-weight:600;">Create Deck</button>
+          <div class="deck-library-actions">
+            <button type="button" class="btn btn-secondary" onclick="toggleImportForm()">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+              Import
+            </button>
+            <button type="button" class="btn btn-gold" onclick="openVisualDeckbuilder()">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              New deck
+            </button>
           </div>
         </div>
 
@@ -237,38 +254,38 @@
 
     <!-- Consolidated View 3: Tournaments Hub -->
     <section id="tournaments-view" class="view-section">
-      <div style="display: grid; grid-template-columns: 260px 1fr; gap: 1.5rem; min-height: 600px;">
-        
+      <div class="events-stage-grid" style="display: grid; grid-template-columns: 260px 1fr; gap: 1.5rem; min-height: 600px;">
+
         <!-- Sidebar: Tournaments List (My Events vs Find Events) -->
-        <div style="background-color: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; height: 100%;">
+        <div class="events-board" style="background-color: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; height: 100%;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; flex-shrink: 0;">
             <h3 style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-medium); letter-spacing: 0.5px; margin: 0;">Events Board</h3>
             <button id="admin-btn-new-tournament" class="btn btn-gold btn-sm" style="display: none; padding: 2px 6px; font-size: 0.7rem;" onclick="showNewTournamentModal()">+ New</button>
           </div>
-          
+
           <div style="display: flex; flex-direction: column; gap: 1.25rem; flex-grow: 1; overflow-y: auto; max-height: 580px; padding-right: 0.25rem;">
             <div>
               <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--color-primary); margin-bottom: 0.5rem; font-weight: 700; letter-spacing: 0.5px;">My Events</h4>
               <div id="tournament-list-my" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
             </div>
-            
+
             <div style="border-top: 1px solid var(--border-light); padding-top: 1rem;">
               <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.5rem; font-weight: 700; letter-spacing: 0.5px;">Find Events</h4>
               <div id="tournament-list-find" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
             </div>
           </div>
         </div>
-        
+
         <!-- Main Area: Selected Tournament Hub -->
         <div id="tournament-hub" style="display: flex; flex-direction: column; gap: 1rem;">
-          <div class="panel" style="margin-bottom: 0; flex-grow: 1; display: flex; flex-direction: column; min-height: 550px;">
-            
+          <div class="panel events-hub-stage" style="margin-bottom: 0; flex-grow: 1; display: flex; flex-direction: column; min-height: 550px;">
+
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
               <div>
                 <h2 id="hub-tournament-title" style="margin: 0; font-size: 1.4rem;">Select an Event</h2>
                 <p id="hub-tournament-status" style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-muted);"></p>
               </div>
-              
+
               <!-- Sub-navigation Tabs -->
               <div class="inner-nav" id="hub-inner-nav" style="display: none; gap: 0.25rem; background: var(--bg-dark); padding: 0.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
                 <button class="nav-btn btn-sm active" id="tab-hub-standings" onclick="switchHubTab('standings')">Standings</button>
@@ -277,10 +294,10 @@
                 <button class="nav-btn btn-sm" id="tab-hub-admin" style="display: none; color: var(--color-secondary);" onclick="switchHubTab('admin')">Console</button>
               </div>
             </div>
-            
+
             <!-- Hub Event Registration Panel (for non-joined events) -->
             <div id="hub-registration-panel" style="display: none; background: var(--bg-dark); border: 1px solid var(--border-medium); border-radius: var(--radius-md); margin-top: 1.5rem; padding: 2rem;"></div>
-            
+
             <!-- Hub Tab 1: Standings -->
             <div id="hub-section-standings" class="hub-tab-section active" style="margin-top: 1.5rem;">
               <div>
@@ -303,7 +320,7 @@
                   </table>
                 </div>
               </div>
-              
+
               <div style="margin-top: 2rem;">
                 <h3 style="margin-bottom: 0.75rem; font-size: 1.1rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.25rem;">Deck Standings</h3>
                 <div class="table-container">
@@ -348,7 +365,7 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- Hub Tab 2: Pairings -->
             <div id="hub-section-pairings" class="hub-tab-section" style="margin-top: 1.5rem; display: none;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -362,7 +379,7 @@
                 <!-- Dynamic match pairings pods -->
               </div>
             </div>
-            
+
             <!-- Hub Tab 3: Attend / Check-In -->
             <div id="hub-section-attend" class="hub-tab-section" style="margin-top: 1.5rem; display: none;">
               <div style="max-width: 500px; margin: 0 auto; padding: 2rem 0;">
@@ -370,20 +387,20 @@
                   <h3 style="margin-bottom: 0.5rem; font-size: 1.25rem;">Event Check-In</h3>
                   <p style="color: var(--text-medium); line-height: 1.5; font-size: 0.9rem;">Check in with a legal deck to register yourself for active round matchmaking.</p>
                 </div>
-                
+
                 <div style="background-color: var(--bg-dark); border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-weight: 500; font-size: 0.9rem;">Attendance Status:</span>
                     <span id="hub-checkin-badge" class="badge badge-neutral">Not Checked-in</span>
                   </div>
-                  
+
                   <div class="form-group" style="margin: 0;">
                     <label class="form-label">Choose Roster Deck</label>
                     <select id="hub-select-checkin-deck" class="input-field" style="margin: 0; background: var(--bg-surface);">
                       <!-- Dynamic select decks -->
                     </select>
                   </div>
-                  
+
                   <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
                     <button id="hub-btn-checkin" class="btn btn-primary" style="flex: 1;" onclick="handleHubCheckIn()">Check-In</button>
                     <button id="hub-btn-checkout" class="btn btn-danger" style="flex: 1;" onclick="handleHubCheckOut()">Check-Out</button>
@@ -391,7 +408,7 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- Hub Tab 4: Admin Console -->
             <div id="hub-section-admin" class="hub-tab-section" style="margin-top: 1.5rem; display: none;">
               <div class="columns-grid">
@@ -406,7 +423,7 @@
                         <label class="form-label">Event/League Name</label>
                         <input type="text" id="rules-name" class="input-field" style="background: var(--bg-surface);" required autocomplete="off">
                       </div>
-                      
+
                       <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
                         <div class="form-group" style="margin: 0;">
                           <label class="form-label">Win pts</label>
@@ -425,7 +442,7 @@
                           <input type="number" id="rules-kill-pts" class="input-field" style="background: var(--bg-surface);" min="0" required>
                         </div>
                       </div>
-                      
+
                       <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 0.75rem; align-items: center;">
                         <div class="form-group" style="margin: 0;">
                           <label class="form-label">Remainder Mode</label>
@@ -445,7 +462,7 @@
                           </div>
                         </div>
                       </div>
-                      
+
                       <!-- Budget Restriction settings -->
                       <div style="display: flex; gap: 0.75rem; align-items: center; border-top: 1px solid var(--border-light); padding-top: 0.75rem; margin-top: 0.25rem;">
                         <div style="display: flex; align-items: center;">
@@ -473,11 +490,11 @@
                         <label class="form-label" style="font-size: 0.75rem; margin-bottom: 0.15rem; color: var(--text-muted);">Banlist (comma-separated names)</label>
                         <input type="text" id="rules-banlist" class="input-field" placeholder="e.g. Sol Ring, Black Lotus" style="background: var(--bg-surface); font-size: 0.8rem; padding: 0.25rem 0.5rem; margin:0;" autocomplete="off">
                       </div>
-                      
+
                       <button type="submit" class="btn btn-primary btn-sm" style="width: 100%; margin-top: 0.25rem;">Save Rules</button>
                     </form>
                   </div>
-                  
+
                   <!-- Generator -->
                   <div class="panel" style="background-color: var(--bg-dark); border-color: var(--border-medium); padding: 1.25rem;">
                     <div class="panel-header" style="margin-bottom: 1rem;">
@@ -492,7 +509,7 @@
                     </div>
                   </div>
                 </div>
-                
+
                 <!-- Roster -->
                 <div>
                   <div class="panel" style="background-color: var(--bg-dark); border-color: var(--border-medium); padding: 1.25rem; height: 100%;">
@@ -500,7 +517,7 @@
                       <h3 style="font-size: 1rem; margin: 0;">Checked-in Roster</h3>
                       <span id="admin-roster-count" class="badge badge-neutral">0 checked-in</span>
                     </div>
-                    
+
                     <div class="table-container" style="max-height: 320px; overflow-y: auto;">
                       <table class="table">
                         <thead>
@@ -529,7 +546,7 @@
                   <table class="table">
                     <thead>
                       <tr>
-                        <th>Store Nickname</th>
+                        <th>Nickname</th>
                         <th>Username</th>
                         <th>Current Role</th>
                         <th>Change Role Action</th>
@@ -555,14 +572,14 @@
                   <p style="font-size:0.75rem; color:var(--text-muted); margin:0; line-height:1.4;">
                     Download and extract the full <strong>MTGJSON AllPrintings.sqlite</strong> database (1.2GB uncompressed) to the persistent container volume. This guarantees offline card lookups, sets, and price trends.
                   </p>
-                  
+
                   <!-- Progress Bar Container -->
                   <div id="mtgjson-progress-container" style="display:none; flex-direction:column; gap:4px; margin-top:0.25rem;">
                     <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--color-primary); font-weight:700;">
                       <span id="mtgjson-progress-text">Downloading: 0%</span>
                     </div>
                     <div style="width:100%; height:6px; background:var(--bg-surface); border-radius:3px; overflow:hidden; border:1px solid var(--border-light);">
-                      <div id="mtgjson-progress-bar" style="width:0%; height:100%; background:var(--color-primary); transition:width 0.2s ease;"></div>
+                      <div id="mtgjson-progress-bar" style="width:100%; height:100%; background:var(--color-primary); transform:scaleX(0); transform-origin:left; transition:transform 0.2s ease;"></div>
                     </div>
                   </div>
 
@@ -573,7 +590,7 @@
                 </div>
               </div>
             </div>
-            
+
           </div>
         </div>
       </div>
@@ -582,34 +599,32 @@
     <!-- View 4: My Profile Panel (Overhauled Page) -->
     <section id="profile-view" class="view-section">
       <div class="profile-scroll-wrapper" style="overflow-y: auto; display: flex; flex-direction: column; height: 100%; width: 100%; box-sizing: border-box; padding-right: 0.5rem;">
-        
-        <!-- Return Header bar with logo -->
-        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem; margin-bottom: 1.5rem; flex-shrink: 0;">
-          <div style="display: flex; align-items: center; gap: 0.75rem;">
-            <img src="logo.svg" alt="Grimore Logo" style="width: 32px; height: 32px; filter: drop-shadow(0 0 5px rgba(168, 85, 247, 0.7)); cursor: pointer;" onclick="showSection('decks')" title="Return to Discover Decks">
-            <h2 style="font-family: 'Cinzel', serif; font-size: 1.4rem; font-weight: 800; color: var(--text-pure); margin: 0; cursor: pointer;" onclick="showSection('decks')">Grimore Profile</h2>
+
+        <div class="profile-stage-intro">
+          <div>
+            <span class="profile-stage-eyebrow">Identity &amp; account</span>
+            <h2>Profile &amp; Settings</h2>
+            <p>Shape how you appear at the table and keep your account details current.</p>
           </div>
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="btn btn-secondary btn-sm" onclick="showSection('decks')">← Discover Decks</button>
-          </div>
+          <span class="profile-preview-status"><i></i> Live preview</span>
         </div>
 
         <div class="profile-layout-grid" style="display: grid; grid-template-columns: 1fr 1.3fr; gap: 1.5rem; width: 100%; align-items: start;">
-          
+
           <!-- Left Side: Profile Customization & Settings Form -->
-          <div class="panel" style="margin: 0; height: fit-content; padding: 1.25rem; background: var(--bg-card); border-color: var(--border-light);">
-            
+          <div class="panel profile-settings-panel" style="margin: 0; height: fit-content; padding: 1.25rem; background: var(--bg-card); border-color: var(--border-light);">
+
             <!-- Tab Bar -->
             <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem;">
-              <button type="button" id="profile-btn-tab-customize" class="btn btn-secondary btn-sm active" onclick="switchProfileConfigTab('customize')" style="flex: 1; font-weight: 700; height: 28px; font-size: 0.72rem; margin: 0;">Customization</button>
-              <button type="button" id="profile-btn-tab-account" class="btn btn-secondary btn-sm" onclick="switchProfileConfigTab('account')" style="flex: 1; font-weight: 700; height: 28px; font-size: 0.72rem; margin: 0;">Account Settings</button>
+              <button type="button" id="profile-btn-tab-customize" class="btn btn-secondary btn-sm active" onclick="switchProfileConfigTab('customize')" style="flex: 1; font-weight: 700; height: 28px; font-size: 0.72rem; margin: 0;">Public profile</button>
+              <button type="button" id="profile-btn-tab-account" class="btn btn-secondary btn-sm" onclick="switchProfileConfigTab('account')" style="flex: 1; font-weight: 700; height: 28px; font-size: 0.72rem; margin: 0;">Account &amp; security</button>
             </div>
-            
+
             <!-- Form 1: Profile Customization Tab -->
             <form id="profile-form-customize" onsubmit="handleSaveProfile(event)" style="display: flex; flex-direction: column; gap: 0.75rem;">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                 <div class="form-group" style="margin: 0;">
-                  <label class="form-label" style="font-size: 0.72rem;">Store Nickname</label>
+                  <label class="form-label" style="font-size: 0.72rem;">Nickname</label>
                   <input type="text" id="profile-nickname" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" required autocomplete="off">
                 </div>
                 <div class="form-group" style="margin: 0;">
@@ -665,7 +680,7 @@
               <div style="border-top: 1px solid var(--border-light); padding-top: 0.5rem; margin-top: 0.25rem;">
                 <div class="form-group" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border-light); margin: 0;">
                   <label class="form-label" style="margin: 0; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;" for="profile-theme-toggle2">
-                    📖 Light Mode
+                    Light Mode
                   </label>
                   <div style="position: relative; display: inline-block; width: 36px; height: 18px;">
                     <input type="checkbox" id="profile-theme-toggle2" onclick="toggleThemeMode()" style="opacity: 0; width: 0; height: 0; margin: 0;">
@@ -674,7 +689,7 @@
                 </div>
               </div>
 
-              <button type="submit" class="btn btn-primary" style="width: 100%; height: 34px; font-weight: 700; margin-top: 0.25rem;">Save Customizations</button>
+              <button type="submit" class="btn btn-primary profile-save-button" style="width: 100%; height: 34px; font-weight: 700; margin-top: 0.25rem;">Save profile</button>
             </form>
 
             <!-- Form 2: Account Settings Tab -->
@@ -684,36 +699,44 @@
                 <input type="text" id="account-username" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" required autocomplete="off">
               </div>
 
-              <div class="form-group" style="margin: 0;">
-                <label class="form-label" style="font-size: 0.75rem;">Email Association</label>
-                <input type="email" id="account-email" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="your.email@example.com" autocomplete="off">
-                <span style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px; display: block;">Used exclusively for password recovery and account support.</span>
+              <div style="margin-top: 0.25rem; margin-bottom: 0.25rem;">
+                <button type="button" id="btn-reveal-credentials" class="btn btn-secondary btn-sm" onclick="window.toggleCredentialsFields()" style="width: 100%; font-weight: 700; height: 32px; display: flex; align-items: center; justify-content: center; gap: 0.25rem; font-size: 0.75rem; margin: 0; background: rgba(255,255,255,0.03); border: 1px solid var(--border-medium);">
+                  ⚙️ Edit Email & Password
+                </button>
               </div>
 
-              <div style="border-top: 1px solid var(--border-light); padding-top: 0.75rem; margin-top: 0.25rem;">
-                <span style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Update Password</span>
-                <div class="form-group" style="margin-top: 0.5rem; margin-bottom: 0;">
-                  <label class="form-label" style="font-size: 0.75rem; margin-bottom: 0.25rem;">New Password</label>
-                  <input type="password" id="account-password" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="Leave blank to keep current">
+              <div id="credentials-fields-container" style="display: none; flex-direction: column; gap: 0.85rem;">
+                <div class="form-group" style="margin: 0;">
+                  <label class="form-label" style="font-size: 0.75rem;">Email</label>
+                  <input type="email" id="account-email" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="your.email@example.com" autocomplete="off">
+                  <span style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; display: block;">Used exclusively for password recovery and account support.</span>
+                </div>
+
+                <div style="border-top: 1px solid var(--border-light); padding-top: 0.75rem; margin-top: 0.25rem;">
+                  <span style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Update Password</span>
+                  <div class="form-group" style="margin-top: 0.5rem; margin-bottom: 0;">
+                    <label class="form-label" style="font-size: 0.75rem; margin-bottom: 0.25rem;">New Password</label>
+                    <input type="password" id="account-password" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="Leave blank to keep current">
+                  </div>
                 </div>
               </div>
 
-              <button type="submit" class="btn btn-primary" style="width: 100%; height: 34px; font-weight: 700; margin-top: 0.5rem;">Update Credentials</button>
+              <button type="submit" class="btn btn-primary profile-save-button" style="width: 100%; height: 34px; font-weight: 700; margin-top: 0.5rem;">Save account changes</button>
             </form>
           </div>
-          
+
           <!-- Right Side: Live Profile Showcase & Stats -->
-          <div style="display: flex; flex-direction: column; gap: 1.5rem; width: 100%;">
-            
+          <div class="profile-preview-column" style="display: flex; flex-direction: column; gap: 1.5rem; width: 100%;">
+
             <!-- Live Profile Card -->
-            <div id="profile-showcase-card" class="panel" style="margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--theme-border, rgba(168, 85, 247, 0.35)); box-shadow: var(--theme-glow, 0 0 20px rgba(168, 85, 247, 0.45)); transition: all 0.3s ease;">
-              
+            <div id="profile-showcase-card" class="panel" style="margin: 0; padding: 1rem; overflow: hidden; border: 1px solid var(--theme-border, rgba(168, 85, 247, 0.35)); box-shadow: 0 8px 24px rgba(0,0,0,0.28); transition: border-color 0.3s ease, background-color 0.3s ease;">
+
               <!-- Art Crop Banner Cover Header -->
               <div id="showcase-banner" style="height: 150px; width: 100%; background-size: cover; background-position: center 25%; position: relative; display: flex; align-items: flex-end; padding: 1rem; box-sizing: border-box; background-image: linear-gradient(to bottom, rgba(12, 13, 20, 0.1) 0%, rgba(12, 13, 20, 0.95) 100%), url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800');">
-                
+
                 <!-- Profile Avatar & Details -->
                 <div style="display: flex; align-items: center; gap: 1rem; z-index: 2; width: 100%;">
-                  <div style="width: 72px; height: 72px; border-radius: 50%; overflow: hidden; border: 3px solid var(--theme-text, #c084fc); box-shadow: var(--theme-glow, 0 0 20px rgba(168, 85, 247, 0.45)); background: var(--bg-surface); flex-shrink: 0;">
+                  <div style="width: 72px; height: 72px; border-radius: 50%; overflow: hidden; border: 3px solid var(--theme-text, #c084fc); box-shadow: 0 4px 14px rgba(0,0,0,0.25); background: var(--bg-surface); flex-shrink: 0;">
                     <img id="showcase-avatar" src="logo.svg" alt="User Avatar" style="width: 100%; height: 100%; object-fit: cover;">
                   </div>
                   <div style="overflow: hidden;">
@@ -725,7 +748,7 @@
                         Player
                       </span>
                     </div>
-                    <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;">
+                    <div style="font-size: 0.875rem; color: var(--text-muted); margin-top: 2px;">
                       Joined: <span id="showcase-join-date">July 2026</span>
                     </div>
                   </div>
@@ -734,7 +757,7 @@
 
               <!-- Profile Body Info -->
               <div style="padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; background: rgba(12, 13, 20, 0.8);">
-                
+
                 <!-- About Bio -->
                 <div>
                   <h4 style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.35rem;">About Me</h4>
@@ -758,12 +781,12 @@
             </div>
 
             <!-- Featured Deck Showcase Widget -->
-            <div id="profile-featured-deck-widget" class="panel" style="margin: 0; padding: 1.25rem; border: 1px solid var(--theme-border, rgba(168, 85, 247, 0.35)); box-shadow: var(--theme-glow, 0 0 20px rgba(168, 85, 247, 0.45)); transition: all 0.3s ease; display: none;">
+            <div id="profile-featured-deck-widget" class="panel" style="margin: 0; padding: 1.25rem; border: 1px solid var(--theme-border, rgba(168, 85, 247, 0.35)); box-shadow: 0 8px 24px rgba(0,0,0,0.28); transition: border-color 0.3s ease, background-color 0.3s ease; display: none;">
               <div class="panel-header" style="border-bottom: 1px solid var(--border-light); padding-bottom: 0.35rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
                 <h4 style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin: 0; letter-spacing: 0.05em;">Featured Deck</h4>
                 <span id="featured-deck-legality">✔ Legal</span>
               </div>
-              
+
               <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem;">
                 <div id="featured-deck-art" style="width: 100px; height: 70px; border-radius: var(--radius-sm); background-size: cover; background-position: center; border: 1px solid var(--border-medium); flex-shrink: 0; background-image: url('logo.svg');"></div>
                 <div style="flex-grow: 1; min-width: 150px; overflow: hidden;">
@@ -778,7 +801,7 @@
               </div>
 
               <!-- Stats grid -->
-              <div style="display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; font-size: 0.72rem; padding: 0.5rem 0; border-top: 1px solid var(--border-light); background: rgba(255,255,255,0.01); border-radius: var(--radius-sm);">
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; text-align: center; font-size: 0.875rem; padding: 0.75rem; border-top: 1px solid var(--border-light); background: rgba(255,255,255,0.01); border-radius: var(--radius-sm);">
                 <div>
                   <div id="featured-deck-points" style="font-weight: 800; color: var(--color-primary); font-size: 0.85rem;">0</div>
                   <div style="font-size: 0.58rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Points</div>
@@ -800,11 +823,11 @@
             </div>
 
             <!-- History Stats Panel -->
-            <div class="panel" style="margin: 0; padding: 1.25rem;">
+            <div class="panel profile-history-panel" style="margin: 0; padding: 1.25rem;">
               <div class="panel-header" style="border-bottom: 1px solid var(--border-light); padding-bottom: 0.35rem; margin-bottom: 0.75rem;">
                 <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin: 0; letter-spacing: 0.05em;">Tournament History</h4>
               </div>
-              
+
               <div class="table-container" style="max-height: 150px; overflow-y: auto;">
                 <table class="table" style="font-size: 0.72rem;">
                   <thead>
@@ -878,10 +901,10 @@
         <button id="btn-inspector-clone" class="btn btn-primary btn-sm" onclick="cloneActiveInspectorDeck()" style="height: 28px; padding: 0 0.75rem; font-size: 0.75rem;">Clone Deck</button>
       </div>
     </div>
-    
+
     <!-- Three-Panel Layout -->
     <div class="deck-view-grid" style="display: grid; grid-template-columns: 310px 2.3fr 0.5fr; gap: 1.5rem; flex-grow: 1; overflow: hidden; padding-top: 1rem;">
-      
+
       <!-- Panel 1: Commander Showroom & Analytics -->
       <div style="display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 1.25rem; overflow: hidden; gap: 1rem;">
         <!-- Commander section (top 1/3) -->
@@ -891,11 +914,11 @@
             <!-- Commander card images loaded dynamically -->
           </div>
         </div>
-        
+
         <!-- Analytics section (bottom 2/3) -->
         <div style="flex: 1 1 67%; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding-right: 0.25rem;">
           <h4 style="font-size: 0.9rem; text-transform: uppercase; color: var(--text-medium); margin-top: 0; margin-bottom: 0.75rem; letter-spacing: 0.5px; font-weight: 700; flex-shrink: 0;">Deck Analytics</h4>
-          
+
           <div id="inspector-analytics-embedded" style="display: flex; flex-direction: column; gap: 1rem;">
             <!-- Stats row -->
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 0.5rem;">
@@ -912,7 +935,7 @@
                 <strong id="inspector-stats-lands-spells" style="display: block; font-size: 1rem; color: var(--text-high); margin-top: 0.15rem;">0 / 0</strong>
               </div>
             </div>
-            
+
             <!-- Mana Curve -->
             <div class="panel" style="background: var(--bg-dark); margin: 0; padding: 0.75rem; display: flex; flex-direction: column; border: 1px solid var(--border-light);">
               <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.5rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-light); padding-bottom: 0.15rem; flex-shrink: 0;">Mana Curve</h4>
@@ -929,7 +952,7 @@
                 <span style="width: 14%">7+</span>
               </div>
             </div>
-            
+
             <!-- Colors Panel -->
             <div class="panel" style="background: var(--bg-dark); margin: 0; padding: 0.75rem; border: 1px solid var(--border-light);">
               <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.5rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-light); padding-bottom: 0.15rem;">Colors</h4>
@@ -937,7 +960,7 @@
                 <!-- Bars -->
               </div>
             </div>
-            
+
             <!-- Types Panel -->
             <div class="panel" style="background: var(--bg-dark); margin: 0; padding: 0.75rem; border: 1px solid var(--border-light);">
               <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.5rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-light); padding-bottom: 0.15rem;">Card Types</h4>
@@ -948,7 +971,7 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Panel 2: Cards Breakdown -->
       <div style="display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 1.25rem; overflow: hidden;">
         <!-- Controls Header -->
@@ -993,7 +1016,7 @@
             </div>
           </div>
         </div>
-        
+
         <!-- Cards Container -->
         <div style="display: flex; flex-direction: column; flex-grow: 1; overflow: hidden;">
           <div style="flex-grow: 1; overflow-y: auto; padding: 0.25rem 0;">
@@ -1003,7 +1026,7 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Panel 3: Social Feed & Collaboration -->
       <div style="display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 1.25rem; overflow: hidden;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-shrink: 0; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem;">
@@ -1013,29 +1036,29 @@
             ❤️ Like <span id="deck-likes-count">0</span>
           </button>
         </div>
-        
+
         <!-- Comments Feed -->
         <div id="deck-comments-list" style="flex-grow: 1; overflow-y: auto; padding-right: 0.25rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 0.75rem;">
           <!-- Comments -->
         </div>
-        
+
         <!-- Add Comment Form -->
         <form onsubmit="handlePostComment(event)" style="display: flex; gap: 0.5rem; flex-shrink: 0;">
           <input type="text" id="input-new-comment" class="input-field" placeholder="Add a comment..." style="margin: 0; flex-grow: 1; background: var(--bg-dark); font-size: 0.85rem;" required autocomplete="off">
           <button type="submit" class="btn btn-primary btn-sm">Post</button>
         </form>
       </div>
-      
+
     </div>
   </section>
 
   <div id="modal-public-profile" class="modal-overlay" onclick="closePublicProfileModal(event)">
-    <div class="modal" style="max-width: 650px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal" style="max-width: 650px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; padding: 1.5rem;" onclick="event.stopPropagation()">
       <div class="panel-header" style="flex-shrink: 0; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
         <h3 id="public-profile-title" style="margin: 0; font-size:1.20rem; font-family:'Cinzel', serif;">Player Profile</h3>
         <button class="btn btn-secondary btn-sm" onclick="closePublicProfileModal(null)">Close</button>
       </div>
-      
+
       <div style="display: flex; flex-direction: column; gap: 1.5rem; flex-grow: 1; overflow-y: auto; padding-top: 1rem;">
         <!-- Header: Avatar, Name, Signature Commander, Follow Button -->
         <div style="display: flex; gap: 1.25rem; align-items: center; background: rgba(255,255,255,0.01); padding: 1rem; border: 1px solid var(--border-light); border-radius: var(--radius-md);">
@@ -1076,7 +1099,7 @@
 
   <!-- Create New Event Modal -->
   <div id="modal-new-tournament" class="modal-overlay" onclick="closeModalNewTournament(event)">
-    <div class="modal" style="max-width: 500px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-medium); border-radius: var(--radius-md);" onclick="event.stopPropagation()">
+    <div class="modal" style="max-width: 500px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 1.5rem;" onclick="event.stopPropagation()">
       <div class="panel-header">
         <h3 style="margin:0;">Start New Event</h3>
         <button class="btn btn-secondary btn-sm" onclick="closeModalNewTournament(null)">Close</button>
@@ -1126,7 +1149,7 @@
   <section id="deckbuilder-view" class="view-section">
     <!-- Two Column Layout Workspace -->
     <div id="deckbuilder-workspace" class="deckbuilder-workspace active-tab-decklist" style="display: grid; grid-template-columns: 135px 1fr; gap: 0.5rem; flex-grow: 1; overflow: hidden; padding-top: 0;">
-      
+
       <!-- Column 1: Back Icon, Command Zone & Analytics -->
       <div class="deckbuilder-col-search" style="display: flex; flex-direction: column; gap: 0.5rem; height: 100%; overflow-y: auto; padding-right: 0.25rem;">
         <!-- Grimore Back Icon Button -->
@@ -1136,7 +1159,7 @@
 
         <!-- Command Zone drop area (Left Top) -->
         <div class="panel" style="background: var(--bg-dark); border-color: var(--border-light); margin: 0; padding: 0.25rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; flex-shrink: 0; min-height: 200px;" ondragover="allowDrop(event)" ondrop="handleDropCommander(event)">
-          <h5 style="font-size: 0.55rem; text-transform: uppercase; color: var(--color-secondary); margin: 0; letter-spacing: 0.5px; font-weight: 700; width: 100%; text-align: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.25rem;">Commander</h5>
+          <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--color-secondary); margin: 0; letter-spacing: 0.5px; font-weight: 700; width: 100%; text-align: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.25rem;">Commander</div>
           <div id="builder-commander-image-container" style="display: flex; flex-direction: column; gap: 0.35rem; justify-content: center; width: 100%; flex-grow: 1; min-height: 180px; align-items: center;">
             <span style="color:var(--text-muted); font-size:0.75rem; text-align: center;">Drag commanders here.</span>
           </div>
@@ -1149,10 +1172,10 @@
           <span style="color: var(--text-muted); font-size: 0.6rem; text-transform: uppercase; font-weight: 700;">Total</span>
           <strong style="color: var(--color-primary); font-size: 0.78rem; display: block; margin-top: 1px;">$<span id="builder-budget-tally">0.00</span></strong>
         </div>
-        
+
         <!-- Mana Curve Chart -->
         <div class="panel" style="background: var(--bg-dark); border-color: var(--border-light); margin: 0; padding: 0.4rem; flex-shrink: 0;">
-          <h5 style="font-size: 0.6rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.25rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-light); padding-bottom: 0.15rem; font-weight: 700; text-align: center;">Curve</h5>
+          <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.25rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-light); padding-bottom: 0.15rem; font-weight: 700; text-align: center;">Curve</div>
           <div id="builder-mana-curve-chart" style="display: flex; align-items: flex-end; justify-content: space-between; height: 60px; padding-top: 0.2rem; border-bottom: 1px solid var(--border-medium);">
             <!-- Dynamic CSS Bars -->
           </div>
@@ -1166,76 +1189,110 @@
             <span style="width: 14%">7+</span>
           </div>
         </div>
-        
+
         <!-- Color Identity Distribution -->
         <div class="panel" style="background: var(--bg-dark); border-color: var(--border-light); margin: 0; padding: 0.4rem; flex-shrink: 0;">
-          <h5 style="font-size: 0.6rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.25rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-light); padding-bottom: 0.15rem; font-weight: 700; text-align: center;">Colors</h5>
+          <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.25rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-light); padding-bottom: 0.15rem; font-weight: 700; text-align: center;">Colors</div>
           <div id="builder-color-identity-bars" style="display: flex; flex-direction: column; gap: 0.25rem;">
             <!-- Dynamic Progress Bars -->
           </div>
         </div>
       </div>
-      
+
       <!-- Column 2: Interactive Decklists (Mainboard list) -->
       <div class="deckbuilder-col-decklist panel" style="background-color: var(--bg-dark); border-color: var(--border-light); display: flex; flex-direction: column; height: 100%; overflow: hidden; margin: 0; padding: 1.25rem;">
-        <div style="display: flex; flex-shrink: 0; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem; width: 100%;">
-          <div id="builder-controls-dropdown" class="deck-builder-dropdown-options" style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 0.35rem; flex-wrap: wrap;">
-            <!-- Mobile count & options toggle button inline at the beginning of the row! -->
-            <div class="mobile-only-header-row" style="display: none; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
-              <span id="builder-card-count-mobile" style="font-weight: 700; font-size: 0.85rem; color: var(--text-pure);">(<span id="builder-card-count-mobile-val">0</span> cards)</span>
-              <button type="button" class="btn btn-secondary btn-sm mobile-options-toggle" onclick="document.getElementById('builder-controls-dropdown').classList.toggle('active'); this.classList.toggle('active');" style="height: 24px; padding: 0 6px; font-size: 0.65rem; font-weight: 700; margin: 0;">⚙️ Options</button>
-            </div>
-            
-            <!-- Left aligned: Name, format, public, reload -->
-            <div class="builder-opt-col" style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
+        <div style="display: flex; flex-shrink: 0; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem; width: 100%; flex-direction: column; gap: 0.5rem;">
+          <!-- Visible controls (Minimalist layout) -->
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 0.5rem; flex-wrap: wrap;">
+            <!-- Left side essential inputs -->
+            <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
               <input type="text" id="builder-deck-name" class="input-field" placeholder="Deck Name" style="width: 140px; height: 26px; margin: 0; padding: 0 0.5rem; font-size: 0.72rem; font-weight: 600; background: var(--bg-surface);" value="My Custom Deck" oninput="window.debouncedAutoSave()">
-              <input type="text" id="builder-deck-tags" class="input-field" placeholder="Deck Tags (e.g. Midrange, Casual)" style="width: 165px; height: 26px; margin: 0; padding: 0 0.5rem; font-size: 0.72rem; background: var(--bg-surface);" oninput="window.debouncedAutoSave()" title="Comma-separated tags describing your deck">
-              <select id="builder-deck-format" class="input-field" style="width: 95px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem;" onchange="validateBuilderDeckLegality(); window.triggerAutoSave()">
-                <option value="commander" selected>Commander</option>
-                <option value="standard">Standard</option>
-                <option value="modern">Modern</option>
-                <option value="legacy">Legacy</option>
-                <option value="pauper">Pauper</option>
-                <option value="custom">Custom/Free</option>
-              </select>
-              <button id="builder-is-public-btn" class="btn btn-secondary btn-sm" onclick="toggleBuilderPublic()" style="height: 26px; font-weight: 600; font-size: 0.72rem; min-width: 65px; padding: 0 0.4rem; margin: 0;">🌐 Public</button>
-              <select id="builder-card-versions" class="input-field" style="width: 110px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem; font-weight: 600;" onchange="window.changeBuilderCardVersions(this.value)" title="Choose card pricing update behavior">
-                <option value="cheapest">🏷️ Cheapest</option>
-                <option value="chosen">🏷️ Chosen</option>
-              </select>
-              <input type="checkbox" id="builder-keep-cheapest" onchange="window.triggerAutoSave()" style="display: none;">
-              <div id="builder-update-cheapest-container" style="display: flex; align-items: center; min-width: 105px; height: 26px; position: relative; margin: 0;">
-                <button id="builder-update-cheapest-btn" class="btn btn-gold btn-sm" onclick="reloadCheapestCardVersions()" style="height: 26px; font-weight: 600; width: 100%; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Search live Scryfall database for cheapest prints">🏷️ Update Cheapest</button>
-                <div id="builder-reload-progress-container" style="display: none; width: 100%; height: 26px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; position: relative; align-items: center; justify-content: center;">
-                  <div id="builder-reload-progress-bar" style="position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transition: width 0.1s ease; z-index: 1;"></div>
-                  <span id="builder-reload-progress-text" style="z-index: 2; font-size: 0.6rem; font-weight: 700; color: var(--text-pure); text-shadow: 0 1px 2px rgba(0,0,0,0.85);">0%</span>
-                </div>
-              </div>
-              <button id="builder-reload-btn" class="btn btn-secondary btn-sm" onclick="reloadBuilderDeckState()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Reload deck data from database">🔄 Reload</button>
-              <button id="builder-autotag-btn" class="btn btn-gold btn-sm" onclick="autoTagBuilderDeck()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Automatically classify cards using Scryfall tags">🏷️ Auto Tag</button>
-            </div>
-
-            <!-- Right aligned: Card count, search cards, price check, view, group, sort -->
-            <div class="builder-opt-col" style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
-              <div style="display:flex; align-items:center; gap:0.2rem; font-size:0.7rem; font-weight:700; color:var(--text-high);">
-                <span style="font-size:0.65rem; color:var(--text-muted); text-transform:uppercase;">Cards:</span>
-                <span id="builder-card-count" style="color: var(--color-primary); font-size: 0.78rem;">0</span>
-              </div>
               <button type="button" class="btn btn-gold btn-sm" onclick="openCardSearchModal()" style="height: 26px; font-size: 0.72rem; padding: 0 0.5rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--radius-sm); margin: 0;">🔍 Search</button>
               <button id="builder-suggestions-btn" type="button" class="btn btn-secondary btn-sm" onclick="openSuggestionsPage()" style="height: 26px; font-size: 0.72rem; padding: 0 0.5rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--radius-sm); margin: 0;" title="Get card suggestions from EDHREC">💡 Suggestions</button>
-              <div style="display:flex; align-items:center; gap:0.25rem; margin-right:0.1rem;">
-                <span style="font-size:0.75rem; font-weight:700; color:var(--color-primary); line-height:1; user-select:none; cursor:pointer;" onclick="document.getElementById('builder-show-prices').click()">$</span>
-                <input type="checkbox" id="builder-show-prices" checked onchange="renderBuilderDecklist()" style="cursor:pointer; width:12px; height:12px; margin:0;">
+            </div>
+
+            <!-- Right side essential details and settings toggle -->
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <div style="display:flex; align-items:center; gap:0.2rem; font-size:0.7rem; font-weight:700; color:var(--text-high);">
+                <span style="font-size:0.875rem; color:var(--text-muted);">Cards:</span>
+                <span id="builder-card-count" style="color: var(--color-primary); font-size: 0.78rem;">0</span>
               </div>
-              <div style="display:flex; align-items:center; gap:0.2rem;">
-                <span style="font-size:0.65rem; color:var(--text-muted); text-transform:uppercase;">View:</span>
-                <select id="builder-view-mode" class="input-field" style="width:90px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
-                  <option value="visual-spoiler" selected>Image Grid</option>
-                  <option value="text">Text</option>
+              <button type="button" id="builder-settings-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleBuilderAdvancedSettings()" style="height: 26px; font-size: 0.72rem; font-weight: 700; margin: 0; padding: 0 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+                ⚙️ Settings
+              </button>
+            </div>
+          </div>
+
+          <!-- Expanding niche settings panel -->
+          <div id="builder-advanced-settings-panel" style="display: none; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 0.75rem; flex-direction: column; gap: 0.75rem; width: 100%;">
+            
+            <!-- Metadata & Customization Row -->
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; width: 100%;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Tags</span>
+                <input type="text" id="builder-deck-tags" class="input-field" placeholder="Deck Tags (e.g. Midrange, Casual)" style="width: 165px; height: 26px; margin: 0; padding: 0 0.5rem; font-size: 0.72rem; background: var(--bg-surface);" oninput="window.debouncedAutoSave()" title="Comma-separated tags describing your deck">
+              </div>
+              
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Format</span>
+                <select id="builder-deck-format" class="input-field" style="width: 95px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem;" onchange="validateBuilderDeckLegality(); window.triggerAutoSave()">
+                  <option value="commander" selected>Commander</option>
+                  <option value="standard">Standard</option>
+                  <option value="modern">Modern</option>
+                  <option value="legacy">Legacy</option>
+                  <option value="pauper">Pauper</option>
+                  <option value="custom">Custom/Free</option>
                 </select>
               </div>
-              <div style="display:flex; align-items:center; gap:0.2rem;">
-                <span style="font-size:0.65rem; color:var(--text-muted); text-transform:uppercase;">Group:</span>
+
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Visibility</span>
+                <button id="builder-is-public-btn" class="btn btn-secondary btn-sm" onclick="toggleBuilderPublic()" style="height: 26px; font-weight: 600; font-size: 0.72rem; min-width: 65px; padding: 0 0.4rem; margin: 0;">🌐 Public</button>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Pricing Version</span>
+                <select id="builder-card-versions" class="input-field" style="width: 100px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem; font-weight: 600;" onchange="window.changeBuilderCardVersions(this.value)" title="Choose card pricing update behavior">
+                  <option value="cheapest">🏷️ Cheapest</option>
+                  <option value="chosen">🏷️ Chosen</option>
+                </select>
+              </div>
+              <input type="checkbox" id="builder-keep-cheapest" onchange="window.triggerAutoSave()" style="display: none;">
+
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Actions</span>
+                <div style="display: flex; gap: 0.35rem; align-items: center;">
+                  <div id="builder-update-cheapest-container" style="display: flex; align-items: center; min-width: 105px; height: 26px; position: relative; margin: 0;">
+                    <button id="builder-update-cheapest-btn" class="btn btn-gold btn-sm" onclick="reloadCheapestCardVersions()" style="height: 26px; font-weight: 600; width: 100%; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Search live Scryfall database for cheapest prints">🏷️ Update Cheapest</button>
+                    <div id="builder-reload-progress-container" style="display: none; width: 100%; height: 26px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; position: relative; align-items: center; justify-content: center;">
+                      <div id="builder-reload-progress-bar" style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transform: scaleX(0); transform-origin: left; transition: transform 0.1s ease; z-index: 1;"></div>
+                      <span id="builder-reload-progress-text" style="z-index: 2; font-size: 0.6rem; font-weight: 700; color: var(--text-pure); text-shadow: 0 1px 2px rgba(0,0,0,0.85);">0%</span>
+                    </div>
+                  </div>
+                  <button id="builder-reload-btn" class="btn btn-secondary btn-sm" onclick="reloadBuilderDeckState()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Reload deck data from database">🔄 Reload</button>
+                  <button id="builder-autotag-btn" class="btn btn-gold btn-sm" onclick="autoTagBuilderDeck()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Automatically classify cards using Scryfall tags">🏷️ Auto Tag</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- View Settings & Sorting Row -->
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.5rem; margin-top: 0.25rem;">
+              <div style="display:flex; align-items:center; gap:0.25rem; height: 26px; margin-right: 0.5rem;">
+                <span style="font-size:0.75rem; font-weight:700; color:var(--color-primary); line-height:1; user-select:none; cursor:pointer;" onclick="document.getElementById('builder-show-prices').click()">$</span>
+                <input type="checkbox" id="builder-show-prices" checked onchange="renderBuilderDecklist()" style="cursor:pointer; width:12px; height:12px; margin:0;">
+                <label for="builder-show-prices" style="font-size:0.72rem; color:var(--text-muted); cursor:pointer; user-select:none; font-weight:600; margin-left:2px;">Show Prices</label>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:0.35rem;">
+                <span style="font-size:0.6rem; color:var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">View Mode</span>
+                <select id="builder-view-mode" class="input-field" style="width:100px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
+                  <option value="visual-spoiler" selected>Image Grid</option>
+                  <option value="text">Text List</option>
+                </select>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:0.35rem;">
+                <span style="font-size:0.6rem; color:var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Group By</span>
                 <select id="builder-group-by" class="input-field" style="width:90px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
                   <option value="type" selected>Type</option>
                   <option value="tag">Tag</option>
@@ -1245,9 +1302,10 @@
                   <option value="rarity">Rarity</option>
                 </select>
               </div>
-              <div style="display:flex; align-items:center; gap:0.2rem;">
-                <span style="font-size:0.65rem; color:var(--text-muted); text-transform:uppercase;">Sort:</span>
-                <select id="builder-sort-by" class="input-field" style="width:80px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
+
+              <div style="display:flex; align-items:center; gap:0.35rem;">
+                <span style="font-size:0.6rem; color:var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Sort By</span>
+                <select id="builder-sort-by" class="input-field" style="width:95px; height:26px; padding:0 0.25rem; font-size:0.72rem; margin:0; background:var(--bg-surface);" onchange="renderBuilderDecklist()">
                   <option value="mana" selected>Mana</option>
                   <option value="name">A-Z</option>
                   <option value="price_desc">Price (↑-↓)</option>
@@ -1257,9 +1315,10 @@
                 </select>
               </div>
             </div>
+
           </div>
         </div>
-        
+
         <div style="flex-grow:1; display:flex; flex-direction:column; gap:1.25rem; padding-right:0.5rem; overflow:hidden; min-height:0; height:100%;">
           <!-- Mainboard Zone -->
           <div style="flex-grow:1; display:flex; flex-direction:column; min-height:0; height:100%;">
@@ -1269,7 +1328,7 @@
           </div>
         </div>
       </div>
-      
+
     </div>
     <!-- Mobile Bottom Navigation Tab Bar -->
     <div class="builder-mobile-tabs">
@@ -1300,7 +1359,7 @@
           <button class="btn btn-danger btn-sm" onclick="playtestReset()">Reset Field</button>
         </div>
       </div>
-      
+
       <!-- Playtest Interactive Counters Bar -->
       <div class="playtest-counters-bar" style="display: grid; grid-template-columns: 1fr 2fr 1.25fr; gap: 1rem; padding: 0.75rem; background: var(--bg-surface); border-radius: var(--radius-sm); border: 1px solid var(--border-light); margin-top: 0.75rem; flex-shrink: 0; align-items: center;">
         <!-- Life Total -->
@@ -1322,7 +1381,7 @@
           <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--color-loss); font-weight: 600; letter-spacing: 0.5px;">Commander Damage (21 limit)</span>
           <div style="display: flex; gap: 1rem; margin-top: 0.25rem; width: 100%; justify-content: center; flex-wrap: wrap;">
             <div style="display: flex; flex-direction: column; align-items: center;">
-              <span style="font-size: 0.65rem; color: var(--text-muted);">Opp 1</span>
+              <span style="font-size: 0.875rem; color: var(--text-muted);">Opponent 1</span>
               <div style="display: flex; align-items: center; gap: 0.25rem; margin-top: 0.1rem;">
                 <button class="btn btn-secondary btn-sm" onclick="adjustCommanderDamage(0, -1)" style="padding: 0.1rem 0.3rem; font-size: 0.8rem;">-</button>
                 <span id="cmd-dmg-0" style="font-size: 1.1rem; font-weight: bold; font-family: monospace; min-width: 20px; text-align: center;">0</span>
@@ -1330,7 +1389,7 @@
               </div>
             </div>
             <div style="display: flex; flex-direction: column; align-items: center;">
-              <span style="font-size: 0.65rem; color: var(--text-muted);">Opp 2</span>
+              <span style="font-size: 0.875rem; color: var(--text-muted);">Opponent 2</span>
               <div style="display: flex; align-items: center; gap: 0.25rem; margin-top: 0.1rem;">
                 <button class="btn btn-secondary btn-sm" onclick="adjustCommanderDamage(1, -1)" style="padding: 0.1rem 0.3rem; font-size: 0.8rem;">-</button>
                 <span id="cmd-dmg-1" style="font-size: 1.1rem; font-weight: bold; font-family: monospace; min-width: 20px; text-align: center;">0</span>
@@ -1338,7 +1397,7 @@
               </div>
             </div>
             <div style="display: flex; flex-direction: column; align-items: center;">
-              <span style="font-size: 0.65rem; color: var(--text-muted);">Opp 3</span>
+              <span style="font-size: 0.875rem; color: var(--text-muted);">Opponent 3</span>
               <div style="display: flex; align-items: center; gap: 0.25rem; margin-top: 0.1rem;">
                 <button class="btn btn-secondary btn-sm" onclick="adjustCommanderDamage(2, -1)" style="padding: 0.1rem 0.3rem; font-size: 0.8rem;">-</button>
                 <span id="cmd-dmg-2" style="font-size: 1.1rem; font-weight: bold; font-family: monospace; min-width: 20px; text-align: center;">0</span>
@@ -1352,22 +1411,22 @@
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
           <div style="display: flex; align-items: center; gap: 0.75rem; width: 100%; justify-content: center;">
             <div style="text-align: center;">
-              <span style="font-size: 0.65rem; text-transform: uppercase; color: var(--color-gold); display: block;">Turn</span>
+              <span style="font-size: 0.875rem; color: var(--color-gold); display: block;">Turn</span>
               <span id="sandbox-turn" style="font-size: 1.5rem; font-weight: bold; color: var(--color-gold); font-family: monospace; display: block; line-height: 1;">1</span>
             </div>
             <button class="btn btn-gold btn-sm" onclick="playtestNextTurn()" style="font-size: 0.75rem; padding: 0.4rem 0.75rem;">Next Turn</button>
           </div>
           <div style="margin-top: 0.25rem; width: 100%;">
-            <div id="sandbox-logs" style="font-family: monospace; font-size: 0.65rem; background: rgba(0,0,0,0.3); border-radius: 4px; padding: 0.25rem 0.5rem; max-height: 48px; overflow-y: auto; border: 1px solid var(--border-light); color: var(--text-muted); text-align: left;">
+            <div id="sandbox-logs" style="font-family: monospace; font-size: 0.875rem; background: rgba(0,0,0,0.3); border-radius: 4px; padding: 0.75rem; max-height: 64px; overflow-y: auto; border: 1px solid var(--border-light); color: var(--text-muted); text-align: left;">
               <div>[Log] Playtest Sandbox started.</div>
             </div>
           </div>
         </div>
       </div>
-      
+
       <!-- Interactive Playtest Workspace -->
       <div class="playtest-layout" style="margin-top:0.75rem;">
-        
+
         <!-- Left Sidebar: Library Deck, Command Zone, Piles -->
         <div class="playtest-sidebar">
           <h4 style="font-size:0.8rem; text-transform:uppercase; color:var(--color-primary); letter-spacing:0.5px; border-bottom:1px solid var(--border-light); padding-bottom:0.25rem; margin: 0;">Library (<span id="playtest-lib-count">0</span>)</h4>
@@ -1379,7 +1438,7 @@
             <button class="btn btn-secondary btn-sm" onclick="playtestShuffle()" style="flex: 1; font-size: 0.65rem;">Shuffle</button>
             <button class="btn btn-secondary btn-sm" onclick="openPlaytestZoneList('library')" style="flex: 1; font-size: 0.65rem;">Search</button>
           </div>
-          
+
           <h4 style="font-size:0.8rem; text-transform:uppercase; color:var(--color-secondary); letter-spacing:0.5px; border-bottom:1px solid var(--border-light); padding-bottom:0.25rem; margin-top:0.5rem; margin-bottom: 0;">Commanders</h4>
           <div id="playtest-commander-box" style="display:flex; flex-direction:column; gap:0.5rem;">
             <!-- Loaded dynamically -->
@@ -1391,24 +1450,24 @@
           <h4 style="font-size:0.8rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.5px; border-bottom:1px solid var(--border-light); padding-bottom:0.25rem; margin-top:0.5rem; margin-bottom: 0;">Exile (<span id="playtest-exile-count">0</span>)</h4>
           <button class="btn btn-secondary btn-sm" onclick="openPlaytestZoneList('exile')" ondragover="allowDrop(event)" ondrop="playtestDrop(event, 'exile')" style="width: 100%; font-size: 0.7rem; height: 38px;">View / Drop Exile</button>
         </div>
-        
+
         <!-- Center/Right: Playmat Battlefield & Hand Tray below -->
         <div style="display: flex; flex-direction: column; overflow: hidden; height: 100%; width: 100%;">
           <div class="playtest-mat" style="flex-grow: 1;">
             <div style="display: flex; flex-direction: column; overflow: hidden;">
-              <div style="font-size:0.7rem; text-transform:uppercase; color:var(--text-muted); font-weight:600; margin-bottom:0.25rem; letter-spacing:0.5px; flex-shrink:0;">Battlefield (Creatures / Permanents)</div>
+              <div style="font-size:0.875rem; color:var(--text-muted); font-weight:600; margin-bottom:0.25rem; letter-spacing:0.2px; flex-shrink:0;">Battlefield (Creatures / Permanents)</div>
               <div id="playtest-mat-permanents" class="playtest-zone" ondragover="allowDrop(event)" ondrop="playtestDrop(event, 'battlefield')" style="flex-grow: 1; overflow-y: auto;">
                 <!-- Cards played -->
               </div>
             </div>
             <div style="display: flex; flex-direction: column; overflow: hidden;">
-              <div style="font-size:0.7rem; text-transform:uppercase; color:var(--text-muted); font-weight:600; margin-bottom:0.25rem; letter-spacing:0.5px; flex-shrink:0;">Lands / Mana Pool</div>
+              <div style="font-size:0.875rem; color:var(--text-muted); font-weight:600; margin-bottom:0.25rem; letter-spacing:0.2px; flex-shrink:0;">Lands / Mana Pool</div>
               <div id="playtest-mat-lands" class="playtest-zone" ondragover="allowDrop(event)" ondrop="playtestDrop(event, 'lands')" style="flex-grow: 1; overflow-y: auto;">
                 <!-- Lands played -->
               </div>
             </div>
           </div>
-          
+
           <!-- Sticky Horizontal Hand Tray -->
           <div style="flex-shrink: 0; width: 100%;">
             <div style="font-size:0.75rem; text-transform:uppercase; color:var(--color-primary); font-weight:700; margin-top:0.5rem; margin-bottom:0.15rem; letter-spacing:0.5px;">Hand Cards (<span id="playtest-hand-count">0</span>)</div>
@@ -1422,24 +1481,72 @@
 
   <!-- View 7: Fullscreen 4-Player Life Tracker -->
   <section id="lifetracker-view" class="view-section">
-    <!-- Top header bar -->
-    <div class="panel-header" style="flex-shrink: 0; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
-      <div style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer;" onclick="exitLifetrackerView()" title="Return to Dashboard">
-        <img src="logo.svg" alt="Grimore Logo" style="width: 36px; height: 36px; filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.7));">
-        <span style="font-family: 'Cinzel', serif; font-weight: 900; font-size: 1.3rem; color: var(--text-pure); letter-spacing: 1px;">GRIMORE</span>
-      </div>
-      <div style="display:flex; gap:0.5rem; align-items:center;">
-        <button class="btn btn-secondary btn-sm" onclick="resetLifetracker(40)">Reset to 40</button>
-        <button class="btn btn-secondary btn-sm" onclick="resetLifetracker(20)">Reset to 20</button>
+    <!-- The center stays quiet until the logo is tapped. -->
+    <div class="life-center-hub">
+      <button id="life-game-menu-trigger" class="life-hub-trigger" type="button" onclick="toggleLifeGameMenu()" aria-label="Open game settings" aria-controls="life-game-menu" aria-expanded="false">
+        <img src="logo.svg" alt="" aria-hidden="true">
+      </button>
+
+      <div id="life-game-menu" class="life-game-menu" role="dialog" aria-label="Game settings" aria-hidden="true">
+        <div class="life-game-menu-head">
+          <div>
+            <span>Commander</span>
+            <strong>Game setup</strong>
+          </div>
+          <div class="life-game-menu-actions">
+            <button class="life-menu-icon" type="button" onclick="exitLifetrackerView()" aria-label="Go home to Discover" title="Discover">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5.5 10.5V20h13v-9.5"></path><path d="M9.5 20v-6h5v6"></path></svg>
+            </button>
+            <button class="life-menu-icon" type="button" onclick="toggleLifeGameMenu(false)" aria-label="Close game settings" title="Close game settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="life-setting-row">
+          <span class="life-setting-label">Players</span>
+          <div class="life-segmented-control" role="group" aria-label="Number of players">
+            <button type="button" data-life-player-count="2" onclick="setLifePlayerCount(2)" aria-pressed="false">2</button>
+            <button type="button" data-life-player-count="3" onclick="setLifePlayerCount(3)" aria-pressed="false">3</button>
+            <button type="button" data-life-player-count="4" onclick="setLifePlayerCount(4)" aria-pressed="true">4</button>
+          </div>
+        </div>
+
+        <div class="life-setting-row life-setting-row-stack">
+          <span class="life-setting-label">Orientation</span>
+          <div class="life-orientation-options" role="group" aria-label="Player orientation">
+            <button type="button" data-life-orientation="table" onclick="setLifeOrientation('table')" aria-pressed="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="3"></rect><path d="M8 8h8M8 16h8"></path></svg>
+              <span>Table</span>
+            </button>
+            <button type="button" data-life-orientation="screen" onclick="setLifeOrientation('screen')" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="3"></rect><path d="M8 21h8M12 17v4"></path></svg>
+              <span>Screen</span>
+            </button>
+            <button type="button" data-life-orientation="around" onclick="setLifeOrientation('around')" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+              <span>Around</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="life-setting-row">
+          <span class="life-setting-label">New game</span>
+          <div class="life-segmented-control life-starting-life" role="group" aria-label="Reset game with starting life">
+            <button type="button" onclick="resetLifetracker(20)">20</button>
+            <button type="button" onclick="resetLifetracker(30)">30</button>
+            <button type="button" class="is-primary" onclick="resetLifetracker(40)">40</button>
+          </div>
+        </div>
       </div>
     </div>
-    
+
     <!-- 4 Player Grid -->
     <div class="life-tracker-grid" style="margin-top: 1rem;">
       <!-- Player 1 -->
-      <div class="life-player-card" id="life-player-card-1" style="border-left: 4px solid #ef4444; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 1rem; position: relative; overflow: hidden; min-height: 250px;">
-        <input type="text" id="life-p1-name" value="Player 1" style="background:none; border:none; text-align:center; font-weight:700; color:var(--text-pure); font-size:1.15rem; width:140px; border-bottom:1px dashed var(--border-medium); z-index: 10;" oninput="updateLifeTrackerNames()" onchange="saveLifeTrackerState()">
-        
+      <div class="life-player-card" id="life-player-card-1" style="--player-accent:#ef4444; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 1rem; position: relative; overflow: hidden; min-height: 250px;">
+        <input type="hidden" id="life-p1-name" value="Player 1">
+
         <!-- Life value (takes majority space) -->
         <div style="display:flex; align-items:center; justify-content:center; gap:2rem; width: 100%; flex-grow: 1; margin: 1rem 0; z-index: 10;">
           <button class="life-control-btn" onclick="adjustLife(1, -1)" style="width: 50px; height: 50px; font-size: 1.5rem; border-radius: 50%;">–</button>
@@ -1455,7 +1562,7 @@
           </div>
           <div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.75rem;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p1-from-p2-label" style="color: var(--color-primary); font-weight: 600;">From Player 2:</span>
+              <span id="cmd-p1-from-p2-label" class="cmd-damage-source" style="color: var(--color-primary);" aria-label="Violet player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(1, 2, -1)">-</button>
                 <span id="cmd-p1-from-p2-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1463,7 +1570,7 @@
               </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p1-from-p3-label" style="color: var(--color-secondary); font-weight: 600;">From Player 3:</span>
+              <span id="cmd-p1-from-p3-label" class="cmd-damage-source" style="color: var(--color-secondary);" aria-label="Gold player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(1, 3, -1)">-</button>
                 <span id="cmd-p1-from-p3-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1471,7 +1578,7 @@
               </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p1-from-p4-label" style="color: var(--color-gold); font-weight: 600;">From Player 4:</span>
+              <span id="cmd-p1-from-p4-label" class="cmd-damage-source" style="color: var(--color-gold);" aria-label="Blue player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(1, 4, -1)">-</button>
                 <span id="cmd-p1-from-p4-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1482,7 +1589,7 @@
         </div>
 
         <!-- Bottom Resource Icon Bar -->
-        <div style="display: flex; justify-content: space-around; align-items: center; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.4rem; z-index: 10; font-size: 0.75rem; color: var(--text-muted);">
+        <div class="life-corner-counters" style="display: flex; justify-content: space-around; align-items: center; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.4rem; z-index: 10; font-size: 0.75rem; color: var(--text-muted);">
           <!-- Poison (Phyrexian Symbol) -->
           <div style="display: flex; align-items: center; gap: 0.15rem;" title="Poison">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="12" cy="12" r="7"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
@@ -1505,7 +1612,7 @@
             <button class="btn btn-xs btn-secondary" onclick="adjustResource(1, 'tax', 1)" style="padding: 0px 4px;">+</button>
           </div>
           <!-- Cmd Damage Toggle (Crossed Swords) -->
-          <button class="btn btn-xs btn-secondary" onclick="toggleCmdDamageDrawer(1)" style="display: flex; align-items: center; gap: 0.15rem; font-weight: 600; padding: 1px 6px;">
+          <button class="btn btn-xs btn-secondary" aria-label="Open commander damage" onclick="toggleCmdDamageDrawer(1)" style="display: flex; align-items: center; gap: 0.15rem; font-weight: 600; padding: 1px 6px;">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><line x1="4" y1="20" x2="20" y2="4"/><line x1="20" y1="20" x2="4" y2="4"/><path d="M4 16 L8 20"/><path d="M20 16 L16 20"/></svg>
             <span style="font-size: 0.6rem;">Damage</span>
           </button>
@@ -1513,9 +1620,9 @@
       </div>
 
       <!-- Player 2 -->
-      <div class="life-player-card" id="life-player-card-2" style="border-left: 4px solid var(--color-primary); display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 1rem; position: relative; overflow: hidden; min-height: 250px;">
-        <input type="text" id="life-p2-name" value="Player 2" style="background:none; border:none; text-align:center; font-weight:700; color:var(--text-pure); font-size:1.15rem; width:140px; border-bottom:1px dashed var(--border-medium); z-index: 10;" oninput="updateLifeTrackerNames()" onchange="saveLifeTrackerState()">
-        
+      <div class="life-player-card" id="life-player-card-2" style="--player-accent:var(--color-primary); display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 1rem; position: relative; overflow: hidden; min-height: 250px;">
+        <input type="hidden" id="life-p2-name" value="Player 2">
+
         <!-- Life value (takes majority space) -->
         <div style="display:flex; align-items:center; justify-content:center; gap:2rem; width: 100%; flex-grow: 1; margin: 1rem 0; z-index: 10;">
           <button class="life-control-btn" onclick="adjustLife(2, -1)" style="width: 50px; height: 50px; font-size: 1.5rem; border-radius: 50%;">–</button>
@@ -1531,7 +1638,7 @@
           </div>
           <div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.75rem;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p2-from-p1-label" style="color: #ef4444; font-weight: 600;">From Player 1:</span>
+              <span id="cmd-p2-from-p1-label" class="cmd-damage-source" style="color: #ef4444;" aria-label="Red player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(2, 1, -1)">-</button>
                 <span id="cmd-p2-from-p1-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1539,7 +1646,7 @@
               </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p2-from-p3-label" style="color: var(--color-secondary); font-weight: 600;">From Player 3:</span>
+              <span id="cmd-p2-from-p3-label" class="cmd-damage-source" style="color: var(--color-secondary);" aria-label="Gold player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(2, 3, -1)">-</button>
                 <span id="cmd-p2-from-p3-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1547,7 +1654,7 @@
               </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p2-from-p4-label" style="color: var(--color-gold); font-weight: 600;">From Player 4:</span>
+              <span id="cmd-p2-from-p4-label" class="cmd-damage-source" style="color: var(--color-gold);" aria-label="Blue player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(2, 4, -1)">-</button>
                 <span id="cmd-p2-from-p4-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1558,7 +1665,7 @@
         </div>
 
         <!-- Bottom Resource Icon Bar -->
-        <div style="display: flex; justify-content: space-around; align-items: center; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.4rem; z-index: 10; font-size: 0.75rem; color: var(--text-muted);">
+        <div class="life-corner-counters" style="display: flex; justify-content: space-around; align-items: center; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.4rem; z-index: 10; font-size: 0.75rem; color: var(--text-muted);">
           <!-- Poison (Phyrexian Symbol) -->
           <div style="display: flex; align-items: center; gap: 0.15rem;" title="Poison">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="12" cy="12" r="7"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
@@ -1581,7 +1688,7 @@
             <button class="btn btn-xs btn-secondary" onclick="adjustResource(2, 'tax', 1)" style="padding: 0px 4px;">+</button>
           </div>
           <!-- Cmd Damage Toggle (Crossed Swords) -->
-          <button class="btn btn-xs btn-secondary" onclick="toggleCmdDamageDrawer(2)" style="display: flex; align-items: center; gap: 0.15rem; font-weight: 600; padding: 1px 6px;">
+          <button class="btn btn-xs btn-secondary" aria-label="Open commander damage" onclick="toggleCmdDamageDrawer(2)" style="display: flex; align-items: center; gap: 0.15rem; font-weight: 600; padding: 1px 6px;">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><line x1="4" y1="20" x2="20" y2="4"/><line x1="20" y1="20" x2="4" y2="4"/><path d="M4 16 L8 20"/><path d="M20 16 L16 20"/></svg>
             <span style="font-size: 0.6rem;">Damage</span>
           </button>
@@ -1589,9 +1696,9 @@
       </div>
 
       <!-- Player 3 -->
-      <div class="life-player-card" id="life-player-card-3" style="border-left: 4px solid var(--color-secondary); display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 1rem; position: relative; overflow: hidden; min-height: 250px;">
-        <input type="text" id="life-p3-name" value="Player 3" style="background:none; border:none; text-align:center; font-weight:700; color:var(--text-pure); font-size:1.15rem; width:140px; border-bottom:1px dashed var(--border-medium); z-index: 10;" oninput="updateLifeTrackerNames()" onchange="saveLifeTrackerState()">
-        
+      <div class="life-player-card" id="life-player-card-3" style="--player-accent:var(--color-secondary); display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 1rem; position: relative; overflow: hidden; min-height: 250px;">
+        <input type="hidden" id="life-p3-name" value="Player 3">
+
         <!-- Life value (takes majority space) -->
         <div style="display:flex; align-items:center; justify-content:center; gap:2rem; width: 100%; flex-grow: 1; margin: 1rem 0; z-index: 10;">
           <button class="life-control-btn" onclick="adjustLife(3, -1)" style="width: 50px; height: 50px; font-size: 1.5rem; border-radius: 50%;">–</button>
@@ -1607,7 +1714,7 @@
           </div>
           <div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.75rem;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p3-from-p1-label" style="color: #ef4444; font-weight: 600;">From Player 1:</span>
+              <span id="cmd-p3-from-p1-label" class="cmd-damage-source" style="color: #ef4444;" aria-label="Red player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(3, 1, -1)">-</button>
                 <span id="cmd-p3-from-p1-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1615,7 +1722,7 @@
               </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p3-from-p2-label" style="color: var(--color-primary); font-weight: 600;">From Player 2:</span>
+              <span id="cmd-p3-from-p2-label" class="cmd-damage-source" style="color: var(--color-primary);" aria-label="Violet player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(3, 2, -1)">-</button>
                 <span id="cmd-p3-from-p2-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1623,7 +1730,7 @@
               </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p3-from-p4-label" style="color: var(--color-gold); font-weight: 600;">From Player 4:</span>
+              <span id="cmd-p3-from-p4-label" class="cmd-damage-source" style="color: var(--color-gold);" aria-label="Blue player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(3, 4, -1)">-</button>
                 <span id="cmd-p3-from-p4-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1634,7 +1741,7 @@
         </div>
 
         <!-- Bottom Resource Icon Bar -->
-        <div style="display: flex; justify-content: space-around; align-items: center; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.4rem; z-index: 10; font-size: 0.75rem; color: var(--text-muted);">
+        <div class="life-corner-counters" style="display: flex; justify-content: space-around; align-items: center; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.4rem; z-index: 10; font-size: 0.75rem; color: var(--text-muted);">
           <!-- Poison (Phyrexian Symbol) -->
           <div style="display: flex; align-items: center; gap: 0.15rem;" title="Poison">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="12" cy="12" r="7"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
@@ -1657,7 +1764,7 @@
             <button class="btn btn-xs btn-secondary" onclick="adjustResource(3, 'tax', 1)" style="padding: 0px 4px;">+</button>
           </div>
           <!-- Cmd Damage Toggle (Crossed Swords) -->
-          <button class="btn btn-xs btn-secondary" onclick="toggleCmdDamageDrawer(3)" style="display: flex; align-items: center; gap: 0.15rem; font-weight: 600; padding: 1px 6px;">
+          <button class="btn btn-xs btn-secondary" aria-label="Open commander damage" onclick="toggleCmdDamageDrawer(3)" style="display: flex; align-items: center; gap: 0.15rem; font-weight: 600; padding: 1px 6px;">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><line x1="4" y1="20" x2="20" y2="4"/><line x1="20" y1="20" x2="4" y2="4"/><path d="M4 16 L8 20"/><path d="M20 16 L16 20"/></svg>
             <span style="font-size: 0.6rem;">Damage</span>
           </button>
@@ -1665,9 +1772,9 @@
       </div>
 
       <!-- Player 4 -->
-      <div class="life-player-card" id="life-player-card-4" style="border-left: 4px solid var(--color-gold); display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 1rem; position: relative; overflow: hidden; min-height: 250px;">
-        <input type="text" id="life-p4-name" value="Player 4" style="background:none; border:none; text-align:center; font-weight:700; color:var(--text-pure); font-size:1.15rem; width:140px; border-bottom:1px dashed var(--border-medium); z-index: 10;" oninput="updateLifeTrackerNames()" onchange="saveLifeTrackerState()">
-        
+      <div class="life-player-card" id="life-player-card-4" style="--player-accent:#38bdf8; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 1rem; position: relative; overflow: hidden; min-height: 250px;">
+        <input type="hidden" id="life-p4-name" value="Player 4">
+
         <!-- Life value (takes majority space) -->
         <div style="display:flex; align-items:center; justify-content:center; gap:2rem; width: 100%; flex-grow: 1; margin: 1rem 0; z-index: 10;">
           <button class="life-control-btn" onclick="adjustLife(4, -1)" style="width: 50px; height: 50px; font-size: 1.5rem; border-radius: 50%;">–</button>
@@ -1683,7 +1790,7 @@
           </div>
           <div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.75rem;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p4-from-p1-label" style="color: #ef4444; font-weight: 600;">From Player 1:</span>
+              <span id="cmd-p4-from-p1-label" class="cmd-damage-source" style="color: #ef4444;" aria-label="Red player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(4, 1, -1)">-</button>
                 <span id="cmd-p4-from-p1-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1691,7 +1798,7 @@
               </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p4-from-p2-label" style="color: var(--color-primary); font-weight: 600;">From Player 2:</span>
+              <span id="cmd-p4-from-p2-label" class="cmd-damage-source" style="color: var(--color-primary);" aria-label="Violet player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(4, 2, -1)">-</button>
                 <span id="cmd-p4-from-p2-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1699,7 +1806,7 @@
               </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span id="cmd-p4-from-p3-label" style="color: var(--color-secondary); font-weight: 600;">From Player 3:</span>
+              <span id="cmd-p4-from-p3-label" class="cmd-damage-source" style="color: var(--color-secondary);" aria-label="Gold player"></span>
               <div style="display: flex; align-items: center; gap: 0.25rem;">
                 <button class="btn btn-xs btn-secondary" onclick="adjustCmdDamage(4, 3, -1)">-</button>
                 <span id="cmd-p4-from-p3-val" style="font-weight: 700; min-width: 15px; text-align: center;">0</span>
@@ -1710,7 +1817,7 @@
         </div>
 
         <!-- Bottom Resource Icon Bar -->
-        <div style="display: flex; justify-content: space-around; align-items: center; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.4rem; z-index: 10; font-size: 0.75rem; color: var(--text-muted);">
+        <div class="life-corner-counters" style="display: flex; justify-content: space-around; align-items: center; width: 100%; border-top: 1px solid var(--border-light); padding-top: 0.4rem; z-index: 10; font-size: 0.75rem; color: var(--text-muted);">
           <!-- Poison (Phyrexian Symbol) -->
           <div style="display: flex; align-items: center; gap: 0.15rem;" title="Poison">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="12" cy="12" r="7"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
@@ -1733,7 +1840,7 @@
             <button class="btn btn-xs btn-secondary" onclick="adjustResource(4, 'tax', 1)" style="padding: 0px 4px;">+</button>
           </div>
           <!-- Cmd Damage Toggle (Crossed Swords) -->
-          <button class="btn btn-xs btn-secondary" onclick="toggleCmdDamageDrawer(4)" style="display: flex; align-items: center; gap: 0.15rem; font-weight: 600; padding: 1px 6px;">
+          <button class="btn btn-xs btn-secondary" aria-label="Open commander damage" onclick="toggleCmdDamageDrawer(4)" style="display: flex; align-items: center; gap: 0.15rem; font-weight: 600; padding: 1px 6px;">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><line x1="4" y1="20" x2="20" y2="4"/><line x1="20" y1="20" x2="4" y2="4"/><path d="M4 16 L8 20"/><path d="M20 16 L16 20"/></svg>
             <span style="font-size: 0.6rem;">Damage</span>
           </button>
@@ -1744,7 +1851,7 @@
 
   <!-- Playtest Zone Inspector Modal -->
   <div id="modal-playtest-list" class="modal-overlay" onclick="this.classList.remove('active')">
-    <div class="modal" style="max-width: 500px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal" style="max-width: 500px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; padding: 1.5rem;" onclick="event.stopPropagation()">
       <div class="panel-header" style="flex-shrink: 0; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
         <h3 id="playtest-list-title" style="margin:0; font-size:1.2rem;">Library Cards</h3>
         <button class="btn btn-secondary btn-sm" onclick="document.getElementById('modal-playtest-list').classList.remove('active')">Close</button>
@@ -1757,7 +1864,7 @@
 
   <!-- Card Versions Explorer Modal -->
   <div id="modal-card-versions" class="modal-overlay" onclick="this.classList.remove('active')">
-    <div class="modal" style="max-width: 800px; width: 95%; max-height: 85vh; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal" style="max-width: 800px; width: 95%; max-height: 85vh; display: flex; flex-direction: column; padding: 1.5rem;" onclick="event.stopPropagation()">
       <div class="panel-header" style="flex-shrink: 0; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
         <h3 id="versions-modal-title" style="margin:0; font-size:1.2rem; font-family:'Outfit', sans-serif; font-weight:700; color:var(--text-pure);">Card Printings</h3>
         <button class="btn btn-secondary btn-sm" onclick="document.getElementById('modal-card-versions').classList.remove('active')">Close</button>
@@ -1770,7 +1877,7 @@
 
   <!-- Forgot Password Recovery Modal -->
   <div id="modal-forgot-password" class="modal-overlay" onclick="this.classList.remove('active')">
-    <div class="modal" style="max-width: 420px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal" style="max-width: 420px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; padding: 1.5rem;" onclick="event.stopPropagation()">
       <div class="panel-header" style="flex-shrink: 0; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
         <h3 style="margin:0; font-size:1.2rem; font-family:'Cinzel', serif; font-weight:700; color:var(--text-pure);">Forgot Password</h3>
         <button class="btn btn-secondary btn-sm" onclick="document.getElementById('modal-forgot-password').classList.remove('active')">Close</button>
@@ -1791,7 +1898,7 @@
 
   <!-- Reset Password Modal -->
   <div id="modal-reset-password" class="modal-overlay" onclick="this.classList.remove('active')">
-    <div class="modal" style="max-width: 420px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal" style="max-width: 420px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; padding: 1.5rem;" onclick="event.stopPropagation()">
       <div class="panel-header" style="flex-shrink: 0; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
         <h3 style="margin:0; font-size:1.2rem; font-family:'Cinzel', serif; font-weight:700; color:var(--text-pure);">Reset Password</h3>
         <button class="btn btn-secondary btn-sm" onclick="document.getElementById('modal-reset-password').classList.remove('active')">Close</button>
@@ -1821,7 +1928,7 @@
 
   <!-- Card Hover Tooltip Container -->
   <div id="card-hover-tooltip" style="position: fixed; display: none; pointer-events: none; z-index: 10000; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); overflow: hidden; max-width: 240px; border: 1px solid var(--border-light); background: var(--bg-surface);">
-    <img id="tooltip-card-img" src="" alt="Card Preview" style="width: 100%; display: block;">
+    <img id="tooltip-card-img" src="logo.svg" alt="" style="width: 100%; display: block;">
   </div>
 
 
@@ -1830,16 +1937,16 @@
   </div> <!-- Close app-layout -->
 
   <!-- Sliding Card Inspector Drawer -->
-  <div id="card-inspector-drawer" class="card-inspector-drawer">
+  <div id="card-inspector-drawer" class="card-inspector-drawer" role="dialog" aria-modal="false" aria-labelledby="card-inspector-title" aria-hidden="true" inert hidden>
     <div class="drawer-header">
-      <h4 style="margin:0; font-weight: 700; color: var(--text-pure); font-size: 0.9rem; text-transform: uppercase; font-family: 'Cinzel', serif; letter-spacing:0.05em;">Card Details</h4>
-      <button type="button" class="close-drawer-btn" onclick="window.closeCardInspectorDrawer()">&times;</button>
+      <h4 id="card-inspector-title" style="margin:0; font-weight: 700; color: var(--text-pure); font-size: 0.9rem; text-transform: uppercase; font-family: 'Cinzel', serif; letter-spacing:0.05em;">Card Details</h4>
+      <button type="button" class="close-drawer-btn" aria-label="Close card details" onclick="window.closeCardInspectorDrawer()">&times;</button>
     </div>
 
     <div class="drawer-content">
       <!-- Card Art/Image Frame -->
       <div class="drawer-card-frame">
-        <img id="inspector-card-image" src="" alt="Card Face" class="drawer-card-img" onerror="this.src='logo.svg'">
+        <img id="inspector-card-image" src="logo.svg" alt="Card face" class="drawer-card-img" onerror="this.src='logo.svg'">
         <button id="inspector-flip-btn" class="btn btn-secondary btn-sm" style="display:none; position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10;" onclick="window.flipInspectorCard()">🔄 Flip Card</button>
       </div>
 
@@ -1866,7 +1973,7 @@
 
       <!-- Tab 1: Details & Legality -->
       <div class="drawer-tab-pane active" id="pane-details">
-        <div id="inspector-card-oracle" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-light); padding: 0.6rem; border-radius: 6px; font-size: 0.75rem; color: var(--text-medium); line-height: 1.4; white-space: pre-wrap; font-style: normal; margin-bottom: 0.75rem; border-left: 3px solid var(--color-primary);"></div>
+        <div id="inspector-card-oracle" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-medium); padding: 0.75rem; border-radius: 6px; font-size: 0.875rem; color: var(--text-high); line-height: 1.5; white-space: pre-wrap; font-style: normal; margin-bottom: 0.75rem;"></div>
 
         <h5 style="margin: 0 0 0.4rem 0; font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing:0.02em;">Format Legality</h5>
         <div id="inspector-legality-grid" class="legality-grid"></div>
@@ -1903,7 +2010,7 @@
     }
   </style>
 
-  <div id="top-loading-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); box-shadow: 0 0 10px var(--color-primary); z-index: 99999; width: 0%; opacity: 0; transition: width 0.4s ease, opacity 0.3s ease; pointer-events: none;"></div>
+  <div id="top-loading-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); z-index: 99999; width: 100%; opacity: 0; transform: scaleX(0); transform-origin: left; transition: transform 0.4s ease, opacity 0.3s ease; pointer-events: none;"></div>
 
   <div id="arcane-progress-overlay" style="display: none; position: fixed; inset: 0; background: rgba(5, 5, 8, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 10000; align-items: center; justify-content: center; flex-direction: column; opacity: 0; transition: opacity 0.3s ease; pointer-events: auto;">
     <div style="background: rgba(12, 13, 20, 0.85); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: var(--radius-lg); padding: 2.5rem; width: 90%; max-width: 420px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05); display: flex; flex-direction: column; align-items: center; gap: 1.5rem; position: relative;">
@@ -1914,20 +2021,65 @@
         <div style="position: absolute; inset: 20px; border: 1.5px solid var(--color-primary); border-radius: 50%; opacity: 0.6; box-shadow: 0 0 15px var(--color-primary);"></div>
         <div id="arcane-progress-pct-center" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; font-weight: 800; color: var(--text-pure); font-family: 'Outfit', sans-serif; text-shadow: 0 0 8px var(--color-primary);">0%</div>
       </div>
-      
+
       <!-- Progress Info -->
       <div style="width: 100%; display: flex; flex-direction: column; gap: 0.75rem; align-items: center;">
         <div id="arcane-progress-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-pure); text-transform: uppercase; letter-spacing: 0.05em; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">Loading...</div>
         <div id="arcane-progress-message" style="font-size: 0.75rem; color: var(--text-muted); min-height: 18px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; width: 100%;">Please wait.</div>
       </div>
-      
+
       <!-- Progress Bar Container -->
       <div style="width: 100%; height: 6px; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--border-light); border-radius: 4px; overflow: hidden; position: relative;">
-        <div id="arcane-progress-bar-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); box-shadow: 0 0 10px var(--color-primary); transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+        <div id="arcane-progress-bar-fill" style="width: 100%; height: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transform: scaleX(0); transform-origin: left; transition: transform 0.2s ease-out;"></div>
       </div>
     </div>
   </div>
 
-  <script src="app.js?v=17"></script>
+  <!--  Server Control Modal -->
+  <div id="modal--server" class="modal-overlay" onclick="closeModal(event)">
+    <div class="modal" style="max-width: 480px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 1.75rem; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6);" onclick="event.stopPropagation()">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem; margin-bottom: 1.25rem;">
+        <h3 style="margin: 0; font-size: 1.35rem; font-family: 'Cinzel', serif; color: var(--color-primary); display: flex; align-items: center; gap: 0.5rem;">
+          🎮  Server Manager
+        </h3>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal(null)">Close</button>
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <div style="background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-medium);"> Dedicated Server:</span>
+            <span id="-status-badge" class="badge badge-neutral" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Checking...</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-medium);">playit.gg Tunnel (playitd):</span>
+            <span id="playit-status-badge" class="badge badge-neutral" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Checking...</span>
+          </div>
+        </div>
+
+        <div id="-connection-details" style="display: none; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: var(--radius-sm); padding: 0.75rem; font-size: 0.8rem; color: var(--color-secondary);">
+          ℹ️ Server Port: <strong>8211 (UDP)</strong> is active. Tunnel connection is established.
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; width: 100%;">
+          <button id="btn--start" class="btn btn-primary" style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onclick="handleAction('start')">
+            ▶️ Start Server
+          </button>
+          <button id="btn--stop" class="btn btn-danger" style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onclick="handleAction('stop')">
+            ⏹️ Stop Server
+          </button>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; border-top: 1px solid var(--border-light); padding-top: 0.75rem;">
+          <span style="font-size: 0.7rem; color: var(--text-muted);">Runs silently in the background</span>
+          <button class="btn btn-secondary btn-sm" onclick="checkStatus()" style="font-size: 0.7rem; padding: 2px 8px;">
+            🔄 Refresh Status
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=39"></script>
 </body>
 </html>

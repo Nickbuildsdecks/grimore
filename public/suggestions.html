@@ -6,30 +6,30 @@
   <title>Grimore</title>
   <meta name="description" content="EDHREC card recommendations and synergy stats for your deck builder.">
   <link rel="icon" type="image/svg+xml" href="logo.svg">
-  <link rel="stylesheet" href="style.css?v=16">
+    <link rel="stylesheet" href="style.css?v=49">
 </head>
-<body>
+<body class="suggestions-page">
   <script>
     if (localStorage.getItem('theme-mode') === 'light') {
       document.body.classList.add('light-theme');
     }
   </script>
   <!-- Fullscreen Background Canvas for Logged In Views -->
-  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: -1; background: #050508;"></canvas>
+  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; background: #050508;"></canvas>
 
   <!-- Top Progress Bar -->
-  <div id="top-progress-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, #00f2fe, #4facfe, #8a2be2); width: 0%; transition: width 0.3s ease, opacity 0.3s ease; opacity: 0; z-index: 9999; pointer-events: none; box-shadow: 0 0 8px rgba(0,242,254,0.6);"></div>
+  <div id="top-progress-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: var(--color-primary); width: 100%; transform: scaleX(0); transform-origin: left; transition: transform 0.3s ease, opacity 0.3s ease; opacity: 0; z-index: 9999; pointer-events: none;"></div>
 
   <div class="app-layout sidebar-hidden" id="app-layout">
     <!-- Occupies full width and height with no sidebar -->
     <div class="main-content" id="main-content" style="margin-left: 0; flex-grow: 1; width: 100%; height: 100vh; overflow: hidden; display: flex; flex-direction: column;">
-      
+
       <!-- Main Standalone Container -->
       <div style="display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; box-sizing: border-box; width: 100%;">
-        
+
         <!-- Row 1: Suggestions Header -->
-        <div style="display: flex; gap: 1rem; align-items: center; background: rgba(12, 13, 20, 0.45); border-bottom: 1px solid rgba(168, 85, 247, 0.25); padding: 0.6rem 1.25rem; flex-shrink: 0; backdrop-filter: blur(8px); box-shadow: 0 4px 20px rgba(0,0,0,0.15); min-height: 64px; height: auto; box-sizing: border-box; width: 100%; flex-wrap: wrap; position: relative;">
-          
+        <header class="suggestions-header-bar" style="display: flex; gap: 1rem; align-items: center; background: rgba(12, 13, 20, 0.45); border-bottom: 1px solid rgba(168, 85, 247, 0.25); padding: 0.6rem 1.25rem; flex-shrink: 0; backdrop-filter: blur(8px); box-shadow: 0 4px 20px rgba(0,0,0,0.15); min-height: 64px; height: auto; box-sizing: border-box; width: 100%; flex-wrap: wrap; position: relative;">
+
           <!-- Left: Logo / Back Button -->
           <div style="display: flex; align-items: center; gap: 1rem; z-index: 2;">
             <!-- Clickable Grimore Logo Back Button -->
@@ -39,26 +39,29 @@
           </div>
 
           <!-- Center: DECK SUGGESTIONS Header -->
-          <div style="position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 1;">
-            <span style="font-family:'Cinzel', serif; font-size: 1.1rem; text-transform: uppercase; font-weight: 700; color: var(--color-primary); letter-spacing: 0.05em; white-space: nowrap;">💡 DECK SUGGESTIONS</span>
+          <div class="suggestions-title" style="position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 1;">
+            <div>
+              <span>Deck intelligence</span>
+              <h1>Recommendations</h1>
+            </div>
           </div>
 
           <!-- Right: Target Deck Selector & Return Button -->
-          <div style="margin-left: auto; display: flex; align-items: center; gap: 0.8rem; z-index: 2; flex-shrink: 0;">
+          <div class="suggestions-context" style="margin-left: auto; display: flex; align-items: center; gap: 0.8rem; z-index: 2; flex-shrink: 0;">
             <div style="display: flex; align-items: center; gap: 0.4rem;">
               <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Active Deck:</span>
               <span id="active-deck-name-display" style="font-size: 0.8rem; font-weight: 700; color: var(--color-secondary);">Loading...</span>
             </div>
-            
+
             <a href="index.html" id="btn-return-deck-link" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0 0.6rem; height: 28px; font-size: 0.72rem; font-weight: 700; margin: 0;">
               Back to Builder
             </a>
           </div>
-        </div>
+        </header>
 
         <!-- Row 2: Split Content (Sidebar Categories + Suggestions Grid + Inspector) -->
         <div class="search-split-container" style="display: flex; flex-grow: 1; overflow: hidden; height: 100%; width: 100%;">
-          
+
           <!-- Left: Categories Sidebar -->
           <div id="suggestions-categories-panel" class="search-filters-sidebar" style="display: flex; flex-direction: column; width: 240px; border-radius: 0; border-top: none; border-bottom: none; border-left: none; height: 100%; flex-shrink: 0; background: rgba(10, 10, 15, 0.5); backdrop-filter: blur(10px); border-right: 1px solid rgba(168, 85, 247, 0.15);">
             <div class="filters-sidebar-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.15); padding: 0.8rem 1rem;">
@@ -74,10 +77,10 @@
           <!-- Middle: Suggestions Results -->
           <div class="search-results-section" style="flex-grow: 1; display: flex; flex-direction: column; height: 100%; overflow: hidden; background: transparent;">
             <!-- Category Header -->
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.25rem; background: rgba(12, 13, 20, 0.2); border-bottom: 1px solid rgba(168, 85, 247, 0.1); flex-shrink: 0;">
+            <div class="suggestions-results-toolbar" style="display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.25rem; background: rgba(12, 13, 20, 0.2); border-bottom: 1px solid rgba(168, 85, 247, 0.1); flex-shrink: 0;">
               <div>
                 <h2 id="current-category-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: var(--text-pure);">Select a Category</h2>
-                <span id="current-category-count" style="font-size: 0.72rem; color: var(--text-muted);">0 cards found</span>
+                <span id="current-category-count" style="font-size: 0.875rem; color: var(--text-muted);">0 cards found</span>
               </div>
               <!-- Zoom Toggle Option -->
               <div style="display: flex; align-items: center; gap: 0.6rem;">
@@ -95,18 +98,18 @@
                 <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; text-align: center; gap: 0.75rem;">
                   <div style="font-size: 1.5rem; animation: pulse 1.5s infinite;">💡</div>
                   <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-high);">Fetching card suggestions from EDHREC...</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); max-width: 320px;">Analyzing your deck's commander to fetch synergy recommendations.</div>
+                  <div style="font-size: 0.875rem; color: var(--text-muted); max-width: 320px;">Analyzing your deck's commander to fetch synergy recommendations.</div>
                 </div>
               </div>
             </div>
           </div>
 
           <!-- Right: Card Inspector Drawer -->
-          <div id="card-inspector-drawer" class="card-inspector-drawer">
+          <div id="card-inspector-drawer" class="card-inspector-drawer" role="dialog" aria-modal="false" aria-labelledby="inspector-card-name" aria-hidden="true" inert hidden>
             <!-- Header -->
             <div class="drawer-header">
               <h3 id="inspector-card-name" style="margin:0; font-size: 1rem; font-weight: 700; color: var(--text-pure);">Card Details</h3>
-              <button class="drawer-close" onclick="window.closeInspectorDrawer()">✕</button>
+              <button class="drawer-close" type="button" aria-label="Close card details" onclick="window.closeInspectorDrawer()">✕</button>
             </div>
 
             <!-- Scrollable Body -->
@@ -114,7 +117,7 @@
               <!-- Visual Card Frame -->
               <div style="position: relative; margin-bottom: 1rem; border-radius: var(--radius-md); overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
                 <img id="inspector-card-img" src="logo.svg" alt="Card Artwork" style="width: 100%; display: block; aspect-ratio: 2.5/3.5; object-fit: contain; background: #0c0d14;" onerror="this.src='logo.svg'">
-                
+
                 <!-- Double Faced Flip Trigger Overlay -->
                 <div id="inspector-flip-overlay" style="display: none; position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); border: 1px solid var(--border-color); border-radius: 50%; width: 36px; height: 36px; align-items: center; justify-content: center; cursor: pointer; z-index: 10;" onclick="window.toggleInspectorCardFace()" title="Flip Card">
                   <span style="font-size: 1.1rem; user-select: none;">🔄</span>
@@ -180,7 +183,7 @@
     </div>
     <div style="display: flex; flex-direction: column; align-items: center; gap: 0.35rem; text-align: center; max-width: 300px; padding: 0 1rem;">
       <h3 id="arcane-progress-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 1rem; color: var(--color-primary); text-transform: uppercase; letter-spacing: 0.05em;">Synchronizing Arcane Core</h3>
-      <p id="arcane-progress-status" style="margin: 0; font-size: 0.72rem; color: var(--text-muted); line-height: 1.4;">Preparing metadata resolution...</p>
+      <p id="arcane-progress-status" style="margin: 0; font-size: 0.875rem; color: var(--text-muted); line-height: 1.5;">Preparing metadata resolution...</p>
     </div>
   </div>
 

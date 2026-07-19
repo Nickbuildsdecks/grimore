@@ -6,71 +6,90 @@
   <title>Grimore</title>
   <meta name="description" content="Sleek visual MTG card search database with advanced filtering, pricing trends, rulings, and deck additions.">
   <link rel="icon" type="image/svg+xml" href="logo.svg">
-  <link rel="stylesheet" href="style.css?v=16">
+    <link rel="stylesheet" href="style.css?v=50">
 </head>
-<body>
+<body class="search-page">
   <script>
     if (localStorage.getItem('theme-mode') === 'light') {
       document.body.classList.add('light-theme');
     }
   </script>
   <!-- Fullscreen Background Canvas for Logged In Views -->
-  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: -1; background: #050508;"></canvas>
+  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; background: #050508;"></canvas>
 
-  <div class="app-layout sidebar-hidden" id="app-layout">
-    <!-- Occupies full width and height with no sidebar -->
-    <div class="main-content" id="main-content" style="margin-left: 0; flex-grow: 1; width: 100%; height: 100vh; overflow: hidden; display: flex; flex-direction: column;">
-      
+  <div class="app-layout sidebar-collapsed search-app-layout" id="app-layout">
+    <aside class="sidebar search-global-sidebar" id="app-sidebar">
+      <button type="button" id="sidebar-collapse-toggle" class="sidebar-collapse-toggle" aria-label="Expand navigation" aria-expanded="false" aria-controls="app-sidebar" onclick="toggleSearchDesktopSidebar()" title="Expand navigation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>
+      </button>
+      <div class="sidebar-header">
+        <a href="index.html" class="logo-container" aria-label="My Decks" title="My Decks">
+          <img src="logo.svg" alt="Grimore Logo" style="filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.65));">
+          <div class="logo-text">Grimore</div>
+        </a>
+      </div>
+      <nav class="sidebar-nav" aria-label="Primary navigation">
+        <a class="nav-btn" href="index.html?view=discover" aria-label="Discover" title="Discover">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg><span>Discover</span>
+        </a>
+        <a class="nav-btn" href="index.html" aria-label="My Decks" title="My Decks">
+          <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg><span>My Decks</span>
+        </a>
+        <a class="nav-btn active" href="search.html" aria-current="page" aria-label="Card Search" title="Card Search">
+          <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><span>Card Search</span>
+        </a>
+        <a class="nav-btn" href="index.html?view=tournaments" aria-label="Events" title="Events">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="7"/><path d="M8.21 13.89L7 23l5-3 5 3-1.21-9.12"/></svg><span>Events</span>
+        </a>
+        <a class="nav-btn" href="index.html?view=lifetracker" aria-label="Life Tracker" title="Life Tracker">
+          <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg><span>Life Tracker</span>
+        </a>
+      </nav>
+    </aside>
+
+    <div class="main-content" id="main-content" style="flex-grow: 1; height: 100vh; overflow: hidden; display: flex; flex-direction: column;">
+
       <!-- Main Standalone Search Container (Flush with screen edges to minimize dead space) -->
       <div style="display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; box-sizing: border-box; width: 100%;">
-        
-        <!-- Row 1: Search Header (Full Width, Flush) -->
-        <div class="search-header-bar" style="display: flex; gap: 1rem; align-items: center; background: rgba(12, 13, 20, 0.45); border-bottom: 1px solid rgba(168, 85, 247, 0.25); padding: 0.6rem 1.25rem; flex-shrink: 0; backdrop-filter: blur(8px); box-shadow: 0 4px 20px rgba(0,0,0,0.15); min-height: 64px; height: auto; box-sizing: border-box; width: 100%; flex-wrap: wrap;">
-          <!-- Clickable Grimore Logo Back Button -->
-          <a href="index.html" class="grimore-back-button" title="Back to Dashboard">
-            <img src="logo.svg" alt="Grimore Logo">
-          </a>
-          <a href="#" id="btn-return-to-deck" class="btn btn-secondary btn-sm" style="display: none; height: 28px; line-height: 26px; padding: 0 10px; font-size: 0.72rem; font-weight: 700; margin: 0; text-decoration: none; align-items: center; border-color: var(--color-primary); color: var(--color-primary); background: rgba(168, 85, 247, 0.05); gap: 0.25rem;">↩ Return to Deck</a>
 
-          <div class="search-header-divider" style="width: 1px; height: 24px; background: rgba(168, 85, 247, 0.25); flex-shrink: 0;"></div>
-
-          <!-- Title -->
-          <div class="search-header-title" style="display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0;">
-            <span style="font-family:'Cinzel', serif; font-size: 1.1rem; text-transform: uppercase; font-weight: 700; color: var(--color-primary); letter-spacing: 0.05em;">Card Search</span>
-          </div>
-          
-          <!-- Search input -->
-          <div class="search-input-group" style="display: flex; flex-grow: 1; min-width: 320px; gap: 0.5rem; align-items: center;">
-            <div style="position: relative; flex: 1 1 40%; min-width: 140px;">
-              <input type="text" id="adv-search-input" class="input-field" placeholder="Card Name (e.g. dragon)..." style="background: rgba(0,0,0,0.25); border: 1px solid rgba(168, 85, 247, 0.25); height: 36px; font-size: 0.85rem; margin: 0; padding: 4px 12px 4px 34px; border-radius: 6px; width: 100%;" onkeydown="window.handleAdvSearchKeyDown(event)">
-              <svg style="position: absolute; left: 10px; top: 10px; width: 16px; height: 16px; fill: var(--text-muted);" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-            </div>
-            <div class="oracle-search-header-container" style="position: relative; flex: 1 1 40%; min-width: 140px;">
-              <input type="text" id="adv-search-text" class="input-field" placeholder="Card Text / Oracle (e.g. golem)..." style="background: rgba(0,0,0,0.25); border: 1px solid rgba(168, 85, 247, 0.25); height: 36px; font-size: 0.85rem; margin: 0; padding: 4px 12px 4px 34px; border-radius: 6px; width: 100%;" onkeydown="window.handleAdvSearchKeyDown(event)">
-              <svg style="position: absolute; left: 10px; top: 10px; width: 16px; height: 16px; fill: var(--text-muted);" viewBox="0 0 24 24"><path d="M14 17h6v2h-6zm0-4h6v2h-6zm0-4h6v2h-6zm-4 8.5C10 18.33 8.33 20 6.5 20S3 18.33 3 16.5 4.67 13 6.5 13s3.5 1.67 3.5 3.5zm-2 0c0-.83-.67-1.5-1.5-1.5S5 15.67 5 16.5 5.67 18 6.5 18 8 17.33 8 16.5zM6.5 3C8.33 3 10 4.67 10 6.5S8.33 10 6.5 10 3 8.33 3 6.5 4.67 3 6.5 3zm0 2C5.67 5 5 5.67 5 6.5S5.67 8 6.5 8 8 7.33 8 6.5 7.33 5 6.5 5z"/></svg>
-            </div>
-            <button type="button" class="btn btn-primary" onclick="window.performAdvSearch(1)" style="height: 36px; font-weight: 700; padding: 0 1.25rem; margin: 0; border-radius: 6px; box-shadow: 0 0 12px rgba(168, 85, 247, 0.25);">Search</button>
-            <button type="button" id="btn-adv-toggle" class="btn btn-secondary active" onclick="window.toggleAdvFilters()" style="height: 36px; display: flex; align-items: center; gap: 0.3rem; font-weight: 600; padding: 0 1rem; margin: 0; border-radius: 6px;">
-              ⚙️ Filters
+        <header class="search-header-bar">
+          <div class="search-brand-row">
+            <button class="mobile-menu-toggle search-mobile-menu" type="button" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false" onclick="toggleSearchMobileSidebar(this)" style="display: none; background: none; border: none; cursor: pointer; color: var(--text-pure); padding: 0.5rem; justify-content: center; align-items: center;">
+              <svg viewBox="0 0 24 24" aria-hidden="true" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round;"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
+            <a href="#" id="btn-return-to-deck" class="search-return-link" style="display: none;">Return to deck</a>
           </div>
 
-          <!-- Target Deck -->
-          <div style="display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0;" id="search-target-deck-container">
-            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Target Deck:</span>
-            <select id="adv-target-deck" class="input-field" style="margin: 0; background: rgba(0,0,0,0.25); border: 1px solid rgba(168, 85, 247, 0.25); height: 36px; padding: 0 8px; font-size: 0.78rem; border-radius: 6px; max-width: 180px;" onchange="window.updateSearchTargetDeckCookie()"></select>
+          <div class="search-command-row">
+            <div class="search-primary-field">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+              <input type="text" id="adv-search-input" class="input-field" placeholder="Search by card name, type, or Scryfall syntax" autocomplete="off" onkeydown="window.handleAdvSearchKeyDown(event)">
+              <kbd>/</kbd>
+            </div>
+            <div class="oracle-search-header-container search-oracle-field">
+              <input type="text" id="adv-search-text" class="input-field" placeholder="Oracle text contains…" autocomplete="off" onkeydown="window.handleAdvSearchKeyDown(event)">
+            </div>
+            <button type="button" class="btn search-submit-button" onclick="window.performAdvSearch(1)">Search</button>
+            <button type="button" id="btn-adv-toggle" class="btn search-filter-button active" aria-controls="adv-filters-panel" aria-expanded="true" onclick="window.toggleAdvFilters()">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 12h10M10 17h4"/></svg>
+              Filters
+            </button>
+            <div id="search-target-deck-container" class="search-target-control">
+              <label for="adv-target-deck">Add cards to</label>
+              <select id="adv-target-deck" class="input-field" onchange="window.updateSearchTargetDeckCookie()"></select>
+            </div>
           </div>
-        </div>
+        </header>
 
         <!-- Row 2: Split Content (Side-by-Side Panel Structure, Flush) -->
         <div class="search-split-container" style="display: flex; flex-grow: 1; overflow: hidden; height: 100%; width: 100%;">
-          
+
           <!-- Left: Advanced Filters Sidebar (Extended to the Left Edge) -->
           <div id="adv-filters-panel" class="search-filters-sidebar" style="display: flex; border-radius: 0; border-top: none; border-bottom: none; border-left: none; height: 100%;">
             <div class="filters-sidebar-header">
-              <h4 style="margin: 0; font-weight: 700; color: var(--text-pure); font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.05em;">Filters</h4>
-              <button type="button" class="btn btn-secondary btn-sm" onclick="window.clearAdvFilters()" style="margin: 0; padding: 2px 8px; font-size: 0.7rem; font-weight: 600; border-radius: 4px;">Reset</button>
-              <button type="button" class="close-filters-btn mobile-only-inline" onclick="window.toggleAdvFilters()" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; line-height: 1; padding: 0; cursor: pointer; font-weight: 700; margin-left: auto; order: 3;">&times;</button>
+              <h2 style="margin: 0; font-weight: 700; color: var(--text-pure); font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.05em;">Filters</h2>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="window.clearAdvFilters()" style="margin: 0; padding: 4px 8px; font-size: 0.875rem; font-weight: 600; border-radius: 4px;">Reset</button>
+              <button type="button" class="close-filters-btn mobile-only-inline" aria-label="Close filters" onclick="window.toggleAdvFilters()" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; line-height: 1; padding: 0; cursor: pointer; font-weight: 700; margin-left: auto; order: 3;">&times;</button>
             </div>
 
             <div class="filters-sidebar-scroll">
@@ -115,7 +134,7 @@
                     </div>
                   </div>
 
-                  <select id="adv-color-identity" class="input-field" style="background: var(--bg-surface); font-size: 0.7rem; height: 26px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
+                  <select id="adv-color-identity" class="input-field" style="background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                     <option value="=">Exactly these colors</option>
                     <option value="<=">Included in these colors</option>
                     <option value=">=">Including these colors</option>
@@ -147,7 +166,7 @@
                 <div class="adv-group-content" style="display: flex; flex-direction: column; gap: 0.5rem;">
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); width: 60px; font-weight: 600;">Mana Value</span>
-                    <select id="adv-mana-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.7rem; height: 24px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
+                    <select id="adv-mana-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
@@ -158,7 +177,7 @@
                   </div>
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); width: 60px; font-weight: 600;">Power</span>
-                    <select id="adv-power-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.7rem; height: 24px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
+                    <select id="adv-power-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
@@ -169,7 +188,7 @@
                   </div>
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); width: 60px; font-weight: 600;">Toughness</span>
-                    <select id="adv-toughness-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.7rem; height: 24px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
+                    <select id="adv-toughness-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
@@ -180,7 +199,7 @@
                   </div>
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); width: 60px; font-weight: 600;">Loyalty</span>
-                    <select id="adv-loyalty-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.7rem; height: 24px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
+                    <select id="adv-loyalty-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
@@ -200,7 +219,7 @@
                   <input type="text" id="adv-set" class="input-field" placeholder="Set Code (e.g. mh3, otj)" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; margin: 0; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between; margin-top: 2px;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 600;">Release Year</span>
-                    <select id="adv-year-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.7rem; height: 24px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
+                    <select id="adv-year-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
@@ -223,7 +242,7 @@
                   </select>
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 600;">Price (USD)</span>
-                    <select id="adv-price-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.7rem; height: 24px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
+                    <select id="adv-price-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="&lt;">&lt;</option>
                       <option value=">">&gt;</option>
                       <option value="=">=</option>
@@ -247,43 +266,46 @@
               </details>
             </div>
 
-            <div style="background: rgba(168,85,247,0.03); border: 1px solid rgba(168,85,247,0.1); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.65rem; color: var(--text-muted); line-height: 1.4; margin-top: auto; flex-shrink:0;">
+            <div style="background: rgba(168,85,247,0.03); border: 1px solid rgba(168,85,247,0.1); border-radius: 6px; padding: 0.75rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin-top: auto; flex-shrink:0;">
               <strong style="color: var(--color-primary); display:block; margin-bottom: 2px;">Syntax Tips:</strong>
               Supports full Scryfall syntax in the search bar. E.g. <code style="color: var(--color-secondary);">oracle:"draw cards" t:creature</code>.
+            </div>
+            <div class="mobile-filter-actions">
+              <button type="button" class="btn btn-secondary" onclick="window.clearAdvFilters()">Reset</button>
+              <button type="button" class="btn btn-primary" onclick="window.performAdvSearch(1)">Show Results</button>
             </div>
           </div>
 
           <!-- Right: Results Grid (With tight side padding to maximize screen width usage) -->
           <div class="search-results-pane" style="flex-grow: 1; display: flex; flex-direction: column; gap: 0.5rem; overflow: hidden; height: 100%; padding: 0.75rem 1rem 0.5rem 1rem;">
             <!-- Results Toolbar -->
-            <div class="search-results-toolbar" style="display: flex; justify-content: space-between; align-items: center; background: rgba(12, 13, 20, 0.2); border: 1px solid rgba(168, 85, 247, 0.08); border-radius: var(--radius-md); padding: 0.4rem 0.6rem; flex-shrink: 0;">
-              <div style="font-size: 0.72rem; color: var(--text-muted);">
-                Showing <span id="adv-results-count" style="font-weight: 700; color: var(--color-secondary);">0</span> matches
+            <div class="search-results-toolbar">
+              <div class="search-results-summary">
+                <span id="adv-results-count">0</span>
+                <span>cards</span>
               </div>
-              <div class="search-results-toolbar-options" style="display: flex; align-items: center; gap: 0.6rem;">
-                <div style="display: flex; align-items: center; gap: 0.25rem;">
-                  <span style="font-size: 0.68rem; color: var(--text-muted);">Sort:</span>
-                  <select id="adv-sort-by-select" class="input-field" style="margin: 0; background: var(--bg-surface); height: 24px; padding: 0 4px; font-size: 0.68rem; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);" onchange="window.performAdvSearch(1)">
+              <div class="search-results-toolbar-options">
+                <div class="search-sort-control">
+                  <label for="adv-sort-by-select">Sort</label>
+                  <select id="adv-sort-by-select" class="input-field" onchange="window.performAdvSearch(1)">
                     <option value="name">Name</option>
                     <option value="price">Cheapest Price</option>
                     <option value="cmc">Mana Value (CMC)</option>
                     <option value="rarity">Rarity</option>
                     <option value="subtype">Subtype</option>
                   </select>
-                  <select id="adv-sort-dir-select" class="input-field" style="margin: 0; background: var(--bg-surface); height: 24px; padding: 0 4px; font-size: 0.68rem; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);" onchange="window.performAdvSearch(1)">
-                    <option value="asc">▲ Asc</option>
-                    <option value="desc">▼ Desc</option>
+                  <select id="adv-sort-dir-select" class="input-field" aria-label="Sort direction" onchange="window.performAdvSearch(1)">
+                    <option value="asc">Ascending</option>
+                    <option value="desc">Descending</option>
                   </select>
                 </div>
-                <!-- Zoom Toggle Option -->
-                <button id="btn-zoom-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleSearchZoom()" style="margin: 0; display: flex; align-items: center; gap: 0.3rem; font-weight: 600; padding: 2px 8px; font-size: 0.7rem; border-radius: 4px; height: 24px;">
-                  🔍 Zoom In
+                <button id="btn-zoom-toggle" class="search-icon-button" aria-label="Show larger cards" title="Show larger cards" onclick="window.toggleSearchZoom()">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
                 </button>
-                <!-- Pagination count -->
-                <div style="display: flex; align-items: center; gap: 0.25rem;">
-                  <button id="btn-search-prev" class="btn btn-secondary btn-sm" onclick="window.searchPrevPage()" style="margin: 0; height: 22px; width: 22px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 800;" disabled>&lt;</button>
-                  <span id="search-page-indicator" style="font-size: 0.7rem; font-weight: 600; color: var(--text-medium); width: 70px; text-align: center;">Page 1</span>
-                  <button id="btn-search-next" class="btn btn-secondary btn-sm" onclick="window.searchNextPage()" style="margin: 0; height: 22px; width: 22px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 800;" disabled>&gt;</button>
+                <div class="search-pagination">
+                  <button id="btn-search-prev" class="search-icon-button" aria-label="Previous results page" onclick="window.searchPrevPage()" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+                  <span id="search-page-indicator">1 / 1</span>
+                  <button id="btn-search-next" class="search-icon-button" aria-label="Next results page" onclick="window.searchNextPage()" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
                 </div>
               </div>
             </div>
@@ -295,26 +317,41 @@
             </div>
 
             <!-- Scrollable Image Grid / List Container (10 columns, tight gap, no overlap) -->
-            <div id="adv-results-grid" style="flex-grow: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 0.5rem; align-items: start; padding-right: 0.25rem;">
-              <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 5rem 0; font-size: 0.78rem; background: rgba(12, 13, 20, 0.1); border: 1px dashed rgba(168, 85, 247, 0.08); border-radius: 8px;">
-                🔮 Enter a search query or select filters on the left and click Search.
+            <div id="adv-results-grid" class="search-results-grid">
+              <div class="search-discovery-state">
+                <div class="search-discovery-copy">
+                  <span>Search 30 years of Magic</span>
+                  <h2>Find the card your deck is missing.</h2>
+                  <p>Search by name, rules text, type, color, price, or full Scryfall syntax.</p>
+                  <div class="search-starter-chips" aria-label="Popular searches">
+                    <button type="button" onclick="window.runQuickSearch('is:commander')">Commanders</button>
+                    <button type="button" onclick="window.runQuickSearch('oracle:draw t:instant')">Card draw</button>
+                    <button type="button" onclick="window.runQuickSearch('oracle:destroy t:instant')">Removal</button>
+                    <button type="button" onclick="window.runQuickSearch('oracle:add mana')">Ramp</button>
+                  </div>
+                </div>
+                <div class="search-discovery-art" aria-hidden="true">
+                  <div style="--search-art:url('https://api.scryfall.com/cards/named?exact=The%20One%20Ring&format=image&version=art_crop')"></div>
+                  <div style="--search-art:url('https://api.scryfall.com/cards/named?exact=Rhystic%20Study&format=image&version=art_crop')"></div>
+                  <div style="--search-art:url('https://api.scryfall.com/cards/named?exact=Sol%20Ring&format=image&version=art_crop')"></div>
+                </div>
               </div>
             </div>
           </div>
           <!-- Sliding Card Inspector Drawer (Right Side) -->
-          <div id="card-inspector-drawer" class="card-inspector-drawer">
+          <div id="card-inspector-drawer" class="card-inspector-drawer" role="dialog" aria-modal="false" aria-labelledby="search-card-inspector-title" aria-hidden="true" inert hidden>
             <div class="drawer-header">
-              <h4 style="margin:0; font-weight: 700; color: var(--text-pure); font-size: 0.9rem; text-transform: uppercase; font-family: 'Cinzel', serif; letter-spacing:0.05em;">Card Details</h4>
-              <button type="button" class="close-drawer-btn" onclick="window.closeCardInspectorDrawer()">&times;</button>
+              <h3 id="search-card-inspector-title" style="margin:0; font-weight: 700; color: var(--text-pure); font-size: 0.9rem; text-transform: uppercase; font-family: 'Cinzel', serif; letter-spacing:0.05em;">Card Details</h3>
+              <button type="button" class="close-drawer-btn" aria-label="Close card details" onclick="window.closeCardInspectorDrawer()">&times;</button>
             </div>
-            
+
             <div class="drawer-content">
               <!-- Card Art/Image Frame -->
               <div class="drawer-card-frame">
-                <img id="inspector-card-image" src="" alt="Card Face" class="drawer-card-img" onerror="this.src='logo.svg'">
-                <button id="inspector-flip-btn" class="btn btn-secondary btn-sm" style="display:none; position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10;" onclick="window.flipInspectorCard()">🔄 Flip Card</button>
+                <img id="inspector-card-image" src="logo.svg" alt="Card face" class="drawer-card-img" onerror="this.src='logo.svg'">
+                <button id="inspector-flip-btn" class="btn btn-secondary btn-sm" style="display:none; position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 0.875rem; font-weight: 700; padding: 6px 10px; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10;" onclick="window.flipInspectorCard()">🔄 Flip Card</button>
               </div>
-              
+
               <!-- Card Core Info -->
               <div style="display:flex; flex-direction:column; gap:4px; margin-bottom: 0.75rem;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap: 8px;">
@@ -338,9 +375,9 @@
 
               <!-- Tab 1: Details & Legality -->
               <div class="drawer-tab-pane active" id="pane-details">
-                <div id="inspector-card-oracle" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-light); padding: 0.6rem; border-radius: 6px; font-size: 0.75rem; color: var(--text-medium); line-height: 1.4; white-space: pre-wrap; font-style: normal; margin-bottom: 0.75rem; border-left: 3px solid var(--color-primary);"></div>
-                
-                <h5 style="margin: 0 0 0.4rem 0; font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing:0.02em;">Format Legality</h5>
+                <div id="inspector-card-oracle" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-medium); padding: 0.75rem; border-radius: 6px; font-size: 0.875rem; color: var(--text-high); line-height: 1.5; white-space: pre-wrap; font-style: normal; margin-bottom: 0.75rem;"></div>
+
+                <h4 style="margin: 0 0 0.4rem 0; font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing:0.02em;">Format Legality</h4>
                 <div id="inspector-legality-grid" class="legality-grid"></div>
               </div>
 
@@ -384,7 +421,7 @@
     }
   </style>
 
-  <div id="top-loading-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); box-shadow: 0 0 10px var(--color-primary); z-index: 99999; width: 0%; opacity: 0; transition: width 0.4s ease, opacity 0.3s ease; pointer-events: none;"></div>
+  <div id="top-loading-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); z-index: 99999; width: 100%; opacity: 0; transform: scaleX(0); transform-origin: left; transition: transform 0.4s ease, opacity 0.3s ease; pointer-events: none;"></div>
 
   <div id="arcane-progress-overlay" style="display: none; position: fixed; inset: 0; background: rgba(5, 5, 8, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 10000; align-items: center; justify-content: center; flex-direction: column; opacity: 0; transition: opacity 0.3s ease; pointer-events: auto;">
     <div style="background: rgba(12, 13, 20, 0.85); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: var(--radius-lg); padding: 2.5rem; width: 90%; max-width: 420px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05); display: flex; flex-direction: column; align-items: center; gap: 1.5rem; position: relative;">
@@ -395,20 +432,20 @@
         <div style="position: absolute; inset: 20px; border: 1.5px solid var(--color-primary); border-radius: 50%; opacity: 0.6; box-shadow: 0 0 15px var(--color-primary);"></div>
         <div id="arcane-progress-pct-center" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; font-weight: 800; color: var(--text-pure); font-family: 'Outfit', sans-serif; text-shadow: 0 0 8px var(--color-primary);">0%</div>
       </div>
-      
+
       <!-- Progress Info -->
       <div style="width: 100%; display: flex; flex-direction: column; gap: 0.75rem; align-items: center;">
         <div id="arcane-progress-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-pure); text-transform: uppercase; letter-spacing: 0.05em; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">Loading...</div>
         <div id="arcane-progress-message" style="font-size: 0.75rem; color: var(--text-muted); min-height: 18px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; width: 100%;">Please wait.</div>
       </div>
-      
+
       <!-- Progress Bar Container -->
       <div style="width: 100%; height: 6px; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--border-light); border-radius: 4px; overflow: hidden; position: relative;">
-        <div id="arcane-progress-bar-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); box-shadow: 0 0 10px var(--color-primary); transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+        <div id="arcane-progress-bar-fill" style="width: 100%; height: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transform: scaleX(0); transform-origin: left; transition: transform 0.2s ease-out;"></div>
       </div>
     </div>
   </div>
 
-  <script src="search.js?v=16"></script>
+  <script src="search.js?v=28"></script>
 </body>
 </html>
