@@ -630,15 +630,10 @@
 
             <!-- Form 1: Profile Customization Tab -->
             <form id="profile-form-customize" onsubmit="handleSaveProfile(event)" style="display: flex; flex-direction: column; gap: 0.75rem;">
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                <div class="form-group" style="margin: 0;">
-                  <label class="form-label" style="font-size: 0.72rem;">Nickname</label>
-                  <input type="text" id="profile-nickname" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" required autocomplete="off">
-                </div>
-                <div class="form-group" style="margin: 0;">
-                  <label class="form-label" style="font-size: 0.72rem;">Signature Card Name</label>
-                  <input type="text" id="profile-commander" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="e.g. Atraxa" autocomplete="off" oninput="window.debouncedProfileCardPreview()">
-                </div>
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label" style="font-size: 0.72rem;">Nickname</label>
+                <input type="text" id="profile-nickname" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" required autocomplete="off">
+                <input type="hidden" id="profile-commander" value="">
               </div>
 
               <div class="form-group" style="margin: 0;">
@@ -669,20 +664,12 @@
               </div>
 
               <div class="form-group" style="margin: 0;">
-                <label class="form-label" style="font-size: 0.72rem;">Avatar Image URL</label>
+                <label class="form-label" style="font-size: 0.72rem;">Avatar Image</label>
                 <input type="url" id="profile-avatar" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="https://example.com/avatar.jpg" autocomplete="off">
               </div>
 
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                <div class="form-group" style="margin: 0;">
-                  <label class="form-label" style="font-size: 0.72rem;">Discord Handle</label>
-                  <input type="text" id="profile-discord" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="e.g. jace_beleren" autocomplete="off">
-                </div>
-                <div class="form-group" style="margin: 0;">
-                  <label class="form-label" style="font-size: 0.72rem;">Moxfield Username</label>
-                  <input type="text" id="profile-moxfield" class="input-field" style="background: var(--bg-surface); height: 32px; font-size: 0.8rem;" placeholder="e.g. mtgBuilder99" autocomplete="off">
-                </div>
-              </div>
+              <input type="hidden" id="profile-discord" value="">
+              <input type="hidden" id="profile-moxfield" value="">
 
               <!-- Appearance Mode Toggle styled nicely -->
               <div style="border-top: 1px solid var(--border-light); padding-top: 0.5rem; margin-top: 0.25rem;">
@@ -774,16 +761,10 @@
                   </div>
                 </div>
 
-                <!-- Social Links block -->
-                <div id="showcase-socials" style="display: flex; gap: 1rem; align-items: center; border-top: 1px solid var(--border-light); padding-top: 0.75rem; font-size: 0.75rem;">
-                  <div style="display: flex; align-items: center; gap: 0.3rem;">
-                    <span style="color: #5865F2; font-weight: 800;">Discord:</span>
-                    <span id="showcase-discord" style="color: var(--text-high); font-weight: 600;">Not connected</span>
-                  </div>
-                  <div style="display: flex; align-items: center; gap: 0.3rem;">
-                    <span style="color: var(--color-secondary); font-weight: 800;">Moxfield:</span>
-                    <span id="showcase-moxfield" style="color: var(--text-high); font-weight: 600;">Not connected</span>
-                  </div>
+                <!-- Social Links block (Hidden) -->
+                <div id="showcase-socials" style="display: none !important;">
+                  <span id="showcase-discord"></span>
+                  <span id="showcase-moxfield"></span>
                 </div>
               </div>
             </div>
@@ -830,28 +811,11 @@
               </div>
             </div>
 
-            <!-- History Stats Panel -->
-            <div class="panel profile-history-panel" style="margin: 0; padding: 1.25rem;">
-              <div class="panel-header" style="border-bottom: 1px solid var(--border-light); padding-bottom: 0.35rem; margin-bottom: 0.75rem;">
-                <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin: 0; letter-spacing: 0.05em;">Tournament History</h4>
-              </div>
-
-              <div class="table-container" style="max-height: 150px; overflow-y: auto;">
-                <table class="table" style="font-size: 0.72rem;">
-                  <thead>
-                    <tr>
-                      <th>Event</th>
-                      <th>Points</th>
-                      <th>Wins</th>
-                      <th>Kills</th>
-                      <th>Matches</th>
-                    </tr>
-                  </thead>
-                  <tbody id="profile-stats-list">
-                    <!-- Dynamic stats -->
-                  </tbody>
-                </table>
-              </div>
+            <!-- History Stats Panel (Hidden) -->
+            <div class="panel profile-history-panel" style="display: none !important;">
+              <table class="table" style="font-size: 0.72rem;">
+                <tbody id="profile-stats-list"></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1075,7 +1039,7 @@
           </div>
           <div style="flex-grow: 1;">
             <h4 id="public-profile-nickname" style="font-size: 1.2rem; font-weight: 800; color: var(--text-pure); margin-bottom: 0.15rem;">Player Name</h4>
-            <div id="public-profile-commander-info" style="font-size: 0.8rem; color: var(--color-primary); font-weight: 600;"></div>
+            <div id="public-profile-commander-info" style="display: none;"></div>
           </div>
           <div style="display:flex; gap:0.5rem; align-items:center; flex-shrink:0;">
             <button id="btn-public-friend" class="btn btn-primary btn-sm" onclick="togglePublicFriend()" style="font-weight:700; display:none;">Add Friend</button>
@@ -1083,7 +1047,7 @@
           </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;">
+        <div>
           <!-- Public Decks -->
           <div>
             <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.5rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-light); padding-bottom: 0.25rem;">Public Decks</h4>
@@ -1092,13 +1056,8 @@
             </div>
           </div>
 
-          <!-- Event history statistics -->
-          <div>
-            <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-medium); margin-bottom: 0.5rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-light); padding-bottom: 0.25rem;">Tournament Scores</h4>
-            <div id="public-profile-stats-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
-              <!-- Loaded dynamically -->
-            </div>
-          </div>
+          <!-- Hidden Tournament Scores Container to prevent JS errors -->
+          <div id="public-profile-stats-list" style="display: none;"></div>
         </div>
 
       </div>
