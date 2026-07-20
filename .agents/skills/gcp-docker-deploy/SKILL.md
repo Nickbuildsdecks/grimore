@@ -74,10 +74,10 @@ To sync local updates to the remote VM and rebuild containers without downtime:
 ### deploy-gcp.ps1 Template
 ```powershell
 # Local paths
-$src = "C:\Users\772wa\.gemini\antigravity\scratch\mtg-tournament-platform"
+$src = "C:\Users\YOUR_USERNAME\...\mtg-tournament-platform"
 $zipPath = "$src\grimore-gcp-export.zip"
-$gcpIP = "136.65.140.33"
-$username = "nickgothard5"
+$gcpIP = "YOUR_VM_IP"
+$username = "YOUR_VM_USERNAME"
 
 Write-Host "Compressing project folder..." -ForegroundColor Cyan
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }

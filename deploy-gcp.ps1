@@ -2,13 +2,29 @@
 # Run this script from PowerShell to compile, compress, upload, and deploy updates to your VM.
 
 # --- CONFIGURATION ---
-$VM_IP = "136.65.140.33" # <-- REPLACE WITH YOUR VM's EXTERNAL IP ADDRESS (e.g. "34.135.24.128")
-$VM_USER = "nickgothard5" # <-- YOUR VM USERNAME
-$LOCAL_ZIP = "C:\Users\772wa\.gemini\antigravity\scratch\mtg-tournament-platform\grimore-gcp-export.zip"
+# Load environment variables from .env if it exists
+$envFile = Join-Path $PSScriptRoot ".env"
+if (Test-Path $envFile) {
+    Get-Content $envFile | Foreach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#")) {
+            $parts = $line.Split("=", 2)
+            if ($parts.Length -eq 2) {
+                $key = $parts[0].Trim()
+                $val = $parts[1].Trim().Trim('"').Trim("'")
+                [System.Environment]::SetEnvironmentVariable($key, $val)
+            }
+        }
+    }
+}
+
+$VM_IP = $env:VM_IP
+$VM_USER = $env:VM_USER
+$LOCAL_ZIP = Join-Path $PSScriptRoot "grimore-gcp-export.zip"
 # ---------------------
 
-if ($VM_IP -eq "YOUR_VM_IP") {
-    Write-Error "Please open deploy-gcp.ps1 and replace 'YOUR_VM_IP' with your Google Cloud VM's External IP address."
+if (-not $VM_IP -or $VM_IP -eq "YOUR_VM_IP" -or -not $VM_USER -or $VM_USER -eq "YOUR_VM_USERNAME") {
+    Write-Error "Please configure VM_IP and VM_USER in your .env file."
     exit
 }
 
@@ -40,7 +56,7 @@ Copy-Item "public\patreon_cover_cropped.png" -Destination "gcp-export\public\pat
 
 Write-Host "2. Creating zip archive..." -ForegroundColor Cyan
 if (Test-Path $LOCAL_ZIP) { Remove-Item $LOCAL_ZIP -Force }
-Compress-Archive -Path "C:\Users\772wa\.gemini\antigravity\scratch\mtg-tournament-platform\gcp-export\*" -DestinationPath $LOCAL_ZIP -Force
+Compress-Archive -Path (Join-Path $PSScriptRoot "gcp-export\*") -DestinationPath $LOCAL_ZIP -Force
 
 Write-Host "3. Uploading updates to VM ($VM_IP)..." -ForegroundColor Cyan
 scp -o StrictHostKeyChecking=no $LOCAL_ZIP "${VM_USER}@${VM_IP}:~/grimore-gcp-export.zip"

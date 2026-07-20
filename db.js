@@ -521,12 +521,16 @@ async function initDb() {
   
   const adminPlayer = await get("SELECT * FROM players WHERE username = 'nickbuildsdecks'");
   if (!adminPlayer) {
-    const hash = await bcrypt.hash('C3n0t@ph', 10);
+    const adminPassword = process.env.ADMIN_PASSWORD || 'ChangeMe123!';
+    const hash = await bcrypt.hash(adminPassword, 10);
     await run(`
       INSERT INTO players (id, username, password_hash, store_nickname, is_admin, role)
       VALUES ('p_admin', 'nickbuildsdecks', ?, 'Nick', 1, 'admin')
     `, [hash]);
     console.log("Admin account created: NickBuildsDecks");
+    if (!process.env.ADMIN_PASSWORD) {
+      console.warn("[SECURITY WARNING] Admin seeded with default password 'ChangeMe123!'. Please define ADMIN_PASSWORD in your .env file.");
+    }
   }
 
   // Purge any tokens, emblems, art series, or un-set cards from local card cache and clean card_price_cache

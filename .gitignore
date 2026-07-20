@@ -15,6 +15,7 @@ jspm_packages/
 
 # Temporary files & backups
 .tmp/
+scratch/
 grimore-gcp-export.zip
 gcp-export/
 
