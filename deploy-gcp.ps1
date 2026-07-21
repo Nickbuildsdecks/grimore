@@ -28,6 +28,9 @@ if (-not $VM_IP -or $VM_IP -eq "YOUR_VM_IP" -or -not $VM_USER -or $VM_USER -eq "
     exit
 }
 
+Write-Host "0. Building React web application..." -ForegroundColor Cyan
+npm run build
+
 Write-Host "1. Refreshing export files..." -ForegroundColor Cyan
 Copy-Item "server.js" -Destination "gcp-export/server.js" -Force
 Copy-Item "db.js" -Destination "gcp-export/db.js" -Force
@@ -53,6 +56,11 @@ Copy-Item "public\collection.html" -Destination "gcp-export\public\collection.ht
 Copy-Item "public\collection.js" -Destination "gcp-export\public\collection.js" -Force
 Copy-Item "public\logo.svg" -Destination "gcp-export\public\logo.svg" -Force
 Copy-Item "public\patreon_cover_cropped.png" -Destination "gcp-export\public\patreon_cover_cropped.png" -Force
+
+if (Test-Path "web") {
+    if (Test-Path "gcp-export\web") { Remove-Item "gcp-export\web" -Recurse -Force }
+    Copy-Item "web" -Destination "gcp-export\web" -Recurse -Force
+}
 
 Write-Host "2. Creating zip archive..." -ForegroundColor Cyan
 if (Test-Path $LOCAL_ZIP) { Remove-Item $LOCAL_ZIP -Force }

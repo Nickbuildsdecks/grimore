@@ -4080,11 +4080,7 @@ app.get('/api/cards/versions', async (req, res) => {
         image_uri: card.image_uris ? (card.image_uris.normal || card.image_uris.small) : (card.card_faces && card.card_faces[0].image_uris ? card.card_faces[0].image_uris.normal : ""),
         foil: !!pricesObj.usd_foil && !pricesObj.usd
       }];
-    });ge_uris ? (card.image_uris.normal || card.image_uris.small) : (card.card_faces && card.card_faces[0].image_uris ? card.card_faces[0].image_uris.normal : ""),
-        foil: !!pricesObj.usd_foil && !pricesObj.usd
-      }];
     });
->>>>>>> origin/codex/grimoire-ui-ux-responsive-overhaul
 
     // Add community totals and this player's preference without an N+1 query.
     const printingIds = prints.map(print => print.id);
