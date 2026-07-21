@@ -76,6 +76,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "4. Extracting and rebuilding containers on VM..." -ForegroundColor Cyan
-ssh -o StrictHostKeyChecking=no "${VM_USER}@${VM_IP}" "unzip -o ~/grimore-gcp-export.zip -d ~/grimore; cd ~/grimore && sudo docker rm -f grimore-app 2>/dev/null; sudo /usr/bin/docker-compose up --build -d"
+ssh -o StrictHostKeyChecking=no "${VM_USER}@${VM_IP}" "unzip -o ~/grimore-gcp-export.zip -d ~/grimore; cd ~/grimore && sudo docker rm -f grimore-app 2>/dev/null; sudo docker system prune -f; sudo /usr/bin/docker-compose up --build -d"
 
 Write-Host "Deployment completed successfully! Grimore is live on: http://$VM_IP" -ForegroundColor Green
