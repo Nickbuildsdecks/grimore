@@ -384,6 +384,43 @@ function sanitizeMoxfieldError(err) {
   return newErr;
 }
 
+const { execFile } = require('child_process');
+
+function fetchMoxfieldViaCurl(moxUrl) {
+  return new Promise((resolve, reject) => {
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+    const args = [
+      '-s',
+      '-L',
+      '--compressed',
+      '-A', userAgent,
+      '-H', 'Accept: application/json, text/plain, */*',
+      '-H', 'Accept-Language: en-US,en;q=0.9',
+      '-H', 'Referer: https://www.moxfield.com/',
+      '-H', 'Origin: https://www.moxfield.com',
+      '-H', 'Sec-Fetch-Dest: empty',
+      '-H', 'Sec-Fetch-Mode: cors',
+      '-H', 'Sec-Fetch-Site: same-site',
+      moxUrl
+    ];
+    execFile('curl', args, { maxBuffer: 25 * 1024 * 1024 }, (err, stdout) => {
+      if (err) {
+        return reject(new Error(`curl error: ${err.message}`));
+      }
+      const trimmed = (stdout || '').trim();
+      if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        return reject(new Error(`Non-JSON response from Moxfield curl: ${trimmed.slice(0, 150)}`));
+      }
+      try {
+        const data = JSON.parse(trimmed);
+        resolve(data);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}
+
 async function fetchMoxfieldJson(moxUrl) {
   // Direct fetch with whitelisted User-Agent and rate limiting
   try {
@@ -395,7 +432,6 @@ async function fetchMoxfieldJson(moxUrl) {
     }
     lastMoxfieldFetchTime = Date.now();
 
-    console.log("Attempting direct fetch to Moxfield using whitelisted credentials...");
     return await new Promise((resolve, reject) => {
       https.get(moxUrl, {
         headers: getMoxfieldHeaders()
@@ -418,6 +454,14 @@ async function fetchMoxfieldJson(moxUrl) {
   } catch (directErr) {
     if (directErr.message && directErr.message.includes('HTTP Error 404')) {
       throw sanitizeMoxfieldError(directErr);
+    }
+
+    // 2. High-Reliability Curl Fallback (bypasses Cloudflare TLS fingerprinting)
+    try {
+      console.log(`Direct Moxfield fetch returned HTTP block/error (${directErr.message}). Using curl fallback for ${moxUrl}...`);
+      return await fetchMoxfieldViaCurl(moxUrl);
+    } catch (curlErr) {
+      console.warn("Curl fallback failed:", curlErr.message);
     }
 
     const cleanErr = sanitizeMoxfieldError(directErr);
@@ -1391,7 +1435,7 @@ app.post('/api/moxfield/import-account', async (req, res) => {
     let pageNumber = 1;
     let allMoxDecks = [];
     let hasMore = true;
-    const maxPages = 5; // safety limit to prevent infinite loops
+    const maxPages = 25; // Supports up to 2,500 public decks per Moxfield account
 
     while (hasMore && pageNumber <= maxPages) {
       const searchUrl = `https://api2.moxfield.com/v2/decks/search?authorUsernames=${encodeURIComponent(username.trim())}&pageNumber=${pageNumber}&pageSize=100&sortType=updated&sortDirection=Descending`;
@@ -1401,7 +1445,7 @@ app.post('/api/moxfield/import-account', async (req, res) => {
       const decksPage = responseData.data || [];
       allMoxDecks = allMoxDecks.concat(decksPage);
       
-      if (decksPage.length < 100 || allMoxDecks.length >= responseData.totalResults) {
+      if (decksPage.length < 100 || allMoxDecks.length >= (responseData.totalResults || 0)) {
         hasMore = false;
       } else {
         pageNumber++;
@@ -1416,7 +1460,7 @@ app.post('/api/moxfield/import-account', async (req, res) => {
     const decksToProcess = [];
     const skippedDecks = [];
 
-    const batchSize = 5;
+    const batchSize = 3;
     for (let i = 0; i < allMoxDecks.length; i += batchSize) {
       const chunk = allMoxDecks.slice(i, i + batchSize);
       await Promise.all(chunk.map(async (moxDeck) => {
@@ -1443,49 +1487,45 @@ app.post('/api/moxfield/import-account', async (req, res) => {
           const deckData = await fetchMoxfieldJson(moxUrl);
 
           const deckFormat = (deckData.format || moxDeck.format || 'commander').toLowerCase();
-          const mainboard = deckData.mainboard || {};
           const commanders = deckData.commanders || {};
           const includeBasicLands = deckData.includeBasicLandsInPrice === true;
 
           const cardsMap = {};
           
-          Object.keys(commanders).forEach(name => {
-            const cardObj = commanders[name];
-            let price = 0.10;
-            let scryfallId = null;
-            if (cardObj && cardObj.card) {
-              scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
-              if (cardObj.card.prices) {
-                const prices = cardObj.card.prices;
-                const usd = parseFloat(prices.usd) || parseFloat(prices.usd_foil) || parseFloat(prices.ck) || parseFloat(prices.ck_foil) || 0.10;
-                price = usd;
-              }
-            }
-            const qty = cardObj.quantity || 1;
-            cardsMap[name] = { price, qty, scryfallId, isCommander: 1, customTag: cardObj.customCategory || null };
-          });
+          const boardSections = [
+            { board: deckData.commanders || {}, isCommander: 1 },
+            { board: deckData.mainboard || {}, isCommander: 0 },
+            { board: deckData.sideboard || {}, isCommander: 0 },
+            { board: deckData.companion || {}, isCommander: 0 },
+            { board: deckData.signatureSpells || {}, isCommander: 0 },
+            { board: deckData.attractions || {}, isCommander: 0 },
+            { board: deckData.stickers || {}, isCommander: 0 }
+          ];
 
-          Object.keys(mainboard).forEach(name => {
-            const cardObj = mainboard[name];
-            let price = 0.10;
-            let scryfallId = null;
-            if (cardObj && cardObj.card) {
-              scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
-              if (cardObj.card.prices) {
-                const prices = cardObj.card.prices;
-                const usd = parseFloat(prices.usd) || parseFloat(prices.usd_foil) || parseFloat(prices.ck) || parseFloat(prices.ck_foil) || 0.10;
-                price = usd;
+          boardSections.forEach(({ board, isCommander }) => {
+            Object.keys(board).forEach(name => {
+              const cardObj = board[name];
+              let price = 0.10;
+              let scryfallId = null;
+              if (cardObj && cardObj.card) {
+                scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
+                if (cardObj.card.prices) {
+                  const prices = cardObj.card.prices;
+                  const usd = parseFloat(prices.usd) || parseFloat(prices.usd_foil) || parseFloat(prices.ck) || parseFloat(prices.ck_foil) || 0.10;
+                  price = usd;
+                }
               }
-            }
-            if (isBasicLand(name) && !includeBasicLands) {
-              price = 0.00;
-            }
-            const qty = cardObj.quantity || 1;
-            if (cardsMap[name]) {
-              cardsMap[name].qty += qty;
-            } else {
-              cardsMap[name] = { price, qty, scryfallId, isCommander: 0, customTag: cardObj.customCategory || null };
-            }
+              if (isBasicLand(name) && !includeBasicLands) {
+                price = 0.00;
+              }
+              const qty = cardObj.quantity || 1;
+              if (cardsMap[name]) {
+                cardsMap[name].qty += qty;
+                if (isCommander) cardsMap[name].isCommander = 1;
+              } else {
+                cardsMap[name] = { price, qty, scryfallId, isCommander, customTag: cardObj.customCategory || null };
+              }
+            });
           });
 
           decksToProcess.push({
