@@ -99,10 +99,6 @@
   function initMagicCanvas(canvasId) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return null;
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      canvas.style.display = 'none';
-      return null;
-    }
     const ctx = canvas.getContext('2d');
     canvas.style.display = 'block';
     let raf;
@@ -130,7 +126,7 @@
         phase: 'in',
         fadeSpd: Math.random() * 0.0025 + 0.001,
         hold: Math.random() * 300 + 180,
-        hue: 160 + Math.random() * 25,
+        hue: 255 + Math.random() * 60,
         drift: (Math.random() - 0.5) * 0.12,
         bob: Math.random() * Math.PI * 2,
         bobSpd: Math.random() * 0.008 + 0.003,
@@ -151,7 +147,7 @@
         vy: -(Math.random() * 0.35 + 0.15),
         size: Math.random() * 1.2 + 0.6,
         alpha: Math.random() * 0.22 + 0.08,
-        hue: 36 + Math.random() * 14,
+        hue: 250 + Math.random() * 45,
         life: 1,
         decay: Math.random() * 0.0012 + 0.0004,
         offsetX: 0
@@ -160,9 +156,9 @@
 
     // 2D Concentric Arcane Circles
     const circles = [
-      { rot: 0, baseR: 0.32, speed: 0.0009,  dir: 1,  alpha: 0.55, dash: [6,14],  segCount: 8,  hue: 168, rPx: 0 },
-      { rot: 0, baseR: 0.20, speed: 0.0015,  dir: -1, alpha: 0.40, dash: [3,22],  segCount: 12, hue: 175, rPx: 0 },
-      { rot: 0, baseR: 0.44, speed: 0.0005,  dir: 1,  alpha: 0.28, dash: [12,30], segCount: 6,  hue: 160, rPx: 0 },
+      { rot: 0, baseR: 0.32, speed: 0.0009,  dir: 1,  alpha: 0.55, dash: [6,14],  segCount: 8,  hue: 270, rPx: 0 },
+      { rot: 0, baseR: 0.20, speed: 0.0015,  dir: -1, alpha: 0.40, dash: [3,22],  segCount: 12, hue: 290, rPx: 0 },
+      { rot: 0, baseR: 0.44, speed: 0.0005,  dir: 1,  alpha: 0.28, dash: [12,30], segCount: 6,  hue: 255, rPx: 0 },
     ];
 
     let mouse = { x: -1000, y: -1000, targetX: -1000, targetY: -1000, active: false };
@@ -239,7 +235,7 @@
 
       // Clean background
       const isLight = document.body.classList.contains('light-theme');
-      ctx.fillStyle = isLight ? '#f5f4f0' : '#090705';
+      ctx.fillStyle = isLight ? '#f5f4f0' : '#060409';
       ctx.fillRect(0, 0, w, h);
 
       // Smooth mouse coordinates
@@ -402,8 +398,8 @@
       alertEl.style.borderColor = 'rgba(239, 68, 68, 0.4)';
       alertEl.innerHTML = `🔴 ${message}`;
     } else {
-      alertEl.style.background = 'rgba(217, 169, 78, 0.85)';
-      alertEl.style.borderColor = 'rgba(217, 169, 78, 0.4)';
+      alertEl.style.background = 'rgba(139, 92, 246, 0.85)';
+      alertEl.style.borderColor = 'rgba(139, 92, 246, 0.4)';
       alertEl.innerHTML = `🔮 ${message}`;
     }
 
@@ -1060,7 +1056,7 @@
 
         if (selectedInspectorPrinting && selectedInspectorPrinting.scryfallId === version.id) {
           item.style.borderColor = 'var(--color-primary)';
-          item.style.background = 'rgba(217, 169, 78, 0.08)';
+          item.style.background = 'rgba(168, 85, 247, 0.08)';
         }
 
         item.onclick = (e) => {
@@ -1085,7 +1081,7 @@
             siblings[i].style.background = 'rgba(255,255,255,0.02)';
           }
           item.style.borderColor = 'var(--color-primary)';
-          item.style.background = 'rgba(217, 169, 78, 0.08)';
+          item.style.background = 'rgba(168, 85, 247, 0.08)';
 
           if (version.id) {
             activeInspectorCard.scryfallId = version.id;

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grimore</title>
   <meta name="description" content="Sleek visual MTG card search database with advanced filtering, pricing trends, rulings, and deck additions.">
   <link rel="icon" type="image/svg+xml" href="logo.svg">
@@ -15,7 +15,7 @@
     }
   </script>
   <!-- Fullscreen Background Canvas for Logged In Views -->
-  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; background: #0a0806;"></canvas>
+  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; background: #050508;"></canvas>
 
   <div class="app-layout sidebar-collapsed search-app-layout" id="app-layout">
     <aside class="sidebar search-global-sidebar" id="app-sidebar">
@@ -24,7 +24,7 @@
       </button>
       <div class="sidebar-header">
         <a href="index.html" class="logo-container" aria-label="My Decks" title="My Decks">
-          <img src="logo.svg" alt="Grimore Logo" style="filter: drop-shadow(0 0 6px rgba(217, 169, 78, 0.65));">
+          <img src="logo.svg" alt="Grimore Logo" style="filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.65));">
           <div class="logo-text">Grimore</div>
         </a>
       </div>
@@ -105,7 +105,7 @@
                 <div class="adv-group-content">
                   <div style="display: flex; flex-direction: column; gap: 3px;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 600;">Legality Format</span>
-                    <select id="adv-format" class="input-field" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <select id="adv-format" class="input-field" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="">Any Format</option>
                       <option value="commander" selected>Commander (EDH)</option>
                       <option value="standard">Standard</option>
@@ -140,7 +140,7 @@
                     </div>
                   </div>
 
-                  <select id="adv-color-identity" class="input-field" style="background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                  <select id="adv-color-identity" class="input-field" style="background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                     <option value="=">Exactly these colors</option>
                     <option value="<=">Included in these colors</option>
                     <option value=">=">Including these colors</option>
@@ -152,7 +152,7 @@
               <details class="adv-group" open>
                 <summary>Card Type</summary>
                 <div class="adv-group-content">
-                  <select id="adv-type" class="input-field" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                  <select id="adv-type" class="input-field" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                     <option value="">Any Type</option>
                     <option value="creature">Creature</option>
                     <option value="planeswalker">Planeswalker</option>
@@ -172,47 +172,47 @@
                 <div class="adv-group-content" style="display: flex; flex-direction: column; gap: 0.5rem;">
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); width: 60px; font-weight: 600;">Mana Value</span>
-                    <select id="adv-mana-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <select id="adv-mana-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
                       <option value=">=">&gt;=</option>
                       <option value="&lt;=">&lt;=</option>
                     </select>
-                    <input type="text" id="adv-mana" class="input-field" placeholder="X" style="width: 45px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <input type="text" id="adv-mana" class="input-field" placeholder="X" style="width: 45px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                   </div>
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); width: 60px; font-weight: 600;">Power</span>
-                    <select id="adv-power-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <select id="adv-power-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
                       <option value=">=">&gt;=</option>
                       <option value="&lt;=">&lt;=</option>
                     </select>
-                    <input type="text" id="adv-power" class="input-field" placeholder="X" style="width: 45px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <input type="text" id="adv-power" class="input-field" placeholder="X" style="width: 45px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                   </div>
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); width: 60px; font-weight: 600;">Toughness</span>
-                    <select id="adv-toughness-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <select id="adv-toughness-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
                       <option value=">=">&gt;=</option>
                       <option value="&lt;=">&lt;=</option>
                     </select>
-                    <input type="text" id="adv-toughness" class="input-field" placeholder="X" style="width: 45px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <input type="text" id="adv-toughness" class="input-field" placeholder="X" style="width: 45px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                   </div>
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); width: 60px; font-weight: 600;">Loyalty</span>
-                    <select id="adv-loyalty-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <select id="adv-loyalty-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
                       <option value=">=">&gt;=</option>
                       <option value="&lt;=">&lt;=</option>
                     </select>
-                    <input type="text" id="adv-loyalty" class="input-field" placeholder="X" style="width: 45px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <input type="text" id="adv-loyalty" class="input-field" placeholder="X" style="width: 45px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                   </div>
                 </div>
               </details>
@@ -221,16 +221,16 @@
               <details class="adv-group">
                 <summary>Oracle & Sets</summary>
                 <div class="adv-group-content" style="display: flex; flex-direction: column; gap: 0.4rem;">
-                  <input type="text" id="adv-oracle" class="input-field" placeholder="Oracle text (e.g. draw a card)" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; margin: 0; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
-                  <input type="text" id="adv-set" class="input-field" placeholder="Set Code (e.g. mh3, otj)" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; margin: 0; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                  <input type="text" id="adv-oracle" class="input-field" placeholder="Oracle text (e.g. draw a card)" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; margin: 0; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
+                  <input type="text" id="adv-set" class="input-field" placeholder="Set Code (e.g. mh3, otj)" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; margin: 0; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between; margin-top: 2px;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 600;">Release Year</span>
-                    <select id="adv-year-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <select id="adv-year-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="=">=</option>
                       <option value=">">&gt;</option>
                       <option value="&lt;">&lt;</option>
                     </select>
-                    <input type="number" id="adv-year" class="input-field" placeholder="2024" style="width: 55px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <input type="number" id="adv-year" class="input-field" placeholder="2024" style="width: 55px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                   </div>
                 </div>
               </details>
@@ -239,7 +239,7 @@
               <details class="adv-group" open>
                 <summary>Price & Rarity</summary>
                 <div class="adv-group-content" style="display: flex; flex-direction: column; gap: 0.4rem;">
-                  <select id="adv-rarity" class="input-field" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                  <select id="adv-rarity" class="input-field" style="background: var(--bg-surface); font-size: 0.72rem; height: 28px; padding: 0 4px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                     <option value="">Any Rarity</option>
                     <option value="common">Common</option>
                     <option value="uncommon">Uncommon</option>
@@ -248,12 +248,12 @@
                   </select>
                   <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: space-between;">
                     <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 600;">Price (USD)</span>
-                    <select id="adv-price-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <select id="adv-price-op" class="input-field" style="width: 50px; background: var(--bg-surface); font-size: 0.8rem; height: 32px; padding: 0 2px; margin: 0; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                       <option value="&lt;">&lt;</option>
                       <option value=">">&gt;</option>
                       <option value="=">=</option>
                     </select>
-                    <input type="number" step="0.01" id="adv-price" class="input-field" placeholder="1.00" style="width: 55px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(217, 169, 78,0.15);">
+                    <input type="number" step="0.01" id="adv-price" class="input-field" placeholder="1.00" style="width: 55px; background: var(--bg-surface); font-size: 0.72rem; height: 24px; text-align: center; margin: 0; padding: 2px; border-radius: 4px; border: 1px solid rgba(168,85,247,0.15);">
                   </div>
                 </div>
               </details>
@@ -272,7 +272,7 @@
               </details>
             </div>
 
-            <div style="background: rgba(217, 169, 78,0.03); border: 1px solid rgba(217, 169, 78,0.1); border-radius: 6px; padding: 0.75rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin-top: auto; flex-shrink:0;">
+            <div style="background: rgba(168,85,247,0.03); border: 1px solid rgba(168,85,247,0.1); border-radius: 6px; padding: 0.75rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin-top: auto; flex-shrink:0;">
               <strong style="color: var(--color-primary); display:block; margin-bottom: 2px;">Syntax Tips:</strong>
               Supports full Scryfall syntax in the search bar. E.g. <code style="color: var(--color-secondary);">oracle:"draw cards" t:creature</code>.
             </div>
@@ -347,7 +347,7 @@
           <!-- Sliding Card Inspector Drawer (Right Side) -->
           <div id="card-inspector-drawer" class="card-inspector-drawer" role="dialog" aria-modal="false" aria-labelledby="search-card-inspector-title" aria-hidden="true" inert hidden>
             <div class="drawer-header">
-              <h3 id="search-card-inspector-title" style="margin:0; font-weight: 700; color: var(--text-pure); font-size: 0.9rem; text-transform: uppercase; font-family: 'Fraunces', serif; letter-spacing:0.05em;">Card Details</h3>
+              <h3 id="search-card-inspector-title" style="margin:0; font-weight: 700; color: var(--text-pure); font-size: 0.9rem; text-transform: uppercase; font-family: 'Cinzel', serif; letter-spacing:0.05em;">Card Details</h3>
               <button type="button" class="close-drawer-btn" aria-label="Close card details" onclick="window.closeCardInspectorDrawer()">&times;</button>
             </div>
 
@@ -355,7 +355,7 @@
               <!-- Card Art/Image Frame -->
               <div class="drawer-card-frame">
                 <img id="inspector-card-image" src="logo.svg" alt="Card face" class="drawer-card-img" onerror="this.src='logo.svg'">
-                <button id="inspector-flip-btn" class="btn btn-secondary btn-sm" style="display:none; position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 0.875rem; font-weight: 700; padding: 6px 10px; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10;" onclick="window.flipInspectorCard()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg> Flip Card</button>
+                <button id="inspector-flip-btn" class="btn btn-secondary btn-sm" style="display:none; position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 0.875rem; font-weight: 700; padding: 6px 10px; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10;" onclick="window.flipInspectorCard()">🔄 Flip Card</button>
               </div>
 
               <!-- Card Core Info -->
@@ -429,12 +429,12 @@
 
   <div id="top-loading-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); z-index: 99999; width: 100%; opacity: 0; transform: scaleX(0); transform-origin: left; transition: transform 0.4s ease, opacity 0.3s ease; pointer-events: none;"></div>
 
-  <div id="arcane-progress-overlay" style="display: none; position: fixed; inset: 0; background: rgba(9, 7, 5, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 10000; align-items: center; justify-content: center; flex-direction: column; opacity: 0; transition: opacity 0.3s ease; pointer-events: auto;">
-    <div style="background: rgba(19, 16, 12, 0.85); border: 1px solid rgba(217, 169, 78, 0.3); border-radius: var(--radius-lg); padding: 2.5rem; width: 90%; max-width: 420px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05); display: flex; flex-direction: column; align-items: center; gap: 1.5rem; position: relative;">
+  <div id="arcane-progress-overlay" style="display: none; position: fixed; inset: 0; background: rgba(5, 5, 8, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 10000; align-items: center; justify-content: center; flex-direction: column; opacity: 0; transition: opacity 0.3s ease; pointer-events: auto;">
+    <div style="background: rgba(12, 13, 20, 0.85); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: var(--radius-lg); padding: 2.5rem; width: 90%; max-width: 420px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05); display: flex; flex-direction: column; align-items: center; gap: 1.5rem; position: relative;">
       <!-- Glowing Arcane Circle Loader Animation -->
       <div style="position: relative; width: 90px; height: 90px;">
-        <div style="position: absolute; inset: 0; border: 2px dashed rgba(217, 169, 78, 0.5); border-radius: 50%; animation: arcane-spin 8s linear infinite;"></div>
-        <div style="position: absolute; inset: 10px; border: 2px dashed rgba(217, 169, 78, 0.3); border-radius: 50%; animation: arcane-spin-reverse 6s linear infinite;"></div>
+        <div style="position: absolute; inset: 0; border: 2px dashed rgba(245, 158, 11, 0.5); border-radius: 50%; animation: arcane-spin 8s linear infinite;"></div>
+        <div style="position: absolute; inset: 10px; border: 2px dashed rgba(168, 85, 247, 0.3); border-radius: 50%; animation: arcane-spin-reverse 6s linear infinite;"></div>
         <div style="position: absolute; inset: 20px; border: 1.5px solid var(--color-primary); border-radius: 50%; opacity: 0.6; box-shadow: 0 0 15px var(--color-primary);"></div>
         <div id="arcane-progress-pct-center" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; font-weight: 800; color: var(--text-pure); font-family: 'Outfit', sans-serif; text-shadow: 0 0 8px var(--color-primary);">0%</div>
       </div>
@@ -453,13 +453,5 @@
   </div>
 
   <script src="search.js?v=28"></script>
-
-  <nav class="mobile-tabbar" aria-label="Primary">
-    <a class="mobile-tab" href="index.html" aria-label="Decks"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span>Decks</span></a>
-    <a class="mobile-tab active" href="search.html" aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span></a>
-    <a class="mobile-tab" href="index.html?view=tournaments" aria-label="Events"><svg viewBox="0 0 24 24"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a1 1 0 0 0-1 1c0 2.4 1.5 3.9 4 4"/><path d="M17 6h3a1 1 0 0 1 1 1c0 2.4-1.5 3.9-4 4"/></svg><span>Events</span></a>
-    <a class="mobile-tab" href="index.html?view=lifetracker" aria-label="Life"><svg viewBox="0 0 24 24"><path d="M12 21C7 16.5 3 13 3 8.9 3 6.1 5.2 4 7.8 4c1.6 0 3.2.8 4.2 2.1C13 4.8 14.6 4 16.2 4 18.8 4 21 6.1 21 8.9c0 4.1-4 7.6-9 12.1z"/></svg><span>Life</span></a>
-    <a class="mobile-tab" href="collection.html" aria-label="Binder"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Binder</span></a>
-  </nav>
 </body>
 </html>
