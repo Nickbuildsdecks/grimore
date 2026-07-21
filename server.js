@@ -2,6 +2,7 @@ const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const fs = require('fs');
 const https = require('https');
 const net = require('net');
 const tls = require('tls');
@@ -29,6 +30,22 @@ function isProfane(text) {
 // Middleware
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true }));
+const reactDistPath = path.join(__dirname, 'web', 'dist');
+const reactIndexPath = path.join(reactDistPath, 'index.html');
+const hasReactBuild = fs.existsSync(reactIndexPath);
+
+if (hasReactBuild) {
+  app.use(express.static(reactDistPath, {
+    index: 'index.html',
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    }
+  }));
+}
+
+// Keep legacy standalone routes available while the React migration reaches parity.
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: function (res, filePath) {
     if (filePath.endsWith('.html')) {
@@ -115,6 +132,66 @@ function fetchJson(url) {
         (data) => { resolve(data); },
         (err) => { reject(err); }
       );
+  });
+}
+
+function getLowestUsdPrice(prices) {
+  const values = [prices?.usd, prices?.usd_foil, prices?.usd_etched]
+    .filter(value => value !== null && value !== undefined && value !== '')
+    .map(value => Number.parseFloat(value))
+    .filter(Number.isFinite);
+
+  return values.length > 0 ? Math.min(...values) : null;
+}
+
+function normalizeArtistKey(artist) {
+  return String(artist || "").normalize("NFKC").trim().toLocaleLowerCase("en-US");
+}
+
+async function getFollowedArtistMap(playerId) {
+  if (!playerId) return new Map();
+  const rows = await db.query(
+    "SELECT artist_key, artist_name FROM artist_follows WHERE player_id = ? ORDER BY artist_name COLLATE NOCASE",
+    [playerId]
+  );
+  return new Map(rows.map(row => [row.artist_key, row.artist_name]));
+}
+
+async function applyFollowedArtistPreferences(cards, playerId) {
+  if (!playerId || cards.length === 0) return cards;
+  const followedArtists = await getFollowedArtistMap(playerId);
+  if (followedArtists.size === 0) return cards;
+
+  const cardNames = [...new Set(cards.map(card => card.name))];
+  const namePlaceholders = cardNames.map(() => "?").join(",");
+  const artistKeys = [...followedArtists.keys()];
+  const artistPlaceholders = artistKeys.map(() => "?").join(",");
+  const preferredRows = await db.query(
+    `SELECT card_name, scryfall_id, artist_name, image_uri, set_name
+     FROM followed_artist_printings
+     WHERE card_name IN (${namePlaceholders})
+       AND artist_key IN (${artistPlaceholders})
+     ORDER BY updated_at DESC`,
+    [...cardNames, ...artistKeys]
+  );
+  const preferredByName = new Map();
+  preferredRows.forEach(row => {
+    const key = row.card_name.toLocaleLowerCase("en-US");
+    if (!preferredByName.has(key)) preferredByName.set(key, row);
+  });
+
+  return cards.map(card => {
+    const preferred = preferredByName.get(card.name.toLocaleLowerCase("en-US"));
+    if (!preferred) return card;
+    return {
+      ...card,
+      scryfallId: preferred.scryfall_id,
+      image_uri: preferred.image_uri,
+      artist: preferred.artist_name,
+      artistFollowed: true,
+      preferredArt: true,
+      set_name: preferred.set_name
+    };
   });
 }
 
@@ -2329,6 +2406,67 @@ app.get('/api/decks/:deckId/cards', async (req, res) => {
   }
 });
 
+app.post('/api/decks/:deckId/cards', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
+
+  const { deckId } = req.params;
+  const { name, price, scryfallId } = req.body || {};
+  if (!name || typeof name !== 'string') {
+    return res.status(400).json({ error: "Card name is required." });
+  }
+
+  try {
+    const deck = await db.get(
+      "SELECT id FROM decks WHERE id = ? AND player_id = ?",
+      [deckId, req.session.player.id]
+    );
+    if (!deck) return res.status(404).json({ error: "Deck not found." });
+
+    const normalizedPrice = Number.isFinite(Number(price)) ? Number(price) : 0.10;
+    const existing = await db.get(
+      "SELECT quantity FROM deck_cards WHERE deck_id = ? AND card_name = ? COLLATE NOCASE",
+      [deckId, name.trim()]
+    );
+
+    let quantity = 1;
+    if (existing) {
+      quantity = Number(existing.quantity || 0) + 1;
+      await db.run(
+        `UPDATE deck_cards
+         SET quantity = ?, cheapest_card_price = ?, scryfall_id = COALESCE(?, scryfall_id)
+         WHERE deck_id = ? AND card_name = ? COLLATE NOCASE`,
+        [quantity, normalizedPrice, scryfallId || null, deckId, name.trim()]
+      );
+    } else {
+      await db.run(
+        `INSERT INTO deck_cards
+         (deck_id, card_name, cheapest_card_price, quantity, scryfall_id, custom_tag, is_commander)
+         VALUES (?, ?, ?, 1, ?, NULL, 0)`,
+        [deckId, name.trim(), normalizedPrice, scryfallId || null]
+      );
+    }
+
+    await db.run(
+      `UPDATE decks
+       SET cheapest_total_price = COALESCE((
+         SELECT SUM(cheapest_card_price * quantity) FROM deck_cards WHERE deck_id = ?
+       ), 0), last_checked = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [deckId, deckId]
+    );
+
+    const validation = await validateDeckLegality(deckId);
+    await db.run(
+      "UPDATE decks SET is_legal = ?, legality_reason = ? WHERE id = ?",
+      [validation.isLegal ? 1 : 0, validation.reason || null, deckId]
+    );
+
+    res.json({ success: true, quantity });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Social rating and comments for decks
 app.get('/api/decks/:deckId/social', async (req, res) => {
   const { deckId } = req.params;
@@ -2485,15 +2623,15 @@ app.post('/api/decks/:deckId/clone', async (req, res) => {
     const newDeckId = 'd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
     await db.run(`
-      INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, cloned_from_deck_id, original_creator_name, budget_limit, is_public)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, 0)
-    `, [newDeckId, playerId, deck.moxfield_url, `${deck.deck_name} (Copy)`, deck.cheapest_total_price, deck.is_legal, sourceDeckId, creatorName, deck.budget_limit]);
+      INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, cloned_from_deck_id, original_creator_name, budget_limit, is_public, format, keep_cheapest, custom_tags, featured_card_name)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+    `, [newDeckId, playerId, deck.moxfield_url, `${deck.deck_name} (Copy)`, deck.cheapest_total_price, deck.is_legal, sourceDeckId, creatorName, deck.budget_limit, deck.format || 'commander', deck.keep_cheapest || 0, deck.custom_tags || '[]', deck.featured_card_name || null]);
     
     const cards = await db.query("SELECT * FROM deck_cards WHERE deck_id = ?", [deckId]);
     for (let card of cards) {
       await db.run(
-        "INSERT INTO deck_cards (deck_id, card_name, cheapest_card_price, quantity, scryfall_id) VALUES (?, ?, ?, ?, ?)",
-        [newDeckId, card.card_name, card.cheapest_card_price, card.quantity, card.scryfall_id]
+        "INSERT INTO deck_cards (deck_id, card_name, cheapest_card_price, quantity, scryfall_id, custom_tag, is_commander) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [newDeckId, card.card_name, card.cheapest_card_price, card.quantity, card.scryfall_id, card.custom_tag || null, card.is_commander || 0]
       );
     }
     
@@ -3417,7 +3555,9 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     await db.run("INSERT OR REPLACE INTO password_resets (username, token, expires_at) VALUES (?, ?, ?)", [player.username, token, expiresAt]);
 
-    const resetLink = `https://grimore.gg?resetToken=${token}`;
+    const forwardedProto = req.get('x-forwarded-proto');
+    const protocol = forwardedProto ? forwardedProto.split(',')[0].trim() : req.protocol;
+    const resetLink = `${protocol}://${req.get('host')}/?resetToken=${encodeURIComponent(token)}`;
     console.log("\n=======================================================");
     console.log(`[SMTP SIMULATOR] Password recovery email dispatched to player: ${player.username}`);
     console.log(`[SMTP SIMULATOR] Recovery Link: ${resetLink}`);
@@ -3825,6 +3965,77 @@ app.get('/api/seasons/:seasonId/matrix', async (req, res) => {
   }
 });
 
+app.get('/api/artists/followed', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in to view followed illustrators." });
+  try {
+    const artists = await db.query(
+      `SELECT artist_name AS name, created_at AS followedAt
+       FROM artist_follows
+       WHERE player_id = ?
+       ORDER BY artist_name COLLATE NOCASE`,
+      [req.session.player.id]
+    );
+    res.json(artists);
+  } catch (_error) {
+    res.status(500).json({ error: "Could not load followed illustrators." });
+  }
+});
+
+app.post('/api/artists/follow', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in to follow illustrators." });
+
+  const artist = typeof req.body.artist === "string" ? req.body.artist.normalize("NFKC").trim() : "";
+  const following = req.body.following;
+  if (!artist || artist.length > 160) return res.status(400).json({ error: "Invalid illustrator name." });
+  if (typeof following !== "boolean") return res.status(400).json({ error: "Following must be true or false." });
+
+  const artistKey = normalizeArtistKey(artist);
+  try {
+    if (following) {
+      await db.run(
+        `INSERT INTO artist_follows (player_id, artist_key, artist_name)
+         VALUES (?, ?, ?)
+         ON CONFLICT(player_id, artist_key) DO UPDATE SET artist_name = excluded.artist_name`,
+        [req.session.player.id, artistKey, artist]
+      );
+
+      const printing = req.body.printing || {};
+      const scryfallId = typeof printing.scryfallId === "string" ? printing.scryfallId : "";
+      const cardName = typeof printing.cardName === "string" ? printing.cardName.trim() : "";
+      const imageUri = typeof printing.imageUri === "string" ? printing.imageUri : "";
+      const setName = typeof printing.setName === "string" ? printing.setName.slice(0, 200) : "";
+      if (
+        /^[a-zA-Z0-9-]{20,64}$/.test(scryfallId) &&
+        cardName && cardName.length <= 250 &&
+        /^https:\/\/cards\.scryfall\.io\//.test(imageUri)
+      ) {
+        await db.run(
+          `INSERT INTO followed_artist_printings
+           (card_name, scryfall_id, artist_key, artist_name, image_uri, set_name, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(card_name, scryfall_id) DO UPDATE SET
+             artist_key = excluded.artist_key,
+             artist_name = excluded.artist_name,
+             image_uri = excluded.image_uri,
+             set_name = excluded.set_name,
+             updated_at = CURRENT_TIMESTAMP`,
+          [cardName, scryfallId, artistKey, artist, imageUri, setName]
+        );
+      }
+    } else {
+      await db.run(
+        "DELETE FROM artist_follows WHERE player_id = ? AND artist_key = ?",
+        [req.session.player.id, artistKey]
+      );
+    }
+
+    res.json({ success: true, artist, following });
+  } catch (error) {
+    console.error("Failed to update illustrator follow:", error);
+    res.status(500).json({ error: "Could not update this illustrator." });
+  }
+});
+
 app.get('/api/cards/versions', async (req, res) => {
   const { name } = req.query;
   if (!name) return res.status(400).json({ error: "Missing card name" });
@@ -3841,26 +4052,98 @@ app.get('/api/cards/versions', async (req, res) => {
       result = await fetchJson(fallbackUrl);
     }
     
-    const prints = (result.data || [])
-      .filter(isRealCard)
-      .map(card => {
-        const pricesObj = card.prices || {};
-        const price = pricesObj.usd || pricesObj.usd_low || pricesObj.usd_foil || "0.00";
-        return {
-          id: card.id,
-          name: card.name,
-          set: card.set ? card.set.toUpperCase() : "???",
-          set_name: card.set_name || "Unknown Set",
-          collector_number: card.collector_number || "",
-          rarity: card.rarity || "common",
-          price: parseFloat(price) || 0.05,
-          image_uri: card.image_uris ? (card.image_uris.normal || card.image_uris.small) : (card.card_faces && card.card_faces[0].image_uris ? card.card_faces[0].image_uris.normal : ""),
-          foil: !!pricesObj.usd_foil && !pricesObj.usd
-        };
-      });
+    let prints = (result.data || []).filter(card => {
+      if (!isRealCard(card)) return false;
+      if (card.digital) return false;
+      if (["funny", "token", "memorabilia"].includes(card.set_type || "")) return false;
+      if (["silver", "gold"].includes(card.border_color || "")) return false;
+      return true;
+    }).flatMap(card => {
+      const pricesObj = card.prices || {};
+      const price = (typeof getLowestUsdPrice === 'function') ? getLowestUsdPrice(pricesObj) : parseFloat(pricesObj.usd || pricesObj.usd_low || pricesObj.usd_foil || "0.15");
+      if (price === null) return [];
 
-    // Sort versions by price ascending
-    prints.sort((a, b) => a.price - b.price);
+      return [{
+        id: card.id,
+        name: card.name,
+        set: card.set ? card.set.toUpperCase() : "???",
+        set_name: card.set_name || "Unknown Set",
+        collector_number: card.collector_number || "",
+        rarity: card.rarity || "common",
+        artist: card.artist || card.card_faces?.map(face => face.artist).find(Boolean) || "Unknown illustrator",
+        price: price || 0.15,
+        prices: {
+          normal: pricesObj.usd ? Number.parseFloat(pricesObj.usd) : null,
+          foil: pricesObj.usd_foil ? Number.parseFloat(pricesObj.usd_foil) : null,
+          etched: pricesObj.usd_etched ? Number.parseFloat(pricesObj.usd_etched) : null
+        },
+        image_uri: card.image_uris ? (card.image_uris.normal || card.image_uris.small) : (card.card_faces && card.card_faces[0].image_uris ? card.card_faces[0].image_uris.normal : ""),
+        foil: !!pricesObj.usd_foil && !pricesObj.usd
+      }];
+    });ge_uris ? (card.image_uris.normal || card.image_uris.small) : (card.card_faces && card.card_faces[0].image_uris ? card.card_faces[0].image_uris.normal : ""),
+        foil: !!pricesObj.usd_foil && !pricesObj.usd
+      }];
+    });
+>>>>>>> origin/codex/grimoire-ui-ux-responsive-overhaul
+
+    // Add community totals and this player's preference without an N+1 query.
+    const printingIds = prints.map(print => print.id);
+    if (printingIds.length > 0) {
+      const placeholders = printingIds.map(() => "?").join(",");
+      const aggregateRows = await db.query(
+        `SELECT scryfall_id,
+          SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END) AS likes,
+          SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END) AS dislikes
+         FROM card_art_votes
+         WHERE scryfall_id IN (${placeholders})
+         GROUP BY scryfall_id`,
+        printingIds
+      );
+      const voteTotals = new Map(aggregateRows.map(row => [row.scryfall_id, row]));
+      const playerVotes = new Map();
+
+      if (req.session.player) {
+        const playerRows = await db.query(
+          `SELECT scryfall_id, vote
+           FROM card_art_votes
+           WHERE player_id = ? AND scryfall_id IN (${placeholders})`,
+          [req.session.player.id, ...printingIds]
+        );
+        playerRows.forEach(row => playerVotes.set(row.scryfall_id, row.vote));
+      }
+
+      prints = prints.map(print => ({
+        ...print,
+        likes: Number(voteTotals.get(print.id)?.likes || 0),
+        dislikes: Number(voteTotals.get(print.id)?.dislikes || 0),
+        userVote: Number(playerVotes.get(print.id) || 0)
+      }));
+    }
+
+    const followedArtists = await getFollowedArtistMap(req.session.player?.id);
+    prints = prints.map(print => ({
+      ...print,
+      artistFollowed: followedArtists.has(normalizeArtistKey(print.artist))
+    }));
+
+    const followedPrintings = prints.filter(print => print.artistFollowed && print.image_uri);
+    if (followedPrintings.length > 0) {
+      await Promise.all(followedPrintings.map(print => db.run(
+        `INSERT INTO followed_artist_printings
+         (card_name, scryfall_id, artist_key, artist_name, image_uri, set_name, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(card_name, scryfall_id) DO UPDATE SET
+           artist_key = excluded.artist_key,
+           artist_name = excluded.artist_name,
+           image_uri = excluded.image_uri,
+           set_name = excluded.set_name,
+           updated_at = CURRENT_TIMESTAMP`,
+        [print.name, print.id, normalizeArtistKey(print.artist), print.artist, print.image_uri, print.set_name]
+      )));
+    }
+
+    // Followed illustrators lead the gallery; price remains the tie-breaker.
+    prints.sort((a, b) => Number(b.artistFollowed) - Number(a.artistFollowed) || a.price - b.price);
 
     // Cache the cheapest price and update the local database with it
     if (prints.length > 0) {
@@ -3886,6 +4169,63 @@ app.get('/api/cards/versions', async (req, res) => {
   }
 });
 
+app.post('/api/cards/versions/:scryfallId/vote', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in to rate card art." });
+
+  const { scryfallId } = req.params;
+  const cardName = typeof req.body.cardName === "string" ? req.body.cardName.trim() : "";
+  const vote = Number(req.body.vote);
+
+  if (!/^[a-zA-Z0-9-]{20,64}$/.test(scryfallId)) {
+    return res.status(400).json({ error: "Invalid printing ID." });
+  }
+  if (!cardName || cardName.length > 250) {
+    return res.status(400).json({ error: "Invalid card name." });
+  }
+  if (![ -1, 0, 1 ].includes(vote)) {
+    return res.status(400).json({ error: "Vote must be like, dislike, or clear." });
+  }
+
+  try {
+    if (vote === 0) {
+      await db.run(
+        "DELETE FROM card_art_votes WHERE player_id = ? AND scryfall_id = ?",
+        [req.session.player.id, scryfallId]
+      );
+    } else {
+      await db.run(
+        `INSERT INTO card_art_votes (player_id, scryfall_id, card_name, vote)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(player_id, scryfall_id) DO UPDATE SET
+           card_name = excluded.card_name,
+           vote = excluded.vote,
+           updated_at = CURRENT_TIMESTAMP`,
+        [req.session.player.id, scryfallId, cardName, vote]
+      );
+    }
+
+    const totals = await db.get(
+      `SELECT
+        SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END) AS likes,
+        SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END) AS dislikes
+       FROM card_art_votes
+       WHERE scryfall_id = ?`,
+      [scryfallId]
+    );
+
+    res.json({
+      success: true,
+      scryfallId,
+      likes: Number(totals?.likes || 0),
+      dislikes: Number(totals?.dislikes || 0),
+      userVote: vote
+    });
+  } catch (error) {
+    console.error("Failed to save card art vote:", error);
+    res.status(500).json({ error: "Could not save your art preference." });
+  }
+});
+
 app.get('/api/cards/rulings', async (req, res) => {
   const { id } = req.query;
   if (!id) return res.status(400).json({ error: "Missing card ID" });
@@ -3906,7 +4246,7 @@ app.get('/api/cards/search', async (req, res) => {
   const pageNum = parseInt(req.query.page) || 1;
   const limitNum = parseInt(req.query.limit) || 60;
   const offsetNum = (pageNum - 1) * limitNum;
-  const isAdvanced = q.includes(':') || q.includes('=') || q.includes('<') || q.includes('>') || q.trim().includes(' ');
+  const isAdvanced = q.includes(':') || q.includes('=') || q.includes('<') || q.includes('>');
 
   try {
     if (isAdvanced) {
@@ -3921,19 +4261,19 @@ app.get('/api/cards/search', async (req, res) => {
     );
     const totalCards = countRows[0] ? countRows[0].count : 0;
 
-    let orderClause = "LENGTH(c.card_name) ASC";
+    let orderClause = "CASE WHEN LOWER(c.card_name) = LOWER(?) THEN 0 ELSE 1 END, LENGTH(c.card_name) ASC";
     if (sort === 'name') {
-      orderClause = `c.card_name ${dir === 'desc' ? 'DESC' : 'ASC'}`;
+      orderClause = `CASE WHEN LOWER(c.card_name) = LOWER(?) THEN 0 ELSE 1 END, c.card_name ${dir === 'desc' ? 'DESC' : 'ASC'}`;
     } else if (sort === 'price') {
-      orderClause = `cached_cheapest_price ${dir === 'desc' ? 'DESC' : 'ASC'}`;
+      orderClause = `CASE WHEN LOWER(c.card_name) = LOWER(?) THEN 0 ELSE 1 END, cached_cheapest_price ${dir === 'desc' ? 'DESC' : 'ASC'}`;
     } else if (sort === 'cmc') {
-      orderClause = `c.cmc ${dir === 'desc' ? 'DESC' : 'ASC'}`;
+      orderClause = `CASE WHEN LOWER(c.card_name) = LOWER(?) THEN 0 ELSE 1 END, c.cmc ${dir === 'desc' ? 'DESC' : 'ASC'}`;
     } else if (sort === 'rarity') {
       const d = dir === 'desc' ? 'DESC' : 'ASC';
-      orderClause = `CASE c.rarity WHEN 'mythic' THEN 1 WHEN 'rare' THEN 2 WHEN 'uncommon' THEN 3 WHEN 'common' THEN 4 ELSE 5 END ${d}`;
+      orderClause = `CASE WHEN LOWER(c.card_name) = LOWER(?) THEN 0 ELSE 1 END, CASE c.rarity WHEN 'mythic' THEN 1 WHEN 'rare' THEN 2 WHEN 'uncommon' THEN 3 WHEN 'common' THEN 4 ELSE 5 END ${d}`;
     } else if (sort === 'subtype') {
       const d = dir === 'desc' ? 'DESC' : 'ASC';
-      orderClause = `CASE WHEN c.type_line LIKE '%—%' THEN SUBSTR(c.type_line, INSTR(c.type_line, '—') + 1) ELSE '' END ${d}`;
+      orderClause = `CASE WHEN LOWER(c.card_name) = LOWER(?) THEN 0 ELSE 1 END, CASE WHEN c.type_line LIKE '%—%' THEN SUBSTR(c.type_line, INSTR(c.type_line, '—') + 1) ELSE '' END ${d}`;
     }
 
     const rows = await db.query(
@@ -3943,7 +4283,7 @@ app.get('/api/cards/search', async (req, res) => {
        WHERE c.card_name LIKE ? 
        ORDER BY ${orderClause} 
        LIMIT ? OFFSET ?`,
-      [queryTerm, limitNum, offsetNum]
+      [q.trim(), queryTerm, limitNum, offsetNum]
     );
     
     if (rows.length === 0) {
@@ -3951,7 +4291,7 @@ app.get('/api/cards/search', async (req, res) => {
       throw new Error("No local matching cards");
     }
 
-    const cards = rows.map(card => {
+    let cards = rows.map(card => {
       let colors = [];
       try {
         colors = JSON.parse(card.colors || "[]");
@@ -3959,7 +4299,7 @@ app.get('/api/cards/search', async (req, res) => {
       
       const finalPrice = card.cached_cheapest_price !== null && card.cached_cheapest_price !== undefined 
         ? card.cached_cheapest_price 
-        : (card.price || 0.05);
+        : (card.price !== null && card.price !== undefined ? card.price : 0.05);
 
       return {
         name: card.card_name,
@@ -3976,12 +4316,16 @@ app.get('/api/cards/search', async (req, res) => {
           : ""
       };
     });
+    cards = await applyFollowedArtistPreferences(cards, req.session.player?.id);
     
     const hasMore = (offsetNum + cards.length) < totalCards;
     res.json({ cards, totalCards, hasMore });
   } catch (e) {
     try {
-      let searchUrl = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}+not:funny+not:token+not:art+is:paper&page=${pageNum}`;
+      const scryfallPageSize = 175;
+      const scryfallPage = Math.floor(offsetNum / scryfallPageSize) + 1;
+      const scryfallOffset = offsetNum % scryfallPageSize;
+      let searchUrl = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}+not:funny+not:token+not:art+is:paper&page=${scryfallPage}`;
       
       let scryfallOrder = 'name';
       if (sort === 'price') scryfallOrder = 'usd';
@@ -4016,11 +4360,13 @@ app.get('/api/cards/search', async (req, res) => {
 
         return true;
       });
+      const followedArtists = await getFollowedArtistMap(req.session.player?.id);
       let cards = filteredData.map(card => {
-        const price = card.prices && (card.prices.usd || card.prices.usd_low || card.prices.usd_foil || "0.00");
+        const price = getLowestUsdPrice(card.prices);
+        const artist = card.artist || card.card_faces?.map(face => face.artist).find(Boolean) || "";
         return {
           name: card.name,
-          price: parseFloat(price) || 0.05,
+          price: price ?? 0.05,
           scryfallId: card.id,
           type_line: card.type_line || "",
           oracle_text: card.oracle_text || "",
@@ -4028,6 +4374,8 @@ app.get('/api/cards/search', async (req, res) => {
           cmc: card.cmc !== undefined ? card.cmc : 0,
           colors: card.colors || [],
           rarity: card.rarity || "common",
+          artist,
+          artistFollowed: followedArtists.has(normalizeArtistKey(artist)),
           image_uri: card.image_uris ? (card.image_uris.normal || card.image_uris.small) : (card.card_faces && card.card_faces[0].image_uris ? card.card_faces[0].image_uris.normal : "")
         };
       });
@@ -4048,9 +4396,12 @@ app.get('/api/cards/search', async (req, res) => {
           return dir === 'desc' ? subB.localeCompare(subA) : subA.localeCompare(subB);
         });
       }
+
+      cards = cards.slice(scryfallOffset, scryfallOffset + limitNum);
+      cards = await applyFollowedArtistPreferences(cards, req.session.player?.id);
       
       const totalCards = result.total_cards || cards.length;
-      const hasMore = result.has_more || false;
+      const hasMore = (offsetNum + cards.length) < totalCards;
       res.json({ cards, totalCards, hasMore });
     } catch (fallbackErr) {
       res.json({ cards: [], totalCards: 0, hasMore: false });
@@ -4064,40 +4415,7 @@ app.get('/api/cards/details', async (req, res) => {
   
   // 1. Try Scryfall live lookup to get legalities, latest printings, etc.
   try {
-    const liveData = await new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'api.scryfall.com',
-        path: `/cards/named?exact=${encodeURIComponent(name)}`,
-        method: 'GET',
-        headers: {
-          'User-Agent': 'Grimore/1.0 (grimore@lgs.com)',
-          'Accept': 'application/json'
-        },
-        timeout: 2000
-      };
-      
-      const request = https.get(options, (response) => {
-        if (response.statusCode !== 200) {
-          reject(new Error(`Scryfall returned status ${response.statusCode}`));
-          return;
-        }
-        let body = '';
-        response.on('data', chunk => body += chunk);
-        response.on('end', () => {
-          try {
-            resolve(JSON.parse(body));
-          } catch (e) {
-            reject(e);
-          }
-        });
-      });
-      
-      request.on('error', reject);
-      request.on('timeout', () => {
-        request.destroy();
-        reject(new Error('Scryfall request timeout'));
-      });
-    });
+    const liveData = await fetchJson(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}`);
 
     if (liveData) {
       // Extract face details for double faced cards
@@ -4113,9 +4431,10 @@ app.get('/api/cards/details', async (req, res) => {
         manaCost = face1.mana_cost || "";
       }
 
+      const livePrice = getLowestUsdPrice(liveData.prices);
       return res.json({
         name: liveData.name,
-        price: liveData.prices ? parseFloat(liveData.prices.usd || liveData.prices.usd_foil || "0.10") : 0.10,
+        price: livePrice ?? 0.10,
         scryfallId: liveData.id,
         type_line: typeLine,
         oracle_text: oracleText,
@@ -4234,7 +4553,7 @@ app.post('/api/decks/builder-save', async (req, res) => {
       const isBasic = isBasicLand(c.name);
       
       // Default to cheapest resolved details
-      let finalPrice = isBasic ? 0.00 : details.price || 0.10;
+      let finalPrice = isBasic ? 0.00 : (details.price !== null && details.price !== undefined ? details.price : 0.10);
       let finalScryfallId = details.scryfallId;
 
       // If keepCheapest is disabled, and client provides specific printing versions/prices, preserve them
@@ -4894,7 +5213,7 @@ app.post('/api/recovery/restore/:id', async (req, res) => {
 
 // Serving Client SPA Router
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(hasReactBuild ? reactIndexPath : path.join(__dirname, 'public', 'index.html'));
 });
 
 function checkDailyResetCron() {

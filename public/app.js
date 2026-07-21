@@ -142,6 +142,10 @@
   function initMagicCanvas(canvasId) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return null;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      canvas.style.display = 'none';
+      return null;
+    }
     const ctx = canvas.getContext('2d');
     canvas.style.display = 'block';
     let raf;
@@ -169,7 +173,7 @@
         phase: 'in',
         fadeSpd: Math.random() * 0.0025 + 0.001,
         hold: Math.random() * 300 + 180,
-        hue: 255 + Math.random() * 60,
+        hue: 160 + Math.random() * 25,
         drift: (Math.random() - 0.5) * 0.12,
         bob: Math.random() * Math.PI * 2,
         bobSpd: Math.random() * 0.008 + 0.003,
@@ -190,7 +194,7 @@
         vy: -(Math.random() * 0.35 + 0.15),
         size: Math.random() * 1.2 + 0.6,
         alpha: Math.random() * 0.22 + 0.08,
-        hue: 250 + Math.random() * 45,
+        hue: 36 + Math.random() * 14,
         life: 1,
         decay: Math.random() * 0.0012 + 0.0004,
         offsetX: 0
@@ -199,9 +203,9 @@
 
     // 2D Concentric Arcane Circles
     const circles = [
-      { rot: 0, baseR: 0.32, speed: 0.0009,  dir: 1,  alpha: 0.55, dash: [6,14],  segCount: 8,  hue: 270, rPx: 0 },
-      { rot: 0, baseR: 0.20, speed: 0.0015,  dir: -1, alpha: 0.40, dash: [3,22],  segCount: 12, hue: 290, rPx: 0 },
-      { rot: 0, baseR: 0.44, speed: 0.0005,  dir: 1,  alpha: 0.28, dash: [12,30], segCount: 6,  hue: 255, rPx: 0 },
+      { rot: 0, baseR: 0.32, speed: 0.0009,  dir: 1,  alpha: 0.55, dash: [6,14],  segCount: 8,  hue: 168, rPx: 0 },
+      { rot: 0, baseR: 0.20, speed: 0.0015,  dir: -1, alpha: 0.40, dash: [3,22],  segCount: 12, hue: 175, rPx: 0 },
+      { rot: 0, baseR: 0.44, speed: 0.0005,  dir: 1,  alpha: 0.28, dash: [12,30], segCount: 6,  hue: 160, rPx: 0 },
     ];
 
     let mouse = { x: -1000, y: -1000, targetX: -1000, targetY: -1000, active: false };
@@ -278,7 +282,7 @@
 
       // Clean background
       const isLight = document.body.classList.contains('light-theme');
-      ctx.fillStyle = isLight ? '#f5f4f0' : '#060409';
+      ctx.fillStyle = isLight ? '#f5f4f0' : '#090705';
       ctx.fillRect(0, 0, w, h);
 
       // Smooth mouse coordinates
@@ -485,18 +489,18 @@
     if (!container) return;
     const showAdminBtn = currentUser && currentUser.username && currentUser.username.toLowerCase() === 'nickbuildsdecks';
     const adminBtnHtml = showAdminBtn ? `
-      <button class="btn btn-sm sidebar-footer-action" id="btn-admin-console" aria-label="Admin Console" title="Admin Console" onclick="switchHubTab('admin'); showSection('tournaments');" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(168,85,247,0.15); border: 1px solid var(--color-primary); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem; font-weight: bold; text-shadow: 0 0 4px rgba(168,85,247,0.3);">
+      <button class="btn btn-sm sidebar-footer-action" id="btn-admin-console" aria-label="Admin Console" title="Admin Console" onclick="switchHubTab('admin'); showSection('tournaments');" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(217, 169, 78,0.15); border: 1px solid var(--color-primary); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem; font-weight: bold; text-shadow: 0 0 4px rgba(217, 169, 78,0.3);">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>
         <span class="sidebar-footer-label">Admin Console</span>
       </button>
     ` : '';
     container.innerHTML = `
       ${adminBtnHtml}
-      <button class="btn btn-sm sidebar-footer-action" id="btn-feedback" aria-label="Feedback" title="Feedback" onclick="openFeedbackModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.3); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
+      <button class="btn btn-sm sidebar-footer-action" id="btn-feedback" aria-label="Feedback" title="Feedback" onclick="openFeedbackModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(217, 169, 78,0.08); border: 1px solid rgba(217, 169, 78,0.3); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
         <span class="sidebar-footer-label">Feedback</span>
       </button>
-      <button class="btn btn-sm sidebar-footer-action" id="btn-inbox" aria-label="Inbox" title="Inbox" onclick="openInboxModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(56,189,248,0.06); border: 1px solid rgba(56,189,248,0.25); color: var(--color-secondary); display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
+      <button class="btn btn-sm sidebar-footer-action" id="btn-inbox" aria-label="Inbox" title="Inbox" onclick="openInboxModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(79, 179, 158,0.06); border: 1px solid rgba(79, 179, 158,0.25); color: var(--color-secondary); display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
         <span class="sidebar-footer-label">Inbox</span><span id="inbox-unread-badge" style="display:none; background:var(--color-loss); color:#fff; border-radius:999px; font-size:0.65rem; padding:1px 5px; margin-left:2px;">0</span>
       </button>
@@ -536,7 +540,7 @@
     overlay.innerHTML = `
       <div style="background:var(--bg-card);border:1px solid var(--border-medium);border-radius:12px;width:100%;max-width:480px;padding:1.5rem;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-          <h3 style="font-family:'Cinzel',serif;font-size:1.1rem;color:var(--color-primary);margin:0;">💬 Send Feedback</h3>
+          <h3 style="font-family:'Fraunces',serif;font-size:1.1rem;color:var(--color-primary);margin:0;">💬 Send Feedback</h3>
           <button onclick="document.getElementById('feedback-modal-overlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;">✕</button>
         </div>
         <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">Your message will be sent directly to the admin. All feedback is welcome — bugs, feature ideas, or general thoughts.</p>
@@ -581,14 +585,14 @@
     overlay.innerHTML = `
       <div style="background:var(--bg-card);border:1px solid var(--border-medium);border-radius:12px;width:100%;max-width:560px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border-light);">
-          <h3 style="font-family:'Cinzel',serif;font-size:1.1rem;color:var(--color-secondary);margin:0;">📬 Messages</h3>
+          <h3 style="font-family:'Fraunces',serif;font-size:1.1rem;color:var(--color-secondary);margin:0;">📬 Messages</h3>
           <button onclick="document.getElementById('inbox-modal-overlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;">✕</button>
         </div>
         <div style="display:flex;gap:0.5rem;padding:0.75rem 1.5rem;border-bottom:1px solid var(--border-light);">
           <button id="tab-inbox-btn" class="btn btn-sm" onclick="switchMessageTab('inbox')" style="font-size:0.78rem;">Inbox</button>
           <button id="tab-sent-btn" class="btn btn-sm btn-secondary" onclick="switchMessageTab('sent')" style="font-size:0.78rem;">Sent</button>
           <button id="tab-friends-btn" class="btn btn-sm btn-secondary" onclick="switchMessageTab('friends')" style="font-size:0.78rem;">👥 Friends</button>
-          <button class="btn btn-sm" onclick="openComposeModal()" style="margin-left:auto;font-size:0.78rem;background:rgba(168,85,247,0.1);border-color:var(--color-primary);color:var(--color-primary);">✏️ Compose</button>
+          <button class="btn btn-sm" onclick="openComposeModal()" style="margin-left:auto;font-size:0.78rem;background:rgba(217, 169, 78,0.1);border-color:var(--color-primary);color:var(--color-primary);">✏️ Compose</button>
         </div>
         <div id="message-list" style="flex-grow:1;overflow-y:auto;padding:0.75rem 1.5rem;"></div>
       </div>
@@ -624,7 +628,7 @@
           html += `<div style="font-size:0.72rem;text-transform:uppercase;color:var(--color-gold);font-weight:700;letter-spacing:0.5px;margin-bottom:0.5rem;">🤝 Pending Requests (${requests.length})</div>`;
           requests.forEach(r => {
             html += `
-              <div style="border:1px solid rgba(234,179,8,0.25);border-radius:8px;padding:0.65rem 0.75rem;margin-bottom:0.4rem;background:rgba(234,179,8,0.04);display:flex;align-items:center;justify-content:space-between;">
+              <div style="border:1px solid rgba(220, 184, 78,0.25);border-radius:8px;padding:0.65rem 0.75rem;margin-bottom:0.4rem;background:rgba(220, 184, 78,0.04);display:flex;align-items:center;justify-content:space-between;">
                 <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${r.sender_name}</span>
                 <div style="display:flex;gap:0.4rem;">
                   <button class="btn btn-sm" onclick="acceptFriendRequest('${r.id}')" style="font-size:0.72rem;padding:3px 8px;background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.4);color:#10b981;">✓ Accept</button>
@@ -643,7 +647,7 @@
             html += `
               <div style="border:1px solid var(--border-light);border-radius:8px;padding:0.65rem 0.75rem;margin-bottom:0.4rem;background:var(--bg-surface);display:flex;align-items:center;justify-content:space-between;">
                 <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${f.friend_name} <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;">@${f.friend_username}</span></span>
-                <button class="btn btn-sm" onclick="openComposeModal('${f.friend_username}')" style="font-size:0.72rem;padding:3px 8px;background:rgba(168,85,247,0.1);border-color:var(--color-primary);color:var(--color-primary);">✉️ Message</button>
+                <button class="btn btn-sm" onclick="openComposeModal('${f.friend_username}')" style="font-size:0.72rem;padding:3px 8px;background:rgba(217, 169, 78,0.1);border-color:var(--color-primary);color:var(--color-primary);">✉️ Message</button>
               </div>`;
           });
         }
@@ -666,7 +670,7 @@
         const timeStr = new Date(m.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
         const name = tab === 'inbox' ? m.sender_name : m.recipient_name;
         return `
-          <div class="message-row" id="msgrow-${m.id}" onclick="expandMessage('${m.id}', '${tab}')" style="border:1px solid var(--border-light);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;cursor:pointer;background:${isUnread ? 'rgba(168,85,247,0.06)' : 'var(--bg-surface)'};transition:background 0.2s;">
+          <div class="message-row" id="msgrow-${m.id}" onclick="expandMessage('${m.id}', '${tab}')" style="border:1px solid var(--border-light);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;cursor:pointer;background:${isUnread ? 'rgba(217, 169, 78,0.06)' : 'var(--bg-surface)'};transition:background 0.2s;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <span style="font-weight:${isUnread ? '700' : '500'};color:${isUnread ? 'var(--color-primary)' : 'var(--text-high)'};font-size:0.82rem;">${name}</span>
               <span style="font-size:0.7rem;color:var(--text-muted);">${timeStr}</span>
@@ -717,7 +721,7 @@
     overlay.innerHTML = `
       <div style="background:var(--bg-card);border:1px solid var(--border-medium);border-radius:12px;width:100%;max-width:480px;padding:1.5rem;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-          <h3 style="font-family:'Cinzel',serif;font-size:1.05rem;color:var(--text-high);margin:0;">✏️ New Message</h3>
+          <h3 style="font-family:'Fraunces',serif;font-size:1.05rem;color:var(--text-high);margin:0;">✏️ New Message</h3>
           <button onclick="document.getElementById('compose-modal-overlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;">✕</button>
         </div>
         <div class="form-group" style="margin-bottom:0.75rem;">
@@ -780,7 +784,7 @@
     const btnReveal = document.getElementById('btn-reveal-credentials');
     if (credsContainer) credsContainer.style.display = 'none';
     if (btnReveal) {
-      btnReveal.textContent = '⚙️ Edit Email & Password';
+      btnReveal.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg> Edit Email & Password';
       btnReveal.classList.remove('btn-primary');
       btnReveal.classList.add('btn-secondary');
     }
@@ -805,12 +809,12 @@
 
     if (container.style.display === 'none' || !container.style.display) {
       container.style.display = 'flex';
-      button.textContent = '🔒 Hide Email & Password';
+      button.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Hide Email & Password';
       button.classList.remove('btn-secondary');
       button.classList.add('btn-primary');
     } else {
       container.style.display = 'none';
-      button.textContent = '⚙️ Edit Email & Password';
+      button.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg> Edit Email & Password';
       button.classList.remove('btn-primary');
       button.classList.add('btn-secondary');
     }
@@ -835,14 +839,14 @@
         text = '#10b981';
         break;
       case 'gold':
-        glow = '0 0 20px rgba(234, 179, 8, 0.45)';
-        border = 'rgba(234, 179, 8, 0.35)';
-        text = '#eab308';
+        glow = '0 0 20px rgba(220, 184, 78, 0.45)';
+        border = 'rgba(220, 184, 78, 0.35)';
+        text = '#dcb84e';
         break;
       case 'obsidian':
         glow = '0 0 20px rgba(255, 255, 255, 0.15)';
         border = 'rgba(255, 255, 255, 0.2)';
-        text = '#e2e8f0';
+        text = '#e8e1d2';
         break;
       case 'solar':
         glow = '0 0 20px rgba(249, 115, 22, 0.45)';
@@ -884,7 +888,7 @@
       const name = document.getElementById('profile-commander').value.trim();
       const banner = document.getElementById('showcase-banner');
       if (!name) {
-        banner.style.backgroundImage = `linear-gradient(to bottom, rgba(12, 13, 20, 0.1) 0%, rgba(12, 13, 20, 0.95) 100%), url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800')`;
+        banner.style.backgroundImage = `linear-gradient(to bottom, rgba(19, 16, 12, 0.1) 0%, rgba(19, 16, 12, 0.95) 100%), url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800')`;
         return;
       }
       try {
@@ -893,7 +897,7 @@
           const cardData = await res.json();
           const artUrl = cardData.image_uris ? cardData.image_uris.art_crop : (cardData.card_faces ? cardData.card_faces[0].image_uris.art_crop : null);
           if (artUrl) {
-            banner.style.backgroundImage = `linear-gradient(to bottom, rgba(12, 13, 20, 0.1) 0%, rgba(12, 13, 20, 0.95) 100%), url('${artUrl}')`;
+            banner.style.backgroundImage = `linear-gradient(to bottom, rgba(19, 16, 12, 0.1) 0%, rgba(19, 16, 12, 0.95) 100%), url('${artUrl}')`;
           }
         }
       } catch(e) {
@@ -951,9 +955,9 @@
       if (banner) {
         if (prof.profile_commander) {
           const artUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(prof.profile_commander)}&format=image&version=art_crop`;
-          banner.style.backgroundImage = `linear-gradient(to bottom, rgba(12, 13, 20, 0.1) 0%, rgba(12, 13, 20, 0.95) 100%), url('${artUrl}')`;
+          banner.style.backgroundImage = `linear-gradient(to bottom, rgba(19, 16, 12, 0.1) 0%, rgba(19, 16, 12, 0.95) 100%), url('${artUrl}')`;
         } else {
-          banner.style.backgroundImage = `linear-gradient(to bottom, rgba(12, 13, 20, 0.1) 0%, rgba(12, 13, 20, 0.95) 100%), url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800')`;
+          banner.style.backgroundImage = `linear-gradient(to bottom, rgba(19, 16, 12, 0.1) 0%, rgba(19, 16, 12, 0.95) 100%), url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800')`;
         }
       }
 
@@ -1298,6 +1302,11 @@
     // Highlight nav button
     const activeBtn = document.getElementById(`nav-btn-${sectionName}`);
     if (activeBtn) activeBtn.classList.add('active');
+
+    // Sync mobile tab bar
+    document.querySelectorAll('.mobile-tabbar .mobile-tab').forEach(t => t.classList.remove('active'));
+    const activeMobileTab = document.querySelector(`.mobile-tabbar .mobile-tab[data-section="${sectionName}"]`);
+    if (activeMobileTab) activeMobileTab.classList.add('active');
 
     if (sectionName === 'lifetracker' || sectionName === 'deckbuilder' || sectionName === 'playtest' || sectionName === 'deck-view') {
       document.getElementById('app-layout').classList.add('sidebar-hidden');
@@ -2097,11 +2106,11 @@
         Creature: '#a855f7',
         Instant: '#3b82f6',
         Sorcery: '#ef4444',
-        Enchantment: '#eab308',
+        Enchantment: '#dcb84e',
         Artifact: '#ec4899',
         Planeswalker: '#f97316',
         Land: '#10b981',
-        Other: '#6b7280'
+        Other: '#7d7568'
       };
 
       Object.keys(typeCounts).forEach(type => {
@@ -2348,7 +2357,7 @@
 
           cardEl.innerHTML = `
             ${qty > 1 ? `<div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.85); color: var(--color-primary); font-size: 0.75rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; z-index: 2; border: 1px solid var(--border-color);">x${qty}</div>` : ''}
-            <div style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #121212; position: relative;">
+            <div style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #141210; position: relative;">
               <img src="${imgUrl}" alt="${c.card_name}" loading="lazy" style="width: 100%; height: 100%; object-fit: contain; transition: transform 0.2s ease;"
                    onmouseover="this.style.transform='scale(1.05)'"
                    onmouseout="this.style.transform='none'"
@@ -2470,7 +2479,7 @@
         myEvents.forEach(s => {
           const isActive = s.is_active === 1;
           const isSelected = s.id === selectedSeasonId;
-          const selectClass = isSelected ? 'border-color: var(--color-primary); background-color: rgba(168, 85, 247, 0.11);' : '';
+          const selectClass = isSelected ? 'border-color: var(--color-primary); background-color: rgba(217, 169, 78, 0.11);' : '';
           const badgeColor = isActive ? 'background-color: var(--color-win-bg); color: var(--color-win); border: 1px solid rgba(16, 185, 129, 0.2);' : 'background-color: rgba(255,255,255,0.05); color: var(--text-muted);';
 
           listMy.innerHTML += `
@@ -2496,7 +2505,7 @@
         findEvents.forEach(s => {
           const isActive = s.is_active === 1;
           const isSelected = s.id === selectedSeasonId;
-          const selectClass = isSelected ? 'border-color: var(--color-primary); background-color: rgba(168, 85, 247, 0.11);' : '';
+          const selectClass = isSelected ? 'border-color: var(--color-primary); background-color: rgba(217, 169, 78, 0.11);' : '';
           const badgeColor = isActive ? 'background-color: var(--color-win-bg); color: var(--color-win); border: 1px solid rgba(16, 185, 129, 0.2);' : 'background-color: rgba(255,255,255,0.05); color: var(--text-muted);';
 
           listFind.innerHTML += `
@@ -2554,7 +2563,7 @@
       regPanel.style.display = 'block';
       regPanel.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:1.25rem; align-items:center; text-align:center; padding: 1rem 0;">
-          <h3 style="font-family:'Cinzel', serif; font-size:1.4rem; color:var(--text-pure); margin:0;">Register for ${season.name}</h3>
+          <h3 style="font-family:'Fraunces', serif; font-size:1.4rem; color:var(--text-pure); margin:0;">Register for ${season.name}</h3>
           <p style="color:var(--text-muted); font-size:0.9rem; max-width:500px; line-height:1.6; margin:0;">
             You are not registered for this tournament event yet. Join now to submit your decklist, get paired into matches, and participate in rounds.
           </p>
@@ -3519,8 +3528,8 @@
         likeBtn.style.borderColor = 'var(--color-primary)';
         likeBtn.style.color = '#fff';
       } else {
-        likeBtn.style.background = 'rgba(168, 85, 247, 0.05)';
-        likeBtn.style.borderColor = 'rgba(168, 85, 247, 0.2)';
+        likeBtn.style.background = 'rgba(217, 169, 78, 0.05)';
+        likeBtn.style.borderColor = 'rgba(217, 169, 78, 0.2)';
         likeBtn.style.color = '';
       }
 
@@ -3537,7 +3546,7 @@
         if (data.customTags && data.customTags.length > 0) {
           data.customTags.forEach(tag => {
             tagsContainer.innerHTML += `
-              <span class="badge" style="background: rgba(168, 85, 247, 0.15); color: var(--color-primary); border: 1px solid rgba(168, 85, 247, 0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: 600;">${tag}</span>
+              <span class="badge" style="background: rgba(217, 169, 78, 0.15); color: var(--color-primary); border: 1px solid rgba(217, 169, 78, 0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: 600;">${tag}</span>
             `;
           });
         }
@@ -3792,7 +3801,7 @@
     builderIsPublic = builderIsPublic === 1 ? 0 : 1;
     const btn = document.getElementById('builder-is-public-btn');
     if (btn) {
-      btn.textContent = builderIsPublic === 1 ? '🌐 Public' : '🔒 Private';
+      btn.innerHTML = builderIsPublic === 1 ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9S14.5 18.4 12 21c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z"/></svg> Public' : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Private';
       btn.className = builderIsPublic === 1 ? 'btn btn-secondary btn-sm' : 'btn btn-danger btn-sm';
     }
     window.triggerAutoSave();
@@ -3812,12 +3821,12 @@
 
     if (panel.style.display === 'none' || !panel.style.display) {
       panel.style.display = 'flex';
-      button.textContent = '🔒 Close Settings';
+      button.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M18 6 6 18M6 6l12 12"/></svg> Close Settings';
       button.classList.remove('btn-secondary');
       button.classList.add('btn-primary');
     } else {
       panel.style.display = 'none';
-      button.textContent = '⚙️ Settings';
+      button.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg> Settings';
       button.classList.remove('btn-primary');
       button.classList.add('btn-secondary');
     }
@@ -3829,7 +3838,7 @@
     const advBtn = document.getElementById('builder-settings-toggle');
     if (advPanel) advPanel.style.display = 'none';
     if (advBtn) {
-      advBtn.textContent = '⚙️ Settings';
+      advBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg> Settings';
       advBtn.classList.remove('btn-primary');
       advBtn.classList.add('btn-secondary');
     }
@@ -3890,7 +3899,7 @@
     // Set toggle public button label
     const pubBtn = document.getElementById('builder-is-public-btn');
     if (pubBtn) {
-      pubBtn.textContent = builderIsPublic === 1 ? '🌐 Public' : '🔒 Private';
+      pubBtn.innerHTML = builderIsPublic === 1 ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9S14.5 18.4 12 21c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z"/></svg> Public' : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Private';
       pubBtn.className = builderIsPublic === 1 ? 'btn btn-secondary btn-sm' : 'btn btn-danger btn-sm';
     }
 
@@ -4622,6 +4631,28 @@
       }
     }
 
+    // Empty deck: teach the interface instead of showing a bare canvas
+    if (builderMainboard.length === 0 && builderCommander.length === 0) {
+      mZone.style.display = 'flex';
+      mZone.style.flexDirection = 'column';
+      mZone.style.alignItems = 'center';
+      mZone.style.justifyContent = 'center';
+      mZone.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 0.9rem; text-align: center; padding: 2.5rem 1.25rem; max-width: 380px; margin: 0 auto;">
+          <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="var(--color-primary)" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity: 0.85;"><rect x="3" y="5" width="11" height="15" rx="1.5"/><path d="M16 4l4.2 1.3a1.5 1.5 0 0 1 1 1.9L18 19"/></svg>
+          <div style="font-family: 'Fraunces', serif; font-size: 1.15rem; font-weight: 600; color: var(--text-high);">An empty grimoire awaits</div>
+          <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;">Search the card library to add your commander and first spells. Prices, curve, and colors fill in as you build.</div>
+          <button type="button" class="btn btn-primary" onclick="openCardSearchModal()" style="min-height: 44px; padding: 0 1.4rem; font-weight: 700;">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            Search cards
+          </button>
+        </div>`;
+      document.getElementById('builder-card-count').textContent = '0';
+      const tallyEl = document.getElementById('builder-budget-tally');
+      if (tallyEl) tallyEl.textContent = '0.00';
+      return;
+    }
+
     // Get view/group/sort configurations from selectors
     const viewMode = document.getElementById('builder-view-mode') ? document.getElementById('builder-view-mode').value : 'visual-spoiler';
     const groupBy = document.getElementById('builder-group-by') ? document.getElementById('builder-group-by').value : 'type';
@@ -5068,10 +5099,10 @@
         colPanel.style.flexDirection = 'column';
         colPanel.style.gap = '0.4rem';
         colPanel.style.padding = '0.65rem';
-        colPanel.style.background = 'rgba(12, 13, 20, 0.45)';
+        colPanel.style.background = 'rgba(19, 16, 12, 0.45)';
         colPanel.style.backdropFilter = 'blur(10px)';
         colPanel.style.webkitBackdropFilter = 'blur(10px)';
-        colPanel.style.border = '1px solid rgba(168, 85, 247, 0.16)';
+        colPanel.style.border = '1px solid rgba(217, 169, 78, 0.16)';
         colPanel.style.borderRadius = 'var(--radius-md)';
         colPanel.style.width = '280px';
         colPanel.style.flexShrink = '0';
@@ -5120,7 +5151,7 @@
           cardEl.style.borderRadius = 'var(--radius-sm)';
           cardEl.style.border = '1px solid';
           cardEl.style.borderColor = builderFeaturedCardName === c.name ? 'var(--color-secondary)' : 'rgba(255, 255, 255, 0.04)';
-          cardEl.style.background = builderFeaturedCardName === c.name ? 'rgba(245, 158, 11, 0.06)' : 'rgba(255, 255, 255, 0.015)';
+          cardEl.style.background = builderFeaturedCardName === c.name ? 'rgba(217, 169, 78, 0.06)' : 'rgba(255, 255, 255, 0.015)';
           cardEl.style.cursor = 'pointer';
           cardEl.onclick = (e) => {
             if (e.target.tagName === 'BUTTON') return;
@@ -5132,12 +5163,12 @@
 
           // Hover states
           cardEl.onmouseenter = () => {
-            cardEl.style.backgroundColor = 'rgba(168, 85, 247, 0.08)';
-            cardEl.style.borderColor = 'rgba(168, 85, 247, 0.35)';
+            cardEl.style.backgroundColor = 'rgba(217, 169, 78, 0.08)';
+            cardEl.style.borderColor = 'rgba(217, 169, 78, 0.35)';
             cardEl.style.transform = 'translateY(-0.5px)';
           };
           cardEl.onmouseleave = () => {
-            cardEl.style.backgroundColor = builderFeaturedCardName === c.name ? 'rgba(245, 158, 11, 0.06)' : 'rgba(255, 255, 255, 0.015)';
+            cardEl.style.backgroundColor = builderFeaturedCardName === c.name ? 'rgba(217, 169, 78, 0.06)' : 'rgba(255, 255, 255, 0.015)';
             cardEl.style.borderColor = builderFeaturedCardName === c.name ? 'var(--color-secondary)' : 'rgba(255, 255, 255, 0.04)';
             cardEl.style.transform = 'none';
           };
@@ -5267,7 +5298,7 @@
 
     if (format === 'commander') {
       if (totalQty !== 100) {
-        warningEl.innerHTML = `⚠️ <span style="color: #f59e0b;">Commander warning: Deck must have exactly 100 cards (currently ${totalQty}).</span>`;
+        warningEl.innerHTML = `⚠️ <span style="color: #d9a94e;">Commander warning: Deck must have exactly 100 cards (currently ${totalQty}).</span>`;
       } else {
         warningEl.innerHTML = `✅ <span style="color: #10b981;">Legal Commander Deck</span>`;
       }
@@ -5483,7 +5514,7 @@
     const originalText = btn ? btn.textContent : '';
     if (btn) {
       btn.disabled = true;
-      btn.textContent = '🔄 Syncing...';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg> Syncing…';
     }
 
     try {
@@ -5492,7 +5523,7 @@
       if (metaRes.ok) {
         const meta = await metaRes.json();
         if (meta.moxfield_url && meta.moxfield_url.includes('moxfield.com/decks/')) {
-          if (btn) btn.textContent = '🔄 Moxfield Sync...';
+          if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg> Moxfield Sync…';
           const initRes = await fetch(`/api/decks/reprice-init/${builderDeckId}`);
           const initData = await initRes.json();
           if (!initData.success) {
@@ -5501,7 +5532,7 @@
         }
       }
 
-      if (btn) btn.textContent = '🔄 Loading...';
+      if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg> Loading…';
       const res = await fetch(`/api/decks/${builderDeckId}/cards`);
       const cards = await res.json();
 
@@ -6128,7 +6159,7 @@
     }
 
     decks.forEach(deck => {
-      const tagsHtml = (deck.customTags || []).map(t => `<span class="tag-badge" style="font-size: 0.65rem; padding: 2px 6px; background: rgba(168, 85, 247, 0.08); border: 1px solid var(--border-light); border-radius: 4px; color: var(--color-primary);">${t}</span>`).join(' ');
+      const tagsHtml = (deck.customTags || []).map(t => `<span class="tag-badge" style="font-size: 0.65rem; padding: 2px 6px; background: rgba(217, 169, 78, 0.08); border: 1px solid var(--border-light); border-radius: 4px; color: var(--color-primary);">${t}</span>`).join(' ');
 
       const cardEl = document.createElement('div');
       cardEl.className = 'deck-card panel';
@@ -6158,10 +6189,10 @@
 
       cardEl.innerHTML = `
         <!-- Art Crop Header Banner -->
-        <div style="height: 140px; width: 100%; background-image: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(3,3,5,0.9) 100%), url('${posterUrl}'); background-size: cover; background-position: center; border-bottom: none; flex-shrink: 0; position: relative;">
+        <div style="height: 140px; width: 100%; background-image: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(5, 4, 3,0.9) 100%), url('${posterUrl}'); background-size: cover; background-position: center; border-bottom: none; flex-shrink: 0; position: relative;">
           <!-- Public status Overlay -->
           <span class="badge" style="position: absolute; top: 0.75rem; right: 0.75rem; font-size: 0.65rem; background-color: rgba(16, 185, 129, 0.95); color: white; border: none; font-weight:700;">
-            🌐 Public
+            Public
           </span>
         </div>
 
@@ -6169,7 +6200,7 @@
         <div style="padding: 1rem; display: flex; flex-grow: 1; flex-direction: column; justify-content: space-between; gap: 0.5rem; overflow: hidden;">
           <div>
             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.25rem; gap: 0.5rem;">
-              <h3 style="font-size: 1.05rem; margin: 0; font-family: 'Cinzel', serif; font-weight: 800; color: var(--text-pure); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1;">${deck.deckName}</h3>
+              <h3 style="font-size: 1.05rem; margin: 0; font-family: 'Fraunces', serif; font-weight: 800; color: var(--text-pure); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1;">${deck.deckName}</h3>
               <span class="badge ${legalClass}" style="flex-shrink: 0;" title="${legalTitle}">${legalLabel}</span>
             </div>
 
@@ -7577,20 +7608,20 @@
         cardEl.style.position = 'relative';
         cardEl.style.borderRadius = '8px';
         cardEl.style.overflow = 'hidden';
-        cardEl.style.background = 'rgba(12, 13, 20, 0.4)';
-        cardEl.style.border = '1px solid rgba(168, 85, 247, 0.15)';
+        cardEl.style.background = 'rgba(19, 16, 12, 0.4)';
+        cardEl.style.border = '1px solid rgba(217, 169, 78, 0.15)';
         cardEl.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease';
         cardEl.style.cursor = 'pointer';
 
         cardEl.onmouseover = function() {
           this.style.transform = 'translateY(-4px)';
           this.style.boxShadow = '0 8px 16px rgba(0,0,0,0.3)';
-          this.style.borderColor = 'rgba(168, 85, 247, 0.35)';
+          this.style.borderColor = 'rgba(217, 169, 78, 0.35)';
         };
         cardEl.onmouseout = function() {
           this.style.transform = 'none';
           this.style.boxShadow = 'none';
-          this.style.borderColor = 'rgba(168, 85, 247, 0.15)';
+          this.style.borderColor = 'rgba(217, 169, 78, 0.15)';
         };
 
         cardEl.onclick = function() {
@@ -7598,7 +7629,7 @@
         };
 
         cardEl.innerHTML = `
-          <div style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #121212; position: relative;">
+          <div style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #141210; position: relative;">
             <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100%; height: 100%; object-fit: contain; transition: transform 0.2s ease;"
                  onmouseover="this.style.transform='scale(1.03)'"
                  onmouseout="this.style.transform='none'"
@@ -7608,7 +7639,7 @@
               <button type="button" class="btn btn-primary" onclick="window.addCardFromSearchByIndex(${index})" style="width: 22px; height: 22px; padding: 0; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; font-weight: 800; border-radius: 50%; margin: 0; border: 1px solid rgba(255,255,255,0.25); background: var(--color-primary); color: white; box-shadow: 0 2px 8px rgba(0,0,0,0.6); cursor: pointer; transition: transform 0.15s ease;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='none'" title="Add to target deck">+</button>
             </div>
             <!-- Floating Price Badge in Bottom Right -->
-            <div style="position: absolute; bottom: 6px; right: 6px; z-index: 10; background: rgba(12, 13, 20, 0.85); border: 1px solid rgba(168, 85, 247, 0.35); padding: 2px 6px; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.5);" onclick="event.stopPropagation();">
+            <div style="position: absolute; bottom: 6px; right: 6px; z-index: 10; background: rgba(19, 16, 12, 0.85); border: 1px solid rgba(217, 169, 78, 0.35); padding: 2px 6px; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.5);" onclick="event.stopPropagation();">
               <span style="font-size: 0.72rem; color: var(--color-secondary); font-weight: 700;">$${(card.price || 0.10).toFixed(2)}</span>
             </div>
           </div>
@@ -7884,7 +7915,7 @@
 
         if (selectedInspectorPrinting && selectedInspectorPrinting.scryfallId === version.id) {
           item.style.borderColor = 'var(--color-primary)';
-          item.style.background = 'rgba(168, 85, 247, 0.08)';
+          item.style.background = 'rgba(217, 169, 78, 0.08)';
         }
 
         item.onclick = (e) => {
@@ -7909,7 +7940,7 @@
             siblings[i].style.background = 'rgba(255,255,255,0.02)';
           }
           item.style.borderColor = 'var(--color-primary)';
-          item.style.background = 'rgba(168, 85, 247, 0.08)';
+          item.style.background = 'rgba(217, 169, 78, 0.08)';
 
           if (version.id) {
             activeInspectorCard.scryfallId = version.id;
@@ -8076,24 +8107,24 @@
         itemEl.style.position = 'relative';
         itemEl.style.borderRadius = '8px';
         itemEl.style.overflow = 'hidden';
-        itemEl.style.background = 'rgba(12, 13, 20, 0.4)';
-        itemEl.style.border = '1px solid rgba(168, 85, 247, 0.15)';
+        itemEl.style.background = 'rgba(19, 16, 12, 0.4)';
+        itemEl.style.border = '1px solid rgba(217, 169, 78, 0.15)';
         itemEl.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease';
 
         itemEl.onmouseover = function() {
           this.style.transform = 'translateY(-4px)';
           this.style.boxShadow = '0 8px 16px rgba(0,0,0,0.3)';
-          this.style.borderColor = 'rgba(168, 85, 247, 0.35)';
+          this.style.borderColor = 'rgba(217, 169, 78, 0.35)';
         };
         itemEl.onmouseout = function() {
           this.style.transform = 'none';
           this.style.boxShadow = 'none';
-          this.style.borderColor = 'rgba(168, 85, 247, 0.15)';
+          this.style.borderColor = 'rgba(217, 169, 78, 0.15)';
         };
 
         itemEl.innerHTML = `
-          <img src="${version.image_uri}" alt="${version.name}" loading="lazy" style="width: 100%; display: block; aspect-ratio: 2.5/3.5; object-fit: contain; background: #0c0d14;" onerror="this.src='logo.svg'">
-          <div style="padding: 4px 6px; background: rgba(12, 13, 20, 0.85); border-top: 1px solid rgba(168, 85, 247, 0.15); font-size: 0.7rem; display: flex; flex-direction: column; gap: 2px;">
+          <img src="${version.image_uri}" alt="${version.name}" loading="lazy" style="width: 100%; display: block; aspect-ratio: 2.5/3.5; object-fit: contain; background: #110e09;" onerror="this.src='logo.svg'">
+          <div style="padding: 4px 6px; background: rgba(19, 16, 12, 0.85); border-top: 1px solid rgba(217, 169, 78, 0.15); font-size: 0.7rem; display: flex; flex-direction: column; gap: 2px;">
             <div style="font-weight: 700; color: var(--text-pure); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${version.set_name}">${version.set} - ${version.set_name}</div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
               <button type="button" class="btn btn-primary" onclick="window.addCardVersionFromSearch(${index})" style="width: 20px; height: 20px; padding: 0; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; font-weight: 700; border-radius: 4px; margin: 0; border: none; background: var(--color-primary); color: white;" title="Add this version to target deck">+</button>

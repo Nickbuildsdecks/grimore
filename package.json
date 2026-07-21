@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node --max-old-space-size=768 server.js",
-    "dev": "node --max-old-space-size=768 server.js"
+    "dev": "node --max-old-space-size=768 server.js",
+    "build": "npm run build:web",
+    "build:web": "npm --prefix web run build"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
