@@ -6102,6 +6102,11 @@
   };
 
   function renderDiscoverDecks(decks) {
+    currentDiscoverDecks = decks || [];
+    currentSwipeIndex = 0;
+    if (discoverViewMode === 'swipe') {
+      renderDiscoverSwipeStack();
+    }
     const container = document.getElementById('discover-decks-container');
     if (!container) return;
     container.innerHTML = '';
@@ -8517,4 +8522,201 @@
   }
 
   
+  // ==========================================
+  // DISCOVER TINDER-LIKE SWIPE STACK CONTROLLER
+  // ==========================================
+  let currentDiscoverDecks = [];
+  let currentSwipeIndex = 0;
+  let discoverViewMode = 'grid';
+
+  window.switchDiscoverViewMode = function(mode) {
+    discoverViewMode = mode;
+    const gridBtn = document.getElementById('btn-discover-view-grid');
+    const swipeBtn = document.getElementById('btn-discover-view-swipe');
+    const gridContainer = document.getElementById('discover-decks-container');
+    const swipeContainer = document.getElementById('discover-swipe-container');
+
+    if (mode === 'swipe') {
+      if (gridBtn) { gridBtn.className = 'btn btn-sm btn-secondary'; }
+      if (swipeBtn) { swipeBtn.className = 'btn btn-sm btn-primary'; }
+      if (gridContainer) gridContainer.style.display = 'none';
+      if (swipeContainer) swipeContainer.style.display = 'flex';
+      renderDiscoverSwipeStack();
+    } else {
+      if (gridBtn) { gridBtn.className = 'btn btn-sm btn-primary'; }
+      if (swipeBtn) { swipeBtn.className = 'btn btn-sm btn-secondary'; }
+      if (gridContainer) gridContainer.style.display = 'grid';
+      if (swipeContainer) swipeContainer.style.display = 'none';
+    }
+  };
+
+  window.renderDiscoverSwipeStack = function() {
+    const stackEl = document.getElementById('swipe-card-stack');
+    if (!stackEl) return;
+
+    if (!currentDiscoverDecks || currentDiscoverDecks.length === 0 || currentSwipeIndex >= currentDiscoverDecks.length) {
+      stackEl.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; color: var(--text-medium); padding: 2rem;">
+          <svg viewBox="0 0 24 24" style="width: 48px; height: 48px; fill: var(--color-primary); margin-bottom: 1rem;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          <h3 style="color: var(--text-pure); margin-bottom: 0.5rem; font-family: 'Cinzel', serif;">End of the Stack</h3>
+          <p style="font-size: 0.85rem; margin-bottom: 1.25rem;">You have viewed all available community decks in this draw.</p>
+          <button class="btn btn-primary" onclick="currentSwipeIndex=0; renderDiscoverSwipeStack();">Shuffle &amp; Start Over</button>
+        </div>
+      `;
+      return;
+    }
+
+    const currentDeck = currentDiscoverDecks[currentSwipeIndex];
+    const nextDeck = currentDiscoverDecks[currentSwipeIndex + 1];
+
+    const artUrl = currentDeck.commander_scryfall_id 
+      ? `https://cards.scryfall.io/art_crop/front/${currentDeck.commander_scryfall_id[0]}/${currentDeck.commander_scryfall_id[1]}/${currentDeck.commander_scryfall_id}.jpg`
+      : 'logo.svg';
+
+    const nextArtUrl = nextDeck && nextDeck.commander_scryfall_id
+      ? `https://cards.scryfall.io/art_crop/front/${nextDeck.commander_scryfall_id[0]}/${nextDeck.commander_scryfall_id[1]}/${nextDeck.commander_scryfall_id}.jpg`
+      : 'logo.svg';
+
+    let html = '';
+
+    if (nextDeck) {
+      html += `
+        <div class="swipe-card" style="transform: scale(0.95) translateY(12px); opacity: 0.6; pointer-events: none; z-index: 1;">
+          <div class="swipe-card-art-container">
+            <img src="${nextArtUrl}" class="swipe-card-art" alt="${escapeHtml(nextDeck.name || 'Deck')}">
+            <div class="swipe-card-art-overlay"></div>
+          </div>
+          <div class="swipe-card-body">
+            <div>
+              <div class="swipe-card-title">${escapeHtml(nextDeck.name || 'Deck')}</div>
+              <div class="swipe-card-creator">by ${escapeHtml(nextDeck.creator_name || nextDeck.username || 'Anonymous')}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    html += `
+      <div id="active-swipe-card" class="swipe-card" style="z-index: 2;">
+        <div class="swipe-card-art-container">
+          <img src="${artUrl}" class="swipe-card-art" alt="${escapeHtml(currentDeck.name || 'Deck')}" draggable="false">
+          <div class="swipe-card-art-overlay"></div>
+        </div>
+        <div class="swipe-card-body">
+          <div>
+            <div class="swipe-card-title">${escapeHtml(currentDeck.name || 'Deck')}</div>
+            <div class="swipe-card-creator">by ${escapeHtml(currentDeck.creator_name || currentDeck.username || 'Anonymous')}</div>
+            <div style="font-size: 0.8rem; color: var(--text-medium); margin-bottom: 0.6rem;">
+              👑 ${escapeHtml(currentDeck.commander_name || 'Commander')}
+            </div>
+            <div class="swipe-card-stats">
+              <div class="swipe-card-stat">
+                <span>Likes</span>
+                <strong>❤️ ${currentDeck.likes || 0}</strong>
+              </div>
+              <div class="swipe-card-stat">
+                <span>Format</span>
+                <strong style="text-transform: uppercase;">${escapeHtml(currentDeck.format || 'Commander')}</strong>
+              </div>
+              ${currentDeck.price ? `
+                <div class="swipe-card-stat">
+                  <span>Value</span>
+                  <strong style="color: var(--color-gold);">$${currentDeck.price}</strong>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    stackEl.innerHTML = html;
+    initCardDragging();
+  };
+
+  function initCardDragging() {
+    const card = document.getElementById('active-swipe-card');
+    if (!card) return;
+
+    let startX = 0;
+    let currentX = 0;
+    let isDragging = false;
+
+    function onPointerDown(e) {
+      isDragging = true;
+      startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+      card.style.transition = 'none';
+    }
+
+    function onPointerMove(e) {
+      if (!isDragging) return;
+      const x = (e.clientX || (e.touches && e.touches[0].clientX) || 0) - startX;
+      currentX = x;
+      const rotate = x / 18;
+      card.style.transform = `translateX(${x}px) rotate(${rotate}deg)`;
+    }
+
+    function onPointerUp() {
+      if (!isDragging) return;
+      isDragging = false;
+      card.style.transition = 'transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease';
+      if (currentX > 80) {
+        triggerSwipeAction('right');
+      } else if (currentX < -80) {
+        triggerSwipeAction('left');
+      } else {
+        card.style.transform = 'translateX(0px) rotate(0deg)';
+      }
+    }
+
+    card.addEventListener('mousedown', onPointerDown);
+    card.addEventListener('touchstart', onPointerDown, { passive: true });
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('touchmove', onPointerMove, { passive: true });
+    window.addEventListener('mouseup', onPointerUp);
+    window.addEventListener('touchend', onPointerUp);
+  }
+
+  window.triggerSwipeAction = function(action) {
+    const card = document.getElementById('active-swipe-card');
+    const currentDeck = currentDiscoverDecks[currentSwipeIndex];
+
+    if (action === 'inspect') {
+      if (currentDeck && window.openDeckInspector) window.openDeckInspector(currentDeck.id);
+      return;
+    }
+
+    if (card) {
+      card.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+      if (action === 'right') {
+        card.style.transform = 'translateX(350px) rotate(25deg)';
+        card.style.opacity = '0';
+        if (currentDeck && window.likeDeck) window.likeDeck(currentDeck.id);
+      } else {
+        card.style.transform = 'translateX(-350px) rotate(-25deg)';
+        card.style.opacity = '0';
+      }
+    }
+
+    setTimeout(() => {
+      currentSwipeIndex++;
+      renderDiscoverSwipeStack();
+    }, 220);
+  };
+
+  // Keyboard shortcut support for Swipe Stack
+  window.addEventListener('keydown', (e) => {
+    if (activeSection !== 'discover' || discoverViewMode !== 'swipe') return;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      triggerSwipeAction('left');
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      triggerSwipeAction('right');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      triggerSwipeAction('inspect');
+    }
+  });
+
 })();

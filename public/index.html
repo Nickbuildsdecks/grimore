@@ -53,10 +53,6 @@
           <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zm0 10h8v8H3zM13 3h8v8h-8zm0 10h8v8h-8z"/></svg>
           <span>Collections</span>
         </button>
-        <button class="nav-btn" id="nav-btn-react" aria-label="React App" title="React Suite" onclick="window.location.href='/react'">
-          <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span style="color: var(--color-primary); font-weight: 700;">React Suite</span>
-        </button>
         <button class="nav-btn" id="nav-btn-patreon" aria-label="Support on Patreon" title="Support on Patreon" onclick="window.open('https://www.patreon.com/NickBuildsDecks', '_blank')" style="margin-top: auto; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 0.75rem; color: #ff424d;">
           <svg viewBox="0 0 24 24" style="fill: currentColor; width: 18px; height: 18px;"><path d="M15.217 0c-4.856 0-8.795 3.939-8.795 8.795 0 4.839 3.939 8.795 8.795 8.795 4.839 0 8.796-3.956 8.796-8.795C24.013 3.939 20.056 0 15.217 0zm-15.217 24h4.13V4.8H0V24z"/></svg>
           <span>Support Patreon</span>
@@ -174,22 +170,40 @@
             <h2 style="font-size: 1.30rem; margin: 0; font-family:'Cinzel', serif;">Community Showcase</h2>
             <span style="font-size: 0.75rem; color: var(--text-muted);">Explore trending decklists, filter by tags, and clone creations directly to your collection.</span>
           </div>
-          <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <select id="discover-sort" class="input-field" style="margin: 0; width: 140px; background: var(--bg-dark); cursor: pointer;" onchange="loadDiscoverDecks()">
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <div style="display: inline-flex; background: var(--bg-dark); padding: 3px; border-radius: 8px; border: 1px solid var(--border-light);">
+              <button type="button" id="btn-discover-view-grid" class="btn btn-sm btn-primary" onclick="switchDiscoverViewMode('grid')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;">🎴 Grid</button>
+              <button type="button" id="btn-discover-view-swipe" class="btn btn-sm btn-secondary" onclick="switchDiscoverViewMode('swipe')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;">🔥 Swipe Stack</button>
+            </div>
+            <select id="discover-sort" class="input-field" style="margin: 0; width: 130px; background: var(--bg-dark); cursor: pointer;" onchange="loadDiscoverDecks()">
               <option value="recent">Recent Decks</option>
               <option value="trending">Trending</option>
             </select>
-            <input type="text" id="discover-search" class="input-field" placeholder="Search tag, card, or creator..." style="margin: 0; width: 250px; background: var(--bg-dark);" oninput="handleDiscoverSearch()">
-            <button class="btn btn-secondary" onclick="loadDiscoverDecks()" style="height: 38px;">Refresh</button>
-            <button class="btn btn-primary" onclick="window.location.href='/react/discover'" style="height: 38px; display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 700; background: linear-gradient(135deg, var(--color-primary), var(--color-arcane-deep)); border: none; box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);">
-              <svg viewBox="0 0 24 24" style="width: 16px; height: 16px; fill: currentColor;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-              🔥 Swipe Stack Mode
-            </button>
+            <input type="text" id="discover-search" class="input-field" placeholder="Search tag, card, or creator..." style="margin: 0; width: 220px; background: var(--bg-dark);" oninput="handleDiscoverSearch()">
+            <button class="btn btn-secondary" onclick="loadDiscoverDecks()" style="height: 36px;">Refresh</button>
           </div>
         </div>
 
         <div id="discover-decks-container" class="decks-grid">
           <!-- Dynamic community decks load here -->
+        </div>
+
+        <!-- Dynamic Swipe Stack Container -->
+        <div id="discover-swipe-container" class="swipe-container" style="display: none;">
+          <div id="swipe-card-stack" class="swipe-card-stack">
+            <!-- Dynamic swiping cards render here -->
+          </div>
+          <div class="swipe-actions">
+            <button type="button" class="swipe-btn swipe-btn-pass" aria-label="Pass / Skip" title="Pass (Left Arrow)" onclick="triggerSwipeAction('left')">
+              <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <button type="button" class="swipe-btn swipe-btn-inspect" aria-label="Inspect Deck" title="Inspect Deck (Enter)" onclick="triggerSwipeAction('inspect')">
+              <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: currentColor;"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+            </button>
+            <button type="button" class="swipe-btn swipe-btn-like" aria-label="Like Deck" title="Like / Save Deck (Right Arrow)" onclick="triggerSwipeAction('right')">
+              <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: currentColor;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            </button>
+          </div>
         </div>
       </div>
     </section>
