@@ -30,22 +30,7 @@ function isProfane(text) {
 // Middleware
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true }));
-const reactDistPath = path.join(__dirname, 'web', 'dist');
-const reactIndexPath = path.join(reactDistPath, 'index.html');
-const hasReactBuild = fs.existsSync(reactIndexPath);
-
-if (hasReactBuild) {
-  app.use(express.static(reactDistPath, {
-    index: 'index.html',
-    setHeaders(res, filePath) {
-      if (filePath.endsWith('.html')) {
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      }
-    }
-  }));
-}
-
-// Keep legacy standalone routes available while the React migration reaches parity.
+// Serve Grimore primary Web Suite
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: function (res, filePath) {
     if (filePath.endsWith('.html')) {
