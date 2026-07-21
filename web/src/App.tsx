@@ -35,7 +35,7 @@ function Gate() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/react">
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route element={<Gate />}>

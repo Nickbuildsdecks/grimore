@@ -41,6 +41,24 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
+// Mount modern React SPA Suite under /react sub-route
+const reactDistPath = path.join(__dirname, 'web', 'dist');
+const reactIndexPath = path.join(reactDistPath, 'index.html');
+
+if (fs.existsSync(reactIndexPath)) {
+  app.use('/react', express.static(reactDistPath, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    }
+  }));
+
+  app.get('/react*', (req, res) => {
+    res.sendFile(reactIndexPath);
+  });
+}
+
 // Sessions setup
 app.use(session({
   secret: 'grimore_secret_key_123984',
