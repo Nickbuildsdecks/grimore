@@ -2,39 +2,39 @@
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Outfit:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
 
 :root {
-  --bg-dark: #0b0908;           /* Warm obsidian (old leather, not blue-black) */
-  --bg-card: rgba(15, 12, 9, 0.85); /* Panel base */
-  --bg-surface: rgba(26, 22, 17, 0.7); /* Warm glass surface */
-  --bg-surface-hover: rgba(40, 34, 26, 0.9); /* Hover glass */
+  --bg-dark: #07070d;
+  --bg-card: rgba(12, 13, 20, 0.88);
+  --bg-surface: rgba(18, 20, 32, 0.75);
+  --bg-surface-hover: rgba(28, 30, 48, 0.9);
 
-  --bg-glass-card: rgba(15, 12, 9, 0.75);
+  --bg-glass-card: rgba(12, 13, 20, 0.75);
 
-  --color-primary: #d9a94e;     /* Brass — candlelight, primary actions */
-  --color-secondary: #e3b45c;   /* Bright champagne — CTA accents */
-  --color-accent: #4fb39e;      /* Spectral teal — arcane glow, info, links */
-  --color-arcane: #4fb39e;      /* Alias: spectral teal */
-  --color-arcane-deep: #2f8f7c;
-  --color-arcane-bright: #8fe0d0;
-  --color-gold: #ecc878;
+  --color-primary: #a855f7;     /* Electric Purple / Violet */
+  --color-secondary: #c084fc;   /* Bright Lavender Accent */
+  --color-accent: #06b6d4;      /* Neon Cyan */
+  --color-arcane: #a855f7;      /* Arcane Violet */
+  --color-arcane-deep: #7e22ce;
+  --color-arcane-bright: #e9d5ff;
+  --color-gold: #fbbf24;
 
-  --text-pure: #fdfaf3;
-  --text-high: #f2ecdf;
-  --text-medium: #d8c294;       /* Parchment accent text */
-  --text-muted: #aca396;        /* Warm muted grey */
+  --text-pure: #ffffff;
+  --text-high: #f3f4f6;
+  --text-medium: #cbd5e1;
+  --text-muted: #94a3b8;
 
   --color-win: #10b981;
   --color-win-bg: rgba(16, 185, 129, 0.1);
   --color-loss: #ef4444;
   --color-loss-bg: rgba(239, 68, 68, 0.1);
 
-  --border-light: rgba(253, 246, 227, 0.10);  /* Quiet structural edges */
-  --border-medium: rgba(217, 169, 78, 0.30);  /* Brass reserved for emphasis */
-  --border-accent: rgba(217, 169, 78, 0.45);  /* Stronger brass borders */
-  --border-arcane: rgba(79, 179, 158, 0.25);  /* Spectral teal emphasis */
+  --border-light: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(168, 85, 247, 0.35);
+  --border-accent: rgba(168, 85, 247, 0.55);
+  --border-arcane: rgba(6, 182, 212, 0.35);
 
-  --glow-cyan: 0 4px 14px rgba(0, 0, 0, 0.28);
-  --glow-gold: 0 4px 14px rgba(0, 0, 0, 0.22);
-  --glow-arcane: 0 0 18px rgba(79, 179, 158, 0.22);
+  --glow-cyan: 0 0 16px rgba(6, 182, 212, 0.35);
+  --glow-gold: 0 0 16px rgba(251, 191, 36, 0.35);
+  --glow-arcane: 0 0 20px rgba(168, 85, 247, 0.45);
 
   --radius-sm: 8px;
   --radius-md: 12px;
