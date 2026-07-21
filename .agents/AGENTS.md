@@ -82,12 +82,44 @@ Be pragmatic. Be reliable. Self-anneal.
 - **[package.json](file:///C:/Users/772wa/.gemini/antigravity/scratch/mtg-tournament-platform/package.json)**: Scripts and dependencies (`bcryptjs`, `express`, `express-session`, `sqlite3`). Runs with `--max-old-space-size=768` memory limit.
 - **`public/`**: Frontend files (`index.html`, `app.js`).
 
+
+## Grimore Project Context & Status Summary
+
+> [!NOTE]
+> This section transfers the context of the Grimore project from the previous conversation (which had 36,990 steps and is too large to load) to any new conversation.
+
+### 📋 Overview
+- **Project Name**: Grimore (formerly Libram / Rostra / Grimoire)
+- **Description**: Premium Commander League & MTG Tournament Manager Web Server
+- **Core Technology Stack**: Node.js, Express, SQLite3, Vanilla CSS, HTML
+- **Primary Database**: `grimore.db` (main data store), with fallbacks `aetherpair.db`, `grimoire.db`, `libram.db`, `rostra.db`.
+
+### 📂 Architecture & Key Files
+- **[server.js](file:///C:/Users/772wa/.gemini/antigravity/scratch/mtg-tournament-platform/server.js)**: Main Express web server. Sets up sessions, routes, MTGJSON/Scryfall integrations, and tournament/deck APIs.
+- **[db.js](file:///C:/Users/772wa/.gemini/antigravity/scratch/mtg-tournament-platform/db.js)**: Database client manager. Handles sqlite3 connections and schemas.
+- **[package.json](file:///C:/Users/772wa/.gemini/antigravity/scratch/mtg-tournament-platform/package.json)**: Scripts and dependencies (`bcryptjs`, `express`, `express-session`, `sqlite3`). Runs with `--max-old-space-size=768` memory limit.
+- **`public/`**: Frontend files (`index.html`, `app.js`).
+
 ### 🚀 Rebranding Status
 - The project has been rebranded from **Libram** to **Grimore**. 
 - Database file references in `server.js`, `db.js`, and public assets have been updated to point to `grimore.db`.
 - The desktop shortcut **Grimore.url** has been created pointing to `http://localhost:3000`.
 
-### 🛠️ Execution Context
-- To start the server: `npm start` (runs `node --max-old-space-size=768 server.js`).
-- Port: `3000`
-- API keys/endpoints should be checked inside the `.env` configuration file in this workspace root.
+### 4. Local Verification & Deployment Confirmation
+- **Test Locally First**: Always implement, run, and verify changes on the local development instance (`http://localhost:3000`) first.
+- **Obtain User Approval**: Once changes are verified locally, ask for permission before pushing to live unless explicitly instructed.
+- **Comprehensive Live Deployment**: When pushing to live, ALWAYS update all applicable target areas together:
+  1. Commit all modified files and untracked assets to Git (`git add .`, `git commit -m "..."`).
+  2. Push to GitHub repository (`git push origin main`).
+  3. Execute the live GCP deployment script (`powershell -ExecutionPolicy Bypass -File .\deploy-gcp.ps1`). API keys/endpoints should be checked inside the `.env` configuration file in this workspace root.
+
+### 🏷️ Auto-Tagging & MTG Classification Specification
+- **Core Directive**: SOP defined in `directives/auto_tagging_engine.md`.
+- **Card Function Categorization**: Cards are categorized strictly by **function** (*Infinite Combos*, *Wincons*, *Tutors*, *Stax*, *Mass Removal*, *Single Target Removal*, *Protection*, *Ramp*, *Card Advantage*, *Card Selection*, *Recursion*, *Reanimation*, *Graveyard Fillers*, *Sacrifice Outlets*, *Utility Lands*, *Lands*, *Unique*).
+- **Removal Rule**: Mass removal (*Day of Black Sun*, *Culling Ritual*, *Toxic Deluge*, *Wrath of God*) belongs ONLY in `Mass Removal` (never `Single Target Removal`).
+- **Ramp Rule**: Standard lands NEVER count as `Ramp`.
+- **Card Advantage vs Selection**: `Card Advantage` is net draw; `Card Selection` is filtering (*Titan's Nest*, *Ponder*).
+- **Utility Lands**: Non-mana utility lands ONLY (*Dakmor Salvage*, *Reliquary Tower*, *Urza's Saga*).
+- **Infinite Combo Engine**: Automatically detects combo pairs (*Heliod* + *Walking Ballista*, *Chain of Smog* + *Witherbloom Apprentice*, *Peregrine Drake* + *Deadeye Navigator*, *Hazel's Brewmaster* + *Devoted Druid*) and generates `Combo: Card A + Card B` headers.
+- **Token Prevention**: All Scryfall queries filter `+not:token+not:art+not:funny+is:paper` and validate using `isRealCard(p)`. Hover tooltips prioritize exact `scryfallId`.
+- **Price Coalesce**: Queries use `COALESCE(pc.price, sc.price, 0.15)` to avoid default $0.15 prices.

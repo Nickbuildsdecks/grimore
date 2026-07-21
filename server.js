@@ -49,12 +49,32 @@ app.use(session({
 
 const scryfallService = require('./scryfallService');
 
+async function sanitizeDeckCardsScryfallIds() {
+  try {
+    const rows = await db.query(
+      `SELECT dc.deck_id, dc.card_name, dc.scryfall_id, sc.scryfall_id as real_scryfall_id
+       FROM deck_cards dc
+       JOIN scryfall_cards sc ON dc.card_name = sc.card_name
+       WHERE dc.scryfall_id IS NOT NULL AND dc.scryfall_id != sc.scryfall_id`
+    );
+    for (const r of rows) {
+      if (r.real_scryfall_id) {
+        console.log(`[DB Sanitize] Corrected ${r.card_name} scryfall_id in deck ${r.deck_id} -> ${r.real_scryfall_id}`);
+        await db.run("UPDATE deck_cards SET scryfall_id = ? WHERE deck_id = ? AND card_name = ?", [r.real_scryfall_id, r.deck_id, r.card_name]);
+      }
+    }
+  } catch(e) {
+    console.error("[DB Sanitize] Error sanitizing deck_cards scryfall_ids:", e.message);
+  }
+}
+
 // Initialize database
 db.initDb().then(async () => {
   console.log("Database initialized successfully.");
   // Check and run initial Scryfall bulk cards synchronization
   await scryfallService.downloadAndImportScryfallBulk();
   scryfallService.setupDailySync();
+  await sanitizeDeckCardsScryfallIds();
 }).catch(err => {
   console.error("Database initialization failed:", err);
 });
@@ -105,11 +125,12 @@ function fetchHtml(url) {
       .then(() => new Promise(r => setTimeout(r, 130)))
       .then(() => {
         return new Promise((resolveFetch, rejectFetch) => {
-          https.get(url, {
+          const req = https.get(url, {
             headers: {
               'User-Agent': 'Grimore/1.0 (grimore@lgs.com)',
               'Accept': 'text/html'
-            }
+            },
+            timeout: 2500
           }, (res) => {
             let data = '';
             res.on('data', (chunk) => { data += chunk; });
@@ -120,7 +141,12 @@ function fetchHtml(url) {
                 resolveFetch(data);
               }
             });
-          }).on('error', rejectFetch);
+          });
+          req.on('timeout', () => {
+            req.destroy();
+            rejectFetch(new Error('Request timeout'));
+          });
+          req.on('error', rejectFetch);
         });
       })
       .then(
@@ -128,6 +154,23 @@ function fetchHtml(url) {
         (err) => { reject(err); }
       );
   });
+}
+
+function isRealCard(p) {
+  if (!p) return false;
+  const layout = (p.layout || '').toLowerCase();
+  if (['token', 'double_faced_token', 'emblem', 'art_series', 'memorabilia'].includes(layout)) return false;
+  
+  const setType = (p.set_type || '').toLowerCase();
+  if (['token', 'memorabilia', 'funny'].includes(setType)) return false;
+  
+  const typeLine = (p.type_line || '').toLowerCase();
+  if (typeLine.startsWith('token') || typeLine.includes('art series') || typeLine.startsWith('emblem')) return false;
+  
+  if (p.digital) return false;
+  if (p.border_color === 'gold' || p.border_color === 'silver') return false;
+  
+  return true;
 }
 
 function decodeChunked(body) {
@@ -1649,122 +1692,286 @@ async function fetchCardTags(cardName, scryfallId) {
     console.error("Local tags cache lookup failed:", e);
   }
 
-  let setCode = null;
-  let collectorNumber = null;
+  // 2. Wrap network operations with a strict 1.5s timeout so auto-tagging never hangs
+  const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), 1500));
+  const fetchPromise = (async () => {
+    let setCode = null;
+    let collectorNumber = null;
 
-  // 2. Resolve set and collector number
-  try {
-    let cardData = null;
-    if (scryfallId) {
-      cardData = await fetchJson(`https://api.scryfall.com/cards/${scryfallId}`);
-    } else {
-      cardData = await fetchJson(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`);
-    }
-
-    if (cardData) {
-      setCode = cardData.set;
-      collectorNumber = cardData.collector_number;
-    }
-  } catch (err) {
-    console.error(`[Auto Tag] Failed to resolve Scryfall metadata for card ${cardName}:`, err.message);
-  }
-
-  if (!setCode || !collectorNumber) {
-    console.warn(`[Auto Tag] Could not resolve set/number for card ${cardName}. Falling back to empty tags.`);
-    return [];
-  }
-
-  // 3. Fetch and parse tags from tagger.scryfall.com
-  let tags = [];
-  try {
-    const taggerUrl = `https://tagger.scryfall.com/card/${setCode.toLowerCase()}/${collectorNumber.toLowerCase()}`;
-    console.log(`[Auto Tag] Scraping tags from: ${taggerUrl}`);
-    const html = await fetchHtml(taggerUrl);
-    
-    // Parse description meta tag
-    const metaMatch = html.match(/<meta name="description" content="([\s\S]+?)"\s*\/?>/i) || 
-                      html.match(/<meta property="og:description" content="([\s\S]+?)"\s*\/?>/i);
-                      
-    if (metaMatch) {
-      const description = metaMatch[1];
-      const cardTagsIndex = description.indexOf("Card Tags:");
-      if (cardTagsIndex !== -1) {
-        const tagsText = description.substring(cardTagsIndex);
-        tags = [...tagsText.matchAll(/(?:★|•)\s*([^\r\n"•★]+)/g)].map(m => m[1].trim());
+    try {
+      let cardData = null;
+      if (scryfallId) {
+        cardData = await fetchJson(`https://api.scryfall.com/cards/${scryfallId}`);
+      } else {
+        cardData = await fetchJson(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`);
       }
+
+      if (cardData) {
+        setCode = cardData.set;
+        collectorNumber = cardData.collector_number;
+      }
+    } catch (err) {
+      console.error(`[Auto Tag] Failed to resolve Scryfall metadata for card ${cardName}:`, err.message);
     }
-  } catch (err) {
-    console.error(`[Auto Tag] Failed to fetch/parse tagger page for card ${cardName}:`, err.message);
-  }
 
-  // 4. Save to cache database
-  try {
-    await db.run(
-      "INSERT OR REPLACE INTO scryfall_card_tags (card_name, tags, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
-      [cardName, JSON.stringify(tags)]
-    );
-  } catch (e) {
-    console.error("Failed to save parsed tags to cache:", e);
-  }
+    if (!setCode || !collectorNumber) {
+      return [];
+    }
 
-  return tags;
+    let tags = [];
+    try {
+      const taggerUrl = `https://tagger.scryfall.com/card/${setCode.toLowerCase()}/${collectorNumber.toLowerCase()}`;
+      console.log(`[Auto Tag] Scraping tags from: ${taggerUrl}`);
+      const html = await fetchHtml(taggerUrl);
+      
+      const metaMatch = html.match(/<meta name="description" content="([\s\S]+?)"\s*\/?>/i) || 
+                        html.match(/<meta property="og:description" content="([\s\S]+?)"\s*\/?>/i);
+                        
+      if (metaMatch) {
+        const description = metaMatch[1];
+        const cardTagsIndex = description.indexOf("Card Tags:");
+        if (cardTagsIndex !== -1) {
+          const tagsText = description.substring(cardTagsIndex);
+          tags = [...tagsText.matchAll(/(?:★|•)\s*([^\r\n"•★]+)/g)].map(m => m[1].trim());
+        }
+      }
+    } catch (err) {
+      console.error(`[Auto Tag] Failed to fetch/parse tagger page for card ${cardName}:`, err.message);
+    }
+
+    try {
+      await db.run(
+        "INSERT OR REPLACE INTO scryfall_card_tags (card_name, tags, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        [cardName, JSON.stringify(tags)]
+      );
+    } catch (e) {
+      console.error("Failed to save parsed tags to cache:", e);
+    }
+
+    return tags;
+  })();
+
+  return Promise.race([fetchPromise, timeoutPromise]);
 }
 
-// HELPER: Categorize card by its Scryfall tags
-function categorizeCardByTags(cardName, typeLine, tags) {
-  if (tags && tags.length > 0) {
-    const lowercaseTags = tags.map(t => t.toLowerCase());
+// HELPER: Infinite Combo Database & Detector
+const INFINITE_COMBO_DATABASE = [
+  { name: "Combo: Heliod + Walking Ballista", cards: ["Heliod, Sun-Crowned", "Walking Ballista"] },
+  { name: "Combo: Thassa's Oracle + Demonic Consultation", cards: ["Thassa's Oracle", "Demonic Consultation"] },
+  { name: "Combo: Thassa's Oracle + Tainted Pact", cards: ["Thassa's Oracle", "Tainted Pact"] },
+  { name: "Combo: Peregrine Drake + Deadeye Navigator", cards: ["Peregrine Drake", "Deadeye Navigator"] },
+  { name: "Combo: Hazel's Brewmaster + Devoted Druid", cards: ["Hazel's Brewmaster", "Devoted Druid"] },
+  { name: "Combo: Chain of Smog + Witherbloom Apprentice", cards: ["Chain of Smog", "Witherbloom Apprentice"] },
+  { name: "Combo: Chain of Smog + Professor Onyx", cards: ["Chain of Smog", "Professor Onyx"] },
+  { name: "Combo: Kiki-Jiki + Zealous Conscripts", cards: ["Kiki-Jiki, Mirror Breaker", "Zealous Conscripts"] },
+  { name: "Combo: Kiki-Jiki + Deceiver Exarch", cards: ["Kiki-Jiki, Mirror Breaker", "Deceiver Exarch"] },
+  { name: "Combo: Kiki-Jiki + Pestermite", cards: ["Kiki-Jiki, Mirror Breaker", "Pestermite"] },
+  { name: "Combo: Kiki-Jiki + Felidar Guardian", cards: ["Kiki-Jiki, Mirror Breaker", "Felidar Guardian"] },
+  { name: "Combo: Splinter Twin + Deceiver Exarch", cards: ["Splinter Twin", "Deceiver Exarch"] },
+  { name: "Combo: Splinter Twin + Pestermite", cards: ["Splinter Twin", "Pestermite"] },
+  { name: "Combo: Dualcaster Mage + Twinflame", cards: ["Dualcaster Mage", "Twinflame"] },
+  { name: "Combo: Dualcaster Mage + Heat Shimmer", cards: ["Dualcaster Mage", "Heat Shimmer"] },
+  { name: "Combo: Sanguine Bond + Exquisite Blood", cards: ["Sanguine Bond", "Exquisite Blood"] },
+  { name: "Combo: Basalt Monolith + Rings of Brighthearth", cards: ["Basalt Monolith", "Rings of Brighthearth"] },
+  { name: "Combo: Basalt Monolith + Forsaken Monument", cards: ["Basalt Monolith", "Forsaken Monument"] },
+  { name: "Combo: Grim Monolith + Power Artifact", cards: ["Grim Monolith", "Power Artifact"] },
+  { name: "Combo: Phyrexian Altar + Gravecrawler", cards: ["Phyrexian Altar", "Gravecrawler"] },
+  { name: "Combo: Ashnod's Altar + Nim Deathmantle", cards: ["Ashnod's Altar", "Nim Deathmantle"] },
+  { name: "Combo: Painter's Servant + Grindstone", cards: ["Painter's Servant", "Grindstone"] },
+  { name: "Combo: Mindcrank + Bloodchief Ascension", cards: ["Mindcrank", "Bloodchief Ascension"] },
+  { name: "Combo: Mindcrank + Duskmantle Guildmage", cards: ["Mindcrank", "Duskmantle Guildmage"] },
+  { name: "Combo: Freed from the Real + Bloom Tender", cards: ["Freed from the Real", "Bloom Tender"] },
+  { name: "Combo: Freed from the Real + Faeburrow Elder", cards: ["Freed from the Real", "Faeburrow Elder"] },
+  { name: "Combo: Pemmin's Aura + Bloom Tender", cards: ["Pemmin's Aura", "Bloom Tender"] },
+  { name: "Combo: Pemmin's Aura + Faeburrow Elder", cards: ["Pemmin's Aura", "Faeburrow Elder"] },
+  { name: "Combo: Sensei's Divining Top + Bolas's Citadel", cards: ["Sensei's Divining Top", "Bolas's Citadel"] },
+  { name: "Combo: Godo + Helm of the Host", cards: ["Godo, Bandit Warlord", "Helm of the Host"] },
+  { name: "Combo: Malcolm + Glint-Horn Buccaneer", cards: ["Malcolm, Keen-Eyed Navigator", "Glint-Horn Buccaneer"] },
+  { name: "Combo: Niv-Mizzet + Curiosity", cards: ["Niv-Mizzet, Parun", "Curiosity"] },
+  { name: "Combo: Niv-Mizzet + Curiosity", cards: ["Niv-Mizzet, the Firemind", "Curiosity"] },
+  { name: "Combo: Niv-Mizzet + Ophidian Eye", cards: ["Niv-Mizzet, Parun", "Ophidian Eye"] },
+  { name: "Combo: Niv-Mizzet + Tandem Lookout", cards: ["Niv-Mizzet, Parun", "Tandem Lookout"] },
+  { name: "Combo: Stella Lee + Twisted Fealty", cards: ["Stella Lee, Wild Card", "Twisted Fealty"] },
+  { name: "Combo: Earthcraft + Squirrel Nest", cards: ["Earthcraft", "Squirrel Nest"] }
+];
 
-    // 1. Infinite Combos
-    if (lowercaseTags.some(t => t.includes('combo') || t.includes('infinite'))) {
-      return 'Infinite Combos';
+function normalizeCardName(name) {
+  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function detectInfiniteCombos(deckCardNames) {
+  const cardSet = new Set((deckCardNames || []).map(normalizeCardName));
+  const comboTagsMap = {};
+
+  INFINITE_COMBO_DATABASE.forEach(combo => {
+    const hasAllPieces = combo.cards.every(c => cardSet.has(normalizeCardName(c)));
+    if (hasAllPieces) {
+      combo.cards.forEach(c => {
+        const norm = normalizeCardName(c);
+        if (!comboTagsMap[norm]) comboTagsMap[norm] = new Set();
+        comboTagsMap[norm].add(combo.name);
+      });
     }
-    // 2. Wincons/Finishers
-    if (lowercaseTags.some(t => t.includes('win-con') || t.includes('finisher') || t.includes('win-condition') || t.includes('game-ender'))) {
-      return 'Wincons/Finishers';
-    }
-    // 3. Tutors
-    if (lowercaseTags.some(t => t.includes('tutor') || t.includes('search-library'))) {
-      return 'Tutors';
-    }
-    // 4. Stax
-    if (lowercaseTags.some(t => t.includes('stax') || t.includes('tax') || t.includes('hatebear') || t.includes('prison') || t.includes('pillow-fort'))) {
-      return 'Stax';
-    }
-    // 5. Mass Removal
-    if (lowercaseTags.some(t => t.includes('board-wipe') || t.includes('sweeper') || t.includes('boardwipe') || t.includes('mass-removal'))) {
-      return 'Mass Removal';
-    }
-    // 6. Single Target Removal
-    if (lowercaseTags.some(t => t.includes('removal') || t.includes('counterspell') || t.includes('spot-removal') || t.includes('single-target-removal') || t.includes('removal-creature') || t.includes('removal-artifact') || t.includes('removal-enchantment') || t.includes('removal-planeswalker'))) {
-      return 'Single Target Removal';
-    }
-    // 7. Protection
-    if (lowercaseTags.some(t => t.includes('protection') || t.includes('hexproof') || t.includes('shroud') || t.includes('indestructible') || t.includes('phase-out') || t.includes('flicker') || t.includes('regenerate') || t.includes('counterspell-protection'))) {
-      return 'Protection';
-    }
-    // 8. Ramp
-    if (lowercaseTags.some(t => t.includes('ramp') || t === 'mana-dork' || t === 'mana-rock' || t.includes('mana-multiplier') || t === 'land-ramp' || t.includes('mana-generator') || t.includes('ritual'))) {
-      return 'Ramp';
-    }
-    // 9. Card Advantage
-    if (lowercaseTags.some(t => t.includes('card-draw') || t.includes('card-advantage') || t === 'draw-card' || t.includes('card draw') || t.includes('looting') || t.includes('rummaging') || t.includes('wheel'))) {
-      return 'Card Advantage';
+  });
+
+  return comboTagsMap;
+}
+
+// HELPER: Categorize card by its Scryfall tags, type line, and oracle text into functional roles
+function categorizeCardByTags(cardName, typeLine, tags = [], oracleText = '') {
+  const matchedTags = new Set();
+  const lowercaseTags = (tags || []).map(t => (t || '').toLowerCase());
+  const type = (typeLine || '').toLowerCase();
+  const oracle = (oracleText || '').toLowerCase();
+  const name = (cardName || '').toLowerCase().trim();
+
+  // 0. Specific Overrides for precision
+  if (name === 'carpet of flowers') {
+    matchedTags.add('Ramp');
+    return Array.from(matchedTags);
+  }
+  if (name === 'grisly salvage') {
+    matchedTags.add('Graveyard Fillers');
+    matchedTags.add('Card Advantage');
+    return Array.from(matchedTags);
+  }
+  if (name === 'ripples of undeath') {
+    matchedTags.add('Graveyard Fillers');
+    matchedTags.add('Card Advantage');
+    return Array.from(matchedTags);
+  }
+  if (name === 'satyr wayfinder') {
+    matchedTags.add('Graveyard Fillers');
+    matchedTags.add('Lands');
+    return Array.from(matchedTags);
+  }
+  if (name === 'volatile stormdrake') {
+    matchedTags.add('Single Target Removal');
+    return Array.from(matchedTags);
+  }
+  if (name === 'eternal witness' || name === 'seasons past' || name === 'regrowth' || name === 'reclaim' || name === 'noxious revival') {
+    matchedTags.add('Recursion');
+    return Array.from(matchedTags);
+  }
+  if (name === 'victimize' || name.includes('life // death') || name === 'death' || name === 'life/death') {
+    matchedTags.add('Reanimation');
+    return Array.from(matchedTags);
+  }
+  if (name === 'ghostly pilferer' || name === 'syphon mind' || name === 'nezahal, primal tide' || name.includes('nezahal')) {
+    matchedTags.add('Card Advantage');
+    return Array.from(matchedTags);
+  }
+  if (name === 'koma, cosmos serpent' || name.includes('koma')) {
+    matchedTags.add('Wincons/Finishers');
+    return Array.from(matchedTags);
+  }
+
+  // 1. Infinite Combos
+  if (lowercaseTags.some(t => t.includes('combo') || t.includes('infinite'))) {
+    matchedTags.add('Infinite Combos');
+  }
+
+  // 2. Wincons/Finishers
+  if (lowercaseTags.some(t => t.includes('win-con') || t.includes('finisher') || t.includes('win-condition') || t.includes('game-ender'))) {
+    matchedTags.add('Wincons/Finishers');
+  }
+
+  // 3. Tutors
+  if (lowercaseTags.some(t => t.includes('tutor') || t.includes('search-library')) || oracle.includes('search your library') || oracle.includes('search target player\'s library')) {
+    matchedTags.add('Tutors');
+  }
+
+  // 4. Stax
+  if (lowercaseTags.some(t => t.includes('stax') || t.includes('tax') || t.includes('hatebear') || t.includes('prison') || t.includes('pillow-fort')) || oracle.includes('spells cost') || oracle.includes('opponents can\'t cast') || oracle.includes('opponents play with') || oracle.includes('can\'t untap')) {
+    matchedTags.add('Stax');
+  }
+
+  // 5. Mass Removal vs Single Target Removal
+  const isMassRemoval = lowercaseTags.some(t => t.includes('board-wipe') || t.includes('sweeper') || t.includes('boardwipe') || t.includes('mass-removal')) ||
+                        oracle.includes('destroy all') || oracle.includes('exile all') || oracle.includes('each creature gets -') || oracle.includes('destroy all nonland') || oracle.includes('return all') ||
+                        name === 'day of black sun' || name === 'culling ritual' || name === 'toxic deluge' || name === 'wrath of god' || name === 'damnation' || name === 'blasphemous act' || name === 'supreme verdict' || name === 'cyclonic rift' || name === 'vanquish the horde' || name === 'the meathook massacre';
+
+  if (isMassRemoval) {
+    matchedTags.add('Mass Removal');
+  } else {
+    // Single Target Removal ONLY if not mass removal
+    const isSingleTargetRemoval = lowercaseTags.some(t => t.includes('removal') || t.includes('counterspell') || t.includes('spot-removal') || t.includes('single-target-removal') || t.includes('removal-creature') || t.includes('removal-artifact') || t.includes('removal-enchantment') || t.includes('removal-planeswalker')) ||
+                                  oracle.includes('destroy target') || oracle.includes('exile target') || oracle.includes('counter target spell') || (oracle.includes('deal') && oracle.includes('damage to target')) || oracle.includes('return target permanent');
+    if (isSingleTargetRemoval) {
+      matchedTags.add('Single Target Removal');
     }
   }
 
-  // Fallback to basic type-based classification if no matching tags
-  const type = (typeLine || '').toLowerCase();
-  if (type.includes("land")) return "Lands";
-  if (type.includes("creature")) return "Creatures";
-  if (type.includes("planeswalker")) return "Planeswalkers";
-  if (type.includes("instant")) return "Instants";
-  if (type.includes("sorcery")) return "Sorceries";
-  if (type.includes("artifact")) return "Artifacts";
-  if (type.includes("enchantment")) return "Enchantments";
-  if (type.includes("battle")) return "Battles";
-  
-  return "Other";
+  // 6. Protection (Protects team/board/player, not self-only beaters)
+  if (name !== 'koma, cosmos serpent' && !name.includes('koma')) {
+    const isProtectionSpell = name === 'heroic intervention' || name === 'teferi\'s protection' || name === 'flawless maneuver' || name === 'swiftfoot boots' || name === 'lightning greaves' || name === 'clever concealment' || name === 'tamiyo\'s safekeeping' || name === 'veil of summer' || name === 'deflecting swat' || name === 'silence' || name === 'boros charm';
+    const isTeamProtectionText = oracle.includes('permanents you control gain') || oracle.includes('creatures you control gain') || oracle.includes('you gain hexproof') || oracle.includes('protection from') || oracle.includes('phase out') || oracle.includes('equipped creature has hexproof') || oracle.includes('equipped creature has shroud') || oracle.includes('target permanent gains indestructible') || oracle.includes('target creature gains hexproof') || oracle.includes('target creature gains indestructible');
+    
+    if (isProtectionSpell || isTeamProtectionText) {
+      matchedTags.add('Protection');
+    }
+  }
+
+  // 7. Ramp (Cards that put you ahead of the mana curve; excludes regular lands)
+  const isLand = type.includes('land');
+  const hasRampTag = lowercaseTags.some(t => t.includes('ramp') || t === 'mana-dork' || t === 'mana-rock' || t.includes('mana-multiplier') || t === 'land-ramp' || t.includes('mana-generator') || t.includes('ritual'));
+  if (hasRampTag || (!isLand && (oracle.includes('add {') || oracle.includes('add one mana') || oracle.includes('add two mana') || oracle.includes('add three mana') || oracle.includes('search your library for a land') || oracle.includes('search your library for a basic land') || oracle.includes('you may play an additional land') || oracle.includes('put a land card from your hand onto the battlefield')))) {
+    matchedTags.add('Ramp');
+  }
+
+  // 8. Card Advantage vs Card Selection
+  const isCardAdvantage = lowercaseTags.some(t => t === 'card-draw' || t === 'card-advantage' || t === 'draw-card') ||
+                          oracle.includes('draw two cards') || oracle.includes('draw three cards') || oracle.includes('draw cards equal') || oracle.includes('at the beginning of your upkeep, draw') || oracle.includes('whenever an opponent casts') || oracle.includes('draw a card for each') || (oracle.includes('draw a card') && !oracle.includes('discard')) ||
+                          name === 'grisly salvage' || name === 'ripples of undeath' || name === 'ghostly pilferer' || name === 'syphon mind' || name.includes('nezahal');
+
+  const isCardSelection = lowercaseTags.some(t => t.includes('looting') || t.includes('rummaging') || t.includes('card-selection') || t.includes('scry') || t.includes('surveil')) ||
+                          oracle.includes('look at the top') || oracle.includes('scry') || oracle.includes('surveil') || oracle.includes('draw a card, then discard') || oracle.includes('titan\'s nest') || name === 'ponder' || name === 'preordain' || name === 'brainstorm' || name === 'sylvan library' || name === 'impulse' || name === 'sensei\'s divining top';
+
+  if (isCardAdvantage) matchedTags.add('Card Advantage');
+  if (isCardSelection) matchedTags.add('Card Selection');
+
+  // 9. Recursion & Reanimation
+  if (oracle.includes('return target') && (oracle.includes('from your graveyard to your hand') || oracle.includes('from a graveyard to your hand'))) {
+    matchedTags.add('Recursion');
+  }
+  if ((oracle.includes('return') || oracle.includes('put')) && (oracle.includes('graveyard to the battlefield') || oracle.includes('graveyard onto the battlefield')) || name === 'victimize' || name.includes('life // death')) {
+    matchedTags.add('Reanimation');
+  }
+
+  // 10. Graveyard Fillers
+  if (oracle.includes('mill') || (oracle.includes('put the top') && oracle.includes('into your graveyard')) || oracle.includes('cards from the top of your library into your graveyard')) {
+    matchedTags.add('Graveyard Fillers');
+  }
+
+  // 11. Sacrifice Outlets
+  if (oracle.includes('sacrifice a creature:') || oracle.includes('sacrifice a permanent:') || oracle.includes('sacrifice an artifact:')) {
+    matchedTags.add('Sacrifice Outlets');
+  }
+
+  // 12. Utility Lands vs Lands
+  if (isLand) {
+    const isUtilityLand = !type.includes('basic land') && (
+      oracle.includes('dredge') || oracle.includes('no maximum hand size') || oracle.includes('search your library') ||
+      oracle.includes('exile target card from a graveyard') || oracle.includes('destroy target land') ||
+      oracle.includes('prevent all combat damage') || oracle.includes('can\'t be blocked') || oracle.includes('sacrifice a') ||
+      name === 'dakmor salvage' || name === 'reliquary tower' || name === 'urza\'s saga' || name === 'bojuka bog' || name === 'strip mine' || name === 'wasteland' || name === 'maze of ith' || name === 'rogue\'s passage' || name === 'high market'
+    );
+    if (isUtilityLand) {
+      matchedTags.add('Utility Lands');
+    }
+    matchedTags.add('Lands');
+  }
+
+  // Fallback: Unique
+  if (matchedTags.size === 0) {
+    if (isLand) {
+      matchedTags.add('Lands');
+    } else {
+      matchedTags.add('Unique');
+    }
+  }
+
+  return Array.from(matchedTags);
 }
 
 app.post('/api/decks/:deckId/autotag', async (req, res) => {
@@ -1787,18 +1994,40 @@ app.post('/api/decks/:deckId/autotag', async (req, res) => {
       return res.json({ success: true, count: 0 });
     }
 
+    const deckCardNames = cards.map(c => c.card_name);
+    const comboMap = detectInfiniteCombos(deckCardNames);
+
     let tagCount = 0;
     for (const card of cards) {
       const cardName = card.card_name;
       const scryfallId = card.scryfall_id;
       const typeLine = card.type_line;
+      const oracleText = card.oracle_text;
       
       const tags = await fetchCardTags(cardName, scryfallId);
-      const customTag = categorizeCardByTags(cardName, typeLine, tags);
+      const customTagArray = categorizeCardByTags(cardName, typeLine, tags, oracleText);
+
+      // Inject detected infinite combo tags for this card if present
+      const detectedCombos = comboMap[normalizeCardName(cardName)];
+      if (detectedCombos) {
+        detectedCombos.forEach(comboTag => {
+          if (!customTagArray.includes(comboTag)) {
+            customTagArray.unshift(comboTag);
+          }
+        });
+      }
+
+      // If customTagArray contains any real functional/combo tag, remove 'Unique'
+      if (customTagArray.length > 1 && customTagArray.includes('Unique')) {
+        const uIdx = customTagArray.indexOf('Unique');
+        if (uIdx !== -1) customTagArray.splice(uIdx, 1);
+      }
+
+      const tagValue = JSON.stringify(customTagArray);
       
       await db.run(
         "UPDATE deck_cards SET custom_tag = ? WHERE deck_id = ? AND card_name = ?",
-        [customTag, deckId, cardName]
+        [tagValue, deckId, cardName]
       );
       tagCount++;
     }
@@ -1829,21 +2058,18 @@ app.post('/api/decks/:deckId/reload-cheapest', async (req, res) => {
 
     for (const card of cards) {
       const cardName = card.card_name;
-      const searchUrl = `https://api.scryfall.com/cards/search?q=!%22${encodeURIComponent(cardName)}%22&unique=prints`;
+      const searchUrl = `https://api.scryfall.com/cards/search?q=!%22${encodeURIComponent(cardName)}%22+not:token+not:art+not:funny+is:paper&unique=prints`;
       
       let price = 0.05;
       let scryfallId = null;
 
       try {
         const result = await fetchJson(searchUrl);
-        const prints = result.data || [];
+        const prints = (result.data || []).filter(isRealCard);
 
         const legalPrints = prints.filter(p => {
-          if (p.digital) return false;
-          if (p.funny) return false;
-          if (p.border_color === 'gold' || p.border_color === 'silver') return false;
           const leg = p.legalities || {};
-          if (deck.format) {
+          if (deck.format && deck.format !== 'custom') {
             const formatStatus = leg[deck.format];
             if (formatStatus !== 'legal' && formatStatus !== 'restricted') {
               return false;
@@ -2329,6 +2555,41 @@ app.post('/api/decks/:deckId/share', async (req, res) => {
   }
 });
 
+app.get('/api/cards/autocomplete', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q || q.length < 2) return res.json([]);
+
+  try {
+    const results = await db.query(
+      `SELECT DISTINCT card_name, type_line, mana_cost, cmc, scryfall_id 
+       FROM scryfall_cards 
+       WHERE card_name LIKE ? AND (type_line IS NULL OR type_line NOT LIKE '%Token%')
+       ORDER BY CASE WHEN card_name LIKE ? THEN 0 ELSE 1 END, card_name ASC 
+       LIMIT 10`,
+      [`%${q}%`, `${q}%`]
+    );
+
+    if (results.length < 5) {
+      try {
+        const scryRes = await fetch(`https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(q)}`);
+        if (scryRes.ok) {
+          const data = await scryRes.json();
+          const existingNames = new Set(results.map(r => (r.card_name || '').toLowerCase()));
+          (data.data || []).forEach(name => {
+            if (!existingNames.has(name.toLowerCase()) && results.length < 10) {
+              results.push({ card_name: name });
+            }
+          });
+        }
+      } catch (err) {}
+    }
+
+    res.json(results);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/decks/:deckId/suggestions', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
   const { deckId } = req.params;
@@ -2423,7 +2684,7 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
         const chunk = namesArray.slice(i, i + chunkSize);
         const placeholders = chunk.map(() => '?').join(',');
         const dbCards = await db.query(
-          `SELECT sc.card_name, sc.scryfall_id, sc.type_line, pc.price as cheapest_card_price
+          `SELECT sc.card_name, COALESCE(sc.scryfall_id, pc.scryfall_id) as scryfall_id, sc.type_line, COALESCE(pc.price, sc.price, 0.15) as cheapest_card_price
            FROM scryfall_cards sc
            LEFT JOIN card_price_cache pc ON sc.card_name = pc.card_name
            WHERE sc.card_name IN (${placeholders})`,
@@ -2432,6 +2693,24 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
         dbCards.forEach(c => {
           cardMap[c.card_name.toLowerCase()] = c;
         });
+      }
+
+      // Fallback query directly on card_price_cache for cards missing from scryfall_cards
+      const unmappedNames = namesArray.filter(name => !cardMap[name.toLowerCase()]);
+      if (unmappedNames.length > 0) {
+        for (let i = 0; i < unmappedNames.length; i += chunkSize) {
+          const chunk = unmappedNames.slice(i, i + chunkSize);
+          const placeholders = chunk.map(() => '?').join(',');
+          const cacheCards = await db.query(
+            `SELECT card_name, scryfall_id, price as cheapest_card_price
+             FROM card_price_cache
+             WHERE card_name IN (${placeholders})`,
+            chunk
+          );
+          cacheCards.forEach(c => {
+            cardMap[c.card_name.toLowerCase()] = c;
+          });
+        }
       }
     }
 
@@ -3554,29 +3833,31 @@ app.get('/api/cards/versions', async (req, res) => {
   try {
     let result;
     try {
-      const searchUrl = `https://api.scryfall.com/cards/search?q=!${encodeURIComponent(trimmedName)}&unique=prints`;
+      const searchUrl = `https://api.scryfall.com/cards/search?q=!%22${encodeURIComponent(trimmedName)}%22+not:token+not:art+not:funny+is:paper&unique=prints`;
       result = await fetchJson(searchUrl);
     } catch (err) {
       // Fall back to fuzzy name search if exact match 404s
-      const fallbackUrl = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(trimmedName)}&unique=prints`;
+      const fallbackUrl = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(trimmedName)}+not:token+not:art+not:funny+is:paper&unique=prints`;
       result = await fetchJson(fallbackUrl);
     }
     
-    const prints = (result.data || []).map(card => {
-      const pricesObj = card.prices || {};
-      const price = pricesObj.usd || pricesObj.usd_low || pricesObj.usd_foil || "0.00";
-      return {
-        id: card.id,
-        name: card.name,
-        set: card.set ? card.set.toUpperCase() : "???",
-        set_name: card.set_name || "Unknown Set",
-        collector_number: card.collector_number || "",
-        rarity: card.rarity || "common",
-        price: parseFloat(price) || 0.05,
-        image_uri: card.image_uris ? (card.image_uris.normal || card.image_uris.small) : (card.card_faces && card.card_faces[0].image_uris ? card.card_faces[0].image_uris.normal : ""),
-        foil: !!pricesObj.usd_foil && !pricesObj.usd
-      };
-    });
+    const prints = (result.data || [])
+      .filter(isRealCard)
+      .map(card => {
+        const pricesObj = card.prices || {};
+        const price = pricesObj.usd || pricesObj.usd_low || pricesObj.usd_foil || "0.00";
+        return {
+          id: card.id,
+          name: card.name,
+          set: card.set ? card.set.toUpperCase() : "???",
+          set_name: card.set_name || "Unknown Set",
+          collector_number: card.collector_number || "",
+          rarity: card.rarity || "common",
+          price: parseFloat(price) || 0.05,
+          image_uri: card.image_uris ? (card.image_uris.normal || card.image_uris.small) : (card.card_faces && card.card_faces[0].image_uris ? card.card_faces[0].image_uris.normal : ""),
+          foil: !!pricesObj.usd_foil && !pricesObj.usd
+        };
+      });
 
     // Sort versions by price ascending
     prints.sort((a, b) => a.price - b.price);

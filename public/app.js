@@ -4156,6 +4156,202 @@
     window.triggerAutoSave();
   };
 
+  // Moxfield-style Quick Add Card Real-time Autocomplete Logic
+  let quickAddDebounceTimer = null;
+  let quickAddFocusIndex = -1;
+
+  window.handleQuickAddInput = function(e) {
+    const q = (e.target.value || '').trim();
+    const dropdown = document.getElementById('quick-add-dropdown');
+    if (!dropdown) return;
+
+    if (q.length < 2) {
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = '';
+      quickAddFocusIndex = -1;
+      return;
+    }
+
+    clearTimeout(quickAddDebounceTimer);
+    quickAddDebounceTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/cards/autocomplete?q=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const cards = await res.json();
+          renderQuickAddDropdown(cards);
+        }
+      } catch (err) {
+        console.error("Quick add autocomplete error:", err);
+      }
+    }, 120);
+  };
+
+  window.handleQuickAddFocus = function(e) {
+    if (e.target.value && e.target.value.trim().length >= 2) {
+      window.handleQuickAddInput(e);
+    }
+  };
+
+  window.closeQuickAddDropdown = function() {
+    const dropdown = document.getElementById('quick-add-dropdown');
+    if (dropdown) {
+      dropdown.style.display = 'none';
+      quickAddFocusIndex = -1;
+    }
+  };
+
+  function renderQuickAddDropdown(cards) {
+    const dropdown = document.getElementById('quick-add-dropdown');
+    if (!dropdown) return;
+
+    if (!cards || cards.length === 0) {
+      dropdown.innerHTML = `<div style="padding: 8px 12px; font-size: 0.72rem; color: var(--text-muted); text-align: center;">No matching cards found</div>`;
+      dropdown.style.display = 'block';
+      quickAddFocusIndex = -1;
+      return;
+    }
+
+    quickAddFocusIndex = -1;
+    let html = '';
+    cards.forEach((c, idx) => {
+      const name = (c.card_name || c.name || '').replace(/'/g, "\\'");
+      const type = c.type_line ? c.type_line.split('—')[0].trim() : '';
+      const scryId = c.scryfall_id || c.scryfallId || '';
+      
+      html += `
+        <div class="quick-add-item" data-idx="${idx}" data-name="${name}" data-scryfall-id="${scryId}" onclick="window.selectQuickAddCard('${name}', '${scryId}')" onmouseover="window.highlightQuickAddItem(${idx})" style="padding: 6px 12px; font-size: 0.75rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.03); transition: background 0.15s ease;">
+          <div style="font-weight: 600; color: var(--text-pure); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            ${c.card_name || c.name}
+          </div>
+          <div style="font-size: 0.65rem; color: var(--text-muted); margin-left: 8px; flex-shrink: 0;">
+            ${type}
+          </div>
+        </div>
+      `;
+    });
+
+    dropdown.innerHTML = html;
+    dropdown.style.display = 'block';
+  }
+
+  window.highlightQuickAddItem = function(idx) {
+    const items = document.querySelectorAll('.quick-add-item');
+    items.forEach((el, i) => {
+      if (i === idx) {
+        el.style.background = 'rgba(168, 85, 247, 0.25)';
+        el.style.color = 'var(--text-pure)';
+      } else {
+        el.style.background = 'transparent';
+        el.style.color = 'inherit';
+      }
+    });
+    quickAddFocusIndex = idx;
+  };
+
+  window.handleQuickAddKeyDown = function(e) {
+    const dropdown = document.getElementById('quick-add-dropdown');
+    const items = document.querySelectorAll('.quick-add-item');
+    
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (items.length === 0) return;
+      quickAddFocusIndex = (quickAddFocusIndex + 1) % items.length;
+      window.highlightQuickAddItem(quickAddFocusIndex);
+      items[quickAddFocusIndex]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (items.length === 0) return;
+      quickAddFocusIndex = (quickAddFocusIndex - 1 + items.length) % items.length;
+      window.highlightQuickAddItem(quickAddFocusIndex);
+      items[quickAddFocusIndex]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (quickAddFocusIndex >= 0 && items[quickAddFocusIndex]) {
+        items[quickAddFocusIndex].click();
+      } else if (items.length > 0) {
+        items[0].click();
+      }
+    } else if (e.key === 'Escape') {
+      window.closeQuickAddDropdown();
+    }
+  };
+
+  window.selectQuickAddCard = async function(cardName, scryfallId) {
+    const input = document.getElementById('quick-add-input');
+    if (input) input.value = '';
+    window.closeQuickAddDropdown();
+
+    try {
+      let url = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`;
+      if (scryfallId) {
+        url = `https://api.scryfall.com/cards/${scryfallId}`;
+      }
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const p = await res.json();
+
+        if (p.layout === 'token' || p.layout === 'art_series' || p.layout === 'double_faced_token' || p.set_type === 'token') {
+          if (window.showSlideNotification) window.showSlideNotification("Tokens cannot be added directly to the deck.", "warning");
+          return;
+        }
+
+        let colorsArr = p.colors || [];
+        if ((!colorsArr || colorsArr.length === 0) && p.card_faces) {
+          colorsArr = [];
+          p.card_faces.forEach(f => {
+            if (f.colors) f.colors.forEach(c => { if (!colorsArr.includes(c)) colorsArr.push(c); });
+          });
+        }
+
+        const cardObj = {
+          name: p.name,
+          price: parseFloat(p.prices?.usd || p.prices?.usd_foil || 0.15),
+          type_line: p.type_line || '',
+          oracle_text: p.oracle_text || (p.card_faces ? p.card_faces.map(f => f.oracle_text).join('\n') : ''),
+          cmc: p.cmc !== undefined ? p.cmc : 0,
+          colors: colorsArr,
+          rarity: p.rarity || 'common',
+          scryfallId: p.id
+        };
+
+        window.addCardDirectly(cardObj);
+
+        if (window.showSlideNotification) {
+          window.showSlideNotification(`Added 1x ${cardObj.name} to deck!`, 'success');
+        }
+      } else {
+        window.addCardDirectly({
+          name: cardName,
+          price: 0.15,
+          qty: 1,
+          type_line: '',
+          oracle_text: '',
+          cmc: 0,
+          colors: [],
+          rarity: 'common',
+          scryfallId: scryfallId || null
+        });
+        if (window.showSlideNotification) {
+          window.showSlideNotification(`Added 1x ${cardName} to deck!`, 'success');
+        }
+      }
+    } catch (e) {
+      console.error("Quick add fetch error:", e);
+      window.addCardDirectly({
+        name: cardName,
+        price: 0.15,
+        qty: 1,
+        type_line: '',
+        oracle_text: '',
+        cmc: 0,
+        colors: [],
+        rarity: 'common',
+        scryfallId: scryfallId || null
+      });
+    }
+  };
+
   window.autoTagBuilderDeck = async function() {
     const btn = document.getElementById('builder-autotag-btn');
     const originalText = btn ? btn.innerHTML : '🏷️ Auto Tag';
@@ -4390,8 +4586,19 @@
     mZone.innerHTML = '';
     const showPrices = document.getElementById('builder-show-prices') ? document.getElementById('builder-show-prices').checked : true;
 
-    let totalCount = builderCommander.length;
+    // Pre-calculate exact deck total count and price from physical deck card quantities
+    let totalCount = builderCommander.reduce((sum, c) => sum + (c.qty || 1), 0) + builderMainboard.reduce((sum, c) => sum + (c.qty || 1), 0);
     let totalPrice = 0;
+
+    builderCommander.forEach(c => {
+      totalPrice += (c.price || 0) * (c.qty || 1);
+    });
+    builderMainboard.forEach(c => {
+      const lowerName = c.name.toLowerCase();
+      const isBasic = ["plains","island","swamp","mountain","forest","wastes"].some(b => lowerName === b || lowerName === `snow-covered ${b}`);
+      const priceVal = isBasic ? 0.00 : (c.price || 0);
+      totalPrice += priceVal * (c.qty || 1);
+    });
 
     // Render Command Zone Images (Column 1 Top)
     const cZoneImg = document.getElementById('builder-commander-image-container');
@@ -4399,7 +4606,6 @@
       if (builderCommander.length > 0) {
         cZoneImg.innerHTML = '';
         builderCommander.forEach(c => {
-          totalPrice += c.price;
           const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.name)}&format=image&version=normal`;
           const imgUrl = c.scryfallId 
             ? `https://cards.scryfall.io/normal/front/${c.scryfallId[0]}/${c.scryfallId[1]}/${c.scryfallId}.jpg` 
@@ -4475,27 +4681,189 @@
       return colorPriority[colors[0]] !== undefined ? colorPriority[colors[0]] : 9;
     }
 
+    // Helper: client-side functional tag detector for fallback / dynamic tagging
+    function getFunctionalTagsForCard(c) {
+      const matched = new Set();
+      const type = (c.type_line || '').toLowerCase();
+      const oracle = (c.oracle_text || '').toLowerCase();
+      const name = (c.name || '').toLowerCase().trim();
+
+      // 0. Specific Overrides for precision
+      if (name === 'carpet of flowers') {
+        matched.add('Ramp');
+        return Array.from(matched);
+      }
+      if (name === 'grisly salvage') {
+        matched.add('Graveyard Fillers');
+        matched.add('Card Advantage');
+        return Array.from(matched);
+      }
+      if (name === 'ripples of undeath') {
+        matched.add('Graveyard Fillers');
+        matched.add('Card Advantage');
+        return Array.from(matched);
+      }
+      if (name === 'satyr wayfinder') {
+        matched.add('Graveyard Fillers');
+        matched.add('Lands');
+        return Array.from(matched);
+      }
+      if (name === 'volatile stormdrake') {
+        matched.add('Single Target Removal');
+        return Array.from(matched);
+      }
+      if (name === 'eternal witness' || name === 'seasons past' || name === 'regrowth' || name === 'reclaim' || name === 'noxious revival') {
+        matched.add('Recursion');
+        return Array.from(matched);
+      }
+      if (name === 'victimize' || name.includes('life // death') || name === 'death' || name === 'life/death') {
+        matched.add('Reanimation');
+        return Array.from(matched);
+      }
+      if (name === 'ghostly pilferer' || name === 'syphon mind' || name === 'nezahal, primal tide' || name.includes('nezahal')) {
+        matched.add('Card Advantage');
+        return Array.from(matched);
+      }
+      if (name === 'koma, cosmos serpent' || name.includes('koma')) {
+        matched.add('Wincons/Finishers');
+        return Array.from(matched);
+      }
+
+      // 1. Infinite Combos
+      if (oracle.includes('infinite') || oracle.includes('repeat this process')) {
+        matched.add('Infinite Combos');
+      }
+      // 2. Wincons/Finishers
+      if (oracle.includes('win the game') || oracle.includes('you win') || oracle.includes('loses the game') || oracle.includes('extra turn')) {
+        matched.add('Wincons/Finishers');
+      }
+      // 3. Tutors
+      if (oracle.includes('search your library') || oracle.includes('search target player\'s library')) {
+        matched.add('Tutors');
+      }
+      // 4. Stax
+      if (oracle.includes('spells cost') || oracle.includes('opponents can\'t cast') || oracle.includes('opponents play with') || oracle.includes('can\'t untap')) {
+        matched.add('Stax');
+      }
+      // 5. Mass Removal vs Single Target Removal
+      const isMassRemoval = oracle.includes('destroy all') || oracle.includes('exile all') || oracle.includes('each creature gets -') || oracle.includes('destroy all nonland') || oracle.includes('return all') ||
+                            name === 'day of black sun' || name === 'culling ritual' || name === 'toxic deluge' || name === 'wrath of god' || name === 'damnation' || name === 'blasphemous act' || name === 'supreme verdict' || name === 'cyclonic rift' || name === 'vanquish the horde' || name === 'the meathook massacre';
+
+      if (isMassRemoval) {
+        matched.add('Mass Removal');
+      } else {
+        const isSingleTargetRemoval = oracle.includes('destroy target') || oracle.includes('exile target') || oracle.includes('counter target spell') || (oracle.includes('deal') && oracle.includes('damage to target')) || oracle.includes('return target permanent');
+        if (isSingleTargetRemoval) {
+          matched.add('Single Target Removal');
+        }
+      }
+
+      // 6. Protection (Protects team/board/player, not self-only beaters)
+      if (name !== 'koma, cosmos serpent' && !name.includes('koma')) {
+        const isProtectionSpell = name === 'heroic intervention' || name === 'teferi\'s protection' || name === 'flawless maneuver' || name === 'swiftfoot boots' || name === 'lightning greaves' || name === 'clever concealment' || name === 'tamiyo\'s safekeeping' || name === 'veil of summer' || name === 'deflecting swat' || name === 'silence' || name === 'boros charm';
+        const isTeamProtectionText = oracle.includes('permanents you control gain') || oracle.includes('creatures you control gain') || oracle.includes('you gain hexproof') || oracle.includes('protection from') || oracle.includes('phase out') || oracle.includes('equipped creature has hexproof') || oracle.includes('equipped creature has shroud') || oracle.includes('target permanent gains indestructible') || oracle.includes('target creature gains hexproof') || oracle.includes('target creature gains indestructible');
+        
+        if (isProtectionSpell || isTeamProtectionText) {
+          matched.add('Protection');
+        }
+      }
+
+      // 7. Ramp (Cards that put you ahead of the mana curve; excludes regular lands)
+      const isLand = type.includes('land');
+      if (!isLand && (oracle.includes('add {') || oracle.includes('add one mana') || oracle.includes('add two mana') || oracle.includes('add three mana') || oracle.includes('search your library for a land') || oracle.includes('search your library for a basic land') || oracle.includes('you may play an additional land') || oracle.includes('put a land card from your hand onto the battlefield'))) {
+        matched.add('Ramp');
+      }
+      // 8. Card Advantage vs Card Selection
+      const isCardAdvantage = oracle.includes('draw two cards') || oracle.includes('draw three cards') || oracle.includes('draw cards equal') || oracle.includes('at the beginning of your upkeep, draw') || (oracle.includes('draw a card') && !oracle.includes('discard'));
+      const isCardSelection = oracle.includes('look at the top') || oracle.includes('scry') || oracle.includes('surveil') || oracle.includes('draw a card, then discard') || oracle.includes('titan\'s nest') || name === 'ponder' || name === 'preordain' || name === 'brainstorm' || name === 'sylvan library' || name === 'impulse';
+
+      if (isCardAdvantage) matched.add('Card Advantage');
+      if (isCardSelection) matched.add('Card Selection');
+
+      // 9. Recursion & Reanimation
+      if (oracle.includes('return target') && (oracle.includes('from your graveyard to your hand') || oracle.includes('from a graveyard to your hand'))) {
+        matched.add('Recursion');
+      }
+      if (oracle.includes('return target') && (oracle.includes('from your graveyard to the battlefield') || oracle.includes('from a graveyard to the battlefield') || oracle.includes('put target creature card from a graveyard onto the battlefield'))) {
+        matched.add('Reanimation');
+      }
+
+      // 10. Graveyard Fillers
+      if (oracle.includes('mill') || (oracle.includes('put the top') && oracle.includes('into your graveyard')) || oracle.includes('cards from the top of your library into your graveyard')) {
+        matched.add('Graveyard Fillers');
+      }
+
+      // 11. Sacrifice Outlets
+      if (oracle.includes('sacrifice a creature:') || oracle.includes('sacrifice a permanent:') || oracle.includes('sacrifice an artifact:')) {
+        matched.add('Sacrifice Outlets');
+      }
+
+      // 12. Utility Lands vs Lands
+      if (isLand) {
+        const isUtilityLand = !type.includes('basic land') && (
+          oracle.includes('dredge') || oracle.includes('no maximum hand size') || oracle.includes('search your library') ||
+          oracle.includes('exile target card from a graveyard') || oracle.includes('destroy target land') ||
+          oracle.includes('prevent all combat damage') || oracle.includes('can\'t be blocked') || oracle.includes('sacrifice a') ||
+          name === 'dakmor salvage' || name === 'reliquary tower' || name === 'urza\'s saga' || name === 'bojuka bog' || name === 'strip mine' || name === 'wasteland' || name === 'maze of ith' || name === 'rogue\'s passage' || name === 'high market'
+        );
+        if (isUtilityLand) {
+          matched.add('Utility Lands');
+        }
+        matched.add('Lands');
+      }
+
+      if (matched.size === 0) {
+        if (isLand) {
+          matched.add('Lands');
+        } else {
+          matched.add('Unique');
+        }
+      }
+      return Array.from(matched);
+    }
+
+    function parseCardTags(customTag, c) {
+      if (customTag) {
+        try {
+          const parsed = JSON.parse(customTag);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch (e) {
+          if (typeof customTag === 'string' && customTag.trim()) {
+            const split = customTag.split(',').map(s => s.trim()).filter(Boolean);
+            if (split.length > 0) return split;
+          }
+        }
+      }
+      return getFunctionalTagsForCard(c);
+    }
+
     // Group mainboard cards
     const groups = {};
     builderMainboard.forEach(c => {
-      let key = "Other";
-      if (groupBy === 'type') {
-        key = getCardCategory(c);
-      } else if (groupBy === 'tag') {
-        key = c.custom_tag || "Untagged";
-      } else if (groupBy === 'mana') {
-        const cmc = c.cmc || 0;
-        key = cmc >= 7 ? "7+ Mana" : `${cmc} Mana`;
-      } else if (groupBy === 'color') {
-        key = getCardColorGroup(c);
-      } else if (groupBy === 'subtype') {
-        key = getSubtype(c);
-      } else if (groupBy === 'rarity') {
-        const r = getRarity(c);
-        key = r.charAt(0).toUpperCase() + r.slice(1);
+      if (groupBy === 'tag') {
+        const tags = parseCardTags(c.custom_tag, c);
+        tags.forEach(t => {
+          if (!groups[t]) groups[t] = [];
+          groups[t].push(c);
+        });
+      } else {
+        let key = "Other";
+        if (groupBy === 'type') {
+          key = getCardCategory(c);
+        } else if (groupBy === 'mana') {
+          const cmc = c.cmc || 0;
+          key = cmc >= 7 ? "7+ Mana" : `${cmc} Mana`;
+        } else if (groupBy === 'color') {
+          key = getCardColorGroup(c);
+        } else if (groupBy === 'subtype') {
+          key = getSubtype(c);
+        } else if (groupBy === 'rarity') {
+          const r = getRarity(c);
+          key = r.charAt(0).toUpperCase() + r.slice(1);
+        }
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(c);
       }
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(c);
     });
 
     // Sort items within each group
@@ -4538,8 +4906,10 @@
         return a.localeCompare(b);
       });
     } else if (groupBy === 'tag') {
-      const tagOrder = ["Combos", "Removal", "Ramp", "Card Draw", "Lands", "Creatures", "Instants", "Sorceries", "Artifacts", "Enchantments", "Planeswalkers", "Battles", "Other", "Untagged"];
+      const tagOrder = ["Infinite Combos", "Wincons/Finishers", "Tutors", "Stax", "Mass Removal", "Single Target Removal", "Protection", "Ramp", "Card Advantage", "Card Selection", "Recursion", "Reanimation", "Graveyard Fillers", "Sacrifice Outlets", "Utility Lands", "Lands", "Unique"];
       sortedTags = Object.keys(groups).sort((a, b) => {
+        if (a.startsWith('Combo:')) return -1;
+        if (b.startsWith('Combo:')) return 1;
         const idxA = tagOrder.indexOf(a);
         const idxB = tagOrder.indexOf(b);
         if (idxA !== -1 && idxB !== -1) return idxA - idxB;
@@ -4604,11 +4974,9 @@
         stackRow.style.paddingBottom = '0.5rem';
 
         groups[tag].forEach(c => {
-          totalCount += c.qty;
           const lowerName = c.name.toLowerCase();
           const isBasic = ["plains","island","swamp","mountain","forest","wastes"].some(b => lowerName === b || lowerName === `snow-covered ${b}`);
           const priceVal = isBasic ? 0 : c.price;
-          totalPrice += priceVal * c.qty;
 
           const stackEl = document.createElement('div');
           stackEl.style.position = 'relative';
@@ -4656,11 +5024,9 @@
       } else if (viewMode === 'visual-spoiler') {
         // Visual Spoiler: full card images in grid
         groups[tag].forEach(c => {
-          totalCount += c.qty;
           const lowerName = c.name.toLowerCase();
           const isBasic = ["plains","island","swamp","mountain","forest","wastes"].some(b => lowerName === b || lowerName === `snow-covered ${b}`);
           const priceVal = isBasic ? 0 : c.price;
-          totalPrice += priceVal * c.qty;
 
           const cardEl = document.createElement('div');
           cardEl.style.position = 'relative';
@@ -4736,11 +5102,9 @@
         colPanel.appendChild(listCont);
 
         groups[tag].forEach(c => {
-          totalCount += c.qty;
           const lowerName = c.name.toLowerCase();
           const isBasic = ["plains","island","swamp","mountain","forest","wastes"].some(b => lowerName === b || lowerName === `snow-covered ${b}`);
           const priceVal = isBasic ? 0.00 : c.price;
-          totalPrice += priceVal * c.qty;
 
           const cardEl = document.createElement('div');
           cardEl.className = 'playtest-card';
@@ -5883,15 +6247,23 @@
     return cleaned;
   }
 
-  function showCardHoverTooltip(cardName, x, y) {
+  function showCardHoverTooltip(cardName, x, y, scryfallId = null) {
     clearTimeout(tooltipTimeout);
     tooltipTimeout = setTimeout(() => {
       const tooltip = document.getElementById('card-hover-tooltip');
       const img = document.getElementById('tooltip-card-img');
       if (!tooltip || !img) return;
 
-      if (cardImageCache.has(cardName)) {
-        img.src = cardImageCache.get(cardName);
+      const cacheKey = scryfallId ? `${cardName}_${scryfallId}` : cardName;
+
+      if (cardImageCache.has(cacheKey)) {
+        img.src = cardImageCache.get(cacheKey);
+        tooltip.style.display = 'block';
+        positionTooltip(x, y);
+      } else if (scryfallId) {
+        const imageUrl = `https://cards.scryfall.io/normal/front/${scryfallId[0]}/${scryfallId[1]}/${scryfallId}.jpg`;
+        cardImageCache.set(cacheKey, imageUrl);
+        img.src = imageUrl;
         tooltip.style.display = 'block';
         positionTooltip(x, y);
       } else {
@@ -5899,7 +6271,6 @@
         fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}&unique=cards`)
           .then(res => res.json())
           .then(data => {
-            // Handle double-faced cards (card_faces[0]) as well as normal cards
             let imageUrl = null;
             if (data && data.image_uris && data.image_uris.normal) {
               imageUrl = data.image_uris.normal;
@@ -5907,7 +6278,7 @@
               imageUrl = data.card_faces[0].image_uris.normal;
             }
             if (imageUrl) {
-              cardImageCache.set(cardName, imageUrl);
+              cardImageCache.set(cacheKey, imageUrl);
               img.src = imageUrl;
               tooltip.style.display = 'block';
               positionTooltip(x, y);
@@ -5943,12 +6314,13 @@
   }
 
   document.addEventListener('mouseover', (e) => {
-    const target = e.target.closest('[data-card-name], .card-item-name, .price-card-name, .playtest-card span');
+    const target = e.target.closest('[data-card-name], [data-scryfall-id], .card-item-name, .price-card-name, .playtest-card span');
     if (target) {
       let cardName = target.getAttribute('data-card-name') || target.textContent.trim();
+      const scryfallId = target.getAttribute('data-scryfall-id') || null;
       cardName = cleanCardNameForTooltip(cardName);
       if (cardName && cardName !== 'Exile' && cardName !== 'Graveyard' && cardName !== 'Hand Cards' && cardName !== 'Library') {
-        showCardHoverTooltip(cardName, e.clientX, e.clientY);
+        showCardHoverTooltip(cardName, e.clientX, e.clientY, scryfallId);
       }
     }
   });
