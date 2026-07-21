@@ -44,6 +44,7 @@ async function run() {
   const regRes = await postJson('/api/auth/register', {
     username: testUser,
     password: 'password123',
+    email: `${testUser}@example.com`,
     storeNickname: 'ImporterTest'
   });
 

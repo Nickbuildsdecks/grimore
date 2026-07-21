@@ -1527,9 +1527,9 @@
           ? ''
           : `<a href="${d.moxfield_url}" target="_blank" class="btn btn-sm btn-secondary" style="text-decoration:none; flex: 1; font-size: 0.7rem; text-align: center; line-height: 20px;">Moxfield</a>`;
 
-        const legalBadge = d.is_legal === 0
-          ? `<span class="deck-status-pill is-illegal" title="${d.legality_reason || 'Does not match tournament rules'}"><span></span>Needs review</span>`
-          : `<span class="deck-status-pill is-legal"><span></span>Legal</span>`;
+        const rawFormat = d.format || 'Commander';
+        const formatLabel = rawFormat.charAt(0).toUpperCase() + rawFormat.slice(1);
+        const formatBadge = `<span class="deck-status-pill is-legal"><span></span>${formatLabel}</span>`;
 
         const privacyBadge = d.is_public === 1
           ? `<span class="deck-privacy-pill"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg>Public</span>`
@@ -1540,18 +1540,16 @@
             <div class="deck-card-art${posterUrl ? '' : ' deck-card-art-fallback'}"${posterUrl ? ` style="--deck-cover: url('${posterUrl}')"` : ''}>
               <div class="deck-card-art-topline">
                 ${privacyBadge}
-                ${legalBadge}
+                ${formatBadge}
               </div>
               <div class="deck-card-art-copy">
-                <span>${d.commander_name || d.format || 'Commander'}</span>
+                <span>${d.commander_name || formatLabel}</span>
                 <h3>${d.deck_name}</h3>
               </div>
             </div>
             <div class="deck-card-details">
               <div class="deck-card-stats">
                 <div><strong>$${(d.cheapest_total_price || 0).toFixed(2)}</strong><span>Value</span></div>
-                <div><strong>${d.total_wins || 0}</strong><span>Wins</span></div>
-                <div><strong>${d.total_points || 0}</strong><span>Points</span></div>
               </div>
               <button class="deck-share-button" type="button" aria-label="Share ${d.deck_name}" onclick="event.stopPropagation(); window.shareDeck('${d.id}', '${d.deck_name.replace(/'/g, "\\'")}')">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></svg>
@@ -1634,15 +1632,30 @@
     if (event) event.preventDefault();
     const username = prompt("Enter your Moxfield username to import all public decks:");
     if (!username) return;
-    window.showArcaneProgress("Importing Moxfield Account", "Retrieving deck lists from Moxfield...", 0);
+
+    window.showArcaneProgress("Importing Moxfield Account", `Searching public decks for user '${username.trim()}'...`, 10);
+    
+    let progressPct = 10;
+    const progressTimer = setInterval(() => {
+      if (progressPct < 90) {
+        progressPct += 5;
+        let msg = `Fetching decklists & prices for '${username.trim()}' (${progressPct}%)...`;
+        if (progressPct > 60) msg = `Resolving card legalities & tournament rules...`;
+        window.updateArcaneProgress(progressPct, msg);
+      }
+    }, 800);
+
     try {
       const res = await fetch('/api/moxfield/import-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: username.trim() })
       });
+      clearInterval(progressTimer);
+      window.updateArcaneProgress(100, "Import process complete!");
       const data = await res.json();
-      window.hideArcaneProgress();
+      setTimeout(() => window.hideArcaneProgress(), 300);
+
       if (!res.ok || !data.success) {
         alert(data.error || "Failed to import Moxfield account.");
         return;
@@ -1652,10 +1665,10 @@
       const skippedDecks = data.skippedDecks || [];
       let message = `Successfully imported/updated ${importedCount} deck(s):\n`;
       importedDecks.forEach(d => {
-        message += ` - ${d.name} ($${d.totalPrice.toFixed(2)})${d.isLegal ? '' : ' [ILLEGAL]'}\n`;
+        message += ` - ${d.name} ($${(d.totalPrice || 0).toFixed(2)})${d.isLegal ? '' : ' [ILLEGAL]'}\n`;
       });
       if (skippedDecks.length > 0) {
-        message += `\nSkipped ${skippedDecks.length} deck(s) due to error or formats:\n`;
+        message += `\nSkipped ${skippedDecks.length} deck(s):\n`;
         skippedDecks.forEach(d => {
           message += ` - ${d.name} (${d.error})\n`;
         });
@@ -1665,6 +1678,7 @@
         loadMyDecks();
       }
     } catch (e) {
+      clearInterval(progressTimer);
       console.error("Moxfield account import failed:", e);
       window.hideArcaneProgress();
       alert("An error occurred while importing Moxfield account.");
@@ -3805,6 +3819,10 @@
     window.triggerAutoSave();
   };
 
+  const getAdvancedButtonHtml = (isOpen) => {
+    return `<svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: #9ca3af; stroke: none; flex-shrink: 0;"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg> ${isOpen ? 'Close Advanced' : 'Advanced'}`;
+  };
+
   window.toggleBuilderAdvancedSettings = function() {
     const panel = document.getElementById('builder-advanced-settings-panel');
     const button = document.getElementById('builder-settings-toggle');
@@ -3812,13 +3830,13 @@
 
     if (panel.style.display === 'none' || !panel.style.display) {
       panel.style.display = 'flex';
-      button.textContent = '🔒 Close Settings';
+      button.innerHTML = getAdvancedButtonHtml(true);
       button.classList.remove('btn-secondary');
-      button.classList.add('btn-primary');
+      button.classList.add('btn-gold');
     } else {
       panel.style.display = 'none';
-      button.textContent = '⚙️ Settings';
-      button.classList.remove('btn-primary');
+      button.innerHTML = getAdvancedButtonHtml(false);
+      button.classList.remove('btn-gold');
       button.classList.add('btn-secondary');
     }
   };
@@ -3829,8 +3847,8 @@
     const advBtn = document.getElementById('builder-settings-toggle');
     if (advPanel) advPanel.style.display = 'none';
     if (advBtn) {
-      advBtn.textContent = '⚙️ Settings';
-      advBtn.classList.remove('btn-primary');
+      advBtn.innerHTML = getAdvancedButtonHtml(false);
+      advBtn.classList.remove('btn-gold', 'btn-primary');
       advBtn.classList.add('btn-secondary');
     }
 
@@ -3961,7 +3979,16 @@
     event.preventDefault();
     const cardName = event.dataTransfer.getData("cardName");
     if (!cardName) return;
-    promoteToCommander(cardName);
+
+    const formatSelect = document.getElementById('builder-deck-format');
+    const currentFormat = formatSelect ? formatSelect.value.toLowerCase() : 'commander';
+    const isCommanderFormat = ['commander', 'brawl', 'oathbreaker', 'archon', 'predh'].includes(currentFormat);
+
+    if (isCommanderFormat) {
+      promoteToCommander(cardName);
+    } else {
+      window.setBuilderFeaturedCard(cardName);
+    }
   };
 
   window.promoteToCommander = function(cardName) {
@@ -4477,6 +4504,92 @@
     builderFeaturedCardName = name;
     renderBuilderDecklist();
     window.triggerAutoSave();
+    if (window.showSlideNotification) {
+      window.showSlideNotification(`Set ${name} as Display Card!`, 'success');
+    }
+  };
+
+  window.resetBuilderFeaturedCard = function() {
+    builderFeaturedCardName = null;
+    renderBuilderDecklist();
+    window.triggerAutoSave();
+    if (window.showSlideNotification) {
+      window.showSlideNotification(`Reset Display Card to default selection`, 'info');
+    }
+  };
+
+  let currentDeleteConfirmCallback = null;
+
+  window.openDeleteConfirmModal = function(messageText, onConfirmCallback) {
+    const modal = document.getElementById('delete-confirm-modal');
+    const textEl = document.getElementById('delete-confirm-text');
+    const inputEl = document.getElementById('delete-confirm-input');
+    const submitBtn = document.getElementById('btn-delete-confirm-submit');
+    if (!modal || !inputEl || !submitBtn) return;
+
+    currentDeleteConfirmCallback = onConfirmCallback;
+
+    if (textEl && messageText) {
+      textEl.innerHTML = `${messageText} To confirm, please type <strong style="color: var(--text-pure);">DELETE</strong> in the box below.`;
+    }
+
+    inputEl.value = '';
+    submitBtn.disabled = true;
+
+    inputEl.oninput = function() {
+      if (this.value.trim().toUpperCase() === 'DELETE') {
+        submitBtn.disabled = false;
+      } else {
+        submitBtn.disabled = true;
+      }
+    };
+
+    submitBtn.onclick = function() {
+      if (inputEl.value.trim().toUpperCase() !== 'DELETE') return;
+      window.closeDeleteConfirmModal();
+      if (typeof currentDeleteConfirmCallback === 'function') {
+        currentDeleteConfirmCallback();
+      }
+    };
+
+    modal.style.display = 'flex';
+    setTimeout(() => inputEl.focus(), 100);
+  };
+
+  window.closeDeleteConfirmModal = function() {
+    const modal = document.getElementById('delete-confirm-modal');
+    if (modal) modal.style.display = 'none';
+    currentDeleteConfirmCallback = null;
+  };
+
+  window.promptDeleteDeckFromBuilder = function() {
+    const deckId = builderDeckId;
+    const deckName = (document.getElementById('builder-deck-name') ? document.getElementById('builder-deck-name').value : '') || 'this deck';
+    if (!deckId) {
+      alert("No active deck loaded to delete.");
+      return;
+    }
+    window.openDeleteConfirmModal(`Are you sure you want to permanently delete "${deckName}"? This action cannot be undone.`, async () => {
+      try {
+        window.startTopProgress();
+        const res = await fetch(`/api/decks/${deckId}`, { method: 'DELETE' });
+        window.completeTopProgress();
+        if (res.ok) {
+          if (window.showSlideNotification) {
+            window.showSlideNotification(`Deck "${deckName}" deleted successfully!`, 'info');
+          }
+          exitDeckbuilderView();
+          if (window.loadMyDecks) window.loadMyDecks();
+        } else {
+          const data = await res.json();
+          alert(data.error || "Failed to delete deck.");
+        }
+      } catch (e) {
+        window.completeTopProgress();
+        console.error(e);
+        alert("Error deleting deck.");
+      }
+    });
   };
 
   window.toggleBuilderCommander = function(name, makeCommander) {
@@ -4600,25 +4713,74 @@
       totalPrice += priceVal * (c.qty || 1);
     });
 
-    // Render Command Zone Images (Column 1 Top)
+    // Check active format to set up Commander / Display Card Zone
+    const formatSelect = document.getElementById('builder-deck-format');
+    const currentFormat = formatSelect ? formatSelect.value.toLowerCase() : 'commander';
+    const isCommanderFormat = ['commander', 'brawl', 'oathbreaker', 'archon', 'predh'].includes(currentFormat);
+    const cZonePanelTitle = document.getElementById('builder-commander-panel-title');
     const cZoneImg = document.getElementById('builder-commander-image-container');
+
+    if (cZonePanelTitle) {
+      cZonePanelTitle.textContent = isCommanderFormat ? 'Commander' : 'Display Card';
+    }
+
     if (cZoneImg) {
-      if (builderCommander.length > 0) {
-        cZoneImg.innerHTML = '';
-        builderCommander.forEach(c => {
-          const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.name)}&format=image&version=normal`;
-          const imgUrl = c.scryfallId 
-            ? `https://cards.scryfall.io/normal/front/${c.scryfallId[0]}/${c.scryfallId[1]}/${c.scryfallId}.jpg` 
+      cZoneImg.innerHTML = '';
+      if (isCommanderFormat) {
+        if (builderCommander.length > 0) {
+          builderCommander.forEach(c => {
+            const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.name)}&format=image&version=normal`;
+            const imgUrl = c.scryfallId 
+              ? `https://cards.scryfall.io/normal/front/${c.scryfallId[0]}/${c.scryfallId[1]}/${c.scryfallId}.jpg` 
+              : fallbackUrl;
+            cZoneImg.innerHTML += `
+              <div style="position: relative; display: inline-block;">
+                <img src="${imgUrl}" style="max-height: 175px; border-radius: 8px; border: 1px solid var(--border-medium); cursor: pointer;" onclick="toggleBuilderCommander('${c.name.replace(/'/g, "\\'")}', false)" title="Click to demote to mainboard" data-card-name="${c.name}" onerror="this.src='logo.svg'">
+                <button class="btn btn-danger btn-sm" style="position: absolute; top: -5px; right: -5px; padding: 2px 6px; font-size: 0.6rem; border-radius: 50%; height: 20px; width: 20px; display: flex; align-items: center; justify-content: center;" onclick="removeBuilderCard('${c.name.replace(/'/g, "\\'")}', true)">×</button>
+              </div>
+            `;
+          });
+        } else {
+          cZoneImg.innerHTML = `<span style="color:var(--text-muted); font-size:0.75rem; text-align: center;">Drag commanders here.</span>`;
+        }
+      } else {
+        // Non-commander Display Card resolution:
+        let featCard = null;
+        if (builderFeaturedCardName) {
+          featCard = builderMainboard.find(c => c.name === builderFeaturedCardName);
+        }
+        if (!featCard) {
+          const nonBasics = builderMainboard.filter(c => {
+            const lower = (c.name || '').toLowerCase().trim();
+            return !['plains', 'island', 'swamp', 'mountain', 'forest', 'wastes'].some(b => lower === b || lower === `snow-covered ${b}`);
+          });
+          const candidates = nonBasics.length > 0 ? [...nonBasics] : [...builderMainboard];
+          candidates.sort((a, b) => {
+            const qtyA = a.qty || 1;
+            const qtyB = b.qty || 1;
+            if (qtyB !== qtyA) return qtyB - qtyA;
+            const priceA = parseFloat(a.price || 0);
+            const priceB = parseFloat(b.price || 0);
+            return priceB - priceA;
+          });
+          featCard = candidates[0] || null;
+        }
+
+        if (featCard) {
+          const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(featCard.name)}&format=image&version=normal`;
+          const imgUrl = featCard.scryfallId 
+            ? `https://cards.scryfall.io/normal/front/${featCard.scryfallId[0]}/${featCard.scryfallId[1]}/${featCard.scryfallId}.jpg` 
             : fallbackUrl;
-          cZoneImg.innerHTML += `
-            <div style="position: relative; display: inline-block;">
-              <img src="${imgUrl}" style="max-height: 175px; border-radius: 8px; border: 1px solid var(--border-medium); cursor: pointer;" onclick="toggleBuilderCommander('${c.name.replace(/'/g, "\\'")}', false)" title="Click to demote to mainboard" data-card-name="${c.name}" onerror="this.src='logo.svg'">
-              <button class="btn btn-danger btn-sm" style="position: absolute; top: -5px; right: -5px; padding: 2px 6px; font-size: 0.6rem; border-radius: 50%; height: 20px; width: 20px; display: flex; align-items: center; justify-content: center;" onclick="removeBuilderCard('${c.name.replace(/'/g, "\\'")}', true)">×</button>
+          cZoneImg.innerHTML = `
+            <div style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <img src="${imgUrl}" style="max-height: 165px; border-radius: 8px; border: 1px solid var(--border-medium); cursor: pointer;" title="Display Card: ${featCard.name} (Drag a card here to change)" data-card-name="${featCard.name}" onerror="this.src='logo.svg'">
+              <div style="font-size: 0.68rem; font-weight: 700; color: var(--color-gold); text-align: center;">${featCard.qty}x • $${(featCard.price || 0).toFixed(2)}</div>
+              ${builderFeaturedCardName ? `<button class="btn btn-secondary btn-sm" style="font-size: 0.6rem; padding: 1px 6px; margin-top: 2px;" onclick="resetBuilderFeaturedCard()">Reset Default</button>` : ''}
             </div>
           `;
-        });
-      } else {
-        cZoneImg.innerHTML = `<span style="color:var(--text-muted); font-size:0.75rem; text-align: center;">Drag commanders here.</span>`;
+        } else {
+          cZoneImg.innerHTML = `<span style="color:var(--text-muted); font-size:0.75rem; text-align: center;">Drag a card here to set Display Card.</span>`;
+        }
       }
     }
 
@@ -5480,19 +5642,29 @@
   window.reloadBuilderDeckState = async function() {
     if (!builderDeckId) return;
     const btn = document.getElementById('builder-reload-btn');
-    const originalText = btn ? btn.textContent : '';
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = '🔄 Syncing...';
+    const progressContainer = document.getElementById('builder-reload-deck-progress-container');
+    const progressBar = document.getElementById('builder-reload-deck-progress-bar');
+    const progressText = document.getElementById('builder-reload-deck-progress-text');
+
+    const updateProgress = (pct, text) => {
+      if (progressBar) progressBar.style.transform = `scaleX(${pct / 100})`;
+      if (progressText) progressText.textContent = text || `${Math.round(pct)}%`;
+    };
+
+    if (btn && progressContainer) {
+      btn.style.display = 'none';
+      progressContainer.style.display = 'flex';
+      updateProgress(10, '10%');
     }
 
     try {
       // 1. Fetch metadata to check if this deck is from Moxfield
       const metaRes = await fetch(`/api/decks/${builderDeckId}`);
+      updateProgress(30, '30%');
       if (metaRes.ok) {
         const meta = await metaRes.json();
         if (meta.moxfield_url && meta.moxfield_url.includes('moxfield.com/decks/')) {
-          if (btn) btn.textContent = '🔄 Moxfield Sync...';
+          updateProgress(45, 'Syncing...');
           const initRes = await fetch(`/api/decks/reprice-init/${builderDeckId}`);
           const initData = await initRes.json();
           if (!initData.success) {
@@ -5501,9 +5673,10 @@
         }
       }
 
-      if (btn) btn.textContent = '🔄 Loading...';
+      updateProgress(65, 'Loading...');
       const res = await fetch(`/api/decks/${builderDeckId}/cards`);
       const cards = await res.json();
+      updateProgress(80, '80%');
 
       const names = cards.map(c => c.card_name);
       const batchRes = await fetch('/api/cards/details-batch', {
@@ -5512,6 +5685,7 @@
         body: JSON.stringify({ names })
       });
       const batchDetails = await batchRes.json();
+      updateProgress(95, '95%');
 
       builderCommander = [];
       builderMainboard = [];
@@ -5540,6 +5714,7 @@
       });
 
       renderBuilderDecklist();
+      updateProgress(100, '100%');
       if (window.showSlideNotification) {
         window.showSlideNotification(`Successfully reloaded deck list from database!`, 'success');
       }
@@ -5547,10 +5722,10 @@
       console.error("Failed to reload deck:", e);
       alert("Error reloading deck list.");
     } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = originalText;
-      }
+      setTimeout(() => {
+        if (progressContainer) progressContainer.style.display = 'none';
+        if (btn) btn.style.display = 'inline-flex';
+      }, 300);
     }
   };
 
@@ -8569,13 +8744,18 @@
     const currentDeck = currentDiscoverDecks[currentSwipeIndex];
     const nextDeck = currentDiscoverDecks[currentSwipeIndex + 1];
 
-    const artUrl = currentDeck.commander_scryfall_id 
-      ? `https://cards.scryfall.io/art_crop/front/${currentDeck.commander_scryfall_id[0]}/${currentDeck.commander_scryfall_id[1]}/${currentDeck.commander_scryfall_id}.jpg`
-      : 'logo.svg';
+    const getDeckArtUrl = (d) => {
+      if (!d) return 'logo.svg';
+      if (d.commanderScryfallId) return `https://cards.scryfall.io/art_crop/front/${d.commanderScryfallId[0]}/${d.commanderScryfallId[1]}/${d.commanderScryfallId}.jpg`;
+      if (d.commander_scryfall_id) return `https://cards.scryfall.io/art_crop/front/${d.commander_scryfall_id[0]}/${d.commander_scryfall_id[1]}/${d.commander_scryfall_id}.jpg`;
+      if (d.commanderName && d.commanderName !== 'Unknown Commander') return `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(d.commanderName)}&format=image&version=art_crop`;
+      if (d.commander_name) return `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(d.commander_name)}&format=image&version=art_crop`;
+      if (d.featured_card_name) return `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(d.featured_card_name)}&format=image&version=art_crop`;
+      return 'logo.svg';
+    };
 
-    const nextArtUrl = nextDeck && nextDeck.commander_scryfall_id
-      ? `https://cards.scryfall.io/art_crop/front/${nextDeck.commander_scryfall_id[0]}/${nextDeck.commander_scryfall_id[1]}/${nextDeck.commander_scryfall_id}.jpg`
-      : 'logo.svg';
+    const artUrl = getDeckArtUrl(currentDeck);
+    const nextArtUrl = getDeckArtUrl(nextDeck);
 
     let html = '';
 
@@ -8583,13 +8763,13 @@
       html += `
         <div class="swipe-card" style="transform: scale(0.95) translateY(12px); opacity: 0.6; pointer-events: none; z-index: 1;">
           <div class="swipe-card-art-container">
-            <img src="${nextArtUrl}" class="swipe-card-art" alt="${escapeHtml(nextDeck.name || 'Deck')}">
+            <img src="${nextArtUrl}" class="swipe-card-art" alt="${escapeHtml(nextDeck.name || nextDeck.deckName || 'Deck')}" onerror="this.src='logo.svg'">
             <div class="swipe-card-art-overlay"></div>
           </div>
           <div class="swipe-card-body">
             <div>
-              <div class="swipe-card-title">${escapeHtml(nextDeck.name || 'Deck')}</div>
-              <div class="swipe-card-creator">by ${escapeHtml(nextDeck.creator_name || nextDeck.username || 'Anonymous')}</div>
+              <div class="swipe-card-title">${escapeHtml(nextDeck.name || nextDeck.deckName || 'Deck')}</div>
+              <div class="swipe-card-creator">by ${escapeHtml(nextDeck.creator_name || nextDeck.creatorName || nextDeck.username || 'Anonymous')}</div>
             </div>
           </div>
         </div>
@@ -8599,15 +8779,15 @@
     html += `
       <div id="active-swipe-card" class="swipe-card" style="z-index: 2;">
         <div class="swipe-card-art-container">
-          <img src="${artUrl}" class="swipe-card-art" alt="${escapeHtml(currentDeck.name || 'Deck')}" draggable="false">
+          <img src="${artUrl}" class="swipe-card-art" alt="${escapeHtml(currentDeck.name || currentDeck.deckName || 'Deck')}" draggable="false" onerror="this.src='logo.svg'">
           <div class="swipe-card-art-overlay"></div>
         </div>
         <div class="swipe-card-body">
           <div>
-            <div class="swipe-card-title">${escapeHtml(currentDeck.name || 'Deck')}</div>
-            <div class="swipe-card-creator">by ${escapeHtml(currentDeck.creator_name || currentDeck.username || 'Anonymous')}</div>
+            <div class="swipe-card-title">${escapeHtml(currentDeck.name || currentDeck.deckName || 'Deck')}</div>
+            <div class="swipe-card-creator">by ${escapeHtml(currentDeck.creator_name || currentDeck.creatorName || currentDeck.username || 'Anonymous')}</div>
             <div style="font-size: 0.8rem; color: var(--text-medium); margin-bottom: 0.6rem;">
-              👑 ${escapeHtml(currentDeck.commander_name || 'Commander')}
+              ${(currentDeck.commanderName && currentDeck.commanderName !== 'Unknown Commander') || currentDeck.commander_name ? `👑 ${escapeHtml(currentDeck.commanderName || currentDeck.commander_name)}` : (currentDeck.featured_card_name ? `⭐ ${escapeHtml(currentDeck.featured_card_name)}` : '')}
             </div>
             <div class="swipe-card-stats">
               <div class="swipe-card-stat">

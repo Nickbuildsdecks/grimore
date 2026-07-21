@@ -42,6 +42,35 @@
   color-scheme: dark;
 }
 
+/* Universal Focus Reset — Zero Yellow Focus Rings Anywhere on Grimore */
+*,
+*::before,
+*::after {
+  outline-color: transparent !important;
+}
+
+*:focus,
+*:focus-visible,
+input:focus,
+input:focus-visible,
+select:focus,
+select:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+button:focus,
+button:focus-visible,
+a:focus,
+a:focus-visible,
+summary:focus,
+summary:focus-visible,
+[tabindex]:focus,
+[tabindex]:focus-visible {
+  outline: none !important;
+  outline-color: transparent !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+}
+
 /* ==========================================================================
    Facelift v26 — arcane tabletop instruments
    ========================================================================== */
@@ -59,9 +88,26 @@
 }
 
 .search-page .search-command-row {
-  grid-template-columns: minmax(260px, 1.6fr) minmax(170px, 0.8fr) auto auto minmax(160px, 210px) !important;
+  grid-template-columns: auto minmax(260px, 1.6fr) minmax(170px, 0.8fr) auto minmax(160px, 210px) !important;
   gap: 0.55rem !important;
   align-items: center;
+}
+
+#btn-adv-toggle,
+.search-filter-button {
+  width: auto !important;
+  max-width: fit-content !important;
+  justify-self: start !important;
+  padding: 0 0.85rem !important;
+  height: 38px !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.4rem !important;
+  border-radius: 6px !important;
 }
 
 .search-page .search-primary-field .input-field,
@@ -76,8 +122,9 @@
 .search-page .search-primary-field .input-field:focus,
 .search-page .search-oracle-field .input-field:focus,
 .search-page .search-target-control .input-field:focus {
-  border-color: rgba(251, 191, 36, 0.72) !important;
-  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.09) !important;
+  outline: none !important;
+  border-color: rgba(168, 85, 247, 0.65) !important;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25) !important;
 }
 
 .search-page .search-submit-button,
@@ -115,25 +162,168 @@
 }
 
 .search-page details.adv-group {
-  margin: 0 !important;
-  background: rgba(255, 255, 255, 0.018) !important;
-  border: 1px solid rgba(255, 255, 255, 0.055) !important;
-  border-radius: 10px !important;
+  margin: 0 0 0.35rem 0 !important;
+  background: rgba(14, 15, 23, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 6px !important;
+  backdrop-filter: blur(10px) !important;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease !important;
+  overflow: hidden !important;
+}
+
+.search-page details.adv-group:hover {
+  border-color: rgba(255, 255, 255, 0.14) !important;
 }
 
 .search-page details.adv-group[open] {
-  background: rgba(18, 18, 29, 0.68) !important;
-  border-color: rgba(168, 85, 247, 0.16) !important;
+  background: rgba(18, 19, 31, 0.85) !important;
+  border-color: rgba(168, 85, 247, 0.25) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35) !important;
 }
 
 .search-page details.adv-group summary {
-  min-height: 42px !important;
-  padding: 0.65rem 0.72rem !important;
+  min-height: 32px !important;
+  padding: 0.45rem 0.65rem !important;
   font-weight: 700 !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.02em !important;
+  color: #d1d5db !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  transition: color 0.15s ease, background-color 0.15s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.search-page details.adv-group summary:hover {
+  color: #f3f4f6 !important;
+  background: rgba(255, 255, 255, 0.025) !important;
+}
+
+.search-page details.adv-group[open] summary {
+  color: #a855f7 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.search-page details.adv-group summary::after {
+  content: '▼';
+  font-size: 0.52rem;
+  color: #6b7280;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease;
+}
+
+.search-page details.adv-group[open] summary::after {
+  transform: rotate(-180deg);
+  color: #a855f7;
 }
 
 .search-page .adv-group-content {
-  padding: 0 0.72rem 0.75rem !important;
+  padding: 0.5rem 0.65rem 0.6rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.45rem !important;
+}
+
+/* Compact Sleek Inputs inside Sidebar */
+.search-filters-sidebar .input-field,
+.search-filters-sidebar select,
+.search-filters-sidebar input[type="text"],
+.search-filters-sidebar input[type="number"] {
+  height: 26px !important;
+  font-size: 0.72rem !important;
+  background: rgba(8, 9, 15, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  border-radius: 4px !important;
+  color: #f3f4f6 !important;
+  padding: 0 0.4rem !important;
+  margin: 0 !important;
+  outline: none !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+/* High-Clarity Select Options — Dark Obsidian Background with Crisp White/Purple Text */
+select option,
+.input-field option,
+.search-filters-sidebar select option {
+  background-color: #0d0e17 !important;
+  color: #f3f4f6 !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  padding: 6px 10px !important;
+}
+
+select option:hover,
+select option:focus,
+select option:checked,
+.input-field option:hover,
+.input-field option:focus,
+.input-field option:checked {
+  background-color: #1e1f32 !important;
+  color: #c084fc !important;
+}
+
+.search-filters-sidebar .input-field:focus,
+.search-filters-sidebar select:focus,
+.search-filters-sidebar input:focus {
+  border-color: rgba(168, 85, 247, 0.55) !important;
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.25) !important;
+}
+
+.search-filters-sidebar span {
+  font-size: 0.64rem !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  color: #9ca3af !important;
+}
+
+.filters-sidebar-header {
+  padding: 0.6rem 0.75rem !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.filters-sidebar-header h2 {
+  font-size: 0.8rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  color: #f3f4f6 !important;
+  margin: 0 !important;
+  text-transform: uppercase !important;
+}
+
+.filters-sidebar-header .btn {
+  height: 24px !important;
+  padding: 0 0.65rem !important;
+  font-size: 0.68rem !important;
+  font-weight: 700 !important;
+  border-radius: 4px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #d1d5db !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  transition: all 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.filters-sidebar-header .btn:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  color: #f87171 !important;
+}
+
+.search-filters-sidebar .syntax-tips-box {
+  background: rgba(168, 85, 247, 0.03) !important;
+  border: 1px solid rgba(168, 85, 247, 0.14) !important;
+  border-radius: 6px !important;
+  padding: 0.55rem 0.65rem !important;
+  font-size: 0.72rem !important;
+  color: #9ca3af !important;
+  line-height: 1.4 !important;
 }
 
 .search-page .search-results-pane {
@@ -916,10 +1106,24 @@ h1, h2, h3, h4, h5, h6 {
   border: 0 !important;
 }
 
+:where(button, a, input, select, textarea, summary, [tabindex]):focus,
 :where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 3px solid #fbbf24 !important;
-  outline-offset: 3px !important;
-  box-shadow: 0 0 0 2px var(--bg-dark) !important;
+  outline: none !important;
+  outline-color: transparent !important;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25), 0 0 10px rgba(168, 85, 247, 0.15) !important;
+}
+
+input:focus,
+input:focus-visible,
+select:focus,
+select:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+.input-field:focus,
+.input-field:focus-visible {
+  border-color: rgba(168, 85, 247, 0.65) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25), 0 0 12px rgba(168, 85, 247, 0.18) !important;
 }
 
 .sidebar-hidden .sidebar {
@@ -1346,6 +1550,13 @@ main {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
   background-color: rgba(12, 13, 20, 0.8) !important;
+}
+
+#quick-add-input:focus {
+  border-color: var(--color-primary, #a855f7) !important;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25) !important;
+  outline: none !important;
+  background-color: var(--bg-surface-hover, rgba(30, 31, 48, 0.9)) !important;
 }
 
 /* Checkboxes */
@@ -2115,14 +2326,32 @@ main {
 }
 
 /* Deck collection: artwork-first, zero-cost Scryfall presentation */
+#decks-view {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: 100% !important;
+  max-height: calc(100vh - 80px) !important;
+  padding-bottom: 2rem !important;
+}
+
 .deck-library-panel {
-  padding: 0.4rem 0 1.5rem;
+  padding: 0.4rem 0.85rem 1.5rem 0.85rem !important;
   background: transparent !important;
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+.decks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  padding: 0.5rem 0.5rem 1.5rem 0.5rem;
+  overflow: visible !important;
 }
 
 .deck-library-header {
@@ -2354,15 +2583,16 @@ main {
   overflow: hidden;
   padding: 0;
   background: #0b0b10;
-  border-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 18px;
   cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s ease;
 }
 
 .deck-card:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: 0 24px 55px rgba(0, 0, 0, 0.45);
-  transform: translateY(-4px);
+  border-color: rgba(168, 85, 247, 0.45) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 20px rgba(168, 85, 247, 0.15) !important;
+  transform: translateY(-4px) !important;
 }
 
 .deck-card-art {
@@ -3551,20 +3781,19 @@ h1, h2, h3 {
 
 /* 2. Color checkboxes circular styling */
 .color-checkbox-label {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 0.75rem;
-  font-weight: 700;
   cursor: pointer;
   user-select: none;
-  transition: all 0.2s ease;
+  transition: transform 0.15s ease, filter 0.15s ease;
   position: relative;
-  background: #111;
+  background: transparent;
+  padding: 0;
+  border: none;
 }
 
 .color-checkbox-label input {
@@ -3575,39 +3804,45 @@ h1, h2, h3 {
   width: 0;
 }
 
-.color-checkbox-label span {
-  z-index: 1;
+.color-checkbox-label .mana-symbol-img {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: block;
+  object-fit: contain;
+  filter: opacity(0.35) grayscale(0.5);
+  transition: filter 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
 }
 
-/* White (W) */
-.color-checkbox-label.w { color: #f9fafb; }
-.color-checkbox-label.w input:checked ~ span { color: #111827; }
-.color-checkbox-label.w:has(input:checked) { background: #fef08a; border-color: #fef08a; box-shadow: 0 0 8px rgba(254, 240, 138, 0.6); }
+.color-checkbox-label:hover .mana-symbol-img {
+  filter: opacity(0.8) grayscale(0.1);
+  transform: scale(1.08);
+}
 
-/* Blue (U) */
-.color-checkbox-label.u { color: #3b82f6; }
-.color-checkbox-label.u input:checked ~ span { color: #ffffff; }
-.color-checkbox-label.u:has(input:checked) { background: #1d4ed8; border-color: #3b82f6; box-shadow: 0 0 8px rgba(59, 130, 246, 0.6); }
+.color-checkbox-label input:checked ~ .mana-symbol-img {
+  filter: opacity(1) grayscale(0);
+  transform: scale(1.15);
+}
 
-/* Black (B) */
-.color-checkbox-label.b { color: #9ca3af; }
-.color-checkbox-label.b input:checked ~ span { color: #ffffff; }
-.color-checkbox-label.b:has(input:checked) { background: #111827; border-color: #9ca3af; box-shadow: 0 0 8px rgba(156, 163, 175, 0.6); }
-
-/* Red (R) */
-.color-checkbox-label.r { color: #ef4444; }
-.color-checkbox-label.r input:checked ~ span { color: #ffffff; }
-.color-checkbox-label.r:has(input:checked) { background: #b91c1c; border-color: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6); }
-
-/* Green (G) */
-.color-checkbox-label.g { color: #10b981; }
-.color-checkbox-label.g input:checked ~ span { color: #ffffff; }
-.color-checkbox-label.g:has(input:checked) { background: #047857; border-color: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); }
-
-/* Colorless (C) */
-.color-checkbox-label.c { color: #94a3b8; }
-.color-checkbox-label.c input:checked ~ span { color: #ffffff; }
-.color-checkbox-label.c:has(input:checked) { background: #475569; border-color: #94a3b8; box-shadow: 0 0 8px rgba(148, 163, 184, 0.6); }
+.color-checkbox-label.w input:checked ~ .mana-symbol-img {
+  box-shadow: 0 0 10px rgba(254, 240, 138, 0.9), 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+.color-checkbox-label.u input:checked ~ .mana-symbol-img {
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.9), 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+.color-checkbox-label.b input:checked ~ .mana-symbol-img {
+  box-shadow: 0 0 10px rgba(156, 163, 175, 0.9), 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+.color-checkbox-label.r input:checked ~ .mana-symbol-img {
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.9), 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+.color-checkbox-label.g input:checked ~ .mana-symbol-img {
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.9), 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+.color-checkbox-label.c input:checked ~ .mana-symbol-img {
+  box-shadow: 0 0 10px rgba(148, 163, 184, 0.9), 0 2px 6px rgba(0, 0, 0, 0.8);
+}
 
 
 /* 3. Custom Checkboxes for Extra Attributes */
@@ -4898,7 +5133,7 @@ body:not(.light-theme) .sidebar {
 
 .search-command-row {
   display: grid;
-  grid-template-columns: minmax(280px, 1.35fr) minmax(180px, 0.72fr) auto auto minmax(180px, 230px);
+  grid-template-columns: auto minmax(280px, 1.35fr) minmax(180px, 0.72fr) auto minmax(180px, 230px);
   gap: 0.65rem;
 }
 

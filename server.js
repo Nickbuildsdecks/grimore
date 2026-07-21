@@ -323,6 +323,49 @@ function fetchWithProxyHttps(host, path, proxy) {
   });
 }
 
+function computeFeaturedCard(commandersObj, cardList) {
+  const commNames = commandersObj ? Object.keys(commandersObj) : [];
+  if (commNames.length > 0) {
+    return commNames[0];
+  }
+
+  let items = [];
+  if (Array.isArray(cardList)) {
+    items = cardList.map(c => ({
+      name: c.name || c.card_name,
+      qty: c.qty || c.quantity || 1,
+      price: parseFloat(c.price || c.cheapest_card_price || 0)
+    }));
+  } else if (cardList && typeof cardList === 'object') {
+    items = Object.keys(cardList).map(name => {
+      const item = cardList[name];
+      return {
+        name,
+        qty: item.qty || item.quantity || 1,
+        price: parseFloat(item.price || item.cheapest_card_price || 0)
+      };
+    });
+  }
+
+  if (items.length === 0) return null;
+
+  const nonBasics = items.filter(c => {
+    const lower = (c.name || '').toLowerCase().trim();
+    return !['plains', 'island', 'swamp', 'mountain', 'forest', 'wastes'].some(b => lower === b || lower === `snow-covered ${b}`);
+  });
+
+  const candidates = nonBasics.length > 0 ? nonBasics : items;
+
+  candidates.sort((a, b) => {
+    if (b.qty !== a.qty) {
+      return b.qty - a.qty;
+    }
+    return b.price - a.price;
+  });
+
+  return candidates[0] ? candidates[0].name : null;
+}
+
 let lastMoxfieldFetchTime = 0;
 
 function getMoxfieldHeaders() {
@@ -346,7 +389,7 @@ async function fetchMoxfieldJson(moxUrl) {
   try {
     const now = Date.now();
     const elapsed = now - lastMoxfieldFetchTime;
-    const minInterval = 1050; // 1 request per second + 50ms buffer
+    const minInterval = 100; // 100ms buffer for high throughput
     if (elapsed < minInterval) {
       await delay(minInterval - elapsed);
     }
@@ -1189,7 +1232,7 @@ app.post('/api/decks/register', async (req, res) => {
     // Check basic lands settings
     const includeBasicLands = deckData.includeBasicLandsInPrice === true;
     
-    // Combine commanders and mainboard
+    const deckFormat = (deckData.format || 'commander').toLowerCase();
     const allCardsMap = {};
     
     // Add commanders
@@ -1198,22 +1241,11 @@ app.post('/api/decks/register', async (req, res) => {
       let price = 0.10;
       let scryfallId = null;
       if (cardObj && cardObj.card) {
-        scryfallId = cardObj.card.scryfall_id || null;
+        scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
         if (cardObj.card.prices) {
           const prices = cardObj.card.prices;
-          const usd = parseFloat(prices.usd);
-          const usdFoil = parseFloat(prices.usd_foil);
-          const ck = parseFloat(prices.ck);
-          const ckFoil = parseFloat(prices.ck_foil);
-          
-          let minPrice = Infinity;
-          if (usd && usd < minPrice) minPrice = usd;
-          if (usdFoil && usdFoil < minPrice) minPrice = usdFoil;
-          if (minPrice === Infinity) {
-            if (ck && ck < minPrice) minPrice = ck;
-            if (ckFoil && ckFoil < minPrice) minPrice = ckFoil;
-          }
-          price = minPrice === Infinity ? 0.10 : minPrice;
+          const usd = parseFloat(prices.usd) || parseFloat(prices.usd_foil) || parseFloat(prices.ck) || parseFloat(prices.ck_foil) || 0.10;
+          price = usd;
         }
       }
       const qty = cardObj.quantity || 1;
@@ -1226,7 +1258,7 @@ app.post('/api/decks/register', async (req, res) => {
       let price = 0.10;
       let scryfallId = null;
       if (cardObj && cardObj.card) {
-        scryfallId = cardObj.card.scryfall_id || null;
+        scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
         if (cardObj.card.prices) {
           const prices = cardObj.card.prices;
           const usd = parseFloat(prices.usd);
@@ -1280,7 +1312,7 @@ app.post('/api/decks/register', async (req, res) => {
         if (details.price !== undefined) {
           card.price = details.price;
         }
-        if (details.scryfallId) {
+        if (details.scryfallId && !card.scryfallId) {
           card.scryfallId = details.scryfallId;
         }
       }
@@ -1290,14 +1322,35 @@ app.post('/api/decks/register', async (req, res) => {
       }
     });
 
-    const deckId = 'd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    
-    // Save to database with 0 initial price (will finalize at the end of frontend loop)
-    await db.run(
-      `INSERT OR REPLACE INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, budget_limit, featured_card_name, include_basic_lands_in_price, is_public)
-       VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, 0, ?, ?, ?, 0)`,
-      [deckId, req.session.player.id, moxfieldUrl, deckData.name || "Moxfield Deck", parsedBudgetLimit, Object.keys(commanders)[0] || null, includeBasicLands ? 1 : 0]
+    // Check for existing identical deck by URL, Moxfield ID, or deck name for this player
+    let existingDeck = await db.get(
+      "SELECT id FROM decks WHERE (moxfield_url = ? OR moxfield_url LIKE ?) AND player_id = ?",
+      [moxfieldUrl, `%${deckIdMox}%`, req.session.player.id]
     );
+    if (!existingDeck && deckData.name) {
+      existingDeck = await db.get(
+        "SELECT id FROM decks WHERE player_id = ? AND LOWER(deck_name) = LOWER(?)",
+        [req.session.player.id, deckData.name.trim()]
+      );
+    }
+
+    const deckId = existingDeck ? existingDeck.id : ('d_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
+    
+    const featuredCardName = computeFeaturedCard(commanders, cardNamesWithPrices);
+
+    if (existingDeck) {
+      await db.run(
+        `UPDATE decks SET player_id = ?, moxfield_url = COALESCE(moxfield_url, ?), deck_name = ?, cheapest_total_price = 0, last_checked = CURRENT_TIMESTAMP, budget_limit = ?, featured_card_name = ?, include_basic_lands_in_price = ?, format = ?
+         WHERE id = ?`,
+        [req.session.player.id, moxfieldUrl, deckData.name || "Moxfield Deck", parsedBudgetLimit, featuredCardName, includeBasicLands ? 1 : 0, deckFormat, deckId]
+      );
+    } else {
+      await db.run(
+        `INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, budget_limit, featured_card_name, include_basic_lands_in_price, is_public, format)
+         VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, 0, ?, ?, ?, 0, ?)`,
+        [deckId, req.session.player.id, moxfieldUrl, deckData.name || "Moxfield Deck", parsedBudgetLimit, featuredCardName, includeBasicLands ? 1 : 0, deckFormat]
+      );
+    }
 
     // Save individual card relations with Scryfall price as baseline, correct quantity and scryfallId
     await db.run("DELETE FROM deck_cards WHERE deck_id = ?", [deckId]);
@@ -1359,86 +1412,97 @@ app.post('/api/moxfield/import-account', async (req, res) => {
       return res.json({ success: true, importedCount: 0, importedDecks: [], message: "No public decks found for this user." });
     }
 
-    console.log(`Found ${allMoxDecks.length} public decks on Moxfield. Fetching lists sequentially...`);
+    console.log(`Found ${allMoxDecks.length} public decks on Moxfield. Fetching lists in parallel batches...`);
     const decksToProcess = [];
     const skippedDecks = [];
 
-    for (const moxDeck of allMoxDecks) {
-      const deckIdMox = moxDeck.publicId;
-      const moxfieldUrl = `https://www.moxfield.com/decks/${deckIdMox}`;
-      
-      // Check ownership
-      const existingDeck = await db.get("SELECT id, player_id FROM decks WHERE moxfield_url = ?", [moxfieldUrl]);
-      if (existingDeck && existingDeck.player_id !== req.session.player.id) {
-        console.log(`Skipping deck ${moxDeck.name} (${moxfieldUrl}) - registered by another player.`);
-        skippedDecks.push({ name: moxDeck.name || 'Moxfield Deck', error: "Registered by another player." });
-        continue;
-      }
-
-      try {
-        // Fetch full decklist JSON from Moxfield (sequentially with rate limiting)
-        const moxUrl = `https://api.moxfield.com/v2/decks/all/${deckIdMox}`;
-        const deckData = await fetchMoxfieldJson(moxUrl);
-
-        const mainboard = deckData.mainboard || {};
-        const commanders = deckData.commanders || {};
-        const includeBasicLands = deckData.includeBasicLandsInPrice === true;
-
-        // Extract card names and store metadata
-        const cardsMap = {};
+    const batchSize = 5;
+    for (let i = 0; i < allMoxDecks.length; i += batchSize) {
+      const chunk = allMoxDecks.slice(i, i + batchSize);
+      await Promise.all(chunk.map(async (moxDeck) => {
+        const deckIdMox = moxDeck.publicId;
+        const moxfieldUrl = `https://www.moxfield.com/decks/${deckIdMox}`;
         
-        Object.keys(commanders).forEach(name => {
-          const cardObj = commanders[name];
-          let price = 0.10;
-          let scryfallId = null;
-          if (cardObj && cardObj.card) {
-            scryfallId = cardObj.card.scryfall_id || null;
-            if (cardObj.card.prices) {
-              const prices = cardObj.card.prices;
-              const usd = parseFloat(prices.usd) || parseFloat(prices.usd_foil) || parseFloat(prices.ck) || parseFloat(prices.ck_foil) || 0.10;
-              price = usd;
-            }
-          }
-          const qty = cardObj.quantity || 1;
-          cardsMap[name] = { price, qty, scryfallId, isCommander: 1, customTag: cardObj.customCategory || null };
-        });
+        // Check for existing deck by URL, Moxfield ID, or deck name for this player
+        let existingDeck = await db.get(
+          "SELECT id, player_id FROM decks WHERE moxfield_url = ? OR moxfield_url LIKE ?",
+          [moxfieldUrl, `%${deckIdMox}%`]
+        );
+        if (!existingDeck && moxDeck.name) {
+          existingDeck = await db.get(
+            "SELECT id, player_id FROM decks WHERE player_id = ? AND LOWER(deck_name) = LOWER(?)",
+            [req.session.player.id, moxDeck.name.trim()]
+          );
+        }
+        if (existingDeck && existingDeck.player_id !== req.session.player.id) {
+          console.log(`Re-assigning existing deck ${moxDeck.name} (${moxfieldUrl}) to active importing player ${req.session.player.id}...`);
+        }
 
-        Object.keys(mainboard).forEach(name => {
-          const cardObj = mainboard[name];
-          let price = 0.10;
-          let scryfallId = null;
-          if (cardObj && cardObj.card) {
-            scryfallId = cardObj.card.scryfall_id || null;
-            if (cardObj.card.prices) {
-              const prices = cardObj.card.prices;
-              const usd = parseFloat(prices.usd) || parseFloat(prices.usd_foil) || parseFloat(prices.ck) || parseFloat(prices.ck_foil) || 0.10;
-              price = usd;
-            }
-          }
-          if (isBasicLand(name) && !includeBasicLands) {
-            price = 0.00;
-          }
-          const qty = cardObj.quantity || 1;
-          if (cardsMap[name]) {
-            cardsMap[name].qty += qty;
-          } else {
-            cardsMap[name] = { price, qty, scryfallId, isCommander: 0, customTag: cardObj.customCategory || null };
-          }
-        });
+        try {
+          const moxUrl = `https://api2.moxfield.com/v2/decks/all/${deckIdMox}`;
+          const deckData = await fetchMoxfieldJson(moxUrl);
 
-        decksToProcess.push({
-          publicId: deckIdMox,
-          moxfieldUrl,
-          name: deckData.name || moxDeck.name || "Moxfield Deck",
-          includeBasicLands,
-          cardsMap,
-          commanders,
-          existingId: existingDeck ? existingDeck.id : null
-        });
-      } catch (deckErr) {
-        console.error(`Failed to fetch details for deck ${moxDeck.name || deckIdMox}:`, deckErr);
-        skippedDecks.push({ name: moxDeck.name || 'Moxfield Deck', error: `Fetch failed: ${deckErr.message}` });
-      }
+          const deckFormat = (deckData.format || moxDeck.format || 'commander').toLowerCase();
+          const mainboard = deckData.mainboard || {};
+          const commanders = deckData.commanders || {};
+          const includeBasicLands = deckData.includeBasicLandsInPrice === true;
+
+          const cardsMap = {};
+          
+          Object.keys(commanders).forEach(name => {
+            const cardObj = commanders[name];
+            let price = 0.10;
+            let scryfallId = null;
+            if (cardObj && cardObj.card) {
+              scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
+              if (cardObj.card.prices) {
+                const prices = cardObj.card.prices;
+                const usd = parseFloat(prices.usd) || parseFloat(prices.usd_foil) || parseFloat(prices.ck) || parseFloat(prices.ck_foil) || 0.10;
+                price = usd;
+              }
+            }
+            const qty = cardObj.quantity || 1;
+            cardsMap[name] = { price, qty, scryfallId, isCommander: 1, customTag: cardObj.customCategory || null };
+          });
+
+          Object.keys(mainboard).forEach(name => {
+            const cardObj = mainboard[name];
+            let price = 0.10;
+            let scryfallId = null;
+            if (cardObj && cardObj.card) {
+              scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
+              if (cardObj.card.prices) {
+                const prices = cardObj.card.prices;
+                const usd = parseFloat(prices.usd) || parseFloat(prices.usd_foil) || parseFloat(prices.ck) || parseFloat(prices.ck_foil) || 0.10;
+                price = usd;
+              }
+            }
+            if (isBasicLand(name) && !includeBasicLands) {
+              price = 0.00;
+            }
+            const qty = cardObj.quantity || 1;
+            if (cardsMap[name]) {
+              cardsMap[name].qty += qty;
+            } else {
+              cardsMap[name] = { price, qty, scryfallId, isCommander: 0, customTag: cardObj.customCategory || null };
+            }
+          });
+
+          decksToProcess.push({
+            publicId: deckIdMox,
+            moxfieldUrl,
+            name: deckData.name || moxDeck.name || "Moxfield Deck",
+            includeBasicLands,
+            cardsMap,
+            commanders,
+            format: deckFormat,
+            existingId: existingDeck ? existingDeck.id : null
+          });
+        } catch (deckErr) {
+          console.error(`Failed to fetch details for deck ${moxDeck.name || deckIdMox}:`, deckErr);
+          skippedDecks.push({ name: moxDeck.name || 'Moxfield Deck', error: `Fetch failed: ${deckErr.message}` });
+        }
+      }));
     }
 
     // 2. Resolve all unique card names across all decks in a single batch
@@ -1453,74 +1517,95 @@ app.post('/api/moxfield/import-account', async (req, res) => {
     const importedDecks = [];
     const activeSeason = await db.get("SELECT id FROM seasons WHERE is_active = 1");
 
-    // 3. Write each deck and its cards to DB, calculate total prices, and check legality
-    for (const d of decksToProcess) {
-      const deckId = d.existingId || ('d_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
-      
-      const cardNamesWithPrices = Object.keys(d.cardsMap).map(name => {
-        const card = d.cardsMap[name];
-        const details = resolvedDetails[name];
-        if (details) {
-          if (details.price !== undefined) card.price = details.price;
-          if (details.scryfallId) card.scryfallId = details.scryfallId;
+    // 3. Write each deck and its cards to DB inside a fast transaction
+    await db.run("BEGIN TRANSACTION");
+    try {
+      for (const d of decksToProcess) {
+        const deckId = d.existingId || ('d_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
+        
+        let totalPrice = 0;
+        const cardNamesWithPrices = Object.keys(d.cardsMap).map(name => {
+          const card = d.cardsMap[name];
+          const details = resolvedDetails[name];
+          if (details) {
+            if (details.price !== undefined) card.price = details.price;
+            if (details.scryfallId && !card.scryfallId) card.scryfallId = details.scryfallId;
+          }
+          if (isBasicLand(name) && !d.includeBasicLands) {
+            card.price = 0.00;
+          }
+          totalPrice += (card.price * card.qty);
+          return {
+            name,
+            price: card.price,
+            qty: card.qty,
+            scryfallId: card.scryfallId,
+            isCommander: card.isCommander,
+            customTag: card.customTag
+          };
+        });
+
+        totalPrice = parseFloat(totalPrice.toFixed(2));
+        const featuredCardName = computeFeaturedCard(d.commanders, cardNamesWithPrices);
+
+        if (d.existingId) {
+          await db.run(
+            `UPDATE decks SET player_id = ?, moxfield_url = COALESCE(moxfield_url, ?), deck_name = ?, cheapest_total_price = ?, last_checked = CURRENT_TIMESTAMP, featured_card_name = ?, include_basic_lands_in_price = ?, format = ?
+             WHERE id = ?`,
+            [req.session.player.id, d.moxfieldUrl, d.name, totalPrice, featuredCardName, d.includeBasicLands ? 1 : 0, d.format, deckId]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, budget_limit, featured_card_name, include_basic_lands_in_price, is_public, format)
+             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0, null, ?, ?, 0, ?)`,
+            [deckId, req.session.player.id, d.moxfieldUrl, d.name, totalPrice, featuredCardName, d.includeBasicLands ? 1 : 0, d.format]
+          );
         }
-        if (isBasicLand(name) && !d.includeBasicLands) {
-          card.price = 0.00;
+
+        // Save cards in bulk
+        await db.run("DELETE FROM deck_cards WHERE deck_id = ?", [deckId]);
+        
+        if (cardNamesWithPrices.length > 0) {
+          const placeholders = cardNamesWithPrices.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
+          const flatParams = [];
+          cardNamesWithPrices.forEach(c => {
+            flatParams.push(deckId, c.name, c.price, c.qty, c.scryfallId, c.isCommander, c.customTag);
+          });
+          await db.run(
+            `INSERT INTO deck_cards (deck_id, card_name, cheapest_card_price, quantity, scryfall_id, is_commander, custom_tag) VALUES ${placeholders}`,
+            flatParams
+          );
         }
-        return {
-          name,
-          price: card.price,
-          qty: card.qty,
-          scryfallId: card.scryfallId,
-          isCommander: card.isCommander,
-          customTag: card.customTag
-        };
-      });
 
-      // Save/Replace Deck row
-      await db.run(
-        `INSERT OR REPLACE INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, budget_limit, featured_card_name, include_basic_lands_in_price, is_public)
-         VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, 0, null, ?, ?, 0)`,
-        [deckId, req.session.player.id, d.moxfieldUrl, d.name, Object.keys(d.commanders)[0] || null, d.includeBasicLands ? 1 : 0]
-      );
+        // Initialize stats
+        if (activeSeason) {
+          await db.run(
+            "INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)",
+            [deckId, activeSeason.id]
+          );
+        }
 
-      // Save cards
-      await db.run("DELETE FROM deck_cards WHERE deck_id = ?", [deckId]);
-      for (const card of cardNamesWithPrices) {
+        const validation = await validateDeckLegality(deckId);
+        const isLegal = validation.isLegal ? 1 : 0;
+        const legalityReason = validation.reason || null;
+
         await db.run(
-          "INSERT INTO deck_cards (deck_id, card_name, cheapest_card_price, quantity, scryfall_id, is_commander, custom_tag) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [deckId, card.name, card.price, card.qty, card.scryfallId, card.isCommander, card.customTag]
+          "UPDATE decks SET is_legal = ?, legality_reason = ? WHERE id = ?",
+          [isLegal, legalityReason, deckId]
         );
+
+        importedDecks.push({
+          name: d.name,
+          moxfieldUrl: d.moxfieldUrl,
+          totalPrice,
+          isLegal: isLegal === 1,
+          legalityReason
+        });
       }
-
-      // Initialize stats
-      if (activeSeason) {
-        await db.run(
-          "INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)",
-          [deckId, activeSeason.id]
-        );
-      }
-
-      // Calculate total price and legality
-      const totalResult = await db.get("SELECT SUM(cheapest_card_price * quantity) as total FROM deck_cards WHERE deck_id = ?", [deckId]);
-      const totalPrice = parseFloat((totalResult.total || 0).toFixed(2));
-      
-      const validation = await validateDeckLegality(deckId);
-      const isLegal = validation.isLegal ? 1 : 0;
-      const legalityReason = validation.reason || null;
-
-      await db.run(
-        "UPDATE decks SET cheapest_total_price = ?, is_legal = ?, legality_reason = ? WHERE id = ?",
-        [totalPrice, isLegal, legalityReason, deckId]
-      );
-
-      importedDecks.push({
-        name: d.name,
-        moxfieldUrl: d.moxfieldUrl,
-        totalPrice,
-        isLegal: isLegal === 1,
-        legalityReason
-      });
+      await db.run("COMMIT");
+    } catch (txErr) {
+      await db.run("ROLLBACK");
+      throw txErr;
     }
 
     res.json({
@@ -2367,7 +2452,8 @@ app.get('/api/decks/my-decks', async (req, res) => {
     const decks = await db.query(
       `SELECT d.*, ds.total_points, ds.total_kills, ds.total_wins, ds.total_matches,
               (SELECT card_name FROM deck_cards WHERE deck_id = d.id AND is_commander = 1 LIMIT 1) AS commander_name,
-              (SELECT scryfall_id FROM deck_cards WHERE deck_id = d.id AND is_commander = 1 LIMIT 1) AS commander_scryfall_id
+              (SELECT scryfall_id FROM deck_cards WHERE deck_id = d.id AND is_commander = 1 LIMIT 1) AS commander_scryfall_id,
+              (SELECT scryfall_id FROM deck_cards WHERE deck_id = d.id AND card_name = d.featured_card_name LIMIT 1) AS featured_scryfall_id
        FROM decks d 
        LEFT JOIN deck_stats ds ON d.id = ds.deck_id
        WHERE d.player_id = ?`,
@@ -2386,6 +2472,30 @@ app.get('/api/decks/:deckId', async (req, res) => {
     if (!deck) return res.status(404).json({ error: "Deck not found" });
     res.json(deck);
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/decks/:deckId', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
+  const { deckId } = req.params;
+  const playerId = req.session.player.id;
+
+  try {
+    const deck = await db.get("SELECT id FROM decks WHERE id = ? AND player_id = ?", [deckId, playerId]);
+    if (!deck) {
+      return res.status(404).json({ error: "Deck not found or access denied." });
+    }
+
+    await db.run("DELETE FROM deck_cards WHERE deck_id = ?", [deckId]);
+    await db.run("DELETE FROM deck_likes WHERE deck_id = ?", [deckId]);
+    await db.run("DELETE FROM deck_comments WHERE deck_id = ?", [deckId]);
+    await db.run("DELETE FROM deck_stats WHERE deck_id = ?", [deckId]);
+    await db.run("DELETE FROM decks WHERE id = ?", [deckId]);
+
+    res.json({ success: true, message: "Deck deleted successfully." });
+  } catch (e) {
+    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -4576,19 +4686,23 @@ app.post('/api/decks/builder-save', async (req, res) => {
       allCards.push(cardObj);
     });
     
+    const commObj = {};
+    (commanderCards || []).forEach(c => { commObj[c.name] = c; });
+    const finalFeaturedCardName = featuredCardName || computeFeaturedCard(commObj, allCards);
+    
     if (isEditing) {
       await db.run(`
         UPDATE decks
         SET deck_name = ?, cheapest_total_price = ?, is_public = ?, featured_card_name = ?, format = ?, keep_cheapest = ?, custom_tags = ?, last_checked = CURRENT_TIMESTAMP
         WHERE id = ? AND player_id = ?
-      `, [deckName, parseFloat(totalPrice.toFixed(2)), finalIsPublic, featuredCardName || null, format || 'commander', finalKeepCheapest, JSON.stringify(customTags || []), targetDeckId, playerId]);
+      `, [deckName, parseFloat(totalPrice.toFixed(2)), finalIsPublic, finalFeaturedCardName, format || 'commander', finalKeepCheapest, JSON.stringify(customTags || []), targetDeckId, playerId]);
       
       await db.run("DELETE FROM deck_cards WHERE deck_id = ?", [targetDeckId]);
     } else {
       await db.run(`
         INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_public, featured_card_name, format, keep_cheapest, custom_tags)
         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)
-      `, [targetDeckId, playerId, 'visual-' + targetDeckId, deckName, parseFloat(totalPrice.toFixed(2)), finalIsPublic, featuredCardName || null, format || 'commander', finalKeepCheapest, JSON.stringify(customTags || [])]);
+      `, [targetDeckId, playerId, 'visual-' + targetDeckId, deckName, parseFloat(totalPrice.toFixed(2)), finalIsPublic, finalFeaturedCardName, format || 'commander', finalKeepCheapest, JSON.stringify(customTags || [])]);
     }
     
     for (let card of allCards) {

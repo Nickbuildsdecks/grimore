@@ -239,6 +239,9 @@ async function initDb() {
     await run("ALTER TABLE decks ADD COLUMN is_public INTEGER DEFAULT 1");
   } catch (e) {}
   try {
+    await run("ALTER TABLE decks ADD COLUMN format TEXT DEFAULT 'commander'");
+  } catch (e) {}
+  try {
     await run("ALTER TABLE decks ADD COLUMN budget_limit REAL");
   } catch (e) {}
   try {

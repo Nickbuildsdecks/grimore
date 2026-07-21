@@ -902,7 +902,7 @@
       <!-- Panel 1: Commander Showroom & Analytics -->
       <div style="display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 1.25rem; overflow: hidden; gap: 1rem;">
         <!-- Commander section (top 1/3) -->
-        <div style="flex: 0 0 33%; display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--border-light); padding-bottom: 1rem; overflow: hidden;">
+        <div id="inspector-commander-section" style="flex: 0 0 33%; display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--border-light); padding-bottom: 1rem; overflow: hidden;">
           <h4 style="font-size: 0.9rem; text-transform: uppercase; color: var(--text-medium); margin-top: 0; margin-bottom: 0.5rem; letter-spacing: 0.5px; font-weight: 700; flex-shrink: 0;">Commander</h4>
           <div id="inspector-commander-showroom" style="display: flex; flex-direction: row; gap: 0.5rem; align-items: center; justify-content: center; flex-grow: 1; overflow: hidden; min-height: 0;">
             <!-- Commander card images loaded dynamically -->
@@ -1146,9 +1146,9 @@
           <img src="logo.svg" alt="Grimore Logo" onclick="exitDeckbuilderView()" title="Return to Collection" style="width: 58px; height: 58px; border-radius: 50%; object-fit: cover; background: transparent; border: none; outline: none; box-shadow: none; cursor: pointer; margin-left: 6px; margin-top: 0; filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.75)); transition: transform 0.2s ease, filter 0.2s ease;" onmouseover="this.style.transform='scale(1.08)'; this.style.filter='drop-shadow(0 0 16px rgba(168, 85, 247, 0.95))';" onmouseout="this.style.transform='scale(1)'; this.style.filter='drop-shadow(0 0 10px rgba(168, 85, 247, 0.75))';">
         </div>
 
-        <!-- Command Zone drop area (Left Top) -->
-        <div class="panel" style="background: var(--bg-dark); border-color: var(--border-light); margin: 0; padding: 0.25rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; flex-shrink: 0; min-height: 200px;" ondragover="allowDrop(event)" ondrop="handleDropCommander(event)">
-          <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--color-secondary); margin: 0; letter-spacing: 0.5px; font-weight: 700; width: 100%; text-align: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.25rem;">Commander</div>
+        <!-- Command Zone / Featured Card area (Left Top) -->
+        <div id="builder-commander-panel" class="panel" style="background: var(--bg-dark); border-color: var(--border-light); margin: 0; padding: 0.25rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; flex-shrink: 0; min-height: 200px;" ondragover="allowDrop(event)" ondrop="handleDropCommander(event)">
+          <div id="builder-commander-panel-title" style="font-size: 0.75rem; text-transform: uppercase; color: var(--color-secondary); margin: 0; letter-spacing: 0.5px; font-weight: 700; width: 100%; text-align: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.25rem;">Commander</div>
           <div id="builder-commander-image-container" style="display: flex; flex-direction: column; gap: 0.35rem; justify-content: center; width: 100%; flex-grow: 1; min-height: 180px; align-items: center;">
             <span style="color:var(--text-muted); font-size:0.75rem; text-align: center;">Drag commanders here.</span>
           </div>
@@ -1192,30 +1192,31 @@
       <div class="deckbuilder-col-decklist panel" style="background-color: var(--bg-dark); border-color: var(--border-light); display: flex; flex-direction: column; height: 100%; overflow: hidden; margin: 0; padding: 1.25rem;">
         <div style="display: flex; flex-shrink: 0; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem; width: 100%; flex-direction: column; gap: 0.5rem;">
           <!-- Visible controls (Centered 3-part layout) -->
-          <div style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; width: 100%; gap: 0.75rem;">
+          <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 0.75rem;">
             <!-- Left side essential inputs -->
-            <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: nowrap; flex-shrink: 0;">
               <input type="text" id="builder-deck-name" class="input-field" placeholder="Deck Name" style="width: 140px; height: 28px; margin: 0; padding: 0 0.5rem; font-size: 0.75rem; font-weight: 600; background: var(--bg-surface);" value="My Custom Deck" oninput="window.debouncedAutoSave()">
-              <button type="button" class="btn btn-gold btn-sm" onclick="openCardSearchModal()" style="height: 28px; font-size: 0.75rem; padding: 0 0.6rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--radius-sm); margin: 0;">🔍 Search</button>
-              <button id="builder-suggestions-btn" type="button" class="btn btn-secondary btn-sm" onclick="openSuggestionsPage()" style="height: 28px; font-size: 0.75rem; padding: 0 0.6rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--radius-sm); margin: 0;" title="Get card suggestions from EDHREC">💡 Suggestions</button>
+              <button type="button" class="btn btn-gold btn-sm" onclick="openCardSearchModal()" style="height: 28px; font-size: 0.75rem; padding: 0 0.65rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; border-radius: var(--radius-sm); margin: 0;"><svg viewBox="0 0 24 24" style="width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search</button>
+              <button id="builder-suggestions-btn" type="button" class="btn btn-secondary btn-sm" onclick="openSuggestionsPage()" style="height: 28px; font-size: 0.75rem; padding: 0 0.65rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; border-radius: var(--radius-sm); margin: 0;" title="Get card suggestions from EDHREC"><svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: #f59e0b; stroke: #f59e0b; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1.55.59 2.94 1.5 4 .76.76 1.23 1.52 1.41 2.5z"/></svg> Suggestions</button>
+              <button type="button" id="builder-settings-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleBuilderAdvancedSettings()" style="height: 28px; font-size: 0.75rem; font-weight: 700; margin: 0; padding: 0 0.65rem; display: inline-flex; align-items: center; gap: 0.35rem;" title="Advanced Deck Settings">
+                <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: #9ca3af; stroke: none; flex-shrink: 0;"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg>
+                Advanced
+              </button>
             </div>
 
-            <!-- Center: Tripled-width Centered Quick Add Search Bar -->
-            <div id="quick-add-container" style="position: relative; display: flex; align-items: center; justify-content: center; width: 100%; max-width: 520px; margin: 0 auto;">
-              <input type="text" id="quick-add-input" class="input-field" placeholder="Add card to deck..." autocomplete="off" style="width: 100%; height: 28px; margin: 0; padding: 0 0.75rem 0 2rem; font-size: 0.78rem; background: var(--bg-surface); border: 1px solid var(--border-medium); border-radius: var(--radius-sm);" oninput="window.handleQuickAddInput(event)" onkeydown="window.handleQuickAddKeyDown(event)" onfocus="window.handleQuickAddFocus(event)" onblur="setTimeout(() => window.closeQuickAddDropdown(), 250)">
+            <!-- Center: 60% Width Centered Quick Add Search Bar -->
+            <div id="quick-add-container" style="position: relative; display: flex; align-items: center; justify-content: center; flex: 0 1 374px; width: 100%; max-width: 374px; min-width: 240px; margin: 0 0.5rem;">
+              <input type="text" id="quick-add-input" class="input-field" placeholder="Add card to deck..." autocomplete="off" style="width: 100%; height: 28px; margin: 0; padding: 0 0.75rem 0 2rem; font-size: 0.78rem; background: var(--bg-surface); border: 1px solid var(--border-medium); border-radius: var(--radius-sm); outline: none;" oninput="window.handleQuickAddInput(event)" onkeydown="window.handleQuickAddKeyDown(event)" onfocus="window.handleQuickAddFocus(event)" onblur="setTimeout(() => window.closeQuickAddDropdown(), 250)">
               <svg viewBox="0 0 24 24" aria-hidden="true" style="position: absolute; left: 10px; width: 14px; height: 14px; fill: none; stroke: var(--text-muted); stroke-width: 2.2; stroke-linecap: round; pointer-events: none;"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
               <div id="quick-add-dropdown" style="display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; max-height: 320px; overflow-y: auto; background: rgba(12, 13, 20, 0.98); border: 1px solid var(--color-primary); border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0,0,0,0.65); z-index: 9999; backdrop-filter: blur(10px); padding: 4px 0;"></div>
             </div>
 
-            <!-- Right side essential details and settings toggle -->
-            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <!-- Right side essential details -->
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; margin-left: auto;">
               <div style="display:flex; align-items:center; gap:0.2rem; font-size:0.7rem; font-weight:700; color:var(--text-high);">
                 <span style="font-size:0.875rem; color:var(--text-muted);">Cards:</span>
                 <span id="builder-card-count" style="color: var(--color-primary); font-size: 0.78rem;">0</span>
               </div>
-              <button type="button" id="builder-settings-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleBuilderAdvancedSettings()" style="height: 28px; font-size: 0.75rem; font-weight: 700; margin: 0; padding: 0 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
-                ⚙️ Settings
-              </button>
             </div>
           </div>
 
@@ -1231,7 +1232,7 @@
               
               <div style="display: flex; flex-direction: column; gap: 2px;">
                 <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Format</span>
-                <select id="builder-deck-format" class="input-field" style="width: 95px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem;" onchange="validateBuilderDeckLegality(); window.triggerAutoSave()">
+                <select id="builder-deck-format" class="input-field" style="width: 95px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem;" onchange="renderBuilderDecklist(); window.triggerAutoSave()">
                   <option value="commander" selected>Commander</option>
                   <option value="standard">Standard</option>
                   <option value="modern">Modern</option>
@@ -1243,14 +1244,14 @@
 
               <div style="display: flex; flex-direction: column; gap: 2px;">
                 <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Visibility</span>
-                <button id="builder-is-public-btn" class="btn btn-secondary btn-sm" onclick="toggleBuilderPublic()" style="height: 26px; font-weight: 600; font-size: 0.72rem; min-width: 65px; padding: 0 0.4rem; margin: 0;">🌐 Public</button>
+                <button id="builder-is-public-btn" class="btn btn-secondary btn-sm" onclick="toggleBuilderPublic()" style="height: 26px; font-weight: 600; font-size: 0.72rem; min-width: 75px; padding: 0 0.5rem; margin: 0; display: inline-flex; align-items: center; gap: 0.3rem;"><svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Public</button>
               </div>
 
               <div style="display: flex; flex-direction: column; gap: 2px;">
                 <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Pricing Version</span>
                 <select id="builder-card-versions" class="input-field" style="width: 100px; height: 26px; margin: 0; background: var(--bg-surface); padding: 0 0.25rem; font-size: 0.72rem; font-weight: 600;" onchange="window.changeBuilderCardVersions(this.value)" title="Choose card pricing update behavior">
-                  <option value="cheapest">🏷️ Cheapest</option>
-                  <option value="chosen">🏷️ Chosen</option>
+                  <option value="cheapest">Cheapest</option>
+                  <option value="chosen">Chosen</option>
                 </select>
               </div>
               <input type="checkbox" id="builder-keep-cheapest" onchange="window.triggerAutoSave()" style="display: none;">
@@ -1258,15 +1259,22 @@
               <div style="display: flex; flex-direction: column; gap: 2px;">
                 <span style="font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Actions</span>
                 <div style="display: flex; gap: 0.35rem; align-items: center;">
-                  <div id="builder-update-cheapest-container" style="display: flex; align-items: center; min-width: 105px; height: 26px; position: relative; margin: 0;">
-                    <button id="builder-update-cheapest-btn" class="btn btn-gold btn-sm" onclick="reloadCheapestCardVersions()" style="height: 26px; font-weight: 600; width: 100%; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Search live Scryfall database for cheapest prints">🏷️ Update Cheapest</button>
+                  <div id="builder-update-cheapest-container" style="display: flex; align-items: center; min-width: 115px; height: 26px; position: relative; margin: 0;">
+                    <button id="builder-update-cheapest-btn" class="btn btn-gold btn-sm" onclick="reloadCheapestCardVersions()" style="height: 26px; font-weight: 600; width: 100%; margin: 0; font-size: 0.72rem; padding: 0 0.5rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.3rem;" title="Search live Scryfall database for cheapest prints"><svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><circle cx="12" cy="12" r="10"/><path d="M16 8l-8 8"/><path d="M12 16h4v-4"/></svg> Update Cheapest</button>
                     <div id="builder-reload-progress-container" style="display: none; width: 100%; height: 26px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; position: relative; align-items: center; justify-content: center;">
                       <div id="builder-reload-progress-bar" style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transform: scaleX(0); transform-origin: left; transition: transform 0.1s ease; z-index: 1;"></div>
                       <span id="builder-reload-progress-text" style="z-index: 2; font-size: 0.6rem; font-weight: 700; color: var(--text-pure); text-shadow: 0 1px 2px rgba(0,0,0,0.85);">0%</span>
                     </div>
                   </div>
-                  <button id="builder-reload-btn" class="btn btn-secondary btn-sm" onclick="reloadBuilderDeckState()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Reload deck data from database">🔄 Reload</button>
-                  <button id="builder-autotag-btn" class="btn btn-gold btn-sm" onclick="autoTagBuilderDeck()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.4rem;" title="Automatically classify cards using Scryfall tags">🏷️ Auto Tag</button>
+                  <div id="builder-reload-deck-container" style="display: flex; align-items: center; min-width: 85px; height: 26px; position: relative; margin: 0;">
+                    <button id="builder-reload-btn" class="btn btn-secondary btn-sm" onclick="reloadBuilderDeckState()" style="height: 26px; font-weight: 600; width: 100%; margin: 0; font-size: 0.72rem; padding: 0 0.5rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.3rem;" title="Reload deck data from database"><svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Reload</button>
+                    <div id="builder-reload-deck-progress-container" style="display: none; width: 100%; height: 26px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; position: relative; align-items: center; justify-content: center;">
+                      <div id="builder-reload-deck-progress-bar" style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transform: scaleX(0); transform-origin: left; transition: transform 0.1s ease; z-index: 1;"></div>
+                      <span id="builder-reload-deck-progress-text" style="z-index: 2; font-size: 0.6rem; font-weight: 700; color: var(--text-pure); text-shadow: 0 1px 2px rgba(0,0,0,0.85);">0%</span>
+                    </div>
+                  </div>
+                  <button id="builder-autotag-btn" class="btn btn-gold btn-sm" onclick="autoTagBuilderDeck()" style="height: 26px; font-weight: 600; margin: 0; font-size: 0.72rem; padding: 0 0.5rem; display: inline-flex; align-items: center; gap: 0.3rem;" title="Automatically classify cards using Scryfall tags"><svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg> Auto Tag</button>
+                  <button id="builder-delete-btn" class="btn btn-danger btn-sm" onclick="window.promptDeleteDeckFromBuilder()" style="height: 26px; font-weight: 700; margin: 0; font-size: 0.72rem; padding: 0 0.5rem; background: #ef4444; border-color: #ef4444; color: #000000; display: inline-flex; align-items: center; gap: 0.3rem;" title="Permanently delete this deck"><svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: #000000; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg> Delete Deck</button>
                 </div>
               </div>
             </div>
