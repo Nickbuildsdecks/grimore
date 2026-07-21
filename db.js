@@ -337,6 +337,60 @@ async function initDb() {
     )
   `);
 
+  // Per-player preferences for individual Scryfall printings/art treatments.
+  // A vote is intentionally scoped to a printing ID instead of a card name so
+  // alternate artwork, frames, and promos can be rated independently.
+  await run(`
+    CREATE TABLE IF NOT EXISTS card_art_votes (
+      player_id TEXT NOT NULL,
+      scryfall_id TEXT NOT NULL,
+      card_name TEXT NOT NULL,
+      vote INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (player_id, scryfall_id),
+      FOREIGN KEY(player_id) REFERENCES players(id)
+    )
+  `);
+  await run(`
+    CREATE INDEX IF NOT EXISTS idx_card_art_votes_card_name
+    ON card_art_votes(card_name)
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS artist_follows (
+      player_id TEXT NOT NULL,
+      artist_key TEXT NOT NULL,
+      artist_name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (player_id, artist_key),
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    )
+  `);
+  await run(`
+    CREATE INDEX IF NOT EXISTS idx_artist_follows_player
+    ON artist_follows(player_id)
+  `);
+
+  // Small preference cache used to substitute a followed illustrator's
+  // printing in search results without issuing per-card Scryfall requests.
+  await run(`
+    CREATE TABLE IF NOT EXISTS followed_artist_printings (
+      card_name TEXT NOT NULL,
+      scryfall_id TEXT NOT NULL,
+      artist_key TEXT NOT NULL,
+      artist_name TEXT NOT NULL,
+      image_uri TEXT NOT NULL,
+      set_name TEXT DEFAULT '',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (card_name, scryfall_id)
+    )
+  `);
+  await run(`
+    CREATE INDEX IF NOT EXISTS idx_followed_artist_printings_lookup
+    ON followed_artist_printings(card_name, artist_key)
+  `);
+
   // Create Deck Comments Table
   await run(`
     CREATE TABLE IF NOT EXISTS deck_comments (

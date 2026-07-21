@@ -210,7 +210,7 @@
       item.style.transition = 'all 0.2s ease';
 
       if (cat.tag === selectedCategoryTag) {
-        item.style.background = 'rgba(168, 85, 247, 0.1)';
+        item.style.background = 'rgba(217, 169, 78, 0.1)';
         item.style.color = 'var(--text-pure)';
         item.style.outline = '1px solid var(--color-primary)';
         item.style.outlineOffset = '-1px';
@@ -222,7 +222,7 @@
 
       item.innerHTML = `
         <span>${cat.header}</span>
-        <span class="category-badge" style="background: rgba(168,85,247,0.15); color: var(--color-primary); font-size: 0.68rem; padding: 1px 6px; border-radius: 10px; font-weight: 700;">${filteredCount}</span>
+        <span class="category-badge" style="background: rgba(217, 169, 78,0.15); color: var(--color-primary); font-size: 0.68rem; padding: 1px 6px; border-radius: 10px; font-weight: 700;">${filteredCount}</span>
       `;
 
       item.onclick = () => selectCategory(cat.tag, item);
@@ -243,14 +243,14 @@
     });
 
     if (element) {
-      element.style.background = 'rgba(168, 85, 247, 0.1)';
+      element.style.background = 'rgba(217, 169, 78, 0.1)';
       element.style.color = 'var(--text-pure)';
       element.style.outline = '1px solid var(--color-primary)';
       element.style.outlineOffset = '-1px';
     } else {
       const targetEl = document.querySelector(`.filters-sidebar-group[data-tag="${tag}"]`);
       if (targetEl) {
-        targetEl.style.background = 'rgba(168, 85, 247, 0.1)';
+        targetEl.style.background = 'rgba(217, 169, 78, 0.1)';
         targetEl.style.color = 'var(--text-pure)';
         targetEl.style.outline = '1px solid var(--color-primary)';
         targetEl.style.outlineOffset = '-1px';
@@ -277,11 +277,11 @@
     const btn = document.getElementById('btn-zoom-toggle');
     if (btn) {
       if (suggestionsZoomed) {
-        btn.textContent = '🔍 Zoom Out';
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg> Zoom Out';
         btn.classList.add('btn-primary');
         btn.classList.remove('btn-secondary');
       } else {
-        btn.textContent = '🔍 Zoom In';
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg> Zoom In';
         btn.classList.add('btn-secondary');
         btn.classList.remove('btn-primary');
       }
@@ -339,17 +339,17 @@
 
       const cardEl = document.createElement('div');
       cardEl.className = 'search-card-item';
-      cardEl.style.cssText = 'position: relative !important; border-radius: 8px !important; overflow: hidden !important; background: rgba(12, 13, 20, 0.4) !important; border: 1px solid rgba(168, 85, 247, 0.15) !important; transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important; cursor: pointer !important; width: 100% !important; display: flex !important; flex-direction: column !important; box-sizing: border-box !important; container-type: inline-size;';
+      cardEl.style.cssText = 'position: relative !important; border-radius: 8px !important; overflow: hidden !important; background: rgba(19, 16, 12, 0.4) !important; border: 1px solid rgba(217, 169, 78, 0.15) !important; transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important; cursor: pointer !important; width: 100% !important; display: flex !important; flex-direction: column !important; box-sizing: border-box !important; container-type: inline-size;';
 
       cardEl.onmouseover = function() {
         this.style.transform = 'translateY(-4px)';
         this.style.boxShadow = '0 8px 16px rgba(0,0,0,0.3)';
-        this.style.borderColor = 'rgba(168, 85, 247, 0.35)';
+        this.style.borderColor = 'rgba(217, 169, 78, 0.35)';
       };
       cardEl.onmouseout = function() {
         this.style.transform = 'none';
         this.style.boxShadow = 'none';
-        this.style.borderColor = 'rgba(168, 85, 247, 0.15)';
+        this.style.borderColor = 'rgba(217, 169, 78, 0.15)';
       };
 
       cardEl.onclick = function() {
@@ -361,7 +361,7 @@
                           activeDeckCommander.reduce((acc, c) => c.name.toLowerCase() === card.name.toLowerCase() ? acc + c.quantity : acc, 0);
 
       const inDeckBadge = qtyInTarget > 0 ? `
-        <div style="position: absolute; top: 6px; left: 6px; background: rgba(245, 158, 11, 0.9) !important; border: 1px solid rgba(245, 158, 11, 0.4) !important; color: white !important; font-family: 'Outfit', sans-serif !important; font-size: 0.62rem !important; font-weight: 800 !important; padding: 2px 6px !important; border-radius: 4px !important; box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important; z-index: 5 !important; text-transform: uppercase !important; pointer-events: none !important;">
+        <div style="position: absolute; top: 6px; left: 6px; background: rgba(217, 169, 78, 0.9) !important; border: 1px solid rgba(217, 169, 78, 0.4) !important; color: white !important; font-family: 'Outfit', sans-serif !important; font-size: 0.62rem !important; font-weight: 800 !important; padding: 2px 6px !important; border-radius: 4px !important; box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important; z-index: 5 !important; text-transform: uppercase !important; pointer-events: none !important;">
           ${qtyInTarget} in Deck
         </div>
       ` : '';
@@ -380,9 +380,9 @@
                onerror="this.src='logo.svg'">
         </div>
         <!-- Footer row with Add Button & Price Badge scaling dynamically -->
-        <div style="display: flex !important; align-items: center !important; gap: 4cqw !important; padding: 4cqw !important; background: rgba(12, 13, 20, 0.9) !important; border-top: 1px solid rgba(168, 85, 247, 0.2) !important; box-sizing: border-box !important; width: 100% !important;" onclick="event.stopPropagation();">
+        <div style="display: flex !important; align-items: center !important; gap: 4cqw !important; padding: 4cqw !important; background: rgba(19, 16, 12, 0.9) !important; border-top: 1px solid rgba(217, 169, 78, 0.2) !important; box-sizing: border-box !important; width: 100% !important;" onclick="event.stopPropagation();">
           <button type="button" class="btn btn-primary" onclick="window.addSuggestionToDeck(${JSON.stringify(card).replace(/'/g, "&apos;")}, this)" style="width: 18cqw !important; height: 18cqw !important; padding: 0 !important; font-size: 10cqw !important; display: flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; border-radius: 50% !important; margin: 0 !important; border: 1px solid rgba(255,255,255,0.25) !important; background: var(--color-primary) !important; color: white !important; box-shadow: 0 2px 8px rgba(0,0,0,0.6) !important; cursor: pointer !important; transition: transform 0.15s ease;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='none'" title="Add to target deck">+</button>
-          <div style="background: rgba(12, 13, 20, 0.85) !important; border: 1px solid rgba(168, 85, 247, 0.35) !important; padding: 0 4cqw !important; border-radius: 3cqw !important; display: flex !important; align-items: center !important; height: 18cqw !important; box-sizing: border-box !important; justify-content: center !important;">
+          <div style="background: rgba(19, 16, 12, 0.85) !important; border: 1px solid rgba(217, 169, 78, 0.35) !important; padding: 0 4cqw !important; border-radius: 3cqw !important; display: flex !important; align-items: center !important; height: 18cqw !important; box-sizing: border-box !important; justify-content: center !important;">
             <span style="font-size: 7cqw !important; color: var(--color-secondary) !important; font-weight: 700 !important; white-space: nowrap !important;">$${Number(card.price || 0.15).toFixed(2)}</span>
           </div>
         </div>
@@ -580,7 +580,7 @@
         item.style.padding = '0.35rem 0.5rem';
         item.style.borderRadius = 'var(--radius-sm)';
         item.style.background = 'rgba(255,255,255,0.01)';
-        item.style.border = '1px solid rgba(168, 85, 247, 0.08)';
+        item.style.border = '1px solid rgba(217, 169, 78, 0.08)';
         item.style.fontSize = '0.72rem';
         item.style.cursor = 'pointer';
 
@@ -631,7 +631,7 @@
         const item = document.createElement('div');
         item.style.padding = '0.5rem';
         item.style.background = 'rgba(255, 255, 255, 0.02)';
-        item.style.border = '1px solid rgba(168, 85, 247, 0.08)';
+        item.style.border = '1px solid rgba(217, 169, 78, 0.08)';
         item.style.borderRadius = 'var(--radius-sm)';
         item.style.fontSize = '0.72rem';
         item.style.lineHeight = '1.35';

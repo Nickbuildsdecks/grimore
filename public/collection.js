@@ -286,7 +286,7 @@
     activeTheme = theme;
     const colors = {
       purple: { primary: '#a855f7', border: 'rgba(168, 85, 247, 0.3)' },
-      gold: { primary: '#f59e0b', border: 'rgba(245, 158, 11, 0.3)' },
+      gold: { primary: '#d9a94e', border: 'rgba(217, 169, 78, 0.3)' },
       green: { primary: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
       blue: { primary: '#2563eb', border: 'rgba(37, 99, 235, 0.3)' }
     };
@@ -526,7 +526,7 @@
 
         cardEl.onmouseover = function() {
           this.style.borderColor = 'var(--color-primary)';
-          this.style.boxShadow = '0 8px 24px rgba(168, 85, 247, 0.18)';
+          this.style.boxShadow = '0 8px 24px rgba(217, 169, 78, 0.18)';
         };
         cardEl.onmouseout = function() {
           this.style.borderColor = 'var(--border-light)';
@@ -537,7 +537,7 @@
         const qtyBadge = `<div style="position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,0.85); color: var(--color-primary); font-size: 0.72rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; z-index: 10; border: 1px solid var(--border-medium);">x${c.quantity}</div>`;
         
         // Foil badge
-        const foilBadge = c.is_foil === 1 ? `<div style="position: absolute; top: 6px; right: 6px; background: linear-gradient(135deg, #f59e0b, #ec4899); color: white; font-size: 0.65rem; font-weight: 800; padding: 1px 5px; border-radius: 4px; z-index: 10; box-shadow: 0 2px 6px rgba(0,0,0,0.5);">FOIL</div>` : '';
+        const foilBadge = c.is_foil === 1 ? `<div style="position: absolute; top: 6px; right: 6px; background: linear-gradient(135deg, #d9a94e, #ec4899); color: white; font-size: 0.65rem; font-weight: 800; padding: 1px 5px; border-radius: 4px; z-index: 10; box-shadow: 0 2px 6px rgba(0,0,0,0.5);">FOIL</div>` : '';
 
         // For Trade badge
         const tradeBadge = c.is_for_trade === 1 ? `<div style="position: absolute; bottom: 38px; left: 6px; background: rgba(16, 185, 129, 0.9); color: black; font-size: 0.65rem; font-weight: 800; padding: 1px 5px; border-radius: 4px; z-index: 10; display: flex; align-items: center; gap: 2px;">♻️ Trade</div>` : '';
@@ -546,7 +546,7 @@
           ${qtyBadge}
           ${foilBadge}
           ${tradeBadge}
-          <div class="search-card-image-wrap" style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #121212; position: relative;" data-card-name="${c.card_name}">
+          <div class="search-card-image-wrap" style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #141210; position: relative;" data-card-name="${c.card_name}">
             <img src="${imgUrl}" alt="${c.card_name}" loading="lazy" style="width: 100%; height: 100%; object-fit: contain; transition: transform 0.2s ease;"
                  onmouseover="this.style.transform='scale(1.03)'"
                  onmouseout="this.style.transform='none'"
@@ -586,7 +586,7 @@
         rowEl.style.border = '1px solid var(--border-light)';
         rowEl.style.borderRadius = 'var(--radius-sm)';
 
-        const foilSpan = c.is_foil === 1 ? `<span style="background: linear-gradient(135deg, #f59e0b, #ec4899); color: white; font-size: 0.6rem; padding: 1px 4px; border-radius: 3px; font-weight: 800;">FOIL</span>` : '';
+        const foilSpan = c.is_foil === 1 ? `<span style="background: linear-gradient(135deg, #d9a94e, #ec4899); color: white; font-size: 0.6rem; padding: 1px 4px; border-radius: 3px; font-weight: 800;">FOIL</span>` : '';
         const tradeSpan = c.is_for_trade === 1 ? `<span style="background: rgba(16,185,129,0.2); border: 1px solid #10b981; color: #10b981; font-size: 0.6rem; padding: 1px 4px; border-radius: 3px; font-weight: 800;">♻️ TRADE</span>` : '';
 
         rowEl.innerHTML = `
@@ -809,7 +809,7 @@
               div.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
               div.style.color = 'var(--text-pure)';
               
-              div.onmouseover = function() { this.style.background = 'rgba(168, 85, 247, 0.15)'; };
+              div.onmouseover = function() { this.style.background = 'rgba(217, 169, 78, 0.15)'; };
               div.onmouseout = function() { this.style.background = 'transparent'; };
               
               div.textContent = item;

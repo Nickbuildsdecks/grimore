@@ -1,4 +1,12 @@
-FROM node:18-slim
+FROM node:22-slim AS web-build
+
+WORKDIR /app/web
+COPY web/package*.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+FROM node:22-slim
 
 # Create app directory
 WORKDIR /app
@@ -8,10 +16,11 @@ COPY package*.json ./
 
 # Install dependencies (including packages required to build sqlite3 if native build fails)
 RUN apt-get update && apt-get install -y python3 make g++ unzip && rm -rf /var/lib/apt/lists/*
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 # Copy rest of the code
 COPY . .
+COPY --from=web-build /app/web/dist ./web/dist
 
 # Expose port
 EXPOSE 3000

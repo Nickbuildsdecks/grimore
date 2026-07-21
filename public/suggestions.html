@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Grimore</title>
   <meta name="description" content="EDHREC card recommendations and synergy stats for your deck builder.">
   <link rel="icon" type="image/svg+xml" href="logo.svg">
@@ -15,7 +15,7 @@
     }
   </script>
   <!-- Fullscreen Background Canvas for Logged In Views -->
-  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; background: #050508;"></canvas>
+  <canvas id="app-bg-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; background: #0a0806;"></canvas>
 
   <!-- Top Progress Bar -->
   <div id="top-progress-bar" style="position: fixed; top: 0; left: 0; height: 3px; background: var(--color-primary); width: 100%; transform: scaleX(0); transform-origin: left; transition: transform 0.3s ease, opacity 0.3s ease; opacity: 0; z-index: 9999; pointer-events: none;"></div>
@@ -28,7 +28,7 @@
       <div style="display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; box-sizing: border-box; width: 100%;">
 
         <!-- Row 1: Suggestions Header -->
-        <header class="suggestions-header-bar" style="display: flex; gap: 1rem; align-items: center; background: rgba(12, 13, 20, 0.45); border-bottom: 1px solid rgba(168, 85, 247, 0.25); padding: 0.6rem 1.25rem; flex-shrink: 0; backdrop-filter: blur(8px); box-shadow: 0 4px 20px rgba(0,0,0,0.15); min-height: 64px; height: auto; box-sizing: border-box; width: 100%; flex-wrap: wrap; position: relative;">
+        <header class="suggestions-header-bar" style="display: flex; gap: 1rem; align-items: center; background: rgba(19, 16, 12, 0.45); border-bottom: 1px solid rgba(217, 169, 78, 0.25); padding: 0.6rem 1.25rem; flex-shrink: 0; backdrop-filter: blur(8px); box-shadow: 0 4px 20px rgba(0,0,0,0.15); min-height: 64px; height: auto; box-sizing: border-box; width: 100%; flex-wrap: wrap; position: relative;">
 
           <!-- Left: Logo / Back Button -->
           <div style="display: flex; align-items: center; gap: 1rem; z-index: 2;">
@@ -63,8 +63,8 @@
         <div class="search-split-container" style="display: flex; flex-grow: 1; overflow: hidden; height: 100%; width: 100%;">
 
           <!-- Left: Categories Sidebar -->
-          <div id="suggestions-categories-panel" class="search-filters-sidebar" style="display: flex; flex-direction: column; width: 240px; border-radius: 0; border-top: none; border-bottom: none; border-left: none; height: 100%; flex-shrink: 0; background: rgba(10, 10, 15, 0.5); backdrop-filter: blur(10px); border-right: 1px solid rgba(168, 85, 247, 0.15);">
-            <div class="filters-sidebar-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.15); padding: 0.8rem 1rem;">
+          <div id="suggestions-categories-panel" class="search-filters-sidebar" style="display: flex; flex-direction: column; width: 240px; border-radius: 0; border-top: none; border-bottom: none; border-left: none; height: 100%; flex-shrink: 0; background: rgba(16, 13, 10, 0.5); backdrop-filter: blur(10px); border-right: 1px solid rgba(217, 169, 78, 0.15);">
+            <div class="filters-sidebar-header" style="border-bottom: 1px solid rgba(217, 169, 78, 0.15); padding: 0.8rem 1rem;">
               <h4 style="margin: 0; font-weight: 700; color: var(--text-pure); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Categories</h4>
             </div>
 
@@ -77,7 +77,7 @@
           <!-- Middle: Suggestions Results -->
           <div class="search-results-section" style="flex-grow: 1; display: flex; flex-direction: column; height: 100%; overflow: hidden; background: transparent;">
             <!-- Category Header -->
-            <div class="suggestions-results-toolbar" style="display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.25rem; background: rgba(12, 13, 20, 0.2); border-bottom: 1px solid rgba(168, 85, 247, 0.1); flex-shrink: 0;">
+            <div class="suggestions-results-toolbar" style="display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.25rem; background: rgba(19, 16, 12, 0.2); border-bottom: 1px solid rgba(217, 169, 78, 0.1); flex-shrink: 0;">
               <div>
                 <h2 id="current-category-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: var(--text-pure);">Select a Category</h2>
                 <span id="current-category-count" style="font-size: 0.875rem; color: var(--text-muted);">0 cards found</span>
@@ -85,7 +85,7 @@
               <!-- Zoom Toggle Option -->
               <div style="display: flex; align-items: center; gap: 0.6rem;">
                 <button id="btn-zoom-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleSuggestionsZoom()" style="margin: 0; display: flex; align-items: center; gap: 0.3rem; font-weight: 600; padding: 2px 8px; font-size: 0.7rem; border-radius: 4px; height: 24px;">
-                  🔍 Zoom In
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg> Zoom In
                 </button>
               </div>
             </div>
@@ -116,7 +116,7 @@
             <div class="drawer-body">
               <!-- Visual Card Frame -->
               <div style="position: relative; margin-bottom: 1rem; border-radius: var(--radius-md); overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
-                <img id="inspector-card-img" src="logo.svg" alt="Card Artwork" style="width: 100%; display: block; aspect-ratio: 2.5/3.5; object-fit: contain; background: #0c0d14;" onerror="this.src='logo.svg'">
+                <img id="inspector-card-img" src="logo.svg" alt="Card Artwork" style="width: 100%; display: block; aspect-ratio: 2.5/3.5; object-fit: contain; background: #110e09;" onerror="this.src='logo.svg'">
 
                 <!-- Double Faced Flip Trigger Overlay -->
                 <div id="inspector-flip-overlay" style="display: none; position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); border: 1px solid var(--border-color); border-radius: 50%; width: 36px; height: 36px; align-items: center; justify-content: center; cursor: pointer; z-index: 10;" onclick="window.toggleInspectorCardFace()" title="Flip Card">
@@ -125,7 +125,7 @@
               </div>
 
               <!-- General Info Grid -->
-              <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(168, 85, 247, 0.15); border-radius: var(--radius-sm); padding: 0.75rem; margin-bottom: 0.75rem;">
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(217, 169, 78, 0.15); border-radius: var(--radius-sm); padding: 0.75rem; margin-bottom: 0.75rem;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
                   <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 600;">Type:</span>
                   <span id="inspector-type" style="font-size: 0.72rem; color: var(--text-high); font-weight: 600; text-align: right;">-</span>
@@ -167,10 +167,10 @@
   </div>
 
   <!-- Global Arcane Progress Overlay -->
-  <div id="arcane-progress-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(5,5,8,0.7); backdrop-filter: blur(15px); z-index: 99999; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; pointer-events: auto;">
+  <div id="arcane-progress-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(9, 7, 5,0.7); backdrop-filter: blur(15px); z-index: 99999; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; pointer-events: auto;">
     <div style="position: relative; width: 100px; height: 100px;">
       <svg width="100" height="100" viewBox="0 0 100 100" style="transform: rotate(-90deg);">
-        <circle cx="50" cy="50" r="42" stroke="rgba(168, 85, 247, 0.15)" stroke-width="6" fill="transparent"/>
+        <circle cx="50" cy="50" r="42" stroke="rgba(217, 169, 78, 0.15)" stroke-width="6" fill="transparent"/>
         <circle id="arcane-progress-ring" cx="50" cy="50" r="42" stroke="url(#arcane-ring-gradient)" stroke-width="6" fill="transparent" stroke-dasharray="263.89" stroke-dashoffset="263.89" style="transition: stroke-dashoffset 0.1s ease;"/>
         <defs>
           <linearGradient id="arcane-ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -182,7 +182,7 @@
       <div id="arcane-progress-percent" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: 'Outfit', sans-serif; font-size: 1.25rem; font-weight: 800; color: var(--text-pure);">0%</div>
     </div>
     <div style="display: flex; flex-direction: column; align-items: center; gap: 0.35rem; text-align: center; max-width: 300px; padding: 0 1rem;">
-      <h3 id="arcane-progress-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 1rem; color: var(--color-primary); text-transform: uppercase; letter-spacing: 0.05em;">Synchronizing Arcane Core</h3>
+      <h3 id="arcane-progress-title" style="margin: 0; font-family: 'Fraunces', serif; font-size: 1rem; color: var(--color-primary); text-transform: uppercase; letter-spacing: 0.05em;">Synchronizing Arcane Core</h3>
       <p id="arcane-progress-status" style="margin: 0; font-size: 0.875rem; color: var(--text-muted); line-height: 1.5;">Preparing metadata resolution...</p>
     </div>
   </div>
@@ -208,12 +208,12 @@
           r: Math.random() * 200 + 100,
           dx: (Math.random() - 0.5) * 0.4,
           dy: (Math.random() - 0.5) * 0.4,
-          color: i % 2 === 0 ? 'rgba(168, 85, 247, 0.03)' : 'rgba(0, 242, 254, 0.02)'
+          color: i % 2 === 0 ? 'rgba(217, 169, 78, 0.03)' : 'rgba(143, 224, 208, 0.02)'
         });
       }
       function draw() {
         const isLight = document.body.classList.contains('light-theme');
-        ctx.fillStyle = isLight ? '#f5f4f0' : '#050508';
+        ctx.fillStyle = isLight ? '#f5f4f0' : '#0a0806';
         ctx.fillRect(0, 0, width, height);
         circles.forEach((c, i) => {
           ctx.beginPath();
@@ -234,5 +234,13 @@
     document.addEventListener('DOMContentLoaded', () => initMagicCanvas('app-bg-canvas'));
   </script>
   <script src="suggestions.js?v=16"></script>
+
+  <nav class="mobile-tabbar" aria-label="Primary">
+    <a class="mobile-tab" href="index.html" aria-label="Decks"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span>Decks</span></a>
+    <a class="mobile-tab" href="search.html" aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span></a>
+    <a class="mobile-tab" href="index.html?view=tournaments" aria-label="Events"><svg viewBox="0 0 24 24"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a1 1 0 0 0-1 1c0 2.4 1.5 3.9 4 4"/><path d="M17 6h3a1 1 0 0 1 1 1c0 2.4-1.5 3.9-4 4"/></svg><span>Events</span></a>
+    <a class="mobile-tab" href="index.html?view=lifetracker" aria-label="Life"><svg viewBox="0 0 24 24"><path d="M12 21C7 16.5 3 13 3 8.9 3 6.1 5.2 4 7.8 4c1.6 0 3.2.8 4.2 2.1C13 4.8 14.6 4 16.2 4 18.8 4 21 6.1 21 8.9c0 4.1-4 7.6-9 12.1z"/></svg><span>Life</span></a>
+    <a class="mobile-tab" href="collection.html" aria-label="Binder"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Binder</span></a>
+  </nav>
 </body>
 </html>

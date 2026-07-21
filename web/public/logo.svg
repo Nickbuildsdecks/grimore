@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <!-- Purple to Magenta Magic Gradient -->
+    <linearGradient id="magic-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+    <!-- Gold / Amber Spark Gradient -->
+    <linearGradient id="gold-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d97706" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#fbbf24" />
+    </linearGradient>
+    <filter id="magic-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Outer Magic Summoning Sigil (Double Ring) -->
+  <circle cx="50" cy="50" r="44" fill="none" stroke="url(#magic-grad)" stroke-width="1.5" stroke-dasharray="16, 4, 8, 4" opacity="0.6" />
+  <circle cx="50" cy="50" r="40" fill="none" stroke="url(#magic-grad)" stroke-width="3" filter="url(#magic-glow)" />
+
+  <!-- Stylized Open Book (Grimoire) -->
+  <!-- Left Page -->
+  <path d="M 50,68 C 42,68 32,64 26,62 L 26,38 C 32,40 42,44 50,44 Z" fill="none" stroke="url(#magic-grad)" stroke-width="3.5" stroke-linejoin="round" />
+  <!-- Right Page -->
+  <path d="M 50,68 C 58,68 68,64 74,62 L 74,38 C 68,40 58,44 50,44 Z" fill="none" stroke="url(#magic-grad)" stroke-width="3.5" stroke-linejoin="round" />
+
+  <!-- Book Spine Center line -->
+  <line x1="50" y1="44" x2="50" y2="68" stroke="url(#gold-grad)" stroke-width="2.5" />
+
+  <!-- Rising Magic Sparkles / Cards intersection (Sleek Geometric Diamonds) -->
+  <path d="M 50,22 L 54,28 L 50,34 L 46,28 Z" fill="url(#gold-grad)" filter="url(#magic-glow)" />
+
+  <!-- Spark side diamonds -->
+  <path d="M 38,30 L 41,33 L 38,36 L 35,33 Z" fill="url(#magic-grad)" opacity="0.8" />
+  <path d="M 62,30 L 65,33 L 62,36 L 59,33 Z" fill="url(#magic-grad)" opacity="0.8" />
+</svg>
