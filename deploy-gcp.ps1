@@ -60,6 +60,7 @@ Copy-Item "public\patreon_cover_cropped.png" -Destination "gcp-export\public\pat
 if (Test-Path "web") {
     if (Test-Path "gcp-export\web") { Remove-Item "gcp-export\web" -Recurse -Force }
     Copy-Item "web" -Destination "gcp-export\web" -Recurse -Force
+    if (Test-Path "gcp-export\web\node_modules") { Remove-Item "gcp-export\web\node_modules" -Recurse -Force }
 }
 
 Write-Host "2. Creating zip archive..." -ForegroundColor Cyan
