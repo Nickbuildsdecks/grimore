@@ -3,8 +3,12 @@ FROM node:22-slim AS web-build
 WORKDIR /app/web
 COPY web/package*.json ./
 RUN npm ci
-COPY web/ ./
-RUN npm run build
+COPY web/src ./src
+COPY web/public ./public
+COPY web/index.html ./
+COPY web/vite.config.ts ./
+COPY web/tsconfig*.json ./
+RUN npx tsc -b && npx vite build
 
 FROM node:22-slim
 
