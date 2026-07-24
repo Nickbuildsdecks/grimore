@@ -660,51 +660,7 @@ function initGoogleSignInButtons() {
   const loginContainer = document.getElementById('google-signin-btn-login');
   const registerContainer = document.getElementById('google-signin-btn-register');
 
-  const clientId = (window.GOOGLE_CLIENT_ID && window.GOOGLE_CLIENT_ID.includes('.apps.googleusercontent.com'))
-    ? window.GOOGLE_CLIENT_ID
-    : '385018034224-39s25v1va6vs16dafv4c0ld2q8oonpro.apps.googleusercontent.com';
-
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-    try {
-      google.accounts.id.initialize({
-        client_id: clientId,
-        callback: window.handleGoogleCredentialResponse,
-        auto_select: false,
-        itp_support: true
-      });
-
-      if (loginContainer) {
-        loginContainer.innerHTML = '';
-        google.accounts.id.renderButton(loginContainer, {
-          type: 'standard',
-          theme: 'filled_black',
-          size: 'large',
-          text: 'signin_with',
-          shape: 'rectangular',
-          logo_alignment: 'left',
-          width: 320
-        });
-      }
-
-      if (registerContainer) {
-        registerContainer.innerHTML = '';
-        google.accounts.id.renderButton(registerContainer, {
-          type: 'standard',
-          theme: 'filled_black',
-          size: 'large',
-          text: 'signup_with',
-          shape: 'rectangular',
-          logo_alignment: 'left',
-          width: 320
-        });
-      }
-      return;
-    } catch (err) {
-      console.warn("GSI Button render fallback:", err.message);
-    }
-  }
-
-  const renderFallbackBtn = (container, text) => {
+  const renderCleanBtn = (container, text) => {
     if (!container) return;
     container.innerHTML = `
       <button type="button" class="btn google-signin-btn" onclick="triggerGoogleSignIn()" style="width: 100%; height: 42px; display: flex; align-items: center; justify-content: center; gap: 0.75rem; background: #18181b; color: #ffffff; border: 1px solid rgba(255,255,255,0.15); font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 0.88rem; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 6px rgba(0,0,0,0.3); margin: 0;">
@@ -719,8 +675,8 @@ function initGoogleSignInButtons() {
     `;
   };
 
-  renderFallbackBtn(loginContainer, 'Sign in with Google');
-  renderFallbackBtn(registerContainer, 'Sign up with Google');
+  renderCleanBtn(loginContainer, 'Sign in with Google');
+  renderCleanBtn(registerContainer, 'Sign up with Google');
 }
 
   // Render User Profile Badge in header
