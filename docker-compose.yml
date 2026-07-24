@@ -13,6 +13,7 @@ services:
       - PORT=3000
       - NODE_ENV=production
       - MOXFIELD_USER_AGENT=${MOXFIELD_USER_AGENT}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - POSTGRES_URL=postgres://grimore_user:grimore_password_99@postgres:5432/grimore_db
       - REDIS_URL=redis://redis:6379
     depends_on:

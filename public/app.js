@@ -577,16 +577,15 @@ window.handleLogout = async function() {
   }
 };
 
-window.triggerGoogleSignIn = async function() {
-  const hasRealClientId = window.GOOGLE_CLIENT_ID && 
-    window.GOOGLE_CLIENT_ID.includes('.apps.googleusercontent.com') && 
-    !window.GOOGLE_CLIENT_ID.includes('sampleclientid') &&
-    !window.GOOGLE_CLIENT_ID.includes('1082987592384');
+window.triggerGoogleSignIn = function() {
+  const clientId = (window.GOOGLE_CLIENT_ID && window.GOOGLE_CLIENT_ID.includes('.apps.googleusercontent.com'))
+    ? window.GOOGLE_CLIENT_ID
+    : '385018034224-39s25v1va6vs16dafv4c0ld2q8oonpro.apps.googleusercontent.com';
 
-  if (hasRealClientId && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
     try {
       const client = google.accounts.oauth2.initTokenClient({
-        client_id: window.GOOGLE_CLIENT_ID,
+        client_id: clientId,
         scope: 'email profile openid',
         callback: async (tokenResponse) => {
           if (tokenResponse.access_token) {
@@ -598,6 +597,7 @@ window.triggerGoogleSignIn = async function() {
               window.processGoogleSignInEmail(userInfo.email, userInfo.name, userInfo.sub, userInfo.picture);
             } catch (err) {
               console.error("Failed to fetch Google userinfo:", err);
+              alert("Google Sign-In failed: " + err.message);
             }
           }
         }
@@ -605,35 +605,14 @@ window.triggerGoogleSignIn = async function() {
       client.requestAccessToken();
       return;
     } catch (e) {
-      console.warn("Google OAuth2 popup fallback:", e);
+      console.error("Google OAuth2 popup launch error:", e);
     }
   }
-  window.openGrimoreGoogleModal();
-};
 
-window.openGrimoreGoogleModal = function() {
-  const modal = document.getElementById('modal-google-signin');
-  if (modal) {
-    modal.style.display = 'flex';
-    const input = document.getElementById('google-modal-email');
-    if (input) {
-      input.value = '';
-      setTimeout(() => input.focus(), 100);
-    }
-  }
-};
-
-window.closeGrimoreGoogleModal = function() {
-  const modal = document.getElementById('modal-google-signin');
-  if (modal) modal.style.display = 'none';
-};
-
-window.handleGrimoreGoogleSubmit = function(event) {
-  if (event) event.preventDefault();
-  const input = document.getElementById('google-modal-email');
-  if (input && input.value.trim()) {
-    window.closeGrimoreGoogleModal();
-    window.processGoogleSignInEmail(input.value.trim());
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+    google.accounts.id.prompt();
+  } else {
+    alert("Google Sign-In is initializing. Please try clicking again in a moment.");
   }
 };
 
@@ -681,12 +660,14 @@ function initGoogleSignInButtons() {
   const loginContainer = document.getElementById('google-signin-btn-login');
   const registerContainer = document.getElementById('google-signin-btn-register');
 
-  const hasRealClientId = window.GOOGLE_CLIENT_ID && window.GOOGLE_CLIENT_ID.includes('.apps.googleusercontent.com') && !window.GOOGLE_CLIENT_ID.includes('sampleclientid');
+  const clientId = (window.GOOGLE_CLIENT_ID && window.GOOGLE_CLIENT_ID.includes('.apps.googleusercontent.com'))
+    ? window.GOOGLE_CLIENT_ID
+    : '385018034224-39s25v1va6vs16dafv4c0ld2q8oonpro.apps.googleusercontent.com';
 
-  if (hasRealClientId && typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
     try {
       google.accounts.id.initialize({
-        client_id: window.GOOGLE_CLIENT_ID,
+        client_id: clientId,
         callback: window.handleGoogleCredentialResponse,
         auto_select: false,
         itp_support: true
