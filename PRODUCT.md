@@ -25,11 +25,13 @@ Arcane, premium, tactile. The original Grimore identity pairs obsidian darkness 
 
 ## Design Principles
 
-1. **Card art is the hero.** The UI is a dark stage; Magic's art provides the color. Chrome recedes, art glows.
-2. **Cinematic shell, instrument core.** Home, discover, and life tracker can be theatrical; search and the builder are precision tools with dense, calm chrome.
-3. **One vocabulary everywhere.** Same buttons, same inputs, same icons (SVG, never emoji) across all six surfaces and both breakpoints.
-4. **The phone is a first-class table companion.** Bottom-thumb navigation, 44px+ targets, safe areas, and mid-game glanceability. Mobile is not a shrunken desktop.
-5. **Motion conveys state.** 150–250ms ease-out for feedback; longer choreography reserved for true moments (opening a deck, joining an event).
+1. **Casual Commander First (Initial Optics)**. The vast majority of the MTG playerbase plays casual Commander. Initial optics, deck cards, card search, community feeds, and visual deck building are kept clean, approachable, and welcoming—never overwhelming users with dense numbers or intimidating data screens.
+2. **Deep Customizability ("The Goodies")**. High-power features (Scryfall query builders, custom category rules, batch repricing, tournament pairing engines, collection trade tools) live inside clean sub-menus, drawers, and settings modals—rewarding serious players who love clicking in to find the goodies.
+3. **Card art is the hero.** The UI is a dark stage; Magic's art provides the color. Chrome recedes, art glows.
+4. **Cinematic shell, instrument core.** Home, discover, and life tracker can be theatrical; search and the builder are precision tools with dense, calm chrome.
+5. **One vocabulary everywhere.** Same buttons, same inputs, same icons (SVG, never emoji) across all surfaces and breakpoints.
+6. **The phone is a first-class table companion.** Bottom-thumb navigation, 44px+ targets, safe areas, and mid-game glanceability. Mobile is not a shrunken desktop.
+7. **Motion conveys state.** 150–250ms ease-out for feedback; longer choreography reserved for true moments (opening a deck, joining an event).
 
 ## Accessibility & Inclusion
 

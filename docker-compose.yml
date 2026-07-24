@@ -13,6 +13,33 @@ services:
       - PORT=3000
       - NODE_ENV=production
       - MOXFIELD_USER_AGENT=${MOXFIELD_USER_AGENT}
+      - POSTGRES_URL=postgres://grimore_user:grimore_password_99@postgres:5432/grimore_db
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: grimore-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: grimore_user
+      POSTGRES_PASSWORD: grimore_password_99
+      POSTGRES_DB: grimore_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: grimore-redis
+    restart: always
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
 
   caddy:
     image: caddy:2-alpine
@@ -31,3 +58,5 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  postgres_data:
+  redis_data:

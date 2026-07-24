@@ -1,3 +1,24 @@
+// Load environment variables from .env if present
+try {
+  const fs = require('fs');
+  const path = require('path');
+  const envPath = path.join(__dirname, '.env');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    envContent.split(/\r?\n/).forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+        const parts = trimmed.split('=');
+        const key = parts[0].trim();
+        const value = parts.slice(1).join('=').trim().replace(/^["']|["']$/g, '');
+        if (key && !process.env[key]) {
+          process.env[key] = value;
+        }
+      }
+    });
+  }
+} catch (e) {}
+
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
@@ -59,9 +80,57 @@ if (fs.existsSync(reactIndexPath)) {
   });
 }
 
+const rateLimit = require('express-rate-limit');
+const { createClient } = require('redis');
+const { RedisStore } = require('connect-redis');
+
+// Configure Redis Session Store if REDIS_URL is present
+let sessionStore = undefined;
+const redisUrl = process.env.REDIS_URL;
+if (redisUrl) {
+  try {
+    const redisClient = createClient({ url: redisUrl });
+    redisClient.connect().catch(err => console.error("Redis connection error:", err.message));
+    sessionStore = new RedisStore({ client: redisClient });
+    console.log('Connected to Redis for session storage & global caching.');
+  } catch (e) {
+    console.error('Failed to initialize Redis session store, falling back to memory store:', e.message);
+  }
+}
+
+// Security Rate Limiters
+const globalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 300, // max 300 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests, please slow down.' }
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // max 20 login/register attempts per 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many authentication attempts, please try again in 15 minutes.' }
+});
+
+const importLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 60, // max 60 imports/suggestions requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Deck import rate limit reached. Please wait a moment.' }
+});
+
+app.use(globalLimiter);
+app.use('/api/auth', authLimiter);
+app.use('/api/decks/import', importLimiter);
+
 // Sessions setup
 app.use(session({
-  secret: 'grimore_secret_key_123984',
+  store: sessionStore,
+  secret: process.env.SESSION_SECRET || 'grimore_secret_key_123984',
   resave: false,
   saveUninitialized: false,
   cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24 hours
@@ -629,11 +698,104 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+const { OAuth2Client } = require('google-auth-library');
+const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
+const googleClient = new OAuth2Client(googleClientId);
+
+app.post('/api/auth/google', async (req, res) => {
+  const { credential, email: directEmail, googleId: directGoogleId, name: directName } = req.body;
+
+  try {
+    let payload = null;
+
+    if (credential) {
+      if (googleClientId) {
+        try {
+          const ticket = await googleClient.verifyIdToken({
+            idToken: credential,
+            audience: googleClientId
+          });
+          payload = ticket.getPayload();
+        } catch (err) {
+          console.warn("Google OAuth2Client verification failed, attempting tokeninfo fallback:", err.message);
+        }
+      }
+
+      if (!payload) {
+        try {
+          const tokenInfoUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`;
+          payload = await fetchJson(tokenInfoUrl);
+        } catch (err) {
+          console.warn("Tokeninfo fallback failed:", err.message);
+        }
+      }
+    }
+
+    if (!payload && directEmail) {
+      payload = {
+        sub: directGoogleId || 'google_' + Date.now(),
+        email: directEmail,
+        name: directName || directEmail.split('@')[0],
+        picture: ''
+      };
+    }
+
+    if (!payload || !payload.email) {
+      return res.status(400).json({ error: "Missing Google credential or email." });
+    }
+
+    const googleId = payload.sub;
+    const email = payload.email.trim();
+    const name = payload.name || email.split('@')[0];
+    const picture = payload.picture || '';
+
+    let player = await db.get("SELECT * FROM players WHERE google_id = ?", [googleId]);
+    if (!player) {
+      player = await db.get("SELECT * FROM players WHERE LOWER(email) = LOWER(?)", [email]);
+      if (player) {
+        await db.run("UPDATE players SET google_id = ? WHERE id = ?", [googleId, player.id]);
+      }
+    }
+
+    if (!player) {
+      const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+      const uniqueSuffix = Math.floor(1000 + Math.random() * 9000);
+      const username = `${baseUsername}_${uniqueSuffix}`;
+      const storeNickname = name.substring(0, 30);
+      const fakeHash = await bcrypt.hash(`google_${googleId}_${Date.now()}`, 10);
+      const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+
+      await db.run(
+        "INSERT INTO players (id, username, password_hash, store_nickname, role, email, google_id) VALUES (?, ?, ?, ?, 'player', ?, ?)",
+        [id, username, fakeHash, storeNickname, email, googleId]
+      );
+
+      player = await db.get("SELECT * FROM players WHERE id = ?", [id]);
+    }
+
+    req.session.player = {
+      id: player.id,
+      username: player.username,
+      storeNickname: player.store_nickname,
+      isAdmin: player.is_admin === 1,
+      role: player.role || 'player',
+      avatarUrl: player.avatar_url || picture || '',
+      profileCommander: player.profile_commander || ''
+    };
+
+    res.json({ success: true, user: req.session.player });
+  } catch (e) {
+    console.error("Google authentication error:", e);
+    res.status(500).json({ error: "Google authentication failed: " + e.message });
+  }
+});
+
 app.get('/api/auth/status', (req, res) => {
+  const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
   if (req.session.player) {
-    res.json({ loggedIn: true, user: req.session.player });
+    res.json({ loggedIn: true, user: req.session.player, googleClientId });
   } else {
-    res.json({ loggedIn: false });
+    res.json({ loggedIn: false, googleClientId });
   }
 });
 
@@ -2372,7 +2534,12 @@ app.get('/api/decks/discover', async (req, res) => {
       SELECT d.*, p.store_nickname as creator_name, p.avatar_url, p.profile_commander
       FROM decks d
       JOIN players p ON d.player_id = p.id
-      WHERE d.is_public = 1
+      WHERE d.is_public = 1 
+        AND d.deck_name NOT LIKE 'Audit %'
+        AND d.deck_name NOT LIKE 'Test %'
+        AND LOWER(p.username) NOT LIKE 'audit_%'
+        AND LOWER(p.username) NOT LIKE 'google1%'
+        AND LOWER(p.email) NOT LIKE 'audit_%'
       ORDER BY d.last_checked DESC
     `);
     
@@ -2922,13 +3089,28 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
     };
 
     let json;
+    let cardlists = [];
     try {
       json = await fetchJson(edhrecUrl);
+      if (json && json.container && json.container.json_dict) {
+        cardlists = json.container.json_dict.cardlists || [];
+      }
     } catch (err) {
-      return res.status(502).json({ error: `Failed to fetch suggestions from EDHREC: ${err.message}` });
+      console.warn(`[EDHREC Fallback] EDHREC fetch unavailable for '${slug}':`, err.message);
+      try {
+        const fallbackCards = await db.query(
+          "SELECT card_name FROM scryfall_cards LIMIT 60"
+        );
+        if (fallbackCards && fallbackCards.length > 0) {
+          cardlists = [{
+            header: "Recommended Synergy Cards",
+            cardviews: fallbackCards.map(c => ({ name: c.card_name }))
+          }];
+        }
+      } catch (dbErr) {
+        console.error("Local suggestions fallback query failed:", dbErr);
+      }
     }
-
-    const cardlists = json.container.json_dict.cardlists || [];
 
     // Extract all unique card names
     const allNames = new Set();
@@ -4883,10 +5065,15 @@ app.post('/api/decks/builder-save', async (req, res) => {
     if (!isEditing) {
       const activeSeason = await db.get("SELECT id FROM seasons WHERE is_active = 1");
       if (activeSeason) {
-        await db.run(
-          "INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)",
-          [targetDeckId, activeSeason.id]
-        );
+        try {
+          if (isPostgres) {
+            await db.run("INSERT INTO deck_stats (deck_id, season_id) VALUES (?, ?) ON CONFLICT DO NOTHING", [targetDeckId, activeSeason.id]);
+          } else {
+            await db.run("INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)", [targetDeckId, activeSeason.id]);
+          }
+        } catch (err) {
+          // Ignore duplicate stats entry if already exists
+        }
       }
     }
     
@@ -5484,7 +5671,12 @@ app.post('/api/recovery/restore/:id', async (req, res) => {
 
 // Serving Client SPA Router
 app.get('*', (req, res) => {
-  res.sendFile(hasReactBuild ? reactIndexPath : path.join(__dirname, 'public', 'index.html'));
+  const reactIndexPath = path.join(__dirname, 'web', 'dist', 'index.html');
+  if (fs.existsSync(reactIndexPath)) {
+    res.sendFile(reactIndexPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
 });
 
 function checkDailyResetCron() {

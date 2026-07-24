@@ -100,6 +100,10 @@ Be pragmatic. Be reliable. Self-anneal.
 - Port: `3000`
 - API keys/endpoints should be checked inside the `.env` configuration file in this workspace root.
 
+### 🎯 Product Philosophy & Optics Rule
+- **Casual Commander First (Initial Optics)**: Grimore targets the vast majority of the MTG playerbase: casual Commander players. Initial optics, home/discover feeds, card search, visual deck building, and suggestions must be ultra-clean, approachable, inviting, and uncluttered—never overwhelming users with dense numbers, intimidating data screens, or unnecessary tournament jargon.
+- **Deep Customizability ("The Goodies")**: High-power, advanced tools (Scryfall query builders, custom category rules, proxy print specs, batch repricing, collection trade tools, and tournament pairing engines) are cleanly organized inside intuitive sub-menus, drawers, and settings modals—rewarding serious players who love clicking in to discover the goodies.
+
 ### 🏷️ Auto-Tagging & MTG Classification Specification
 - **Core Directive**: SOP defined in `directives/auto_tagging_engine.md`.
 - **No-Emoji UI Rule**: Do NOT default to emojis in user interfaces, buttons, toolbar pills, or category headers. Emojis look AI-generated and clutter the interface. Use clean typography, badge pills, or custom SVG icons.
