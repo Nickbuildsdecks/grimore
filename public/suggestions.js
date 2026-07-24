@@ -26,6 +26,55 @@
     }, 200);
   };
 
+  // Toast Notification Helper
+  window.showToast = function(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    toast.style.cssText = 'background: rgba(18, 16, 28, 0.92); backdrop-filter: blur(12px); border: 1px solid rgba(168, 85, 247, 0.35); border-left: 4px solid var(--color-primary); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 0.8rem; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,0.5); pointer-events: auto; display: flex; align-items: center; gap: 8px; transform: translateY(20px); opacity: 0; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);';
+    toast.innerHTML = `<span>${message}</span>`;
+    container.appendChild(toast);
+    requestAnimationFrame(() => {
+      toast.style.transform = 'translateY(0)';
+      toast.style.opacity = '1';
+    });
+    setTimeout(() => {
+      toast.style.transform = 'translateY(-10px)';
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }, 2500);
+  };
+
+  // Category Icon Mapping for Grimore Functional Auto-Tagging Engine (No Emojis)
+  const CATEGORY_ICONS = {
+    'owned-suggestions': '',
+    'wincons': '',
+    'tutors': '',
+    'stax': '',
+    'mass-removal': '',
+    'single-target-removal': '',
+    'protection': '',
+    'ramp': '',
+    'card-advantage': '',
+    'card-selection': '',
+    'recursion': '',
+    'reanimation': '',
+    'graveyard-fillers': '',
+    'sacrifice-outlets': '',
+    'tokens-swarm': '',
+    'counters-triggers': '',
+    'equipment-auras': '',
+    'artifact-engine': '',
+    'enchantments': '',
+    'blink-etb': '',
+    'spellslinger': '',
+    'landfall': '',
+    'utility-lands': '',
+    'lands': '',
+    'unique': ''
+  };
+
   // State Variables
   const urlParams = new URLSearchParams(window.location.search);
   const deckId = urlParams.get('deckId');
@@ -36,29 +85,79 @@
     return;
   }
 
-  // Update return to builder link
+  // Update return to builder links
   const returnLink = document.getElementById('btn-return-deck-link');
-  if (returnLink) {
-    returnLink.href = `index.html?deckId=${deckId}`;
-  }
+  if (returnLink) returnLink.href = `index.html?deckId=${deckId}`;
   const returnLogo = document.getElementById('btn-return-to-deck');
-  if (returnLogo) {
-    returnLogo.href = `index.html?deckId=${deckId}`;
-  }
+  if (returnLogo) returnLogo.href = `index.html?deckId=${deckId}`;
 
   let currentUser = null;
-  let activeDeckData = null;
-  let activeDeckCommander = [];
-  let activeDeckMainboard = [];
+  let currentSuggestionsMode = 'function'; // 'function' or 'type'
+  let rawFunctionalCategories = [];
+  let rawTypeCategories = [];
   let categories = [];
   let selectedCategoryTag = null;
+  
+  let searchQuery = '';
+  let activeFilter = 'all'; // 'all', 'owned', 'budget'
+  let activeSort = 'price-asc'; // 'price-asc', 'price-desc', 'name'
 
   let activeInspectorCard = null;
   let lastInspectorTrigger = null;
   let currentCardFaceIdx = 0;
   let suggestionsZoomed = false;
 
-  // Initialize
+  window.currentCategoryCards = []; // In-memory cards array for current view
+
+  // Switch between Type and Function suggestion modes
+  window.setSuggestionsMode = function(mode) {
+    if (currentSuggestionsMode === mode) return;
+    currentSuggestionsMode = mode;
+
+    const btnType = document.getElementById('mode-btn-type');
+    const btnFunction = document.getElementById('mode-btn-function');
+
+    if (mode === 'type') {
+      if (btnType) {
+        btnType.style.background = 'linear-gradient(135deg, rgba(168, 85, 247, 0.85) 0%, rgba(126, 34, 206, 0.95) 100%)';
+        btnType.style.color = '#ffffff';
+        btnType.style.boxShadow = '0 2px 10px rgba(168, 85, 247, 0.4)';
+      }
+      if (btnFunction) {
+        btnFunction.style.background = 'transparent';
+        btnFunction.style.color = 'var(--text-muted)';
+        btnFunction.style.boxShadow = 'none';
+      }
+      categories = rawTypeCategories;
+    } else {
+      if (btnFunction) {
+        btnFunction.style.background = 'linear-gradient(135deg, rgba(168, 85, 247, 0.85) 0%, rgba(126, 34, 206, 0.95) 100%)';
+        btnFunction.style.color = '#ffffff';
+        btnFunction.style.boxShadow = '0 2px 10px rgba(168, 85, 247, 0.4)';
+      }
+      if (btnType) {
+        btnType.style.background = 'transparent';
+        btnType.style.color = 'var(--text-muted)';
+        btnType.style.boxShadow = 'none';
+      }
+      categories = rawFunctionalCategories;
+    }
+
+    if (categories.length > 0) {
+      selectedCategoryTag = categories[0].tag;
+    } else {
+      selectedCategoryTag = null;
+    }
+
+    renderCategoriesSidebar();
+
+    if (selectedCategoryTag) {
+      const firstItem = document.querySelector(`.filters-sidebar-group[data-tag="${selectedCategoryTag}"]`);
+      selectCategory(selectedCategoryTag, firstItem);
+    }
+  };
+
+  // Initialize Page
   document.addEventListener('DOMContentLoaded', async () => {
     window.startTopProgress();
     const authed = await checkAuthStatus();
@@ -74,8 +173,19 @@
       document.body.classList.remove('light-theme');
     }
 
-    await loadDeckDetails();
-    await loadSuggestions();
+    // Attach search input listener
+    const searchInput = document.getElementById('suggestions-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value.trim().toLowerCase();
+        refreshCurrentCategoryView();
+      });
+    }
+
+    await Promise.all([
+      loadDeckDetails(),
+      loadSuggestions()
+    ]);
     window.completeTopProgress();
   });
 
@@ -97,7 +207,7 @@
   // Fetch target deck data and its cards
   async function loadDeckDetails() {
     try {
-      // Get deck name
+      // Get deck metadata
       const resDecks = await fetch('/api/decks/my-decks');
       const decks = await resDecks.json();
       activeDeckData = decks.find(d => d.id === deckId);
@@ -108,7 +218,7 @@
         document.getElementById('active-deck-name-display').textContent = "Unknown Deck";
       }
 
-      // Get current cards
+      // Get current deck cards
       const resCards = await fetch(`/api/decks/${deckId}/cards`);
       const cardList = await resCards.json();
 
@@ -116,15 +226,18 @@
       activeDeckCommander = cardList.filter(c => c.is_commander === 1).map(c => ({
         name: c.card_name,
         quantity: c.quantity || 1,
+        qty: c.quantity || 1,
         scryfallId: c.scryfall_id || null,
-        price: c.cheapest_card_price || 0.15
+        price: c.cheapest_card_price || 0.15,
+        custom_tag: c.custom_tag
       }));
-
       activeDeckMainboard = cardList.filter(c => c.is_commander !== 1).map(c => ({
         name: c.card_name,
         quantity: c.quantity || 1,
+        qty: c.quantity || 1,
         scryfallId: c.scryfall_id || null,
-        price: c.cheapest_card_price || 0.15
+        price: c.cheapest_card_price || 0.15,
+        custom_tag: c.custom_tag
       }));
     } catch (e) {
       console.error("Error loading deck details:", e);
@@ -146,7 +259,7 @@
             <div style="font-size: 1.5rem;">⚠️</div>
             <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-high);">${data.error}</div>
             <div style="font-size: 0.72rem; color: var(--text-muted); max-width: 320px;">
-              suggestions are based on the commander cards registered inside your deck builder. Make sure to tag your commander!
+              Suggestions are based on the commander cards registered inside your deck builder. Make sure to tag your commander!
             </div>
           </div>
         `;
@@ -154,11 +267,28 @@
         return;
       }
 
-      categories = data.categories || [];
+      // Update Commander header avatar & title display
+      if (data.commanderName) {
+        const cmdNameDisplay = document.getElementById('commander-name-display');
+        if (cmdNameDisplay) cmdNameDisplay.textContent = data.commanderName;
+      }
+      if (data.commanderScryfallId) {
+        const cmdImg = document.getElementById('commander-avatar-img');
+        if (cmdImg) {
+          cmdImg.src = `https://cards.scryfall.io/art_crop/front/${data.commanderScryfallId[0]}/${data.commanderScryfallId[1]}/${data.commanderScryfallId}.jpg`;
+        }
+      }
+
+      rawFunctionalCategories = data.functionalCategories || data.categories || [];
+      rawTypeCategories = data.typeCategories || [];
+
+      categories = currentSuggestionsMode === 'type' ? rawTypeCategories : rawFunctionalCategories;
+      const totalCatBadge = document.getElementById('total-categories-count');
+      if (totalCatBadge) totalCatBadge.textContent = categories.length;
+
       if (categories.length === 0) {
         grid.innerHTML = `
           <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; text-align: center; gap: 0.75rem;">
-            <div style="font-size: 1.5rem;">💡</div>
             <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-high);">No suggestions found</div>
             <div style="font-size: 0.72rem; color: var(--text-muted); max-width: 320px;">EDHREC returned no recommendations for this commander.</div>
           </div>
@@ -183,7 +313,7 @@
     }
   }
 
-  // Populate categories sidebar with counts that filter out existing cards
+  // Populate categories sidebar with counts that filter out existing cards (No Emojis)
   function renderCategoriesSidebar() {
     const catsList = document.getElementById('categories-list');
     if (!catsList) return;
@@ -199,35 +329,78 @@
       const item = document.createElement('div');
       item.className = 'filters-sidebar-group';
       item.dataset.tag = cat.tag;
-      item.style.padding = '0.5rem 0.75rem';
-      item.style.cursor = 'pointer';
-      item.style.borderRadius = 'var(--radius-sm)';
-      item.style.fontSize = '0.78rem';
-      item.style.fontWeight = '600';
-      item.style.display = 'flex';
-      item.style.justifyContent = 'space-between';
-      item.style.alignItems = 'center';
-      item.style.transition = 'all 0.2s ease';
+      item.style.cssText = 'padding: 0.55rem 0.85rem; cursor: pointer; border-radius: 6px; font-size: 0.76rem; font-weight: 700; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); margin-bottom: 3px; letter-spacing: 0.03em;';
 
       if (cat.tag === selectedCategoryTag) {
-        item.style.background = 'rgba(168, 85, 247, 0.1)';
-        item.style.color = 'var(--text-pure)';
-        item.style.outline = '1px solid var(--color-primary)';
-        item.style.outlineOffset = '-1px';
+        item.style.background = 'linear-gradient(135deg, rgba(168, 85, 247, 0.22) 0%, rgba(126, 34, 206, 0.28) 100%)';
+        item.style.color = '#ffffff';
+        item.style.border = '1px solid rgba(168, 85, 247, 0.45)';
+        item.style.boxShadow = '0 2px 10px rgba(168, 85, 247, 0.25)';
       } else {
-        item.style.background = 'transparent';
+        item.style.background = 'rgba(255, 255, 255, 0.02)';
         item.style.color = 'var(--text-muted)';
-        item.style.outline = 'none';
+        item.style.border = '1px solid transparent';
+        item.style.boxShadow = 'none';
       }
 
+      item.onmouseenter = () => {
+        if (cat.tag !== selectedCategoryTag) {
+          item.style.background = 'rgba(168, 85, 247, 0.08)';
+          item.style.color = 'var(--text-high)';
+        }
+      };
+      item.onmouseleave = () => {
+        if (cat.tag !== selectedCategoryTag) {
+          item.style.background = 'rgba(255, 255, 255, 0.02)';
+          item.style.color = 'var(--text-muted)';
+        }
+      };
+
       item.innerHTML = `
-        <span>${cat.header}</span>
-        <span class="category-badge" style="background: rgba(168,85,247,0.15); color: var(--color-primary); font-size: 0.68rem; padding: 1px 6px; border-radius: 10px; font-weight: 700;">${filteredCount}</span>
+        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase;">
+          ${cat.header}
+        </span>
+        <span class="category-badge" style="background: rgba(168, 85, 247, 0.18); color: var(--color-primary); font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; font-weight: 800; flex-shrink: 0;">${filteredCount}</span>
       `;
 
       item.onclick = () => selectCategory(cat.tag, item);
       catsList.appendChild(item);
     });
+  }
+
+  // Filter and Sort card processing logic
+  function processCards(rawCards) {
+    let list = rawCards.filter(card => {
+      const inMainboard = activeDeckMainboard.some(c => c.name.toLowerCase() === card.name.toLowerCase());
+      const inCommander = activeDeckCommander.some(c => c.name.toLowerCase() === card.name.toLowerCase());
+      return !inMainboard && !inCommander;
+    });
+
+    // Apply Live Search Query Filter
+    if (searchQuery) {
+      list = list.filter(c => c.name.toLowerCase().includes(searchQuery));
+    }
+
+    // Apply Quick Filter Pills
+    if (activeFilter === 'owned') {
+      list = list.filter(c => c.owned === true);
+    } else if (activeFilter === 'budget') {
+      list = list.filter(c => c.price <= 2.00);
+    }
+
+    // Apply Sorting
+    list.sort((a, b) => {
+      if (activeSort === 'price-asc') {
+        return (a.price || 0) - (b.price || 0);
+      } else if (activeSort === 'price-desc') {
+        return (b.price || 0) - (a.price || 0);
+      } else if (activeSort === 'name') {
+        return a.name.localeCompare(b.name);
+      }
+      return 0;
+    });
+
+    return list;
   }
 
   // Handle category selection
@@ -243,35 +416,66 @@
     });
 
     if (element) {
-      element.style.background = 'rgba(168, 85, 247, 0.1)';
+      element.style.background = 'rgba(168, 85, 247, 0.15)';
       element.style.color = 'var(--text-pure)';
       element.style.outline = '1px solid var(--color-primary)';
       element.style.outlineOffset = '-1px';
     } else {
       const targetEl = document.querySelector(`.filters-sidebar-group[data-tag="${tag}"]`);
       if (targetEl) {
-        targetEl.style.background = 'rgba(168, 85, 247, 0.1)';
+        targetEl.style.background = 'rgba(168, 85, 247, 0.15)';
         targetEl.style.color = 'var(--text-pure)';
         targetEl.style.outline = '1px solid var(--color-primary)';
         targetEl.style.outlineOffset = '-1px';
       }
     }
 
-    const cat = categories.find(c => c.tag === tag);
-    if (!cat) return;
-
-    const filteredCards = cat.cards.filter(card => {
-      const inMainboard = activeDeckMainboard.some(c => c.name.toLowerCase() === card.name.toLowerCase());
-      const inCommander = activeDeckCommander.some(c => c.name.toLowerCase() === card.name.toLowerCase());
-      return !inMainboard && !inCommander;
-    });
-
-    document.getElementById('current-category-title').textContent = cat.header;
-    document.getElementById('current-category-count').textContent = `${filteredCards.length} recommendations found`;
-
-    renderCardsGrid(filteredCards);
+    refreshCurrentCategoryView();
   }
 
+  // Refresh current category view with applied filters & sort
+  function refreshCurrentCategoryView() {
+    const cat = categories.find(c => c.tag === selectedCategoryTag);
+    if (!cat) return;
+
+    const catTitleEl = document.getElementById('current-category-title');
+    if (catTitleEl) catTitleEl.innerHTML = `<span id="current-category-icon" style="display:none;"></span> ${cat.header}`;
+
+    const processedCards = processCards(cat.cards);
+
+    const countEl = document.getElementById('current-category-count');
+    if (countEl) countEl.textContent = `${processedCards.length} recommendations shown`;
+
+    renderCardsGrid(processedCards);
+  }
+
+  // Quick Filter Pill Switcher
+  window.setSuggestionsFilter = function(filterType) {
+    activeFilter = filterType;
+    ['all', 'owned', 'budget'].forEach(f => {
+      const btn = document.getElementById(`filter-btn-${f}`);
+      if (btn) {
+        if (f === filterType) {
+          btn.style.background = 'rgba(168,85,247,0.3)';
+          btn.style.color = '#fff';
+          btn.classList.add('active-filter-pill');
+        } else {
+          btn.style.background = 'transparent';
+          btn.style.color = 'var(--text-muted)';
+          btn.classList.remove('active-filter-pill');
+        }
+      }
+    });
+    refreshCurrentCategoryView();
+  };
+
+  // Sort Switcher
+  window.setSuggestionsSort = function(sortType) {
+    activeSort = sortType;
+    refreshCurrentCategoryView();
+  };
+
+  // Zoom Toggle Switcher
   window.toggleSuggestionsZoom = function() {
     suggestionsZoomed = !suggestionsZoomed;
     const btn = document.getElementById('btn-zoom-toggle');
@@ -286,9 +490,17 @@
         btn.classList.remove('btn-primary');
       }
     }
-    const activeCat = categories.find(c => c.tag === selectedCategoryTag);
-    if (activeCat) {
-      renderCardsGrid(activeCat.cards);
+    refreshCurrentCategoryView();
+  };
+
+  // Add suggestion by array index in memory
+  window.addSuggestionByIndex = function(index, event, buttonEl) {
+    if (event) event.stopPropagation();
+    const card = window.currentCategoryCards && window.currentCategoryCards[index];
+    if (card) {
+      window.addSuggestionToDeck(card, buttonEl);
+    } else {
+      console.error("Card not found at index", index);
     }
   };
 
@@ -298,6 +510,19 @@
     if (!grid) return;
     grid.innerHTML = '';
 
+    window.currentCategoryCards = cards; // Store in memory for clean index-based click handling
+
+    if (cards.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; text-align: center; gap: 0.75rem;">
+          <div style="font-size: 1.5rem;">🔍</div>
+          <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-high);">No matching cards</div>
+          <div style="font-size: 0.72rem; color: var(--text-muted); max-width: 320px;">Try loosening your search query or filter options.</div>
+        </div>
+      `;
+      return;
+    }
+
     const isMobile = window.innerWidth <= 480;
     const isTablet = window.innerWidth <= 768 && window.innerWidth > 480;
 
@@ -306,29 +531,14 @@
     grid.style.gridAutoRows = 'max-content';
 
     if (isMobile) {
-      if (suggestionsZoomed) {
-        grid.style.gridTemplateColumns = 'repeat(1, minmax(0, 1fr))';
-        grid.style.gap = '0.5rem';
-      } else {
-        grid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-        grid.style.gap = '0.35rem';
-      }
+      grid.style.gridTemplateColumns = suggestionsZoomed ? 'repeat(1, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))';
+      grid.style.gap = suggestionsZoomed ? '0.5rem' : '0.35rem';
     } else if (isTablet) {
-      if (suggestionsZoomed) {
-        grid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-        grid.style.gap = '0.6rem';
-      } else {
-        grid.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
-        grid.style.gap = '0.45rem';
-      }
+      grid.style.gridTemplateColumns = suggestionsZoomed ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))';
+      grid.style.gap = suggestionsZoomed ? '0.6rem' : '0.45rem';
     } else {
-      if (suggestionsZoomed) {
-        grid.style.gridTemplateColumns = 'repeat(6, minmax(0, 1fr))';
-        grid.style.gap = '0.75rem';
-      } else {
-        grid.style.gridTemplateColumns = 'repeat(10, minmax(0, 1fr))';
-        grid.style.gap = '0.5rem';
-      }
+      grid.style.gridTemplateColumns = suggestionsZoomed ? 'repeat(6, minmax(0, 1fr))' : 'repeat(10, minmax(0, 1fr))';
+      grid.style.gap = suggestionsZoomed ? '0.75rem' : '0.5rem';
     }
 
     cards.forEach((card, index) => {
@@ -339,35 +549,37 @@
 
       const cardEl = document.createElement('div');
       cardEl.className = 'search-card-item';
-      cardEl.style.cssText = 'position: relative !important; border-radius: 8px !important; overflow: hidden !important; background: rgba(12, 13, 20, 0.4) !important; border: 1px solid rgba(168, 85, 247, 0.15) !important; transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important; cursor: pointer !important; width: 100% !important; display: flex !important; flex-direction: column !important; box-sizing: border-box !important; container-type: inline-size;';
+      cardEl.style.cssText = 'position: relative !important; border-radius: 8px !important; overflow: hidden !important; background: rgba(12, 13, 20, 0.5) !important; border: 1px solid rgba(168, 85, 247, 0.2) !important; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease !important; cursor: pointer !important; width: 100% !important; display: flex !important; flex-direction: column !important; box-sizing: border-box !important; container-type: inline-size; backdrop-filter: blur(8px);';
 
       cardEl.onmouseover = function() {
         this.style.transform = 'translateY(-4px)';
-        this.style.boxShadow = '0 8px 16px rgba(0,0,0,0.3)';
-        this.style.borderColor = 'rgba(168, 85, 247, 0.35)';
+        this.style.boxShadow = '0 8px 24px rgba(168, 85, 247, 0.25)';
+        this.style.borderColor = 'rgba(168, 85, 247, 0.45)';
       };
       cardEl.onmouseout = function() {
         this.style.transform = 'none';
         this.style.boxShadow = 'none';
-        this.style.borderColor = 'rgba(168, 85, 247, 0.15)';
+        this.style.borderColor = 'rgba(168, 85, 247, 0.2)';
       };
 
       cardEl.onclick = function() {
         window.openInspector(card);
       };
 
-      // Check quantity in deck
+      // Check quantity in target deck
       const qtyInTarget = activeDeckMainboard.reduce((acc, c) => c.name.toLowerCase() === card.name.toLowerCase() ? acc + c.quantity : acc, 0) +
                           activeDeckCommander.reduce((acc, c) => c.name.toLowerCase() === card.name.toLowerCase() ? acc + c.quantity : acc, 0);
 
       const inDeckBadge = qtyInTarget > 0 ? `
-        <div style="position: absolute; top: 6px; left: 6px; background: rgba(245, 158, 11, 0.9) !important; border: 1px solid rgba(245, 158, 11, 0.4) !important; color: white !important; font-family: 'Outfit', sans-serif !important; font-size: 0.62rem !important; font-weight: 800 !important; padding: 2px 6px !important; border-radius: 4px !important; box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important; z-index: 5 !important; text-transform: uppercase !important; pointer-events: none !important;">
+        <div style="position: absolute; top: 6px; left: 6px; background: rgba(245, 158, 11, 0.95) !important; border: 1px solid rgba(245, 158, 11, 0.4) !important; color: white !important; font-family: 'Outfit', sans-serif !important; font-size: 0.62rem !important; font-weight: 800 !important; padding: 2px 6px !important; border-radius: 4px !important; box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important; z-index: 5 !important; text-transform: uppercase !important; pointer-events: none !important;">
           ${qtyInTarget} in Deck
         </div>
       ` : '';
 
       const ownedBadge = card.owned ? `
-        <div class="suggestion-owned-badge">Owned</div>
+        <div style="position: absolute; top: 6px; right: 6px; background: rgba(16, 185, 129, 0.95) !important; border: 1px solid rgba(16, 185, 129, 0.4) !important; color: white !important; font-family: 'Outfit', sans-serif !important; font-size: 0.62rem !important; font-weight: 800 !important; padding: 2px 6px !important; border-radius: 4px !important; box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important; z-index: 5 !important; text-transform: uppercase !important; pointer-events: none !important;">
+          💎 Owned
+        </div>
       ` : '';
 
       cardEl.innerHTML = `
@@ -375,13 +587,13 @@
         ${ownedBadge}
         <div style="width: 100% !important; aspect-ratio: 2.5/3.5 !important; overflow: hidden !important; position: relative !important;" data-card-name="${card.name}">
           <img src="${imgUrl}" alt="${card.name}" loading="lazy" style="width: 100% !important; height: 100% !important; object-fit: contain !important; transition: transform 0.2s ease !important; display: block !important;"
-               onmouseover="this.style.transform='scale(1.03)'"
+               onmouseover="this.style.transform='scale(1.04)'"
                onmouseout="this.style.transform='none'"
                onerror="this.src='logo.svg'">
         </div>
-        <!-- Footer row with Add Button & Price Badge scaling dynamically -->
-        <div style="display: flex !important; align-items: center !important; gap: 4cqw !important; padding: 4cqw !important; background: rgba(12, 13, 20, 0.9) !important; border-top: 1px solid rgba(168, 85, 247, 0.2) !important; box-sizing: border-box !important; width: 100% !important;" onclick="event.stopPropagation();">
-          <button type="button" class="btn btn-primary" onclick="window.addSuggestionToDeck(${JSON.stringify(card).replace(/'/g, "&apos;")}, this)" style="width: 18cqw !important; height: 18cqw !important; padding: 0 !important; font-size: 10cqw !important; display: flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; border-radius: 50% !important; margin: 0 !important; border: 1px solid rgba(255,255,255,0.25) !important; background: var(--color-primary) !important; color: white !important; box-shadow: 0 2px 8px rgba(0,0,0,0.6) !important; cursor: pointer !important; transition: transform 0.15s ease;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='none'" title="Add to target deck">+</button>
+        <!-- Footer row with Add Button & Price Badge -->
+        <div style="display: flex !important; align-items: center !important; gap: 4cqw !important; padding: 4cqw !important; background: rgba(12, 13, 20, 0.92) !important; border-top: 1px solid rgba(168, 85, 247, 0.2) !important; box-sizing: border-box !important; width: 100% !important;" onclick="event.stopPropagation();">
+          <button type="button" class="btn btn-primary" onclick="window.addSuggestionByIndex(${index}, event, this)" style="width: 18cqw !important; height: 18cqw !important; padding: 0 !important; font-size: 10cqw !important; display: flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; border-radius: 50% !important; margin: 0 !important; border: 1px solid rgba(255,255,255,0.25) !important; background: var(--color-primary) !important; color: white !important; box-shadow: 0 2px 8px rgba(0,0,0,0.6) !important; cursor: pointer !important; transition: transform 0.15s ease;" onmouseover="this.style.transform='scale(1.18)'" onmouseout="this.style.transform='none'" title="Add to target deck">+</button>
           <div style="background: rgba(12, 13, 20, 0.85) !important; border: 1px solid rgba(168, 85, 247, 0.35) !important; padding: 0 4cqw !important; border-radius: 3cqw !important; display: flex !important; align-items: center !important; height: 18cqw !important; box-sizing: border-box !important; justify-content: center !important;">
             <span style="font-size: 7cqw !important; color: var(--color-secondary) !important; font-weight: 700 !important; white-space: nowrap !important;">$${Number(card.price || 0.15).toFixed(2)}</span>
           </div>
@@ -393,6 +605,22 @@
 
   // Add card to target deck list
   window.addSuggestionToDeck = async function(card, buttonEl) {
+    // Update memory deck state immediately
+    const existing = activeDeckMainboard.find(c => c.name.toLowerCase() === card.name.toLowerCase());
+    if (existing) {
+      existing.quantity = (existing.quantity || existing.qty || 0) + 1;
+      existing.qty = existing.quantity;
+    } else {
+      activeDeckMainboard.push({
+        name: card.name,
+        quantity: 1,
+        qty: 1,
+        scryfallId: card.scryfallId || null,
+        price: card.price || 0.15
+      });
+    }
+
+    // Immediately trigger instant UI updates (0ms delay)
     if (buttonEl) {
       buttonEl.disabled = true;
       buttonEl.textContent = '✓';
@@ -400,77 +628,26 @@
       buttonEl.style.color = '#fff';
     }
 
-    // Check if card is already in mainboard
-    const existing = activeDeckMainboard.find(c => c.name.toLowerCase() === card.name.toLowerCase());
-    if (existing) {
-      existing.quantity += 1;
-    } else {
-      activeDeckMainboard.push({
+    window.showToast(`Added <strong>${card.name}</strong> to mainboard`);
+    renderCategoriesSidebar();
+    refreshCurrentCategoryView();
+
+    // Fire atomic card addition to server asynchronously (~50 bytes payload)
+    fetch(`/api/decks/${encodeURIComponent(deckId)}/cards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         name: card.name,
-        quantity: 1,
-        scryfallId: card.scryfallId || null,
-        price: card.price || 0.15
-      });
-    }
-
-    try {
-      window.startTopProgress();
-      const saveRes = await fetch('/api/decks/builder-save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deckId,
-          deckName: activeDeckData ? activeDeckData.deck_name : 'New Deck',
-          commanderCards: activeDeckCommander,
-          mainboardCards: activeDeckMainboard,
-          isPublic: activeDeckData ? (activeDeckData.is_public !== undefined ? activeDeckData.is_public : 0) : 0,
-          format: activeDeckData ? activeDeckData.format : 'commander',
-          keepCheapest: activeDeckData ? activeDeckData.keep_cheapest : 0
-        })
-      });
-
-      const saveResult = await saveRes.json();
-      window.completeTopProgress();
-
+        price: card.price || 0.15,
+        scryfallId: card.scryfallId || null
+      })
+    }).then(res => res.json()).then(saveResult => {
       if (saveResult.error) {
-        alert("Failed to add card: " + saveResult.error);
-        if (buttonEl) {
-          buttonEl.disabled = false;
-          buttonEl.textContent = buttonEl.id === 'inspector-add-to-deck-btn' ? '➕ Add Selected Printing to Deck' : '+';
-          buttonEl.style.background = '';
-        }
-      } else {
-        // Re-render suggestion grid to remove the added card and update the sidebar counts
-        setTimeout(() => {
-          if (buttonEl) {
-            buttonEl.disabled = false;
-            buttonEl.textContent = buttonEl.id === 'inspector-add-to-deck-btn' ? '➕ Add Selected Printing to Deck' : '+';
-            buttonEl.style.background = '';
-            buttonEl.style.color = '';
-          }
-          renderCategoriesSidebar();
-          const activeCat = categories.find(c => c.tag === selectedCategoryTag);
-          if (activeCat) {
-            const filteredCards = activeCat.cards.filter(card => {
-              const inMainboard = activeDeckMainboard.some(c => c.name.toLowerCase() === card.name.toLowerCase());
-              const inCommander = activeDeckCommander.some(c => c.name.toLowerCase() === card.name.toLowerCase());
-              return !inMainboard && !inCommander;
-            });
-            document.getElementById('current-category-count').textContent = `${filteredCards.length} recommendations found`;
-            renderCardsGrid(filteredCards);
-          }
-        }, 1200);
+        window.showToast(`⚠️ Failed to save ${card.name}: ${saveResult.error}`);
       }
-    } catch (e) {
-      window.completeTopProgress();
-      console.error(e);
-      alert("Failed to save changes.");
-      if (buttonEl) {
-        buttonEl.disabled = false;
-        buttonEl.textContent = buttonEl.id === 'inspector-add-to-deck-btn' ? '➕ Add Selected Printing to Deck' : '+';
-        buttonEl.style.background = '';
-      }
-    }
+    }).catch(e => {
+      console.error("Atomic card save error:", e);
+    });
   };
 
   // ── INSPECTOR DRAWER ────────────────────────────────────────────────
@@ -595,7 +772,6 @@
             colors: activeInspectorCard ? activeInspectorCard.colors : [],
             rarity: v.rarity || 'common'
           };
-          // Update active scryfall_id in inspector details if matching
           if (v.scryfall_id) {
             loadCardRulings(v.scryfall_id);
           }
@@ -653,21 +829,13 @@
     await window.addSuggestionToDeck(selectedInspectorPrinting, btn);
   };
 
-  // Window resize observer to adapt columns dynamically
+  // Window resize observer
   let lastWidthCategory = window.innerWidth <= 480 ? 'mobile' : (window.innerWidth <= 768 ? 'tablet' : 'desktop');
   window.addEventListener('resize', () => {
     const currentCategory = window.innerWidth <= 480 ? 'mobile' : (window.innerWidth <= 768 ? 'tablet' : 'desktop');
     if (currentCategory !== lastWidthCategory) {
       lastWidthCategory = currentCategory;
-      const activeCat = categories.find(c => c.tag === selectedCategoryTag);
-      if (activeCat) {
-        const filteredCards = activeCat.cards.filter(card => {
-          const inMainboard = activeDeckMainboard.some(c => c.name.toLowerCase() === card.name.toLowerCase());
-          const inCommander = activeDeckCommander.some(c => c.name.toLowerCase() === card.name.toLowerCase());
-          return !inMainboard && !inCommander;
-        });
-        renderCardsGrid(filteredCards);
-      }
+      refreshCurrentCategoryView();
     }
   });
 

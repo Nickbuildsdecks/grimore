@@ -4838,13 +4838,36 @@ body:not(.light-theme) .sidebar {
 }
 
 .suggestions-results-toolbar {
-  margin: 0.75rem 1rem 0;
-  padding: 0.65rem 0.8rem !important;
-  background: rgba(10,10,17,0.34) !important;
-  border: 1px solid rgba(255,255,255,0.1) !important;
-  border-radius: 12px;
+  margin: 0 !important;
+  padding: 0.6rem 1.25rem !important;
+  background: rgba(10, 10, 17, 0.45) !important;
+  border-bottom: 1px solid rgba(168, 85, 247, 0.15) !important;
   backdrop-filter: blur(12px) saturate(130%);
   -webkit-backdrop-filter: blur(12px) saturate(130%);
+}
+
+/* Suggestions Search Box Focus */
+#suggestions-search-input:focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.3) !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Active Filter Pill Highlights */
+.active-filter-pill {
+  box-shadow: 0 2px 8px rgba(168, 85, 247, 0.4) !important;
+}
+
+/* Sidebar Category Hover */
+.filters-sidebar-group:hover {
+  background: rgba(168, 85, 247, 0.08) !important;
+  color: var(--text-pure) !important;
+}
+
+/* Floating Toast Keyframes */
+@keyframes toastSlideUp {
+  0% { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
 }
 
 @media (max-width: 768px) {

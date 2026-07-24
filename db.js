@@ -205,6 +205,13 @@ async function initDb() {
     )
   `);
 
+  // Performance Indexes for high-speed queries
+  try {
+    await run("CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_name ON deck_cards (deck_id, card_name)");
+    await run("CREATE INDEX IF NOT EXISTS idx_scryfall_cards_name_lower ON scryfall_cards (LOWER(card_name))");
+    await run("CREATE INDEX IF NOT EXISTS idx_card_price_cache_name_lower ON card_price_cache (LOWER(card_name))");
+  } catch (e) {}
+
   // Create Movers Table (to track price spikes for budget cards)
   await run(`
     CREATE TABLE IF NOT EXISTS price_movers (

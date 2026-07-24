@@ -102,11 +102,15 @@ Be pragmatic. Be reliable. Self-anneal.
 
 ### 🏷️ Auto-Tagging & MTG Classification Specification
 - **Core Directive**: SOP defined in `directives/auto_tagging_engine.md`.
-- **Card Function Categorization**: Cards are categorized strictly by **function** (*Infinite Combos*, *Wincons*, *Tutors*, *Stax*, *Mass Removal*, *Single Target Removal*, *Protection*, *Ramp*, *Card Advantage*, *Card Selection*, *Recursion*, *Reanimation*, *Graveyard Fillers*, *Sacrifice Outlets*, *Utility Lands*, *Lands*, *Unique*).
+- **No-Emoji UI Rule**: Do NOT default to emojis in user interfaces, buttons, toolbar pills, or category headers. Emojis look AI-generated and clutter the interface. Use clean typography, badge pills, or custom SVG icons.
+- **Main Category Priority Rule**: Core functional roles (*Ramp*, *Card Advantage*, *Single Target Removal*, *Mass Removal*, *Protection*, *Tutors*, *Wincons/Finishers*, *Recursion*, *Reanimation*, *Stax*, *Graveyard Fillers*, *Sacrifice Outlets*, *Lands*) ALWAYS take top priority over secondary archetype categories (*Enchantments*, *Spellslinger*, etc.). Cards are assigned to their primary functional roles first. `Counters & Triggers` and `Artifact Engine` are completely removed.
+- **Fetch Lands Rule**: Fetch lands (*Polluted Delta*, *Misty Rainforest*, *Scalding Tarn*, *Verdant Catacombs*, *Arid Mesa*, *Marsh Flats*, *Bloodstained Mire*, *Flooded Strand*, *Wooded Foothills*, *Windswept Heath*, *Prismatic Vista*, *Fabled Passage*) belong under `Lands` ONLY. They are NEVER tagged as `Utility Lands`.
+- **Reanimation vs Blink & ETB Rule**: Reanimation spells (*Reanimate*, *Animate Dead*, *Victimize*, *Life // Death*, *Necromancy*, *Persist*) belong in `Reanimation` ONLY, and must NEVER be tagged as `Blink & ETB`. `Blink & ETB` is strictly battlefield exile and return (*Ephemerate*, *Flickerwisp*, *Soulherder*, *Teleportation Circle*).
+- **EDHREC Integration Rule**: EDHREC is used solely as a raw reference card pool source. EDHREC category names and synergy metrics are ignored completely in favor of Grimore's functional auto-tagging engine.
 - **Removal Rule**: Mass removal (*Day of Black Sun*, *Culling Ritual*, *Toxic Deluge*, *Wrath of God*) belongs ONLY in `Mass Removal` (never `Single Target Removal`).
 - **Ramp Rule**: Standard lands NEVER count as `Ramp`.
 - **Card Advantage vs Selection**: `Card Advantage` is net draw; `Card Selection` is filtering (*Titan's Nest*, *Ponder*).
-- **Utility Lands**: Non-mana utility lands ONLY (*Dakmor Salvage*, *Reliquary Tower*, *Urza's Saga*).
+- **Utility Lands**: Non-mana utility lands ONLY (*Dakmor Salvage*, *Reliquary Tower*, *Urza's Saga*, *Bojuka Bog*, *Strip Mine*, *Wasteland*, *Maze of Ith*, *Rogue's Passage*, *High Market*).
 - **Infinite Combo Engine**: Automatically detects combo pairs (*Heliod* + *Walking Ballista*, *Chain of Smog* + *Witherbloom Apprentice*, *Peregrine Drake* + *Deadeye Navigator*, *Hazel's Brewmaster* + *Devoted Druid*) and generates `Combo: Card A + Card B` headers.
 - **Token Prevention**: All Scryfall queries filter `+not:token+not:art+not:funny+is:paper` and validate using `isRealCard(p)`. Hover tooltips prioritize exact `scryfallId`.
 - **Price Coalesce**: Queries use `COALESCE(pc.price, sc.price, 0.15)` to avoid default $0.15 prices.

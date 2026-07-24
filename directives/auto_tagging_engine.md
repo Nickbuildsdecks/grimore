@@ -5,7 +5,7 @@ This document defines the exact rules, categorization logic, combo signatures, t
 ---
 
 ## 🎯 Primary Purpose
-Sort decklists strictly by card **function** rather than card type (Creature, Instant, Sorcery). Cards appear under all matching functional role headers without inflating physical card totals. Cards with zero matching functional roles belong under `Unique`.
+Sort decklists strictly by card **function** rather than card type (Creature, Instant, Sorcery). Core functional roles (*Ramp*, *Card Advantage*, *Single Target Removal*, *Mass Removal*, *Protection*, *Tutors*, *Wincons/Finishers*, *Recursion/Reanimation*, *Stax*, *Graveyard Fillers*, *Sacrifice Outlets*, *Lands*) ALWAYS take top priority over secondary archetype tags (*Artifact Engine*, *Enchantments*, *Spellslinger*, *Counters & Triggers*, etc.). Cards appear under their true primary functional role headers without inflating physical card totals. Cards with zero matching functional roles belong under `Unique`.
 
 ---
 
@@ -42,7 +42,7 @@ Sort decklists strictly by card **function** rather than card type (Creature, In
    - Returning cards from graveyard to hand (*Eternal Witness*, *Seasons Past*, *Regrowth*, *Reclaim*).
 
 10. **Reanimation**:
-    - Returning cards from graveyard directly to the battlefield (*Reanimate*, *Animate Dead*, *Victimize*, *Life // Death*).
+    - Returning cards from graveyard directly to the battlefield (*Reanimate*, *Animate Dead*, *Victimize*, *Life // Death*, *Necromancy*, *Persist*). **Reanimation spells MUST NEVER be tagged as Blink & ETB** (Blink/ETB is strictly exiling and returning permanents on the battlefield).
 
 11. **Graveyard Fillers**:
     - Milling or dumping cards into graveyard (*Grisly Salvage*, *Ripples of Undeath*, *Satyr Wayfinder*, *Stitcher's Supplier*).
@@ -51,8 +51,8 @@ Sort decklists strictly by card **function** rather than card type (Creature, In
     - Sacrificing permanents for value (*Viscera Seer*, *Phyrexian Altar*, *Ashnod's Altar*, *Goblin Bombardment*).
 
 13. **Utility Lands vs. Lands**:
-    - `Utility Lands`: Strictly reserved for non-basic lands performing non-mana functions (*Dakmor Salvage*, *Reliquary Tower*, *Urza's Saga*, *Bojuka Bog*, *Strip Mine*, *Maze of Ith*, *Rogue's Passage*, *High Market*).
-    - `Lands`: Mana-producing lands (*Command Tower*, Triomes, Shocklands, Duals, Basics).
+    - `Utility Lands`: Strictly reserved for non-basic lands performing non-mana utility functions (*Dakmor Salvage*, *Reliquary Tower*, *Urza's Saga*, *Bojuka Bog*, *Strip Mine*, *Wasteland*, *Maze of Ith*, *Rogue's Passage*, *High Market*).
+    - `Lands`: Mana-producing lands and **Fetch Lands** (*Command Tower*, Triomes, Shocklands, Duals, Basics, *Polluted Delta*, *Misty Rainforest*, *Scalding Tarn*, *Verdant Catacombs*, *Arid Mesa*, *Marsh Flats*, *Bloodstained Mire*, *Flooded Strand*, *Wooded Foothills*, *Windswept Heath*, *Prismatic Vista*, *Fabled Passage*). **Fetch lands NEVER count as Utility Lands.**
 
 14. **Unique**:
     - Applied ONLY if a card has zero other functional roles or combo tags. If any functional or combo tag is assigned, `Unique` MUST be stripped.

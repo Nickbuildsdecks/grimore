@@ -835,8 +835,8 @@ async function resolveCardDetailsBatch(cardNames) {
         } catch (e) {}
         
         // Check if there is a cached cheapest price using case-insensitive index
-        const cached = await db.get("SELECT price FROM card_price_cache WHERE card_name = ? COLLATE NOCASE", [card.card_name]);
-        const finalPrice = cached ? cached.price : (card.price || 0.05);
+        const cached = await db.get("SELECT price FROM card_price_cache WHERE card_name = ? COLLATE NOCASE AND price > 0", [card.card_name]);
+        const finalPrice = (cached && cached.price > 0) ? cached.price : (card.price && card.price > 0 ? card.price : 0.15);
 
         results[name] = {
           name: card.card_name, // official name from cache
@@ -2022,143 +2022,129 @@ function detectInfiniteCombos(deckCardNames) {
   return comboTagsMap;
 }
 
-// HELPER: Categorize card by its Scryfall tags, type line, and oracle text into functional roles
 function categorizeCardByTags(cardName, typeLine, tags = [], oracleText = '') {
   const matchedTags = new Set();
-  const lowercaseTags = (tags || []).map(t => (t || '').toLowerCase());
   const type = (typeLine || '').toLowerCase();
   const oracle = (oracleText || '').toLowerCase();
   const name = (cardName || '').toLowerCase().trim();
 
-  // 0. Specific Overrides for precision
-  if (name === 'carpet of flowers') {
+  // 0. High-Precision Functional Overrides for MTG Staples
+  if (name === 'sol ring' || name === 'arcane signet' || name === 'mana crypt' || name === 'mana vault' || name === 'fellwar stone' || name === 'thought vessel' || name === 'mind stone' || name.includes('talisman of') || name.includes('signet') || name === 'cultivate' || name === 'kodama\'s reach' || name === 'farseek' || name === 'three visits' || name === 'nature\'s lore' || name === 'birds of paradise' || name === 'llanowar elves' || name === 'fyndhorn elves' || name === 'elvish mystic' || name === 'delighted halfling' || name === 'carpet of flowers' || name === 'dockside extortionist' || name === 'smothering tithe') {
     matchedTags.add('Ramp');
     return Array.from(matchedTags);
   }
-  if (name === 'grisly salvage') {
-    matchedTags.add('Graveyard Fillers');
+
+  if (name === 'rhystic study' || name === 'mystic remora' || name === 'phyrexian arena' || name === 'sylvan library' || name === 'skullclamp' || name === 'esper sentinel' || name === 'ledger shredder' || name === 'ghostly pilferer' || name === 'syphon mind' || name.includes('nezahal') || name === 'black market connections') {
     matchedTags.add('Card Advantage');
     return Array.from(matchedTags);
   }
-  if (name === 'ripples of undeath') {
-    matchedTags.add('Graveyard Fillers');
-    matchedTags.add('Card Advantage');
-    return Array.from(matchedTags);
-  }
-  if (name === 'satyr wayfinder') {
-    matchedTags.add('Graveyard Fillers');
-    matchedTags.add('Lands');
-    return Array.from(matchedTags);
-  }
-  if (name === 'volatile stormdrake') {
+
+  if (name === 'swords to plowshares' || name === 'path to exile' || name === 'beast within' || name === 'generous gift' || name === 'chaos warp' || name === 'feed the swarm' || name === 'counterspell' || name === 'dovin\'s veto' || name === 'arcane denial' || name === 'fierce guardianship' || name === 'force of will' || name === 'swan song' || name === 'an offer you can\'t refuse' || name === 'deadly rollick' || name === 'snuff out' || name === 'infernal grasp' || name === 'assassin\'s trophy' || name === 'abrupt decay' || name === 'nature\'s claim' || name === 'strix serenade') {
     matchedTags.add('Single Target Removal');
     return Array.from(matchedTags);
   }
-  if (name === 'eternal witness' || name === 'seasons past' || name === 'regrowth' || name === 'reclaim' || name === 'noxious revival') {
-    matchedTags.add('Recursion');
-    return Array.from(matchedTags);
-  }
-  if (name === 'victimize' || name.includes('life // death') || name === 'death' || name === 'life/death') {
-    matchedTags.add('Reanimation');
-    return Array.from(matchedTags);
-  }
-  if (name === 'ghostly pilferer' || name === 'syphon mind' || name === 'nezahal, primal tide' || name.includes('nezahal')) {
-    matchedTags.add('Card Advantage');
-    return Array.from(matchedTags);
-  }
-  if (name === 'koma, cosmos serpent' || name.includes('koma')) {
-    matchedTags.add('Wincons/Finishers');
+
+  if (name === 'toxic deluge' || name === 'blasphemous act' || name === 'wrath of god' || name === 'damnation' || name === 'cyclonic rift' || name === 'farewell' || name === 'vanquish the horde' || name === 'supreme verdict' || name === 'culling ritual' || name === 'day of black sun' || name === 'the meathook massacre') {
+    matchedTags.add('Mass Removal');
     return Array.from(matchedTags);
   }
 
-  // 1. Infinite Combos
-  if (lowercaseTags.some(t => t.includes('combo') || t.includes('infinite'))) {
-    matchedTags.add('Infinite Combos');
+  if (name === 'demonic tutor' || name === 'vampiric tutor' || name === 'worldy tutor' || name === 'mystical tutor' || name === 'enlightened tutor' || name === 'gamble' || name === 'green sun\'s zenith' || name === 'finale of devastation') {
+    matchedTags.add('Tutors');
+    return Array.from(matchedTags);
   }
 
-  // 2. Wincons/Finishers
-  if (lowercaseTags.some(t => t.includes('win-con') || t.includes('finisher') || t.includes('win-condition') || t.includes('game-ender'))) {
-    matchedTags.add('Wincons/Finishers');
+  if (name === 'heroic intervention' || name === 'teferi\'s protection' || name === 'flawless maneuver' || name === 'lightning greaves' || name === 'swiftfoot boots' || name === 'clever concealment' || name === 'tamiyo\'s safekeeping' || name === 'veil of summer' || name === 'deflecting swat' || name === 'boros charm') {
+    matchedTags.add('Protection');
+    return Array.from(matchedTags);
   }
 
-  // 3. Tutors
-  if (lowercaseTags.some(t => t.includes('tutor') || t.includes('search-library')) || oracle.includes('search your library') || oracle.includes('search target player\'s library')) {
+  // 1. Tutors
+  if (oracle.includes('search your library for a card') || oracle.includes('search your library for an') || oracle.includes('search your library for a creature') || oracle.includes('search your library for a instant') || oracle.includes('search your library for a sorcery') || oracle.includes('search your library for a enchantment')) {
     matchedTags.add('Tutors');
   }
 
-  // 4. Stax
-  if (lowercaseTags.some(t => t.includes('stax') || t.includes('tax') || t.includes('hatebear') || t.includes('prison') || t.includes('pillow-fort')) || oracle.includes('spells cost') || oracle.includes('opponents can\'t cast') || oracle.includes('opponents play with') || oracle.includes('can\'t untap')) {
+  // 2. Stax
+  if (oracle.includes('spells cost {') || oracle.includes('opponents can\'t cast') || oracle.includes('can\'t untap')) {
     matchedTags.add('Stax');
   }
 
-  // 5. Mass Removal vs Single Target Removal
-  const isMassRemoval = lowercaseTags.some(t => t.includes('board-wipe') || t.includes('sweeper') || t.includes('boardwipe') || t.includes('mass-removal')) ||
-                        oracle.includes('destroy all') || oracle.includes('exile all') || oracle.includes('each creature gets -') || oracle.includes('destroy all nonland') || oracle.includes('return all') ||
-                        name === 'day of black sun' || name === 'culling ritual' || name === 'toxic deluge' || name === 'wrath of god' || name === 'damnation' || name === 'blasphemous act' || name === 'supreme verdict' || name === 'cyclonic rift' || name === 'vanquish the horde' || name === 'the meathook massacre';
-
-  if (isMassRemoval) {
+  // 3. Mass Removal vs Single Target Removal
+  const isMass = oracle.includes('destroy all') || oracle.includes('exile all') || oracle.includes('each creature gets -') || oracle.includes('destroy all nonland') || oracle.includes('return all');
+  if (isMass) {
     matchedTags.add('Mass Removal');
-  } else {
-    // Single Target Removal ONLY if not mass removal
-    const isSingleTargetRemoval = lowercaseTags.some(t => t.includes('removal') || t.includes('counterspell') || t.includes('spot-removal') || t.includes('single-target-removal') || t.includes('removal-creature') || t.includes('removal-artifact') || t.includes('removal-enchantment') || t.includes('removal-planeswalker')) ||
-                                  oracle.includes('destroy target') || oracle.includes('exile target') || oracle.includes('counter target spell') || (oracle.includes('deal') && oracle.includes('damage to target')) || oracle.includes('return target permanent');
-    if (isSingleTargetRemoval) {
-      matchedTags.add('Single Target Removal');
-    }
+  } else if (oracle.includes('destroy target') || oracle.includes('exile target') || oracle.includes('counter target spell') || oracle.includes('return target permanent') || (oracle.includes('deal') && oracle.includes('damage to target'))) {
+    matchedTags.add('Single Target Removal');
   }
 
-  // 6. Protection (Protects team/board/player, not self-only beaters)
-  if (name !== 'koma, cosmos serpent' && !name.includes('koma')) {
-    const isProtectionSpell = name === 'heroic intervention' || name === 'teferi\'s protection' || name === 'flawless maneuver' || name === 'swiftfoot boots' || name === 'lightning greaves' || name === 'clever concealment' || name === 'tamiyo\'s safekeeping' || name === 'veil of summer' || name === 'deflecting swat' || name === 'silence' || name === 'boros charm';
-    const isTeamProtectionText = oracle.includes('permanents you control gain') || oracle.includes('creatures you control gain') || oracle.includes('you gain hexproof') || oracle.includes('protection from') || oracle.includes('phase out') || oracle.includes('equipped creature has hexproof') || oracle.includes('equipped creature has shroud') || oracle.includes('target permanent gains indestructible') || oracle.includes('target creature gains hexproof') || oracle.includes('target creature gains indestructible');
-    
-    if (isProtectionSpell || isTeamProtectionText) {
-      matchedTags.add('Protection');
-    }
+  // 4. Protection
+  if (oracle.includes('permanents you control gain') || oracle.includes('creatures you control gain') || oracle.includes('you gain hexproof') || oracle.includes('equipped creature has hexproof') || oracle.includes('equipped creature has shroud')) {
+    matchedTags.add('Protection');
   }
 
-  // 7. Ramp (Cards that put you ahead of the mana curve; excludes regular lands)
+  // 5. Ramp
   const isLand = type.includes('land');
-  const hasRampTag = lowercaseTags.some(t => t.includes('ramp') || t === 'mana-dork' || t === 'mana-rock' || t.includes('mana-multiplier') || t === 'land-ramp' || t.includes('mana-generator') || t.includes('ritual'));
-  if (hasRampTag || (!isLand && (oracle.includes('add {') || oracle.includes('add one mana') || oracle.includes('add two mana') || oracle.includes('add three mana') || oracle.includes('search your library for a land') || oracle.includes('search your library for a basic land') || oracle.includes('you may play an additional land') || oracle.includes('put a land card from your hand onto the battlefield')))) {
+  if (!isLand && (oracle.includes('add {') || oracle.includes('add one mana') || oracle.includes('search your library for a land') || oracle.includes('you may play an additional land'))) {
     matchedTags.add('Ramp');
   }
 
-  // 8. Card Advantage vs Card Selection
-  const isCardAdvantage = lowercaseTags.some(t => t === 'card-draw' || t === 'card-advantage' || t === 'draw-card') ||
-                          oracle.includes('draw two cards') || oracle.includes('draw three cards') || oracle.includes('draw cards equal') || oracle.includes('at the beginning of your upkeep, draw') || oracle.includes('whenever an opponent casts') || oracle.includes('draw a card for each') || (oracle.includes('draw a card') && !oracle.includes('discard')) ||
-                          name === 'grisly salvage' || name === 'ripples of undeath' || name === 'ghostly pilferer' || name === 'syphon mind' || name.includes('nezahal');
+  // 6. Card Advantage vs Card Selection
+  if (oracle.includes('draw two cards') || oracle.includes('draw three cards') || oracle.includes('draw cards equal') || (oracle.includes('whenever') && oracle.includes('draw a card')) || oracle.includes('at the beginning of your upkeep, draw')) {
+    matchedTags.add('Card Advantage');
+  } else if (oracle.includes('look at the top') || oracle.includes('scry') || oracle.includes('surveil') || oracle.includes('draw a card, then discard')) {
+    matchedTags.add('Card Selection');
+  }
 
-  const isCardSelection = lowercaseTags.some(t => t.includes('looting') || t.includes('rummaging') || t.includes('card-selection') || t.includes('scry') || t.includes('surveil')) ||
-                          oracle.includes('look at the top') || oracle.includes('scry') || oracle.includes('surveil') || oracle.includes('draw a card, then discard') || oracle.includes('titan\'s nest') || name === 'ponder' || name === 'preordain' || name === 'brainstorm' || name === 'sylvan library' || name === 'impulse' || name === 'sensei\'s divining top';
-
-  if (isCardAdvantage) matchedTags.add('Card Advantage');
-  if (isCardSelection) matchedTags.add('Card Selection');
-
-  // 9. Recursion & Reanimation
-  if (oracle.includes('return target') && (oracle.includes('from your graveyard to your hand') || oracle.includes('from a graveyard to your hand'))) {
+  // 7. Reanimation & Recursion
+  if (oracle.includes('from a graveyard to the battlefield') || oracle.includes('from your graveyard to the battlefield')) {
+    matchedTags.add('Reanimation');
+  } else if (oracle.includes('from your graveyard to your hand')) {
     matchedTags.add('Recursion');
   }
-  if ((oracle.includes('return') || oracle.includes('put')) && (oracle.includes('graveyard to the battlefield') || oracle.includes('graveyard onto the battlefield')) || name === 'victimize' || name.includes('life // death')) {
-    matchedTags.add('Reanimation');
-  }
 
-  // 10. Graveyard Fillers
-  if (oracle.includes('mill') || (oracle.includes('put the top') && oracle.includes('into your graveyard')) || oracle.includes('cards from the top of your library into your graveyard')) {
+  // 8. Graveyard Fillers & Sacrifice Outlets
+  if (oracle.includes('mill ') || oracle.includes('cards into your graveyard')) {
     matchedTags.add('Graveyard Fillers');
   }
-
-  // 11. Sacrifice Outlets
-  if (oracle.includes('sacrifice a creature:') || oracle.includes('sacrifice a permanent:') || oracle.includes('sacrifice an artifact:')) {
+  if (oracle.includes('sacrifice a creature:') || oracle.includes('sacrifice a permanent:')) {
     matchedTags.add('Sacrifice Outlets');
   }
 
-  // 12. Utility Lands vs Lands
+  // 9. Tokens & Swarm
+  if (oracle.includes('populate') || oracle.includes('create a 1/1') || oracle.includes('create a 2/2') || oracle.includes('create a 3/3') || oracle.includes('create a 4/4') || oracle.includes('create X') || oracle.includes('tokens you control')) {
+    matchedTags.add('Tokens & Swarm');
+  }
+
+  // 10. Equipment & Auras
+  if (type.includes('equipment') || type.includes('aura') || oracle.includes('equipped creature') || oracle.includes('enchanted creature')) {
+    matchedTags.add('Equipment & Auras');
+  }
+
+  // 11. Archetype Engines
+  if (type.includes('enchantment') && matchedTags.size === 0) {
+    matchedTags.add('Enchantments');
+  }
+  if (oracle.includes('landfall')) {
+    matchedTags.add('Landfall');
+  }
+  if ((oracle.includes('instant') || oracle.includes('sorcery')) && (oracle.includes('whenever you cast') || oracle.includes('magecraft') || oracle.includes('copy target instant'))) {
+    matchedTags.add('Spellslinger');
+  }
+
+  // Blink & ETB (Battlefield exile and return ONLY; excludes Reanimation from graveyard!)
+  const isReanimation = matchedTags.has('Reanimation') || oracle.includes('from a graveyard') || oracle.includes('from your graveyard');
+  if (!isReanimation && oracle.includes('exile') && oracle.includes('return') && (oracle.includes('to the battlefield') || oracle.includes('battlefield under'))) {
+    matchedTags.add('Blink & ETB');
+  }
+
+  // 12. Utility Lands vs Lands (Fetch lands belong ONLY in Lands, never Utility Lands)
   if (isLand) {
-    const isUtilityLand = !type.includes('basic land') && (
-      oracle.includes('dredge') || oracle.includes('no maximum hand size') || oracle.includes('search your library') ||
+    const isFetchLand = oracle.includes('pay 1 life, sacrifice') || oracle.includes('search your library for a land card') || oracle.includes('search your library for a basic land') || name.includes('delta') || name.includes('rainforest') || name.includes('tarn') || name.includes('catacombs') || name.includes('mesa') || name.includes('flats') || name.includes('mire') || name.includes('strand') || name.includes('foothills') || name.includes('heath') || name === 'prismatic vista' || name === 'fabled passage';
+    
+    const isUtilityLand = !isFetchLand && !type.includes('basic land') && (
+      oracle.includes('dredge') || oracle.includes('no maximum hand size') ||
       oracle.includes('exile target card from a graveyard') || oracle.includes('destroy target land') ||
-      oracle.includes('prevent all combat damage') || oracle.includes('can\'t be blocked') || oracle.includes('sacrifice a') ||
+      oracle.includes('prevent all combat damage') || oracle.includes('can\'t be blocked') ||
       name === 'dakmor salvage' || name === 'reliquary tower' || name === 'urza\'s saga' || name === 'bojuka bog' || name === 'strip mine' || name === 'wasteland' || name === 'maze of ith' || name === 'rogue\'s passage' || name === 'high market'
     );
     if (isUtilityLand) {
@@ -2258,66 +2244,15 @@ app.post('/api/decks/:deckId/reload-cheapest', async (req, res) => {
       return res.json({ success: true, totalPrice: 0 });
     }
 
-    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const cardNames = cards.map(c => c.card_name);
+    const resolvedBatch = await resolveCardDetailsBatch(cardNames);
     const updatedCards = [];
 
     for (const card of cards) {
       const cardName = card.card_name;
-      const searchUrl = `https://api.scryfall.com/cards/search?q=!%22${encodeURIComponent(cardName)}%22+not:token+not:art+not:funny+is:paper&unique=prints`;
-      
-      let price = 0.05;
-      let scryfallId = null;
-
-      try {
-        const result = await fetchJson(searchUrl);
-        const prints = (result.data || []).filter(isRealCard);
-
-        const legalPrints = prints.filter(p => {
-          const leg = p.legalities || {};
-          if (deck.format && deck.format !== 'custom') {
-            const formatStatus = leg[deck.format];
-            if (formatStatus !== 'legal' && formatStatus !== 'restricted') {
-              return false;
-            }
-          }
-          return true;
-        });
-
-        let cheapestPrint = null;
-        let minPrice = Infinity;
-        const printsToEvaluate = legalPrints.length > 0 ? legalPrints : prints;
-
-        printsToEvaluate.forEach(p => {
-          if (p.prices) {
-            const usd = parseFloat(p.prices.usd);
-            const usdFoil = parseFloat(p.prices.usd_foil);
-            const usdEtched = parseFloat(p.prices.usd_etched);
-            
-            let pVal = Infinity;
-            if (usd && usd < pVal) pVal = usd;
-            if (usdFoil && usdFoil < pVal) pVal = usdFoil;
-            if (usdEtched && usdEtched < pVal) pVal = usdEtched;
-
-            if (pVal < minPrice) {
-              minPrice = pVal;
-              cheapestPrint = p;
-            }
-          }
-        });
-
-        if (cheapestPrint) {
-          price = minPrice === Infinity ? 0.05 : minPrice;
-          scryfallId = cheapestPrint.id;
-        }
-      } catch (err) {
-        console.error(`Failed to fetch cheapest print for ${cardName}:`, err.message);
-      }
-
-      await delay(75);
-
-      if (isBasicLand(cardName) && deck.include_basic_lands_in_price !== 1) {
-        price = 0.00;
-      }
+      const details = resolvedBatch[cardName] || {};
+      let price = isBasicLand(cardName) && deck.include_basic_lands_in_price !== 1 ? 0.00 : (details.price !== undefined ? details.price : 0.15);
+      let scryfallId = details.scryfallId || null;
 
       await db.run(
         "UPDATE deck_cards SET cheapest_card_price = ?, scryfall_id = ? WHERE deck_id = ? AND card_name = ?",
@@ -2881,6 +2816,8 @@ app.get('/api/cards/autocomplete', async (req, res) => {
   }
 });
 
+const suggestionsMemoryCache = new Map();
+
 app.get('/api/decks/:deckId/suggestions', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
   const { deckId } = req.params;
@@ -2888,7 +2825,10 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
   try {
     // Find commander cards for the deck
     const commanders = await db.query(
-      "SELECT card_name FROM deck_cards WHERE deck_id = ? AND is_commander = 1",
+      `SELECT dc.card_name, dc.scryfall_id, sc.scryfall_id as sc_id 
+       FROM deck_cards dc
+       LEFT JOIN scryfall_cards sc ON dc.card_name = sc.card_name
+       WHERE dc.deck_id = ? AND dc.is_commander = 1`,
       [deckId]
     );
 
@@ -2897,6 +2837,9 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
         error: "No commander defined for this deck. Please tag at least one card in your deck as a Commander first."
       });
     }
+
+    const commanderNames = commanders.map(c => c.card_name);
+    const commanderScryfallId = commanders[0]?.scryfall_id || commanders[0]?.sc_id || null;
 
     // Slugify commander name(s)
     const getEdhrecSlugForCommanders = (names) => {
@@ -2911,8 +2854,40 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
       return slugs.join('-');
     };
 
-    const commanderNames = commanders.map(c => c.card_name);
     const slug = getEdhrecSlugForCommanders(commanderNames);
+    
+    // Check high-speed memory cache (6 hour TTL)
+    const cached = suggestionsMemoryCache.get(slug);
+    if (cached && (Date.now() - cached.timestamp < 21600000)) {
+      const ownedCardsRows = await db.query(
+        `SELECT DISTINCT cc.card_name 
+         FROM collection_cards cc
+         JOIN collections c ON cc.collection_id = c.id
+         WHERE c.player_id = ?`,
+        [playerId]
+      );
+      const ownedSet = new Set(ownedCardsRows.map(r => r.card_name.toLowerCase()));
+
+      const updatedFunctional = cached.functionalCategories.map(cat => ({
+        ...cat,
+        cards: cat.cards.map(card => ({ ...card, owned: ownedSet.has(card.name.toLowerCase()) }))
+      }));
+
+      const updatedType = cached.typeCategories.map(cat => ({
+        ...cat,
+        cards: cat.cards.map(card => ({ ...card, owned: ownedSet.has(card.name.toLowerCase()) }))
+      }));
+
+      return res.json({
+        success: true,
+        commanderName: cached.commanderName,
+        commanderScryfallId: cached.commanderScryfallId,
+        categories: updatedFunctional,
+        functionalCategories: updatedFunctional,
+        typeCategories: updatedType
+      });
+    }
+
     const edhrecUrl = `https://json.edhrec.com/pages/commanders/${slug}.json`;
 
     // Fetch from EDHREC
@@ -2968,18 +2943,19 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
     const namesArray = Array.from(allNames);
     const cardMap = {};
 
-    // Look up in database to get prices and scryfall_ids
+    // Look up in database to get oracle_text, type_line, prices, and scryfall_ids
     if (namesArray.length > 0) {
       const chunkSize = 90;
       for (let i = 0; i < namesArray.length; i += chunkSize) {
         const chunk = namesArray.slice(i, i + chunkSize);
         const placeholders = chunk.map(() => '?').join(',');
+        const lowerChunk = chunk.map(c => c.toLowerCase());
         const dbCards = await db.query(
-          `SELECT sc.card_name, COALESCE(sc.scryfall_id, pc.scryfall_id) as scryfall_id, sc.type_line, COALESCE(pc.price, sc.price, 0.15) as cheapest_card_price
+          `SELECT sc.card_name, COALESCE(sc.scryfall_id, pc.scryfall_id) as scryfall_id, sc.type_line, sc.oracle_text, COALESCE(NULLIF(pc.price, 0), NULLIF(sc.price, 0), 0.15) as cheapest_card_price
            FROM scryfall_cards sc
-           LEFT JOIN card_price_cache pc ON sc.card_name = pc.card_name
-           WHERE sc.card_name IN (${placeholders})`,
-          chunk
+           LEFT JOIN card_price_cache pc ON LOWER(sc.card_name) = LOWER(pc.card_name)
+           WHERE LOWER(sc.card_name) IN (${placeholders})`,
+          lowerChunk
         );
         dbCards.forEach(c => {
           cardMap[c.card_name.toLowerCase()] = c;
@@ -2992,11 +2968,12 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
         for (let i = 0; i < unmappedNames.length; i += chunkSize) {
           const chunk = unmappedNames.slice(i, i + chunkSize);
           const placeholders = chunk.map(() => '?').join(',');
+          const lowerChunk = chunk.map(c => c.toLowerCase());
           const cacheCards = await db.query(
-            `SELECT card_name, scryfall_id, price as cheapest_card_price
+            `SELECT card_name, scryfall_id, COALESCE(NULLIF(price, 0), 0.15) as cheapest_card_price
              FROM card_price_cache
-             WHERE card_name IN (${placeholders})`,
-            chunk
+             WHERE LOWER(card_name) IN (${placeholders})`,
+            lowerChunk
           );
           cacheCards.forEach(c => {
             cardMap[c.card_name.toLowerCase()] = c;
@@ -3016,57 +2993,198 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
     );
     const ownedSet = new Set(ownedCardsRows.map(r => r.card_name.toLowerCase()));
 
-    const ownedSuggestions = [];
+    // Define functional and archetype category buckets matching Grimore Auto-Tagging engine
+    const functionalBucketMap = {
+      'Owned Suggestions': { tag: 'owned-suggestions', cards: [] },
+      'Wincons/Finishers': { tag: 'wincons', cards: [] },
+      'Tutors': { tag: 'tutors', cards: [] },
+      'Stax': { tag: 'stax', cards: [] },
+      'Mass Removal': { tag: 'mass-removal', cards: [] },
+      'Single Target Removal': { tag: 'single-target-removal', cards: [] },
+      'Protection': { tag: 'protection', cards: [] },
+      'Ramp': { tag: 'ramp', cards: [] },
+      'Card Advantage': { tag: 'card-advantage', cards: [] },
+      'Card Selection': { tag: 'card-selection', cards: [] },
+      'Recursion': { tag: 'recursion', cards: [] },
+      'Reanimation': { tag: 'reanimation', cards: [] },
+      'Graveyard Fillers': { tag: 'graveyard-fillers', cards: [] },
+      'Sacrifice Outlets': { tag: 'sacrifice-outlets', cards: [] },
+      'Tokens & Swarm': { tag: 'tokens-swarm', cards: [] },
+      'Equipment & Auras': { tag: 'equipment-auras', cards: [] },
+      'Enchantments': { tag: 'enchantments', cards: [] },
+      'Blink & ETB': { tag: 'blink-etb', cards: [] },
+      'Spellslinger': { tag: 'spellslinger', cards: [] },
+      'Landfall': { tag: 'landfall', cards: [] },
+      'Utility Lands': { tag: 'utility-lands', cards: [] },
+      'Lands': { tag: 'lands', cards: [] },
+      'Unique': { tag: 'unique', cards: [] }
+    };
+
+    const addedToBucketMap = new Set(); // track 'cardName:bucket' to prevent duplicates
+
+    // Process every recommended card through Grimore's Functional Auto-Tagging engine
     namesArray.forEach(name => {
-      if (ownedSet.has(name.toLowerCase())) {
-        const matched = cardMap[name.toLowerCase()];
-        const price = matched ? matched.cheapest_card_price : 0.15;
-        const scryfallId = matched ? matched.scryfall_id : null;
-        const typeLine = matched ? matched.type_line : 'Card';
-        ownedSuggestions.push({
-          name,
-          scryfallId,
-          price: price !== null && price !== undefined ? price : 0.15,
-          type_line: typeLine,
-          synergy: null,
-          owned: true
-        });
+      const matched = cardMap[name.toLowerCase()];
+      const price = matched ? matched.cheapest_card_price : 0.15;
+      const scryfallId = matched ? matched.scryfall_id : null;
+      const typeLine = matched ? matched.type_line : 'Card';
+      const oracleText = matched ? matched.oracle_text : '';
+      const isOwned = ownedSet.has(name.toLowerCase());
+
+      const cardObj = {
+        name,
+        scryfallId,
+        price: price !== null && price !== undefined ? price : 0.15,
+        type_line: typeLine,
+        owned: isOwned
+      };
+
+      // Add to Owned Suggestions bucket if owned
+      if (isOwned) {
+        functionalBucketMap['Owned Suggestions'].cards.push(cardObj);
       }
+
+      // Run card through Grimore functional auto-tagger
+      const assignedCategories = categorizeCardByTags(name, typeLine, [], oracleText);
+
+      assignedCategories.forEach(catName => {
+        if (functionalBucketMap[catName]) {
+          const key = `${name.toLowerCase()}:${catName}`;
+          if (!addedToBucketMap.has(key)) {
+            addedToBucketMap.add(key);
+            functionalBucketMap[catName].cards.push(cardObj);
+          }
+        }
+      });
     });
 
-    // Format the response categories
-    const categories = cardlists.map(list => {
-      const cards = (list.cardviews || []).map(c => {
-        const matched = cardMap[c.name.toLowerCase()];
-        const price = matched ? matched.cheapest_card_price : 0.15;
-        const scryfallId = matched ? matched.scryfall_id : null;
-        const typeLine = matched ? matched.type_line : 'Card';
-        return {
-          name: c.name,
-          scryfallId,
-          price: price !== null && price !== undefined ? price : 0.15,
-          type_line: typeLine,
-          synergy: null,
-          owned: ownedSet.has(c.name.toLowerCase())
-        };
-      });
+    // Build ordered response categories prioritizing Main Categories
+    const categoryOrder = [
+      'Owned Suggestions',
+      'Ramp',
+      'Card Advantage',
+      'Single Target Removal',
+      'Mass Removal',
+      'Protection',
+      'Tutors',
+      'Wincons/Finishers',
+      'Card Selection',
+      'Recursion',
+      'Reanimation',
+      'Stax',
+      'Graveyard Fillers',
+      'Sacrifice Outlets',
+      'Tokens & Swarm',
+      'Equipment & Auras',
+      'Enchantments',
+      'Blink & ETB',
+      'Spellslinger',
+      'Landfall',
+      'Utility Lands',
+      'Lands',
+      'Unique'
+    ];
 
+    const functionalCategories = categoryOrder.map(header => {
+      const b = functionalBucketMap[header];
       return {
-        header: list.header,
-        tag: list.tag,
-        cards
+        header,
+        tag: b.tag,
+        cards: b.cards
       };
     }).filter(cat => cat.cards.length > 0);
 
-    if (ownedSuggestions.length > 0) {
-      categories.unshift({
-        header: "Owned Suggestions",
-        tag: "owned-suggestions",
-        cards: ownedSuggestions
-      });
-    }
+    // Build Type-Based Categories for Type Mode
+    const typeBucketMap = {
+      'Owned Suggestions': { tag: 'owned-suggestions', cards: [] },
+      'Creatures': { tag: 'creatures', cards: [] },
+      'Planeswalkers': { tag: 'planeswalkers', cards: [] },
+      'Instants': { tag: 'instants', cards: [] },
+      'Sorceries': { tag: 'sorceries', cards: [] },
+      'Enchantments': { tag: 'enchantments-type', cards: [] },
+      'Artifacts': { tag: 'artifacts-type', cards: [] },
+      'Lands': { tag: 'lands-type', cards: [] },
+      'Other': { tag: 'other-type', cards: [] }
+    };
 
-    res.json({ success: true, categories });
+    const addedToTypeBucket = new Set();
+    namesArray.forEach(name => {
+      const matched = cardMap[name.toLowerCase()];
+      const price = matched ? matched.cheapest_card_price : 0.15;
+      const scryfallId = matched ? matched.scryfall_id : null;
+      const typeLine = matched ? matched.type_line : 'Card';
+      const isOwned = ownedSet.has(name.toLowerCase());
+
+      const cardObj = {
+        name,
+        scryfallId,
+        price: price !== null && price !== undefined ? price : 0.15,
+        type_line: typeLine,
+        owned: isOwned
+      };
+
+      if (isOwned) {
+        const key = `${name.toLowerCase()}:owned-suggestions`;
+        if (!addedToTypeBucket.has(key)) {
+          addedToTypeBucket.add(key);
+          typeBucketMap['Owned Suggestions'].cards.push(cardObj);
+        }
+      }
+
+      const t = (typeLine || '').toLowerCase();
+      let assignedType = 'Other';
+      if (t.includes('creature')) assignedType = 'Creatures';
+      else if (t.includes('planeswalker')) assignedType = 'Planeswalkers';
+      else if (t.includes('instant')) assignedType = 'Instants';
+      else if (t.includes('sorcery')) assignedType = 'Sorceries';
+      else if (t.includes('enchantment')) assignedType = 'Enchantments';
+      else if (t.includes('artifact')) assignedType = 'Artifacts';
+      else if (t.includes('land')) assignedType = 'Lands';
+
+      const typeKey = `${name.toLowerCase()}:${assignedType}`;
+      if (!addedToTypeBucket.has(typeKey)) {
+        addedToTypeBucket.add(typeKey);
+        typeBucketMap[assignedType].cards.push(cardObj);
+      }
+    });
+
+    const typeOrder = [
+      'Owned Suggestions',
+      'Creatures',
+      'Planeswalkers',
+      'Instants',
+      'Sorceries',
+      'Enchantments',
+      'Artifacts',
+      'Lands',
+      'Other'
+    ];
+
+    const typeCategories = typeOrder.map(header => {
+      const b = typeBucketMap[header];
+      return {
+        header,
+        tag: b.tag,
+        cards: b.cards
+      };
+    }).filter(cat => cat.cards.length > 0);
+
+    suggestionsMemoryCache.set(slug, {
+      commanderName: commanderNames.join(' // '),
+      commanderScryfallId,
+      functionalCategories,
+      typeCategories,
+      timestamp: Date.now()
+    });
+
+    res.json({
+      success: true,
+      commanderName: commanderNames.join(' // '),
+      commanderScryfallId,
+      categories: functionalCategories,
+      functionalCategories,
+      typeCategories
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -4711,7 +4829,7 @@ app.post('/api/decks/builder-save', async (req, res) => {
         finalScryfallId = c.scryfallId;
       }
 
-      const qty = c.qty || 1;
+      const qty = c.qty !== undefined ? (parseInt(c.qty, 10) || 1) : (c.quantity !== undefined ? (parseInt(c.quantity, 10) || 1) : 1);
       
       const cardObj = {
         name: c.name,

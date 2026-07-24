@@ -483,15 +483,7 @@
   function renderUserBadge() {
     const container = document.getElementById('user-badge-container');
     if (!container) return;
-    const showAdminBtn = currentUser && currentUser.username && currentUser.username.toLowerCase() === 'nickbuildsdecks';
-    const adminBtnHtml = showAdminBtn ? `
-      <button class="btn btn-sm sidebar-footer-action" id="btn-admin-console" aria-label="Admin Console" title="Admin Console" onclick="switchHubTab('admin'); showSection('tournaments');" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(168,85,247,0.15); border: 1px solid var(--color-primary); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem; font-weight: bold; text-shadow: 0 0 4px rgba(168,85,247,0.3);">
-        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>
-        <span class="sidebar-footer-label">Admin Console</span>
-      </button>
-    ` : '';
     container.innerHTML = `
-      ${adminBtnHtml}
       <button class="btn btn-sm sidebar-footer-action" id="btn-feedback" aria-label="Feedback" title="Feedback" onclick="openFeedbackModal()" style="width: 100%; margin-bottom: 0.4rem; font-size: 0.75rem; background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.3); color: var(--color-primary); display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
         <span class="sidebar-footer-label">Feedback</span>
@@ -505,8 +497,8 @@
         <span class="sidebar-footer-label">Logout</span>
       </button>
     `;
-    // Load unread count
     loadInboxUnreadCount();
+  }
   }
 
   async function loadInboxUnreadCount() {

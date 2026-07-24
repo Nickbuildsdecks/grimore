@@ -28,32 +28,40 @@
       <div style="display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; box-sizing: border-box; width: 100%;">
 
         <!-- Row 1: Suggestions Header -->
-        <header class="suggestions-header-bar" style="display: flex; gap: 1rem; align-items: center; background: rgba(12, 13, 20, 0.45); border-bottom: 1px solid rgba(168, 85, 247, 0.25); padding: 0.6rem 1.25rem; flex-shrink: 0; backdrop-filter: blur(8px); box-shadow: 0 4px 20px rgba(0,0,0,0.15); min-height: 64px; height: auto; box-sizing: border-box; width: 100%; flex-wrap: wrap; position: relative;">
+        <header class="suggestions-header-bar" style="display: flex; gap: 1rem; align-items: center; background: rgba(12, 13, 20, 0.55); border-bottom: 1px solid rgba(168, 85, 247, 0.25); padding: 0.5rem 1.25rem; flex-shrink: 0; backdrop-filter: blur(12px); box-shadow: 0 4px 24px rgba(0,0,0,0.25); min-height: 64px; height: auto; box-sizing: border-box; width: 100%; flex-wrap: wrap; position: relative;">
 
-          <!-- Left: Logo / Back Button -->
-          <div style="display: flex; align-items: center; gap: 1rem; z-index: 2;">
-            <!-- Clickable Grimore Logo Back Button -->
+          <!-- Left: Grimore Logo Back Button & Commander Badge -->
+          <div style="display: flex; align-items: center; gap: 0.85rem; z-index: 2;">
             <a href="index.html" class="grimore-back-button" id="btn-return-to-deck" title="Back to Deck Builder">
               <img src="logo.svg" alt="Grimore Logo">
             </a>
-          </div>
 
-          <!-- Center: DECK SUGGESTIONS Header -->
-          <div class="suggestions-title" style="position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 1;">
-            <div>
-              <span>Deck intelligence</span>
-              <h1>Recommendations</h1>
+            <!-- Commander Visual Avatar Badge -->
+            <div id="commander-avatar-container" style="display: flex; align-items: center; gap: 0.6rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(168, 85, 247, 0.2); padding: 3px 10px 3px 4px; border-radius: 20px; transition: all 0.2s ease;">
+              <img id="commander-avatar-img" src="logo.svg" alt="Commander" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1.5px solid var(--color-secondary); background: #0c0d14;" onerror="this.src='logo.svg'">
+              <div style="display: flex; flex-direction: column; justify-content: center; line-height: 1.1;">
+                <span style="font-size: 0.62rem; color: var(--color-primary); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Commander</span>
+                <span id="commander-name-display" style="font-size: 0.78rem; font-weight: 700; color: var(--text-pure); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">-</span>
+              </div>
             </div>
           </div>
 
-          <!-- Right: Target Deck Selector & Return Button -->
+          <!-- Center: DECK SUGGESTIONS Header Title -->
+          <div class="suggestions-title" style="position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 1;">
+            <div style="text-align: center;">
+              <span style="font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-secondary); font-weight: 700;">EDHREC Intelligence</span>
+              <h1 style="margin: 0; font-size: 1.15rem; font-weight: 800; background: linear-gradient(135deg, #fff 0%, #d8b4fe 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Recommendations</h1>
+            </div>
+          </div>
+
+          <!-- Right: Active Deck Selector & Return Button -->
           <div class="suggestions-context" style="margin-left: auto; display: flex; align-items: center; gap: 0.8rem; z-index: 2; flex-shrink: 0;">
-            <div style="display: flex; align-items: center; gap: 0.4rem;">
-              <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Active Deck:</span>
+            <div style="display: flex; align-items: center; gap: 0.4rem; background: rgba(168,85,247,0.08); padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(168,85,247,0.15);">
+              <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600;">Active Deck:</span>
               <span id="active-deck-name-display" style="font-size: 0.8rem; font-weight: 700; color: var(--color-secondary);">Loading...</span>
             </div>
 
-            <a href="index.html" id="btn-return-deck-link" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0 0.6rem; height: 28px; font-size: 0.72rem; font-weight: 700; margin: 0;">
+            <a href="index.html" id="btn-return-deck-link" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.3rem; padding: 0 0.75rem; height: 32px; font-size: 0.75rem; font-weight: 700; margin: 0; border-radius: 6px;">
               Back to Builder
             </a>
           </div>
@@ -63,12 +71,20 @@
         <div class="search-split-container" style="display: flex; flex-grow: 1; overflow: hidden; height: 100%; width: 100%;">
 
           <!-- Left: Categories Sidebar -->
-          <div id="suggestions-categories-panel" class="search-filters-sidebar" style="display: flex; flex-direction: column; width: 240px; border-radius: 0; border-top: none; border-bottom: none; border-left: none; height: 100%; flex-shrink: 0; background: rgba(10, 10, 15, 0.5); backdrop-filter: blur(10px); border-right: 1px solid rgba(168, 85, 247, 0.15);">
-            <div class="filters-sidebar-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.15); padding: 0.8rem 1rem;">
-              <h4 style="margin: 0; font-weight: 700; color: var(--text-pure); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Categories</h4>
+          <div id="suggestions-categories-panel" class="search-filters-sidebar" style="display: flex; flex-direction: column; width: 250px; border-radius: 0; border-top: none; border-bottom: none; border-left: none; height: 100%; flex-shrink: 0; background: rgba(10, 10, 15, 0.6); backdrop-filter: blur(12px); border-right: 1px solid rgba(168, 85, 247, 0.15);">
+            <!-- Top Space 2-Sided Toggle Switch (Type / Function) -->
+            <div class="filters-sidebar-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.15); padding: 0.6rem 0.75rem; display: flex; align-items: center; justify-content: center; background: rgba(12, 13, 20, 0.4); flex-shrink: 0;">
+              <div style="display: flex; width: 100%; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 8px; padding: 3px; gap: 3px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);">
+                <button id="mode-btn-type" type="button" onclick="window.setSuggestionsMode('type')" style="flex: 1; border: none; background: transparent; color: var(--text-muted); padding: 6px 0; border-radius: 6px; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);">
+                  Type
+                </button>
+                <button id="mode-btn-function" type="button" onclick="window.setSuggestionsMode('function')" style="flex: 1; border: none; background: linear-gradient(135deg, rgba(168, 85, 247, 0.85) 0%, rgba(126, 34, 206, 0.95) 100%); color: #ffffff; padding: 6px 0; border-radius: 6px; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 10px rgba(168, 85, 247, 0.4);">
+                  Function
+                </button>
+              </div>
             </div>
 
-            <div id="categories-list" class="filters-sidebar-scroll" style="display: flex; flex-direction: column; gap: 0.2rem; padding: 0.6rem; overflow-y: auto; flex-grow: 1;">
+            <div id="categories-list" class="filters-sidebar-scroll" style="display: flex; flex-direction: column; gap: 0.25rem; padding: 0.6rem; overflow-y: auto; flex-grow: 1;">
               <!-- Categories populated via JS -->
               <div style="padding: 1rem; text-align: center; color: var(--text-muted); font-size: 0.75rem;">Loading categories...</div>
             </div>
@@ -76,18 +92,47 @@
 
           <!-- Middle: Suggestions Results -->
           <div class="search-results-section" style="flex-grow: 1; display: flex; flex-direction: column; height: 100%; overflow: hidden; background: transparent;">
-            <!-- Category Header -->
-            <div class="suggestions-results-toolbar" style="display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.25rem; background: rgba(12, 13, 20, 0.2); border-bottom: 1px solid rgba(168, 85, 247, 0.1); flex-shrink: 0;">
-              <div>
-                <h2 id="current-category-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: var(--text-pure);">Select a Category</h2>
-                <span id="current-category-count" style="font-size: 0.875rem; color: var(--text-muted);">0 cards found</span>
+            <!-- Toolbar & Search/Filter Bar -->
+            <div class="suggestions-results-toolbar" style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 1.25rem; background: rgba(12, 13, 20, 0.35); border-bottom: 1px solid rgba(168, 85, 247, 0.15); flex-shrink: 0; gap: 1rem; flex-wrap: wrap;">
+              
+              <!-- Category Title & Counter -->
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <div>
+                  <h2 id="current-category-title" style="margin: 0; font-size: 0.98rem; font-weight: 800; color: var(--text-pure); display: flex; align-items: center; gap: 0.4rem;">
+                    <span id="current-category-icon" style="display:none;"></span> Select a Category
+                  </h2>
+                  <span id="current-category-count" style="font-size: 0.78rem; color: var(--text-muted);">0 cards found</span>
+                </div>
               </div>
-              <!-- Zoom Toggle Option -->
-              <div style="display: flex; align-items: center; gap: 0.6rem;">
-                <button id="btn-zoom-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleSuggestionsZoom()" style="margin: 0; display: flex; align-items: center; gap: 0.3rem; font-weight: 600; padding: 2px 8px; font-size: 0.7rem; border-radius: 4px; height: 24px;">
-                  🔍 Zoom In
+
+              <!-- Filter Controls: Live Search, Quick Filter Pills, Sort & Zoom -->
+              <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+                
+                <!-- Live Search Box -->
+                <div style="position: relative; display: flex; align-items: center;">
+                  <input type="text" id="suggestions-search-input" placeholder="Search category cards..." style="padding: 0.3rem 0.6rem; border-radius: 6px; border: 1px solid rgba(168,85,247,0.25); background: rgba(0,0,0,0.3); color: var(--text-pure); font-size: 0.75rem; font-weight: 500; outline: none; width: 170px; transition: all 0.2s ease;">
+                </div>
+
+                <!-- Quick Filter Buttons -->
+                <div style="display: flex; background: rgba(0,0,0,0.3); border: 1px solid rgba(168,85,247,0.2); border-radius: 6px; padding: 2px; gap: 2px;">
+                  <button id="filter-btn-all" type="button" class="btn btn-sm active-filter-pill" onclick="window.setSuggestionsFilter('all')" style="padding: 2px 8px; font-size: 0.7rem; font-weight: 700; border-radius: 4px; height: 24px; margin: 0; border: none; background: rgba(168,85,247,0.3); color: white;">All</button>
+                  <button id="filter-btn-owned" type="button" class="btn btn-sm" onclick="window.setSuggestionsFilter('owned')" style="padding: 2px 8px; font-size: 0.7rem; font-weight: 700; border-radius: 4px; height: 24px; margin: 0; border: none; background: transparent; color: var(--text-muted);">Owned</button>
+                  <button id="filter-btn-budget" type="button" class="btn btn-sm" onclick="window.setSuggestionsFilter('budget')" style="padding: 2px 8px; font-size: 0.7rem; font-weight: 700; border-radius: 4px; height: 24px; margin: 0; border: none; background: transparent; color: var(--text-muted);">Budget (< $2)</button>
+                </div>
+
+                <!-- Sort Selector -->
+                <select id="suggestions-sort-select" onchange="window.setSuggestionsSort(this.value)" style="padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid rgba(168,85,247,0.25); background: rgba(12,13,20,0.8); color: var(--text-high); font-size: 0.72rem; font-weight: 600; outline: none; height: 28px; cursor: pointer;">
+                  <option value="price-asc">Price (Low to High)</option>
+                  <option value="price-desc">Price (High to Low)</option>
+                  <option value="name">Name (A-Z)</option>
+                </select>
+
+                <!-- Zoom Toggle Button -->
+                <button id="btn-zoom-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleSuggestionsZoom()" style="margin: 0; display: flex; align-items: center; gap: 0.3rem; font-weight: 700; padding: 2px 8px; font-size: 0.7rem; border-radius: 6px; height: 28px;">
+                  Zoom In
                 </button>
               </div>
+
             </div>
 
             <!-- Scrollable Suggestions Grid -->
@@ -96,9 +141,8 @@
               <div id="suggestions-grid" class="search-results-grid">
                 <!-- Recommendations cards populated via JS -->
                 <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; text-align: center; gap: 0.75rem;">
-                  <div style="font-size: 1.5rem; animation: pulse 1.5s infinite;">💡</div>
-                  <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-high);">Fetching card suggestions from EDHREC...</div>
-                  <div style="font-size: 0.875rem; color: var(--text-muted); max-width: 320px;">Analyzing your deck's commander to fetch synergy recommendations.</div>
+                  <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-high);">Fetching card suggestions...</div>
+                  <div style="font-size: 0.875rem; color: var(--text-muted); max-width: 320px;">Analyzing your deck's commander to fetch recommendations.</div>
                 </div>
               </div>
             </div>
@@ -120,7 +164,7 @@
 
                 <!-- Double Faced Flip Trigger Overlay -->
                 <div id="inspector-flip-overlay" style="display: none; position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); border: 1px solid var(--border-color); border-radius: 50%; width: 36px; height: 36px; align-items: center; justify-content: center; cursor: pointer; z-index: 10;" onclick="window.toggleInspectorCardFace()" title="Flip Card">
-                  <span style="font-size: 1.1rem; user-select: none;">🔄</span>
+                  <span style="font-size: 0.8rem; user-select: none;">Flip</span>
                 </div>
               </div>
 
@@ -138,7 +182,7 @@
 
               <!-- Add to Target Deck Button -->
               <button id="inspector-add-to-deck-btn" class="btn btn-gold" style="width: 100%; margin-bottom: 0.75rem; font-weight: 700; height: 32px; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 0.25rem;" onclick="window.addActivePrintingToDeck()">
-                ➕ Add Selected Printing to Deck
+                Add Selected Printing to Deck
               </button>
 
               <!-- Printing Version Picker -->
@@ -233,6 +277,9 @@
     }
     document.addEventListener('DOMContentLoaded', () => initMagicCanvas('app-bg-canvas'));
   </script>
-  <script src="suggestions.js?v=16"></script>
+  <!-- Floating Toast Notifications Container -->
+  <div id="toast-container" style="position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 99999; pointer-events: none;"></div>
+
+  <script src="suggestions.js?v=17"></script>
 </body>
 </html>
