@@ -317,6 +317,7 @@ async function initDb() {
       }
     }
     console.log("PostgreSQL database tables initialized successfully.");
+    await seedAdminAccount();
     return;
   }
 
@@ -579,13 +580,30 @@ async function initDb() {
     )
   `);
 
-  // Performance Indexes
   await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_card_name ON deck_cards(card_name);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_scryfall_cards_name ON scryfall_cards(name);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_player_collection_player ON player_collection(player_id);`);
 
   console.log("SQLite database initialized successfully.");
+  await seedAdminAccount();
+}
+
+async function seedAdminAccount() {
+  try {
+    const existingAdmin = await get("SELECT id FROM players WHERE username = 'nickbuildsdecks'");
+    if (!existingAdmin) {
+      const bcrypt = require('bcryptjs');
+      const hash = bcrypt.hashSync('C3n0t@ph', 10);
+      await run(
+        "INSERT INTO players (id, username, password_hash, store_nickname, is_admin, role) VALUES (?, ?, ?, ?, 1, 'admin')",
+        ['p_admin', 'nickbuildsdecks', hash, 'Nick']
+      );
+      console.log("Default admin account 'nickbuildsdecks' seeded successfully.");
+    }
+  } catch (err) {
+    console.warn("Admin account seed notice:", err.message);
+  }
 }
 
 module.exports = {
