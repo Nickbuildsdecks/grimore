@@ -5701,6 +5701,14 @@ function checkDailyResetCron() {
 setInterval(checkDailyResetCron, 30000);
 
 // Start Server
-app.listen(PORT, () => {
-  console.log(`Grimore Server running on http://localhost:${PORT}`);
+db.initDb().then(() => {
+  console.log("Database initialized successfully.");
+  app.listen(PORT, () => {
+    console.log(`Grimore Server running on http://localhost:${PORT}`);
+  });
+}).catch(err => {
+  console.error("Database initialization warning:", err);
+  app.listen(PORT, () => {
+    console.log(`Grimore Server running on http://localhost:${PORT}`);
+  });
 });

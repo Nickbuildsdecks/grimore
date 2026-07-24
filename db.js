@@ -88,9 +88,9 @@ const get = (sql, params = []) => {
 // Initialize Tables
 async function initDb() {
   if (isPostgres) {
-    // Postgres DDL Initialization
-    await query(`
-      CREATE TABLE IF NOT EXISTS seasons (
+    // Postgres DDL Initialization - execute each statement independently
+    const pgStatements = [
+      `CREATE TABLE IF NOT EXISTS seasons (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         points_entry INTEGER DEFAULT 1,
@@ -102,8 +102,8 @@ async function initDb() {
         checkin_enabled INTEGER DEFAULT 1,
         is_active INTEGER DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS players (
+      )`,
+      `CREATE TABLE IF NOT EXISTS players (
         id TEXT PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
@@ -111,9 +111,12 @@ async function initDb() {
         is_admin INTEGER DEFAULT 0,
         email TEXT DEFAULT NULL,
         google_id TEXT UNIQUE DEFAULT NULL,
+        role TEXT DEFAULT 'player',
+        avatar_url TEXT DEFAULT NULL,
+        profile_commander TEXT DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS decks (
+      )`,
+      `CREATE TABLE IF NOT EXISTS decks (
         id TEXT PRIMARY KEY,
         player_id TEXT NOT NULL REFERENCES players(id),
         moxfield_url TEXT UNIQUE NOT NULL,
@@ -121,17 +124,24 @@ async function initDb() {
         cheapest_total_price REAL DEFAULT 0,
         last_checked TIMESTAMP,
         is_legal INTEGER DEFAULT 1,
-        keep_cheapest INTEGER DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS deck_stats (
+        keep_cheapest INTEGER DEFAULT 0,
+        is_public INTEGER DEFAULT 0,
+        custom_tags TEXT,
+        featured_card_name TEXT,
+        format TEXT DEFAULT 'commander',
+        cloned_from_deck_id TEXT,
+        original_creator_name TEXT,
+        legality_reason TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS deck_stats (
         deck_id TEXT PRIMARY KEY REFERENCES decks(id),
         total_wins INTEGER DEFAULT 0,
         total_kills INTEGER DEFAULT 0,
         total_points INTEGER DEFAULT 0,
         games_played INTEGER DEFAULT 0,
         win_rate REAL DEFAULT 0.0
-      );
-      CREATE TABLE IF NOT EXISTS deck_cards (
+      )`,
+      `CREATE TABLE IF NOT EXISTS deck_cards (
         id SERIAL PRIMARY KEY,
         deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
         card_name TEXT NOT NULL,
@@ -150,16 +160,17 @@ async function initDb() {
         type_line TEXT,
         rarity TEXT,
         image_uris TEXT,
+        custom_tag TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS price_overrides (
+      )`,
+      `CREATE TABLE IF NOT EXISTS price_overrides (
         id SERIAL PRIMARY KEY,
         card_name TEXT UNIQUE NOT NULL,
         price REAL NOT NULL,
         notes TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS scryfall_cards (
+      )`,
+      `CREATE TABLE IF NOT EXISTS scryfall_cards (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         set_code TEXT NOT NULL,
@@ -181,8 +192,8 @@ async function initDb() {
         keywords TEXT,
         card_faces TEXT,
         last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS card_price_cache (
+      )`,
+      `CREATE TABLE IF NOT EXISTS card_price_cache (
         id SERIAL PRIMARY KEY,
         scryfall_id TEXT UNIQUE NOT NULL,
         card_name TEXT NOT NULL,
@@ -197,8 +208,8 @@ async function initDb() {
         cmc REAL,
         rarity TEXT,
         cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS tournaments (
+      )`,
+      `CREATE TABLE IF NOT EXISTS tournaments (
         id TEXT PRIMARY KEY,
         season_id TEXT REFERENCES seasons(id),
         name TEXT NOT NULL,
@@ -209,8 +220,8 @@ async function initDb() {
         pairing_strategy TEXT DEFAULT 'swiss',
         deck_lock INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS tournament_players (
+      )`,
+      `CREATE TABLE IF NOT EXISTS tournament_players (
         tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
         player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
         deck_id TEXT REFERENCES decks(id),
@@ -223,15 +234,15 @@ async function initDb() {
         losses INTEGER DEFAULT 0,
         kills INTEGER DEFAULT 0,
         PRIMARY KEY (tournament_id, player_id)
-      );
-      CREATE TABLE IF NOT EXISTS tournament_rounds (
+      )`,
+      `CREATE TABLE IF NOT EXISTS tournament_rounds (
         id SERIAL PRIMARY KEY,
         tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
         round_number INTEGER NOT NULL,
         status TEXT DEFAULT 'in_progress',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS matches (
+      )`,
+      `CREATE TABLE IF NOT EXISTS matches (
         id TEXT PRIMARY KEY,
         tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
         round_number INTEGER NOT NULL,
@@ -245,8 +256,8 @@ async function initDb() {
         status TEXT DEFAULT 'pending',
         scores_submitted INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS match_reports (
+      )`,
+      `CREATE TABLE IF NOT EXISTS match_reports (
         id SERIAL PRIMARY KEY,
         match_id TEXT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
         reporter_id TEXT NOT NULL REFERENCES players(id),
@@ -254,8 +265,8 @@ async function initDb() {
         kills_json TEXT,
         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (match_id, reporter_id)
-      );
-      CREATE TABLE IF NOT EXISTS player_collection (
+      )`,
+      `CREATE TABLE IF NOT EXISTS player_collection (
         id SERIAL PRIMARY KEY,
         player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
         card_name TEXT NOT NULL,
@@ -267,8 +278,8 @@ async function initDb() {
         purchase_price REAL DEFAULT 0.0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (player_id, card_name, set_code, collector_number, foil)
-      );
-      CREATE TABLE IF NOT EXISTS messages (
+      )`,
+      `CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
         sender_id TEXT REFERENCES players(id),
         recipient_id TEXT REFERENCES players(id),
@@ -276,8 +287,35 @@ async function initDb() {
         body TEXT NOT NULL,
         is_read INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
+      )`,
+      `CREATE TABLE IF NOT EXISTS deck_likes (
+        id SERIAL PRIMARY KEY,
+        deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (deck_id, player_id)
+      )`,
+      // Column migrations for Postgres
+      `ALTER TABLE players ADD COLUMN IF NOT EXISTS google_id TEXT`,
+      `ALTER TABLE players ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'player'`,
+      `ALTER TABLE players ADD COLUMN IF NOT EXISTS avatar_url TEXT`,
+      `ALTER TABLE players ADD COLUMN IF NOT EXISTS profile_commander TEXT`,
+      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS is_public INTEGER DEFAULT 0`,
+      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS custom_tags TEXT`,
+      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_card_name TEXT`,
+      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS format TEXT DEFAULT 'commander'`,
+      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS cloned_from_deck_id TEXT`,
+      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS original_creator_name TEXT`,
+      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS legality_reason TEXT`
+    ];
+
+    for (let stmt of pgStatements) {
+      try {
+        await query(stmt);
+      } catch (e) {
+        console.warn("Postgres DDL statement notice:", e.message);
+      }
+    }
     console.log("PostgreSQL database tables initialized successfully.");
     return;
   }
