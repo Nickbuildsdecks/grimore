@@ -14,6 +14,7 @@ const Collections = lazy(() => import("@/pages/Collections").then((module) => ({
 const Builder = lazy(() => import("@/pages/Builder").then((module) => ({ default: module.Builder })))
 const Profile = lazy(() => import("@/pages/Profile").then((module) => ({ default: module.Profile })))
 const DeckDetail = lazy(() => import("@/pages/DeckDetail").then((module) => ({ default: module.DeckDetail })))
+const IconGallery = lazy(() => import("@/pages/IconGallery").then((module) => ({ default: module.IconGallery })))
 
 function RouteFallback() {
   return <div className="flex min-h-dvh items-center justify-center"><img src="/logo.svg?v=mythic" alt="" className="h-14 w-14 animate-pulse" /></div>
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="/life" element={<Life />} />
             <Route path="/collections" element={<Collections />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/icons" element={<IconGallery />} />
             <Route path="/builder/new" element={<Builder />} />
             <Route path="/builder/:deckId" element={<Builder />} />
             <Route path="*" element={<Navigate to="/discover" replace />} />

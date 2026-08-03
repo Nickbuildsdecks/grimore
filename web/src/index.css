@@ -1196,3 +1196,194 @@
   .life-damage-source button { min-width: 26px; }
   .life-menu { padding: 9px; }
 }
+
+/* ── Grimore icons: animation + two-tone system ─────────────────────────
+   Parts inside each icon (bubbles, sparks, flames, rings) carry class
+   hooks. Animations exist on every part but stay paused until activated:
+   .gi-animate loops forever; .gi-hover runs while the icon, a parent
+   link/button, or a Tailwind .group ancestor is hovered.                */
+
+.gi * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.gi {
+  --gi-play: paused;
+}
+.gi.gi-animate,
+.gi.gi-hover:hover,
+:is(a, button, [role="button"], .group):hover .gi.gi-hover {
+  --gi-play: running;
+}
+
+/* Fully-lit mode also makes the whole icon breathe with a soft glow */
+.gi.gi-animate,
+.gi.gi-hover:hover,
+:is(a, button, [role="button"], .group):hover .gi.gi-hover {
+  animation: gi-breathe 3.2s ease-in-out infinite;
+}
+
+/* Two-tone accents: sparks/bubbles/flames pick up --gi-accent */
+.gi .gi-accent {
+  stroke: var(--gi-accent, currentColor);
+}
+.gi-accent-arcane {
+  --gi-accent: var(--arcane-bright);
+}
+.gi-accent-brass {
+  --gi-accent: var(--brass-bright);
+}
+
+/* Part choreography */
+.gi .gi-bubble {
+  animation: gi-bubble 2s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-bubble-2 {
+  animation-delay: 0.45s;
+}
+.gi .gi-bubble-3 {
+  animation-delay: 1s;
+}
+.gi .gi-spark {
+  animation: gi-twinkle 1.5s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-glint {
+  animation: gi-blink 2.2s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-flame {
+  animation: gi-flicker 0.9s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+  transform-origin: 50% 100%;
+}
+.gi .gi-ring {
+  animation: gi-spin 8s linear infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-gem {
+  animation: gi-pulse 1.7s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-stir {
+  animation: gi-stir 1.4s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+  transform-origin: 60% 85%;
+}
+.gi .gi-sway {
+  animation: gi-sway 2.2s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+  transform-origin: 50% 100%;
+}
+.gi .gi-pestle {
+  animation: gi-grind 1.1s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+  transform-origin: 20% 90%;
+}
+.gi .gi-rune {
+  animation: gi-glow 1.9s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-pupil {
+  animation: gi-dart 2.8s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-sand {
+  animation: gi-drip 1.3s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-orb {
+  animation: gi-glow 2.6s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-liquid {
+  animation: gi-slosh 2s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-wand {
+  animation: gi-wave 1.5s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+  transform-origin: 15% 90%;
+}
+.gi .gi-lines {
+  animation: gi-blink 3s ease-in-out infinite;
+  animation-play-state: var(--gi-play);
+}
+
+@keyframes gi-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.045); }
+}
+@keyframes gi-bubble {
+  0% { transform: translateY(1.6px) scale(0.7); opacity: 0.25; }
+  55% { transform: translateY(-1.6px) scale(1.05); opacity: 1; }
+  100% { transform: translateY(-3.6px) scale(0.55); opacity: 0; }
+}
+@keyframes gi-twinkle {
+  0%, 100% {
+    transform: scale(0.62) rotate(-14deg);
+    opacity: 0.45;
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    transform: scale(1.3) rotate(14deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 2.5px currentColor);
+  }
+}
+@keyframes gi-blink {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+@keyframes gi-glow {
+  0%, 100% { opacity: 0.55; filter: drop-shadow(0 0 0 transparent); }
+  50% { opacity: 1; filter: drop-shadow(0 0 2.5px currentColor); }
+}
+@keyframes gi-flicker {
+  0%, 100% { transform: scaleY(1) scaleX(1) skewX(0deg); }
+  25% { transform: scaleY(1.16) scaleX(0.94) skewX(-4deg); }
+  55% { transform: scaleY(0.88) scaleX(1.06) skewX(3.5deg); }
+  80% { transform: scaleY(1.1) scaleX(0.96) skewX(-2deg); }
+}
+@keyframes gi-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes gi-pulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.6; filter: drop-shadow(0 0 0 transparent); }
+  50% { transform: scale(1.12); opacity: 1; filter: drop-shadow(0 0 2px currentColor); }
+}
+@keyframes gi-stir {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(9deg); }
+}
+@keyframes gi-sway {
+  0%, 100% { transform: rotate(-5.5deg); }
+  50% { transform: rotate(5.5deg); }
+}
+@keyframes gi-grind {
+  0%, 100% { transform: rotate(0deg) translateX(0); }
+  40% { transform: rotate(-11deg) translateX(-1px); }
+  70% { transform: rotate(5deg) translateX(0.7px); }
+}
+@keyframes gi-dart {
+  0%, 40%, 100% { transform: translateX(0) scaleY(1); }
+  46%, 60% { transform: translateX(-1.8px) scaleY(1); }
+  66%, 80% { transform: translateX(1.6px) scaleY(1); }
+  90% { transform: translateX(0) scaleY(0.12); }
+  94% { transform: translateX(0) scaleY(1); }
+}
+@keyframes gi-drip {
+  0% { transform: translateY(-1.2px); opacity: 0.3; }
+  60% { transform: translateY(0.8px); opacity: 1; }
+  100% { transform: translateY(1.8px); opacity: 0; }
+}
+@keyframes gi-slosh {
+  0%, 100% { transform: rotate(-2.5deg) translateY(0); }
+  50% { transform: rotate(2.5deg) translateY(-0.4px); }
+}
+@keyframes gi-wave {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(4deg); }
+}
