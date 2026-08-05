@@ -46,17 +46,13 @@ async function migrateData() {
     return new Set(res.rows.map(r => r.column_name.toLowerCase()));
   };
 
-  // Ordered list of tables to preserve foreign key hierarchy
+  // Ordered list of tables to preserve foreign key hierarchy and prioritize user decks
   const tables = [
-    'seasons',
     'players',
-    'scryfall_cards',
-    'scryfall_card_tags',
+    'seasons',
     'decks',
     'deck_stats',
     'deck_cards',
-    'card_price_cache',
-    'price_overrides',
     'player_stats',
     'active_roster',
     'deck_likes',
@@ -65,6 +61,9 @@ async function migrateData() {
     'collections',
     'collection_cards',
     'wishlist_cards',
+    'card_price_cache',
+    'price_overrides',
+    'scryfall_card_tags',
     'deleted_items',
     'card_art_votes',
     'tournaments',
@@ -73,7 +72,12 @@ async function migrateData() {
     'matches',
     'match_reports',
     'player_collection',
-    'messages'
+    'messages',
+    'preference_events',
+    'card_swipes',
+    'artist_follows',
+    'followed_artist_printings',
+    'scryfall_cards' // Large cache table goes LAST
   ];
 
   for (const table of tables) {
