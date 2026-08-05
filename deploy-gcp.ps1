@@ -63,6 +63,8 @@ if (Test-Path "execution") {
 }
 if (Test-Path "grimore.db") {
     Copy-Item "grimore.db" -Destination "gcp-export\grimore.db" -Force
+    if (-not (Test-Path "gcp-export\data")) { New-Item -ItemType Directory -Path "gcp-export\data" -Force }
+    Copy-Item "grimore.db" -Destination "gcp-export\data\grimore.db" -Force
 }
 
 if (Test-Path "web") {

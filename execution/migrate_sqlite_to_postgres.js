@@ -104,31 +104,55 @@ async function migrateData() {
 
       console.log(`- Migrating table '${table}': ${rows.length} row(s)...`);
 
-      // Batch insert helper
-      const BATCH_SIZE = 250;
+      // Multi-row bulk insert helper
+      const BATCH_SIZE = 100;
       let successCount = 0;
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
         const batch = rows.slice(i, i + BATCH_SIZE);
 
-        for (const row of batch) {
-          // Filter keys to only those columns that exist in Postgres
-          const validKeys = Object.keys(row).filter(k => pgCols.has(k.toLowerCase()));
-          if (validKeys.length === 0) continue;
+        if (batch.length === 0) continue;
 
-          const values = validKeys.map(k => row[k]);
-          const placeholders = validKeys.map((_, idx) => `$${idx + 1}`).join(', ');
+        // Filter keys to only those columns that exist in Postgres
+        const sampleRow = batch[0];
+        const validKeys = Object.keys(sampleRow).filter(k => pgCols.has(k.toLowerCase()));
+        if (validKeys.length === 0) continue;
 
-          const sql = `
-            INSERT INTO ${table} (${validKeys.join(', ')})
-            VALUES (${placeholders})
-            ON CONFLICT DO NOTHING
-          `;
+        const valuePlaceholders = [];
+        const queryValues = [];
+        let valParamIdx = 1;
 
-          try {
-            await pgPool.query(sql, values);
-            successCount++;
-          } catch (rowErr) {
-            // Ignore single row insert conflicts or warnings
+        for (const r of batch) {
+          const rowParams = [];
+          for (const k of validKeys) {
+            rowParams.push(`$${valParamIdx++}`);
+            queryValues.push(r[k]);
+          }
+          valuePlaceholders.push(`(${rowParams.join(', ')})`);
+        }
+
+        const sql = `
+          INSERT INTO ${table} (${validKeys.join(', ')})
+          VALUES ${valuePlaceholders.join(', ')}
+          ON CONFLICT DO NOTHING
+        `;
+
+        try {
+          const res = await pgPool.query(sql, queryValues);
+          successCount += res.rowCount || batch.length;
+        } catch (rowErr) {
+          // Fallback to row-by-row insert on batch error
+          for (const r of batch) {
+            const rowValues = validKeys.map(k => r[k]);
+            const singlePlaceholders = validKeys.map((_, idx) => `$${idx + 1}`).join(', ');
+            const singleSql = `
+              INSERT INTO ${table} (${validKeys.join(', ')})
+              VALUES (${singlePlaceholders})
+              ON CONFLICT DO NOTHING
+            `;
+            try {
+              await pgPool.query(singleSql, rowValues);
+              successCount++;
+            } catch (e) {}
           }
         }
       }
