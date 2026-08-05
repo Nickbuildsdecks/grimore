@@ -7,7 +7,8 @@
     "start": "node --max-old-space-size=768 server.js",
     "dev": "node --max-old-space-size=768 server.js",
     "build": "npm run build:web",
-    "build:web": "npm --prefix web run build"
+    "build:web": "npm --prefix web run build",
+    "test:recommendations": "node --test test/recommendation-engine.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

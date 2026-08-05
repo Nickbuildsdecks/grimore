@@ -1,7 +1,10 @@
 import { useMemo, useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowRight, Compass, Download, MoreHorizontal, Plus, Search, Sparkles, Trash2 } from "lucide-react"
+import { ArrowRight, Compass, Download, MoreHorizontal, Plus, Search, Trash2 } from "lucide-react"
+import {
+  ScryingEye,
+} from "@/icons"
 import { toast } from "sonner"
 import { api, cardImage, type Deck } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -120,7 +123,7 @@ export function Decks() {
           </div>
           <div className="brew-stage-art">
             <CardArtFan cards={showcase.cards} />
-            <button type="button" className="brew-stage-art-link" onClick={() => showcase.cards[0] && navigate(`/search?q=${encodeURIComponent(showcase.cards[0].name)}&view=single`)} disabled={!showcase.cards[0]}><Sparkles /> Inspect this commander</button>
+            <button type="button" className="brew-stage-art-link" onClick={() => showcase.cards[0] && navigate(`/search?q=${encodeURIComponent(showcase.cards[0].name)}&view=single`)} disabled={!showcase.cards[0]}><ScryingEye /> Inspect this commander</button>
           </div>
         </section>
       )}

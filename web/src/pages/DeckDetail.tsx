@@ -1,7 +1,8 @@
 import { useMemo, useState, type FormEvent } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Copy, Crown, Heart, MessageCircle, Pencil, Send } from "lucide-react"
+import { ArrowLeft, Copy, Heart, MessageCircle, Pencil, Send } from "lucide-react"
+import { CommanderCrown } from "@/icons"
 import { toast } from "sonner"
 import { api, cardImage, type DeckCard } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -46,7 +47,7 @@ export function DeckDetail() {
       </header>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[220px_1fr]">
-        <aside>{commander ? <figure className="sticky top-4"><img src={cardImage(commander.scryfall_id)} alt={commander.card_name} className="w-full rounded-xl" /><figcaption className="mt-2 flex items-center gap-2 text-sm font-semibold"><Crown className="size-4 text-primary" /> {commander.card_name}</figcaption></figure> : <div className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">No commander selected.</div>}</aside>
+        <aside>{commander ? <figure className="sticky top-4"><img src={cardImage(commander.scryfall_id)} alt={commander.card_name} className="w-full rounded-xl" /><figcaption className="mt-2 flex items-center gap-2 text-sm font-semibold"><CommanderCrown className="size-4 text-primary" /> {commander.card_name}</figcaption></figure> : <div className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">No commander selected.</div>}</aside>
         <div className="min-w-0 space-y-7">{grouped.map((group) => <section key={group.type}><h2 className="mb-2 flex items-center justify-between border-b border-border pb-2 text-sm font-semibold"><span>{group.type}</span><span className="font-mono text-muted-foreground">{group.cards.reduce((sum, card) => sum + card.quantity, 0)}</span></h2><div className="grid grid-cols-1 gap-x-5 md:grid-cols-2 xl:grid-cols-3">{group.cards.map((card) => <div key={card.card_name} className="flex min-h-10 items-center gap-2 border-b border-border/60 text-sm"><span className="w-7 font-mono text-xs text-primary">{card.quantity}×</span><span className="min-w-0 flex-1 truncate">{card.card_name}</span><span className="font-mono text-xs text-muted-foreground">${Number(card.cheapest_card_price ?? 0).toFixed(2)}</span></div>)}</div></section>)}</div>
       </div>
 

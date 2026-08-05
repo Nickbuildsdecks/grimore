@@ -255,6 +255,71 @@ export const SpellSearch = createIcon(
   </>
 )
 
+/* ── Icons that name a place ───────────────────────────────────────────
+   These read by silhouette alone: a binder is a binder, a trophy is a
+   trophy. Metaphor is the flavour; recognisability is the job.        */
+
+/** Ring binder holding a card. Your collection. */
+export const CardBinder = createIcon(
+  "CardBinder",
+  <>
+    <path d="M4.5 3.5h15a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z" />
+    <path d="M8.2 3.5v17" />
+    <circle className="gi-glint gi-accent" cx="6" cy="8" r=".75" />
+    <circle className="gi-glint gi-accent" cx="6" cy="12" r=".75" />
+    <circle className="gi-glint gi-accent" cx="6" cy="16" r=".75" />
+    <path d="M11.5 7.5h5.5v9h-5.5z" />
+  </>
+)
+
+/** Two-handled prize cup. League standings and events. */
+export const PrizeChalice = createIcon(
+  "PrizeChalice",
+  <>
+    <path d="M7 3.5h10v4.2a5 5 0 0 1-10 0z" />
+    <path d="M7 5.2H5.2a2.3 2.3 0 0 0 2.1 4M17 5.2h1.8a2.3 2.3 0 0 1-2.1 4" />
+    <path d="M12 12.9v4.1" />
+    <path d="M8.6 20.5h6.8a3.4 3.4 0 0 0-3.4-3.5 3.4 3.4 0 0 0-3.4 3.5z" />
+    {spark(12, 6, 1.5)}
+  </>
+)
+
+/** Bookmark with a star. Cards you want but do not own. */
+export const WishBookmark = createIcon(
+  "WishBookmark",
+  <>
+    <path d="M6.5 3.5h11a1 1 0 0 1 1 1v16l-6.5-4.2L5.5 20.5v-16a1 1 0 0 1 1-1z" />
+    {spark(12, 9.5, 2.2)}
+  </>
+)
+
+/** Crowned with a spark. The commander of a deck. */
+export const CommanderCrown = createIcon(
+  "CommanderCrown",
+  <>
+    <path d="M4 18.5h16" />
+    <path d="M4 18.5 5.1 8.2l4.2 3.2L12 5.5l2.7 5.9 4.2-3.2L20 18.5z" />
+    {spark(12, 2.9, 1.3)}
+  </>
+)
+
+/** A heart split down a jagged seam that mends itself. Life totals break
+    apart and come back together, which is the whole job of the tracker. */
+export const MendingHeart = createIcon(
+  "MendingHeart",
+  <>
+    <path
+      className="gi-mend-left"
+      d="M12 6.1C11 4.8 9.4 4 7.8 4 5.2 4 3 6.1 3 8.9 3 13 7 16.5 12 21l.8-4.6-1.6-2.4 1.9-2.6-2.3-2.2z"
+    />
+    <path
+      className="gi-mend-right"
+      d="M12 6.1C13 4.8 14.6 4 16.2 4 18.8 4 21 6.1 21 8.9c0 4.1-4 7.6-9 12.1l.8-4.6-1.6-2.4 1.9-2.6-2.3-2.2z"
+    />
+    {spark(12, 12, 2.1, "gi-mend-spark gi-accent")}
+  </>
+)
+
 export const GRIMORE_ICONS = {
   Cauldron,
   PotionFlask,
@@ -274,6 +339,11 @@ export const GRIMORE_ICONS = {
   ManaSpark,
   BrewHourglass,
   SpellSearch,
+  CardBinder,
+  PrizeChalice,
+  WishBookmark,
+  CommanderCrown,
+  MendingHeart,
 } as const
 
 export type GrimoreIconName = keyof typeof GRIMORE_ICONS

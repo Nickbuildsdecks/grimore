@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
   ArrowDown,
@@ -12,8 +12,9 @@ import {
   GalleryHorizontal,
   Grid2X2,
   History,
-  LayoutList,
+  List,
   LoaderCircle,
+  Palette,
   Plus,
   Search as SearchIcon,
   SlidersHorizontal,
@@ -23,6 +24,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react"
+import { BrewHourglass, Ladle, ManaSpark } from "@/icons"
 import { api, type CardResult, type Deck, type DeckCard } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,7 +42,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Label } from "@/components/ui/label"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { SinglesCarousel } from "@/components/cards/SinglesCarousel"
+import { SwipeStack } from "@/components/cards/SwipeStack"
 import { CardArtAtmosphere } from "@/components/cards/CardArtShowcase"
 import { PageHeader } from "@/components/PageHeader"
 
@@ -107,9 +109,50 @@ interface ArtVoteResponse {
   userVote: -1 | 0 | 1
 }
 
+interface RecommendationCard extends CardResult {
+  score: number
+  reasons: string[]
+  roles: string[]
+  themes: string[]
+  targetDeck: { id: string; name: string } | null
+  owned: boolean
+  alreadyInDeck: boolean
+}
+
+interface RecommendationFeedCard extends RecommendationCard {
+  feedCycle: number
+}
+
+interface RecommendationProfile {
+  confidence: number
+  coldStart: boolean
+  decksLearned: number
+  topColors: { name: string; score: number }[]
+  topRoles: { name: string; score: number }[]
+  topThemes: { name: string; score: number }[]
+  typicalManaValues: { name: string; score: number }[]
+  typicalPriceBands: { name: string; score: number }[]
+  followedArtists: number
+  signalCounts: Record<string, number>
+}
+
+interface RecommendationResponse {
+  algorithmVersion: string
+  fallback: boolean
+  candidateSource: "scryfall-legal-pool" | "local-cache"
+  cursor: string
+  nextCursor: string
+  hasMore: true
+  cycle: number
+  recycled: boolean
+  profile: RecommendationProfile
+  cards: RecommendationCard[]
+}
+
 type ViewMode = "comfortable" | "compact" | "list" | "single"
 
 const PAGE_SIZE = 25
+const SIMILAR_PRIMARY_TYPES = ["Creature", "Planeswalker", "Battle", "Instant", "Sorcery", "Artifact", "Enchantment", "Land"]
 const EMPTY_FILTERS: FiltersState = {
   type: "any",
   rarity: "any",
@@ -176,6 +219,7 @@ export function CardSearch() {
   const qc = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const searchRef = useRef<HTMLInputElement>(null)
+  const recommendationLoadMoreRef = useRef<HTMLElement>(null)
 
   const initialFilters = useRef<FiltersState>({
     type: searchParams.get("type") || "any",
@@ -207,6 +251,8 @@ export function CardSearch() {
   const [draftFilters, setDraftFilters] = useState<FiltersState>(initialFilters)
   const [selectedCard, setSelectedCard] = useState<CardResult | null>(null)
   const [selectedVersionId, setSelectedVersionId] = useState("")
+  const [lovedArt, setLovedArt] = useState<Set<string>>(new Set())
+  const [artView, setArtView] = useState<"grid" | "swipe">("grid")
   const [visibleVersionCount, setVisibleVersionCount] = useState(12)
   const [recentSearches, setRecentSearches] = useState(readRecentSearches)
 
@@ -219,6 +265,55 @@ export function CardSearch() {
     queryKey: ["followed-artists"],
     queryFn: () => api.get<FollowedArtist[]>("/api/artists/followed"),
   })
+
+  const recommendations = useInfiniteQuery({
+    queryKey: ["card-recommendations", targetDeck],
+    queryFn: ({ pageParam }) => api.get<RecommendationResponse>(
+      `/api/cards/recommendations?limit=16&cursor=${encodeURIComponent(pageParam)}${targetDeck ? `&deckId=${encodeURIComponent(targetDeck)}` : ""}`
+    ),
+    initialPageParam: "1:0",
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled: !query,
+    staleTime: 60 * 1000,
+  })
+  const {
+    fetchNextPage: fetchNextRecommendationPage,
+    hasNextPage: hasNextRecommendationPage,
+    isFetchingNextPage: isFetchingNextRecommendationPage,
+  } = recommendations
+
+  const recommendationProfile = recommendations.data?.pages[0]?.profile
+  const recommendationCards = useMemo<RecommendationFeedCard[]>(() => {
+    const seen = new Set<string>()
+    const cards: RecommendationFeedCard[] = []
+    recommendations.data?.pages.forEach((feedPage) => {
+      feedPage.cards.forEach((card) => {
+        const key = `${feedPage.cycle}:${card.name.normalize("NFKC").trim().toLocaleLowerCase("en-US")}`
+        if (seen.has(key)) return
+        seen.add(key)
+        cards.push({ ...card, feedCycle: feedPage.cycle })
+      })
+    })
+    return cards
+  }, [recommendations.data])
+
+  useEffect(() => {
+    const target = recommendationLoadMoreRef.current
+    if (query || !target || recommendationCards.length === 0 || !hasNextRecommendationPage) return
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting) && !isFetchingNextRecommendationPage) {
+        void fetchNextRecommendationPage()
+      }
+    }, { rootMargin: "240px" })
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [
+    query,
+    recommendationCards.length,
+    fetchNextRecommendationPage,
+    hasNextRecommendationPage,
+    isFetchingNextRecommendationPage,
+  ])
 
   useEffect(() => {
     if (!decks.data) return
@@ -278,6 +373,23 @@ export function CardSearch() {
     ),
     enabled: query.trim().length > 0,
     placeholderData: (previous) => previous,
+  })
+
+  /* A search that pins down one exact card refills the swipe deck with its
+     kin: same primary type and color identity, nearby mana value. */
+  const singleResultCard = results.data?.totalCards === 1 ? results.data.cards[0] : undefined
+  const similarCards = useQuery({
+    queryKey: ["similar-cards", singleResultCard?.name],
+    queryFn: () => {
+      const card = singleResultCard!
+      const type = SIMILAR_PRIMARY_TYPES.find((item) => card.type_line.includes(item)) ?? "Creature"
+      const identity = card.colors.length > 0 ? ` id<=${card.colors.join("")}` : ""
+      const band = ` cmc>=${Math.max(0, Math.floor(card.cmc) - 1)} cmc<=${Math.floor(card.cmc) + 2}`
+      const kinQuery = `t:${type.toLowerCase()}${identity}${band} -!"${card.name}"`
+      return api.get<SearchResponse>(`/api/cards/search?q=${encodeURIComponent(kinQuery)}&page=1&limit=${PAGE_SIZE}`)
+    },
+    enabled: Boolean(singleResultCard),
+    staleTime: 5 * 60 * 1000,
   })
 
   const targetDeckCards = useQuery({
@@ -351,6 +463,7 @@ export function CardSearch() {
     onSuccess: ({ artist, following }) => {
       toast.success(following ? `Following ${artist}` : `Unfollowed ${artist}`)
       void qc.invalidateQueries({ queryKey: ["card-search"] })
+      void qc.invalidateQueries({ queryKey: ["card-recommendations"] })
     },
     onError: (error, _variables, context) => {
       if (context?.previousVersions && context.versionsKey) qc.setQueryData(context.versionsKey, context.previousVersions)
@@ -366,7 +479,13 @@ export function CardSearch() {
 
   const voteForArt = useMutation({
     mutationFn: ({ version, vote, cardName }: { version: CardVersion; vote: -1 | 0 | 1; cardName: string }) =>
-      api.post<ArtVoteResponse>(`/api/cards/versions/${version.id}/vote`, { cardName, vote }),
+      api.post<ArtVoteResponse>(`/api/cards/versions/${version.id}/vote`, {
+        cardName,
+        vote,
+        source: "art_gallery",
+        artist: version.artist,
+        price: version.price,
+      }),
     onMutate: async ({ version, vote, cardName }) => {
       const queryKey = ["card-versions", cardName]
       await qc.cancelQueries({ queryKey })
@@ -388,11 +507,55 @@ export function CardSearch() {
           ? { ...item, likes: result.likes, dislikes: result.dislikes, userVote: result.userVote }
           : item
       ))
+      void qc.invalidateQueries({ queryKey: ["card-recommendations"] })
     },
     onError: (error, _variables, context) => {
       if (context?.previous) qc.setQueryData(context.queryKey, context.previous)
       toast.error(error instanceof Error ? error.message : "Could not save your art preference")
     },
+  })
+
+  /* Gameplay taste. Swiping between different cards says nothing about the
+     artwork, so this never touches the printing's art votes. */
+  const swipeCard = useMutation({
+    mutationFn: ({ card, vote }: { card: CardResult; vote: -1 | 0 | 1 }) =>
+      api.post<{ success: boolean }>("/api/cards/swipes", {
+        cardName: card.name,
+        scryfallId: card.scryfallId,
+        vote,
+        source: "card_search_swipe",
+        context: targetDeck || undefined,
+        typeLine: card.type_line,
+        oracleText: card.oracle_text,
+        colors: card.colors,
+        cmc: card.cmc,
+        price: card.price,
+      }),
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not save this swipe"),
+  })
+
+  /* Art taste, kept deliberately separate from the swipe above. */
+  const loveArt = useMutation({
+    mutationFn: ({ card, loved }: { card: CardResult; loved: boolean }) => {
+      if (!card.scryfallId) throw new Error("This printing cannot be rated yet")
+      return api.post<ArtVoteResponse>(`/api/cards/versions/${card.scryfallId}/vote`, {
+        cardName: card.name,
+        vote: loved ? 1 : 0,
+        source: "art_gallery",
+        artist: card.artist,
+        setName: card.set_name,
+      })
+    },
+    onSuccess: (_data, { card, loved }) => {
+      setLovedArt((current) => {
+        const next = new Set(current)
+        if (loved) next.add(card.scryfallId ?? "")
+        else next.delete(card.scryfallId ?? "")
+        return next
+      })
+      toast.success(loved ? `Saved this artwork of ${card.name}` : "Removed art preference")
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not save your art preference"),
   })
 
   const addCard = useMutation({
@@ -408,6 +571,7 @@ export function CardSearch() {
       toast.success(`${card.name} added · ${data.quantity} in deck`)
       void qc.invalidateQueries({ queryKey: ["deck-cards", targetDeck] })
       void qc.invalidateQueries({ queryKey: ["my-decks"] })
+      void qc.invalidateQueries({ queryKey: ["card-recommendations"] })
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not add card"),
   })
@@ -423,6 +587,58 @@ export function CardSearch() {
     localStorage.setItem("grimore-recent-card-searches", JSON.stringify(next))
   }
 
+  function trackPreference(event: {
+    eventType: "search" | "detail_view" | "recommendation_open" | "recommendation_like" | "recommendation_dismiss"
+    entityType: "card" | "query"
+    entityKey: string
+    source: string
+    context?: Record<string, unknown>
+  }) {
+    void api.post("/api/preferences/events", event).catch(() => undefined)
+  }
+
+  function recordSwipe(card: CardResult, vote: -1 | 0 | 1, source: "personalized_cards" | "card_search") {
+    swipeCard.mutate({ card, vote })
+    if (vote === 0) return
+    trackPreference({
+      eventType: vote === 1 ? "recommendation_like" : "recommendation_dismiss",
+      entityType: "card",
+      entityKey: card.name,
+      source: `${source}_swipe`,
+      context: {
+        cardName: card.name,
+        artist: card.artist,
+        typeLine: card.type_line,
+        oracleText: card.oracle_text,
+        colors: card.colors,
+        cmc: card.cmc,
+        price: card.price,
+        targetDeckId: targetDeck || undefined,
+      },
+    })
+  }
+
+  function openCard(card: CardResult, source = "card_search") {
+    setSelectedCard(card)
+    trackPreference({
+      eventType: source === "personalized_cards" ? "recommendation_open" : "detail_view",
+      entityType: "card",
+      entityKey: card.name,
+      source,
+      context: {
+        cardName: card.name,
+        scryfallId: card.scryfallId,
+        artist: card.artist,
+        typeLine: card.type_line,
+        oracleText: card.oracle_text,
+        colors: card.colors,
+        cmc: card.cmc,
+        price: card.price,
+        targetDeckId: targetDeck || undefined,
+      },
+    })
+  }
+
   function runSearch(base: string, nextFilters = filters) {
     const value = composeQuery(base, nextFilters)
     setInput(base)
@@ -430,6 +646,13 @@ export function CardSearch() {
     setPage(1)
     setQuery(value)
     rememberSearch(base)
+    trackPreference({
+      eventType: "search",
+      entityType: "query",
+      entityKey: value,
+      source: "card_search",
+      context: { query: value, targetDeckId: targetDeck || undefined },
+    })
   }
 
   function submit(event: FormEvent) {
@@ -464,7 +687,8 @@ export function CardSearch() {
   ].filter(Boolean) as { key: keyof FiltersState; label: string }[]
 
   const totalPages = results.data ? Math.max(1, Math.ceil(results.data.totalCards / PAGE_SIZE)) : 1
-  const atmosphereCards = (results.data?.cards ?? []).slice(0, 3).map((card) => ({
+  const atmosphereSource = (results.data?.cards?.length ? results.data.cards : recommendationCards) ?? []
+  const atmosphereCards = atmosphereSource.slice(0, 3).map((card) => ({
     name: card.name,
     scryfallId: card.scryfallId,
     imageUri: card.image_uri,
@@ -509,6 +733,67 @@ export function CardSearch() {
     return <Tooltip><TooltipTrigger asChild><span className={cn("inline-flex", expanded && "w-full")}>{button}</span></TooltipTrigger><TooltipContent>Choose or create a deck first</TooltipContent></Tooltip>
   }
 
+  function swipeCardFace(card: CardResult, reason?: string) {
+    const artistPending = followArtist.isPending && followArtist.variables?.artist === card.artist
+    return (
+      <div className="search-swipe-card-face">
+        <div className="search-swipe-card-art">
+          {card.image_uri
+            ? <img src={card.image_uri} alt={card.name} draggable={false} />
+            : <div className="search-swipe-card-missing">Artwork unavailable</div>}
+          {reason && <span className="search-swipe-reason">{reason}</span>}
+        </div>
+        <div className="search-swipe-card-meta">
+          <div className="search-swipe-card-copy">
+            <strong>{card.name}</strong>
+            <span>{card.type_line || "Magic card"}</span>
+            {card.artist && <span className="search-swipe-artist-name">Art by {card.artist}</span>}
+          </div>
+          <div className="search-swipe-card-tools">
+            <b>{formatPrice(card.price)}</b>
+            {card.artist && <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="search-swipe-artist-follow"
+              aria-label={`${card.artistFollowed ? "Unfollow" : "Follow"} illustrator ${card.artist}`}
+              aria-pressed={card.artistFollowed}
+              disabled={artistPending}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                followArtist.mutate({
+                  artist: card.artist!,
+                  following: !card.artistFollowed,
+                  printing: {
+                    cardName: card.name,
+                    scryfallId: card.scryfallId || "",
+                    imageUri: card.image_uri,
+                    setName: card.set_name || "",
+                  },
+                })
+              }}
+            >{artistPending ? <LoaderCircle className="animate-spin" /> : card.artistFollowed ? <UserCheck /> : <UserPlus />}</Button>}
+            {card.scryfallId && <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="search-swipe-art-love"
+              aria-label={`${lovedArt.has(card.scryfallId) ? "Remove" : "Save"} this artwork of ${card.name}`}
+              aria-pressed={lovedArt.has(card.scryfallId)}
+              disabled={loveArt.isPending}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                loveArt.mutate({ card, loved: !lovedArt.has(card.scryfallId!) })
+              }}
+            ><Palette className={cn(lovedArt.has(card.scryfallId) && "fill-current")} /></Button>}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <TooltipProvider>
       <div className="card-search-page page-wrap relative isolate pb-5 md:pb-8" data-view={view}>
@@ -531,15 +816,104 @@ export function CardSearch() {
           {(followedArtists.data?.length ?? 0) > 0 && <nav className="search-followed-artists scrollbar-thin mt-2 flex items-center gap-2 overflow-x-auto border-t border-border pt-2" aria-label="Followed illustrators"><span className="flex shrink-0 items-center gap-1.5 px-1 text-xs font-semibold text-muted-foreground"><Brush className="size-3.5" /> Illustrators</span>{followedArtists.data?.map((artist) => <button key={artist.name} type="button" className="min-h-11 shrink-0 rounded-full bg-secondary px-3 text-xs font-medium text-secondary-foreground transition-colors hover:bg-primary/15 hover:text-primary" onClick={() => runSearch(artistSearchQuery(artist.name))}>Art by {artist.name}</button>)}</nav>}
         </form>
 
-        {query && <div className={cn("search-deck-context mt-3 flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border pb-3 text-sm", (decks.data?.length ?? 0) === 0 && "is-empty")}>{(decks.data?.length ?? 0) > 0 ? <><span className="text-muted-foreground">Add results to</span><Select value={targetDeck} onValueChange={setTargetDeck}><SelectTrigger className="w-full sm:w-56" aria-label="Deck receiving searched cards"><SelectValue placeholder="Choose a deck" /></SelectTrigger><SelectContent>{(decks.data ?? []).map((deck) => <SelectItem key={deck.id} value={deck.id}>{deck.deck_name}</SelectItem>)}</SelectContent></Select></> : <><span className="max-w-[48ch] text-muted-foreground">Browse freely, or create a deck to start saving cards.</span><Button variant="secondary" asChild><Link to="/builder/new"><Plus /> Create a deck</Link></Button></>}</div>}
+        {(query || !recommendations.isPending) && <div className={cn("search-deck-context mt-3 flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border pb-3 text-sm", (decks.data?.length ?? 0) === 0 && "is-empty")}>{(decks.data?.length ?? 0) > 0 ? <><span className="text-muted-foreground">{query ? "Add results to" : "Tune recommendations for"}</span><Select value={targetDeck || "__all__"} onValueChange={(value) => setTargetDeck(value === "__all__" ? "" : value)}><SelectTrigger className="w-full sm:w-56" aria-label="Deck receiving searched cards"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__all__">All of my decks</SelectItem>{(decks.data ?? []).map((deck) => <SelectItem key={deck.id} value={deck.id}>{deck.deck_name}</SelectItem>)}</SelectContent></Select></> : <><span className="max-w-[48ch] text-muted-foreground">Browse freely, or create a deck so Grimore can learn your building style.</span><Button variant="secondary" asChild><Link to="/builder/new"><Plus /> Create a deck</Link></Button></>}</div>}
 
         {!query ? (
-          <section className="mx-auto max-w-3xl py-8 text-center md:py-10">
-            <h2 className="text-2xl font-semibold">Search by name, role, rules text, or Scryfall syntax</h2>
-            <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">Use a quick role below or type directly into the command bar.</p>
-            <div className="mt-5 flex flex-wrap justify-center gap-2">{QUICK.map((item) => <Button key={item.label} variant="secondary" onClick={() => runSearch(item.q)}>{item.label}</Button>)}</div>
-            {recentSearches.length > 0 && <div className="mt-6 border-t border-border pt-5"><p className="mb-2 flex items-center justify-center gap-2 text-xs font-semibold text-muted-foreground"><History className="size-4" /> Recent searches</p><div className="flex flex-wrap justify-center gap-2">{recentSearches.map((item) => <Button key={item} variant="ghost" size="sm" onClick={() => runSearch(item)}>{item}</Button>)}</div></div>}
-          </section>
+          <div className="space-y-8 py-5 md:py-7">
+            <section aria-labelledby="personalized-cards-title">
+              <header className="personalized-feed-header mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary"><ManaSpark className="size-4" /> Personal card feed</p>
+                  <h2 id="personalized-cards-title" className="mt-1 font-display text-2xl font-semibold">{recommendationProfile?.coldStart ? "Popular cards while Grimore learns you" : "Built for the way you brew"}</h2>
+                  <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                    {recommendationProfile?.coldStart
+                      ? "Swipe, build, follow illustrators, and save cards—the feed will become distinctly yours."
+                      : `Learning from ${recommendationProfile?.decksLearned ?? 0} deck fingerprints, your card choices, swipes, collection, and art preferences.`}
+                  </p>
+                </div>
+                <div className="personalized-feed-controls flex flex-wrap items-center gap-2 sm:justify-end">
+                  {recommendationProfile && !recommendationProfile.coldStart && <div className="personalized-feed-signals flex max-w-xl flex-wrap gap-1.5 sm:justify-end">
+                    {[...recommendationProfile.topThemes, ...recommendationProfile.topRoles].slice(0, 5).map((item) => <Badge key={item.name} variant="secondary">{item.name}</Badge>)}
+                  </div>}
+                  <div className="flex items-center rounded-xl bg-secondary/70 p-1" aria-label="Personal feed layout">
+                    <Button type="button" variant="ghost" size="icon" className={cn("size-11 border-0", view !== "single" && "bg-primary/12 text-primary")} aria-label="Browse recommendations as a grid" aria-pressed={view !== "single"} onClick={() => setView("comfortable")}><Grid2X2 /></Button>
+                    <Button type="button" variant="ghost" size="icon" className={cn("size-11 border-0", view === "single" && "bg-primary/12 text-primary")} aria-label="Swipe recommendations one at a time" aria-pressed={view === "single"} onClick={() => setView("single")}><GalleryHorizontal /></Button>
+                  </div>
+                </div>
+              </header>
+
+              {recommendations.isPending ? (
+                view === "single"
+                  ? <div className="swipe-stack-loading"><img src="/logo.svg?v=mythic" alt="" /><p>Shuffling cards for you…</p></div>
+                  : <div className="grid grid-flow-col auto-cols-[minmax(172px,64vw)] gap-3 overflow-hidden md:grid-flow-row md:grid-cols-4">
+                    {Array.from({ length: 4 }).map((_, index) => <div key={index} className="space-y-2"><Skeleton className="aspect-[0.716] rounded-xl" /><Skeleton className="h-12 rounded-lg" /></div>)}
+                  </div>
+              ) : recommendations.isError && recommendationCards.length === 0 ? (
+                <div className="rounded-xl border border-border bg-card/70 p-5 text-sm text-muted-foreground">Personal suggestions are unavailable right now. Search still works normally.</div>
+              ) : view === "single" ? (
+                <div className="card-search-swipe">
+                  <SwipeStack
+                    key={`recommendations-${targetDeck || "all"}`}
+                    items={recommendationCards}
+                    getKey={(card) => `${card.feedCycle}-${card.name}-${card.scryfallId}`}
+                    ariaLabel="Personalized card swipe feed"
+                    statusLabel="For you"
+                    hasMore={hasNextRecommendationPage}
+                    isLoadingMore={isFetchingNextRecommendationPage}
+                    onNearEnd={() => void fetchNextRecommendationPage()}
+                    onAccept={(card) => recordSwipe(card, 1, "personalized_cards")}
+                    onReject={(card) => recordSwipe(card, -1, "personalized_cards")}
+                    onUndo={(card) => recordSwipe(card, 0, "personalized_cards")}
+                    onInspect={(card) => openCard(card, "personalized_cards")}
+                    acceptLabel="Like this card"
+                    rejectLabel="Pass on this card"
+                    inspectLabel="Inspect card details"
+                    renderItem={(card) => swipeCardFace(card, card.reasons[0])}
+                  />
+                </div>
+              ) : (
+                <div className="scrollbar-thin grid snap-x grid-flow-col auto-cols-[minmax(172px,64vw)] gap-3 overflow-x-auto pb-3 md:grid-flow-row md:grid-cols-4 md:overflow-visible">
+                  {recommendationCards.map((card) => (
+                    <article key={`${card.feedCycle}-${card.name}-${card.scryfallId}`} className="group min-w-0 snap-start overflow-hidden rounded-xl border border-border bg-card/90 transition-colors hover:border-primary/45">
+                      <button type="button" className="relative block w-full text-left" onClick={() => openCard(card, "personalized_cards")} aria-label={`View why ${card.name} was recommended`}>
+                        {card.image_uri ? <img src={card.image_uri} alt={card.name} loading="lazy" className="aspect-[0.716] w-full object-cover" /> : <span className="flex aspect-[0.716] items-center justify-center p-4 text-center text-sm text-muted-foreground">{card.name}</span>}
+                        <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/75 to-transparent p-3 pt-10 text-white">
+                          <span className="block line-clamp-2 text-sm font-semibold leading-tight">{card.name}</span>
+                          <span className="mt-1 block truncate text-[0.68rem] text-white/75">{card.reasons[0]}</span>
+                        </span>
+                      </button>
+                      <div className="space-y-2 p-2.5">
+                        <div className="flex min-w-0 items-center justify-between gap-2">
+                          <span className="truncate text-[0.68rem] text-muted-foreground">{card.targetDeck ? `For ${card.targetDeck.name}` : card.roles[0] || card.themes[0] || "Discovery pick"}</span>
+                          <span className="shrink-0 font-mono text-[0.68rem] text-brass-bright">{formatPrice(card.price)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2"><Button type="button" variant="ghost" size="sm" className="min-w-0 flex-1 justify-start px-2" onClick={() => openCard(card, "personalized_cards")}>Why this card</Button>{addButton(card)}</div>
+                      </div>
+                    </article>
+                  ))}
+                  <article ref={recommendationLoadMoreRef} className="flex min-h-64 min-w-0 snap-start items-stretch overflow-hidden rounded-xl border border-dashed border-primary/35 bg-card/45">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-full min-h-64 w-full flex-col gap-3 whitespace-normal rounded-xl px-5 text-center"
+                      disabled={isFetchingNextRecommendationPage}
+                      onClick={() => void fetchNextRecommendationPage()}
+                    >
+                      {isFetchingNextRecommendationPage ? <LoaderCircle className="size-7 animate-spin text-primary" /> : <BrewHourglass className="size-7 text-primary" />}
+                      <span className="font-display text-lg font-semibold">{isFetchingNextRecommendationPage ? "Dealing your next picks…" : "Keep dealing"}</span>
+                      <span className="max-w-44 text-xs font-normal leading-relaxed text-muted-foreground">Grimore keeps moving through legal cards, then reshuffles when the pool is exhausted.</span>
+                    </Button>
+                  </article>
+                </div>
+              )}
+            </section>
+
+            <section className="mx-auto max-w-3xl border-t border-border pt-6 text-center">
+              <h2 className="text-lg font-semibold">Search by role, rules text, or Scryfall syntax</h2>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">{QUICK.map((item) => <Button key={item.label} variant="secondary" onClick={() => runSearch(item.q)}>{item.label}</Button>)}</div>
+              {recentSearches.length > 0 && <div className="mt-5"><p className="mb-2 flex items-center justify-center gap-2 text-xs font-semibold text-muted-foreground"><History className="size-4" /> Recent searches</p><div className="flex flex-wrap justify-center gap-2">{recentSearches.map((item) => <Button key={item} variant="ghost" size="sm" onClick={() => runSearch(item)}>{item}</Button>)}</div></div>}
+            </section>
+          </div>
         ) : (
           <>
             <div className="search-results-toolbar mt-4 flex flex-col items-stretch gap-3 border-b border-border px-1 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -551,7 +925,7 @@ export function CardSearch() {
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="search-view-controls flex items-center rounded-xl border border-border bg-secondary/55 p-1" aria-label="Result layout">
-                  {([['comfortable', Grid2X2, 'Comfortable grid'], ['compact', Grid2X2, 'Compact grid'], ['list', LayoutList, 'List view'], ['single', GalleryHorizontal, 'Singles swipe view']] as const).map(([mode, Icon, label]) => <Tooltip key={mode}><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={label} aria-pressed={view === mode} onClick={() => setView(mode)} className={cn("search-view-option size-11 border-0", `search-view-option-${mode}`, view === mode && "bg-primary/12 text-primary hover:bg-primary/16")}>{<Icon className={cn("size-4", mode === "compact" && "scale-75")} />}</Button></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>)}
+                  {([['comfortable', Grid2X2, 'Comfortable grid'], ['compact', Grid2X2, 'Compact grid'], ['list', List, 'List view'], ['single', GalleryHorizontal, 'Singles swipe view']] as const).map(([mode, Icon, label]) => <Tooltip key={mode}><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={label} aria-pressed={view === mode} onClick={() => setView(mode)} className={cn("search-view-option size-11 border-0", `search-view-option-${mode}`, view === mode && "bg-primary/12 text-primary hover:bg-primary/16")}>{<Icon className={cn("size-4", mode === "compact" && "scale-75")} />}</Button></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>)}
                   </div>
                   {paginationControls("top")}
                 </div>
@@ -565,35 +939,42 @@ export function CardSearch() {
             ) : (results.data?.cards ?? []).length === 0 ? (
               <div className="py-16 text-center"><h2 className="font-display text-2xl font-semibold">No cards found</h2><p className="mt-2 text-sm text-muted-foreground">Check spelling, remove a filter, or try a broader query.</p><Button variant="secondary" className="mt-4" onClick={resetSearch}>Clear search</Button></div>
             ) : view === "single" ? (
-              <SinglesCarousel items={results.data?.cards ?? []} getKey={(card) => `${card.name}-${card.scryfallId}`} ariaLabel="Card search singles">
-                {(card) => (
-                  <article className="mx-auto grid max-w-3xl items-center gap-5 md:grid-cols-[minmax(260px,360px)_1fr] md:gap-8">
-                    <div className="relative mx-auto w-[min(78vw,360px)] overflow-hidden rounded-xl border border-border bg-card">
-                      {card.artistFollowed && <span className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-full bg-background/90 px-2 py-1 text-xs font-semibold text-primary"><Brush className="size-3.5 shrink-0" /><span className="truncate">{card.artist}</span></span>}
-                      {card.image_uri ? <img src={card.image_uri} alt={card.name} className="aspect-[0.716] w-full object-cover" /> : <div className="flex aspect-[0.716] items-center justify-center p-6 text-center text-sm text-muted-foreground">Artwork unavailable</div>}
-                    </div>
-                    <div className="min-w-0 px-2 text-center md:px-0 md:text-left">
-                      <h2 className="text-balance font-display text-2xl font-semibold md:text-3xl">{card.name}</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">{card.type_line}</p>
-                      <div className="mt-4 flex flex-wrap justify-center gap-2 md:justify-start"><Badge variant="secondary" className="capitalize">{card.rarity}</Badge><Badge variant="outline" className="font-mono text-primary">{formatPrice(card.price)}</Badge></div>
-                      {card.artist && <div className="mt-4 flex min-h-11 flex-wrap items-center justify-center gap-2 md:justify-start"><p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"><Brush className="size-4 shrink-0" /> Illustrated by <strong className="truncate font-semibold text-foreground">{card.artist}</strong></p><Button type="button" size="sm" variant={card.artistFollowed ? "secondary" : "outline"} className="min-h-11 shrink-0" aria-pressed={card.artistFollowed} disabled={followArtist.isPending && followArtist.variables?.artist === card.artist} onClick={() => followArtist.mutate({ artist: card.artist!, following: !card.artistFollowed, printing: { cardName: card.name, scryfallId: card.scryfallId || "", imageUri: card.image_uri, setName: card.set_name || "" } })}>{followArtist.isPending && followArtist.variables?.artist === card.artist ? <LoaderCircle className="animate-spin" /> : card.artistFollowed ? <UserCheck /> : <UserPlus />}{card.artistFollowed ? "Following" : "Follow"}</Button></div>}
-                      <p className="mx-auto mt-4 line-clamp-5 max-w-xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground md:mx-0">{card.oracle_text || "No Oracle text available."}</p>
-                      <div className="mt-5 flex flex-col gap-2 sm:flex-row md:justify-start"><Button type="button" variant="secondary" className="sm:flex-1" onClick={() => setSelectedCard(card)}>Card details</Button><div className="sm:flex-1">{addButton(card, true)}</div></div>
-                    </div>
-                  </article>
-                )}
-              </SinglesCarousel>
+              <div className="card-search-swipe">
+                <SwipeStack
+                  key={`${query}:${page}`}
+                  items={singleResultCard
+                    ? [singleResultCard, ...(similarCards.data?.cards ?? []).filter((card) => card.name !== singleResultCard.name)]
+                    : results.data?.cards ?? []}
+                  getKey={(card) => `${card.name}-${card.scryfallId}`}
+                  ariaLabel="Card search swipe results"
+                  statusLabel={singleResultCard ? `More like “${singleResultCard.name}”` : `Page ${page}`}
+                  isLoadingMore={Boolean(singleResultCard) && similarCards.isFetching}
+                  onAccept={(card) => recordSwipe(card, 1, "card_search")}
+                  onReject={(card) => recordSwipe(card, -1, "card_search")}
+                  onUndo={(card) => recordSwipe(card, 0, "card_search")}
+                  onInspect={(card) => openCard(card)}
+                  acceptLabel="Like this card"
+                  rejectLabel="Pass on this card"
+                  inspectLabel="Inspect card details"
+                  renderItem={(card) => swipeCardFace(card, singleResultCard && card.name !== singleResultCard.name ? `More like “${singleResultCard.name}”` : undefined)}
+                  empty={singleResultCard
+                    ? <><BrewHourglass /><h2>That’s every kin of “{singleResultCard.name}” in the library.</h2><p>Loosen the search to keep swiping through more of the archive.</p></>
+                    : results.data?.hasMore
+                      ? <><Ladle /><h2>Ready for another draw?</h2><p>Keep the same search and deal the next page of cards.</p><Button onClick={() => setPage((current) => current + 1)}>Deal next cards</Button></>
+                      : undefined}
+                />
+              </div>
             ) : (
               <div className={cn("mt-4 grid", view === "list" ? "grid-cols-1 gap-2 lg:grid-cols-2" : view === "compact" ? "grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5")}>
                 {(results.data?.cards ?? []).map((card) => {
                   const quantity = cardQuantities.get(card.name.toLowerCase()) ?? 0
-                  if (view === "list") return <article key={`${card.name}-${card.scryfallId}`} className="flex min-h-28 overflow-hidden rounded-xl border border-border bg-card/90"><button type="button" className="w-24 shrink-0 sm:w-28" onClick={() => setSelectedCard(card)} aria-label={`View ${card.name} details`}>{card.image_uri ? <img src={card.image_uri} alt="" loading="lazy" className="h-full w-full object-cover object-top" /> : <span className="flex h-full items-center justify-center p-2 text-xs text-muted-foreground">No image</span>}</button><div className="flex min-w-0 flex-1 flex-col p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h2 className="truncate text-sm font-semibold">{card.name}</h2><p className="truncate text-xs text-muted-foreground">{card.type_line}</p>{card.artistFollowed && <p className="mt-1 flex items-center gap-1 truncate text-xs font-medium text-primary"><Brush className="size-3 shrink-0" /> Art by {card.artist}</p>}</div><span className="shrink-0 font-mono text-xs text-brass-bright">{formatPrice(card.price)}</span></div><p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{card.oracle_text || "No Oracle text."}</p><div className="mt-auto flex items-center justify-between pt-2"><button type="button" className="min-h-11 text-xs font-medium text-primary hover:underline" onClick={() => setSelectedCard(card)}>Card details</button><div className="flex items-center gap-2">{quantity > 0 && <span className="text-xs text-muted-foreground">{quantity} in deck</span>}{addButton(card)}</div></div></div></article>
-                  return <figure key={`${card.name}-${card.scryfallId}`} className="group relative min-w-0 overflow-hidden rounded-xl border border-border bg-card/90 transition-colors hover:border-primary/45">{card.artistFollowed && <span className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-full bg-background/90 px-2 py-1 text-[0.65rem] font-semibold text-primary"><Brush className="size-3 shrink-0" /><span className="truncate">{card.artist}</span></span>}<button type="button" className="block w-full" onClick={() => setSelectedCard(card)} aria-label={`View ${card.name} details`}>{card.image_uri ? <img src={card.image_uri} alt={card.name} loading="lazy" className="aspect-[0.716] w-full object-cover" /> : <span className="flex aspect-[0.716] items-center justify-center p-3 text-center text-xs text-muted-foreground">{card.name}</span>}</button><figcaption className="flex min-h-[68px] items-center justify-between gap-1 p-2"><div className="min-w-0"><p className="line-clamp-2 text-xs font-semibold leading-tight">{card.name}</p><p className="mt-1 font-mono text-[0.7rem] text-brass-bright">{formatPrice(card.price)}</p></div>{addButton(card)}</figcaption></figure>
+                  if (view === "list") return <article key={`${card.name}-${card.scryfallId}`} className="flex min-h-28 overflow-hidden rounded-xl border border-border bg-card/90"><button type="button" className="w-24 shrink-0 sm:w-28" onClick={() => openCard(card)} aria-label={`View ${card.name} details`}>{card.image_uri ? <img src={card.image_uri} alt="" loading="lazy" className="h-full w-full object-cover object-top" /> : <span className="flex h-full items-center justify-center p-2 text-xs text-muted-foreground">No image</span>}</button><div className="flex min-w-0 flex-1 flex-col p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h2 className="truncate text-sm font-semibold">{card.name}</h2><p className="truncate text-xs text-muted-foreground">{card.type_line}</p>{card.artistFollowed && <p className="mt-1 flex items-center gap-1 truncate text-xs font-medium text-primary"><Brush className="size-3 shrink-0" /> Art by {card.artist}</p>}</div><span className="shrink-0 font-mono text-xs text-brass-bright">{formatPrice(card.price)}</span></div><p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{card.oracle_text || "No Oracle text."}</p><div className="mt-auto flex items-center justify-between pt-2"><button type="button" className="min-h-11 text-xs font-medium text-primary hover:underline" onClick={() => openCard(card)}>Card details</button><div className="flex items-center gap-2">{quantity > 0 && <span className="text-xs text-muted-foreground">{quantity} in deck</span>}{addButton(card)}</div></div></div></article>
+                  return <figure key={`${card.name}-${card.scryfallId}`} className="group relative min-w-0 overflow-hidden rounded-xl border border-border bg-card/90 transition-colors hover:border-primary/45">{card.artistFollowed && <span className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-full bg-background/90 px-2 py-1 text-[0.65rem] font-semibold text-primary"><Brush className="size-3 shrink-0" /><span className="truncate">{card.artist}</span></span>}<button type="button" className="block w-full" onClick={() => openCard(card)} aria-label={`View ${card.name} details`}>{card.image_uri ? <img src={card.image_uri} alt={card.name} loading="lazy" className="aspect-[0.716] w-full object-cover" /> : <span className="flex aspect-[0.716] items-center justify-center p-3 text-center text-xs text-muted-foreground">{card.name}</span>}</button><figcaption className="flex min-h-[68px] items-center justify-between gap-1 p-2"><div className="min-w-0"><p className="line-clamp-2 text-xs font-semibold leading-tight">{card.name}</p><p className="mt-1 font-mono text-[0.7rem] text-brass-bright">{formatPrice(card.price)}</p></div>{addButton(card)}</figcaption></figure>
                 })}
               </div>
             )}
 
-            {(results.data?.cards ?? []).length > 0 && totalPages > 1 && <div className="mt-6 flex items-center justify-between border-t border-border pt-4"><p className="text-sm text-muted-foreground">Page {page} of {totalPages}</p>{paginationControls("bottom")}</div>}
+            {view !== "single" && (results.data?.cards ?? []).length > 0 && totalPages > 1 && <div className="mt-6 flex items-center justify-between border-t border-border pt-4"><p className="text-sm text-muted-foreground">Page {page} of {totalPages}</p>{paginationControls("bottom")}</div>}
           </>
         )}
 
@@ -629,13 +1010,59 @@ export function CardSearch() {
                       <h3 id="art-gallery-title" className="text-sm font-semibold">Rate the artwork</h3>
                       <p className="mt-0.5 text-xs text-muted-foreground">Pick the printings you would—or would not—play.</p>
                     </div>
-                    {!!versions.data?.length && <span className="shrink-0 font-mono text-[0.68rem] text-muted-foreground">{versions.data.length} versions</span>}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {!!versions.data?.length && <span className="font-mono text-[0.68rem] text-muted-foreground">{versions.data.length} versions</span>}
+                      {(versions.data?.length ?? 0) > 1 && <div className="flex items-center rounded-lg border border-border p-0.5">
+                        <Button type="button" variant="ghost" size="icon" className={cn("size-9 border-0", artView === "grid" && "bg-primary/12 text-primary")} aria-label="Browse artwork as a grid" aria-pressed={artView === "grid"} onClick={() => setArtView("grid")}><Grid2X2 className="size-4" /></Button>
+                        <Button type="button" variant="ghost" size="icon" className={cn("size-9 border-0", artView === "swipe" && "bg-primary/12 text-primary")} aria-label="Swipe through artwork one at a time" aria-pressed={artView === "swipe"} onClick={() => setArtView("swipe")}><GalleryHorizontal className="size-4" /></Button>
+                      </div>}
+                    </div>
                   </div>
                   {versions.isPending ? (
                     <div className="mt-3 flex gap-3 overflow-hidden" aria-label="Loading artwork versions">
                       {[0, 1, 2].map((item) => <Skeleton key={item} className="h-56 w-32 shrink-0 rounded-xl" />)}
                     </div>
                   ) : (
+                    artView === "swipe" && selectedCard ? (
+                      /* The only clean art signal: one card, every printing,
+                         so artwork is the sole thing that varies. */
+                      <div className="card-search-swipe mt-3">
+                        <SwipeStack
+                          key={`art:${selectedCard.name}`}
+                          items={versions.data ?? []}
+                          getKey={(version) => version.id}
+                          ariaLabel={`Artwork swipe for ${selectedCard.name}`}
+                          statusLabel="Artwork"
+                          acceptStamp="Love it"
+                          rejectStamp="Not for me"
+                          acceptLabel="Love this artwork"
+                          rejectLabel="Pass on this artwork"
+                          inspectLabel="Use this printing"
+                          onAccept={(version) => voteForArt.mutate({ version, vote: 1, cardName: selectedCard.name })}
+                          onReject={(version) => voteForArt.mutate({ version, vote: -1, cardName: selectedCard.name })}
+                          onUndo={(version) => voteForArt.mutate({ version, vote: 0, cardName: selectedCard.name })}
+                          onInspect={(version) => setSelectedVersionId(version.id)}
+                          renderItem={(version) => (
+                            <div className="search-swipe-card-face">
+                              <div className="search-swipe-card-art">
+                                {version.image_uri
+                                  ? <img src={version.image_uri} alt={`${version.name}, ${version.set_name} printing`} draggable={false} />
+                                  : <div className="search-swipe-card-missing">Artwork unavailable</div>}
+                              </div>
+                              <div className="search-swipe-card-meta">
+                                <div className="search-swipe-card-copy">
+                                  <strong>{version.set_name}</strong>
+                                  <span>#{version.collector_number}</span>
+                                  {version.artist && <span className="search-swipe-artist-name">Art by {version.artist}</span>}
+                                </div>
+                                <div className="search-swipe-card-tools"><b>{formatPrice(version.price)}</b></div>
+                              </div>
+                            </div>
+                          )}
+                          empty={<><BrewHourglass /><h2>You have seen every printing.</h2><p>Grimore now knows which artwork of {selectedCard.name} you prefer.</p></>}
+                        />
+                      </div>
+                    ) : (
                     <>
                       <div className="scrollbar-thin mt-3 flex snap-x gap-3 overflow-x-auto pb-2">
                         {(versions.data ?? []).slice(0, visibleVersionCount).map((version) => {
@@ -681,7 +1108,7 @@ export function CardSearch() {
                       </div>
                       {(versions.data?.length ?? 0) > visibleVersionCount && <Button type="button" variant="ghost" size="sm" className="mt-1 w-full" onClick={() => setVisibleVersionCount((current) => current + 12)}>Show 12 more artworks</Button>}
                     </>
-                  )}
+                  ))}
                 </section>
                 <div className="mt-5 space-y-2">{(decks.data?.length ?? 0) > 0 ? <><Select value={targetDeck} onValueChange={setTargetDeck}><SelectTrigger className="w-full" aria-label="Add card to deck"><SelectValue placeholder="Choose target deck…" /></SelectTrigger><SelectContent>{(decks.data ?? []).map((deck) => <SelectItem key={deck.id} value={deck.id}>{deck.deck_name}</SelectItem>)}</SelectContent></Select>{addButton(detailCard, true)}</> : <Button variant="secondary" asChild className="w-full"><Link to="/builder/new"><Plus /> Create a deck first</Link></Button>}</div>
               </div>

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, LayoutGrid, Minus, PackageOpen, Plus, Recycle, Search, Sparkles, Trash2 } from "lucide-react"
+import { ArrowLeft, Minus, PackageOpen, Plus, Recycle, Search, Trash2 } from "lucide-react"
+import {
+  CardBinder,
+  WishBookmark,
+} from "@/icons"
 import { toast } from "sonner"
 import { api, cardImage, type CardResult, type Collection } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -150,9 +154,9 @@ export function Collections() {
                 >
                   <span className="flex items-center gap-2 font-semibold">
                     {c.is_wishlist ? (
-                      <Sparkles className="h-4 w-4 text-arcane-bright" />
+                      <WishBookmark className="h-4 w-4 text-arcane-bright" />
                     ) : (
-                      <LayoutGrid className="h-4 w-4 text-brass" />
+                      <CardBinder className="h-4 w-4 text-brass" />
                     )}
                     {c.name}
                   </span>

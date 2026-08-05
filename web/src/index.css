@@ -686,9 +686,10 @@
   .swipe-stack-item[data-depth="0"] {
     z-index: 3;
     cursor: grab;
-    transform: translate3d(calc(-50% + var(--swipe-x, 0px)), 0, 0) rotate(var(--swipe-turn, 0deg));
+    transform: translate3d(calc(-50% + var(--swipe-x, 0px)), var(--swipe-y, 0px), 0) rotate(var(--swipe-turn, 0deg));
   }
   .swipe-stack-item[data-depth="0"]:active { cursor: grabbing; }
+  .swipe-stack-item[data-depth="0"][data-dragging="true"] { transition: none; }
   .swipe-stack-item[data-depth="1"] { z-index: 2; opacity: .78; transform: translate3d(-50%, 8px, 0) scale(.965) rotate(1.4deg); }
   .swipe-stack-item[data-depth="2"] { z-index: 1; opacity: .42; transform: translate3d(-50%, 15px, 0) scale(.93) rotate(-1.2deg); }
   .swipe-stack-item[data-exit="left"] { opacity: 0; transform: translate3d(calc(-50% - 115vw), 20px, 0) rotate(-19deg); }
@@ -736,8 +737,9 @@
   .discovery-deck-meta dl div { display: grid; }
   .discovery-deck-meta dt { color: var(--muted-foreground); font-size: .62rem; }
   .discovery-deck-meta dd { margin-top: 2px; font-family: var(--font-mono); font-size: .78rem; }
-  .swipe-stack-actions { display: flex; align-items: center; justify-content: center; gap: 22px; min-height: 72px; padding-top: 8px; }
+  .swipe-stack-actions { display: flex; align-items: center; justify-content: center; gap: 15px; min-height: 72px; padding-top: 8px; }
   .swipe-action { border-radius: 50% !important; }
+  .swipe-action-undo { border: 1px solid color-mix(in oklch, var(--brass-bright) 38%, var(--border)); color: var(--brass-bright); }
   .swipe-action-reject { border-color: color-mix(in oklch, var(--destructive) 40%, var(--border)); background: color-mix(in oklch, var(--destructive) 7%, var(--background)); color: var(--destructive); }
   .swipe-action-inspect { border: 1px solid var(--border); background: var(--background); color: var(--foreground); }
   .swipe-action-accept { background: var(--primary); color: var(--primary-foreground); box-shadow: 0 0 0 5px color-mix(in oklch, var(--primary) 12%, transparent); }
@@ -748,6 +750,53 @@
   .swipe-stack-complete > svg { width: 42px; height: 42px; margin-bottom: 18px; color: var(--primary); }
   .swipe-stack-complete h2 { max-width: 19ch; font-family: var(--font-display); font-size: 1.65rem; }
   .swipe-stack-complete p, .swipe-stack-loading p { max-width: 42ch; margin: 8px 0 20px; color: var(--muted-foreground); font-size: .82rem; }
+
+  .card-search-swipe {
+    width: 100%;
+    max-width: 720px;
+    margin-inline: auto;
+  }
+  .card-search-swipe .swipe-stack { height: min(600px, calc(100dvh - 320px)); max-height: 640px; min-height: 450px; }
+  .card-search-swipe .swipe-stack-item { width: min(78vw, 370px); }
+  .search-swipe-card-face { display: flex; height: 100%; min-height: 0; flex-direction: column; background: #050508; }
+  .search-swipe-card-art { position: relative; display: grid; min-height: 0; flex: 1; place-items: center; overflow: hidden; background: #020203; }
+  .search-swipe-card-art > img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+  .search-swipe-card-missing { display: grid; width: 100%; height: 100%; place-items: center; padding: 24px; color: var(--muted-foreground); font-size: .8rem; text-align: center; }
+  .search-swipe-reason {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    left: 12px;
+    overflow: hidden;
+    border-radius: 9px;
+    background: rgb(5 5 8 / 92%);
+    padding: 8px 10px;
+    color: var(--foreground);
+    font-size: .68rem;
+    font-weight: 650;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .search-swipe-card-meta {
+    display: flex;
+    min-height: 76px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+    padding: 9px 10px 9px 13px;
+    background: var(--card);
+  }
+  .search-swipe-card-copy { min-width: 0; }
+  .search-swipe-card-copy strong, .search-swipe-card-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .search-swipe-card-copy strong { font-size: .86rem; }
+  .search-swipe-card-copy span { margin-top: 2px; color: var(--muted-foreground); font-size: .66rem; }
+  .search-swipe-card-copy .search-swipe-artist-name { color: color-mix(in oklch, var(--primary) 76%, var(--foreground)); }
+  .search-swipe-card-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+  .search-swipe-card-tools b { color: var(--brass-bright); font-family: var(--font-mono); font-size: .7rem; }
+  .search-swipe-artist-follow { width: 44px; height: 44px; color: var(--primary); }
+  .search-swipe-artist-follow[aria-pressed="true"] { background: color-mix(in oklch, var(--primary) 13%, transparent); }
 }
 
 @media (max-width: 767px) {
@@ -859,7 +908,7 @@
   .swipe-stack-actions { min-height: 64px; padding-top: 5px; }
   .swipe-stack-hint { display: none; }
 
-  .card-search-page[data-view="single"] { padding-top: 12px; }
+  .card-search-page[data-view="single"] { padding-top: 8px; }
   .card-search-page[data-view="single"] .card-search-page-header { display: none; }
   .card-search-page[data-view="single"] .search-command-panel { position: relative; top: auto; border-radius: 0; padding: 4px 0 8px; }
   .card-search-page[data-view="single"] .search-command-panel > div:first-child { flex-wrap: nowrap; }
@@ -879,9 +928,14 @@
   .card-search-page[data-view="single"] .search-view-option-compact,
   .card-search-page[data-view="single"] .search-view-option-list { display: none; }
   .card-search-page[data-view="single"] .search-results-count p:last-child { display: none; }
-  .card-search-page[data-view="single"] .singles-carousel { margin-top: 6px; }
-  .card-search-page[data-view="single"] .singles-carousel-nav { margin-bottom: 7px; }
-  .card-search-page[data-view="single"] .singles-carousel-hint { display: none; }
+  .card-search-page[data-view="single"] > .space-y-8 { padding-top: 4px; }
+  .card-search-page[data-view="single"] .personalized-feed-header { margin-bottom: 2px; }
+  .card-search-page[data-view="single"] .personalized-feed-header > div:first-child,
+  .card-search-page[data-view="single"] .personalized-feed-signals { display: none; }
+  .card-search-page[data-view="single"] .personalized-feed-controls { width: 100%; justify-content: flex-end; }
+  .card-search-page[data-view="single"] .card-search-swipe .swipe-stack { height: min(490px, calc(100dvh - 330px)); min-height: 380px; }
+  .card-search-page[data-view="single"] .card-search-swipe .swipe-stack-item { width: min(78vw, 340px); }
+  .card-search-page[data-view="single"] .swipe-stack-status { height: 20px; }
 }
 
 @media (max-height: 600px) and (orientation: landscape) {
@@ -903,6 +957,11 @@
   .swipe-stack-actions { position: absolute; top: 50%; right: 18px; flex-direction: column; gap: 8px; transform: translateY(-35%); }
   .swipe-stack-actions [data-slot="button"] { width: 42px; height: 42px; }
   .swipe-discovery { position: relative; }
+  .card-search-swipe .swipe-stack { height: min(300px, calc(100dvh - 190px)); min-height: 170px; }
+  .card-search-swipe .swipe-stack-item { width: min(33vw, 210px); }
+  .card-search-swipe .search-swipe-card-meta { position: absolute; inset: auto 0 0; min-height: 46px; padding: 6px 8px; background: rgb(5 5 8 / 94%); }
+  .card-search-swipe .search-swipe-card-copy > span:not(.search-swipe-artist-name),
+  .card-search-swipe .search-swipe-artist-follow { display: none; }
 }
 
 @media (min-width: 768px) {
@@ -1386,4 +1445,39 @@
 @keyframes gi-wave {
   0%, 100% { transform: rotate(-3deg); }
   50% { transform: rotate(4deg); }
+}
+
+/* The life tracker's heart: breaks along its seam, then mends. The halves
+   hinge at the bottom point where they meet, so they part like a wound
+   rather than sliding sideways. */
+.gi .gi-mend-left {
+  transform-origin: 100% 100%;
+  animation: gi-mend-left 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-mend-right {
+  transform-origin: 0% 100%;
+  animation: gi-mend-right 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  animation-play-state: var(--gi-play);
+}
+.gi .gi-mend-spark {
+  opacity: 0;
+  animation: gi-mend-spark 2.6s ease-out infinite;
+  animation-play-state: var(--gi-play);
+}
+
+@keyframes gi-mend-left {
+  0%, 6% { transform: translate(0, 0) rotate(0deg); }
+  26%, 60% { transform: translate(-1.5px, 0.4px) rotate(-6deg); }
+  82%, 100% { transform: translate(0, 0) rotate(0deg); }
+}
+@keyframes gi-mend-right {
+  0%, 6% { transform: translate(0, 0) rotate(0deg); }
+  26%, 60% { transform: translate(1.5px, 0.4px) rotate(6deg); }
+  82%, 100% { transform: translate(0, 0) rotate(0deg); }
+}
+@keyframes gi-mend-spark {
+  0%, 62% { opacity: 0; transform: scale(0.3) rotate(-20deg); }
+  78% { opacity: 1; transform: scale(1.25) rotate(10deg); }
+  100% { opacity: 0; transform: scale(0.7) rotate(20deg); }
 }

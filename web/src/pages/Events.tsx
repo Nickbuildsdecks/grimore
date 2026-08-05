@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CalendarDays, CheckCircle2, LogOut, Medal, Swords, Trophy, Users } from "lucide-react"
+import { CalendarDays, CheckCircle2, LogOut, Swords, Users } from "lucide-react"
+import { PrizeChalice } from "@/icons"
 import { toast } from "sonner"
 import { api, type Deck, type Season } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -48,7 +49,7 @@ export function Events() {
           <section className="surface-panel mb-5 rounded-xl p-5 md:p-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div><div className="flex flex-wrap items-center gap-2"><h2 className="font-display text-2xl font-semibold md:text-3xl">{name}</h2><Badge className="bg-emerald-500/15 text-emerald-300">Active</Badge></div><p className="mt-2 max-w-2xl text-sm text-muted-foreground">Join the season once, then check in with the deck you’re playing each event night.</p></div>
-              <Button onClick={() => join.mutate(s.id)} disabled={join.isPending || isRegistered}>{isRegistered ? <CheckCircle2 /> : <Trophy />} {join.isPending ? "Registering…" : isRegistered ? "Joined" : "Join season"}</Button>
+              <Button onClick={() => join.mutate(s.id)} disabled={join.isPending || isRegistered}>{isRegistered ? <CheckCircle2 /> : <PrizeChalice />} {join.isPending ? "Registering…" : isRegistered ? "Joined" : "Join season"}</Button>
             </div>
           </section>
 
@@ -59,7 +60,7 @@ export function Events() {
           )}
 
           <Tabs defaultValue="checkin">
-            <TabsList className="mb-4 w-full justify-start overflow-x-auto" variant="line"><TabsTrigger value="checkin"><CheckCircle2 /> Check-in</TabsTrigger><TabsTrigger value="standings"><Medal /> Standings</TabsTrigger><TabsTrigger value="pod"><Users /> My pod</TabsTrigger></TabsList>
+            <TabsList className="mb-4 w-full justify-start overflow-x-auto" variant="line"><TabsTrigger value="checkin"><CheckCircle2 /> Check-in</TabsTrigger><TabsTrigger value="standings"><PrizeChalice /> Standings</TabsTrigger><TabsTrigger value="pod"><Users /> My pod</TabsTrigger></TabsList>
             <TabsContent value="checkin">
               <section className="grid gap-8 border-t border-border pt-5 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
                 <div><h2 className="text-lg font-semibold">Event-night check-in</h2>

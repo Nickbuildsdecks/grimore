@@ -5,9 +5,8 @@ import { toast } from "sonner"
 import {
   ArrowLeft,
   ChevronDown,
-  Crown,
   GalleryHorizontal,
-  Grid3X3,
+  Grid2X2,
   List,
   Minus,
   Plus,
@@ -15,6 +14,7 @@ import {
   Search as SearchIcon,
   Trash2,
 } from "lucide-react"
+import { Cauldron, CommanderCrown } from "@/icons"
 import { api, cardImage, type CardResult, type DeckCard } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -270,6 +270,7 @@ export function Builder() {
         <Button variant="secondary" size="icon" aria-label="Back to decks" onClick={() => navigate("/decks")}>
           <ArrowLeft />
         </Button>
+        <Cauldron className="hidden size-6 shrink-0 text-brass gi-accent-arcane sm:block" animated="hover" aria-hidden="true" />
         <Input
           value={name}
           onChange={(e) => {
@@ -312,7 +313,7 @@ export function Builder() {
         <aside className="order-2 grid grid-cols-2 gap-3 sm:grid-cols-[135px_1fr] xl:order-none xl:block xl:space-y-3">
           <section className="surface-panel rounded-xl p-2 sm:w-[135px]">
             <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brass">
-              <Crown className="h-4 w-4" /> Commander
+              <CommanderCrown className="h-4 w-4" /> Commander
             </h2>
             {commander.length === 0 ? (
               <p className="px-1 pb-2 text-xs text-muted-foreground">
@@ -333,7 +334,7 @@ export function Builder() {
                     onClick={() => toggleCommander(c.name)}
                     aria-label={`Demote ${c.name} from commander`}
                   >
-                    <Crown className="h-4 w-4" />
+                    <CommanderCrown className="h-4 w-4" />
                   </button>
                 </figure>
               ))
@@ -414,7 +415,7 @@ export function Builder() {
             </div>
             <div className="flex rounded-xl border border-border bg-secondary/55 p-1" aria-label="Deck view">
               <Button variant="ghost" size="icon" className={cn("size-11 border-0 sm:size-9", viewMode === "list" && "bg-primary/12 text-primary hover:bg-primary/16")} aria-label="List view" aria-pressed={viewMode === "list"} onClick={() => setViewMode("list")}><List /></Button>
-              <Button variant="ghost" size="icon" className={cn("size-11 border-0 sm:size-9", viewMode === "grid" && "bg-primary/12 text-primary hover:bg-primary/16")} aria-label="Card grid view" aria-pressed={viewMode === "grid"} onClick={() => setViewMode("grid")}><Grid3X3 /></Button>
+              <Button variant="ghost" size="icon" className={cn("size-11 border-0 sm:size-9", viewMode === "grid" && "bg-primary/12 text-primary hover:bg-primary/16")} aria-label="Card grid view" aria-pressed={viewMode === "grid"} onClick={() => setViewMode("grid")}><Grid2X2 /></Button>
               <Button variant="ghost" size="icon" className={cn("size-11 border-0 sm:size-9", viewMode === "single" && "bg-primary/12 text-primary hover:bg-primary/16")} aria-label="Singles swipe view" aria-pressed={viewMode === "single"} onClick={() => setViewMode("single")}><GalleryHorizontal /></Button>
             </div>
           </div>
@@ -439,7 +440,7 @@ export function Builder() {
                 <article className="mx-auto grid max-w-3xl items-center gap-5 md:grid-cols-[minmax(260px,360px)_1fr] md:gap-8">
                   <div className="relative mx-auto w-[min(78vw,360px)] overflow-hidden rounded-xl border border-border bg-card">
                     {card.scryfallId ? <img src={cardImage(card.scryfallId)} alt={card.name} className="aspect-[0.716] w-full object-cover" /> : <div className="flex aspect-[0.716] items-center justify-center p-6 text-center text-sm text-muted-foreground">{card.name}</div>}
-                    {card.isCommander && <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-background/90 px-2 py-1 text-xs font-semibold text-primary"><Crown className="size-3.5" /> Commander</span>}
+                    {card.isCommander && <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-background/90 px-2 py-1 text-xs font-semibold text-primary"><CommanderCrown className="size-3.5" /> Commander</span>}
                   </div>
                   <div className="min-w-0 px-2 text-center md:px-0 md:text-left">
                     <h2 className="text-balance font-display text-2xl font-semibold md:text-3xl">{card.name}</h2>
@@ -448,7 +449,7 @@ export function Builder() {
                     <div className="mt-5 flex flex-wrap justify-center gap-2 md:justify-start">
                       <Button type="button" variant="secondary" size="icon" className="size-11" aria-label={`Remove one ${card.name}`} onClick={() => setQty(card.name, card.qty - 1)}><Minus /></Button>
                       <Button type="button" size="icon" className="size-11" aria-label={`Add one ${card.name}`} onClick={() => setQty(card.name, card.qty + 1)}><Plus /></Button>
-                      <Button type="button" variant="secondary" className="min-h-11" aria-pressed={card.isCommander} onClick={() => toggleCommander(card.name)}><Crown /> {card.isCommander ? "Commander" : "Make commander"}</Button>
+                      <Button type="button" variant="secondary" className="min-h-11" aria-pressed={card.isCommander} onClick={() => toggleCommander(card.name)}><CommanderCrown /> {card.isCommander ? "Commander" : "Make commander"}</Button>
                       <Button type="button" variant="ghost" size="icon" className="size-11 text-destructive" aria-label={`Remove ${card.name}`} onClick={() => setQty(card.name, 0)}><Trash2 /></Button>
                     </div>
                   </div>
@@ -457,7 +458,7 @@ export function Builder() {
             </SinglesCarousel>
           ) : viewMode === "grid" ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(135px,1fr))] gap-2">
-              {cards.map((card) => <article key={card.name} className="group relative min-w-0 overflow-hidden rounded-lg bg-card"><button type="button" className="block w-full" onClick={() => setQty(card.name, card.qty + 1)} aria-label={`Add one ${card.name}`}>{card.scryfallId ? <img src={cardImage(card.scryfallId)} alt={card.name} loading="lazy" className="aspect-[0.716] w-full object-cover" /> : <div className="flex aspect-[0.716] items-center justify-center p-3 text-center text-xs">{card.name}</div>}</button><div className="flex min-h-11 items-center gap-1 px-2"><span className="font-mono text-xs text-primary">{card.qty}×</span><span className="min-w-0 flex-1 truncate text-xs font-medium">{card.name}</span><Button variant="ghost" size="icon" className="size-11 sm:size-9" aria-label={`Remove one ${card.name}`} onClick={() => setQty(card.name, card.qty - 1)}><Minus /></Button></div>{card.isCommander && <Crown className="absolute left-2 top-2 size-5 rounded-full bg-background/90 p-1 text-primary" />}</article>)}
+              {cards.map((card) => <article key={card.name} className="group relative min-w-0 overflow-hidden rounded-lg bg-card"><button type="button" className="block w-full" onClick={() => setQty(card.name, card.qty + 1)} aria-label={`Add one ${card.name}`}>{card.scryfallId ? <img src={cardImage(card.scryfallId)} alt={card.name} loading="lazy" className="aspect-[0.716] w-full object-cover" /> : <div className="flex aspect-[0.716] items-center justify-center p-3 text-center text-xs">{card.name}</div>}</button><div className="flex min-h-11 items-center gap-1 px-2"><span className="font-mono text-xs text-primary">{card.qty}×</span><span className="min-w-0 flex-1 truncate text-xs font-medium">{card.name}</span><Button variant="ghost" size="icon" className="size-11 sm:size-9" aria-label={`Remove one ${card.name}`} onClick={() => setQty(card.name, card.qty - 1)}><Minus /></Button></div>{card.isCommander && <CommanderCrown className="absolute left-2 top-2 size-5 rounded-full bg-background/90 p-1 text-primary" />}</article>)}
             </div>
           ) : (
             <div className="mt-6 space-y-6">
@@ -493,7 +494,7 @@ export function Builder() {
                             aria-label={`Make ${c.name} commander`}
                             onClick={() => toggleCommander(c.name)}
                           >
-                            <Crown className="h-4 w-4 text-muted-foreground hover:text-brass-bright" />
+                            <CommanderCrown className="h-4 w-4 text-muted-foreground hover:text-brass-bright" />
                           </Button>
                           <Button
                             variant="ghost"

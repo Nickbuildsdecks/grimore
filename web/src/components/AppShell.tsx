@@ -10,12 +10,12 @@ import {
   UserRound,
 } from "lucide-react"
 import {
-  Cauldron,
+  CardBinder,
   CrystalBall,
-  PotionFlask,
+  MendingHeart,
+  PrizeChalice,
   SpellSearch,
   Spellbook,
-  SpiceJar,
 } from "@/icons"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -36,9 +36,9 @@ const NAV = [
   { to: "/discover", label: "Discover", short: "Discover", icon: CrystalBall },
   { to: "/decks", label: "My Decks", short: "Decks", icon: Spellbook },
   { to: "/search", label: "Card Search", short: "Search", icon: SpellSearch },
-  { to: "/collections", label: "Collections", short: "Binder", icon: SpiceJar },
-  { to: "/events", label: "League & Events", short: "Events", icon: Cauldron },
-  { to: "/life", label: "Life Tracker", short: "Life", icon: PotionFlask },
+  { to: "/collections", label: "Collections", short: "Binder", icon: CardBinder },
+  { to: "/events", label: "League & Events", short: "Events", icon: PrizeChalice },
+  { to: "/life", label: "Life Tracker", short: "Life", icon: MendingHeart },
 ]
 
 const MOBILE_NAV = NAV.filter((item) => ["/discover", "/decks", "/search", "/life"].includes(item.to))

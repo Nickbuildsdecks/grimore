@@ -1,4 +1,7 @@
-import { ArrowRight, Sparkles } from "lucide-react"
+import { ArrowRight } from "lucide-react"
+import {
+  ManaSpark,
+} from "@/icons"
 import { cn } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { showcaseImage, type ShowcaseCard } from "@/hooks/useShowcaseCards"
@@ -54,7 +57,7 @@ export function CardArtRail({
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 id={`art-rail-${title.replace(/\W+/g, "-").toLowerCase()}`} className="flex items-center gap-2 text-lg font-semibold">
-            <Sparkles className="size-4 text-brass-bright" /> {title}
+            <ManaSpark className="size-4 text-brass-bright" /> {title}
           </h2>
           {description && <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>}
         </div>
