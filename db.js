@@ -355,8 +355,69 @@ async function initDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (follower_id, following_id)
       )`,
+      `CREATE TABLE IF NOT EXISTS preference_events (
+        id BIGSERIAL PRIMARY KEY,
+        player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'app',
+        signal REAL DEFAULT 0,
+        context_json TEXT,
+        occurrences INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (player_id, entity_type, entity_key, source)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_preference_events_player
+       ON preference_events(player_id, last_seen_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS card_swipes (
+        player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        card_key TEXT NOT NULL,
+        card_name TEXT NOT NULL,
+        scryfall_id TEXT,
+        context_key TEXT NOT NULL DEFAULT 'explore',
+        vote INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (player_id, card_key, context_key)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_card_swipes_player
+       ON card_swipes(player_id, updated_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS schema_migrations (
+        name TEXT PRIMARY KEY,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS card_art_votes (
+        player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        scryfall_id TEXT NOT NULL,
+        card_name TEXT NOT NULL,
+        artist TEXT,
+        vote INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (player_id, scryfall_id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS artist_follows (
+        player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        artist_key TEXT NOT NULL,
+        artist_name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (player_id, artist_key)
+      )`,
+      `CREATE TABLE IF NOT EXISTS followed_artist_printings (
+        card_name TEXT NOT NULL,
+        scryfall_id TEXT NOT NULL,
+        artist_key TEXT NOT NULL,
+        artist_name TEXT NOT NULL,
+        image_uri TEXT NOT NULL,
+        set_name TEXT DEFAULT '',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (card_name, scryfall_id)
+      )`,
       // Column migrations for Postgres
       `ALTER TABLE players ADD COLUMN IF NOT EXISTS google_id TEXT`,
+      `ALTER TABLE card_art_votes ADD COLUMN IF NOT EXISTS artist TEXT`,
       `ALTER TABLE players ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'player'`,
       `ALTER TABLE players ADD COLUMN IF NOT EXISTS avatar_url TEXT`,
       `ALTER TABLE players ADD COLUMN IF NOT EXISTS profile_commander TEXT`,
@@ -645,10 +706,101 @@ async function initDb() {
     )
   `);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS preference_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_key TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'app',
+      signal REAL DEFAULT 0,
+      context_json TEXT,
+      occurrences INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (player_id, entity_type, entity_key, source),
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Gameplay taste. Keyed by card name, not printing: liking a card is a
+  // statement about the card, and is scoped to the brew you were in.
+  await run(`
+    CREATE TABLE IF NOT EXISTS card_swipes (
+      player_id TEXT NOT NULL,
+      card_key TEXT NOT NULL,
+      card_name TEXT NOT NULL,
+      scryfall_id TEXT,
+      context_key TEXT NOT NULL DEFAULT 'explore',
+      vote INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (player_id, card_key, context_key),
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_card_swipes_player ON card_swipes(player_id, updated_at DESC);`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      name TEXT PRIMARY KEY,
+      applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Art taste. Keyed by printing, and only ever written by comparing
+  // printings of one card, where art is the only thing that varies.
+  await run(`
+    CREATE TABLE IF NOT EXISTS card_art_votes (
+      player_id TEXT NOT NULL,
+      scryfall_id TEXT NOT NULL,
+      card_name TEXT NOT NULL,
+      artist TEXT,
+      vote INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (player_id, scryfall_id),
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS artist_follows (
+      player_id TEXT NOT NULL,
+      artist_key TEXT NOT NULL,
+      artist_name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (player_id, artist_key),
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS followed_artist_printings (
+      card_name TEXT NOT NULL,
+      scryfall_id TEXT NOT NULL,
+      artist_key TEXT NOT NULL,
+      artist_name TEXT NOT NULL,
+      image_uri TEXT NOT NULL,
+      set_name TEXT DEFAULT '',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (card_name, scryfall_id)
+    )
+  `);
+
+  // Art votes need the illustrator to be worth anything; older rows predate it.
+  try {
+    await run("ALTER TABLE card_art_votes ADD COLUMN artist TEXT");
+  } catch (e) {
+    // Column already exists
+  }
+
   await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_card_name ON deck_cards(card_name);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_scryfall_cards_name ON scryfall_cards(name);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_player_collection_player ON player_collection(player_id);`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_preference_events_player ON preference_events(player_id, last_seen_at DESC);`);
 
   console.log("SQLite database initialized successfully.");
   await seedAdminAccount();

@@ -5,16 +5,18 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
-  Compass,
-  Heart,
-  Layers,
-  LayoutGrid,
   LogOut,
   Menu,
-  Search,
-  Trophy,
   UserRound,
 } from "lucide-react"
+import {
+  CardBinder,
+  CrystalBall,
+  MendingHeart,
+  PrizeChalice,
+  SpellSearch,
+  Spellbook,
+} from "@/icons"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/hooks/useAuth"
@@ -31,12 +33,12 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 const NAV = [
-  { to: "/discover", label: "Discover", short: "Discover", icon: Compass },
-  { to: "/decks", label: "My Decks", short: "Decks", icon: Layers },
-  { to: "/search", label: "Card Search", short: "Search", icon: Search },
-  { to: "/collections", label: "Collections", short: "Binder", icon: LayoutGrid },
-  { to: "/events", label: "League & Events", short: "Events", icon: Trophy },
-  { to: "/life", label: "Life Tracker", short: "Life", icon: Heart },
+  { to: "/discover", label: "Discover", short: "Discover", icon: CrystalBall },
+  { to: "/decks", label: "My Decks", short: "Decks", icon: Spellbook },
+  { to: "/search", label: "Card Search", short: "Search", icon: SpellSearch },
+  { to: "/collections", label: "Collections", short: "Binder", icon: CardBinder },
+  { to: "/events", label: "League & Events", short: "Events", icon: PrizeChalice },
+  { to: "/life", label: "Life Tracker", short: "Life", icon: MendingHeart },
 ]
 
 const MOBILE_NAV = NAV.filter((item) => ["/discover", "/decks", "/search", "/life"].includes(item.to))
@@ -155,7 +157,7 @@ function MobileMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open
                   to={to}
                   className={cn("flex min-h-12 items-center gap-3 rounded-[10px] px-3 font-medium text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground", isActive && "bg-primary/10 text-foreground")}
                 >
-                  <Icon className={cn("size-5", isActive && "text-primary")} />
+                  <Icon className={cn("size-5 gi-accent-arcane", isActive && "text-primary")} animated={isActive ? true : "hover"} />
                   <span>{label}</span>
                 </NavLink>
               </SheetClose>
@@ -219,7 +221,7 @@ export function AppShell() {
                       aria-label={collapsed ? label : undefined}
                       className={cn("app-sidebar-link flex min-h-10 items-center gap-3 rounded-[10px] px-3 text-[0.9rem] font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/70 hover:text-foreground", collapsed && "min-h-11 justify-center px-0", isActive && "is-active bg-primary/10 text-foreground")}
                     >
-                      <Icon className="size-5 shrink-0" strokeWidth={1.8} />
+                      <Icon className="size-5 shrink-0 gi-accent-arcane" strokeWidth={1.8} animated={isActive ? true : "hover"} />
                       {!collapsed && <span className="truncate">{label}</span>}
                     </NavLink>
                   </TooltipTrigger>
@@ -266,8 +268,12 @@ export function AppShell() {
         <nav aria-label="Primary" className="app-mobile-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-background/90 px-1 backdrop-blur-2xl pb-safe md:hidden">
           {MOBILE_NAV.map(({ to, short, icon: Icon }) => (
             <NavLink key={to} to={to} aria-label={short} className={({ isActive }) => cn("flex min-h-[60px] flex-col items-center justify-center gap-0.5 text-[0.64rem] font-semibold text-muted-foreground transition-colors active:scale-95", isActive && "is-active text-foreground")}>
-              <Icon className="size-5" strokeWidth={1.8} />
-              <span>{short}</span>
+              {({ isActive }) => (
+                <>
+                  <Icon className="size-5 gi-accent-arcane" strokeWidth={1.8} animated={isActive} />
+                  <span>{short}</span>
+                </>
+              )}
             </NavLink>
           ))}
           <button type="button" aria-label="More destinations" onClick={() => setMobileMenuOpen(true)} className="flex min-h-[60px] flex-col items-center justify-center gap-0.5 text-[0.64rem] font-semibold text-muted-foreground transition-colors hover:text-foreground active:scale-95">

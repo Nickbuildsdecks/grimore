@@ -1,7 +1,11 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "react-router-dom"
-import { Copy, Layers3, Search, Sparkles } from "lucide-react"
+import { Copy, Search } from "lucide-react"
+import {
+  ManaSpark,
+  Spellbook,
+} from "@/icons"
 import { toast } from "sonner"
 import { api, cardImage } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -50,11 +54,19 @@ export function Discover() {
     onSuccess: (data) => { toast.success("Deck added to your collection"); void qc.invalidateQueries({ queryKey: ["my-decks"] }); navigate(`/builder/${data.newDeckId}`) },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not copy this deck"),
   })
+  /* Gameplay taste. These cards differ from one another, so a swipe here says
+     nothing about artwork and must not touch the printing's art votes. */
   const voteCard = useMutation({
-    mutationFn: ({ card, vote }: { card: ShowcaseCard; vote: -1 | 1 }) => {
-      if (!card.scryfallId) throw new Error("This printing cannot be rated yet")
-      return api.post(`/api/cards/versions/${card.scryfallId}/vote`, { cardName: card.name, vote })
-    },
+    mutationFn: ({ card, vote }: { card: ShowcaseCard; vote: -1 | 1 }) =>
+      api.post("/api/cards/swipes", {
+        cardName: card.name,
+        scryfallId: card.scryfallId,
+        vote,
+        source: "discover_swipe",
+        typeLine: card.typeLine,
+        cmc: card.cmc,
+        price: card.price,
+      }),
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not save this preference"),
   })
 
@@ -69,8 +81,8 @@ export function Discover() {
 
       <div className="discovery-feed-bar">
         <div className="discovery-mode-switch" role="tablist" aria-label="Discovery feed">
-          <button type="button" role="tab" aria-selected={mode === "cards"} onClick={() => setMode("cards")}><Sparkles /> Cards</button>
-          <button type="button" role="tab" aria-selected={mode === "decks"} onClick={() => setMode("decks")}><Layers3 /> Decks{communityDecks.length > 0 && <span>{communityDecks.length}</span>}</button>
+          <button type="button" role="tab" aria-selected={mode === "cards"} onClick={() => setMode("cards")}><ManaSpark /> Cards</button>
+          <button type="button" role="tab" aria-selected={mode === "decks"} onClick={() => setMode("decks")}><Spellbook /> Decks{communityDecks.length > 0 && <span>{communityDecks.length}</span>}</button>
         </div>
         <div className="discovery-feed-actions">
           <Button className="discovery-feed-search" variant="ghost" size="icon" asChild aria-label="Search every card"><Link to="/search"><Search /></Link></Button>
@@ -107,7 +119,7 @@ export function Discover() {
           renderItem={(deck) => <div className="discovery-deck-face">{deck.commanderScryfallId ? <img src={artCrop(deck.commanderScryfallId)} alt="" draggable={false} /> : <img src="/logo.svg?v=mythic" alt="" className="discovery-deck-placeholder" />}<div className="discovery-deck-shade" /><div className="discovery-deck-meta"><span>{deck.commanderName || "Commander deck"}</span><h2>{deck.deckName}</h2><p>by {deck.creatorName}</p><dl><div><dt>Likes</dt><dd>{deck.likes}</dd></div><div><dt>Copies</dt><dd>{deck.clones}</dd></div>{typeof deck.price === "number" && <div><dt>Value</dt><dd>${deck.price.toFixed(0)}</dd></div>}</dl><Button variant="secondary" onClick={(event) => { event.stopPropagation(); cloneDeck.mutate(deck.id) }} disabled={cloneDeck.isPending}><Copy /> Copy deck</Button></div></div>}
         />
       ) : (
-        <div className="swipe-stack-complete discovery-decks-empty"><Layers3 /><h2>No community decks are in the stack yet.</h2><p>Publish the first list, then it becomes swipeable for everyone.</p><Button asChild><Link to="/builder/new">Build the first deck</Link></Button></div>
+        <div className="swipe-stack-complete discovery-decks-empty"><Spellbook /><h2>No community decks are in the stack yet.</h2><p>Publish the first list, then it becomes swipeable for everyone.</p><Button asChild><Link to="/builder/new">Build the first deck</Link></Button></div>
       )}
     </div>
   )

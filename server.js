@@ -29,6 +29,14 @@ const net = require('net');
 const tls = require('tls');
 const db = require('./db');
 const mtgjsonService = require('./mtgjsonService');
+const {
+  createPreferenceProfile,
+  parseRecommendationCursor,
+  formatRecommendationCursor,
+  nextRecommendationCursor,
+  scoreRecommendations,
+  summarizeProfile,
+} = require('./execution/recommendation_engine');
 
 // Global Error Handlers to prevent Node process from crashing due to unexpected promise rejections/uncaught errors
 process.on('unhandledRejection', (reason, promise) => {
@@ -160,6 +168,7 @@ async function sanitizeDeckCardsScryfallIds() {
 // Initialize database
 db.initDb().then(async () => {
   console.log("Database initialized successfully.");
+  await splitSwipeVotesFromArtVotes();
   // Check and run initial Scryfall bulk cards synchronization
   await scryfallService.downloadAndImportScryfallBulk();
   scryfallService.setupDailySync();
@@ -167,6 +176,59 @@ db.initDb().then(async () => {
 }).catch(err => {
   console.error("Database initialization failed:", err);
 });
+
+/**
+ * Card swipes used to be stored as art votes, which made community art rankings
+ * measure card popularity and let aesthetic judgements masquerade as gameplay
+ * taste. Move those rows to card_swipes and drop them from the art totals.
+ *
+ * Guarded by schema_migrations: without it a later, genuine art vote on a card
+ * the player once swiped would be swept up on a subsequent boot.
+ */
+async function splitSwipeVotesFromArtVotes() {
+  const MIGRATION = "2026-08-split-swipe-votes-from-art-votes";
+  try {
+    const done = await db.get("SELECT name FROM schema_migrations WHERE name = ?", [MIGRATION]);
+    if (done) return;
+
+    // A vote is swipe-sourced when the player swiped that card and never
+    // rated that specific printing in the art gallery.
+    const swipeSourced = await db.query(
+      `SELECT DISTINCT v.player_id, v.scryfall_id, v.card_name, v.vote, v.updated_at
+       FROM card_art_votes v
+       JOIN preference_events e
+         ON e.player_id = v.player_id
+        AND e.entity_type = 'card'
+        AND LOWER(e.entity_key) = LOWER(v.card_name)
+        AND e.source LIKE '%_swipe'
+       WHERE NOT EXISTS (
+         SELECT 1 FROM preference_events g
+         WHERE g.player_id = v.player_id
+           AND g.entity_type = 'printing'
+           AND g.entity_key = v.scryfall_id
+           AND g.source = 'art_gallery'
+       )`
+    );
+
+    for (const row of swipeSourced) {
+      await db.run(
+        `INSERT INTO card_swipes (player_id, card_key, card_name, scryfall_id, context_key, vote, updated_at)
+         VALUES (?, ?, ?, ?, 'explore', ?, ?)
+         ON CONFLICT(player_id, card_key, context_key) DO NOTHING`,
+        [row.player_id, String(row.card_name).toLocaleLowerCase("en-US"), row.card_name, row.scryfall_id, row.vote, row.updated_at]
+      );
+      await db.run(
+        "DELETE FROM card_art_votes WHERE player_id = ? AND scryfall_id = ?",
+        [row.player_id, row.scryfall_id]
+      );
+    }
+
+    await db.run("INSERT INTO schema_migrations (name) VALUES (?)", [MIGRATION]);
+    console.log(`Split ${swipeSourced.length} swipe-sourced rows out of card_art_votes.`);
+  } catch (error) {
+    console.error("Failed to split swipe votes from art votes:", error);
+  }
+}
 
 // Helper for https requests (fetching Scryfall / Moxfield API) with a global rate-limiting queue
 let scryfallQueue = Promise.resolve();
@@ -265,6 +327,504 @@ async function applyFollowedArtistPreferences(cards, playerId) {
       set_name: preferred.set_name
     };
   });
+}
+
+const recommendationCandidateCache = {
+  cards: [],
+  communityCounts: {},
+  updatedAt: 0,
+};
+const scryfallRecommendationCache = new Map();
+
+async function safePreferenceQuery(sql, params = []) {
+  try {
+    return await db.query(sql, params);
+  } catch (error) {
+    console.warn("[Recommendations] Optional signal query skipped:", error.message);
+    return [];
+  }
+}
+
+function parsePreferenceContext(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function sanitizePreferenceContext(value = {}) {
+  const allowed = {
+    cardName: typeof value.cardName === "string" ? value.cardName.slice(0, 250) : undefined,
+    scryfallId: typeof value.scryfallId === "string" ? value.scryfallId.slice(0, 64) : undefined,
+    artist: typeof value.artist === "string" ? value.artist.slice(0, 160) : undefined,
+    typeLine: typeof value.typeLine === "string" ? value.typeLine.slice(0, 300) : undefined,
+    oracleText: typeof value.oracleText === "string" ? value.oracleText.slice(0, 4000) : undefined,
+    colors: Array.isArray(value.colors) ? value.colors.slice(0, 5) : undefined,
+    cmc: Number.isFinite(Number(value.cmc)) ? Number(value.cmc) : undefined,
+    price: Number.isFinite(Number(value.price)) ? Number(value.price) : undefined,
+    query: typeof value.query === "string" ? value.query.slice(0, 500) : undefined,
+    targetDeckId: typeof value.targetDeckId === "string" ? value.targetDeckId.slice(0, 100) : undefined,
+  };
+  return Object.fromEntries(Object.entries(allowed).filter(([, item]) => item !== undefined));
+}
+
+async function recordPreferenceEvent(playerId, {
+  eventType,
+  entityType,
+  entityKey,
+  source = "app",
+  signal = 0,
+  context = {},
+}) {
+  if (!playerId || !eventType || !entityType || !entityKey) return;
+  const cleanEventType = String(eventType).normalize("NFKC").trim().slice(0, 60);
+  const cleanEntityType = String(entityType).normalize("NFKC").trim().slice(0, 40);
+  const cleanEntityKey = String(entityKey).normalize("NFKC").trim().slice(0, 500);
+  const cleanSource = String(source || "app").normalize("NFKC").trim().slice(0, 80);
+  if (!cleanEventType || !cleanEntityType || !cleanEntityKey || !cleanSource) return;
+
+  await db.run(
+    `INSERT INTO preference_events
+     (player_id, event_type, entity_type, entity_key, source, signal, context_json, occurrences, created_at, last_seen_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ON CONFLICT(player_id, entity_type, entity_key, source) DO UPDATE SET
+       event_type = excluded.event_type,
+       signal = excluded.signal,
+       context_json = excluded.context_json,
+       occurrences = preference_events.occurrences + 1,
+       last_seen_at = CURRENT_TIMESTAMP`,
+    [
+      playerId,
+      cleanEventType,
+      cleanEntityType,
+      cleanEntityKey,
+      cleanSource,
+      Math.max(-5, Math.min(5, Number(signal) || 0)),
+      JSON.stringify(sanitizePreferenceContext(context)),
+    ]
+  );
+}
+
+function recencyMultiplier(value, halfLifeDays = 180) {
+  const timestamp = new Date(value || 0).getTime();
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return 1;
+  const ageDays = Math.max(0, (Date.now() - timestamp) / 86400000);
+  return Math.pow(0.5, ageDays / halfLifeDays);
+}
+
+function recommendationCardFromRow(row = {}) {
+  let colors = row.colors || row.color_identity || [];
+  if (typeof colors === "string") {
+    try {
+      colors = JSON.parse(colors);
+    } catch (_error) {
+      colors = colors.split("").filter(color => "WUBRG".includes(color.toUpperCase()));
+    }
+  }
+  let legalities = row.legalities || {};
+  if (typeof legalities === "string") {
+    try {
+      legalities = JSON.parse(legalities);
+    } catch (_error) {
+      legalities = {};
+    }
+  }
+  const scryfallId = row.scryfall_id || row.scryfallId || row.id || null;
+  return {
+    name: row.card_name || row.name || "",
+    card_name: row.card_name || row.name || "",
+    scryfallId,
+    scryfall_id: scryfallId,
+    type_line: row.type_line || "",
+    oracle_text: row.oracle_text || "",
+    mana_cost: row.mana_cost || "",
+    cmc: Number(row.cmc || 0),
+    colors: Array.isArray(colors) ? colors : [],
+    price: row.cached_price !== null && row.cached_price !== undefined
+      ? Number(row.cached_price)
+      : Number(row.price || row.cheapest_card_price || 0.15),
+    rarity: row.rarity || "common",
+    artist: row.artist || row.artist_name || "",
+    artistFollowed: Boolean(row.artistFollowed),
+    image_uri: row.image_uri || (scryfallId
+      ? `https://cards.scryfall.io/normal/front/${scryfallId[0]}/${scryfallId[1]}/${scryfallId}.jpg`
+      : ""),
+    set_name: row.set_name || "",
+    legalities: legalities && typeof legalities === "object" ? legalities : {},
+    custom_tag: row.custom_tag || "",
+    deck_tags: row.deck_tags || row.custom_tags || "",
+  };
+}
+
+async function loadLocalRecommendationCandidates() {
+  const cacheAge = Date.now() - recommendationCandidateCache.updatedAt;
+  if (recommendationCandidateCache.cards.length > 0 && cacheAge < 30 * 60 * 1000) {
+    return recommendationCandidateCache.cards;
+  }
+
+  let rows = await safePreferenceQuery(
+    `SELECT sc.card_name, sc.scryfall_id, sc.type_line, sc.oracle_text,
+            sc.mana_cost, sc.cmc, sc.colors, sc.price, sc.rarity,
+            COALESCE(pc.price, sc.price, 0.15) AS cached_price
+     FROM scryfall_cards sc
+     LEFT JOIN card_price_cache pc ON LOWER(pc.card_name) = LOWER(sc.card_name)`
+  );
+
+  if (rows.length === 0) {
+    rows = await safePreferenceQuery(
+      `SELECT sc.name AS card_name, sc.id AS scryfall_id, sc.type_line, sc.oracle_text,
+              sc.mana_cost, sc.cmc, COALESCE(sc.color_identity, sc.colors) AS colors,
+              sc.price, sc.rarity, sc.image_uri,
+              COALESCE(pc.price, sc.price, 0.15) AS cached_price
+       FROM scryfall_cards sc
+       LEFT JOIN card_price_cache pc ON LOWER(pc.card_name) = LOWER(sc.name)`
+    );
+  }
+
+  const uniqueCards = new Map();
+  rows.map(recommendationCardFromRow).forEach(card => {
+    const key = card.name.toLocaleLowerCase("en-US");
+    if (!key) return;
+    const existing = uniqueCards.get(key);
+    if (!existing || card.price < existing.price) uniqueCards.set(key, card);
+  });
+  recommendationCandidateCache.cards = [...uniqueCards.values()];
+  recommendationCandidateCache.updatedAt = Date.now();
+  return recommendationCandidateCache.cards;
+}
+
+async function loadCommunityCardCounts() {
+  const cacheAge = Date.now() - recommendationCandidateCache.updatedAt;
+  if (Object.keys(recommendationCandidateCache.communityCounts).length > 0 && cacheAge < 10 * 60 * 1000) {
+    return recommendationCandidateCache.communityCounts;
+  }
+  const rows = await safePreferenceQuery(
+    `SELECT LOWER(dc.card_name) AS card_key, COUNT(DISTINCT dc.deck_id) AS deck_count
+     FROM deck_cards dc
+     JOIN decks d ON d.id = dc.deck_id
+     WHERE COALESCE(d.is_public, 0) = 1
+     GROUP BY LOWER(dc.card_name)`
+  );
+  recommendationCandidateCache.communityCounts = Object.fromEntries(
+    rows.map(row => [row.card_key, Number(row.deck_count || 0)])
+  );
+  return recommendationCandidateCache.communityCounts;
+}
+
+async function loadScryfallColdStartCards(limit = 48) {
+  try {
+    const url = "https://api.scryfall.com/cards/search?q=game%3Apaper+-type%3Abasic+-is%3Afunny+-is%3Atoken&order=edhrec&unique=cards";
+    const result = await fetchJson(url);
+    return (result.data || [])
+      .filter(isRealCard)
+      .slice(0, limit)
+      .map(card => recommendationCardFromRow({
+        card_name: card.name,
+        scryfall_id: card.id,
+        type_line: card.type_line,
+        oracle_text: card.oracle_text || card.card_faces?.map(face => face.oracle_text).filter(Boolean).join("\n") || "",
+        mana_cost: card.mana_cost,
+        cmc: card.cmc,
+        colors: card.color_identity || card.colors,
+        price: getLowestUsdPrice(card.prices) ?? 0.15,
+        rarity: card.rarity,
+        artist: card.artist || card.card_faces?.map(face => face.artist).find(Boolean),
+        image_uri: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal,
+        set_name: card.set_name,
+      }));
+  } catch (error) {
+    console.warn("[Recommendations] Scryfall cold-start fallback unavailable:", error.message);
+    return [];
+  }
+}
+
+async function loadScryfallRecommendationCandidates(profile, targetDeckId = "", limit = 240, cursor = { page: 1 }) {
+  const page = Math.max(1, Number(cursor.page) || 1);
+  const allowedFormats = new Set([
+    "commander", "brawl", "standard", "pioneer", "modern",
+    "legacy", "vintage", "pauper",
+  ]);
+  let deckContexts = targetDeckId
+    ? profile.decks.filter(deck => deck.id === targetDeckId)
+    : profile.decks.slice().sort((a, b) => b.cardCount - a.cardCount);
+  if (deckContexts.length === 0) deckContexts = [{ format: "", colors: [] }];
+
+  const uniqueContexts = new Map();
+  deckContexts.forEach(deck => {
+    const format = allowedFormats.has(deck.format) ? deck.format : "";
+    const colors = [...(deck.colors || [])].sort();
+    const key = `${format}:${colors.join("")}`;
+    if (!uniqueContexts.has(key)) uniqueContexts.set(key, { format, colors });
+  });
+
+  const candidateSets = [];
+  let hasMore = false;
+  for (const context of [...uniqueContexts.values()].slice(0, 4)) {
+    const queryParts = ["game:paper", "-type:basic", "-is:funny", "-is:token"];
+    if (context.format) queryParts.push(`format:${context.format}`);
+    if (context.format === "commander" && context.colors.length > 0) {
+      queryParts.push(`id<=${context.colors.join("").toLocaleLowerCase("en-US")}`);
+    }
+    const query = queryParts.join(" ");
+    const cacheKey = `${query.toLocaleLowerCase("en-US")}:page:${page}`;
+    const cached = scryfallRecommendationCache.get(cacheKey);
+    if (cached && Date.now() - cached.updatedAt < 30 * 60 * 1000) {
+      candidateSets.push(cached.cards);
+      hasMore = hasMore || cached.hasMore;
+      continue;
+    }
+
+    try {
+      const url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&order=edhrec&unique=cards&page=${page}`;
+      const result = await fetchJson(url);
+      const cards = (result.data || []).filter(isRealCard).map(card => recommendationCardFromRow({
+        card_name: card.name,
+        scryfall_id: card.id,
+        type_line: card.type_line,
+        oracle_text: card.oracle_text || card.card_faces?.map(face => face.oracle_text).filter(Boolean).join("\n") || "",
+        mana_cost: card.mana_cost,
+        cmc: card.cmc,
+        colors: card.color_identity || card.colors,
+        price: getLowestUsdPrice(card.prices) ?? 0.15,
+        rarity: card.rarity,
+        artist: card.artist || card.card_faces?.map(face => face.artist).find(Boolean),
+        image_uri: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal,
+        set_name: card.set_name,
+        legalities: card.legalities,
+      }));
+      const pageHasMore = Boolean(result.has_more);
+      scryfallRecommendationCache.set(cacheKey, { cards, hasMore: pageHasMore, updatedAt: Date.now() });
+      candidateSets.push(cards);
+      hasMore = hasMore || pageHasMore;
+    } catch (error) {
+      console.warn(`[Recommendations] Legal Scryfall pool unavailable for ${query}:`, error.message);
+    }
+  }
+
+  const uniqueCards = new Map();
+  candidateSets.flat().forEach(card => {
+    const key = card.name.toLocaleLowerCase("en-US");
+    if (!uniqueCards.has(key)) uniqueCards.set(key, card);
+  });
+  return {
+    cards: [...uniqueCards.values()].slice(0, Math.max(limit, 48)),
+    hasMore,
+  };
+}
+
+async function loadUserPreferenceSignals(playerId) {
+  const scryfallNameColumn = db.isPostgres ? "sc.name" : "sc.card_name";
+  const scryfallIdColumn = db.isPostgres ? "sc.id" : "sc.scryfall_id";
+  const [
+    deckRows,
+    voteRows,
+    swipeRows,
+    collectionRows,
+    wishlistRows,
+    likedDeckRows,
+    eventRows,
+    artistRows,
+    followedPrintingRows,
+  ] = await Promise.all([
+    safePreferenceQuery(
+      `SELECT d.id AS deck_id, d.deck_name, d.format, d.custom_tags AS deck_tags,
+              d.cloned_from_deck_id,
+              dc.card_name, dc.quantity, COALESCE(dc.scryfall_id, ${scryfallIdColumn}) AS scryfall_id,
+              dc.custom_tag, dc.is_commander,
+              COALESCE(sc.type_line, '') AS type_line,
+              COALESCE(sc.oracle_text, '') AS oracle_text,
+              COALESCE(sc.mana_cost, '') AS mana_cost,
+              COALESCE(sc.cmc, 0) AS cmc,
+              COALESCE(sc.colors, '[]') AS colors,
+              COALESCE(pc.price, sc.price, 0.15) AS price,
+              COALESCE(sc.rarity, 'common') AS rarity
+       FROM decks d
+       JOIN deck_cards dc ON dc.deck_id = d.id
+       LEFT JOIN scryfall_cards sc ON LOWER(${scryfallNameColumn}) = LOWER(dc.card_name)
+       LEFT JOIN card_price_cache pc ON LOWER(pc.card_name) = LOWER(dc.card_name)
+       WHERE d.player_id = ?`,
+      [playerId]
+    ),
+    // Art votes only need the illustrator. Joining card stats here is what
+    // used to let an aesthetic judgement masquerade as a gameplay preference.
+    safePreferenceQuery(
+      `SELECT v.card_name, v.scryfall_id, v.vote, v.updated_at,
+              COALESCE(v.artist, fp.artist_name) AS artist
+       FROM card_art_votes v
+       LEFT JOIN followed_artist_printings fp ON fp.scryfall_id = v.scryfall_id
+       WHERE v.player_id = ?`,
+      [playerId]
+    ),
+    safePreferenceQuery(
+      `SELECT s.card_name, s.scryfall_id, s.vote, s.context_key, s.updated_at,
+              sc.type_line, sc.oracle_text, sc.mana_cost, sc.cmc, sc.colors,
+              COALESCE(pc.price, sc.price, 0.15) AS price, sc.rarity
+       FROM card_swipes s
+       LEFT JOIN scryfall_cards sc ON LOWER(${scryfallNameColumn}) = LOWER(s.card_name)
+       LEFT JOIN card_price_cache pc ON LOWER(pc.card_name) = LOWER(s.card_name)
+       WHERE s.player_id = ?`,
+      [playerId]
+    ),
+    safePreferenceQuery(
+      `SELECT cc.card_name, cc.scryfall_id, cc.quantity, cc.added_at,
+              sc.type_line, sc.oracle_text, sc.mana_cost, sc.cmc, sc.colors,
+              COALESCE(pc.price, sc.price, 0.15) AS price, sc.rarity
+       FROM collection_cards cc
+       JOIN collections c ON c.id = cc.collection_id
+       LEFT JOIN scryfall_cards sc ON LOWER(${scryfallNameColumn}) = LOWER(cc.card_name)
+       LEFT JOIN card_price_cache pc ON LOWER(pc.card_name) = LOWER(cc.card_name)
+       WHERE c.player_id = ?`,
+      [playerId]
+    ),
+    safePreferenceQuery(
+      `SELECT w.card_name, w.scryfall_id, w.quantity, w.added_at,
+              sc.type_line, sc.oracle_text, sc.mana_cost, sc.cmc, sc.colors,
+              COALESCE(pc.price, sc.price, 0.15) AS price, sc.rarity
+       FROM wishlist_cards w
+       LEFT JOIN scryfall_cards sc ON LOWER(${scryfallNameColumn}) = LOWER(w.card_name)
+       LEFT JOIN card_price_cache pc ON LOWER(pc.card_name) = LOWER(w.card_name)
+       WHERE w.player_id = ?`,
+      [playerId]
+    ),
+    safePreferenceQuery(
+      `SELECT d.id AS deck_id, d.deck_name, d.format, d.custom_tags AS deck_tags,
+              dc.card_name, dc.quantity, COALESCE(dc.scryfall_id, ${scryfallIdColumn}) AS scryfall_id,
+              dc.custom_tag, dc.is_commander,
+              sc.type_line, sc.oracle_text, sc.mana_cost, sc.cmc, sc.colors,
+              COALESCE(pc.price, sc.price, 0.15) AS price, sc.rarity
+       FROM deck_likes dl
+       JOIN decks d ON d.id = dl.deck_id
+       JOIN deck_cards dc ON dc.deck_id = d.id
+       LEFT JOIN scryfall_cards sc ON LOWER(${scryfallNameColumn}) = LOWER(dc.card_name)
+       LEFT JOIN card_price_cache pc ON LOWER(pc.card_name) = LOWER(dc.card_name)
+       WHERE dl.player_id = ?`,
+      [playerId]
+    ),
+    safePreferenceQuery(
+      `SELECT event_type, entity_type, entity_key, source, signal, context_json,
+              occurrences, created_at, last_seen_at
+       FROM preference_events
+       WHERE player_id = ?
+       ORDER BY last_seen_at DESC
+       LIMIT 1000`,
+      [playerId]
+    ),
+    safePreferenceQuery(
+      "SELECT artist_name FROM artist_follows WHERE player_id = ? ORDER BY artist_name",
+      [playerId]
+    ),
+    safePreferenceQuery(
+      `SELECT fp.card_name, fp.scryfall_id, fp.artist_name AS artist,
+              fp.image_uri, fp.set_name
+       FROM followed_artist_printings fp
+       JOIN artist_follows af ON af.artist_key = fp.artist_key
+       WHERE af.player_id = ?`,
+      [playerId]
+    ),
+  ]);
+
+  const decks = [...new Map(deckRows.map(row => [row.deck_id, {
+    id: row.deck_id,
+    name: row.deck_name,
+    format: row.format,
+  }])).values()];
+  const signals = [];
+  const searches = [];
+
+  deckRows.forEach(row => signals.push({
+    card: recommendationCardFromRow(row),
+    source: "own_deck",
+    weight: (Number(row.is_commander) === 1 ? 5 : 2.3) * (row.cloned_from_deck_id ? 0.72 : 1),
+    polarity: 1,
+    deckId: row.deck_id,
+    deckName: row.deck_name,
+    format: row.format,
+    quantity: row.quantity,
+    isCommander: Number(row.is_commander) === 1,
+  }));
+  likedDeckRows.forEach(row => signals.push({
+    card: recommendationCardFromRow(row),
+    source: "liked_deck",
+    weight: Number(row.is_commander) === 1 ? 1.3 : 0.65,
+    polarity: 1,
+  }));
+  collectionRows.forEach(row => signals.push({
+    card: recommendationCardFromRow(row),
+    source: "collection",
+    weight: 0.45 * Math.min(3, Math.max(1, Number(row.quantity || 1))),
+    polarity: 1,
+    quantity: row.quantity,
+  }));
+  wishlistRows.forEach(row => signals.push({
+    card: recommendationCardFromRow(row),
+    source: "wishlist",
+    weight: 1.8,
+    polarity: 1,
+    explicit: true,
+  }));
+  voteRows.forEach(row => signals.push({
+    kind: "art",
+    artist: row.artist,
+    card: recommendationCardFromRow(row),
+    source: "art_vote",
+    weight: 0.65 * recencyMultiplier(row.updated_at),
+    polarity: Number(row.vote) >= 0 ? 1 : -1,
+  }));
+  // Swipes fade faster than deliberate acts like building or wishlisting, so a
+  // playstyle phase stops steering the queue once you have moved on from it.
+  swipeRows.forEach(row => signals.push({
+    card: recommendationCardFromRow(row),
+    source: "card_swipe",
+    weight: 3.5 * recencyMultiplier(row.updated_at, 50),
+    polarity: Number(row.vote) >= 0 ? 1 : -1,
+    explicit: true,
+    deckId: row.context_key && row.context_key !== "explore" ? row.context_key : undefined,
+  }));
+
+  eventRows.forEach(row => {
+    const context = parsePreferenceContext(row.context_json);
+    const occurrences = Math.min(6, Math.max(1, Number(row.occurrences || 1)));
+    const recency = recencyMultiplier(row.last_seen_at || row.created_at);
+    if (row.entity_type === "query") {
+      searches.push({ query: context.query || row.entity_key, occurrences });
+      return;
+    }
+    // card_swipes and card_art_votes are the authoritative records for those
+    // actions; their events are kept only as an audit trail, not re-counted.
+    const eventSource = String(row.source || "");
+    if (eventSource.endsWith("_swipe") || eventSource === "art_gallery") return;
+    const eventWeight = Math.abs(Number(row.signal || 0)) * (1 + Math.log1p(occurrences) * 0.35) * recency;
+    if (eventWeight === 0) return;
+    signals.push({
+      card: recommendationCardFromRow({
+        card_name: context.cardName || (row.entity_type === "card" ? row.entity_key : ""),
+        scryfall_id: context.scryfallId || (row.entity_type === "printing" ? row.entity_key : ""),
+        type_line: context.typeLine,
+        oracle_text: context.oracleText,
+        colors: context.colors,
+        cmc: context.cmc,
+        price: context.price,
+        artist: context.artist,
+      }),
+      source: row.source || row.event_type,
+      weight: eventWeight,
+      polarity: Number(row.signal) >= 0 ? 1 : -1,
+      explicit: String(row.source || "").endsWith("_swipe") || row.event_type === "recommendation_like",
+      deckId: context.targetDeckId,
+    });
+  });
+
+  return {
+    decks,
+    signals,
+    searches,
+    followedArtists: artistRows.map(row => row.artist_name),
+    followedPrintings: followedPrintingRows.map(recommendationCardFromRow),
+  };
 }
 
 function fetchHtml(url) {
@@ -4418,6 +4978,130 @@ app.get('/api/seasons/:seasonId/matrix', async (req, res) => {
   }
 });
 
+app.post('/api/preferences/events', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in to teach Grimore your preferences." });
+
+  const eventSignals = {
+    search: 0.25,
+    detail_view: 0.45,
+    recommendation_open: 0.75,
+    recommendation_like: 1.5,
+    recommendation_dismiss: -1.5,
+  };
+  const eventType = typeof req.body.eventType === "string" ? req.body.eventType : "";
+  const entityType = typeof req.body.entityType === "string" ? req.body.entityType : "";
+  const entityKey = typeof req.body.entityKey === "string" ? req.body.entityKey : "";
+  const source = typeof req.body.source === "string" ? req.body.source : "app";
+
+  if (!(eventType in eventSignals)) return res.status(400).json({ error: "Unsupported preference event." });
+  if (!["card", "printing", "query"].includes(entityType)) return res.status(400).json({ error: "Unsupported preference entity." });
+  if (!entityKey.trim() || entityKey.length > 500) return res.status(400).json({ error: "Invalid preference entity." });
+
+  try {
+    await recordPreferenceEvent(req.session.player.id, {
+      eventType,
+      entityType,
+      entityKey,
+      source,
+      signal: eventSignals[eventType],
+      context: req.body.context || {},
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to record preference event:", error);
+    res.status(500).json({ error: "Could not update your recommendation profile." });
+  }
+});
+
+app.get('/api/cards/recommendations', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in to view personalized cards." });
+
+  const playerId = req.session.player.id;
+  const limit = Math.max(4, Math.min(40, Number.parseInt(req.query.limit, 10) || 16));
+  const targetDeckId = typeof req.query.deckId === "string" ? req.query.deckId.slice(0, 100) : "";
+  const requestedCursor = parseRecommendationCursor(req.query.cursor);
+
+  try {
+    const [userData, localCandidates, communityCounts] = await Promise.all([
+      loadUserPreferenceSignals(playerId),
+      loadLocalRecommendationCandidates(),
+      loadCommunityCardCounts(),
+    ]);
+
+    if (targetDeckId && !userData.decks.some(deck => deck.id === targetDeckId)) {
+      return res.status(404).json({ error: "Target deck not found." });
+    }
+
+    const profile = createPreferenceProfile({
+      playerId,
+      signals: userData.signals,
+      decks: userData.decks,
+      followedArtists: userData.followedArtists,
+      searches: userData.searches,
+    });
+
+    const scryfallPage = await loadScryfallRecommendationCandidates(
+      profile,
+      targetDeckId,
+      Math.max(limit * 12, 120),
+      requestedCursor
+    );
+    let responseCursor = requestedCursor;
+    let candidates = scryfallPage.cards.length > 0 ? scryfallPage.cards : localCandidates;
+    const candidateSource = scryfallPage.cards.length > 0 ? "scryfall-legal-pool" : "local-cache";
+    let candidateOffset = candidateSource === "local-cache" ? (requestedCursor.page - 1) * limit : 0;
+
+    const followedByName = new Map(
+      userData.followedPrintings.map(card => [card.name.toLocaleLowerCase("en-US"), card])
+    );
+    candidates = candidates.map(card => {
+      const followed = followedByName.get(card.name.toLocaleLowerCase("en-US"));
+      return followed ? { ...card, ...followed, artistFollowed: true } : card;
+    });
+
+    const scorePage = (pageCandidates, offset, cursor) => scoreRecommendations({
+      profile,
+      candidates: pageCandidates,
+      communityCounts,
+      targetDeckId,
+      limit,
+      offset,
+      seed: `${playerId}:${new Date().toISOString().slice(0, 10)}:cycle:${cursor.cycle}`,
+    });
+    let cards = scorePage(candidates, candidateOffset, responseCursor);
+    let recycled = requestedCursor.cycle > 0;
+
+    if (candidateSource === "local-cache" && cards.length === 0 && requestedCursor.page > 1) {
+      responseCursor = parseRecommendationCursor(nextRecommendationCursor(requestedCursor, false));
+      candidateOffset = 0;
+      cards = scorePage(candidates, candidateOffset, responseCursor);
+      recycled = true;
+    }
+
+    const sourceHasMore = candidateSource === "scryfall-legal-pool"
+      ? scryfallPage.hasMore
+      : cards.length >= limit;
+    const cursor = formatRecommendationCursor(responseCursor);
+    const nextCursor = nextRecommendationCursor(responseCursor, sourceHasMore);
+
+    res.json({
+      algorithmVersion: "deck-fingerprint-v2",
+      fallback: profile.coldStart,
+      candidateSource,
+      cursor,
+      nextCursor,
+      hasMore: true,
+      cycle: responseCursor.cycle,
+      recycled,
+      profile: summarizeProfile(profile),
+      cards,
+    });
+  } catch (error) {
+    console.error("Failed to generate personalized card recommendations:", error);
+    res.status(500).json({ error: "Could not build your card recommendations." });
+  }
+});
+
 app.get('/api/artists/followed', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Please log in to view followed illustrators." });
   try {
@@ -4618,12 +5302,23 @@ app.get('/api/cards/versions', async (req, res) => {
   }
 });
 
+// Art taste only. This endpoint is reachable exclusively from surfaces that
+// compare printings of ONE card, where artwork is the only variable. Swiping
+// between different cards is gameplay taste and belongs on /api/cards/swipes.
 app.post('/api/cards/versions/:scryfallId/vote', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Please log in to rate card art." });
 
   const { scryfallId } = req.params;
   const cardName = typeof req.body.cardName === "string" ? req.body.cardName.trim() : "";
   const vote = Number(req.body.vote);
+  // Reject rather than silently relabel: a stale client sending swipe traffic
+  // here is exactly the bug this split exists to prevent.
+  if (typeof req.body.source === "string" && req.body.source.endsWith("_swipe") && req.body.source !== "art_swipe") {
+    return res.status(400).json({ error: "Card swipes are gameplay taste. Post them to /api/cards/swipes." });
+  }
+  const voteSource = ["art_swipe", "art_gallery"].includes(req.body.source)
+    ? req.body.source
+    : "art_gallery";
 
   if (!/^[a-zA-Z0-9-]{20,64}$/.test(scryfallId)) {
     return res.status(400).json({ error: "Invalid printing ID." });
@@ -4642,16 +5337,34 @@ app.post('/api/cards/versions/:scryfallId/vote', async (req, res) => {
         [req.session.player.id, scryfallId]
       );
     } else {
+      const artistName = typeof req.body.artist === "string" ? req.body.artist.trim().slice(0, 200) : null;
       await db.run(
-        `INSERT INTO card_art_votes (player_id, scryfall_id, card_name, vote)
-         VALUES (?, ?, ?, ?)
+        `INSERT INTO card_art_votes (player_id, scryfall_id, card_name, artist, vote)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(player_id, scryfall_id) DO UPDATE SET
            card_name = excluded.card_name,
+           artist = COALESCE(excluded.artist, card_art_votes.artist),
            vote = excluded.vote,
            updated_at = CURRENT_TIMESTAMP`,
-        [req.session.player.id, scryfallId, cardName, vote]
+        [req.session.player.id, scryfallId, cardName, artistName || null, vote]
       );
     }
+
+    // Deliberately carries no type line, colors, or mana value: the card is
+    // held constant while voting, so those dimensions say nothing about art.
+    await recordPreferenceEvent(req.session.player.id, {
+      eventType: vote === 1 ? "art_like" : vote === -1 ? "art_dislike" : "art_clear",
+      entityType: "printing",
+      entityKey: scryfallId,
+      source: voteSource,
+      signal: vote * 0.75,
+      context: {
+        cardName,
+        scryfallId,
+        artist: req.body.artist,
+        setName: req.body.setName,
+      },
+    });
 
     const totals = await db.get(
       `SELECT
@@ -4672,6 +5385,76 @@ app.post('/api/cards/versions/:scryfallId/vote', async (req, res) => {
   } catch (error) {
     console.error("Failed to save card art vote:", error);
     res.status(500).json({ error: "Could not save your art preference." });
+  }
+});
+
+// Gameplay taste. Swiping between different cards says nothing about artwork,
+// so this never touches card_art_votes or the community art totals.
+app.post('/api/cards/swipes', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in to teach Grimore your taste." });
+
+  const cardName = typeof req.body.cardName === "string" ? req.body.cardName.trim() : "";
+  const vote = Number(req.body.vote);
+  const scryfallId = typeof req.body.scryfallId === "string" ? req.body.scryfallId.slice(0, 64) : null;
+  const source = ["discover_swipe", "card_search_swipe"].includes(req.body.source)
+    ? req.body.source
+    : "card_search_swipe";
+  // Brew context: the deck you were building when you swiped, so a Goblins
+  // phase does not poison the queue you get while brewing control later.
+  const contextKey = (typeof req.body.context === "string" && req.body.context.trim())
+    ? req.body.context.trim().slice(0, 100)
+    : "explore";
+
+  if (!cardName || cardName.length > 250) {
+    return res.status(400).json({ error: "Invalid card name." });
+  }
+  if (![-1, 0, 1].includes(vote)) {
+    return res.status(400).json({ error: "Swipe must be like, pass, or clear." });
+  }
+
+  const cardKey = cardName.toLocaleLowerCase("en-US");
+
+  try {
+    if (vote === 0) {
+      await db.run(
+        "DELETE FROM card_swipes WHERE player_id = ? AND card_key = ? AND context_key = ?",
+        [req.session.player.id, cardKey, contextKey]
+      );
+    } else {
+      await db.run(
+        `INSERT INTO card_swipes (player_id, card_key, card_name, scryfall_id, context_key, vote)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(player_id, card_key, context_key) DO UPDATE SET
+           card_name = excluded.card_name,
+           scryfall_id = excluded.scryfall_id,
+           vote = excluded.vote,
+           updated_at = CURRENT_TIMESTAMP`,
+        [req.session.player.id, cardKey, cardName, scryfallId, contextKey, vote]
+      );
+    }
+
+    await recordPreferenceEvent(req.session.player.id, {
+      eventType: vote === 1 ? "swipe_like" : vote === -1 ? "swipe_pass" : "swipe_clear",
+      entityType: "card",
+      entityKey: cardName,
+      source,
+      signal: vote * 3.5,
+      context: {
+        cardName,
+        scryfallId,
+        typeLine: req.body.typeLine,
+        oracleText: req.body.oracleText,
+        colors: req.body.colors,
+        cmc: req.body.cmc,
+        price: req.body.price,
+        targetDeckId: contextKey === "explore" ? undefined : contextKey,
+      },
+    });
+
+    res.json({ success: true, cardName, context: contextKey, vote });
+  } catch (error) {
+    console.error("Failed to save card swipe:", error);
+    res.status(500).json({ error: "Could not save this swipe." });
   }
 });
 
