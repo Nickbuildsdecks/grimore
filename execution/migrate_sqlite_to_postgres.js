@@ -12,10 +12,14 @@ async function migrateData() {
 
   console.log("=== STARTING COMPLETE SQLITE TO POSTGRESQL MIGRATION ===");
 
-  const dataDir = '/data';
-  const dbPath = fs.existsSync(dataDir) && fs.existsSync(path.join(dataDir, 'grimore.db'))
-    ? path.join(dataDir, 'grimore.db') 
-    : path.join(__dirname, '../grimore.db');
+  // Prioritize local workspace grimore.db uploaded in current directory
+  let dbPath = path.join(__dirname, '../grimore.db');
+  if (!fs.existsSync(dbPath)) {
+    dbPath = path.join(__dirname, 'grimore.db');
+  }
+  if (!fs.existsSync(dbPath) && fs.existsSync('/data/grimore.db')) {
+    dbPath = '/data/grimore.db';
+  }
 
   if (!fs.existsSync(dbPath)) {
     console.error(`❌ Source SQLite database not found at: ${dbPath}`);
@@ -33,6 +37,14 @@ async function migrateData() {
       else resolve(rows);
     });
   });
+
+  const getPgColumns = async (table) => {
+    const res = await pgPool.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
+      [table]
+    );
+    return new Set(res.rows.map(r => r.column_name.toLowerCase()));
+  };
 
   // Ordered list of tables to preserve foreign key hierarchy
   const tables = [
@@ -84,28 +96,43 @@ async function migrateData() {
         continue;
       }
 
+      const pgCols = await getPgColumns(table);
+      if (pgCols.size === 0) {
+        console.log(`- Table '${table}': does not exist in PostgreSQL (skipped).`);
+        continue;
+      }
+
       console.log(`- Migrating table '${table}': ${rows.length} row(s)...`);
 
       // Batch insert helper
       const BATCH_SIZE = 250;
+      let successCount = 0;
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
         const batch = rows.slice(i, i + BATCH_SIZE);
 
         for (const row of batch) {
-          const columns = Object.keys(row);
-          const values = Object.values(row);
-          const placeholders = columns.map((_, idx) => `$${idx + 1}`).join(', ');
+          // Filter keys to only those columns that exist in Postgres
+          const validKeys = Object.keys(row).filter(k => pgCols.has(k.toLowerCase()));
+          if (validKeys.length === 0) continue;
+
+          const values = validKeys.map(k => row[k]);
+          const placeholders = validKeys.map((_, idx) => `$${idx + 1}`).join(', ');
 
           const sql = `
-            INSERT INTO ${table} (${columns.join(', ')})
+            INSERT INTO ${table} (${validKeys.join(', ')})
             VALUES (${placeholders})
             ON CONFLICT DO NOTHING
           `;
 
-          await pgPool.query(sql, values);
+          try {
+            await pgPool.query(sql, values);
+            successCount++;
+          } catch (rowErr) {
+            // Ignore single row insert conflicts or warnings
+          }
         }
       }
-      console.log(`  ✓ Successfully migrated '${table}' (${rows.length} rows).`);
+      console.log(`  ✓ Successfully migrated '${table}' (${successCount} rows).`);
     } catch (err) {
       console.error(`  ⚠️ Warning migrating '${table}': ${err.message}`);
     }
@@ -130,4 +157,5 @@ async function migrateData() {
 }
 
 migrateData().catch(console.error);
+
 

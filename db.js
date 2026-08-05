@@ -295,18 +295,83 @@ async function initDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (deck_id, player_id)
       )`,
+      `CREATE TABLE IF NOT EXISTS deck_comments (
+        id SERIAL PRIMARY KEY,
+        deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        comment_text TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        link_url TEXT,
+        is_read INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS player_stats (
+        player_id TEXT PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+        total_games INTEGER DEFAULT 0,
+        total_wins INTEGER DEFAULT 0,
+        total_kills INTEGER DEFAULT 0,
+        total_points INTEGER DEFAULT 0,
+        win_rate REAL DEFAULT 0.0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS scryfall_card_tags (
+        id SERIAL PRIMARY KEY,
+        card_name TEXT NOT NULL,
+        tag_name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (card_name, tag_name)
+      )`,
+      `CREATE TABLE IF NOT EXISTS collections (
+        id SERIAL PRIMARY KEY,
+        player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        description TEXT,
+        is_public INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS collection_cards (
+        id SERIAL PRIMARY KEY,
+        collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+        card_name TEXT NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        set_code TEXT,
+        collector_number TEXT,
+        scryfall_id TEXT,
+        foil INTEGER DEFAULT 0,
+        purchase_price REAL DEFAULT 0.0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS follows (
+        id SERIAL PRIMARY KEY,
+        follower_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        following_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (follower_id, following_id)
+      )`,
       // Column migrations for Postgres
       `ALTER TABLE players ADD COLUMN IF NOT EXISTS google_id TEXT`,
       `ALTER TABLE players ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'player'`,
       `ALTER TABLE players ADD COLUMN IF NOT EXISTS avatar_url TEXT`,
       `ALTER TABLE players ADD COLUMN IF NOT EXISTS profile_commander TEXT`,
+      `ALTER TABLE players ADD COLUMN IF NOT EXISTS profile_bio TEXT`,
+      `ALTER TABLE seasons ADD COLUMN IF NOT EXISTS schedule_mode TEXT`,
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS is_public INTEGER DEFAULT 0`,
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS custom_tags TEXT`,
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_card_name TEXT`,
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS format TEXT DEFAULT 'commander'`,
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS cloned_from_deck_id TEXT`,
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS original_creator_name TEXT`,
-      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS legality_reason TEXT`
+      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS legality_reason TEXT`,
+      `ALTER TABLE decks ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0`,
+      `ALTER TABLE deck_stats ADD COLUMN IF NOT EXISTS season_id TEXT`,
+      `ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS card_name TEXT`
     ];
 
     for (let stmt of pgStatements) {
