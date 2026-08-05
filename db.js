@@ -138,6 +138,7 @@ async function initDb() {
         total_wins INTEGER DEFAULT 0,
         total_kills INTEGER DEFAULT 0,
         total_points INTEGER DEFAULT 0,
+        total_matches INTEGER DEFAULT 0,
         games_played INTEGER DEFAULT 0,
         win_rate REAL DEFAULT 0.0
       )`,
@@ -431,6 +432,7 @@ async function initDb() {
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS original_creator_name TEXT`,
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS legality_reason TEXT`,
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0`,
+      `ALTER TABLE deck_stats ADD COLUMN IF NOT EXISTS total_matches INTEGER DEFAULT 0`,
       `ALTER TABLE deck_stats ADD COLUMN IF NOT EXISTS season_id TEXT`,
       `ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS card_name TEXT`
     ];
