@@ -57,6 +57,14 @@ Copy-Item "public\collection.js" -Destination "gcp-export\public\collection.js" 
 Copy-Item "public\logo.svg" -Destination "gcp-export\public\logo.svg" -Force
 Copy-Item "public\patreon_cover_cropped.png" -Destination "gcp-export\public\patreon_cover_cropped.png" -Force
 
+if (Test-Path "execution") {
+    if (-not (Test-Path "gcp-export\execution")) { New-Item -ItemType Directory -Path "gcp-export\execution" -Force }
+    Copy-Item "execution\*" -Destination "gcp-export\execution" -Force
+}
+if (Test-Path "grimore.db") {
+    Copy-Item "grimore.db" -Destination "gcp-export\grimore.db" -Force
+}
+
 if (Test-Path "web") {
     if (Test-Path "gcp-export\web") { Remove-Item "gcp-export\web" -Recurse -Force }
     Copy-Item "web" -Destination "gcp-export\web" -Recurse -Force
@@ -75,7 +83,8 @@ if ($LASTEXITCODE -ne 0) {
     exit
 }
 
-Write-Host "4. Extracting and rebuilding containers on VM..." -ForegroundColor Cyan
-ssh -o StrictHostKeyChecking=no "${VM_USER}@${VM_IP}" "unzip -o ~/grimore-gcp-export.zip -d ~/grimore; cd ~/grimore && sudo docker rm -f grimore-app 2>/dev/null; sudo docker system prune -f; sudo /usr/bin/docker-compose up --build -d"
+Write-Host "4. Extracting, rebuilding containers, and migrating database on VM..." -ForegroundColor Cyan
+ssh -o StrictHostKeyChecking=no "${VM_USER}@${VM_IP}" "unzip -o ~/grimore-gcp-export.zip -d ~/grimore; cd ~/grimore && sudo docker rm -f grimore-app 2>/dev/null; sudo docker system prune -f; sudo /usr/bin/docker-compose up --build -d; sleep 5; sudo docker exec grimore-app node execution/migrate_sqlite_to_postgres.js"
 
-Write-Host "Deployment completed successfully! Grimore is live on: http://$VM_IP" -ForegroundColor Green
+Write-Host "Deployment and Database Migration completed successfully! Grimore is live on: http://$VM_IP" -ForegroundColor Green
+

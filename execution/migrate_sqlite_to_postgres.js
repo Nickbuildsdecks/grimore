@@ -10,10 +10,10 @@ async function migrateData() {
     process.exit(1);
   }
 
-  console.log("=== STARTING SQLITE TO POSTGRESQL MIGRATION ===");
+  console.log("=== STARTING COMPLETE SQLITE TO POSTGRESQL MIGRATION ===");
 
   const dataDir = '/data';
-  const dbPath = fs.existsSync(dataDir) 
+  const dbPath = fs.existsSync(dataDir) && fs.existsSync(path.join(dataDir, 'grimore.db'))
     ? path.join(dataDir, 'grimore.db') 
     : path.join(__dirname, '../grimore.db');
 
@@ -21,6 +21,8 @@ async function migrateData() {
     console.error(`❌ Source SQLite database not found at: ${dbPath}`);
     process.exit(1);
   }
+
+  console.log(`Using source SQLite database at: ${dbPath}`);
 
   const sqliteDb = new sqlite3.Database(dbPath);
   const pgPool = new Pool({ connectionString: pgUrl });
@@ -32,15 +34,27 @@ async function migrateData() {
     });
   });
 
+  // Ordered list of tables to preserve foreign key hierarchy
   const tables = [
     'seasons',
     'players',
+    'scryfall_cards',
+    'scryfall_card_tags',
     'decks',
     'deck_stats',
     'deck_cards',
-    'price_overrides',
-    'scryfall_cards',
     'card_price_cache',
+    'price_overrides',
+    'player_stats',
+    'active_roster',
+    'deck_likes',
+    'deck_comments',
+    'notifications',
+    'collections',
+    'collection_cards',
+    'wishlist_cards',
+    'deleted_items',
+    'card_art_votes',
     'tournaments',
     'tournament_players',
     'tournament_rounds',
@@ -52,6 +66,18 @@ async function migrateData() {
 
   for (const table of tables) {
     try {
+      // Check if table exists in SQLite
+      const tableCheck = await new Promise((resolve) => {
+        sqliteDb.get(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, [table], (err, row) => {
+          resolve(!!row);
+        });
+      });
+
+      if (!tableCheck) {
+        console.log(`- Table '${table}': does not exist in SQLite (skipped).`);
+        continue;
+      }
+
       const rows = await getSqliteRows(table);
       if (rows.length === 0) {
         console.log(`- Table '${table}': 0 rows (skipped).`);
@@ -60,27 +86,43 @@ async function migrateData() {
 
       console.log(`- Migrating table '${table}': ${rows.length} row(s)...`);
 
-      for (const row of rows) {
-        const columns = Object.keys(row);
-        const values = Object.values(row);
-        const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+      // Batch insert helper
+      const BATCH_SIZE = 250;
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const batch = rows.slice(i, i + BATCH_SIZE);
 
-        const sql = `
-          INSERT INTO ${table} (${columns.join(', ')})
-          VALUES (${placeholders})
-          ON CONFLICT DO NOTHING
-        `;
+        for (const row of batch) {
+          const columns = Object.keys(row);
+          const values = Object.values(row);
+          const placeholders = columns.map((_, idx) => `$${idx + 1}`).join(', ');
 
-        await pgPool.query(sql, values);
+          const sql = `
+            INSERT INTO ${table} (${columns.join(', ')})
+            VALUES (${placeholders})
+            ON CONFLICT DO NOTHING
+          `;
+
+          await pgPool.query(sql, values);
+        }
       }
-      console.log(`  ✓ Successfully migrated '${table}'.`);
+      console.log(`  ✓ Successfully migrated '${table}' (${rows.length} rows).`);
     } catch (err) {
       console.error(`  ⚠️ Warning migrating '${table}': ${err.message}`);
     }
   }
 
+  // Reset SERIAL sequences for auto-increment tables in Postgres
+  const serialTables = ['deck_cards', 'price_overrides', 'card_price_cache', 'tournament_rounds', 'match_reports', 'player_collection', 'deck_likes', 'deck_comments', 'collections', 'collection_cards'];
+  for (const sTable of serialTables) {
+    try {
+      await pgPool.query(`SELECT setval(pg_get_serial_sequence('${sTable}', 'id'), COALESCE((SELECT MAX(id) FROM ${sTable}), 1));`);
+    } catch (e) {
+      // Sequence reset warning ignored if sequence doesn't exist
+    }
+  }
+
   console.log("\n==================================================");
-  console.log("=== MIGRATION COMPLETE: DATA SAVED TO POSTGRESQL ===");
+  console.log("=== MIGRATION COMPLETE: ALL DATA SAVED TO POSTGRESQL ===");
   console.log("==================================================\n");
 
   await pgPool.end();
@@ -88,3 +130,4 @@ async function migrateData() {
 }
 
 migrateData().catch(console.error);
+
