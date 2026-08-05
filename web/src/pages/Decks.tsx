@@ -20,7 +20,7 @@ import { useShowcaseCards } from "@/hooks/useShowcaseCards"
 import { PageHeader } from "@/components/PageHeader"
 
 function DeckCard({ deck, onDelete }: { deck: Deck; onDelete: (deck: Deck) => void }) {
-  const art = cardImage(deck.commander_scryfall_id)
+  const art = cardImage(deck.commander_scryfall_id || deck.featured_scryfall_id)
   return (
     <article className="group relative min-w-0 overflow-hidden rounded-xl border border-border bg-card/85 transition-colors hover:border-primary/45">
       <Link to={`/builder/${deck.id}`} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">

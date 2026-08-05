@@ -62,6 +62,7 @@ export interface Deck {
   moxfield_url?: string | null
   commander_name?: string | null
   commander_scryfall_id?: string | null
+  featured_scryfall_id?: string | null
   total_points?: number | null
   total_wins?: number | null
   total_matches?: number | null

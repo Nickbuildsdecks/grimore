@@ -1312,9 +1312,18 @@ app.post('/api/auth/google', async (req, res) => {
     let player = await db.get("SELECT * FROM players WHERE google_id = ?", [googleId]);
     if (!player) {
       player = await db.get("SELECT * FROM players WHERE LOWER(email) = LOWER(?)", [email]);
-      if (player) {
-        await db.run("UPDATE players SET google_id = ? WHERE id = ?", [googleId, player.id]);
+    }
+
+    // Auto-link primary owner Google emails to p_admin
+    if (email.toLowerCase().includes('nickgothard5') || email.toLowerCase().includes('772wally')) {
+      const adminPlayer = await db.get("SELECT * FROM players WHERE id = 'p_admin'");
+      if (adminPlayer) {
+        player = adminPlayer;
       }
+    }
+
+    if (player) {
+      await db.run("UPDATE players SET google_id = ?, email = ? WHERE id = ?", [googleId, email, player.id]);
     }
 
     if (!player) {
