@@ -168,7 +168,7 @@ app.post('/api/sandbox/ai-advisor', async (req, res) => {
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
     const prompt = `You are Grim — the official Grimore MTG Arena Rules Advisor and AI Judge (L3 Judge standard).
 Provide a concise, direct, accurate explanation of how the following cards/rules interact according to the Comprehensive Rules. Always cite the exact CR section number (e.g. CR 704.5k, CR 603.2) where applicable. Keep the answer under 3 sentences for fast in-game reading. Speak with a helpful, sharp, authoritative tone as Grim.
 
