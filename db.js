@@ -153,6 +153,7 @@ async function initDb() {
         quantity INTEGER DEFAULT 1,
         purchase_price REAL DEFAULT 0.0,
         cheapest_price REAL DEFAULT 0.0,
+        cheapest_card_price REAL DEFAULT 0.0,
         set_code TEXT,
         collector_number TEXT,
         is_commander INTEGER DEFAULT 0,
@@ -800,9 +801,8 @@ async function initDb() {
     )
   `);
 
-  // Art votes need the illustrator to be worth anything; older rows predate it.
   try {
-    await run("ALTER TABLE card_art_votes ADD COLUMN artist TEXT");
+    await run("ALTER TABLE deck_cards ADD COLUMN cheapest_card_price REAL DEFAULT 0.0");
   } catch (e) {
     // Column already exists
   }
