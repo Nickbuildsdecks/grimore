@@ -2022,68 +2022,58 @@ app.post('/api/decks/register', async (req, res) => {
     const deckData = await fetchMoxfieldJson(moxUrl);
 
     const mainboard = deckData.mainboard || {};
-    const commanders = deckData.commanders || {};
-    
-    // Check basic lands settings
     const includeBasicLands = deckData.includeBasicLandsInPrice === true;
-    
     const deckFormat = (deckData.format || 'commander').toLowerCase();
     const allCardsMap = {};
     
-    // Add commanders
-    Object.keys(commanders).forEach(name => {
-      const cardObj = commanders[name];
-      let price = 0.10;
-      let scryfallId = null;
-      if (cardObj && cardObj.card) {
-        scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
-        if (cardObj.card.prices) {
-          const prices = cardObj.card.prices;
-          const usd = parseFloat(prices.usd) || parseFloat(prices.usd_foil) || parseFloat(prices.ck) || parseFloat(prices.ck_foil) || 0.10;
-          price = usd;
-        }
-      }
-      const qty = cardObj.quantity || 1;
-      allCardsMap[name] = { price, qty, scryfallId, isCommander: 1, customTag: cardObj.customCategory || null };
-    });
+    const boardSections = [
+      { board: deckData.commanders || {}, isCommander: 1 },
+      { board: deckData.mainboard || {}, isCommander: 0 },
+      { board: deckData.sideboard || {}, isCommander: 0 },
+      { board: deckData.companions || deckData.companion || {}, isCommander: 0 },
+      { board: deckData.signatureSpells || {}, isCommander: 0 },
+      { board: deckData.attractions || {}, isCommander: 0 },
+      { board: deckData.stickers || {}, isCommander: 0 }
+    ];
 
-    // Add mainboard
-    Object.keys(mainboard).forEach(name => {
-      const cardObj = mainboard[name];
-      let price = 0.10;
-      let scryfallId = null;
-      if (cardObj && cardObj.card) {
-        scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
-        if (cardObj.card.prices) {
-          const prices = cardObj.card.prices;
-          const usd = parseFloat(prices.usd);
-          const usdFoil = parseFloat(prices.usd_foil);
-          const ck = parseFloat(prices.ck);
-          const ckFoil = parseFloat(prices.ck_foil);
-          
-          let minPrice = Infinity;
-          if (usd && usd < minPrice) minPrice = usd;
-          if (usdFoil && usdFoil < minPrice) minPrice = usdFoil;
-          if (minPrice === Infinity) {
-            if (ck && ck < minPrice) minPrice = ck;
-            if (ckFoil && ckFoil < minPrice) minPrice = ckFoil;
+    boardSections.forEach(({ board, isCommander }) => {
+      Object.keys(board).forEach(name => {
+        const cardObj = board[name];
+        let price = 0.10;
+        let scryfallId = null;
+        if (cardObj && cardObj.card) {
+          scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
+          if (cardObj.card.prices) {
+            const prices = cardObj.card.prices;
+            const usd = parseFloat(prices.usd);
+            const usdFoil = parseFloat(prices.usd_foil);
+            const ck = parseFloat(prices.ck);
+            const ckFoil = parseFloat(prices.ck_foil);
+            
+            let minPrice = Infinity;
+            if (usd && usd < minPrice) minPrice = usd;
+            if (usdFoil && usdFoil < minPrice) minPrice = usdFoil;
+            if (minPrice === Infinity) {
+              if (ck && ck < minPrice) minPrice = ck;
+              if (ckFoil && ckFoil < minPrice) minPrice = ckFoil;
+            }
+            price = minPrice === Infinity ? 0.10 : minPrice;
           }
-          price = minPrice === Infinity ? 0.10 : minPrice;
         }
-      }
-      
-      // Zero out basic lands if they shouldn't be included
-      if (isBasicLand(name) && !includeBasicLands) {
-        price = 0.00;
-      }
-      
-      const qty = cardObj.quantity || 1;
-      if (allCardsMap[name]) {
-        allCardsMap[name].qty += qty;
-        // Keep commander status if already set
-      } else {
-        allCardsMap[name] = { price, qty, scryfallId, isCommander: 0, customTag: cardObj.customCategory || null };
-      }
+        
+        // Zero out basic lands if they shouldn't be included
+        if (isBasicLand(name) && !includeBasicLands) {
+          price = 0.00;
+        }
+        
+        const qty = cardObj.quantity || 1;
+        if (allCardsMap[name]) {
+          allCardsMap[name].qty += qty;
+          if (isCommander) allCardsMap[name].isCommander = 1;
+        } else {
+          allCardsMap[name] = { price, qty, scryfallId, isCommander, customTag: cardObj.customCategory || null };
+        }
+      });
     });
 
     const cardNamesWithPrices = Object.keys(allCardsMap).map(name => {
@@ -2472,78 +2462,57 @@ app.get('/api/decks/reprice-init/:deckId', async (req, res) => {
     const moxUrl = `https://api.moxfield.com/v2/decks/all/${deckIdMox}`;
     const deckData = await fetchMoxfieldJson(moxUrl);
 
-    const mainboard = deckData.mainboard || {};
-    const commanders = deckData.commanders || {};
-    
-    // Check basic lands settings
     const includeBasicLands = deckData.includeBasicLandsInPrice === true;
-    
     const allCardsMap = {};
     
-    // Add commanders
-    Object.keys(commanders).forEach(name => {
-      const cardObj = commanders[name];
-      let price = 0.10;
-      let scryfallId = null;
-      if (cardObj && cardObj.card) {
-        scryfallId = cardObj.card.scryfall_id || null;
-        if (cardObj.card.prices) {
-          const prices = cardObj.card.prices;
-          const usd = parseFloat(prices.usd);
-          const usdFoil = parseFloat(prices.usd_foil);
-          const ck = parseFloat(prices.ck);
-          const ckFoil = parseFloat(prices.ck_foil);
-          
-          let minPrice = Infinity;
-          if (usd && usd < minPrice) minPrice = usd;
-          if (usdFoil && usdFoil < minPrice) minPrice = usdFoil;
-          if (minPrice === Infinity) {
-            if (ck && ck < minPrice) minPrice = ck;
-            if (ckFoil && ckFoil < minPrice) minPrice = ckFoil;
-          }
-          price = minPrice === Infinity ? 0.10 : minPrice;
-        }
-      }
-      const qty = cardObj.quantity || 1;
-      allCardsMap[name] = { price, qty, scryfallId, isCommander: 1, customTag: cardObj.customCategory || null };
-    });
+    const boardSections = [
+      { board: deckData.commanders || {}, isCommander: 1 },
+      { board: deckData.mainboard || {}, isCommander: 0 },
+      { board: deckData.sideboard || {}, isCommander: 0 },
+      { board: deckData.companions || deckData.companion || {}, isCommander: 0 },
+      { board: deckData.signatureSpells || {}, isCommander: 0 },
+      { board: deckData.attractions || {}, isCommander: 0 },
+      { board: deckData.stickers || {}, isCommander: 0 }
+    ];
 
-    // Add mainboard
-    Object.keys(mainboard).forEach(name => {
-      const cardObj = mainboard[name];
-      let price = 0.10;
-      let scryfallId = null;
-      if (cardObj && cardObj.card) {
-        scryfallId = cardObj.card.scryfall_id || null;
-        if (cardObj.card.prices) {
-          const prices = cardObj.card.prices;
-          const usd = parseFloat(prices.usd);
-          const usdFoil = parseFloat(prices.usd_foil);
-          const ck = parseFloat(prices.ck);
-          const ckFoil = parseFloat(prices.ck_foil);
-          
-          let minPrice = Infinity;
-          if (usd && usd < minPrice) minPrice = usd;
-          if (usdFoil && usdFoil < minPrice) minPrice = usdFoil;
-          if (minPrice === Infinity) {
-            if (ck && ck < minPrice) minPrice = ck;
-            if (ckFoil && ckFoil < minPrice) minPrice = ckFoil;
+    boardSections.forEach(({ board, isCommander }) => {
+      Object.keys(board).forEach(name => {
+        const cardObj = board[name];
+        let price = 0.10;
+        let scryfallId = null;
+        if (cardObj && cardObj.card) {
+          scryfallId = cardObj.card.scryfall_id || cardObj.card.id || null;
+          if (cardObj.card.prices) {
+            const prices = cardObj.card.prices;
+            const usd = parseFloat(prices.usd);
+            const usdFoil = parseFloat(prices.usd_foil);
+            const ck = parseFloat(prices.ck);
+            const ckFoil = parseFloat(prices.ck_foil);
+            
+            let minPrice = Infinity;
+            if (usd && usd < minPrice) minPrice = usd;
+            if (usdFoil && usdFoil < minPrice) minPrice = usdFoil;
+            if (minPrice === Infinity) {
+              if (ck && ck < minPrice) minPrice = ck;
+              if (ckFoil && ckFoil < minPrice) minPrice = ckFoil;
+            }
+            price = minPrice === Infinity ? 0.10 : minPrice;
           }
-          price = minPrice === Infinity ? 0.10 : minPrice;
         }
-      }
-      
-      // Zero out basic lands if they shouldn't be included
-      if (isBasicLand(name) && !includeBasicLands) {
-        price = 0.00;
-      }
-      
-      const qty = cardObj.quantity || 1;
-      if (allCardsMap[name]) {
-        allCardsMap[name].qty += qty;
-      } else {
-        allCardsMap[name] = { price, qty, scryfallId, isCommander: 0, customTag: cardObj.customCategory || null };
-      }
+        
+        // Zero out basic lands if they shouldn't be included
+        if (isBasicLand(name) && !includeBasicLands) {
+          price = 0.00;
+        }
+        
+        const qty = cardObj.quantity || 1;
+        if (allCardsMap[name]) {
+          allCardsMap[name].qty += qty;
+          if (isCommander) allCardsMap[name].isCommander = 1;
+        } else {
+          allCardsMap[name] = { price, qty, scryfallId, isCommander, customTag: cardObj.customCategory || null };
+        }
+      });
     });
 
     const cardNamesWithPrices = Object.keys(allCardsMap).map(name => {

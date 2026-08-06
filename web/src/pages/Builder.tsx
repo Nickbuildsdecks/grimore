@@ -359,7 +359,7 @@ export function Builder() {
                 </div>
               ))}
             </div>
-            <dl className="mt-3 space-y-1 border-t border-border pt-2 text-xs"><div className="flex justify-between"><dt className="text-muted-foreground">Cards</dt><dd className="font-mono">{totalCards}/100</dd></div><div className="flex justify-between"><dt className="text-muted-foreground">Value</dt><dd className="font-mono text-primary">${totalPrice.toFixed(2)}</dd></div></dl>
+            <dl className="mt-3 space-y-1 border-t border-border pt-2 text-xs"><div className="flex justify-between"><dt className="text-muted-foreground">Cards</dt><dd className="font-mono">{totalCards}/100 <span className="text-[0.65rem] text-muted-foreground">({cards.length} unique)</span></dd></div><div className="flex justify-between"><dt className="text-muted-foreground">Value</dt><dd className="font-mono text-primary">${totalPrice.toFixed(2)}</dd></div></dl>
           </section>
         </aside>
 

@@ -137,6 +137,11 @@ async function downloadAndImportScryfallBulk(force = false) {
         const colors = JSON.stringify(card.colors || []);
         const rarity = card.rarity || "common";
         
+        const set_code = (card.set || "unk").toLowerCase();
+        const collector_number = card.collector_number || "1";
+        const set_name = card.set_name || "";
+        const image_uri = (card.image_uris && (card.image_uris.normal || card.image_uris.large || card.image_uris.small)) || (card.card_faces && card.card_faces[0] && card.card_faces[0].image_uris && card.card_faces[0].image_uris.normal) || "";
+        
         let price = 0.05;
         if (card.prices) {
           const usd = parseFloat(card.prices.usd);
@@ -148,11 +153,11 @@ async function downloadAndImportScryfallBulk(force = false) {
         if (db.isPostgres) {
           await db.run(
             `INSERT INTO scryfall_cards 
-             (id, name, card_name, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, price, rarity, updated_at) 
-             VALUES ($1, $2, $2, $1, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+             (id, name, card_name, scryfall_id, set_code, set_name, collector_number, type_line, oracle_text, mana_cost, cmc, colors, price, image_uri, rarity, last_updated) 
+             VALUES ($1, $2, $2, $1, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
              ON CONFLICT (id) DO UPDATE SET 
-             name = EXCLUDED.name, card_name = EXCLUDED.card_name, type_line = EXCLUDED.type_line, price = EXCLUDED.price`,
-            [scryfallId, name, type_line, oracle_text, mana_cost, cmc, colors, price, rarity]
+             name = EXCLUDED.name, card_name = EXCLUDED.card_name, type_line = EXCLUDED.type_line, price = EXCLUDED.price, image_uri = EXCLUDED.image_uri, set_code = EXCLUDED.set_code`,
+            [scryfallId, name, set_code, set_name, collector_number, type_line, oracle_text, mana_cost, cmc, colors, price, image_uri, rarity]
           );
         } else {
           await db.run(

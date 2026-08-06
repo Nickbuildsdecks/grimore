@@ -31,8 +31,24 @@ export function DeckDetail() {
   const postComment = useMutation({ mutationFn: () => api.post(`/api/decks/${deckId}/comment`, { commentText: comment.trim() }), onSuccess: () => { setComment(""); toast.success("Comment posted"); void qc.invalidateQueries({ queryKey: ["deck-social", deckId] }) }, onError: (error) => toast.error(error instanceof Error ? error.message : "Could not post comment") })
 
   const commander = cards.data?.find((card) => card.is_commander === 1)
-  const grouped = useMemo(() => ORDER.map((type) => ({ type, cards: (cards.data ?? []).filter((card) => card.is_commander !== 1 && cardType(card.type_line ?? "") === type) })).filter((group) => group.cards.length), [cards.data])
+  const grouped = useMemo(() => {
+    const rawCards = cards.data ?? []
+    const map = new Map<string, DeckCard[]>()
+    for (const card of rawCards.filter((c) => c.is_commander !== 1)) {
+      const type = cardType(card.type_line ?? "")
+      const tag = card.custom_tag || type
+      if (!map.has(tag)) map.set(tag, [])
+      map.get(tag)!.push(card)
+    }
+    const categories = Array.from(new Set([...ORDER, ...Array.from(map.keys())]))
+    return categories.filter((cat) => map.has(cat)).map((cat) => ({
+      type: cat,
+      cards: map.get(cat)!
+    }))
+  }, [cards.data])
+
   const total = (cards.data ?? []).reduce((sum, card) => sum + card.quantity, 0)
+  const uniqueCount = (cards.data ?? []).length
   const ownerName = owner.data?.profile?.store_nickname || "Grimore player"
 
   if (meta.isPending || cards.isPending) return <div className="page-wrap"><Skeleton className="h-80 rounded-xl" /></div>
@@ -42,7 +58,7 @@ export function DeckDetail() {
     <div className="page-wrap">
       <Button variant="ghost" className="mb-4 px-2" onClick={() => navigate(-1)}><ArrowLeft /> Back</Button>
       <header className="grid gap-6 border-b border-border pb-6 md:grid-cols-[1fr_auto] md:items-end">
-        <div><div className="flex flex-wrap gap-2">{meta.data.is_legal === 1 ? <Badge className="bg-emerald-500/15 text-emerald-300">Legal</Badge> : <Badge variant="destructive">Needs work</Badge>}<Badge variant="secondary" className="capitalize">{meta.data.format || "Commander"}</Badge>{social.data?.customTags?.map((tag) => <Badge key={tag} variant="secondary">{tag}</Badge>)}</div><h1 className="mt-3 font-display text-4xl font-semibold md:text-5xl">{meta.data.deck_name}</h1><p className="mt-2 text-sm text-muted-foreground">by {ownerName} · {total} cards · ${Number(meta.data.cheapest_total_price ?? 0).toFixed(2)}</p>{meta.data.legality_reason && <p className="mt-2 max-w-2xl text-sm text-destructive">{meta.data.legality_reason}</p>}</div>
+        <div><div className="flex flex-wrap gap-2">{meta.data.is_legal === 1 ? <Badge className="bg-emerald-500/15 text-emerald-300">Legal</Badge> : <Badge variant="destructive">Needs work</Badge>}<Badge variant="secondary" className="capitalize">{meta.data.format || "Commander"}</Badge>{social.data?.customTags?.map((tag) => <Badge key={tag} variant="secondary">{tag}</Badge>)}</div><h1 className="mt-3 font-display text-4xl font-semibold md:text-5xl">{meta.data.deck_name}</h1><p className="mt-2 text-sm text-muted-foreground">by {ownerName} · {total} cards ({uniqueCount} unique) · ${Number(meta.data.cheapest_total_price ?? 0).toFixed(2)}</p>{meta.data.legality_reason && <p className="mt-2 max-w-2xl text-sm text-destructive">{meta.data.legality_reason}</p>}</div>
         <div className="flex flex-wrap gap-2">{social.data?.isOwner ? <Button asChild><Link to={`/builder/${deckId}`}><Pencil /> Edit deck</Link></Button> : <Button onClick={() => clone.mutate()} disabled={clone.isPending}><Copy /> {clone.isPending ? "Cloning…" : "Clone deck"}</Button>}<Button variant="secondary" aria-pressed={social.data?.hasLiked} onClick={() => like.mutate()}><Heart className={social.data?.hasLiked ? "fill-current text-primary" : ""} /> {social.data?.likes ?? 0}</Button></div>
       </header>
 
