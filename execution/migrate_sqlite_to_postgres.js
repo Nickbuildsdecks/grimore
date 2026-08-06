@@ -166,6 +166,14 @@ async function migrateData() {
     }
   }
 
+  // Sync is_public visibility and sequence resets for Postgres
+  try {
+    await pgPool.query("UPDATE decks SET is_public = 1 WHERE player_id = 'p_admin';");
+    console.log("  ✓ Updated is_public = 1 on live PostgreSQL decks.");
+  } catch (e) {
+    console.warn("  ⚠️ Warning syncing PostgreSQL deck visibility:", e.message);
+  }
+
   // Reset SERIAL sequences for auto-increment tables in Postgres
   const serialTables = ['deck_cards', 'price_overrides', 'card_price_cache', 'tournament_rounds', 'match_reports', 'player_collection', 'deck_likes', 'deck_comments', 'collections', 'collection_cards'];
   for (const sTable of serialTables) {

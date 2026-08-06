@@ -1,8 +1,7 @@
-# Grimore GCP Compute VM Auto-Deploy Script
-# Run this script from PowerShell to compile, compress, upload, and deploy updates to your VM.
+# Grimore High-Speed GCP Compute VM Auto-Deploy Script
+# Features: Local pre-compilation, zero-VM-build overhead, and real-time progress indicators.
 
 # --- CONFIGURATION ---
-# Load environment variables from .env if it exists
 $envFile = Join-Path $PSScriptRoot ".env"
 if (Test-Path $envFile) {
     Get-Content $envFile | Foreach-Object {
@@ -21,72 +20,84 @@ if (Test-Path $envFile) {
 $VM_IP = $env:VM_IP
 $VM_USER = $env:VM_USER
 $LOCAL_ZIP = Join-Path $PSScriptRoot "grimore-gcp-export.zip"
-# ---------------------
 
 if (-not $VM_IP -or $VM_IP -eq "YOUR_VM_IP" -or -not $VM_USER -or $VM_USER -eq "YOUR_VM_USERNAME") {
     Write-Error "Please configure VM_IP and VM_USER in your .env file."
     exit
 }
 
-Write-Host "0. Building React web application..." -ForegroundColor Cyan
-npm run build
+function Show-DeploymentProgress {
+    param(
+        [int]$Percent,
+        [string]$Status
+    )
+    Write-Progress -Activity "Deploying Grimore to GCP VM ($VM_IP)" -Status $Status -PercentComplete $Percent
+    $barWidth = 30
+    $filled = [math]::Round(($Percent / 100) * $barWidth)
+    $empty = $barWidth - $filled
+    $bar = "█" * $filled + "░" * $empty
+    Write-Host "`n[PROGRESS $Percent%] [$bar] $Status" -ForegroundColor Yellow
+}
 
-Write-Host "1. Refreshing export files..." -ForegroundColor Cyan
-Copy-Item "server.js" -Destination "gcp-export/server.js" -Force
-Copy-Item "db.js" -Destination "gcp-export/db.js" -Force
-Copy-Item "mtgjsonService.js" -Destination "gcp-export/mtgjsonService.js" -Force
-Copy-Item "scryfallService.js" -Destination "gcp-export/scryfallService.js" -Force
-Copy-Item "package.json" -Destination "gcp-export/package.json" -Force
-Copy-Item "package-lock.json" -Destination "gcp-export/package-lock.json" -Force
-Copy-Item "Dockerfile" -Destination "gcp-export/Dockerfile" -Force
-Copy-Item ".dockerignore" -Destination "gcp-export/.dockerignore" -Force
-Copy-Item "docker-compose.yml" -Destination "gcp-export/docker-compose.yml" -Force
-Copy-Item "Caddyfile" -Destination "gcp-export/Caddyfile" -Force
-Copy-Item ".env.example" -Destination "gcp-export/.env.example" -Force
-Copy-Item "logo.svg" -Destination "gcp-export/logo.svg" -Force
-Copy-Item "logo.ico" -Destination "gcp-export/logo.ico" -Force
-Copy-Item "public\app.js" -Destination "gcp-export\public\app.js" -Force
-Copy-Item "public\index.html" -Destination "gcp-export\public\index.html" -Force
-Copy-Item "public\style.css" -Destination "gcp-export\public\style.css" -Force
-Copy-Item "public\search.html" -Destination "gcp-export\public\search.html" -Force
-Copy-Item "public\search.js" -Destination "gcp-export\public\search.js" -Force
-Copy-Item "public\suggestions.html" -Destination "gcp-export\public\suggestions.html" -Force
-Copy-Item "public\suggestions.js" -Destination "gcp-export\public\suggestions.js" -Force
-Copy-Item "public\collection.html" -Destination "gcp-export\public\collection.html" -Force
-Copy-Item "public\collection.js" -Destination "gcp-export\public\collection.js" -Force
-Copy-Item "public\logo.svg" -Destination "gcp-export\public\logo.svg" -Force
-Copy-Item "public\patreon_cover_cropped.png" -Destination "gcp-export\public\patreon_cover_cropped.png" -Force
+# STEP 1: Local Pre-Compilation
+Show-DeploymentProgress -Percent 20 -Status "[1/5] Building React frontend static bundle locally..."
+Set-Location -Path (Join-Path $PSScriptRoot "web")
+npm run build | Out-Null
+Set-Location -Path $PSScriptRoot
+
+# STEP 2: Packaging Export Directory
+Show-DeploymentProgress -Percent 40 -Status "[2/5] Refreshing export bundle & static assets..."
+if (Test-Path "gcp-export") { Remove-Item "gcp-export" -Recurse -Force }
+New-Item -ItemType Directory -Path "gcp-export" -Force | Out-Null
+
+$filesToCopy = @(
+    "server.js", "db.js", "mtgjsonService.js", "scryfallService.js",
+    "package.json", "package-lock.json", "Dockerfile", ".dockerignore",
+    "docker-compose.yml", "Caddyfile", ".env.example", "logo.svg", "logo.ico"
+)
+
+foreach ($file in $filesToCopy) {
+    if (Test-Path $file) { Copy-Item $file -Destination "gcp-export\" -Force }
+}
+
+Copy-Item "public" -Destination "gcp-export\public" -Recurse -Force
 
 if (Test-Path "execution") {
-    if (-not (Test-Path "gcp-export\execution")) { New-Item -ItemType Directory -Path "gcp-export\execution" -Force }
-    Copy-Item "execution\*" -Destination "gcp-export\execution" -Force
+    Copy-Item "execution" -Destination "gcp-export\execution" -Recurse -Force
 }
 if (Test-Path "grimore.db") {
     Copy-Item "grimore.db" -Destination "gcp-export\grimore.db" -Force
-    if (-not (Test-Path "gcp-export\data")) { New-Item -ItemType Directory -Path "gcp-export\data" -Force }
+    New-Item -ItemType Directory -Path "gcp-export\data" -Force | Out-Null
     Copy-Item "grimore.db" -Destination "gcp-export\data\grimore.db" -Force
 }
 
-if (Test-Path "web") {
-    if (Test-Path "gcp-export\web") { Remove-Item "gcp-export\web" -Recurse -Force }
-    Copy-Item "web" -Destination "gcp-export\web" -Recurse -Force
-    if (Test-Path "gcp-export\web\node_modules") { Remove-Item "gcp-export\web\node_modules" -Recurse -Force }
+# Copy pre-built React dist directory
+if (Test-Path "web\dist") {
+    New-Item -ItemType Directory -Path "gcp-export\web" -Force | Out-Null
+    Copy-Item "web\dist" -Destination "gcp-export\web\dist" -Recurse -Force
 }
 
-Write-Host "2. Creating zip archive..." -ForegroundColor Cyan
+# STEP 3: Compressing Export Zip
+Show-DeploymentProgress -Percent 60 -Status "[3/5] Creating lightweight release archive..."
 if (Test-Path $LOCAL_ZIP) { Remove-Item $LOCAL_ZIP -Force }
 Compress-Archive -Path (Join-Path $PSScriptRoot "gcp-export\*") -DestinationPath $LOCAL_ZIP -Force
 
-Write-Host "3. Uploading updates to VM ($VM_IP)..." -ForegroundColor Cyan
+# STEP 4: High-Speed SCP Transfer
+Show-DeploymentProgress -Percent 80 -Status "[4/5] Transferring release package to GCP VM ($VM_IP)..."
 scp -o StrictHostKeyChecking=no $LOCAL_ZIP "${VM_USER}@${VM_IP}:~/grimore-gcp-export.zip"
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "SCP upload failed. Please verify that your VM is running, the IP is correct, and your SSH key is authorized."
+    Write-Error "SCP upload failed. Please check VM network connectivity."
     exit
 }
 
-Write-Host "4. Extracting, rebuilding containers, and migrating database on VM..." -ForegroundColor Cyan
-ssh -o StrictHostKeyChecking=no "${VM_USER}@${VM_IP}" "unzip -o ~/grimore-gcp-export.zip -d ~/grimore; cd ~/grimore && sudo docker rm -f grimore-app 2>/dev/null; sudo docker system prune -f; sudo /usr/bin/docker-compose up --build -d; sleep 5; sudo docker exec grimore-app node execution/migrate_sqlite_to_postgres.js"
+# STEP 5: Fast Remote Container Swap & Database Sync
+Show-DeploymentProgress -Percent 95 -Status "[5/5] Restarting live containers and syncing database..."
+ssh -o StrictHostKeyChecking=no "${VM_USER}@${VM_IP}" "unzip -o ~/grimore-gcp-export.zip -d ~/grimore; cd ~/grimore && sudo docker-compose up --build -d; sleep 3; sudo docker exec grimore-app node execution/migrate_sqlite_to_postgres.js"
 
-Write-Host "Deployment and Database Migration completed successfully! Grimore is live on: http://$VM_IP" -ForegroundColor Green
+Show-DeploymentProgress -Percent 100 -Status "Deployment Complete! Grimore is Live!"
 
+Write-Host "`n==================================================" -ForegroundColor Green
+Write-Host "🚀 DEPLOYMENT COMPLETE! Grimore is Live on:" -ForegroundColor Green
+Write-Host "   👉 http://$VM_IP" -ForegroundColor Cyan
+Write-Host "==================================================`n" -ForegroundColor Green
