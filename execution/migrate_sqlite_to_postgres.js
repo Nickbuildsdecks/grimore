@@ -141,8 +141,13 @@ async function migrateData() {
         for (const r of batch) {
           const rowParams = [];
           for (const k of validKeys) {
-            rowParams.push(`$${valParamIdx++}`);
-            queryValues.push(r[k]);
+            const paramPlaceholder = ['prices', 'image_uris', 'legalities'].includes(k) ? `$${valParamIdx++}::jsonb` : `$${valParamIdx++}`;
+            rowParams.push(paramPlaceholder);
+            let val = r[k];
+            if (['prices', 'image_uris', 'legalities'].includes(k) && typeof val === 'string' && val.trim().length === 0) {
+              val = '{}';
+            }
+            queryValues.push(val);
           }
           valuePlaceholders.push(`(${rowParams.join(', ')})`);
         }
