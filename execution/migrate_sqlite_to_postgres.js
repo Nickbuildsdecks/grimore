@@ -81,7 +81,7 @@ async function migrateData() {
   ];
 
   try {
-    await pgPool.query("TRUNCATE deck_cards CASCADE;");
+    await pgPool.query("TRUNCATE deck_cards, scryfall_cards CASCADE;");
   } catch (e) {}
 
   for (const table of tables) {
@@ -102,6 +102,13 @@ async function migrateData() {
       if (rows.length === 0) {
         console.log(`- Table '${table}': 0 rows (skipped).`);
         continue;
+      }
+
+      if (table === 'scryfall_cards') {
+        for (const r of rows) {
+          if (!r.id && r.scryfall_id) r.id = r.scryfall_id;
+          if (!r.name && r.card_name) r.name = r.card_name;
+        }
       }
 
       const pgCols = await getPgColumns(table);
