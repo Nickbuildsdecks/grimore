@@ -3250,7 +3250,7 @@ app.get('/api/decks/:deckId/cards', async (req, res) => {
     const scryfallNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
     const cards = await db.query(
       `SELECT dc.deck_id, dc.card_name, 
-              COALESCE(NULLIF(pc.price, 0), NULLIF(dc.cheapest_card_price, 0), NULLIF(dc.cheapest_price, 0), NULLIF(dc.purchase_price, 0), NULLIF(sc.price, 0), 0.15) AS cheapest_card_price, 
+              COALESCE(NULLIF(pc.price, 0), NULLIF(dc.cheapest_price, 0), NULLIF(dc.purchase_price, 0), NULLIF(sc.price, 0), 0.15) AS cheapest_card_price, 
               dc.quantity, dc.is_commander, dc.custom_tag,
               COALESCE(dc.scryfall_id, ${scryfallIdCol}) AS scryfall_id,
               COALESCE(sc.type_line, 'Card') AS type_line, 
