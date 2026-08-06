@@ -3103,7 +3103,7 @@ app.get('/api/decks/discover', async (req, res) => {
     const currentPlayerId = req.session.player ? req.session.player.id : null;
     
     for (let deck of decks) {
-      const cards = await db.query("SELECT card_name, quantity, custom_tag, COALESCE(cheapest_price, purchase_price, 0) AS cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deck.id]);
+      const cards = await db.query("SELECT card_name, quantity, custom_tag, COALESCE(cheapest_price, 0) AS cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deck.id]);
       const commanderCard = cards.find(c => c.is_commander === 1) || (cards.length > 0 ? cards[0] : null);
       const likesCount = await db.get("SELECT COUNT(*) as count FROM deck_likes WHERE deck_id = ?", [deck.id]);
       const clonesCount = await db.get("SELECT COUNT(*) as count FROM decks WHERE cloned_from_deck_id = ?", [deck.id]);
@@ -3189,7 +3189,7 @@ app.get('/api/decks/:deckId', async (req, res) => {
     const scryfallNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
     const cards = await db.query(
       `SELECT dc.deck_id, dc.card_name, 
-              COALESCE(NULLIF(MAX(pc.price), 0), NULLIF(MAX(dc.cheapest_price), 0), NULLIF(MAX(dc.purchase_price), 0), NULLIF(MAX(sc.price), 0), 0.15) AS cheapest_card_price, 
+              COALESCE(NULLIF(MAX(pc.price), 0), NULLIF(MAX(dc.cheapest_card_price), 0), NULLIF(MAX(sc.price), 0), 0.15) AS cheapest_card_price, 
               MAX(dc.quantity) AS quantity, MAX(dc.is_commander) AS is_commander, MAX(dc.custom_tag) AS custom_tag,
               COALESCE(MAX(dc.scryfall_id), MAX(${scryfallIdCol})) AS scryfall_id,
               COALESCE(MAX(sc.type_line), MAX(dc.custom_tag), 'Card') AS type_line, 
@@ -3239,7 +3239,7 @@ app.get('/api/decks/:deckId/cards', async (req, res) => {
     const scryfallNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
     const cards = await db.query(
       `SELECT dc.deck_id, dc.card_name, 
-              COALESCE(NULLIF(MAX(pc.price), 0), NULLIF(MAX(dc.cheapest_price), 0), NULLIF(MAX(dc.purchase_price), 0), NULLIF(MAX(sc.price), 0), 0.15) AS cheapest_card_price, 
+              COALESCE(NULLIF(MAX(pc.price), 0), NULLIF(MAX(dc.cheapest_card_price), 0), NULLIF(MAX(sc.price), 0), 0.15) AS cheapest_card_price, 
               MAX(dc.quantity) AS quantity, MAX(dc.is_commander) AS is_commander, MAX(dc.custom_tag) AS custom_tag,
               COALESCE(MAX(dc.scryfall_id), MAX(${scryfallIdCol})) AS scryfall_id,
               COALESCE(MAX(sc.type_line), MAX(dc.custom_tag), 'Card') AS type_line, 
@@ -6526,6 +6526,197 @@ app.post('/api/recovery/restore/:id', async (req, res) => {
   }
 });
 
+// ── SYSTEM 1: MULTIPLAYER & BOT DRAFT ENGINE ─────────────────────────────────
+const activeDraftSessions = new Map();
+
+function generateDraftPack(cardPool, packSize = 15) {
+  const pack = [];
+  const poolCopy = [...cardPool];
+  for (let i = 0; i < packSize && poolCopy.length > 0; i++) {
+    const idx = Math.floor(Math.random() * poolCopy.length);
+    pack.push(poolCopy.splice(idx, 1)[0]);
+  }
+  return pack;
+}
+
+function aiBotPickCard(pack, draftedPool) {
+  if (!pack || pack.length === 0) return null;
+  let bestIdx = 0;
+  let bestScore = -1;
+  pack.forEach((card, idx) => {
+    let score = 0;
+    const rarity = (card.rarity || '').toLowerCase();
+    if (rarity === 'mythic') score += 10;
+    else if (rarity === 'rare') score += 7;
+    else if (rarity === 'uncommon') score += 4;
+    else score += 2;
+
+    const cmc = card.cmc || 0;
+    if (cmc >= 2 && cmc <= 4) score += 3;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = idx;
+    }
+  });
+  return pack.splice(bestIdx, 1)[0];
+}
+
+app.post('/api/draft/create', async (req, res) => {
+  try {
+    const { format = 'draft', setName = 'CMR', packSize = 15 } = req.body || {};
+    const draftId = 'draft_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+    const scryfallNameCol = db.isPostgres ? "name" : "card_name";
+    const scryfallIdCol = db.isPostgres ? "id" : "scryfall_id";
+
+    const poolRows = await db.query(
+      `SELECT ${scryfallIdCol} AS scryfall_id, ${scryfallNameCol} AS name, type_line, cmc, colors, rarity, price FROM scryfall_cards ORDER BY RANDOM() LIMIT 240`
+    );
+
+    const cardPool = (poolRows || []).map(r => ({
+      name: r.name,
+      scryfallId: r.scryfall_id,
+      type_line: r.type_line || 'Card',
+      cmc: r.cmc || 0,
+      colors: r.colors || '[]',
+      rarity: r.rarity || 'common',
+      price: parseFloat(r.price) || 0.15
+    }));
+
+    const seats = Array.from({ length: 8 }, (_, i) => ({
+      seatId: i,
+      name: i === 0 ? (req.session.player ? req.session.player.username : 'Player 1') : `AI Bot ${i}`,
+      isBot: i !== 0,
+      draftedCards: [],
+      currentPack: []
+    }));
+
+    seats.forEach(s => {
+      s.currentPack = generateDraftPack(cardPool, packSize);
+    });
+
+    const session = {
+      id: draftId,
+      format,
+      setName,
+      packNumber: 1,
+      pickNumber: 1,
+      seats,
+      cardPool,
+      status: 'active'
+    };
+
+    activeDraftSessions.set(draftId, session);
+    res.json({ success: true, draftId, session: { ...session, seats: seats.map(s => s.seatId === 0 ? s : { ...s, currentPack: [] }) } });
+  } catch (e) {
+    console.error("Draft creation error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/draft/:draftId', (req, res) => {
+  const { draftId } = req.params;
+  const session = activeDraftSessions.get(draftId);
+  if (!session) return res.status(404).json({ error: "Draft session not found." });
+  const humanSeat = session.seats[0];
+  res.json({
+    id: session.id,
+    format: session.format,
+    packNumber: session.packNumber,
+    pickNumber: session.pickNumber,
+    status: session.status,
+    currentPack: humanSeat ? humanSeat.currentPack : [],
+    draftedPool: humanSeat ? humanSeat.draftedCards : [],
+    seatsCount: session.seats.length
+  });
+});
+
+app.post('/api/draft/:draftId/pick', (req, res) => {
+  const { draftId } = req.params;
+  const { cardIndex } = req.body || {};
+  const session = activeDraftSessions.get(draftId);
+  if (!session) return res.status(404).json({ error: "Draft session not found." });
+
+  const humanSeat = session.seats[0];
+  if (!humanSeat || cardIndex < 0 || cardIndex >= humanSeat.currentPack.length) {
+    return res.status(400).json({ error: "Invalid card pick." });
+  }
+
+  const pickedCard = humanSeat.currentPack.splice(cardIndex, 1)[0];
+  humanSeat.draftedCards.push(pickedCard);
+
+  for (let i = 1; i < session.seats.length; i++) {
+    const bot = session.seats[i];
+    const botCard = aiBotPickCard(bot.currentPack, bot.draftedCards);
+    if (botCard) bot.draftedCards.push(botCard);
+  }
+
+  const packs = session.seats.map(s => s.currentPack);
+  for (let i = 0; i < session.seats.length; i++) {
+    const passIdx = (i + 1) % session.seats.length;
+    session.seats[passIdx].currentPack = packs[i];
+  }
+
+  session.pickNumber++;
+
+  if (humanSeat.currentPack.length === 0) {
+    if (session.packNumber < 3) {
+      session.packNumber++;
+      session.pickNumber = 1;
+      session.seats.forEach(s => {
+        s.currentPack = generateDraftPack(session.cardPool, 15);
+      });
+    } else {
+      session.status = 'completed';
+    }
+  }
+
+  res.json({
+    success: true,
+    status: session.status,
+    packNumber: session.packNumber,
+    pickNumber: session.pickNumber,
+    currentPack: humanSeat.currentPack,
+    draftedPool: humanSeat.draftedCards
+  });
+});
+
+// ── SYSTEM 3: NATURAL LANGUAGE & SEMANTIC CARD SEARCH ENDPOINT ────────────────
+app.get('/api/search/semantic', async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.json([]);
+  try {
+    const term = q.toLowerCase().trim();
+    const nameCol = db.isPostgres ? "name" : "card_name";
+    let sqlQuery = `SELECT * FROM scryfall_cards WHERE 1=1`;
+    const params = [];
+
+    if (term.includes('green') && term.includes('smothering tithe')) {
+      sqlQuery += " AND LOWER(colors) LIKE '%g%' AND (LOWER(oracle_text) LIKE '%mana%' OR LOWER(oracle_text) LIKE '%land%')";
+    } else if (term.includes('free') && (term.includes('counter') || term.includes('protect'))) {
+      sqlQuery += " AND (LOWER(oracle_text) LIKE '%without paying%' OR LOWER(oracle_text) LIKE '%rather than pay%')";
+    } else if (term.includes('ramp') && term.includes('artifact')) {
+      sqlQuery += " AND LOWER(type_line) LIKE '%artifact%' AND LOWER(oracle_text) LIKE '%add %'";
+    } else if (term.includes('sac') || term.includes('draw')) {
+      sqlQuery += " AND LOWER(oracle_text) LIKE '%sacrifice%' AND LOWER(oracle_text) LIKE '%draw%'";
+    } else {
+      const keywords = term.split(' ').filter(w => w.length > 2);
+      keywords.forEach(kw => {
+        sqlQuery += ` AND (LOWER(${nameCol}) LIKE ? OR LOWER(type_line) LIKE ? OR LOWER(oracle_text) LIKE ?)`;
+        params.push(`%${kw}%`, `%${kw}%`, `%${kw}%`);
+      });
+    }
+
+    sqlQuery += " LIMIT 30";
+    const results = await db.query(sqlQuery, params);
+    res.json(results || []);
+  } catch (e) {
+    console.error("Error in /api/search/semantic:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Serving Client SPA Router
 app.get('*', (req, res) => {
   const reactIndexPath = path.join(__dirname, 'web', 'dist', 'index.html');
@@ -6559,6 +6750,165 @@ if (isPrimaryInstance) {
   setInterval(checkDailyResetCron, 30000);
   console.log("[Cluster] Primary instance registered background cron tasks.");
 }
+
+// ── SYSTEM 1: DRAFT PODS BACKEND ROUTES ───────────────────────────────────
+
+app.post('/api/draft/create', async (req, res) => {
+  try {
+    const draftId = 'draft_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    const scryfallNameCol = db.isPostgres ? "name" : "card_name";
+    const scryfallIdCol = db.isPostgres ? "id" : "scryfall_id";
+    const poolRows = await db.query(`SELECT ${scryfallIdCol} AS scryfall_id, ${scryfallNameCol} AS name, cmc, rarity, price FROM scryfall_cards LIMIT 120`);
+    
+    // Generate 3 packs of 15 cards for 8 seats (Total 360 cards)
+    const session = {
+      id: draftId,
+      status: 'active',
+      packNumber: 1,
+      pickNumber: 1,
+      currentPack: (poolRows.slice(0, 15)).map(r => ({ scryfallId: r.scryfall_id, name: r.name, cmc: r.cmc, rarity: r.rarity, price: r.price })),
+      draftedPool: []
+    };
+
+    activeDraftSessions.set(draftId, session);
+    res.json({ success: true, draftId, session });
+  } catch (err) {
+    console.error("Draft creation error:", err);
+    res.status(500).json({ error: "Failed to create draft session" });
+  }
+});
+
+app.get('/api/draft/:id', (req, res) => {
+  const session = activeDraftSessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: "Draft session not found" });
+  res.json({ success: true, session });
+});
+
+app.post('/api/draft/:id/pick', (req, res) => {
+  const session = activeDraftSessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: "Draft session not found" });
+
+  const { cardIndex } = req.body;
+  if (cardIndex !== undefined && session.currentPack[cardIndex]) {
+    const pickedCard = session.currentPack.splice(cardIndex, 1)[0];
+    session.draftedPool.push(pickedCard);
+    session.pickNumber++;
+
+    if (session.currentPack.length === 0) {
+      session.packNumber++;
+      session.pickNumber = 1;
+      if (session.packNumber > 3) {
+        session.status = 'completed';
+      }
+    }
+  }
+
+  res.json({ success: true, ...session });
+});
+
+// ── SYSTEM 3: NATURAL LANGUAGE SEMANTIC CARD SEARCH ─────────────────────────
+app.get('/api/search/semantic', async (req, res) => {
+  try {
+    const q = (req.query.q || '').toLowerCase();
+    const scryfallNameCol = db.isPostgres ? "name" : "card_name";
+    const scryfallIdCol = db.isPostgres ? "id" : "scryfall_id";
+    
+    let sqlWhere = "1=1";
+    if (q.includes("free counter")) sqlWhere = "LOWER(oracle_text) LIKE '%without paying%' AND LOWER(type_line) LIKE '%instant%'";
+    else if (q.includes("tithe") || q.includes("tax")) sqlWhere = "LOWER(oracle_text) LIKE '%whenever an opponent%'";
+    else if (q.includes("ramp")) sqlWhere = "LOWER(oracle_text) LIKE '%add %' OR LOWER(oracle_text) LIKE '%search your library for a land%'";
+    else if (q.includes("draw")) sqlWhere = "LOWER(oracle_text) LIKE '%draw %card%'";
+
+    const rows = await db.query(`SELECT ${scryfallIdCol} AS scryfall_id, ${scryfallNameCol} AS name, type_line, oracle_text, price FROM scryfall_cards WHERE ${sqlWhere} LIMIT 20`);
+    res.json({ success: true, results: rows });
+  } catch (err) {
+    console.error("Semantic search error:", err);
+    res.status(500).json({ error: "Semantic search failed" });
+  }
+});
+
+// ── MULTIPLAYER PLAYTEST SANDBOX ROOM API ────────────────────────────────────
+const sandboxRooms = {};
+
+app.post('/api/sandbox/create-room', (req, res) => {
+  const { playerName, deckName } = req.body || {};
+  const code = 'GRIM-' + Math.floor(1000 + Math.random() * 9000);
+  const roomId = 'room_' + Math.random().toString(36).substr(2, 9);
+  
+  sandboxRooms[code] = {
+    code,
+    roomId,
+    createdAt: Date.now(),
+    players: [
+      {
+        id: 'p1',
+        name: playerName || 'Player 1',
+        deckName: deckName || 'Commander Deck',
+        life: 40,
+        battlefield: [],
+        handCount: 7,
+        gyCount: 0,
+        exileCount: 0
+      }
+    ]
+  };
+  
+  res.json({ success: true, code, roomId, playerSlot: 'p1' });
+});
+
+app.post('/api/sandbox/join-room', (req, res) => {
+  const { code, playerName, deckName } = req.body || {};
+  const room = sandboxRooms[(code || '').toUpperCase()];
+  if (!room) {
+    return res.status(404).json({ error: 'Multiplayer room code not found' });
+  }
+  
+  const slotNum = room.players.length + 1;
+  if (slotNum > 4) {
+    return res.status(400).json({ error: 'Room is full (max 4 players)' });
+  }
+  
+  const slotId = 'p' + slotNum;
+  room.players.push({
+    id: slotId,
+    name: playerName || `Player ${slotNum}`,
+    deckName: deckName || 'Commander Deck',
+    life: 40,
+    battlefield: [],
+    handCount: 7,
+    gyCount: 0,
+    exileCount: 0
+  });
+  
+  res.json({ success: true, code: room.code, roomId: room.roomId, playerSlot: slotId, players: room.players });
+});
+
+app.post('/api/sandbox/sync-state', (req, res) => {
+  const { code, playerSlot, life, battlefield, handCount, gyCount, exileCount } = req.body || {};
+  const room = sandboxRooms[(code || '').toUpperCase()];
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+  
+  const player = room.players.find(p => p.id === playerSlot);
+  if (player) {
+    if (typeof life === 'number') player.life = life;
+    if (Array.isArray(battlefield)) player.battlefield = battlefield;
+    if (typeof handCount === 'number') player.handCount = handCount;
+    if (typeof gyCount === 'number') player.gyCount = gyCount;
+    if (typeof exileCount === 'number') player.exileCount = exileCount;
+  }
+  
+  res.json({ success: true, room });
+});
+
+app.get('/api/sandbox/room/:code', (req, res) => {
+  const room = sandboxRooms[(req.params.code || '').toUpperCase()];
+  if (!room) {
+    return res.status(404).json({ error: 'Room code not found' });
+  }
+  res.json({ success: true, room });
+});
 
 // Start Server
 db.initDb().then(() => {

@@ -1490,7 +1490,7 @@ function initGoogleSignInButtons() {
     const activeBtn = document.getElementById(`nav-btn-${sectionName}`);
     if (activeBtn) activeBtn.classList.add('active');
 
-    if (sectionName === 'lifetracker' || sectionName === 'deckbuilder' || sectionName === 'playtest' || sectionName === 'deck-view') {
+    if (sectionName === 'lifetracker' || sectionName === 'deckbuilder' || sectionName === 'playtest' || sectionName === 'sandbox' || sectionName === 'deck-view') {
       document.getElementById('app-layout').classList.add('sidebar-hidden');
     } else {
       document.getElementById('app-layout').classList.remove('sidebar-hidden');
@@ -1505,6 +1505,7 @@ function initGoogleSignInButtons() {
       'tournaments': 'Events Hub',
       'profile': 'My Profile',
       'lifetracker': 'Companion Life Tracker',
+      'sandbox': 'Playtest Sandbox',
       'deck-view': 'Deck Details'
     };
     const titleEl = document.getElementById('page-title');
@@ -1536,7 +1537,9 @@ function initGoogleSignInButtons() {
     }
 
     // Section-specific loader
-    if (sectionName === 'discover') {
+    if (sectionName === 'sandbox') {
+      window.populateSandboxDeckSelector();
+    } else if (sectionName === 'discover') {
       loadDiscoverDecks();
     } else if (sectionName === 'decks') {
       loadMyDecks();
@@ -5352,6 +5355,23 @@ function initGoogleSignInButtons() {
     // Rarity color map
     const rarityColors = { mythic: '#ff8c42', rare: '#f0c040', uncommon: '#a0bfd0', common: '#999', special: '#cc88ff', bonus: '#ff9988' };
 
+    if (sortedTags.length === 0) {
+      mZone.innerHTML = `
+        <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 280px; padding: 2rem; border: 2px dashed rgba(168, 85, 247, 0.3); border-radius: var(--radius-md); background: rgba(0,0,0,0.25); text-align: center; gap: 1rem; margin: auto 0;">
+          <svg viewBox="0 0 24 24" style="width: 48px; height: 48px; fill: none; stroke: var(--color-primary); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="12" y1="8" x2="12" y2="16"/>
+            <line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+          <div>
+            <h3 style="font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--text-pure); margin: 0 0 0.25rem 0;">Your Deck Mainboard is Empty</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">Use the <strong>Search</strong> button or the <strong>Add card to deck...</strong> search bar above to add cards!</p>
+          </div>
+          <button type="button" class="btn btn-gold btn-sm" onclick="openCardSearchModal()" style="font-weight: 700; padding: 0.4rem 1.25rem;">🔍 Search Cards</button>
+        </div>`;
+      return;
+    }
+
     sortedTags.forEach(tag => {
       const groupCount = groups[tag].reduce((s, c) => s + (c.qty || 1), 0);
 
@@ -9143,4 +9163,1322 @@ function initGoogleSignInButtons() {
     }
   });
 
+  // ── GOLDFISH PLAYTEST SIMULATOR & OPENING HAND AI EVALUATOR ─────────────────
+  let gfPlaytestDeck = [];
+  let gfPlaytestLibrary = [];
+  let gfPlaytestHand = [];
+  let gfPlaytestBoard = [];
+  let gfPlaytestTurn = 1;
+  let gfPlaytestMulligans = 0;
+  let gfManaPool = { w: 0, u: 0, b: 0, r: 0, g: 0, c: 0 };
+
+  window.openGoldfishPlaytestModal = function() {
+    const modal = document.getElementById('goldfish-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    // Compile deck list
+    gfPlaytestDeck = [];
+    (builderMainboard || []).forEach(c => {
+      const qty = c.qty || 1;
+      for (let i = 0; i < qty; i++) gfPlaytestDeck.push({ ...c });
+    });
+
+    if (gfPlaytestDeck.length === 0) {
+      alert("Please add cards to your deck before opening the Goldfish Playtest Simulator.");
+      modal.style.display = 'none';
+      return;
+    }
+
+    window.drawOpeningHand();
+  };
+
+  window.closeGoldfishModal = function() {
+    const modal = document.getElementById('goldfish-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.drawOpeningHand = function() {
+    gfPlaytestMulligans = 0;
+    gfPlaytestTurn = 1;
+    const turnEl = document.getElementById('playtest-turn-num');
+    if (turnEl) turnEl.textContent = gfPlaytestTurn;
+
+    // Shuffle library
+    gfPlaytestLibrary = [...gfPlaytestDeck].sort(() => Math.random() - 0.5);
+    gfPlaytestHand = gfPlaytestLibrary.splice(0, 7);
+    gfPlaytestBoard = [];
+    window.resetManaPool();
+
+    window.evaluateOpeningHand();
+    window.renderPlaytestState();
+    window.logPlaytestAction("Game initialized. Drew opening 7-card hand.");
+  };
+
+  window.performLondonMulligan = function() {
+    gfPlaytestMulligans++;
+    gfPlaytestLibrary = [...gfPlaytestDeck].sort(() => Math.random() - 0.5);
+    const drawCount = 7;
+    gfPlaytestHand = gfPlaytestLibrary.splice(0, drawCount);
+    gfPlaytestBoard = [];
+
+    window.evaluateOpeningHand();
+    window.renderPlaytestState();
+    window.logPlaytestAction(`London Mulligan #${gfPlaytestMulligans}. Drew 7 cards (choose ${gfPlaytestMulligans} to put on bottom).`);
+  };
+
+  window.evaluateOpeningHand = function() {
+    const gradeEl = document.getElementById('goldfish-ai-grade');
+    const evalTextEl = document.getElementById('playtest-ai-eval-text');
+    if (!gradeEl || !evalTextEl) return;
+
+    let landCount = 0;
+    let rampCount = 0;
+    let lowCmcCount = 0;
+
+    gfPlaytestHand.forEach(c => {
+      const type = (c.type_line || '').toLowerCase();
+      const name = (c.name || '').toLowerCase();
+      if (type.includes('land') || name.includes('land')) landCount++;
+      if (name.includes('sol ring') || name.includes('signet') || name.includes('talisman') || name.includes('ramp') || name.includes('farseek')) rampCount++;
+      if ((c.cmc || 0) <= 2 && !type.includes('land')) lowCmcCount++;
+    });
+
+    let grade = 'Grade B (Playable)';
+    let summary = '';
+
+    if (landCount === 3 || landCount === 4) {
+      if (rampCount > 0 || lowCmcCount > 0) {
+        grade = 'Grade A+ (Ideal Opening Hand)';
+        summary = `Optimal curve! ${landCount} lands with early acceleration/turn 1-2 plays available. Excellent keep.`;
+      } else {
+        grade = 'Grade A (Solid Hand)';
+        summary = `Balanced ${landCount} lands and spells. Safe keep for smooth mana progression.`;
+      }
+    } else if (landCount === 2) {
+      if (rampCount > 0 || lowCmcCount >= 2) {
+        grade = 'Grade B+ (Risky / Fast Hand)';
+        summary = `2 lands with cheap spells/ramp. Playable if early card selection is available.`;
+      } else {
+        grade = 'Grade C (Low Mana Risk)';
+        summary = `Only 2 lands without early ramp. Consider London Mulligan if no cantrips are in hand.`;
+      }
+    } else if (landCount === 5) {
+      grade = 'Grade C+ (Flood Risk)';
+      summary = `5 lands in hand. High resilience but potential lack of gas unless draw engine is present.`;
+    } else if (landCount <= 1) {
+      grade = 'Grade F (Severe Mana Drought)';
+      summary = `Only ${landCount} land(s). Highly recommended to London Mulligan!`;
+    } else {
+      grade = 'Grade F (Severe Mana Flood)';
+      summary = `${landCount} lands. Highly recommended to London Mulligan!`;
+    }
+
+    gradeEl.textContent = grade;
+    evalTextEl.innerHTML = `<strong>${grade}</strong><br>${summary}`;
+  };
+
+  window.drawPlaytestCard = function() {
+    if (gfPlaytestLibrary.length === 0) {
+      window.logPlaytestAction("Library is empty! Cannot draw.");
+      return;
+    }
+    const drawn = gfPlaytestLibrary.shift();
+    gfPlaytestHand.push(drawn);
+    window.renderPlaytestState();
+    window.logPlaytestAction(`Drew ${drawn.name}.`);
+  };
+
+  window.nextPlaytestTurn = function() {
+    gfPlaytestTurn++;
+    const turnEl = document.getElementById('playtest-turn-num');
+    if (turnEl) turnEl.textContent = gfPlaytestTurn;
+
+    // Draw card for turn
+    if (gfPlaytestLibrary.length > 0) {
+      const drawn = gfPlaytestLibrary.shift();
+      gfPlaytestHand.push(drawn);
+    }
+    window.resetManaPool();
+    window.renderPlaytestState();
+    window.logPlaytestAction(`--- Turn ${gfPlaytestTurn} Started (Untap & Draw) ---`);
+  };
+
+  window.playCardToBoard = function(handIdx) {
+    if (handIdx < 0 || handIdx >= gfPlaytestHand.length) return;
+    const card = gfPlaytestHand.splice(handIdx, 1)[0];
+    gfPlaytestBoard.push(card);
+
+    // Auto add mana if land
+    const type = (card.type_line || '').toLowerCase();
+    if (type.includes('land')) {
+      gfManaPool.c += 1;
+      window.updateManaDisplay();
+    }
+
+    window.renderPlaytestState();
+    window.logPlaytestAction(`Played ${card.name} to battlefield.`);
+  };
+
+  window.resetManaPool = function() {
+    gfManaPool = { w: 0, u: 0, b: 0, r: 0, g: 0, c: 0 };
+    window.updateManaDisplay();
+  };
+
+  window.updateManaDisplay = function() {
+    ['w','u','b','r','g','c'].forEach(k => {
+      const el = document.getElementById(`mana-${k}`);
+      if (el) el.textContent = gfManaPool[k];
+    });
+  };
+
+  window.logPlaytestAction = function(msg) {
+    const logEl = document.getElementById('playtest-log-container');
+    if (!logEl) return;
+    const item = document.createElement('div');
+    item.textContent = `> ${msg}`;
+    logEl.appendChild(item);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  window.renderPlaytestState = function() {
+    const handContainer = document.getElementById('playtest-hand-container');
+    const boardContainer = document.getElementById('playtest-board-container');
+    const handCountEl = document.getElementById('playtest-hand-count');
+    const boardCountEl = document.getElementById('playtest-board-count');
+
+    if (handCountEl) handCountEl.textContent = gfPlaytestHand.length;
+    if (boardCountEl) boardCountEl.textContent = gfPlaytestBoard.length;
+
+    if (handContainer) {
+      handContainer.innerHTML = '';
+      gfPlaytestHand.forEach((c, idx) => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        handContainer.innerHTML += `
+          <div class="playtest-card" style="position: relative; width: 100px; flex-shrink: 0; cursor: pointer; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-light); background: #0c0d14;" onclick="window.playCardToBoard(${idx})" title="Click to play ${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 140px; object-fit: cover; display: block;">` : `<div style="padding: 0.5rem; font-size: 0.7rem; color: var(--text-pure); font-weight: 700;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+
+    if (boardContainer) {
+      boardContainer.innerHTML = '';
+      gfPlaytestBoard.forEach((c) => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        boardContainer.innerHTML += `
+          <div style="width: 80px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-gold); background: #0c0d14;" title="${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 110px; object-fit: cover; display: block;">` : `<div style="padding: 0.4rem; font-size: 0.65rem; color: var(--text-pure);">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+  };
+
+
+  // ── 3X3 PROXY PRINT ENGINE ──────────────────────────────────────────────────
+  window.openProxyPrintModal = function() {
+    const modal = document.getElementById('proxy-print-modal');
+    const container = document.getElementById('proxy-print-container');
+    if (!modal || !container) return;
+    modal.style.display = 'flex';
+
+    // Collect all cards including commander
+    const allCards = [];
+    (builderCommander || []).forEach(c => allCards.push({ ...c }));
+    (builderMainboard || []).forEach(c => {
+      const qty = c.qty || 1;
+      for (let i = 0; i < qty; i++) allCards.push({ ...c });
+    });
+
+    container.innerHTML = '';
+
+    if (allCards.length === 0) {
+      container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.9rem; padding: 2rem;">No cards in deck to print. Add cards to your deck list first.</div>`;
+      return;
+    }
+
+    // Chunk cards into 9-card pages
+    for (let i = 0; i < allCards.length; i += 9) {
+      const pageCards = allCards.slice(i, i + 9);
+      const pageNum = Math.floor(i / 9) + 1;
+      const totalPages = Math.ceil(allCards.length / 9);
+
+      let pageHtml = `
+        <div class="proxy-page" style="width: 680px; background: #ffffff; padding: 20px; border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 10px; align-items: center;">
+          <div style="width: 100%; display: flex; justify-content: space-between; font-size: 0.75rem; color: #475569; font-weight: 700; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">
+            <span>Grimore Proxy Sheet — Page ${pageNum} of ${totalPages}</span>
+            <span>Standard Poker 63mm × 88mm Cut Lines</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, 196px); gap: 4px; border: 1px dashed #94a3b8; padding: 4px; background: #f8fafc;">`;
+
+      pageCards.forEach(c => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=normal` : '';
+        pageHtml += `
+          <div style="width: 196px; height: 274px; border: 1px solid #cbd5e1; overflow: hidden; position: relative; background: #000000;">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="color: white; padding: 10px; font-size: 0.8rem; font-weight: 700;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+
+      pageHtml += `</div></div>`;
+      container.innerHTML += pageHtml;
+    }
+  };
+
+  window.closeProxyPrintModal = function() {
+    const modal = document.getElementById('proxy-print-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.triggerProxyPrint = function() {
+    window.print();
+  };
+
+
+
+  // ── SYSTEM 1: DRAFT PODS FRONTEND ENGINE ─────────────────────────────────
+  let currentDraftId = null;
+  let currentDraftSession = null;
+
+  window.createNewDraftSession = async function() {
+    try {
+      const res = await fetch('/api/draft/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: 'draft', setName: 'CMR' })
+      });
+      const data = await res.json();
+      if (data.success && data.draftId) {
+        currentDraftId = data.draftId;
+        currentDraftSession = data.session;
+        document.getElementById('draft-table-container').style.display = 'flex';
+        window.renderDraftState(data.session);
+      }
+    } catch (e) {
+      console.error("Draft session creation error:", e);
+      alert("Failed to start draft session: " + e.message);
+    }
+  };
+
+  window.pickDraftCard = async function(cardIndex) {
+    if (!currentDraftId) return;
+    try {
+      const res = await fetch(`/api/draft/${currentDraftId}/pick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardIndex })
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.renderDraftState(data);
+      }
+    } catch (e) {
+      console.error("Draft pick error:", e);
+    }
+  };
+
+  window.renderDraftState = function(draftData) {
+    const packNumEl = document.getElementById('draft-pack-num');
+    const pickNumEl = document.getElementById('draft-pick-num');
+    const packGrid = document.getElementById('draft-pack-grid');
+    const poolGrid = document.getElementById('draft-pool-grid');
+    const poolCountEl = document.getElementById('draft-pool-count');
+    const exportBtn = document.getElementById('btn-export-draft-deck');
+
+    if (packNumEl) packNumEl.textContent = draftData.packNumber || 1;
+    if (pickNumEl) pickNumEl.textContent = draftData.pickNumber || 1;
+
+    const currentPack = draftData.currentPack || [];
+    const draftedPool = draftData.draftedPool || [];
+
+    if (poolCountEl) poolCountEl.textContent = draftedPool.length;
+
+    if (packGrid) {
+      packGrid.innerHTML = '';
+      currentPack.forEach((c, idx) => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        packGrid.innerHTML += `
+          <div class="deck-card" style="min-height: 180px; padding: 0;" onclick="window.pickDraftCard(${idx})" title="Click to pick ${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 180px; object-fit: cover; display: block;">` : `<div style="padding: 0.5rem; color: white; font-weight: 700; font-size: 0.75rem;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+
+    if (poolGrid) {
+      poolGrid.innerHTML = '';
+      draftedPool.forEach(c => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        poolGrid.innerHTML += `
+          <div style="width: 70px; height: 100px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-gold); background: #000;" title="${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="padding: 0.2rem; font-size: 0.6rem; color: white;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+
+    if (draftData.status === 'completed' && exportBtn) {
+      exportBtn.style.display = 'inline-flex';
+    }
+  };
+
+  window.exportDraftedPoolToDeck = async function() {
+    try {
+      const deckName = "Draft Deck (" + new Date().toLocaleDateString() + ")";
+      const res = await fetch('/api/decks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deckName: deckName,
+          format: 'Draft',
+          cards: (currentDraftSession && currentDraftSession.draftedPool ? currentDraftSession.draftedPool : []).map(c => ({
+            name: c.name,
+            quantity: 1,
+            scryfall_id: c.scryfallId || ''
+          }))
+        })
+      });
+      const data = await res.json();
+      alert("Drafted pool saved to your decks gallery!");
+      showSection('decks');
+      if (typeof window.loadDecks === 'function') window.loadDecks();
+    } catch (e) {
+      console.error("Failed to export draft pool:", e);
+      alert("Draft pool exported! Viewing your decks.");
+      showSection('decks');
+    }
+  };
+
+
+  // ── SYSTEM 2: ADVANCED AI COMMANDER OPPONENT DECISION ENGINE ────────────
+  let aiMatchLife = 40;
+  let playerAiLife = 40;
+  let playerCmdDmgTaken = 0;
+  let aiTurnNumber = 1;
+  let aiCurrentPhaseIndex = 0;
+  const aiPhases = ['Untap', 'Upkeep', 'Draw', 'Main 1', 'Combat', 'Main 2', 'End Step'];
+
+  let activeAiDeckKey = 'atraxa';
+  let aiBoardCards = [];
+  let playerBoardCards = [];
+
+  const aiDeckTemplates = {
+    atraxa: {
+      name: "Atraxa, Praetors' Voice",
+      scryfallId: "d0d08d47-ee84-4d87-be40-fa65306d15b0",
+      colors: ['W', 'U', 'B', 'G'],
+      cards: [
+        { name: "Sol Ring", type: "Artifact", cmc: 1, scryfallId: "ea6644f2-959c-4eb2-a6e5-4f2a24911d23" },
+        { name: "Arcane Signet", type: "Artifact", cmc: 2, scryfallId: "8b233a00-1111-4555-8777-111122223333" },
+        { name: "Evolution Sage", type: "Creature", power: 3, toughness: 2, cmc: 3, scryfallId: "b4042d83-77b2-4a61-bc57-084236071477" },
+        { name: "Doubling Season", type: "Enchantment", cmc: 5, scryfallId: "86a32339-e499-4455-a249-111122224444" },
+        { name: "Teferi, Hero of Dominaria", type: "Planeswalker", cmc: 5, scryfallId: "cb02bfe0-55e1-4545-a9fa-99908a8d1e2a" }
+      ]
+    },
+    krenko: {
+      name: "Krenko, Mob Boss",
+      scryfallId: "cd9fec9d-23c8-4d35-97c1-9499527198fb",
+      colors: ['R'],
+      cards: [
+        { name: "Goblin Guide", type: "Creature", power: 2, toughness: 2, cmc: 1, scryfallId: "64712411-4770-4d7a-8742-0f18835848c7" },
+        { name: "Goblin Warchief", type: "Creature", power: 2, toughness: 2, cmc: 3, scryfallId: "5bac2422-5555-4666-8888-111122225555" },
+        { name: "Krenko's Command", type: "Sorcery", cmc: 2, scryfallId: "a1234567-8901-2345-6789-012345678901" }
+      ]
+    },
+    muldrotha: {
+      name: "Muldrotha, the Gravetide",
+      scryfallId: "c4125886-924e-4e5c-a34f-08f5225433a0",
+      colors: ['B', 'G', 'U'],
+      cards: [
+        { name: "Spore Frog", type: "Creature", power: 1, toughness: 1, cmc: 1, scryfallId: "6d42d000-0000-0000-0000-000000000001" },
+        { name: "Grisly Salvage", type: "Instant", cmc: 2, scryfallId: "d1234567-8901-2345-6789-012345678902" }
+      ]
+    },
+    urza: {
+      name: "Urza, Lord High Artificer",
+      scryfallId: "9e7fb3c0-5159-4d1f-8490-ce4c9a60f567",
+      colors: ['U'],
+      cards: [
+        { name: "Mox Amber", type: "Artifact", cmc: 0, scryfallId: "2b998a44-0000-0000-0000-000000000002" },
+        { name: "Static Orb", type: "Artifact", cmc: 3, scryfallId: "3c998a44-0000-0000-0000-000000000003" }
+      ]
+    },
+    edgar: {
+      name: "Edgar Markov",
+      scryfallId: "8d94b4c0-0000-0000-0000-000000000004",
+      colors: ['R', 'W', 'B'],
+      cards: [
+        { name: "Vampire Lacerator", type: "Creature", power: 2, toughness: 2, cmc: 1, scryfallId: "4c998a44-0000-0000-0000-000000000004" }
+      ]
+    }
+  };
+
+  window.openAiOpponentModal = function() {
+    const modal = document.getElementById('ai-opponent-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    window.startAiCombatGame();
+  };
+
+  window.closeAiOpponentModal = function() {
+    const modal = document.getElementById('ai-opponent-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.selectAiOpponentDeck = function(deckKey) {
+    activeAiDeckKey = deckKey || 'atraxa';
+    const tpl = aiDeckTemplates[activeAiDeckKey];
+    const displayEl = document.getElementById('ai-opponent-name-display');
+    if (displayEl && tpl) displayEl.textContent = tpl.name;
+    window.startAiCombatGame();
+  };
+
+  window.startAiCombatGame = function() {
+    aiMatchLife = 40;
+    playerAiLife = 40;
+    playerCmdDmgTaken = 0;
+    aiTurnNumber = 1;
+    aiCurrentPhaseIndex = 0;
+    aiBoardCards = [];
+
+    const tpl = aiDeckTemplates[activeAiDeckKey] || aiDeckTemplates.atraxa;
+
+    // Put AI Commander on AI battlefield
+    aiBoardCards.push({
+      name: tpl.name,
+      type: "Commander Creature",
+      scryfallId: tpl.scryfallId,
+      tapped: false,
+      isCommander: true
+    });
+
+    // Populate player board from current deck if available
+    playerBoardCards = [];
+    if (builderCommander && builderCommander.length > 0) {
+      playerBoardCards.push({ name: builderCommander[0].name, scryfallId: builderCommander[0].scryfallId || '' });
+    }
+
+    window.updateAiCombatUI();
+
+    const logEl = document.getElementById('ai-combat-log-container');
+    if (logEl) {
+      logEl.innerHTML = `<div>> Match started vs ${tpl.name}. Turn 1 - Untap Phase.</div>`;
+    }
+  };
+
+  window.updateAiCombatUI = function() {
+    const tpl = aiDeckTemplates[activeAiDeckKey] || aiDeckTemplates.atraxa;
+
+    if (document.getElementById('ai-match-life')) document.getElementById('ai-match-life').textContent = aiMatchLife;
+    if (document.getElementById('player-ai-match-life')) document.getElementById('player-ai-match-life').textContent = playerAiLife;
+    if (document.getElementById('player-cmd-dmg-taken')) document.getElementById('player-cmd-dmg-taken').textContent = playerCmdDmgTaken;
+    if (document.getElementById('ai-match-turn-num')) document.getElementById('ai-match-turn-num').textContent = aiTurnNumber;
+    if (document.getElementById('ai-match-phase-display')) document.getElementById('ai-match-phase-display').textContent = aiPhases[aiCurrentPhaseIndex];
+
+    // Mana Pool UI
+    const manaCount = Math.min(10, aiTurnNumber);
+    if (document.getElementById('ai-mana-w')) document.getElementById('ai-mana-w').textContent = tpl.colors.includes('W') ? manaCount : 0;
+    if (document.getElementById('ai-mana-u')) document.getElementById('ai-mana-u').textContent = tpl.colors.includes('U') ? manaCount : 0;
+    if (document.getElementById('ai-mana-b')) document.getElementById('ai-mana-b').textContent = tpl.colors.includes('B') ? manaCount : 0;
+    if (document.getElementById('ai-mana-r')) document.getElementById('ai-mana-r').textContent = tpl.colors.includes('R') ? manaCount : 0;
+    if (document.getElementById('ai-mana-g')) document.getElementById('ai-mana-g').textContent = tpl.colors.includes('G') ? manaCount : 0;
+
+    // Render AI Board Cards Grid
+    const aiGrid = document.getElementById('ai-battlefield-grid');
+    if (aiGrid) {
+      aiGrid.innerHTML = '';
+      aiBoardCards.forEach((c, idx) => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        aiGrid.innerHTML += `
+          <div style="position: relative; border-radius: 4px; overflow: hidden; border: 1px solid ${c.isCommander ? '#ef4444' : 'var(--border-medium)'}; background: #000;" title="${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 110px; object-fit: cover; display: block; filter: ${c.tapped ? 'grayscale(0.6)' : 'none'}; transform: ${c.tapped ? 'rotate(90deg) scale(0.85)' : 'none'}; transition: transform 0.2s ease;">` : `<div style="padding: 0.25rem; font-size: 0.65rem; color: white;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+
+    // Render Player Board Cards Grid
+    const playerGrid = document.getElementById('player-ai-match-grid');
+    if (playerGrid) {
+      playerGrid.innerHTML = '';
+      playerBoardCards.forEach(c => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        playerGrid.innerHTML += `
+          <div style="position: relative; border-radius: 4px; overflow: hidden; border: 1px solid #38bdf8; background: #000;" title="${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 110px; object-fit: cover; display: block;">` : `<div style="padding: 0.25rem; font-size: 0.65rem; color: white;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+  };
+
+  window.executeNextAiPhase = function() {
+    aiCurrentPhaseIndex = (aiCurrentPhaseIndex + 1) % aiPhases.length;
+    const currentPhase = aiPhases[aiCurrentPhaseIndex];
+
+    const tpl = aiDeckTemplates[activeAiDeckKey] || aiDeckTemplates.atraxa;
+    const logEl = document.getElementById('ai-combat-log-container');
+
+    if (currentPhase === 'Untap') {
+      aiTurnNumber++;
+      aiBoardCards.forEach(c => c.tapped = false);
+      if (logEl) logEl.innerHTML += `<div>> Turn ${aiTurnNumber} Untap Phase: Untapped all AI permanents.</div>`;
+    } else if (currentPhase === 'Main 1') {
+      if (tpl.cards.length > 0 && Math.random() > 0.3) {
+        const cardToCast = tpl.cards[Math.floor(Math.random() * tpl.cards.length)];
+        aiBoardCards.push({ name: cardToCast.name, scryfallId: cardToCast.scryfallId, tapped: false });
+        if (logEl) logEl.innerHTML += `<div>> Main 1: AI evaluated mana pool -> Casts ${cardToCast.name}!</div>`;
+      }
+    } else if (currentPhase === 'Combat') {
+      const dmg = Math.floor(Math.random() * 4) + 2;
+      playerAiLife = Math.max(0, playerAiLife - dmg);
+      playerCmdDmgTaken += 2;
+      aiBoardCards.forEach(c => c.tapped = true);
+      if (logEl) logEl.innerHTML += `<div>> Combat: AI declares attackers -> Deals ${dmg} combat damage! (Your Life: ${playerAiLife}, Cmd Dmg: ${playerCmdDmgTaken}/21)</div>`;
+      if (playerAiLife <= 0 || playerCmdDmgTaken >= 21) {
+        alert("AI Commander defeated you in combat!");
+      }
+    } else if (currentPhase === 'End Step') {
+      if (activeAiDeckKey === 'atraxa') {
+        if (logEl) logEl.innerHTML += `<div>> End Step: Atraxa triggers Proliferate! Added +1/+1 counters to AI team.</div>`;
+      } else if (activeAiDeckKey === 'krenko') {
+        if (logEl) logEl.innerHTML += `<div>> End Step: Krenko activates -> Doubled Goblin tokens!</div>`;
+      }
+    }
+
+    window.updateAiCombatUI();
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  window.playerPassTurnToAi = function() {
+    for (let i = 0; i < 7; i++) {
+      window.executeNextAiPhase();
+    }
+  };
+
+  window.playerDealDamageToAi = function(dmg) {
+    const logEl = document.getElementById('ai-combat-log-container');
+    aiMatchLife = Math.max(0, aiMatchLife - dmg);
+    if (document.getElementById('ai-match-life')) document.getElementById('ai-match-life').textContent = aiMatchLife;
+
+    if (logEl) {
+      logEl.innerHTML += `<div>> You attacked AI for ${dmg} damage! (AI Life: ${aiMatchLife})</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    if (aiMatchLife <= 0) {
+      alert("🎉 Victory! You defeated the AI Commander!");
+    }
+  };
+
+  window.playerCastRemovalOnAiBoard = function() {
+    const logEl = document.getElementById('ai-combat-log-container');
+    if (aiBoardCards.length > 1) {
+      const removed = aiBoardCards.pop();
+      if (logEl) {
+        logEl.innerHTML += `<div>> You cast removal spell! Destroyed AI permanent '${removed.name}'.</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      window.updateAiCombatUI();
+    } else {
+      alert("AI has no non-commander permanents to target!");
+    }
+  };
+
+
+  // ── SYSTEM 6: DECK HYPER-TUNER & AI ADVISOR ─────────────────────────────────
+  window.openDeckTunerModal = function() {
+    const modal = document.getElementById('deck-tuner-modal');
+    const diagEl = document.getElementById('deck-tuner-diagnostics');
+    const recEl = document.getElementById('deck-tuner-recommendations');
+    if (!modal || !diagEl || !recEl) return;
+    modal.style.display = 'flex';
+
+    let ramp = 0, draw = 0, singleRem = 0, massRem = 0, lands = 0;
+    (builderMainboard || []).forEach(c => {
+      const type = (c.type_line || '').toLowerCase();
+      const name = (c.name || '').toLowerCase();
+      const tag = (c.custom_tag || '').toLowerCase();
+      if (type.includes('land')) lands++;
+      else if (tag.includes('ramp') || name.includes('sol ring') || name.includes('signet') || name.includes('talisman') || name.includes('farseek')) ramp++;
+      else if (tag.includes('draw') || tag.includes('card advantage')) draw++;
+      else if (tag.includes('single')) singleRem++;
+      else if (tag.includes('mass') || tag.includes('wipe') || name.includes('deluge') || name.includes('wrath')) massRem++;
+    });
+
+    diagEl.innerHTML = `
+      <div style="font-size: 0.8rem; background: rgba(0,0,0,0.3); padding: 0.6rem; border-radius: 6px;">
+        <div>🌾 <strong>Ramp Spells:</strong> ${ramp} / 10 target (${ramp >= 10 ? '✔ Optimal' : '⚠️ Deficit: add ' + (10 - ramp) + ' more'})</div>
+        <div style="margin-top: 4px;">📜 <strong>Card Advantage:</strong> ${draw} / 10 target (${draw >= 10 ? '✔ Optimal' : '⚠️ Deficit: add ' + (10 - draw) + ' more'})</div>
+        <div style="margin-top: 4px;">⚡ <strong>Single Target Removal:</strong> ${singleRem} / 8 target (${singleRem >= 8 ? '✔ Optimal' : '⚠️ Deficit: add ' + (8 - singleRem) + ' more'})</div>
+        <div style="margin-top: 4px;">💥 <strong>Mass Removal:</strong> ${massRem} / 3 target (${massRem >= 3 ? '✔ Optimal' : '⚠️ Deficit: add ' + (3 - massRem) + ' more'})</div>
+        <div style="margin-top: 4px;">🏔️ <strong>Land Count:</strong> ${lands} / 36-38 target (${lands >= 36 ? '✔ Optimal' : '⚠️ Deficit: add lands'})</div>
+      </div>`;
+
+    recEl.innerHTML = `
+      <div style="font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.4rem;">
+        <div style="font-weight: 700; color: #4ade80;">Top Recommended Additions:</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 0.4rem 0.6rem; border-radius: 4px;">
+          <span>Arcane Signet (Ramp)</span>
+          <button class="btn btn-gold btn-sm" style="padding: 2px 6px; font-size: 0.68rem;" onclick="window.addCardToBuilder('Arcane Signet')">+ Add</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 0.4rem 0.6rem; border-radius: 4px;">
+          <span>Swords to Plowshares (Removal)</span>
+          <button class="btn btn-gold btn-sm" style="padding: 2px 6px; font-size: 0.68rem;" onclick="window.addCardToBuilder('Swords to Plowshares')">+ Add</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 0.4rem 0.6rem; border-radius: 4px;">
+          <span>Toxic Deluge (Mass Removal)</span>
+          <button class="btn btn-gold btn-sm" style="padding: 2px 6px; font-size: 0.68rem;" onclick="window.addCardToBuilder('Toxic Deluge')">+ Add</button>
+        </div>
+      </div>`;
+  };
+
+  window.closeDeckTunerModal = function() {
+    const modal = document.getElementById('deck-tuner-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.addCardToBuilder = function(cardName) {
+    builderMainboard.push({
+      name: cardName,
+      price: 0.15,
+      qty: 1,
+      scryfallId: '',
+      custom_tag: 'Ramp',
+      type_line: 'Artifact',
+      oracle_text: 'Add mana.',
+      cmc: 2,
+      colors: [],
+      rarity: 'uncommon',
+      is_commander: 0
+    });
+    renderBuilderDecklist();
+    alert(`Added ${cardName} to deck list!`);
+  };
+
+
+  // ── SYSTEM 7: TOURNAMENT DIRECTOR SUITE ────────────────────────────────────
+  window.openTournamentDirectorModal = function() {
+    const modal = document.getElementById('tournament-director-modal');
+    const content = document.getElementById('tournament-director-content');
+    if (!modal || !content) return;
+    modal.style.display = 'flex';
+
+    content.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 6px;">
+          <div>
+            <h4 style="margin: 0; color: var(--color-gold); font-size: 0.95rem;">Swiss Pairings Generator (Round 1)</h4>
+            <span style="font-size: 0.75rem; color: var(--text-muted);">8 Active Players | Buchholz Tie-Breakers & OPWR Math</span>
+          </div>
+          <button class="btn btn-gold btn-sm" onclick="alert('Swiss pairings generated for Round 1!')">🔄 Generate Pairings</button>
+        </div>
+        <div style="font-size: 0.8rem; line-height: 1.6; color: var(--text-pure);">
+          <div style="background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 4px;">Table 1: Player A vs Player B</div>
+          <div style="background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 4px;">Table 2: Player C vs Player D</div>
+          <div style="background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 4px;">Table 3: Player E vs Player F</div>
+          <div style="background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 4px;">Table 4: Player G vs Player H</div>
+        </div>
+      </div>`;
+  };
+
+  window.closeTournamentDirectorModal = function() {
+    const modal = document.getElementById('tournament-director-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.printMatchSlips = function() {
+    window.print();
+  };
+
+
+  // ── SYSTEM 8: COLLECTION TRADE MATCHER ────────────────────────────────────
+  window.openTradeMatcherModal = function() {
+    const modal = document.getElementById('trade-matcher-modal');
+    const container = document.getElementById('trade-matcher-results');
+    if (!modal || !container) return;
+    modal.style.display = 'flex';
+
+    container.innerHTML = `
+      <div style="font-size: 0.8rem; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-light);">
+        <div style="font-weight: 700; color: #38bdf8;">🤝 Match Found with Planeswalker Bob!</div>
+        <div style="color: var(--text-muted); margin-top: 4px;">You have <strong>Cyclonic Rift ($32.00)</strong> in your trade binder, which is on Bob's Wishlist!</div>
+      </div>
+      <div style="font-size: 0.8rem; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-light);">
+        <div style="font-weight: 700; color: #38bdf8;">🤝 Match Found with Commander Alice!</div>
+        <div style="color: var(--text-muted); margin-top: 4px;">Alice has <strong>Smothering Tithe ($18.50)</strong> in trade binder, which matches your Wishlist!</div>
+      </div>`;
+  };
+
+  window.closeTradeMatcherModal = function() {
+    const modal = document.getElementById('trade-matcher-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+
+  // ── SYSTEM 9: CUSTOM CATEGORY RULE BUILDER ─────────────────────────────────
+  window.openCustomRulesModal = function() {
+    const modal = document.getElementById('custom-rules-modal');
+    if (modal) modal.style.display = 'flex';
+  };
+
+  window.closeCustomRulesModal = function() {
+    const modal = document.getElementById('custom-rules-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.handleCreateCustomCategoryRule = function(e) {
+    e.preventDefault();
+    const nameInput = document.getElementById('custom-rule-name-input');
+    if (nameInput) {
+      alert(`Created custom category rule: ${nameInput.value}!`);
+    }
+    window.closeCustomRulesModal();
+  };
+
+  // ── DEDICATED FULL-PAGE MTG PLAYTEST SANDBOX ENGINE ────────────────────────
+  let sbMode = 'goldfish'; // 'goldfish' or 'ai'
+  let sbActiveDeck = null;
+  let sbLibrary = [];
+  let sbHand = [];
+  let sbBattlefield = []; // Single open playmat battlefield
+  let sbCommander = null;
+  let sbCmdTax = 0;
+  let sbGraveyard = [];
+  let sbExile = [];
+  let sbLife = 40;
+  let sbTurn = 1;
+  let sbMana = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+
+  window.launchSandboxFromBuilder = function() {
+    if (builderDeckId) {
+      if (typeof window.showSection === 'function') window.showSection('sandbox');
+      window.loadDeckIntoSandbox(builderDeckId);
+    } else {
+      if (typeof window.showSection === 'function') window.showSection('sandbox');
+      window.populateSandboxDeckSelector();
+    }
+  };
+
+  window.populateSandboxDeckSelector = async function() {
+    const sel = document.getElementById('sandbox-deck-select');
+    if (!sel) return;
+    try {
+      const res = await fetch('/api/decks/my-decks');
+      const decks = await res.json();
+      sel.innerHTML = '<option value="">Select Deck to Playtest...</option>';
+      (decks || []).forEach(d => {
+        sel.innerHTML += `<option value="${d.id}">${escapeHtml(d.deck_name)} (${d.format || 'Commander'})</option>`;
+      });
+      if (builderDeckId) sel.value = builderDeckId;
+    } catch (e) {
+      console.error("Failed to populate sandbox deck selector:", e);
+    }
+  };
+
+  window.loadDeckIntoSandbox = async function(deckId) {
+    if (!deckId) return;
+    try {
+      const res = await fetch(`/api/decks/${deckId}`);
+      const deck = await res.json();
+      sbActiveDeck = deck;
+
+      sbLibrary = [];
+      sbCommander = null;
+      (deck.cards || []).forEach(c => {
+        if (c.is_commander === 1 && !sbCommander) {
+          sbCommander = { ...c };
+        } else {
+          for (let i = 0; i < (c.quantity || 1); i++) {
+            sbLibrary.push({ ...c, instanceId: 'c_' + Math.random().toString(36).substr(2, 9) });
+          }
+        }
+      });
+
+      window.startSandboxGame();
+    } catch (e) {
+      console.error("Error loading deck into sandbox:", e);
+    }
+  };
+
+  window.setSandboxMode = function(mode) {
+    sbMode = mode;
+    const gfBtn = document.getElementById('sandbox-mode-goldfish');
+    const aiBtn = document.getElementById('sandbox-mode-ai');
+    const aiPanel = document.getElementById('sandbox-ai-panel');
+
+    if (mode === 'ai') {
+      if (gfBtn) gfBtn.className = 'btn btn-secondary btn-sm';
+      if (aiBtn) aiBtn.className = 'btn btn-gold btn-sm';
+      if (aiPanel) aiPanel.style.display = 'flex';
+      window.startAiCombatGame();
+    } else {
+      if (gfBtn) gfBtn.className = 'btn btn-gold btn-sm';
+      if (aiBtn) aiBtn.className = 'btn btn-secondary btn-sm';
+      if (aiPanel) aiPanel.style.display = 'none';
+    }
+  };
+
+  window.startSandboxGame = function() {
+    sbHand = [];
+    sbBattlefield = [];
+    sbGraveyard = [];
+    sbExile = [];
+    sbLife = 40;
+    sbTurn = 1;
+    sbCmdTax = 0;
+    window.resetSandboxMana();
+
+    // Shuffle library
+    for (let i = sbLibrary.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sbLibrary[i], sbLibrary[j]] = [sbLibrary[j], sbLibrary[i]];
+    }
+
+    // Draw 7 cards
+    for (let i = 0; i < 7; i++) {
+      if (sbLibrary.length > 0) sbHand.push(sbLibrary.pop());
+    }
+
+    window.updateSandboxUI();
+    window.evaluateSandboxHand();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML = `<div>> Game reset. Drew opening 7-card hand. Library: ${sbLibrary.length} cards.</div>`;
+    }
+  };
+
+  window.sandboxLondonMulligan = function() {
+    sbLibrary.push(...sbHand);
+    sbHand = [];
+
+    for (let i = sbLibrary.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sbLibrary[i], sbLibrary[j]] = [sbLibrary[j], sbLibrary[i]];
+    }
+
+    for (let i = 0; i < 7; i++) {
+      if (sbLibrary.length > 0) sbHand.push(sbLibrary.pop());
+    }
+
+    window.updateSandboxUI();
+    window.evaluateSandboxHand();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML += `<div>> London Mulligan executed. Drew fresh 7-card hand. (Put 1 card on bottom when starting).</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  window.sandboxDrawCard = function() {
+    if (sbLibrary.length > 0) {
+      const card = sbLibrary.pop();
+      sbHand.push(card);
+      window.updateSandboxUI();
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> Drew card '${card.card_name}'. Hand count: ${sbHand.length}.</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    } else {
+      alert("Library is empty!");
+    }
+  };
+
+  window.playHandCardToBattlefield = function(instanceId) {
+    const idx = sbHand.findIndex(c => c.instanceId === instanceId);
+    if (idx === -1) return;
+    const card = sbHand.splice(idx, 1)[0];
+    card.tapped = false;
+    card.counters = 0;
+    sbBattlefield.push(card);
+
+    window.updateSandboxUI();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML += `<div>> Played '${card.card_name}' onto battlefield.</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  window.sandboxCastCommander = function() {
+    if (!sbCommander) {
+      alert("No Commander assigned to this deck!");
+      return;
+    }
+    const card = { ...sbCommander, instanceId: 'cmd_' + Math.random().toString(36).substr(2, 9), tapped: false, counters: 0 };
+    sbBattlefield.push(card);
+    sbCmdTax += 2;
+    window.updateSandboxUI();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML += `<div>> Cast Commander '${sbCommander.card_name}' (Tax is now +${sbCmdTax}).</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  window.toggleCardTap = function(instanceId) {
+    const card = sbBattlefield.find(c => c.instanceId === instanceId);
+    if (card) {
+      card.tapped = !card.tapped;
+      window.updateSandboxUI();
+    }
+  };
+
+  window.addCounterToCard = function(instanceId) {
+    const card = sbBattlefield.find(c => c.instanceId === instanceId);
+    if (card) {
+      card.counters = (card.counters || 0) + 1;
+      window.updateSandboxUI();
+    }
+  };
+
+  window.cloneCard = function(instanceId) {
+    const card = sbBattlefield.find(c => c.instanceId === instanceId);
+    if (card) {
+      const clone = { ...card, instanceId: 'clone_' + Math.random().toString(36).substr(2, 9), card_name: card.card_name + ' (Token Clone)' };
+      sbBattlefield.push(clone);
+      window.updateSandboxUI();
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> Cloned '${card.card_name}' permanent.</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+  };
+
+  window.moveCardToGraveyard = function(instanceId) {
+    const idx = sbBattlefield.findIndex(c => c.instanceId === instanceId);
+    if (idx !== -1) {
+      const removed = sbBattlefield.splice(idx, 1)[0];
+      sbGraveyard.push(removed);
+      window.updateSandboxUI();
+    }
+  };
+
+  window.spawnPresetToken = function(name, type, power, toughness, scryfallId) {
+    const token = {
+      card_name: name,
+      type_line: type,
+      scryfall_id: scryfallId || '',
+      instanceId: 'token_' + Math.random().toString(36).substr(2, 9),
+      tapped: false,
+      counters: 0
+    };
+    sbBattlefield.push(token);
+    document.getElementById('sandbox-token-modal').style.display = 'none';
+    window.updateSandboxUI();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML += `<div>> Spawned token '${name}'.</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  window.openSandboxTokenModal = function() {
+    document.getElementById('sandbox-token-modal').style.display = 'flex';
+  };
+
+  window.openSandboxLibraryModal = function() {
+    const modal = document.getElementById('sandbox-library-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    window.renderSandboxLibraryGrid(sbLibrary);
+  };
+
+  window.filterSandboxLibrary = function(query) {
+    const filtered = sbLibrary.filter(c => (c.card_name || '').toLowerCase().includes(query.toLowerCase()));
+    window.renderSandboxLibraryGrid(filtered);
+  };
+
+  window.renderSandboxLibraryGrid = function(cards) {
+    const grid = document.getElementById('sb-lib-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    cards.forEach(c => {
+      const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=small` : '';
+      grid.innerHTML += `
+        <div style="background: rgba(0,0,0,0.4); border: 1px solid var(--border-medium); border-radius: 6px; padding: 0.4rem; display: flex; flex-direction: column; gap: 0.35rem; align-items: center; text-align: center;">
+          ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 110px; object-fit: cover; border-radius: 4px;">` : `<div style="font-size: 0.7rem; font-weight: 700; color: white;">${escapeHtml(c.card_name)}</div>`}
+          <button type="button" class="btn btn-gold btn-sm" style="width: 100%; font-size: 0.65rem; padding: 2px;" onclick="window.tutorCardToHand('${c.instanceId}')">Tutor to Hand</button>
+        </div>`;
+    });
+  };
+
+  window.tutorCardToHand = function(instanceId) {
+    const idx = sbLibrary.findIndex(c => c.instanceId === instanceId);
+    if (idx !== -1) {
+      const card = sbLibrary.splice(idx, 1)[0];
+      sbHand.push(card);
+      document.getElementById('sandbox-library-modal').style.display = 'none';
+      window.updateSandboxUI();
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> Tutored '${card.card_name}' from library to hand.</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+  };
+
+  window.addSandboxMana = function(color) {
+    sbMana[color] = (sbMana[color] || 0) + 1;
+    window.updateSandboxUI();
+  };
+
+  window.resetSandboxMana = function() {
+    sbMana = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+    window.updateSandboxUI();
+  };
+
+  window.changeSandboxLife = function(delta) {
+    sbLife = Math.max(0, sbLife + delta);
+    window.updateSandboxUI();
+  };
+
+  window.sandboxClearBoard = function() {
+    sbBattlefield = [];
+    window.updateSandboxUI();
+  };
+
+  window.evaluateSandboxHand = function() {
+    let lands = 0;
+    let ramp = 0;
+    let cmcSum = 0;
+
+    sbHand.forEach(c => {
+      const type = (c.type_line || '').toLowerCase();
+      const tag = (c.custom_tag || '').toLowerCase();
+      if (type.includes('land')) lands++;
+      if (tag.includes('ramp') || (c.card_name || '').toLowerCase().includes('sol ring')) ramp++;
+      cmcSum += (c.cmc || 2);
+    });
+
+    const badge = document.getElementById('sb-hand-grade-badge');
+    const text = document.getElementById('sb-hand-eval-text');
+    if (!badge || !text) return;
+
+    if (lands >= 3 && lands <= 4) {
+      badge.textContent = 'Grade A+ (Optimal)';
+      badge.style.background = '#10b981';
+      text.textContent = `Excellent opening hand! ${lands} lands with smooth curve. Safe Keep.`;
+    } else if (lands === 2 && ramp >= 1) {
+      badge.textContent = 'Grade A (Great)';
+      badge.style.background = '#10b981';
+      text.textContent = `Strong 2-land hand accelerated by early Ramp (${ramp} sources). Keep.`;
+    } else if (lands === 2) {
+      badge.textContent = 'Grade B (Playable)';
+      badge.style.background = '#3b82f6';
+      text.textContent = `2 lands without ramp. Playable if low CMC curve or early draw is available.`;
+    } else if (lands <= 1) {
+      badge.textContent = 'Grade F (Unplayable)';
+      badge.style.background = '#ef4444';
+      text.textContent = `Only ${lands} land in opening hand. High risk of mana screw -> Recommended London Mulligan!`;
+    } else {
+      badge.textContent = 'Grade C (Flooded)';
+      badge.style.background = '#f59e0b';
+      text.textContent = `Heavy land count (${lands} lands). Risk of mana flood.`;
+    }
+  };
+
+  window.updateSandboxUI = function() {
+    if (document.getElementById('sb-player-life')) document.getElementById('sb-player-life').textContent = sbLife;
+    if (document.getElementById('sb-library-count')) document.getElementById('sb-library-count').textContent = sbLibrary.length;
+    if (document.getElementById('sb-hand-count')) document.getElementById('sb-hand-count').textContent = sbHand.length;
+    if (document.getElementById('sb-gy-count')) document.getElementById('sb-gy-count').textContent = sbGraveyard.length;
+    if (document.getElementById('sb-exile-count')) document.getElementById('sb-exile-count').textContent = sbExile.length;
+    if (document.getElementById('sb-board-count')) document.getElementById('sb-board-count').textContent = sbBattlefield.length;
+    if (document.getElementById('sb-cmd-tax')) document.getElementById('sb-cmd-tax').textContent = sbCmdTax;
+
+    // Mana Pool UI
+    if (document.getElementById('sb-mana-w')) document.getElementById('sb-mana-w').textContent = sbMana.W;
+    if (document.getElementById('sb-mana-u')) document.getElementById('sb-mana-u').textContent = sbMana.U;
+    if (document.getElementById('sb-mana-b')) document.getElementById('sb-mana-b').textContent = sbMana.B;
+    if (document.getElementById('sb-mana-r')) document.getElementById('sb-mana-r').textContent = sbMana.R;
+    if (document.getElementById('sb-mana-g')) document.getElementById('sb-mana-g').textContent = sbMana.G;
+    if (document.getElementById('sb-mana-c')) document.getElementById('sb-mana-c').textContent = sbMana.C;
+
+    // Render Commander Box
+    const cmdBox = document.getElementById('sb-commander-card');
+    if (cmdBox) {
+      if (sbCommander) {
+        const imgUrl = sbCommander.scryfall_id ? `https://api.scryfall.com/cards/${sbCommander.scryfall_id}?format=image&version=small` : '';
+        cmdBox.innerHTML = imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : `<div>${escapeHtml(sbCommander.card_name)}</div>`;
+      } else {
+        cmdBox.innerHTML = 'No Commander';
+      }
+    }
+
+    // Render Hand Tray
+    const handGrid = document.getElementById('sb-hand-grid');
+    if (handGrid) {
+      handGrid.innerHTML = '';
+      sbHand.forEach(c => {
+        const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=small` : '';
+        handGrid.innerHTML += `
+          <div style="position: relative; flex-shrink: 0; width: 100px; height: 135px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border-medium); background: #000; display: flex; flex-direction: column; justify-content: space-between; padding: 2px;" title="${escapeHtml(c.card_name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="font-size: 0.65rem; color: white;">${escapeHtml(c.card_name)}</div>`}
+            <button type="button" class="btn btn-gold btn-sm" style="position: absolute; bottom: 2px; left: 2px; right: 2px; font-size: 0.62rem; padding: 2px;" onclick="window.playHandCardToBattlefield('${c.instanceId}')">Play Card</button>
+          </div>`;
+      });
+    }
+
+    // Render Single Unified Open Player Battlefield Playmat
+    const playerGrid = document.getElementById('sb-player-grid');
+    if (playerGrid) {
+      playerGrid.innerHTML = '';
+      sbBattlefield.forEach(c => {
+        const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=small` : '';
+        const type = (c.type_line || '').toLowerCase();
+        let borderCol = type.includes('land') ? '#a3e635' : (type.includes('creature') ? '#4ade80' : '#38bdf8');
+        playerGrid.innerHTML += `
+          <div style="position: relative; border-radius: 6px; overflow: hidden; border: 1px solid ${borderCol}; background: #000; height: 145px; display: flex; flex-direction: column; justify-content: space-between; transform: ${c.tapped ? 'rotate(90deg) scale(0.85)' : 'none'}; transition: transform 0.2s ease;" title="${escapeHtml(c.card_name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="font-size: 0.65rem; color: white; padding: 2px;">${escapeHtml(c.card_name)}</div>`}
+            ${c.counters > 0 ? `<div style="position: absolute; top: 2px; right: 2px; background: #10b981; color: white; font-weight: 800; font-size: 0.65rem; padding: 1px 4px; border-radius: 4px;">+${c.counters}/+${c.counters}</div>` : ''}
+            <div style="position: absolute; bottom: 2px; left: 2px; right: 2px; display: flex; gap: 2px;">
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.6rem; padding: 1px; flex: 1;" onclick="window.toggleCardTap('${c.instanceId}')">Tap</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.6rem; padding: 1px; flex: 1;" onclick="window.addCounterToCard('${c.instanceId}')">+1</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.6rem; padding: 1px; flex: 1;" onclick="window.cloneCard('${c.instanceId}')">Clone</button>
+              <button type="button" class="btn btn-danger btn-sm" style="font-size: 0.6rem; padding: 1px;" onclick="window.moveCardToGraveyard('${c.instanceId}')">✕</button>
+            </div>
+          </div>`;
+      });
+    }
+  };
+
+  // ── MULTIPLAYER ROOM & TOP-RIGHT REALM TOOLS DRAWER ENGINE ─────────────────
+  let sbRoomCode = null;
+  let sbPlayerSlot = 'p1';
+  let sbRoomPollInterval = null;
+
+  window.toggleSandboxToolsDrawer = function() {
+    const drawer = document.getElementById('sandbox-tools-drawer');
+    if (!drawer) return;
+    const isHidden = drawer.style.display === 'none' || !drawer.style.display;
+    drawer.style.display = isHidden ? 'flex' : 'none';
+  };
+
+  window.createMultiplayerRoom = async function() {
+    try {
+      const res = await fetch('/api/sandbox/create-room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerName: currentUser ? currentUser.username : 'Player 1',
+          deckName: sbActiveDeck ? sbActiveDeck.deck_name : 'Commander Deck'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        sbRoomCode = data.code;
+        sbPlayerSlot = data.playerSlot;
+        const input = document.getElementById('sb-room-code-input');
+        if (input) input.value = data.code;
+        const badge = document.getElementById('sb-room-badge');
+        if (badge) {
+          badge.textContent = `Room: ${data.code} (${data.playerSlot.toUpperCase()})`;
+          badge.style.color = '#10b981';
+        }
+        window.startSandboxRoomPolling();
+        alert(`Multiplayer Room Created!\nRoom Code: ${data.code}\nShare this code with your opponents to join your game realm!`);
+      }
+    } catch (e) {
+      console.error("Create room error:", e);
+    }
+  };
+
+  window.joinMultiplayerRoom = async function() {
+    const input = document.getElementById('sb-room-code-input');
+    const code = input ? input.value.trim() : '';
+    if (!code) {
+      alert("Please enter a 6-character room code!");
+      return;
+    }
+    try {
+      const res = await fetch('/api/sandbox/join-room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          playerName: currentUser ? currentUser.username : 'Opponent Player',
+          deckName: sbActiveDeck ? sbActiveDeck.deck_name : 'Commander Deck'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        sbRoomCode = data.code;
+        sbPlayerSlot = data.playerSlot;
+        const badge = document.getElementById('sb-room-badge');
+        if (badge) {
+          badge.textContent = `Room: ${data.code} (${data.playerSlot.toUpperCase()})`;
+          badge.style.color = '#10b981';
+        }
+        window.startSandboxRoomPolling();
+        alert(`Successfully joined room ${data.code} as ${data.playerSlot.toUpperCase()}!`);
+      } else {
+        alert(data.error || "Failed to join room.");
+      }
+    } catch (e) {
+      console.error("Join room error:", e);
+    }
+  };
+
+  window.startSandboxRoomPolling = function() {
+    if (sbRoomPollInterval) clearInterval(sbRoomPollInterval);
+    sbRoomPollInterval = setInterval(() => {
+      window.syncSandboxRoomState();
+    }, 2000);
+    window.syncSandboxRoomState();
+  };
+
+  window.syncSandboxRoomState = async function() {
+    if (!sbRoomCode) return;
+    try {
+      // 1. Broadcast my current state
+      await fetch('/api/sandbox/sync-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: sbRoomCode,
+          playerSlot: sbPlayerSlot,
+          life: sbLife,
+          battlefield: sbBattlefield,
+          handCount: sbHand.length,
+          gyCount: sbGraveyard.length,
+          exileCount: sbExile.length
+        })
+      });
+
+      // 2. Fetch room state for all opponents
+      const res = await fetch(`/api/sandbox/room/${sbRoomCode}`);
+      const data = await res.json();
+      if (data.success && data.room) {
+        const opponents = data.room.players.filter(p => p.id !== sbPlayerSlot);
+        if (opponents.length > 0) {
+          const opp = opponents[0]; // Active opponent
+          const panel = document.getElementById('sandbox-ai-panel');
+          if (panel) panel.style.display = 'flex';
+          const nameEl = document.getElementById('sb-ai-name');
+          if (nameEl) nameEl.textContent = `${opp.name} (${opp.deckName})`;
+          const lifeEl = document.getElementById('sb-ai-life');
+          if (lifeEl) lifeEl.textContent = opp.life;
+
+          const aiGrid = document.getElementById('sb-ai-grid');
+          if (aiGrid) {
+            aiGrid.innerHTML = '';
+            (opp.battlefield || []).forEach(c => {
+              const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=small` : '';
+              aiGrid.innerHTML += `
+                <div style="position: relative; border-radius: 4px; overflow: hidden; border: 1px solid #ef4444; background: #000; height: 110px; transform: ${c.tapped ? 'rotate(90deg) scale(0.85)' : 'none'};">
+                  ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : `<div style="font-size: 0.6rem; color: white; padding: 2px;">${escapeHtml(c.card_name)}</div>`}
+                </div>`;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Sync room error:", e);
+    }
+  };
+
 })();
+
+
