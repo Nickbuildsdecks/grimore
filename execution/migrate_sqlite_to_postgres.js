@@ -172,6 +172,7 @@ async function migrateData() {
     await pgPool.query("ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS cheapest_card_price REAL DEFAULT 0.0;");
     await pgPool.query("ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS scryfall_id TEXT;");
     await pgPool.query("ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS card_name TEXT;");
+    await pgPool.query("ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS name TEXT;");
     await pgPool.query("UPDATE decks SET is_public = 1 WHERE player_id = 'p_admin';");
     console.log("  ✓ Truncated and ready for clean re-migration of deck_cards & scryfall_cards.");
   } catch (e) {
