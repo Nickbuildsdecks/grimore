@@ -1750,6 +1750,20 @@ function initGoogleSignInButtons() {
         `;
       });
       window.completeTopProgress();
+
+      // Background prefetch top decks for 0ms instant deck opening
+      window.deckMemoryCache = window.deckMemoryCache || new Map();
+      if (Array.isArray(myDecks)) {
+        myDecks.slice(0, 15).forEach(d => {
+          if (d && d.id && !window.deckMemoryCache.has(d.id)) {
+            fetch(`/api/decks/${d.id}`).then(r => r.ok ? r.json() : null).then(data => {
+              if (data && data.cards) {
+                window.deckMemoryCache.set(d.id, data);
+              }
+            }).catch(() => {});
+          }
+        });
+      }
     } catch (e) {
       console.error("Decks load failed:", e);
       window.completeTopProgress();
@@ -4083,52 +4097,84 @@ function initGoogleSignInButtons() {
     // Switch section IMMEDIATELY on click so UI reacts instantly
     document.getElementById('app-layout').classList.add('sidebar-hidden');
     showSection('deckbuilder', pushHistory);
-    renderBuilderDecklist();
     window.switchBuilderMobileTab('decklist');
+
+    window.deckMemoryCache = window.deckMemoryCache || new Map();
+
+    // Instant 0ms memory render if deck is pre-cached
+    let hasMemoryHit = false;
+    if (deckId && window.deckMemoryCache.has(deckId)) {
+      const cached = window.deckMemoryCache.get(deckId);
+      if (cached && Array.isArray(cached.cards)) {
+        builderCommander = [];
+        builderMainboard = [];
+        cached.cards.forEach(c => {
+          let colorsArr = [];
+          if (c.colors) {
+            try { colorsArr = JSON.parse(c.colors); } catch (e) {
+              try { colorsArr = c.colors.split(',').map(x => x.trim()).filter(Boolean); } catch (err) {}
+            }
+          }
+          const cardObj = {
+            name: c.card_name,
+            price: (c.cheapest_card_price !== undefined && c.cheapest_card_price !== null) ? c.cheapest_card_price : 0.05,
+            qty: c.quantity || 1,
+            scryfallId: c.scryfall_id,
+            custom_tag: c.custom_tag,
+            type_line: c.type_line || "",
+            oracle_text: c.oracle_text || "",
+            cmc: c.cmc !== undefined ? c.cmc : 0,
+            colors: colorsArr,
+            rarity: c.rarity || "common",
+            is_commander: c.is_commander
+          };
+          if (c.is_commander === 1) builderCommander.push(cardObj);
+          else builderMainboard.push(cardObj);
+        });
+
+        if (nameInput && cached.deck_name) nameInput.value = cached.deck_name;
+        builderIsPublic = cached.is_public === 0 ? 0 : 1;
+        builderKeepCheapest = cached.keep_cheapest === 1 ? 1 : 0;
+        builderFeaturedCardName = cached.featured_card_name || builderFeaturedCardName;
+        if (formatSelect && cached.format) formatSelect.value = cached.format;
+        hasMemoryHit = true;
+        renderBuilderDecklist();
+      }
+    }
 
     if (deckId) {
       loadBuilderLayoutOptions(deckId);
       const mZone = document.getElementById('builder-zone-mainboard');
-      if (mZone) {
+      if (mZone && !hasMemoryHit) {
         mZone.innerHTML = `<div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-muted); font-size: 0.9rem; gap: 0.75rem;"><div style="width: 28px; height: 28px; border: 3px solid rgba(168, 85, 247, 0.2); border-top-color: var(--color-gold); border-radius: 50%; animation: spin 0.8s linear infinite;"></div><span>Loading deck cards...</span></div>`;
       }
 
       try {
-        const [metaRes, cardsRes] = await Promise.all([
-          fetch(`/api/decks/${deckId}`).catch(() => null),
-          fetch(`/api/decks/${deckId}/cards`).catch(() => null)
-        ]);
-
+        const metaRes = await fetch(`/api/decks/${deckId}`);
         if (metaRes && metaRes.ok) {
           const meta = await metaRes.json();
-          if (nameInput && meta.deck_name) nameInput.value = meta.deck_name;
-          builderIsPublic = meta.is_public === 0 ? 0 : 1;
-          builderKeepCheapest = meta.keep_cheapest === 1 ? 1 : 0;
-          builderFeaturedCardName = meta.featured_card_name || builderFeaturedCardName;
-          if (formatSelect && meta.format) formatSelect.value = meta.format;
+          if (meta && Array.isArray(meta.cards)) {
+            window.deckMemoryCache.set(deckId, meta);
+            if (nameInput && meta.deck_name) nameInput.value = meta.deck_name;
+            builderIsPublic = meta.is_public === 0 ? 0 : 1;
+            builderKeepCheapest = meta.keep_cheapest === 1 ? 1 : 0;
+            builderFeaturedCardName = meta.featured_card_name || builderFeaturedCardName;
+            if (formatSelect && meta.format) formatSelect.value = meta.format;
 
-          if (tagsInput) {
-            try {
-              const parsedTags = JSON.parse(meta.custom_tags || '[]');
-              tagsInput.value = Array.isArray(parsedTags) ? parsedTags.join(', ') : '';
-            } catch (e) {}
-          }
-        }
+            if (tagsInput) {
+              try {
+                const parsedTags = JSON.parse(meta.custom_tags || '[]');
+                tagsInput.value = Array.isArray(parsedTags) ? parsedTags.join(', ') : '';
+              } catch (e) {}
+            }
 
-        if (cardsRes && cardsRes.ok) {
-          const cards = await cardsRes.json();
-          if (Array.isArray(cards)) {
             builderCommander = [];
             builderMainboard = [];
-            cards.forEach(c => {
+            meta.cards.forEach(c => {
               let colorsArr = [];
               if (c.colors) {
-                try {
-                  colorsArr = JSON.parse(c.colors);
-                } catch (e) {
-                  try {
-                    colorsArr = c.colors.split(',').map(x => x.trim()).filter(Boolean);
-                  } catch (err) {}
+                try { colorsArr = JSON.parse(c.colors); } catch (e) {
+                  try { colorsArr = c.colors.split(',').map(x => x.trim()).filter(Boolean); } catch (err) {}
                 }
               }
               const cardObj = {
@@ -4145,11 +4191,8 @@ function initGoogleSignInButtons() {
                 is_commander: c.is_commander
               };
 
-              if (c.is_commander === 1) {
-                builderCommander.push(cardObj);
-              } else {
-                builderMainboard.push(cardObj);
-              }
+              if (c.is_commander === 1) builderCommander.push(cardObj);
+              else builderMainboard.push(cardObj);
             });
           }
         }
@@ -4158,6 +4201,8 @@ function initGoogleSignInButtons() {
       } finally {
         renderBuilderDecklist();
       }
+    } else {
+      renderBuilderDecklist();
     }
   };
 

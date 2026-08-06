@@ -443,6 +443,10 @@ async function initDb() {
       `CREATE INDEX IF NOT EXISTS idx_deck_cards_commander ON deck_cards(deck_id, is_commander)`,
       `CREATE INDEX IF NOT EXISTS idx_decks_player ON decks(player_id)`,
       `CREATE INDEX IF NOT EXISTS idx_scryfall_cards_card_name ON scryfall_cards(card_name)`,
+      `CREATE INDEX IF NOT EXISTS idx_scryfall_cards_lower_name ON scryfall_cards(LOWER(name))`,
+      `CREATE INDEX IF NOT EXISTS idx_scryfall_cards_lower_card_name ON scryfall_cards(LOWER(card_name))`,
+      `CREATE INDEX IF NOT EXISTS idx_card_price_cache_lower_card_name ON card_price_cache(LOWER(card_name))`,
+      `CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id)`,
       `CREATE INDEX IF NOT EXISTS idx_deck_likes_deck_player ON deck_likes(deck_id, player_id)`,
       `CREATE INDEX IF NOT EXISTS idx_deck_comments_deck ON deck_comments(deck_id)`
     ];

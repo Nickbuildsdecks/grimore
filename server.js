@@ -3165,9 +3165,22 @@ app.get('/api/decks/my-decks', async (req, res) => {
   }
 });
 
+// High-speed Deck Caching Layer
+const deckMetaCache = new Map();
+const deckCardsCache = new Map();
+
+function invalidateDeckCache(deckId) {
+  if (!deckId) return;
+  deckMetaCache.delete(deckId);
+  deckCardsCache.delete(deckId);
+}
+
 // Atomic single-query deck details endpoint with embedded cards & stats
 app.get('/api/decks/:deckId', async (req, res) => {
   const { deckId } = req.params;
+  if (deckMetaCache.has(deckId)) {
+    return res.json(deckMetaCache.get(deckId));
+  }
   try {
     const deck = await db.get("SELECT * FROM decks WHERE id = ?", [deckId]);
     if (!deck) return res.status(404).json({ error: "Deck not found" });
@@ -3182,7 +3195,7 @@ app.get('/api/decks/:deckId', async (req, res) => {
               COALESCE(MAX(sc.type_line), MAX(dc.custom_tag), 'Card') AS type_line, 
               MAX(sc.oracle_text) AS oracle_text, MAX(sc.colors) AS colors, MAX(sc.cmc) AS cmc, MAX(sc.rarity) AS rarity
        FROM deck_cards dc
-       LEFT JOIN scryfall_cards sc ON (LOWER(dc.card_name) = LOWER(${scryfallNameCol}) OR LOWER(dc.card_name) = LOWER(sc.card_name))
+       LEFT JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(${scryfallNameCol})
        LEFT JOIN card_price_cache pc ON LOWER(dc.card_name) = LOWER(pc.card_name)
        WHERE dc.deck_id = ?
        GROUP BY dc.deck_id, dc.card_name
@@ -3192,7 +3205,7 @@ app.get('/api/decks/:deckId', async (req, res) => {
     const commanderCard = cards.find(c => c.is_commander === 1) || (cards.length > 0 ? cards[0] : null);
     const stats = await db.get("SELECT * FROM deck_stats WHERE deck_id = ?", [deckId]);
 
-    res.json({
+    const result = {
       ...deck,
       cards: (cards || []).map(c => ({
         ...c,
@@ -3200,9 +3213,50 @@ app.get('/api/decks/:deckId', async (req, res) => {
       })),
       commander: commanderCard ? { name: commanderCard.card_name, scryfallId: commanderCard.scryfall_id } : null,
       stats: stats || { total_points: 0, total_kills: 0, total_wins: 0, total_matches: 0 }
-    });
+    };
+    deckMetaCache.set(deckId, result);
+    res.json(result);
   } catch (e) {
     console.error("Error in /api/decks/:deckId:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/decks/:deckId/cards', async (req, res) => {
+  const { deckId } = req.params;
+  if (deckCardsCache.has(deckId)) {
+    return res.json(deckCardsCache.get(deckId));
+  }
+  if (deckMetaCache.has(deckId)) {
+    const meta = deckMetaCache.get(deckId);
+    if (meta && meta.cards) {
+      deckCardsCache.set(deckId, meta.cards);
+      return res.json(meta.cards);
+    }
+  }
+  try {
+    const scryfallIdCol = db.isPostgres ? "sc.id" : "sc.scryfall_id";
+    const scryfallNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
+    const cards = await db.query(
+      `SELECT dc.deck_id, dc.card_name, 
+              COALESCE(NULLIF(MAX(pc.price), 0), NULLIF(MAX(dc.cheapest_price), 0), NULLIF(MAX(dc.purchase_price), 0), NULLIF(MAX(sc.price), 0), 0.15) AS cheapest_card_price, 
+              MAX(dc.quantity) AS quantity, MAX(dc.is_commander) AS is_commander, MAX(dc.custom_tag) AS custom_tag,
+              COALESCE(MAX(dc.scryfall_id), MAX(${scryfallIdCol})) AS scryfall_id,
+              COALESCE(MAX(sc.type_line), MAX(dc.custom_tag), 'Card') AS type_line, 
+              MAX(sc.oracle_text) AS oracle_text, MAX(sc.colors) AS colors, MAX(sc.cmc) AS cmc, MAX(sc.rarity) AS rarity
+       FROM deck_cards dc
+       LEFT JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(${scryfallNameCol})
+       LEFT JOIN card_price_cache pc ON LOWER(dc.card_name) = LOWER(pc.card_name)
+       WHERE dc.deck_id = ?
+       GROUP BY dc.deck_id, dc.card_name
+       ORDER BY MAX(dc.is_commander) DESC, dc.card_name ASC`,
+      [deckId]
+    );
+    const result = cards || [];
+    deckCardsCache.set(deckId, result);
+    res.json(result);
+  } catch (e) {
+    console.error("Error in /api/decks/:deckId/cards:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -3223,37 +3277,11 @@ app.delete('/api/decks/:deckId', async (req, res) => {
     await db.run("DELETE FROM deck_comments WHERE deck_id = ?", [deckId]);
     await db.run("DELETE FROM deck_stats WHERE deck_id = ?", [deckId]);
     await db.run("DELETE FROM decks WHERE id = ?", [deckId]);
+    invalidateDeckCache(deckId);
 
     res.json({ success: true, message: "Deck deleted successfully." });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get('/api/decks/:deckId/cards', async (req, res) => {
-  const { deckId } = req.params;
-  try {
-    const scryfallIdCol = db.isPostgres ? "sc.id" : "sc.scryfall_id";
-    const scryfallNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
-    const cards = await db.query(
-      `SELECT dc.deck_id, dc.card_name, 
-              COALESCE(NULLIF(MAX(pc.price), 0), NULLIF(MAX(dc.cheapest_price), 0), NULLIF(MAX(dc.purchase_price), 0), NULLIF(MAX(sc.price), 0), 0.15) AS cheapest_card_price, 
-              MAX(dc.quantity) AS quantity, MAX(dc.is_commander) AS is_commander, MAX(dc.custom_tag) AS custom_tag,
-              COALESCE(MAX(dc.scryfall_id), MAX(${scryfallIdCol})) AS scryfall_id,
-              COALESCE(MAX(sc.type_line), MAX(dc.custom_tag), 'Card') AS type_line, 
-              MAX(sc.oracle_text) AS oracle_text, MAX(sc.colors) AS colors, MAX(sc.cmc) AS cmc, MAX(sc.rarity) AS rarity
-       FROM deck_cards dc
-       LEFT JOIN scryfall_cards sc ON (LOWER(dc.card_name) = LOWER(${scryfallNameCol}) OR LOWER(dc.card_name) = LOWER(sc.card_name))
-       LEFT JOIN card_price_cache pc ON LOWER(dc.card_name) = LOWER(pc.card_name)
-       WHERE dc.deck_id = ?
-       GROUP BY dc.deck_id, dc.card_name
-       ORDER BY MAX(dc.is_commander) DESC, dc.card_name ASC`,
-      [deckId]
-    );
-    res.json(cards || []);
-  } catch (e) {
-    console.error("Error in /api/decks/:deckId/cards:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -5897,6 +5925,7 @@ app.post('/api/decks/builder-save', async (req, res) => {
       }
     }
     
+    invalidateDeckCache(targetDeckId);
     res.json({ success: true, deckId: targetDeckId });
   } catch (e) {
     res.status(500).json({ error: e.message });
