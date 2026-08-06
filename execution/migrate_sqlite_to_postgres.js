@@ -82,6 +82,13 @@ async function migrateData() {
 
   try {
     await pgPool.query("TRUNCATE deck_cards, scryfall_cards CASCADE;");
+    await pgPool.query("ALTER TABLE scryfall_cards ALTER COLUMN set_code DROP NOT NULL;");
+    await pgPool.query("ALTER TABLE scryfall_cards ALTER COLUMN set_code SET DEFAULT 'unk';");
+    await pgPool.query("ALTER TABLE scryfall_cards ALTER COLUMN collector_number DROP NOT NULL;");
+    await pgPool.query("ALTER TABLE scryfall_cards ALTER COLUMN collector_number SET DEFAULT '1';");
+    await pgPool.query("ALTER TABLE card_price_cache ALTER COLUMN set_code DROP NOT NULL;");
+    await pgPool.query("ALTER TABLE card_price_cache ALTER COLUMN collector_number DROP NOT NULL;");
+    await pgPool.query("ALTER TABLE card_price_cache ALTER COLUMN scryfall_id DROP NOT NULL;");
   } catch (e) {}
 
   for (const table of tables) {
@@ -106,8 +113,10 @@ async function migrateData() {
 
       if (table === 'scryfall_cards') {
         for (const r of rows) {
-          r.id = r.id || r.scryfall_id;
+          r.id = r.id || r.scryfall_id || ('scry_' + Math.random().toString(36).substr(2, 9));
           r.name = r.name || r.card_name;
+          r.set_code = r.set_code || 'unk';
+          r.collector_number = r.collector_number || '1';
           delete r.scryfall_id;
           delete r.card_name;
         }
