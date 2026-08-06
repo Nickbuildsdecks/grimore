@@ -97,9 +97,9 @@ async function downloadAndImportScryfallBulk(force = false) {
     console.log(`Download completed in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
     // 3. Read and parse bulk data using streaming readline to keep memory footprint under 30MB
-    console.log("Importing card objects to SQLite database using streaming reader (transaction)...");
+    console.log("Importing card objects to database using streaming reader...");
     const insertStart = Date.now();
-    await db.run("BEGIN TRANSACTION");
+    if (!db.isPostgres) await db.run("BEGIN TRANSACTION");
     
     let cardCount = 0;
     try {
@@ -145,12 +145,23 @@ async function downloadAndImportScryfallBulk(force = false) {
           if (usdLow && usdLow < price) price = usdLow;
         }
 
-        await db.run(
-          `INSERT OR REPLACE INTO scryfall_cards 
-           (card_name, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, price, rarity, last_updated) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-          [name, scryfallId, type_line, oracle_text, mana_cost, cmc, colors, price, rarity]
-        );
+        if (db.isPostgres) {
+          await db.run(
+            `INSERT INTO scryfall_cards 
+             (id, name, card_name, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, price, rarity, updated_at) 
+             VALUES ($1, $2, $2, $1, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+             ON CONFLICT (id) DO UPDATE SET 
+             name = EXCLUDED.name, card_name = EXCLUDED.card_name, type_line = EXCLUDED.type_line, price = EXCLUDED.price`,
+            [scryfallId, name, type_line, oracle_text, mana_cost, cmc, colors, price, rarity]
+          );
+        } else {
+          await db.run(
+            `INSERT OR REPLACE INTO scryfall_cards 
+             (card_name, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, price, rarity, last_updated) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [name, scryfallId, type_line, oracle_text, mana_cost, cmc, colors, price, rarity]
+          );
+        }
       };
 
       let currentObjectLines = [];
@@ -199,12 +210,14 @@ async function downloadAndImportScryfallBulk(force = false) {
         }
       }
 
-      await db.run("COMMIT");
+      if (!db.isPostgres) await db.run("COMMIT");
       console.log(`Import completed in ${((Date.now() - insertStart) / 1000).toFixed(2)}s. Parsed ${cardCount} cards.`);
     } catch (writeErr) {
-      try {
-        await db.run("ROLLBACK");
-      } catch (rollbackErr) {}
+      if (!db.isPostgres) {
+        try {
+          await db.run("ROLLBACK");
+        } catch (rollbackErr) {}
+      }
       throw writeErr;
     }
 

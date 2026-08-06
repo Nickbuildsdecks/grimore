@@ -155,7 +155,8 @@ export function Builder() {
       if (!map.has(t)) map.set(t, [])
       map.get(t)!.push(c)
     }
-    return TYPE_ORDER.filter((t) => map.has(t)).map((t) => ({
+    const categories = Array.from(new Set([...TYPE_ORDER, ...Array.from(map.keys())]))
+    return categories.filter((t) => map.has(t)).map((t) => ({
       type: t,
       cards: map.get(t)!.sort((a, b) => a.cmc - b.cmc || a.name.localeCompare(b.name)),
     }))
