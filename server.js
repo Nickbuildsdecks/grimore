@@ -285,7 +285,7 @@ function normalizeArtistKey(artist) {
 async function getFollowedArtistMap(playerId) {
   if (!playerId) return new Map();
   const rows = await db.query(
-    "SELECT artist_key, artist_name FROM artist_follows WHERE player_id = ? ORDER BY artist_name COLLATE NOCASE",
+    "SELECT artist_key, artist_name FROM artist_follows WHERE player_id = ? ORDER BY LOWER(artist_name) ASC",
     [playerId]
   );
   return new Map(rows.map(row => [row.artist_key, row.artist_name]));
@@ -1533,9 +1533,9 @@ async function resolveCardDetailsBatch(cardNames) {
     const cleanBase = clean.split(' // ')[0];
     let rows = await db.query(
       `SELECT * FROM scryfall_cards 
-       WHERE card_name = ? COLLATE NOCASE 
-          OR card_name = ? COLLATE NOCASE
-          OR card_name LIKE ? COLLATE NOCASE
+       WHERE LOWER(card_name) = LOWER(?) 
+          OR LOWER(card_name) = LOWER(?)
+          OR LOWER(card_name) LIKE LOWER(?)
        LIMIT 1`,
       [clean, cleanBase, cleanBase + ' //%']
     );
@@ -1545,7 +1545,7 @@ async function resolveCardDetailsBatch(cardNames) {
     if (clean.length >= 4) {
       rows = await db.query(
         `SELECT * FROM scryfall_cards 
-         WHERE card_name LIKE ? COLLATE NOCASE 
+         WHERE LOWER(card_name) LIKE LOWER(?) 
          ORDER BY LENGTH(card_name) ASC
          LIMIT 1`,
         [`%${clean}%`]
@@ -1566,7 +1566,7 @@ async function resolveCardDetailsBatch(cardNames) {
         } catch (e) {}
         
         // Check if there is a cached cheapest price using case-insensitive index
-        const cached = await db.get("SELECT price FROM card_price_cache WHERE card_name = ? COLLATE NOCASE AND price > 0", [card.card_name]);
+        const cached = await db.get("SELECT price FROM card_price_cache WHERE LOWER(card_name) = LOWER(?) AND price > 0", [card.card_name]);
         const finalPrice = (cached && cached.price > 0) ? cached.price : (card.price && card.price > 0 ? card.price : 0.15);
 
         results[name] = {
@@ -3247,17 +3247,20 @@ app.get('/api/decks/:deckId/cards', async (req, res) => {
   const { deckId } = req.params;
   try {
     const cards = await db.query(
-      `SELECT dc.deck_id, dc.card_name, dc.cheapest_card_price, dc.quantity, dc.is_commander, dc.custom_tag,
+      `SELECT dc.deck_id, dc.card_name, 
+              COALESCE(dc.cheapest_card_price, dc.cheapest_price, dc.purchase_price, 0) AS cheapest_card_price, 
+              dc.quantity, dc.is_commander, dc.custom_tag,
               COALESCE(dc.scryfall_id, sc.scryfall_id) AS scryfall_id,
               sc.type_line, sc.oracle_text, sc.colors, sc.cmc, sc.rarity
        FROM deck_cards dc
-       LEFT JOIN scryfall_cards sc ON dc.card_name = sc.card_name COLLATE NOCASE
+       LEFT JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(sc.card_name)
        WHERE dc.deck_id = ?
        ORDER BY dc.card_name ASC`,
       [deckId]
     );
-    res.json(cards);
+    res.json(cards || []);
   } catch (e) {
+    console.error("Error in /api/decks/:deckId/cards:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -3280,7 +3283,7 @@ app.post('/api/decks/:deckId/cards', async (req, res) => {
 
     const normalizedPrice = Number.isFinite(Number(price)) ? Number(price) : 0.10;
     const existing = await db.get(
-      "SELECT quantity FROM deck_cards WHERE deck_id = ? AND card_name = ? COLLATE NOCASE",
+      "SELECT quantity FROM deck_cards WHERE deck_id = ? AND LOWER(card_name) = LOWER(?)",
       [deckId, name.trim()]
     );
 
@@ -3290,7 +3293,7 @@ app.post('/api/decks/:deckId/cards', async (req, res) => {
       await db.run(
         `UPDATE deck_cards
          SET quantity = ?, cheapest_card_price = ?, scryfall_id = COALESCE(?, scryfall_id)
-         WHERE deck_id = ? AND card_name = ? COLLATE NOCASE`,
+         WHERE deck_id = ? AND LOWER(card_name) = LOWER(?)`,
         [quantity, normalizedPrice, scryfallId || null, deckId, name.trim()]
       );
     } else {
@@ -5150,7 +5153,7 @@ app.get('/api/artists/followed', async (req, res) => {
       `SELECT artist_name AS name, created_at AS followedAt
        FROM artist_follows
        WHERE player_id = ?
-       ORDER BY artist_name COLLATE NOCASE`,
+       ORDER BY LOWER(artist_name) ASC`,
       [req.session.player.id]
     );
     res.json(artists);
@@ -6260,7 +6263,7 @@ app.post('/api/collections/:id/cards', async (req, res) => {
     // Check if card matches database scryfall_cards or price cache to fetch scryfallId
     let resolvedScryfallId = scryfallId || null;
     if (!resolvedScryfallId) {
-      const match = await db.get("SELECT scryfall_id FROM scryfall_cards WHERE card_name = ? COLLATE NOCASE", [cardName]);
+      const match = await db.get("SELECT scryfall_id FROM scryfall_cards WHERE LOWER(card_name) = LOWER(?)", [cardName]);
       if (match) resolvedScryfallId = match.scryfall_id;
     }
 
@@ -6274,14 +6277,14 @@ app.post('/api/collections/:id/cards', async (req, res) => {
 
     // Auto-remove or decrement from wishlist if it exists
     const wishlistCard = await db.get(
-      "SELECT * FROM wishlist_cards WHERE player_id = ? AND card_name = ? COLLATE NOCASE",
+      "SELECT * FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
       [playerId, cardName]
     );
     if (wishlistCard) {
       const newWishQty = wishlistCard.quantity - qty;
       if (newWishQty <= 0) {
         await db.run(
-          "DELETE FROM wishlist_cards WHERE player_id = ? AND card_name = ? COLLATE NOCASE",
+          "DELETE FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
           [playerId, cardName]
         );
       } else {
