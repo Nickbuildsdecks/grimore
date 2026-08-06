@@ -122,7 +122,7 @@ async function migrateData() {
       console.log(`- Migrating table '${table}': ${rows.length} row(s)...`);
 
       // Multi-row bulk insert helper
-      const batchSize = table === 'scryfall_cards' ? 5000 : 250;
+      const batchSize = table === 'scryfall_cards' ? 1000 : 250;
       let successCount = 0;
       for (let i = 0; i < rows.length; i += batchSize) {
         const batch = rows.slice(i, i + batchSize);
@@ -174,8 +174,8 @@ async function migrateData() {
         }
       }
       console.log(`  ✓ Successfully migrated '${table}' (${successCount} rows).`);
-    } catch (err) {
-      console.error(`  ⚠️ Warning migrating '${table}': ${err.message}`);
+    } catch (e) {
+      console.error(`  ❌ Error migrating table '${table}':`, e.message);
     }
   }
 
