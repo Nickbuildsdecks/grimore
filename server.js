@@ -3126,7 +3126,7 @@ app.get('/api/decks/discover', async (req, res) => {
              p.profile_commander
       FROM decks d
       LEFT JOIN players p ON d.player_id = p.id
-      WHERE (COALESCE(d.is_public, 1) = 1 OR d.is_public IS TRUE)
+      WHERE COALESCE(d.is_public, 1) = 1
       ORDER BY d.last_checked DESC
     `);
     
