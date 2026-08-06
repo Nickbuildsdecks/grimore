@@ -80,6 +80,10 @@ async function migrateData() {
     'scryfall_cards' // Large cache table goes LAST
   ];
 
+  try {
+    await pgPool.query("TRUNCATE deck_cards CASCADE;");
+  } catch (e) {}
+
   for (const table of tables) {
     try {
       // Check if table exists in SQLite
