@@ -169,21 +169,29 @@ app.post('/api/sandbox/ai-advisor', async (req, res) => {
 
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-    const prompt = `You are Grim — the official Grimore MTG Arena Rules Advisor and AI Judge (L3 Judge standard).
-Provide a concise, direct, accurate explanation of how the following cards/rules interact according to the Comprehensive Rules. Always cite the exact CR section number (e.g. CR 704.5k, CR 603.2) where applicable. Keep the answer under 3 sentences for fast in-game reading. Speak with a helpful, sharp, authoritative tone as Grim.
+    const prompt = `You are Grim — the official Grimore MTG Arena Rules Advisor and L3 Certified MTG Head Judge.
+STRICT PRECISION DIRECTIVE: You must provide 100% accurate, bulletproof Magic: the Gathering rulings with zero hallucinations.
+MANDATORY DUAL-SOURCE CITATIONS: You must ALWAYS cite applicable official sources:
+1. Mechanical Rules: Exact Comprehensive Rules section number (e.g., CR 603.6a, CR 613.1d, CR 704.5k).
+2. Tournament Policy / Infractions: Exact Infraction Procedure Guide (IPG) or Magic Tournament Rules (MTR) section number (e.g., IPG 2.3, IPG 3.5, MTR 4.1).
+
+Format your response cleanly for fast in-game reading:
+- Direct, authoritative ruling first.
+- Exact dual citations formatted as [CR X.Y / IPG A.B].
+- Step-by-step mechanical/policy breakdown (under 3 sentences).
 
 User Query: "${query}"
 ${boardState ? `Current Board Context: ${boardState}` : ''}`;
 
     const result = await model.generateContent(prompt);
-
     const responseText = result.response.text();
 
     return res.json({
       answer: responseText,
       mode: "ai-active",
-      model: "gemini-2.5-flash"
+      model: "gemini-flash-latest"
     });
+
   } catch (err) {
     console.error("Gemini AI API Error:", err.message);
     return res.status(500).json({ error: "Failed to consult AI Rules Advisor.", details: err.message });
