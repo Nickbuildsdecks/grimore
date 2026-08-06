@@ -3248,21 +3248,19 @@ app.get('/api/decks/:deckId/cards', async (req, res) => {
   try {
     const scryfallIdCol = db.isPostgres ? "sc.id" : "sc.scryfall_id";
     const scryfallNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
-    const distinctClause = db.isPostgres ? "DISTINCT ON (LOWER(dc.card_name))" : "";
-    const groupByClause = db.isPostgres ? "" : "GROUP BY dc.card_name";
     const cards = await db.query(
-      `SELECT ${distinctClause} dc.deck_id, dc.card_name, 
-              COALESCE(NULLIF(pc.price, 0), NULLIF(dc.cheapest_price, 0), NULLIF(dc.purchase_price, 0), NULLIF(sc.price, 0), 0.15) AS cheapest_card_price, 
-              dc.quantity, dc.is_commander, dc.custom_tag,
-              COALESCE(dc.scryfall_id, ${scryfallIdCol}) AS scryfall_id,
-              COALESCE(sc.type_line, dc.custom_tag, 'Card') AS type_line, 
-              sc.oracle_text, sc.colors, sc.cmc, sc.rarity
+      `SELECT dc.deck_id, dc.card_name, 
+              COALESCE(NULLIF(pc.price, 0), NULLIF(MAX(dc.cheapest_price), 0), NULLIF(MAX(dc.purchase_price), 0), NULLIF(MAX(sc.price), 0), 0.15) AS cheapest_card_price, 
+              MAX(dc.quantity) AS quantity, MAX(dc.is_commander) AS is_commander, MAX(dc.custom_tag) AS custom_tag,
+              COALESCE(MAX(dc.scryfall_id), MAX(${scryfallIdCol})) AS scryfall_id,
+              COALESCE(MAX(sc.type_line), MAX(dc.custom_tag), 'Card') AS type_line, 
+              MAX(sc.oracle_text) AS oracle_text, MAX(sc.colors) AS colors, MAX(sc.cmc) AS cmc, MAX(sc.rarity) AS rarity
        FROM deck_cards dc
        LEFT JOIN scryfall_cards sc ON (LOWER(dc.card_name) = LOWER(${scryfallNameCol}) OR LOWER(dc.card_name) = LOWER(sc.card_name))
        LEFT JOIN card_price_cache pc ON LOWER(dc.card_name) = LOWER(pc.card_name)
        WHERE dc.deck_id = ?
-       ${groupByClause}
-       ORDER BY dc.is_commander DESC, dc.card_name ASC`,
+       GROUP BY dc.deck_id, dc.card_name, pc.price
+       ORDER BY MAX(dc.is_commander) DESC, dc.card_name ASC`,
       [deckId]
     );
     res.json(cards || []);
