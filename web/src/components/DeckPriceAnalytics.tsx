@@ -39,10 +39,15 @@ export function DeckPriceAnalytics({ cards, onOptimizePrices }: DeckPriceAnalyti
   }
 
   const openTCGDirect = () => {
-    // Generate TCGplayer Mass Entry URL
     const queryStr = cards.map((c) => `${c.qty} ${c.name}`).join("||")
-    const tcgUrl = `https://store.tcgplayer.com/massentry?c=${encodeURIComponent(queryStr)}`
+    const tcgUrl = `https://store.tcgplayer.com/massentry?c=${encodeURIComponent(queryStr)}&utm_source=grimore`
     window.open(tcgUrl, "_blank")
+  }
+
+  const openCardKingdomDirect = () => {
+    const queryStr = cards.map((c) => `${c.qty} ${c.name}`).join("\n")
+    const ckUrl = `https://www.cardkingdom.com/builder?partner=grimore&main=${encodeURIComponent(queryStr)}`
+    window.open(ckUrl, "_blank")
   }
 
   return (
@@ -89,6 +94,14 @@ export function DeckPriceAnalytics({ cards, onOptimizePrices }: DeckPriceAnalyti
           >
             <ShoppingCart className="w-3.5 h-3.5" />
             TCGplayer Checkout
+          </Button>
+          <Button
+            onClick={openCardKingdomDirect}
+            size="sm"
+            className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold gap-1.5"
+          >
+            <ShoppingCart className="w-3.5 h-3.5" />
+            Card Kingdom Checkout
           </Button>
         </div>
       </div>

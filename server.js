@@ -5924,6 +5924,14 @@ app.get('/api/auth/me', (req, res) => {
   }
 });
 
+// Affiliate monetization config
+app.get('/api/config/affiliates', (req, res) => {
+  res.json({
+    tcgplayerAffiliateId: process.env.TCGPLAYER_AFFILIATE_ID || 'grimore',
+    cardKingdomAffiliateId: process.env.CARDKINGDOM_AFFILIATE_ID || 'grimore'
+  });
+});
+
 // Delete a deck (owner only)
 app.delete('/api/decks/:deckId', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: 'Not logged in.' });
