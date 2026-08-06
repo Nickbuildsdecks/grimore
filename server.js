@@ -46,7 +46,58 @@ process.on('uncaughtException', (error) => {
   console.error('CRITICAL: Uncaught Exception thrown:', error);
 });
 
+const http = require('http');
+const { Server } = require('socket.io');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { z } = require('zod');
+
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*' }
+});
+
+// Real-Time Socket.IO Multiplayer & Arena Sync Engine
+io.on('connection', (socket) => {
+  console.log('[Socket.IO] Client connected:', socket.id);
+
+  socket.on('join-room', (roomId) => {
+    socket.join(roomId);
+    socket.emit('joined-room', { roomId, socketId: socket.id });
+    console.log(`[Socket.IO] Socket ${socket.id} joined room ${roomId}`);
+  });
+
+  socket.on('arena-action', (data) => {
+    if (data && data.roomId) {
+      socket.to(data.roomId).emit('arena-action', data);
+    }
+  });
+
+  socket.on('arena-state-sync', (data) => {
+    if (data && data.roomId) {
+      socket.to(data.roomId).emit('arena-state-update', data.state);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('[Socket.IO] Client disconnected:', socket.id);
+  });
+});
+
+// Gemini AI Rules Advisor Setup
+const geminiApiKey = process.env.GEMINI_API_KEY;
+let genAI = null;
+if (geminiApiKey) {
+  try {
+    genAI = new GoogleGenerativeAI(geminiApiKey);
+    console.log('Gemini AI Engine initialized successfully for MTG Rules Advisor.');
+  } catch (err) {
+    console.warn('Failed to initialize Gemini AI:', err.message);
+  }
+} else {
+  console.log('Gemini AI Engine: Set GEMINI_API_KEY in .env to enable real-time LLM interaction reasoning.');
+}
+
 const PORT = process.env.PORT || 3000;
 
 const badWords = ['fuck', 'shit', 'asshole', 'bitch', 'crap', 'dick', 'pussy', 'bastard', 'cunt', 'nigger', 'faggot'];
@@ -58,6 +109,7 @@ function isProfane(text) {
 
 // Middleware
 app.use(express.json({ limit: '20mb' }));
+
 app.use(express.urlencoded({ extended: true }));
 // Serve Grimore primary Web Suite
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -87,6 +139,56 @@ if (fs.existsSync(reactIndexPath)) {
     res.sendFile(reactIndexPath);
   });
 }
+
+// Grimore Premium Arena Sandbox — dedicated route
+app.get('/sandbox', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'sandbox.html'));
+});
+
+// Gemini AI Rules & Interaction Reasoning Endpoint
+const aiAdvisorQuerySchema = z.object({
+  query: z.string().min(1).max(1000),
+  boardState: z.string().optional()
+});
+
+app.post('/api/sandbox/ai-advisor', async (req, res) => {
+  const parseResult = aiAdvisorQuerySchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid input parameters.', details: parseResult.error.format() });
+  }
+
+  const { query, boardState } = parseResult.data;
+
+  if (!genAI) {
+    return res.json({
+      answer: "Gemini AI Engine is currently in heuristic mode. To enable real-time generative MTG interaction analysis, add your GEMINI_API_KEY to the .env configuration file.",
+      mode: "heuristic",
+      ruleCitation: "CR 100.1"
+    });
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const prompt = `You are Grim — the official Grimore MTG Arena Rules Advisor and AI Judge (L3 Judge standard).
+Provide a concise, direct, accurate explanation of how the following cards/rules interact according to the Comprehensive Rules. Always cite the exact CR section number (e.g. CR 704.5k, CR 603.2) where applicable. Keep the answer under 3 sentences for fast in-game reading. Speak with a helpful, sharp, authoritative tone as Grim.
+
+User Query: "${query}"
+${boardState ? `Current Board Context: ${boardState}` : ''}`;
+
+    const result = await model.generateContent(prompt);
+
+    const responseText = result.response.text();
+
+    return res.json({
+      answer: responseText,
+      mode: "ai-active",
+      model: "gemini-2.5-flash"
+    });
+  } catch (err) {
+    console.error("Gemini AI API Error:", err.message);
+    return res.status(500).json({ error: "Failed to consult AI Rules Advisor.", details: err.message });
+  }
+});
 
 const rateLimit = require('express-rate-limit');
 const { createClient } = require('redis');
@@ -6913,12 +7015,13 @@ app.get('/api/sandbox/room/:code', (req, res) => {
 // Start Server
 db.initDb().then(() => {
   console.log("Database initialized successfully.");
-  app.listen(PORT, () => {
-    console.log(`Grimore Server running on http://localhost:${PORT}`);
+  server.listen(PORT, () => {
+    console.log(`Grimore Server (with Socket.IO & better-sqlite3) running on http://localhost:${PORT}`);
   });
 }).catch(err => {
   console.error("Database initialization warning:", err);
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`Grimore Server running on http://localhost:${PORT}`);
   });
 });
+

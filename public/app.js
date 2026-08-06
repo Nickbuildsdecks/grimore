@@ -147,61 +147,47 @@
     let raf;
     let t = 0;
 
-    // ── CONFIG ──────────────────────────────────────────────────────────
-    const RUNE_CHARS = ['ᚠ','ᚢ','ᚦ','ᚨ','ᚱ','ᚲ','ᚷ','ᚹ','ᚺ','ᚾ','ᛁ','ᛃ','ᛇ','ᛈ','ᛉ','ᛊ','ᛏ','ᛒ','ᛖ','ᛗ','ᛚ','ᛜ','ᛞ','ᛟ','᛭','᚛','᚜','ᛤ','ᛥ'];
-    const MTG_SYMBOLS = ['⬡','⬢','◈','⧖','⊕','⊗','⊘','⊙','✦','✧','❋','⁂','⁑'];
+    // ── CYBER MAINFRAME CONFIG ─────────────────────────────────────────
+    const CODE_TOKENS = ['01', '10', '0F', 'FF', '80', 'A4', 'C0', '40', '00', '11', '{ }', '< />', '=>', 'func', '0x9F', '0x3A', '0x7E', 'ASM', 'SYS', 'SYNC', 'EXEC', 'PTR', 'HEX'];
+    
+    // Cyber Matrix Stream Nodes
+    const codeNodes = [];
+    const CODE_NODE_COUNT = 36;
 
-
-
-    // Floating Runes
-    const runePool = [];
-    const RUNE_COUNT = 28;
-
-    function newRune(w, h) {
-      const chars = Math.random() < 0.7 ? RUNE_CHARS : MTG_SYMBOLS;
+    function newCodeNode(w, h) {
       return {
         x: Math.random() * w,
         y: Math.random() * h,
-        char: chars[Math.floor(Math.random() * chars.length)],
-        size: Math.random() * 10 + 10,
-        alpha: 0,
-        maxAlpha: Math.random() * 0.30 + 0.35,
-        phase: 'in',
-        fadeSpd: Math.random() * 0.0025 + 0.001,
-        hold: Math.random() * 300 + 180,
-        hue: 255 + Math.random() * 60,
-        drift: (Math.random() - 0.5) * 0.12,
-        bob: Math.random() * Math.PI * 2,
-        bobSpd: Math.random() * 0.008 + 0.003,
+        token: CODE_TOKENS[Math.floor(Math.random() * CODE_TOKENS.length)],
+        size: Math.random() * 8 + 10,
+        alpha: Math.random() * 0.25 + 0.15,
+        speedY: Math.random() * 0.4 + 0.15,
+        driftX: (Math.random() - 0.5) * 0.1,
+        hue: Math.random() < 0.6 ? 185 : (Math.random() < 0.8 ? 270 : 45), // Cyan, Purple, Amber
         offsetX: 0,
         offsetY: 0
       };
     }
 
-    // Rise-up Stardust Embers (sharp dots, no blurred blobs)
-    const embers = [];
-    const EMBER_COUNT = 80;
+    // Mainframe Plexus Vector Grid
+    const plexusNodes = [];
+    const PLEXUS_COUNT = 45;
 
-    function newEmber(w, h) {
+    function newPlexusNode(w, h) {
       return {
         x: Math.random() * w,
-        y: h + Math.random() * 50,
-        vx: (Math.random() - 0.5) * 0.15,
-        vy: -(Math.random() * 0.35 + 0.15),
-        size: Math.random() * 1.2 + 0.6,
-        alpha: Math.random() * 0.22 + 0.08,
-        hue: 250 + Math.random() * 45,
-        life: 1,
-        decay: Math.random() * 0.0012 + 0.0004,
-        offsetX: 0
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        radius: Math.random() * 1.5 + 1
       };
     }
 
-    // 2D Concentric Arcane Circles
-    const circles = [
-      { rot: 0, baseR: 0.32, speed: 0.0009,  dir: 1,  alpha: 0.55, dash: [6,14],  segCount: 8,  hue: 270, rPx: 0 },
-      { rot: 0, baseR: 0.20, speed: 0.0015,  dir: -1, alpha: 0.40, dash: [3,22],  segCount: 12, hue: 290, rPx: 0 },
-      { rot: 0, baseR: 0.44, speed: 0.0005,  dir: 1,  alpha: 0.28, dash: [12,30], segCount: 6,  hue: 255, rPx: 0 },
+    // Concentric Cyber Mainframe Target Reticles
+    const reticles = [
+      { rot: 0, baseR: 0.35, speed: 0.0008, dir: 1, alpha: 0.35, dash: [4, 12], segCount: 16, hue: 185, rPx: 0 },
+      { rot: 0, baseR: 0.22, speed: 0.0014, dir: -1, alpha: 0.25, dash: [2, 18], segCount: 8, hue: 270, rPx: 0 },
+      { rot: 0, baseR: 0.48, speed: 0.0004, dir: 1, alpha: 0.20, dash: [10, 24], segCount: 12, hue: 45, rPx: 0 },
     ];
 
     let mouse = { x: -1000, y: -1000, targetX: -1000, targetY: -1000, active: false };
@@ -212,24 +198,20 @@
       canvas.height = window.innerHeight;
       const w = canvas.width, h = canvas.height;
 
-      runePool.length = 0;
-      for (let i = 0; i < RUNE_COUNT; i++) runePool.push(newRune(w, h));
+      codeNodes.length = 0;
+      for (let i = 0; i < CODE_NODE_COUNT; i++) codeNodes.push(newCodeNode(w, h));
 
-      embers.length = 0;
-      for (let i = 0; i < EMBER_COUNT; i++) {
-        const eb = newEmber(w, h);
-        eb.y = Math.random() * h;
-        embers.push(eb);
-      }
+      plexusNodes.length = 0;
+      for (let i = 0; i < PLEXUS_COUNT; i++) plexusNodes.push(newPlexusNode(w, h));
 
       const minDim = Math.min(w, h);
-      circles.forEach(c => {
+      reticles.forEach(c => {
         c.rPx = minDim * c.baseR;
       });
 
-      vignetteGrad = ctx.createRadialGradient(w/2, h/2, minDim * 0.25, w/2, h/2, minDim * 0.75);
+      vignetteGrad = ctx.createRadialGradient(w/2, h/2, minDim * 0.2, w/2, h/2, minDim * 0.85);
       vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
-      vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.45)');
+      vignetteGrad.addColorStop(1, 'rgba(3, 4, 8, 0.7)');
     }
 
     function onMouseMove(e) {
@@ -250,17 +232,15 @@
     resize();
 
     function drawCircleWithTickmarks(cx, cy, r, segCount, rot) {
-      // Main ring
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.stroke();
-      // Tickmarks at segment positions
       for (let i = 0; i < segCount; i++) {
         const a = rot + (Math.PI * 2 / segCount) * i;
-        const x1 = cx + Math.cos(a) * (r - 6);
-        const y1 = cy + Math.sin(a) * (r - 6);
-        const x2 = cx + Math.cos(a) * (r + 6);
-        const y2 = cy + Math.sin(a) * (r + 6);
+        const x1 = cx + Math.cos(a) * (r - 5);
+        const y1 = cy + Math.sin(a) * (r - 5);
+        const x2 = cx + Math.cos(a) * (r + 5);
+        const y2 = cy + Math.sin(a) * (r + 5);
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
@@ -268,21 +248,20 @@
       }
     }
 
-
-
     function draw() {
       t += 1;
       const w = canvas.width;
       const h = canvas.height;
-      const minDim = Math.min(w, h);
+      const cx = w / 2;
+      const cy = h / 2;
 
-      // Clean background
+      // Deep Cyber Obsidian Background
       const isLight = document.body.classList.contains('light-theme');
-      ctx.fillStyle = isLight ? '#f5f4f0' : '#060409';
+      ctx.fillStyle = isLight ? '#f4f5f8' : '#030408';
       ctx.fillRect(0, 0, w, h);
 
-      // Smooth mouse coordinates
-      if (mouse.active) {
+      // Smooth mouse coordinate inertia
+      if (mouse.active && mouse.targetX !== -1000) {
         if (mouse.x === -1000) {
           mouse.x = mouse.targetX;
           mouse.y = mouse.targetY;
@@ -292,106 +271,101 @@
         }
       }
 
-      // Gyroscope center coordinates
-      const cx = w / 2;
-      const cy = h / 2;
-
-      // ── 1. BACKGROUND STARDUST EMBERS ────────────────────────────────
-      ctx.save();
-      embers.forEach((eb, idx) => {
-        eb.x += eb.vx;
-        eb.y += eb.vy;
-        eb.life -= eb.decay;
-
-        if (mouse.active && mouse.x !== -1000) {
-          const dx = mouse.x - eb.x;
-          const dy = mouse.y - eb.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 140) {
-            const push = (140 - dist) / 140;
-            eb.offsetX += (dx > 0 ? -1 : 1) * push * 0.35;
-          }
-        }
-        eb.offsetX *= 0.95;
-        eb.x += eb.offsetX;
-
-        if (eb.life <= 0 || eb.x < -20 || eb.x > w + 20 || eb.y < -20) {
-          embers[idx] = newEmber(w, h);
-          return;
-        }
-
-        const currentAlpha = eb.alpha * (eb.life > 0.5 ? (1 - eb.life) * 2 : eb.life * 2);
-        ctx.fillStyle = `hsla(${eb.hue}, 85%, 80%, ${currentAlpha})`;
-        ctx.beginPath();
-        ctx.arc(eb.x, eb.y, eb.size, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.restore();
-
-      // ── 2. OUTER ARCANE CIRCLES ───────────────────────────────────────
-      circles.forEach(c => {
+      // ── 1. CYBER RETICLE HUD RINGS ─────────────────────────────────────
+      reticles.forEach(c => {
         c.rot += c.speed * c.dir;
         ctx.save();
-        ctx.strokeStyle = `hsla(${c.hue},80%,65%,${c.alpha})`;
-        ctx.lineWidth = 1.2;
-        ctx.shadowColor = `hsla(${c.hue},100%,60%,0.4)`;
-        ctx.shadowBlur = 8;
+        ctx.strokeStyle = `hsla(${c.hue}, 90%, 65%, ${c.alpha})`;
+        ctx.lineWidth = 1;
+        ctx.shadowColor = `hsla(${c.hue}, 100%, 60%, 0.3)`;
+        ctx.shadowBlur = 6;
         ctx.setLineDash(c.dash);
         ctx.lineDashOffset = -c.rot * c.rPx;
         drawCircleWithTickmarks(cx, cy, c.rPx, c.segCount, c.rot);
         ctx.restore();
       });
 
-      // ── 3. FLOATING RUNES ─────────────────────────────────────────────
+      // ── 2. MAINFRAME PLEXUS VECTOR NETWORK ─────────────────────────────
       ctx.save();
-      runePool.forEach(rn => {
-        rn.x += rn.drift;
-        rn.bob += rn.bobSpd;
-        const bobY = Math.sin(rn.bob) * 1.8;
+      plexusNodes.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0 || p.x > w) p.vx *= -1;
+        if (p.y < 0 || p.y > h) p.vy *= -1;
 
-        if (rn.phase === 'in') {
-          rn.alpha += rn.fadeSpd;
-          if (rn.alpha >= rn.maxAlpha) { rn.alpha = rn.maxAlpha; rn.phase = 'hold'; }
-        } else if (rn.phase === 'hold') {
-          rn.hold--;
-          if (rn.hold <= 0) rn.phase = 'out';
-        } else {
-          rn.alpha -= rn.fadeSpd;
-          if (rn.alpha <= 0) {
-            const nr = newRune(w, h);
-            Object.assign(rn, nr);
-          }
-        }
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
 
-        if (rn.x < -40) rn.x = w + 20;
-        if (rn.x > w + 40) rn.x = -20;
-
-        let currentAlpha = rn.alpha;
-        if (mouse.active && mouse.x !== -1000) {
-          const dx = mouse.x - rn.x;
-          const dy = mouse.y - rn.y;
+      // Draw connections between nearby nodes & cursor
+      for (let i = 0; i < plexusNodes.length; i++) {
+        for (let j = i + 1; j < plexusNodes.length; j++) {
+          const dx = plexusNodes[i].x - plexusNodes[j].x;
+          const dy = plexusNodes[i].y - plexusNodes[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 150) {
-            const force = (150 - dist) / 150;
-            rn.offsetX += (dx > 0 ? -1 : 1) * force * 0.6;
-            rn.offsetY += (dy > 0 ? -1 : 1) * force * 0.6;
-            currentAlpha = Math.min(1, rn.alpha + force * 0.45);
+          if (dist < 110) {
+            const alpha = (1 - dist / 110) * 0.12;
+            ctx.strokeStyle = `rgba(0, 240, 255, ${alpha})`;
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(plexusNodes[i].x, plexusNodes[i].y);
+            ctx.lineTo(plexusNodes[j].x, plexusNodes[j].y);
+            ctx.stroke();
           }
         }
-        rn.offsetX *= 0.95;
-        rn.offsetY *= 0.95;
-        rn.x += rn.offsetX;
-        rn.y += rn.offsetY;
 
-        ctx.save();
-        ctx.font = `${rn.size}px 'Courier New', monospace`;
-        ctx.fillStyle = `hsla(${rn.hue},90%,80%,${currentAlpha})`;
-        ctx.shadowColor = `hsla(${rn.hue},100%,65%,${currentAlpha * 2.5})`;
-        ctx.shadowBlur = 18;
+        // Connect to mouse cursor
+        if (mouse.active && mouse.x !== -1000) {
+          const mdx = mouse.x - plexusNodes[i].x;
+          const mdy = mouse.y - plexusNodes[i].y;
+          const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
+          if (mdist < 200) {
+            const malpha = (1 - mdist / 200) * 0.28;
+            ctx.strokeStyle = `rgba(0, 240, 255, ${malpha})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(plexusNodes[i].x, plexusNodes[i].y);
+            ctx.lineTo(mouse.x, mouse.y);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+
+      // ── 3. CODE MATRIX STREAM PARTICLES ────────────────────────────────
+      ctx.save();
+      codeNodes.forEach(cn => {
+        cn.y += cn.speedY;
+        cn.x += cn.driftX;
+
+        if (cn.y > h + 20) {
+          cn.y = -20;
+          cn.x = Math.random() * w;
+          cn.token = CODE_TOKENS[Math.floor(Math.random() * CODE_TOKENS.length)];
+        }
+
+        let alpha = cn.alpha;
+        if (mouse.active && mouse.x !== -1000) {
+          const dx = mouse.x - cn.x;
+          const dy = mouse.y - cn.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 160) {
+            const force = (160 - dist) / 160;
+            cn.offsetX += (dx > 0 ? -1 : 1) * force * 0.5;
+            alpha = Math.min(0.8, cn.alpha + force * 0.4);
+          }
+        }
+        cn.offsetX *= 0.94;
+        cn.x += cn.offsetX;
+
+        ctx.font = `${cn.size}px 'Fira Code', 'Consolas', monospace`;
+        ctx.fillStyle = `hsla(${cn.hue}, 95%, 70%, ${alpha})`;
+        ctx.shadowColor = `hsla(${cn.hue}, 100%, 65%, ${alpha * 2.5})`;
+        ctx.shadowBlur = 10;
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(rn.char, rn.x, rn.y + bobY);
-        ctx.restore();
+        ctx.fillText(cn.token, cn.x, cn.y);
       });
       ctx.restore();
 

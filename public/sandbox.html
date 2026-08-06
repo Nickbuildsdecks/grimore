@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grimore Arena — MTG Playtest Sandbox</title>
+  <meta name="description" content="Premium Magic: the Gathering playtest arena with real-time rules engine, stack management, and Grim AI advisor.">
+  <link rel="stylesheet" href="sandbox.css">
+</head>
+<body>
+
+<!-- Background particle canvas -->
+<canvas id="arena-canvas-bg"></canvas>
+
+<!-- SVG overlay for combat attack arrows -->
+<svg id="combat-arrows-svg" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="rgba(239,68,68,0.8)"/>
+    </marker>
+  </defs>
+</svg>
+
+<!-- Card Preview Float -->
+<div id="card-preview">
+  <img id="card-preview-img" src="" alt="">
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<!-- Deck Select Panel (shown on first load) -->
+<div id="deck-select-panel">
+  <div class="deck-select-modal">
+    <div class="deck-select-header">
+      <span class="deck-select-title">Select a Deck</span>
+      <button class="arena-btn arena-btn-ghost" onclick="Arena.skipDeckSelect()">Solo Goldfish (No Deck)</button>
+    </div>
+    <div class="deck-select-grid" id="deck-select-grid">
+      <div style="text-align:center;padding:2rem;color:#475569;font-size:0.8rem;">Loading your decks...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Deck Load Splash -->
+<div id="deck-load-splash" style="display:none;">
+  <div class="splash-spinner"></div>
+  <div class="splash-title">Grimore Arena</div>
+  <div class="splash-subtitle" id="splash-msg">Shuffling your library...</div>
+</div>
+
+<!-- Main Arena Grid -->
+<div id="arena-root">
+
+  <!-- TOP BAR: Phase Stepper + Life Orbs + Controls -->
+  <header id="arena-topbar">
+    <!-- Logo -->
+    <div class="arena-logo">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      Grimore Arena
+    </div>
+
+    <!-- Phase Stepper Pill -->
+    <div id="phase-stepper">
+      <span class="phase-step" data-phase="untap"     onclick="Arena.jumpToPhase('untap')">Untap</span>
+      <span class="phase-step" data-phase="upkeep"    onclick="Arena.jumpToPhase('upkeep')">Upkeep</span>
+      <span class="phase-step active main-phase" data-phase="draw" onclick="Arena.jumpToPhase('draw')">Draw</span>
+      <span class="phase-step" data-phase="main1"     onclick="Arena.jumpToPhase('main1')">Main 1</span>
+      <span class="phase-step" data-phase="beginCombat"  onclick="Arena.jumpToPhase('beginCombat')">Begin Cbt</span>
+      <span class="phase-step combat-phase" data-phase="declareAttackers" onclick="Arena.jumpToPhase('declareAttackers')">Attackers</span>
+      <span class="phase-step combat-phase" data-phase="declareBlockers"  onclick="Arena.jumpToPhase('declareBlockers')">Blockers</span>
+      <span class="phase-step combat-phase" data-phase="combat"           onclick="Arena.jumpToPhase('combat')">Damage</span>
+      <span class="phase-step" data-phase="main2"     onclick="Arena.jumpToPhase('main2')">Main 2</span>
+      <span class="phase-step" data-phase="end"       onclick="Arena.jumpToPhase('end')">End</span>
+    </div>
+
+    <!-- Right: Life Orbs + Priority + Controls -->
+    <div id="topbar-controls">
+      <!-- Opponent Life -->
+      <div class="life-orb opponent">
+        <span class="life-orb-value" id="opp-life">40</span>
+        <span class="life-orb-label">Grim</span>
+      </div>
+
+      <div style="width:1px;height:24px;background:rgba(255,255,255,0.08);"></div>
+
+      <!-- Priority indicator -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+        <div class="priority-indicator" id="priority-dot"></div>
+        <span style="font-size:0.55rem;color:#475569;letter-spacing:0.08em;text-transform:uppercase;" id="priority-label">Priority</span>
+      </div>
+
+      <div style="width:1px;height:24px;background:rgba(255,255,255,0.08);"></div>
+
+      <!-- Player Life -->
+      <div class="life-orb player">
+        <span class="life-orb-value" id="player-life">40</span>
+        <span class="life-orb-label">You</span>
+      </div>
+
+      <div style="width:1px;height:24px;background:rgba(255,255,255,0.08);margin:0 4px;"></div>
+
+      <!-- Turn counter + mode badge -->
+      <span class="turn-counter">Turn <strong id="turn-num">1</strong></span>
+      <span id="mode-badge" style="font-size:0.62rem;font-weight:700;color:#38bdf8;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.25);border-radius:4px;padding:2px 8px;">vs Grim</span>
+
+      <button class="arena-btn arena-btn-ghost" onclick="Arena.exitToMain()" style="font-size:0.68rem;">Exit</button>
+    </div>
+  </header>
+
+  <!-- LEFT: Command Zone -->
+  <aside id="arena-cmdzone">
+    <span class="cmdzone-label">Command<br>Zone</span>
+
+    <div id="cmd-card-slot" onclick="Arena.castCommander()" title="Click to cast commander">
+      <span style="font-size:0.55rem;text-align:center;line-height:1.4;color:#6b7280;">No Commander</span>
+    </div>
+
+    <div class="cmd-tax-badge">
+      Cast: +<span id="cmd-tax-mana">0</span> Tax
+    </div>
+
+    <div style="font-size:0.58rem;color:#6b7280;text-align:center;line-height:1.5;margin-top:2px;">
+      Cmd Dmg:<br>
+      <span id="cmd-dmg-dealt" style="color:#f87171;font-weight:700;">0</span> / 21
+    </div>
+
+    <!-- Poison counters -->
+    <div style="font-size:0.58rem;color:#6b7280;text-align:center;margin-top:4px;">
+      Poison:<br>
+      <span id="poison-count" style="color:#a78bfa;font-weight:700;">0</span> / 10
+    </div>
+
+    <!-- Life adjust buttons -->
+    <div style="display:flex;gap:2px;margin-top:4px;">
+      <button class="arena-btn arena-btn-danger" style="padding:3px 6px;font-size:0.65rem;" onclick="Arena.changeLife('player',-1)">-1</button>
+      <button class="arena-btn arena-btn-primary" style="padding:3px 6px;font-size:0.65rem;" onclick="Arena.changeLife('player',+1)">+1</button>
+    </div>
+    <div style="display:flex;gap:2px;">
+      <button class="arena-btn arena-btn-danger" style="padding:2px 5px;font-size:0.6rem;" onclick="Arena.changeLife('player',-5)">-5</button>
+      <button class="arena-btn arena-btn-primary" style="padding:2px 5px;font-size:0.6rem;" onclick="Arena.changeLife('player',+5)">+5</button>
+    </div>
+  </aside>
+
+  <!-- CENTER: Main Board -->
+  <main id="arena-board">
+    <!-- Opponent Battlefield (top half) -->
+    <div id="opponent-battlefield" class="battlefield-half">
+      <span class="bf-zone-label">Grim's Battlefield</span>
+      <!-- Opponent permanents rendered dynamically -->
+    </div>
+
+    <!-- Center Divider Line -->
+    <div class="board-center-line">
+      <span class="board-center-text">BATTLEFIELD</span>
+    </div>
+
+    <!-- Player Battlefield (bottom half) -->
+    <div id="player-battlefield" class="battlefield-half"
+         ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="Arena.handleBattlefieldDrop(event)">
+      <span class="bf-zone-label">Your Battlefield</span>
+      <!-- Player permanents rendered dynamically -->
+    </div>
+  </main>
+
+  <!-- RIGHT: Rules Advisor Panel -->
+  <aside id="arena-advisor">
+    <div class="advisor-header">
+      <span class="advisor-title">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
+        </svg>
+        Grim — AI Judge
+      </span>
+      <span style="font-size:0.6rem;color:#38bdf8;font-style:italic;">Live AI</span>
+    </div>
+
+    <!-- Stack Section -->
+    <div class="advisor-section">
+      <div class="advisor-section-label">
+        <span>The Stack</span>
+        <span id="stack-count-badge" style="font-size:0.58rem;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);border-radius:999px;padding:1px 6px;">0</span>
+      </div>
+      <div id="advisor-stack-list">
+        <div class="stack-empty">Stack is empty.</div>
+      </div>
+    </div>
+
+    <!-- Rules Feed Section -->
+    <div class="advisor-section-label">
+      <span>Advisor Feed & Grim</span>
+    </div>
+    <div style="padding:0.3rem 0.6rem;display:flex;gap:4px;">
+      <input type="text" id="ai-query-input" class="arena-search" placeholder="Ask Grim (e.g. 'Does Torpor Orb stop Dockside?')..." style="font-size:0.68rem;padding:0.3rem 0.5rem;" onkeydown="if(event.key==='Enter')Arena.askAIAdvisor()">
+      <button class="arena-btn arena-btn-gold" style="font-size:0.62rem;padding:2px 8px;" onclick="Arena.askAIAdvisor()">Ask Grim</button>
+    </div>
+    <div id="advisor-rules-feed">
+      <div class="rules-message info">
+        Welcome to Grimore Arena. Select a deck to begin playtesting.
+        <span class="rules-cite">Rules enforcement active — Grim is ready.</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- HAND ZONE -->
+  <div id="arena-hand">
+    <span class="hand-zone-label">Hand (<span id="hand-count">0</span>)</span>
+    <!-- Hand cards rendered dynamically -->
+  </div>
+
+  <!-- BOTTOM ACTION BAR -->
+  <footer id="arena-bottombar">
+
+    <!-- Mana Pool -->
+    <div id="mana-pool-display" title="Your mana pool — click a pip to add mana">
+      <span style="font-size:0.6rem;color:#475569;margin-right:3px;font-weight:600;">Mana:</span>
+      <div class="mana-pip" data-color="W" title="White mana" onclick="Arena.addMana('W',1)">
+        W<span class="mana-pip-count" id="mana-W-count">0</span>
+      </div>
+      <div class="mana-pip" data-color="U" title="Blue mana" onclick="Arena.addMana('U',1)">
+        U<span class="mana-pip-count" id="mana-U-count">0</span>
+      </div>
+      <div class="mana-pip" data-color="B" title="Black mana" onclick="Arena.addMana('B',1)">
+        B<span class="mana-pip-count" id="mana-B-count">0</span>
+      </div>
+      <div class="mana-pip" data-color="R" title="Red mana" onclick="Arena.addMana('R',1)">
+        R<span class="mana-pip-count" id="mana-R-count">0</span>
+      </div>
+      <div class="mana-pip" data-color="G" title="Green mana" onclick="Arena.addMana('G',1)">
+        G<span class="mana-pip-count" id="mana-G-count">0</span>
+      </div>
+      <div class="mana-pip" data-color="C" title="Colorless mana" onclick="Arena.addMana('C',1)">
+        C<span class="mana-pip-count" id="mana-C-count">0</span>
+      </div>
+      <button class="arena-btn arena-btn-ghost" style="font-size:0.6rem;padding:2px 6px;margin-left:2px;" onclick="Arena.clearManaPool()" title="Empty mana pool (happens at end of phase)">Empty</button>
+    </div>
+
+    <!-- Zone Quick Access -->
+    <div style="display:flex;align-items:center;gap:0.5rem;border-left:1px solid rgba(255,255,255,0.06);padding-left:0.6rem;">
+      <button class="arena-btn arena-btn-ghost" style="font-size:0.65rem;" onclick="Arena.openModal('library')">
+        Library <span id="lib-count-btn" style="color:#38bdf8;font-weight:800;">99</span>
+      </button>
+      <button class="arena-btn arena-btn-ghost" style="font-size:0.65rem;" onclick="Arena.openModal('graveyard')">
+        GY <span id="gy-count-btn" style="color:#fb923c;font-weight:800;">0</span>
+      </button>
+      <button class="arena-btn arena-btn-ghost" style="font-size:0.65rem;" onclick="Arena.openModal('exile')">
+        Exile <span id="exile-count-btn" style="color:#c084fc;font-weight:800;">0</span>
+      </button>
+    </div>
+
+    <div style="width:1px;height:24px;background:rgba(255,255,255,0.06);"></div>
+
+    <!-- Phase Controls -->
+    <button class="arena-btn arena-btn-primary" onclick="Arena.passPhase()" id="btn-pass-phase" title="Pass priority / advance phase (F6)">
+      Pass Priority (F6)
+    </button>
+
+    <button class="arena-btn arena-btn-gold" onclick="Arena.untapAll()" title="Untap all your permanents">
+      Untap All
+    </button>
+
+    <button class="arena-btn arena-btn-ghost" onclick="Arena.drawCard()">
+      Draw
+    </button>
+
+    <div style="width:1px;height:24px;background:rgba(255,255,255,0.06);"></div>
+
+    <!-- Tokens & Tools -->
+    <button class="arena-btn arena-btn-ghost" onclick="Arena.toggleTokenSpawner()" title="Open token spawner">
+      Tokens
+    </button>
+
+    <button class="arena-btn arena-btn-ghost" onclick="Arena.rollDie(20)" title="Roll a d20">
+      d20
+    </button>
+
+    <button class="arena-btn arena-btn-ghost" onclick="Arena.openModal('search-library')" title="Search your library">
+      Tutor
+    </button>
+
+    <div class="bar-spacer"></div>
+
+    <!-- Resolve Stack Button (visible when stack is non-empty) -->
+    <button class="arena-btn arena-btn-danger" id="btn-resolve" onclick="Arena.resolveTopOfStack()" style="display:none;">
+      Resolve Top
+    </button>
+
+    <!-- New Game -->
+    <button class="arena-btn arena-btn-ghost" style="font-size:0.65rem;" onclick="Arena.newGame()">
+      New Game
+    </button>
+  </footer>
+
+</div>
+
+<!-- Zone Inspector Modal (Library / GY / Exile / Search) -->
+<div class="arena-modal-overlay" id="zone-modal">
+  <div class="arena-modal">
+    <div class="arena-modal-header">
+      <span class="arena-modal-title" id="zone-modal-title">Library</span>
+      <div style="display:flex;align-items:center;gap:0.5rem;">
+        <input type="text" class="arena-search" id="zone-modal-search" placeholder="Search cards..." style="width:200px;" oninput="Arena.filterModalCards(this.value)">
+        <button class="arena-btn arena-btn-ghost" onclick="Arena.closeModal()">Close</button>
+      </div>
+    </div>
+    <div class="arena-modal-body" id="zone-modal-body">
+      <!-- Cards rendered dynamically -->
+    </div>
+  </div>
+</div>
+
+<!-- Token Spawner Panel -->
+<div id="token-spawner-panel">
+  <div style="font-size:0.7rem;font-weight:700;color:#f5c842;padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,0.06);">Token Spawner</div>
+  <input type="text" class="arena-search" id="token-search" placeholder="Search tokens..." style="margin-bottom:4px;" oninput="Arena.filterTokens(this.value)">
+  <div class="token-grid" id="token-grid">
+    <button class="token-btn" onclick="Arena.spawnToken({name:'Treasure',type:'Artifact',pt:''})">Treasure</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'Food',type:'Artifact',pt:''})">Food</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'Clue',type:'Artifact',pt:''})">Clue</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'1/1 Goblin',type:'Creature',pt:'1/1'})">1/1 Goblin</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'2/2 Zombie',type:'Creature',pt:'2/2'})">2/2 Zombie</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'1/1 Elf',type:'Creature',pt:'1/1'})">1/1 Elf</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'3/3 Beast',type:'Creature',pt:'3/3'})">3/3 Beast</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'4/4 Angel',type:'Creature',pt:'4/4',abilities:'Flying'})">4/4 Angel</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'5/5 Dragon',type:'Creature',pt:'5/5',abilities:'Flying'})">5/5 Dragon</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'1/1 Saproling',type:'Creature',pt:'1/1'})">Saproling</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'1/1 Vampire',type:'Creature',pt:'1/1',abilities:'Flying, Lifelink'})">Vampire</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'2/2 Knight',type:'Creature',pt:'2/2',abilities:'Vigilance'})">Knight</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'Map',type:'Artifact',pt:''})">Map</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'Soldier',type:'Creature',pt:'1/1'})">Soldier</button>
+    <button class="token-btn" onclick="Arena.spawnToken({name:'Spirit',type:'Creature',pt:'1/1',abilities:'Flying'})">Spirit</button>
+    <button class="token-btn" onclick="Arena.promptCustomToken()">Custom...</button>
+  </div>
+</div>
+
+<!-- Card Context Menu (rendered dynamically into body) -->
+<div class="card-context-menu" id="card-ctx-menu" style="display:none;"></div>
+
+<!-- Load JS Engine -->
+<script src="sandbox.js"></script>
+
+</body>
+</html>

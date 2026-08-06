@@ -1,4 +1,4 @@
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
@@ -28,16 +28,15 @@ if (pgUrl) {
     ? path.join(dataDir, 'grimore.db') 
     : path.join(__dirname, 'grimore.db');
 
-  sqliteDb = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-      console.error('Error connecting to SQLite database:', err.message);
-    } else {
-      console.log('Connected to Grimore SQLite database.');
-      sqliteDb.run("PRAGMA foreign_keys = ON;", (err) => {
-        if (err) console.error("Failed to enable foreign keys:", err.message);
-      });
-    }
-  });
+  try {
+    sqliteDb = new Database(dbPath);
+    sqliteDb.pragma('journal_mode = WAL');
+    sqliteDb.pragma('foreign_keys = ON');
+    sqliteDb.pragma('synchronous = NORMAL');
+    console.log('Connected to Grimore SQLite database via better-sqlite3 (WAL Mode).');
+  } catch (err) {
+    console.error('Error connecting to SQLite database with better-sqlite3:', err.message);
+  }
 }
 
 // Convert SQLite '?' parameters to PostgreSQL '$1, $2, ...'
@@ -46,18 +45,29 @@ function convertSqlPlaceholders(sql) {
   return sql.replace(/\?/g, () => `$${index++}`);
 }
 
+// Prepared Statement Cache for better-sqlite3
+const stmtCache = new Map();
+function getStmt(sql) {
+  let stmt = stmtCache.get(sql);
+  if (!stmt) {
+    stmt = sqliteDb.prepare(sql);
+    stmtCache.set(sql, stmt);
+  }
+  return stmt;
+}
+
 // Helper for DB queries using Promises
 const query = (sql, params = []) => {
   if (isPostgres) {
     const pgSql = convertSqlPlaceholders(sql);
     return pgPool.query(pgSql, params).then(res => res.rows);
   }
-  return new Promise((resolve, reject) => {
-    sqliteDb.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
+  try {
+    const stmt = getStmt(sql);
+    return Promise.resolve(stmt.all(...params));
+  } catch (err) {
+    return Promise.reject(err);
+  }
 };
 
 const run = (sql, params = []) => {
@@ -68,12 +78,13 @@ const run = (sql, params = []) => {
       changes: res.rowCount
     }));
   }
-  return new Promise((resolve, reject) => {
-    sqliteDb.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve({ id: this.lastID, changes: this.changes });
-    });
-  });
+  try {
+    const stmt = getStmt(sql);
+    const info = stmt.run(...params);
+    return Promise.resolve({ id: info.lastInsertRowid, changes: info.changes });
+  } catch (err) {
+    return Promise.reject(err);
+  }
 };
 
 const get = (sql, params = []) => {
@@ -81,13 +92,15 @@ const get = (sql, params = []) => {
     const pgSql = convertSqlPlaceholders(sql);
     return pgPool.query(pgSql, params).then(res => res.rows[0] || null);
   }
-  return new Promise((resolve, reject) => {
-    sqliteDb.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+  try {
+    const stmt = getStmt(sql);
+    const res = stmt.get(...params);
+    return Promise.resolve(res || null);
+  } catch (err) {
+    return Promise.reject(err);
+  }
 };
+
 
 // Initialize Tables
 async function initDb() {
