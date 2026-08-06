@@ -1481,3 +1481,19 @@
   78% { opacity: 1; transform: scale(1.25) rotate(10deg); }
   100% { opacity: 0; transform: scale(0.7) rotate(20deg); }
 }
+
+/* ── Mobile Device Optimization & Tap Targets ────────────────────────────── */
+@media (max-width: 768px) {
+  :root {
+    --page-gutter: 12px;
+    --control-height: 44px;
+  }
+
+  button, input, select, textarea, [role="button"] {
+    min-height: 44px;
+  }
+
+  .mobile-stacked {
+    grid-template-columns: 1fr !important;
+  }
+}

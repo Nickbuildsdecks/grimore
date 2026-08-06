@@ -1982,6 +1982,26 @@ async function validateDeckLegality(deckId) {
   }
 }
 
+const asyncJobsMap = new Map();
+
+// Cleanup expired job statuses older than 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [jobId, job] of asyncJobsMap.entries()) {
+    if (now - job.createdAt > 30 * 60 * 1000) {
+      asyncJobsMap.delete(jobId);
+    }
+  }
+}, 5 * 60 * 1000);
+
+app.get('/api/jobs/:jobId', (req, res) => {
+  const job = asyncJobsMap.get(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ error: "Job not found or expired." });
+  }
+  res.json(job);
+});
+
 app.post('/api/decks/register', async (req, res) => {
   if (!req.session.player) {
     return res.status(401).json({ error: "Please log in first." });
@@ -6489,8 +6509,11 @@ function checkDailyResetCron() {
   }
 }
 
-// Poll once every 30 seconds
-setInterval(checkDailyResetCron, 30000);
+const isPrimaryInstance = !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0';
+if (isPrimaryInstance) {
+  setInterval(checkDailyResetCron, 30000);
+  console.log("[Cluster] Primary instance registered background cron tasks.");
+}
 
 // Start Server
 db.initDb().then(() => {

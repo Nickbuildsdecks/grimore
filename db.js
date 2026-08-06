@@ -12,11 +12,15 @@ if (pgUrl) {
   isPostgres = true;
   pgPool = new Pool({
     connectionString: pgUrl,
-    max: 20,
+    max: 35,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
+    allowExitOnIdle: false
   });
-  console.log('Connected to Grimore PostgreSQL database pool.');
+  pgPool.on('error', (err) => {
+    console.error('Unexpected error on idle PostgreSQL pool client:', err.message);
+  });
+  console.log('Connected to Grimore PostgreSQL database pool (max 35 connections).');
 } else {
   // Check if persistent volume mount directory exists (Fly.io volume location)
   const dataDir = '/data';
@@ -434,7 +438,12 @@ async function initDb() {
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0`,
       `ALTER TABLE deck_stats ADD COLUMN IF NOT EXISTS total_matches INTEGER DEFAULT 0`,
       `ALTER TABLE deck_stats ADD COLUMN IF NOT EXISTS season_id TEXT`,
-      `ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS card_name TEXT`
+      `ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS card_name TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_deck_cards_commander ON deck_cards(deck_id, is_commander)`,
+      `CREATE INDEX IF NOT EXISTS idx_decks_player ON decks(player_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_scryfall_cards_card_name ON scryfall_cards(card_name)`,
+      `CREATE INDEX IF NOT EXISTS idx_deck_likes_deck_player ON deck_likes(deck_id, player_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_deck_comments_deck ON deck_comments(deck_id)`
     ];
 
     for (let stmt of pgStatements) {
@@ -800,7 +809,11 @@ async function initDb() {
 
   await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_card_name ON deck_cards(card_name);`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_scryfall_cards_name ON scryfall_cards(name);`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_commander ON deck_cards(deck_id, is_commander);`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_decks_player ON decks(player_id);`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_scryfall_cards_card_name ON scryfall_cards(card_name);`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_deck_likes_deck_player ON deck_likes(deck_id, player_id);`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_deck_comments_deck ON deck_comments(deck_id);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_player_collection_player ON player_collection(player_id);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_preference_events_player ON preference_events(player_id, last_seen_at DESC);`);
 
