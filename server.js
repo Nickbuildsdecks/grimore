@@ -3246,14 +3246,16 @@ app.delete('/api/decks/:deckId', async (req, res) => {
 app.get('/api/decks/:deckId/cards', async (req, res) => {
   const { deckId } = req.params;
   try {
+    const scryfallIdCol = db.isPostgres ? "sc.id" : "sc.scryfall_id";
+    const scryfallNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
     const cards = await db.query(
       `SELECT dc.deck_id, dc.card_name, 
               COALESCE(dc.cheapest_price, dc.purchase_price, 0) AS cheapest_card_price, 
               dc.quantity, dc.is_commander, dc.custom_tag,
-              COALESCE(dc.scryfall_id, sc.scryfall_id, sc.id) AS scryfall_id,
+              COALESCE(dc.scryfall_id, ${scryfallIdCol}) AS scryfall_id,
               sc.type_line, sc.oracle_text, sc.colors, sc.cmc, sc.rarity
        FROM deck_cards dc
-       LEFT JOIN scryfall_cards sc ON (LOWER(dc.card_name) = LOWER(sc.card_name) OR LOWER(dc.card_name) = LOWER(sc.name))
+       LEFT JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(${scryfallNameCol})
        WHERE dc.deck_id = ?
        ORDER BY dc.card_name ASC`,
       [deckId]
