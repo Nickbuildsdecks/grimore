@@ -3134,7 +3134,7 @@ app.get('/api/decks/discover', async (req, res) => {
     const currentPlayerId = req.session.player ? req.session.player.id : null;
     
     for (let deck of decks) {
-      const cards = await db.query("SELECT card_name, quantity, custom_tag, cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deck.id]);
+      const cards = await db.query("SELECT card_name, quantity, custom_tag, COALESCE(cheapest_price, purchase_price, 0) AS cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deck.id]);
       const commanderCard = cards.find(c => c.is_commander === 1) || (cards.length > 0 ? cards[0] : null);
       const likesCount = await db.get("SELECT COUNT(*) as count FROM deck_likes WHERE deck_id = ?", [deck.id]);
       const clonesCount = await db.get("SELECT COUNT(*) as count FROM decks WHERE cloned_from_deck_id = ?", [deck.id]);
@@ -3203,7 +3203,7 @@ app.get('/api/decks/:deckId', async (req, res) => {
     const deck = await db.get("SELECT * FROM decks WHERE id = ?", [deckId]);
     if (!deck) return res.status(404).json({ error: "Deck not found" });
 
-    const cards = await db.query("SELECT card_name, quantity, custom_tag, cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deckId]);
+    const cards = await db.query("SELECT card_name, quantity, custom_tag, COALESCE(cheapest_price, purchase_price, 0) AS cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deckId]);
     const commanderCard = cards.find(c => c.is_commander === 1) || (cards.length > 0 ? cards[0] : null);
     const stats = await db.get("SELECT * FROM deck_stats WHERE deck_id = ?", [deckId]);
 
