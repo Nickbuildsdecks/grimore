@@ -49,9 +49,13 @@ const TYPE_ORDER = [
   "Other",
 ]
 
-function primaryType(typeLine: string): string {
-  for (const t of TYPE_ORDER) if (typeLine.includes(t)) return t
-  return "Other"
+function primaryType(typeLine?: string, customTag?: string): string {
+  if (customTag && TYPE_ORDER.includes(customTag)) return customTag;
+  if (!typeLine) return "Other";
+  for (const t of TYPE_ORDER) {
+    if (typeLine.toLowerCase().includes(t.toLowerCase())) return t;
+  }
+  return "Other";
 }
 
 export function Builder() {
@@ -147,7 +151,7 @@ export function Builder() {
   const grouped = useMemo(() => {
     const map = new Map<string, BuilderCard[]>()
     for (const c of cards.filter((c) => !c.isCommander)) {
-      const t = primaryType(c.type_line)
+      const t = primaryType(c.type_line, c.custom_tag)
       if (!map.has(t)) map.set(t, [])
       map.get(t)!.push(c)
     }
