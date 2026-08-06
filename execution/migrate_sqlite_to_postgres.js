@@ -162,10 +162,17 @@ async function migrateData() {
           const res = await pgPool.query(sql, queryValues);
           successCount += res.rowCount || batch.length;
         } catch (rowErr) {
+          console.error(`  ⚠️ Batch insert error on ${table}: ${rowErr.message}`);
           // Fallback to row-by-row insert on batch error
           for (const r of batch) {
-            const rowValues = validKeys.map(k => r[k]);
-            const singlePlaceholders = validKeys.map((_, idx) => `$${idx + 1}`).join(', ');
+            const rowValues = validKeys.map(k => {
+              let val = r[k];
+              if (['prices', 'image_uris', 'legalities'].includes(k) && typeof val === 'string' && val.trim().length === 0) {
+                val = '{}';
+              }
+              return val;
+            });
+            const singlePlaceholders = validKeys.map((k, idx) => ['prices', 'image_uris', 'legalities'].includes(k) ? `$${idx + 1}::jsonb` : `$${idx + 1}`).join(', ');
             const singleSql = `
               INSERT INTO ${table} (${validKeys.join(', ')})
               VALUES (${singlePlaceholders})
