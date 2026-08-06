@@ -4047,34 +4047,12 @@ function initGoogleSignInButtons() {
     builderIsPublic = isPublic === 0 ? 0 : 1;
     builderKeepCheapest = keepCheapest === 1 ? 1 : 0;
     builderFeaturedCardName = featuredCardName;
-
-    const tagsInput = document.getElementById('builder-deck-tags');
-    if (tagsInput) tagsInput.value = '';
-
-    if (deckId) {
-      try {
-        const metaRes = await fetch(`/api/decks/${deckId}`);
-        if (metaRes.ok) {
-          const meta = await metaRes.json();
-          deckName = meta.deck_name || deckName;
-          builderIsPublic = meta.is_public === 0 ? 0 : 1;
-          builderKeepCheapest = meta.keep_cheapest === 1 ? 1 : 0;
-          builderFeaturedCardName = meta.featured_card_name || builderFeaturedCardName;
-          format = meta.format || format;
-
-          if (tagsInput) {
-            const parsedTags = JSON.parse(meta.custom_tags || '[]');
-            tagsInput.value = parsedTags.join(', ');
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to load deck metadata from server:", e);
-      }
-    }
-
     builderCommander = [];
     builderMainboard = [];
     builderActivePreviewCard = null;
+
+    const tagsInput = document.getElementById('builder-deck-tags');
+    if (tagsInput) tagsInput.value = '';
 
     const searchInput = document.getElementById('builder-search-input');
     if (searchInput) searchInput.value = '';
@@ -4082,7 +4060,8 @@ function initGoogleSignInButtons() {
     if (resultsPanel) {
       resultsPanel.innerHTML = `<span style="color:var(--text-muted); font-size:0.75rem; text-align: center; margin-top: 2rem;">Search to view matching cards.</span>`;
     }
-    document.getElementById('builder-deck-name').value = deckName;
+    const nameInput = document.getElementById('builder-deck-name');
+    if (nameInput) nameInput.value = deckName;
 
     const formatSelect = document.getElementById('builder-deck-format');
     if (formatSelect) formatSelect.value = format || 'commander';
@@ -4090,67 +4069,91 @@ function initGoogleSignInButtons() {
     const kcCheck = document.getElementById('builder-keep-cheapest');
     if (kcCheck) kcCheck.checked = builderKeepCheapest === 1;
 
-    // Set card versions dropdown value
     const cvSelect = document.getElementById('builder-card-versions');
     if (cvSelect) {
       cvSelect.value = builderKeepCheapest === 1 ? 'cheapest' : 'chosen';
     }
 
-    // Set toggle public button label
     const pubBtn = document.getElementById('builder-is-public-btn');
     if (pubBtn) {
       pubBtn.textContent = builderIsPublic === 1 ? '🌐 Public' : '🔒 Private';
       pubBtn.className = builderIsPublic === 1 ? 'btn btn-secondary btn-sm' : 'btn btn-danger btn-sm';
     }
 
-    // Load layout options for this specific deck
-    loadBuilderLayoutOptions(deckId);
-
-    if (deckId) {
-      try {
-        const res = await fetch(`/api/decks/${deckId}/cards`);
-        const cards = await res.json();
-
-        cards.forEach(c => {
-          let colorsArr = [];
-          if (c.colors) {
-            try {
-              colorsArr = JSON.parse(c.colors);
-            } catch (e) {
-              try {
-                colorsArr = c.colors.split(',').map(x => x.trim()).filter(Boolean);
-              } catch (err) {}
-            }
-          }
-          const cardObj = {
-            name: c.card_name,
-            price: (c.cheapest_card_price !== undefined && c.cheapest_card_price !== null) ? c.cheapest_card_price : 0.05,
-            qty: c.quantity || 1,
-            scryfallId: c.scryfall_id,
-            custom_tag: c.custom_tag,
-            type_line: c.type_line || "",
-            oracle_text: c.oracle_text || "",
-            cmc: c.cmc !== undefined ? c.cmc : 0,
-            colors: colorsArr,
-            rarity: c.rarity || "common",
-            is_commander: c.is_commander
-          };
-
-          if (c.is_commander === 1) {
-            builderCommander.push(cardObj);
-          } else {
-            builderMainboard.push(cardObj);
-          }
-        });
-      } catch (e) {
-        console.error("Failed to load cards for editing:", e);
-      }
-    }
-
+    // Switch section IMMEDIATELY on click so UI reacts instantly
     document.getElementById('app-layout').classList.add('sidebar-hidden');
     showSection('deckbuilder', pushHistory);
     renderBuilderDecklist();
     window.switchBuilderMobileTab('decklist');
+
+    if (deckId) {
+      loadBuilderLayoutOptions(deckId);
+      try {
+        const metaRes = await fetch(`/api/decks/${deckId}`);
+        if (metaRes.ok) {
+          const meta = await metaRes.json();
+          if (nameInput) nameInput.value = meta.deck_name || deckName;
+          builderIsPublic = meta.is_public === 0 ? 0 : 1;
+          builderKeepCheapest = meta.keep_cheapest === 1 ? 1 : 0;
+          builderFeaturedCardName = meta.featured_card_name || builderFeaturedCardName;
+          if (formatSelect) formatSelect.value = meta.format || format || 'commander';
+
+          if (tagsInput) {
+            try {
+              const parsedTags = JSON.parse(meta.custom_tags || '[]');
+              tagsInput.value = Array.isArray(parsedTags) ? parsedTags.join(', ') : '';
+            } catch (e) {}
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to load deck metadata from server:", e);
+      }
+
+      try {
+        const res = await fetch(`/api/decks/${deckId}/cards`);
+        if (res.ok) {
+          const cards = await res.json();
+          if (Array.isArray(cards)) {
+            builderCommander = [];
+            builderMainboard = [];
+            cards.forEach(c => {
+              let colorsArr = [];
+              if (c.colors) {
+                try {
+                  colorsArr = JSON.parse(c.colors);
+                } catch (e) {
+                  try {
+                    colorsArr = c.colors.split(',').map(x => x.trim()).filter(Boolean);
+                  } catch (err) {}
+                }
+              }
+              const cardObj = {
+                name: c.card_name,
+                price: (c.cheapest_card_price !== undefined && c.cheapest_card_price !== null) ? c.cheapest_card_price : 0.05,
+                qty: c.quantity || 1,
+                scryfallId: c.scryfall_id,
+                custom_tag: c.custom_tag,
+                type_line: c.type_line || "",
+                oracle_text: c.oracle_text || "",
+                cmc: c.cmc !== undefined ? c.cmc : 0,
+                colors: colorsArr,
+                rarity: c.rarity || "common",
+                is_commander: c.is_commander
+              };
+
+              if (c.is_commander === 1) {
+                builderCommander.push(cardObj);
+              } else {
+                builderMainboard.push(cardObj);
+              }
+            });
+            renderBuilderDecklist();
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load cards for editing:", e);
+      }
+    }
   };
 
   window.closeModalDeckbuilder = function(e) {
