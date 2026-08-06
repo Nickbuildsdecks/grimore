@@ -3250,14 +3250,16 @@ app.get('/api/decks/:deckId/cards', async (req, res) => {
     const scryfallNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
     const cards = await db.query(
       `SELECT dc.deck_id, dc.card_name, 
-              COALESCE(dc.cheapest_price, dc.purchase_price, 0) AS cheapest_card_price, 
+              COALESCE(NULLIF(pc.price, 0), NULLIF(dc.cheapest_card_price, 0), NULLIF(dc.cheapest_price, 0), NULLIF(dc.purchase_price, 0), NULLIF(sc.price, 0), 0.15) AS cheapest_card_price, 
               dc.quantity, dc.is_commander, dc.custom_tag,
               COALESCE(dc.scryfall_id, ${scryfallIdCol}) AS scryfall_id,
-              sc.type_line, sc.oracle_text, sc.colors, sc.cmc, sc.rarity
+              COALESCE(sc.type_line, 'Card') AS type_line, 
+              sc.oracle_text, sc.colors, sc.cmc, sc.rarity
        FROM deck_cards dc
        LEFT JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(${scryfallNameCol})
+       LEFT JOIN card_price_cache pc ON LOWER(dc.card_name) = LOWER(pc.card_name)
        WHERE dc.deck_id = ?
-       ORDER BY dc.card_name ASC`,
+       ORDER BY dc.is_commander DESC, dc.card_name ASC`,
       [deckId]
     );
     res.json(cards || []);
