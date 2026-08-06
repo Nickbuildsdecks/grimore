@@ -3116,19 +3116,17 @@ app.post('/api/decks/:deckId/reprice-card-cheapest', async (req, res) => {
   }
 });
 
-// GET all public community decks for discover feed
+// GET all public community decks for discover feed (Bulletproof atomic loading)
 app.get('/api/decks/discover', async (req, res) => {
   try {
     const decks = await db.query(`
-      SELECT d.*, p.store_nickname as creator_name, p.avatar_url, p.profile_commander
+      SELECT d.*, 
+             COALESCE(p.store_nickname, 'Deck Builder') as creator_name, 
+             p.avatar_url, 
+             p.profile_commander
       FROM decks d
-      JOIN players p ON d.player_id = p.id
-      WHERE d.is_public = 1 
-        AND d.deck_name NOT LIKE 'Audit %'
-        AND d.deck_name NOT LIKE 'Test %'
-        AND LOWER(p.username) NOT LIKE 'audit_%'
-        AND LOWER(p.username) NOT LIKE 'google1%'
-        AND LOWER(p.email) NOT LIKE 'audit_%'
+      LEFT JOIN players p ON d.player_id = p.id
+      WHERE (COALESCE(d.is_public, 1) = 1 OR d.is_public IS TRUE)
       ORDER BY d.last_checked DESC
     `);
     
@@ -3146,15 +3144,15 @@ app.get('/api/decks/discover', async (req, res) => {
       results.push({
         id: deck.id,
         deckName: deck.deck_name,
-        creatorName: deck.creator_name,
+        creatorName: deck.creator_name || 'Deck Builder',
         creatorAvatar: deck.avatar_url || '',
         creatorCommander: deck.profile_commander || '',
-        price: deck.cheapest_total_price,
-        isLegal: deck.is_legal === 1,
+        price: Number(deck.cheapest_total_price || 0),
+        isLegal: deck.is_legal === 1 || deck.is_legal === true,
         budgetLimit: deck.budget_limit,
-        likes: likesCount ? likesCount.count : 0,
-        clones: clonesCount ? clonesCount.count : 0,
-        popularity: (likesCount ? likesCount.count : 0) * 3 + (clonesCount ? clonesCount.count : 0),
+        likes: likesCount ? Number(likesCount.count || 0) : 0,
+        clones: clonesCount ? Number(clonesCount.count || 0) : 0,
+        popularity: (likesCount ? Number(likesCount.count || 0) : 0) * 3 + (clonesCount ? Number(clonesCount.count || 0) : 0),
         hasLiked: !!hasLiked,
         commanderName: commanderCard ? commanderCard.card_name : "Unknown Commander",
         commanderScryfallId: commanderCard ? commanderCard.scryfall_id : null,
@@ -3172,6 +3170,7 @@ app.get('/api/decks/discover', async (req, res) => {
     
     res.json(results);
   } catch (e) {
+    console.error("Error in /api/decks/discover:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -3190,19 +3189,32 @@ app.get('/api/decks/my-decks', async (req, res) => {
        WHERE d.player_id = ?`,
       [req.session.player.id]
     );
-    res.json(decks);
+    res.json(decks || []);
   } catch (e) {
+    console.error("Error in /api/decks/my-decks:", e);
     res.status(500).json({ error: e.message });
   }
 });
 
+// Atomic single-query deck details endpoint with embedded cards & stats
 app.get('/api/decks/:deckId', async (req, res) => {
   const { deckId } = req.params;
   try {
     const deck = await db.get("SELECT * FROM decks WHERE id = ?", [deckId]);
     if (!deck) return res.status(404).json({ error: "Deck not found" });
-    res.json(deck);
+
+    const cards = await db.query("SELECT card_name, quantity, custom_tag, cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deckId]);
+    const commanderCard = cards.find(c => c.is_commander === 1) || (cards.length > 0 ? cards[0] : null);
+    const stats = await db.get("SELECT * FROM deck_stats WHERE deck_id = ?", [deckId]);
+
+    res.json({
+      ...deck,
+      cards: cards || [],
+      commander: commanderCard ? { name: commanderCard.card_name, scryfallId: commanderCard.scryfall_id } : null,
+      stats: stats || { total_points: 0, total_kills: 0, total_wins: 0, total_matches: 0 }
+    });
   } catch (e) {
+    console.error("Error in /api/decks/:deckId:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -5777,7 +5789,7 @@ app.post('/api/decks/builder-save', async (req, res) => {
   }
   
   const playerId = req.session.player.id;
-  const finalIsPublic = isPublic === 1 ? 1 : 0; // Default to private (0)
+  const finalIsPublic = isPublic === 0 ? 0 : 1; // Default to public (1)
   const finalKeepCheapest = keepCheapest === 1 ? 1 : 0; // Default to 0 (disabled)
   
   try {
