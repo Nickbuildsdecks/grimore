@@ -3203,7 +3203,23 @@ app.get('/api/decks/:deckId', async (req, res) => {
     const deck = await db.get("SELECT * FROM decks WHERE id = ?", [deckId]);
     if (!deck) return res.status(404).json({ error: "Deck not found" });
 
-    const cards = await db.query("SELECT card_name, quantity, custom_tag, COALESCE(cheapest_price, purchase_price, 0) AS cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deckId]);
+    const scryfallIdCol = db.isPostgres ? "sc.id" : "sc.scryfall_id";
+    const scryfallNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
+    const cards = await db.query(
+      `SELECT dc.deck_id, dc.card_name, 
+              COALESCE(NULLIF(pc.price, 0), NULLIF(MAX(dc.cheapest_price), 0), NULLIF(MAX(dc.purchase_price), 0), NULLIF(MAX(sc.price), 0), 0.15) AS cheapest_card_price, 
+              MAX(dc.quantity) AS quantity, MAX(dc.is_commander) AS is_commander, MAX(dc.custom_tag) AS custom_tag,
+              COALESCE(MAX(dc.scryfall_id), MAX(${scryfallIdCol})) AS scryfall_id,
+              COALESCE(MAX(sc.type_line), MAX(dc.custom_tag), 'Card') AS type_line, 
+              MAX(sc.oracle_text) AS oracle_text, MAX(sc.colors) AS colors, MAX(sc.cmc) AS cmc, MAX(sc.rarity) AS rarity
+       FROM deck_cards dc
+       LEFT JOIN scryfall_cards sc ON (LOWER(dc.card_name) = LOWER(${scryfallNameCol}) OR LOWER(dc.card_name) = LOWER(sc.card_name))
+       LEFT JOIN card_price_cache pc ON LOWER(dc.card_name) = LOWER(pc.card_name)
+       WHERE dc.deck_id = ?
+       GROUP BY dc.deck_id, dc.card_name, pc.price
+       ORDER BY MAX(dc.is_commander) DESC, dc.card_name ASC`,
+      [deckId]
+    );
     const commanderCard = cards.find(c => c.is_commander === 1) || (cards.length > 0 ? cards[0] : null);
     const stats = await db.get("SELECT * FROM deck_stats WHERE deck_id = ?", [deckId]);
 
