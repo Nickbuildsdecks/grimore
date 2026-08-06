@@ -106,8 +106,10 @@ async function migrateData() {
 
       if (table === 'scryfall_cards') {
         for (const r of rows) {
-          if (!r.id && r.scryfall_id) r.id = r.scryfall_id;
-          if (!r.name && r.card_name) r.name = r.card_name;
+          r.id = r.id || r.scryfall_id;
+          r.name = r.name || r.card_name;
+          delete r.scryfall_id;
+          delete r.card_name;
         }
       }
 
