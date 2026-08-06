@@ -1727,22 +1727,22 @@ function initGoogleSignInButtons() {
           : `<span class="deck-privacy-pill"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Private</span>`;
 
         container.innerHTML += `
-          <article class="deck-card" onclick="openVisualDeckbuilder('${d.id}', '${d.deck_name.replace(/'/g, "\\'")}', ${d.is_public}, '${d.featured_card_name ? d.featured_card_name.replace(/'/g, "\\'") : ''}', '${d.format ? d.format : 'commander'}')">
+          <article class="deck-card" onclick="openVisualDeckbuilder('${d.id}')">
             <div class="deck-card-art${posterUrl ? '' : ' deck-card-art-fallback'}"${posterUrl ? ` style="--deck-cover: url('${posterUrl}')"` : ''}>
               <div class="deck-card-art-topline">
                 ${privacyBadge}
                 ${formatBadge}
               </div>
               <div class="deck-card-art-copy">
-                <span>${d.commander_name || formatLabel}</span>
-                <h3>${d.deck_name}</h3>
+                <span>${escapeHtml(d.commander_name || formatLabel)}</span>
+                <h3>${escapeHtml(d.deck_name)}</h3>
               </div>
             </div>
             <div class="deck-card-details">
               <div class="deck-card-stats">
                 <div><strong>$${(d.cheapest_total_price || 0).toFixed(2)}</strong><span>Value</span></div>
               </div>
-              <button class="deck-share-button" type="button" aria-label="Share ${d.deck_name}" onclick="event.stopPropagation(); window.shareDeck('${d.id}', '${d.deck_name.replace(/'/g, "\\'")}')">
+              <button class="deck-share-button" type="button" aria-label="Share ${escapeHtml(d.deck_name)}" onclick="event.stopPropagation(); window.shareDeck('${d.id}', '${d.deck_name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></svg>
               </button>
             </div>
@@ -4088,15 +4088,24 @@ function initGoogleSignInButtons() {
 
     if (deckId) {
       loadBuilderLayoutOptions(deckId);
+      const mZone = document.getElementById('builder-zone-mainboard');
+      if (mZone) {
+        mZone.innerHTML = `<div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-muted); font-size: 0.9rem; gap: 0.75rem;"><div style="width: 28px; height: 28px; border: 3px solid rgba(168, 85, 247, 0.2); border-top-color: var(--color-gold); border-radius: 50%; animation: spin 0.8s linear infinite;"></div><span>Loading deck cards...</span></div>`;
+      }
+
       try {
-        const metaRes = await fetch(`/api/decks/${deckId}`);
-        if (metaRes.ok) {
+        const [metaRes, cardsRes] = await Promise.all([
+          fetch(`/api/decks/${deckId}`).catch(() => null),
+          fetch(`/api/decks/${deckId}/cards`).catch(() => null)
+        ]);
+
+        if (metaRes && metaRes.ok) {
           const meta = await metaRes.json();
-          if (nameInput) nameInput.value = meta.deck_name || deckName;
+          if (nameInput && meta.deck_name) nameInput.value = meta.deck_name;
           builderIsPublic = meta.is_public === 0 ? 0 : 1;
           builderKeepCheapest = meta.keep_cheapest === 1 ? 1 : 0;
           builderFeaturedCardName = meta.featured_card_name || builderFeaturedCardName;
-          if (formatSelect) formatSelect.value = meta.format || format || 'commander';
+          if (formatSelect && meta.format) formatSelect.value = meta.format;
 
           if (tagsInput) {
             try {
@@ -4105,14 +4114,9 @@ function initGoogleSignInButtons() {
             } catch (e) {}
           }
         }
-      } catch (e) {
-        console.warn("Failed to load deck metadata from server:", e);
-      }
 
-      try {
-        const res = await fetch(`/api/decks/${deckId}/cards`);
-        if (res.ok) {
-          const cards = await res.json();
+        if (cardsRes && cardsRes.ok) {
+          const cards = await cardsRes.json();
           if (Array.isArray(cards)) {
             builderCommander = [];
             builderMainboard = [];
@@ -4147,11 +4151,12 @@ function initGoogleSignInButtons() {
                 builderMainboard.push(cardObj);
               }
             });
-            renderBuilderDecklist();
           }
         }
       } catch (e) {
-        console.error("Failed to load cards for editing:", e);
+        console.error("Failed to load deck cards or metadata:", e);
+      } finally {
+        renderBuilderDecklist();
       }
     }
   };
