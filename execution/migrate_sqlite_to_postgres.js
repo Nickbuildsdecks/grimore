@@ -113,10 +113,10 @@ async function migrateData() {
       console.log(`- Migrating table '${table}': ${rows.length} row(s)...`);
 
       // Multi-row bulk insert helper
-      const BATCH_SIZE = 100;
+      const batchSize = table === 'scryfall_cards' ? 5000 : 250;
       let successCount = 0;
-      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-        const batch = rows.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize);
 
         if (batch.length === 0) continue;
 
