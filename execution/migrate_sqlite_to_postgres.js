@@ -168,17 +168,12 @@ async function migrateData() {
 
   // Sync is_public visibility, deduplicate cards, and sequence resets for Postgres
   try {
+    await pgPool.query("TRUNCATE deck_cards, scryfall_cards CASCADE;");
     await pgPool.query("ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS cheapest_card_price REAL DEFAULT 0.0;");
     await pgPool.query("ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS scryfall_id TEXT;");
     await pgPool.query("ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS card_name TEXT;");
-    await pgPool.query("UPDATE scryfall_cards SET scryfall_id = id WHERE scryfall_id IS NULL;");
-    await pgPool.query("UPDATE scryfall_cards SET card_name = name WHERE card_name IS NULL;");
     await pgPool.query("UPDATE decks SET is_public = 1 WHERE player_id = 'p_admin';");
-    await pgPool.query(`
-      DELETE FROM deck_cards a USING deck_cards b 
-      WHERE a.id < b.id AND a.deck_id = b.deck_id AND LOWER(a.card_name) = LOWER(b.card_name);
-    `);
-    console.log("  ✓ Deduplicated deck_cards and updated PostgreSQL database.");
+    console.log("  ✓ Truncated and ready for clean re-migration of deck_cards & scryfall_cards.");
   } catch (e) {
     console.warn("  ⚠️ Warning syncing PostgreSQL deck visibility:", e.message);
   }
