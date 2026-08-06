@@ -3225,7 +3225,10 @@ app.get('/api/decks/:deckId', async (req, res) => {
 
     res.json({
       ...deck,
-      cards: cards || [],
+      cards: (cards || []).map(c => ({
+        ...c,
+        cheapest_card_price: parseFloat(c.cheapest_card_price) || 0.15
+      })),
       commander: commanderCard ? { name: commanderCard.card_name, scryfallId: commanderCard.scryfall_id } : null,
       stats: stats || { total_points: 0, total_kills: 0, total_wins: 0, total_matches: 0 }
     });
