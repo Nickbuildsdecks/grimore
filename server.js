@@ -3248,7 +3248,7 @@ app.get('/api/decks/:deckId/cards', async (req, res) => {
   try {
     const cards = await db.query(
       `SELECT dc.deck_id, dc.card_name, 
-              COALESCE(dc.cheapest_card_price, dc.cheapest_price, dc.purchase_price, 0) AS cheapest_card_price, 
+              COALESCE(dc.cheapest_price, dc.purchase_price, 0) AS cheapest_card_price, 
               dc.quantity, dc.is_commander, dc.custom_tag,
               COALESCE(dc.scryfall_id, sc.scryfall_id) AS scryfall_id,
               sc.type_line, sc.oracle_text, sc.colors, sc.cmc, sc.rarity
