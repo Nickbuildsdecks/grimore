@@ -138,6 +138,8 @@
 
   let authMagicCleanup = null;
   let appBgCleanup = null;
+  let activeSection = 'discover';
+  let currentUser = null;
 
   function initMagicCanvas(canvasId) {
     const canvas = document.getElementById(canvasId);
@@ -426,7 +428,7 @@
             window.history.replaceState({ section: urlView }, '', window.location.pathname);
           } catch (e) {}
         } else {
-          showSection(activeSection, false);
+          showSection(activeSection || 'discover', false);
         }
       } else {
         currentUser = null;
@@ -492,7 +494,10 @@ window.handleLogin = async function(event) {
     const data = await res.json();
     if (data.success) {
       currentUser = data.user;
-      checkAuthStatus();
+      await checkAuthStatus();
+      if (!document.querySelector('.view-section.active')) {
+        window.showSection('discover', false);
+      }
     } else {
       alert(data.error || "Login failed. Please check your credentials.");
     }
@@ -1435,6 +1440,7 @@ function initGoogleSignInButtons() {
 
   // Section/Tab Router
   window.showSection = function(sectionName, pushHistory = true) {
+    if (!sectionName) sectionName = 'discover';
     // Close inspector drawer and return to body when switching views to prevent layout issues
     const drawer = document.getElementById('card-inspector-drawer');
     if (drawer) {
