@@ -8437,3 +8437,37 @@ body:not(.light-theme) .sidebar {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   A2UI (Agentic Adaptive UI) Component Styles & Animations
+   ============================================================ */
+@keyframes a2uiWidgetEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.a2ui-widget-enter {
+  animation: a2uiWidgetEnter 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.a2ui-card-tile:hover {
+  border-color: var(--color-primary, #a855f7) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(168, 85, 247, 0.2) !important;
+}
+
+.a2ui-pill-btn:hover {
+  border-color: var(--color-primary, #a855f7) !important;
+  background: rgba(168, 85, 247, 0.15) !important;
+  transform: translateY(-1px);
+}
+.a2ui-pill-btn.active {
+  background: rgba(168, 85, 247, 0.25) !important;
+  border-color: var(--color-primary, #a855f7) !important;
+}
