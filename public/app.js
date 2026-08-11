@@ -494,10 +494,15 @@ window.handleLogin = async function(event) {
     const data = await res.json();
     if (data.success) {
       currentUser = data.user;
-      await checkAuthStatus();
-      if (!document.querySelector('.view-section.active')) {
-        window.showSection('discover', false);
+      const authView = document.getElementById('auth-view');
+      const appLayout = document.getElementById('app-layout');
+      if (authView) authView.classList.remove('active');
+      if (appLayout) {
+        appLayout.classList.remove('sidebar-hidden');
+        appLayout.classList.remove('auth-mode');
       }
+      await checkAuthStatus();
+      window.showSection('discover', false);
     } else {
       alert(data.error || "Login failed. Please check your credentials.");
     }

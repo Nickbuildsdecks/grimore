@@ -81,15 +81,15 @@ def main():
             print("[FAIL] public/a2ui.js missing A2UI specifications.")
             sys.exit(1)
 
-    # 5. Audit 1-Click Enter as Guest Button in index.html
-    log_step("5/5", "Auditing Login Screen Guest Button in index.html...")
+    # 5. Audit Access Grimore Login Form & handleLogin in index.html
+    log_step("5/5", "Auditing Access Grimore Login Form in index.html...")
     index_path = os.path.join(os.path.dirname(__file__), "..", "public", "index.html")
     with open(index_path, 'r', encoding='utf-8') as f:
         content = f.read()
-        if "handleGuestLogin" in content and "Enter as Guest" in content:
-            log_ok("1-Click Guest button verified in public/index.html.")
+        if "handleLogin" in content and "Access Grimore" in content:
+            log_ok("'Access Grimore' login submit button verified in public/index.html.")
         else:
-            print("[FAIL] public/index.html missing handleGuestLogin button.")
+            print("[FAIL] public/index.html missing handleLogin form submit button.")
             sys.exit(1)
 
     print("\n[SUCCESS] ALL FULL-SURFACE UI & FEATURE AUDITS PASSED 100%!")

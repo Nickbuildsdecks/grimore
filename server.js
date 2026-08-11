@@ -1528,15 +1528,36 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required." });
+  }
+
+  const cleanUser = username.trim().toLowerCase();
   try {
-    const player = await db.get("SELECT * FROM players WHERE username = ?", [username.toLowerCase()]);
+    let player = await db.get("SELECT * FROM players WHERE username = ?", [cleanUser]);
+    if (!player) {
+      // Auto-create user account if it doesn't exist yet so any login attempt succeeds seamlessly
+      const hash = await bcrypt.hash(password, 10);
+      try {
+        await db.run(
+          "INSERT INTO players (username, store_nickname, email, password_hash, is_admin, role) VALUES (?, ?, ?, ?, ?, ?)",
+          [cleanUser, username.trim(), `${cleanUser}@grimore.local`, hash, 0, 'player']
+        );
+        player = await db.get("SELECT * FROM players WHERE username = ?", [cleanUser]);
+      } catch (insertErr) {
+        console.error("Auto-registration on login failed:", insertErr);
+      }
+    } else {
+      const valid = await bcrypt.compare(password, player.password_hash);
+      if (!valid) {
+        return res.status(400).json({ error: "Incorrect password for this username." });
+      }
+    }
+
     if (!player) {
       return res.status(400).json({ error: "Invalid username or password." });
     }
-    const valid = await bcrypt.compare(password, player.password_hash);
-    if (!valid) {
-      return res.status(400).json({ error: "Invalid username or password." });
-    }
+
     req.session.player = {
       id: player.id,
       username: player.username,
