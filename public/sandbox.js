@@ -1073,6 +1073,7 @@ const Arena = (() => {
     if (state.life.player <= 0) {
       advise(`CR 704.5a State-Based Action: You have 0 or less life (${state.life.player} HP). Game Over!`, 'error');
       toast(`Game Over — 0 Life`, 'error', '704.5a');
+      playAudioSound('game_over');
     }
     Object.keys(state.opponents).forEach(pk => {
       if (state.opponents[pk].life <= 0) {
@@ -1085,7 +1086,65 @@ const Arena = (() => {
     if (state.poison >= 10) {
       advise(`CR 704.5c State-Based Action: You have 10 or more poison counters (${state.poison}). Game Over!`, 'error');
       toast(`Game Over — 10 Poison`, 'error', '704.5c');
+      playAudioSound('game_over');
     }
+
+    // CR 903.10: Commander Damage 21+ lethal check
+    if (state.commanderZone && state.commanderZone.damageDealt >= 21) {
+      advise(`CR 903.10 State-Based Action: Took 21+ lethal commander damage (${state.commanderZone.damageDealt}). Game Over!`, 'error');
+      toast(`Game Over — 21 Lethal Commander Damage`, 'error', '903.10');
+      playAudioSound('game_over');
+    }
+
+    // CR 704.5g: Creature Lethal Damage check
+    ['player', 'opponent'].forEach(side => {
+      const bf = state.zones[side].battlefield;
+      const dying = [];
+      bf.forEach(c => {
+        const types = c._types || detectCardTypes(c);
+        if (types.isCreature) {
+          const pt = parsePT(c) || { power: 1, toughness: 1 };
+          if (c._damage && c._damage >= pt.toughness && pt.toughness > 0) {
+            dying.push(c);
+          }
+        }
+      });
+      dying.forEach(c => {
+        state.zones[side].battlefield = state.zones[side].battlefield.filter(x => x._uid !== c._uid);
+        state.zones[side].graveyard.push(c);
+        advise(`CR 704.5g State-Based Action: <strong>${c.name}</strong> has received lethal damage (${c._damage}) and was put into graveyard.`, 'warning', '704.5g');
+      });
+      if (dying.length > 0) {
+        renderBattlefield(side);
+        updateZoneCounts();
+      }
+    });
+
+    // CR 704.5k: Legendary Rule check
+    ['player', 'opponent'].forEach(side => {
+      const bf = state.zones[side].battlefield;
+      const legendsByName = {};
+      bf.forEach(c => {
+        const types = c._types || detectCardTypes(c);
+        if (types.isLegendary) {
+          if (!legendsByName[c.name]) legendsByName[c.name] = [];
+          legendsByName[c.name].push(c);
+        }
+      });
+      Object.keys(legendsByName).forEach(name => {
+        if (legendsByName[name].length > 1) {
+          // Put extra copies into graveyard
+          const extras = legendsByName[name].slice(1);
+          extras.forEach(extra => {
+            state.zones[side].battlefield = state.zones[side].battlefield.filter(x => x._uid !== extra._uid);
+            state.zones[side].graveyard.push(extra);
+            advise(`CR 704.5k Legend Rule: Duplicate legend <strong>${extra.name}</strong> put into graveyard.`, 'warning', '704.5k');
+          });
+          renderBattlefield(side);
+          updateZoneCounts();
+        }
+      });
+    });
   }
 
   // ── DYNAMIC STACK OVERLAY RENDER ───────────────────────────
