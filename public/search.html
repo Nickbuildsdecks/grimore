@@ -85,6 +85,16 @@
               <select id="adv-target-deck" class="input-field" onchange="window.updateSearchTargetDeckCookie()"></select>
             </div>
           </div>
+
+          <!-- Quick Filter Preset Pills -->
+          <div class="quick-filter-pills-row" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 1rem; background: rgba(5, 5, 8, 0.6); border-top: 1px solid rgba(255, 255, 255, 0.05); overflow-x: auto; flex-shrink: 0;">
+            <span style="font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0;">Presets:</span>
+            <button type="button" class="btn btn-secondary btn-sm filter-pill" onclick="window.applyQuickFilter('f:commander')" style="font-size: 0.72rem; padding: 2px 10px; height: 24px; font-weight: 600; border-color: rgba(168, 85, 247, 0.3); color: var(--text-high);">Commander</button>
+            <button type="button" class="btn btn-secondary btn-sm filter-pill" onclick="window.applyQuickFilter('f:modern')" style="font-size: 0.72rem; padding: 2px 10px; height: 24px; font-weight: 600; border-color: rgba(56, 189, 248, 0.3); color: var(--text-high);">Modern</button>
+            <button type="button" class="btn btn-secondary btn-sm filter-pill" onclick="window.applyQuickFilter('usd<=2.00')" style="font-size: 0.72rem; padding: 2px 10px; height: 24px; font-weight: 600; border-color: rgba(16, 185, 129, 0.3); color: #10b981;">Budget &lt; $2</button>
+            <button type="button" class="btn btn-secondary btn-sm filter-pill" onclick="window.applyQuickFilter('t:legendary t:creature')" style="font-size: 0.72rem; padding: 2px 10px; height: 24px; font-weight: 600; border-color: rgba(245, 158, 11, 0.3); color: var(--color-gold);">Legendary</button>
+            <button type="button" class="btn btn-secondary btn-sm filter-pill" onclick="window.applyQuickFilter('r:mythic')" style="font-size: 0.72rem; padding: 2px 10px; height: 24px; font-weight: 600; border-color: rgba(239, 68, 68, 0.3); color: #ef4444;">Mythic</button>
+          </div>
         </header>
 
         <!-- Row 2: Split Content (Side-by-Side Panel Structure, Flush) -->

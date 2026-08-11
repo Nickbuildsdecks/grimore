@@ -1519,6 +1519,16 @@
     }
   });
 
+  // ── QUICK FILTER PRESET PILLS ─────────────────────────
+  window.applyQuickFilter = function(queryStr) {
+    const input = document.getElementById('adv-search-input');
+    if (!input) return;
+    input.value = queryStr;
+    if (typeof window.performAdvSearch === 'function') {
+      window.performAdvSearch(1);
+    }
+  };
+
   // ── INIT ─────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     initMagicCanvas('app-bg-canvas');
