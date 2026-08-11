@@ -50,10 +50,11 @@ def main():
             if len(answer) > 0:
                 log_ok(f"Rules Advisor answered replay query ({len(answer)} chars).")
             else:
-                log_ok("Rules Advisor endpoint reachable.")
+                print("[FAIL] Rules Advisor returned empty answer.")
+                sys.exit(1)
     except Exception as e:
-        print(f"[WARN] Rules Advisor endpoint fallback: {e}")
-        log_ok("Rules Advisor endpoint reachable.")
+        print(f"[FAIL] Rules Advisor error: {e}")
+        sys.exit(1)
 
     print("\n[SUCCESS] ALL REPLAY ENGINE & SOUND SYNTHESIZER TESTS PASSED 100%!")
 

@@ -73,10 +73,11 @@ def main():
             if len(answer) > 0:
                 log_ok(f"AI Advisor returned response ({len(answer)} chars).")
             else:
-                log_ok("AI Advisor endpoint reachable.")
+                print("[FAIL] AI Advisor returned empty answer.")
+                sys.exit(1)
     except Exception as e:
-        print(f"[WARN] AI Advisor endpoint fallback: {e}")
-        log_ok("AI Advisor endpoint reachable.")
+        print(f"[FAIL] AI Advisor error: {e}")
+        sys.exit(1)
 
     print("\n[SUCCESS] ALL A2UI CHAT & TUNER TESTS PASSED 100%!")
 

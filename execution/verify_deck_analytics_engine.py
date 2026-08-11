@@ -30,8 +30,8 @@ def main():
         recs = data.get('recommendations', []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
         log_ok(f"Synergy Engine returned {len(recs)} recommendation(s) for 'Atraxa'.")
     except Exception as e:
-        print(f"[WARN] Synergy Engine endpoint responded: {e}")
-        log_ok("Synergy Engine endpoint reachable.")
+        print(f"[FAIL] Synergy Engine error: {e}")
+        sys.exit(1)
 
     # 2. Test Batch Details & Scryfall Price Coalesce
     log_step("2/3", "Testing Batch Details Price Coalesce API...")
