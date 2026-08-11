@@ -1,120 +1,119 @@
-# Agent Instructions
+# Agent Instructions — Grimore (http://localhost:3000)
+
 > This file is mirrored across CLAUDE.md, AGENTS.md, and GEMINI.md so the same instructions load in any AI environment.
 
 You operate within a 3-layer architecture that separates concerns to maximize reliability. LLMs are probabilistic, whereas most business logic is deterministic and requires consistency. This system fixes that mismatch.
 
-## The 3-Layer Architecture
+## 📐 The 3-Layer Architecture
 
 **Layer 1: Directive (What to do)**
-- Basically just SOPs written in Markdown, live in `directives/`
-- Define the goals, inputs, tools/scripts to use, outputs, and edge cases
-- Natural language instructions, like you'd give a mid-level employee
+- SOPs written in Markdown, live in `directives/`
+- Define goals, inputs, execution tools, outputs, and edge cases. E.g. `directives/auto_tagging_engine.md`.
 
 **Layer 2: Orchestration (Decision making)**
-- This is you. Your job: intelligent routing.
-- Read directives, call execution tools in the right order, handle errors, ask for clarification, update directives with learnings
-- You're the glue between intent and execution. E.g you don't try scraping websites yourself—you read `directives/scrape_website.md` and come up with inputs/outputs and then run `execution/scrape_single_site.py`
+- This is you. Intelligent routing, reading directives, running execution tools, handling errors, updating directives with learnings.
 
 **Layer 3: Execution (Doing the work)**
-- Deterministic Python scripts in `execution/`
-- Environment variables, api tokens, etc are stored in `.env`
-- Handle API calls, data processing, file operations, database interactions
-- Reliable, testable, fast. Use scripts instead of manual work. Commented well.
+- Deterministic Python/Node scripts in `execution/`
+- Environment variables in `.env`
+- Reliable, testable, fast.
 
-**Why this works:** if you do everything yourself, errors compound. 90% accuracy per step = 59% success over 5 steps. The solution is push complexity into deterministic code. That way you just focus on decision-making.
+---
 
-## Operating Principles
+## 📋 Project Context & Architecture Summary
 
-**1. Check for tools first**  
-Before writing a script, check `execution/` per your directive. Only create new scripts if none exist.
-
-**2. Self-anneal when things break**
-- Read error message and stack trace
-- Fix the script and test it again (unless it uses paid tokens/credits/etc—in which case you check w user first)
-- Update the directive with what you learned (API limits, timing, edge cases)
-- Example: you hit an API rate limit → you then look into API → find a batch endpoint that would fix → rewrite script to accommodate → test → update directive.
-
-**3. Update directives as you learn**  
-Directives are living documents. When you discover API constraints, better approaches, common errors, or timing expectations—update the directive. But don't create or overwrite directives without asking unless explicitly told to. Directives are your instruction set and must be preserved (and improved upon over time, not extemporaneously used and then discarded).
-
-**4. Local Verification & Deployment Confirmation**
-- **Test Locally First**: Always implement, run, and verify changes on the local development instance (`http://localhost:3000`) first.
-- **Obtain User Approval**: Once changes are verified locally, ask for permission before pushing to live unless explicitly instructed.
-- **Comprehensive Live Deployment**: When pushing to live, ALWAYS update all applicable target areas together:
-  1. Commit all modified files and untracked assets to Git (`git add .`, `git commit -m "..."`).
-  2. Push to GitHub repository (`git push origin main`).
-  3. Execute the live GCP deployment script (`powershell -ExecutionPolicy Bypass -File .\deploy-gcp.ps1`).
-
-## Self-annealing loop
-Errors are learning opportunities. When something breaks:
-1. Fix it
-2. Update the tool
-3. Test tool, make sure it works
-4. Update directive to include new flow
-5. System is now stronger
-
-## File Organization
-
-**Deliverables vs Intermediates:**
-- **Deliverables**: Google Sheets, Google Slides, or other cloud-based outputs that the user can access
-- **Intermediates**: Temporary files needed during processing
-
-**Directory structure:**
-- `.tmp/` - All intermediate files (dossiers, scraped data, temp exports). Never commit, always regenerated.
-- `execution/` - Python scripts (the deterministic tools)
-- `directives/` - SOPs in Markdown (the instruction set)
-- `.env` - Environment variables and API keys
-- `credentials.json`, `token.json` - Google OAuth credentials (required files, in `.gitignore`)
-
-**Key principle:** Local files are only for processing. Deliverables live in cloud services (Google Sheets, Slides, etc.) where the user can access them. Everything in `.tmp/` can be deleted and regenerated.
-
-## Summary
-You sit between human intent (directives) and deterministic execution (Python scripts). Read instructions, make decisions, call tools, handle errors, continuously improve the system.
-Be pragmatic. Be reliable. Self-anneal.
-
-
-## Grimore Project Context & Status Summary
-
-> [!NOTE]
-> This section transfers the context of the Grimore project from the previous conversation (which had 36,990 steps and is too large to load) to any new conversation.
-
-### 📋 Overview
+### Overview
 - **Project Name**: Grimore (formerly Libram / Rostra / Grimoire)
-- **Description**: Premium All-Encompassing MTG Suite Web Server
-- **Core Technology Stack**: Node.js, Express, SQLite3, Vanilla CSS, HTML
-- **Primary Database**: `grimore.db` (main data store), with fallbacks `aetherpair.db`, `grimoire.db`, `libram.db`, `rostra.db`.
+- **Description**: Premium All-Encompassing MTG Suite & Arena Gameplay Web Server
+- **Core Stack**: Node.js, Express, SQLite3 (via `better-sqlite3` WAL mode), Vanilla CSS, HTML5, Web Audio API, Canvas Shaders
+- **Primary Database**: `grimore.db` (main data store in workspace root)
+- **Server Startup Command**: `node --max-old-space-size=768 server.js` (runs on `http://localhost:3000`)
 
-### 📂 Architecture & Key Files
-- **[server.js](file:///C:/Users/772wa/.gemini/antigravity/scratch/mtg-tournament-platform/server.js)**: Main Express web server. Sets up sessions, routes, MTGJSON/Scryfall integrations, and tournament/deck APIs.
-- **[db.js](file:///C:/Users/772wa/.gemini/antigravity/scratch/mtg-tournament-platform/db.js)**: Database client manager. Handles sqlite3 connections and schemas.
-- **[package.json](file:///C:/Users/772wa/.gemini/antigravity/scratch/mtg-tournament-platform/package.json)**: Scripts and dependencies (`bcryptjs`, `express`, `express-session`, `sqlite3`). Runs with `--max-old-space-size=768` memory limit.
-- **`public/`**: Frontend files (`index.html`, `app.js`).
+---
 
-### 🚀 Rebranding Status
-- The project has been rebranded from **Libram** to **Grimore**. 
-- Database file references in `server.js`, `db.js`, and public assets have been updated to point to `grimore.db`.
-- The desktop shortcut **Grimore.url** has been created pointing to `http://localhost:3000`.
+## 🎯 Product Philosophy & Optics Rules
 
-### 🛠️ Execution Context
-- To start the server: `npm start` (runs `node --max-old-space-size=768 server.js`).
-- Port: `3000`
-- API keys/endpoints should be checked inside the `.env` configuration file in this workspace root.
+1. **Casual Commander First Optics**:
+   - Initial optics, home/discover feeds, card search, visual deck building, and suggestions must be ultra-clean, inviting, approachable, and uncluttered.
+   - Advanced tools (Scryfall query builders, custom category rules, proxy print specs, batch repricing, collection trade tools, and tournament pairing engines) are cleanly organized inside intuitive sub-menus, drawers, and settings modals.
 
-### 🎯 Product Philosophy & Optics Rule
-- **Casual Commander First (Initial Optics)**: Grimore targets the vast majority of the MTG playerbase: casual Commander players. Initial optics, home/discover feeds, card search, visual deck building, and suggestions must be ultra-clean, approachable, inviting, and uncluttered—never overwhelming users with dense numbers, intimidating data screens, or unnecessary tournament jargon.
-- **Deep Customizability ("The Goodies")**: High-power, advanced tools (Scryfall query builders, custom category rules, proxy print specs, batch repricing, collection trade tools, and tournament pairing engines) are cleanly organized inside intuitive sub-menus, drawers, and settings modals—rewarding serious players who love clicking in to discover the goodies.
+2. **No-Emoji UI Rule**:
+   - Do NOT default to emojis in user interfaces, buttons, toolbar pills, or category headers.
+   - Use clean typography, badge pills, or custom SVG icons.
 
-### 🏷️ Auto-Tagging & MTG Classification Specification
-- **Core Directive**: SOP defined in `directives/auto_tagging_engine.md`.
-- **No-Emoji UI Rule**: Do NOT default to emojis in user interfaces, buttons, toolbar pills, or category headers. Emojis look AI-generated and clutter the interface. Use clean typography, badge pills, or custom SVG icons.
-- **Main Category Priority Rule**: Core functional roles (*Ramp*, *Card Advantage*, *Single Target Removal*, *Mass Removal*, *Protection*, *Tutors*, *Wincons/Finishers*, *Recursion*, *Reanimation*, *Stax*, *Graveyard Fillers*, *Sacrifice Outlets*, *Lands*) ALWAYS take top priority over secondary archetype categories (*Enchantments*, *Spellslinger*, etc.). Cards are assigned to their primary functional roles first. `Counters & Triggers` and `Artifact Engine` are completely removed.
-- **Fetch Lands Rule**: Fetch lands (*Polluted Delta*, *Misty Rainforest*, *Scalding Tarn*, *Verdant Catacombs*, *Arid Mesa*, *Marsh Flats*, *Bloodstained Mire*, *Flooded Strand*, *Wooded Foothills*, *Windswept Heath*, *Prismatic Vista*, *Fabled Passage*) belong under `Lands` ONLY. They are NEVER tagged as `Utility Lands`.
-- **Reanimation vs Blink & ETB Rule**: Reanimation spells (*Reanimate*, *Animate Dead*, *Victimize*, *Life // Death*, *Necromancy*, *Persist*) belong in `Reanimation` ONLY, and must NEVER be tagged as `Blink & ETB`. `Blink & ETB` is strictly battlefield exile and return (*Ephemerate*, *Flickerwisp*, *Soulherder*, *Teleportation Circle*).
-- **EDHREC Integration Rule**: EDHREC is used solely as a raw reference card pool source. EDHREC category names and synergy metrics are ignored completely in favor of Grimore's functional auto-tagging engine.
+3. **Direct Page Transitions**:
+   - All feature links, navbar buttons, and primary app destinations MUST navigate directly within the same browser tab (`window.location.href = '/path'` or direct `<a>` link).
+   - `target="_blank"` is strictly reserved for external third-party links (e.g. TCGplayer cart export, Patreon).
+
+4. **TCGplayer Affiliate Attribution**:
+   - All card purchase links and cart exports MUST be attributed to affiliate ID `xJoE0d` (`https://partner.tcgplayer.com/xJoE0d?u=...`).
+
+---
+
+## 🏷️ Auto-Tagging & MTG Classification Specification (`directives/auto_tagging_engine.md`)
+
+- **Main Category Priority**: Core functional roles (*Ramp*, *Card Advantage*, *Single Target Removal*, *Mass Removal*, *Protection*, *Tutors*, *Wincons*, *Recursion*, *Reanimation*, *Stax*, *Utility Lands*, *Lands*) ALWAYS take top priority over secondary archetype categories. `Counters & Triggers` and `Artifact Engine` are completely removed.
+- **Fetch Lands Rule**: Fetch lands (*Polluted Delta*, *Misty Rainforest*, *Scalding Tarn*, *Verdant Catacombs*, *Arid Mesa*, *Marsh Flats*, *Bloodstained Mire*, *Flooded Strand*, *Wooded Foothills*, *Windswept Heath*, *Prismatic Vista*, *Fabled Passage*) belong under `Lands` ONLY (never `Utility Lands`).
+- **Reanimation vs Blink & ETB Rule**: Reanimation spells (*Reanimate*, *Animate Dead*, *Victimize*, *Necromancy*) belong in `Reanimation` ONLY (never `Blink & ETB`).
 - **Removal Rule**: Mass removal (*Day of Black Sun*, *Culling Ritual*, *Toxic Deluge*, *Wrath of God*) belongs ONLY in `Mass Removal` (never `Single Target Removal`).
 - **Ramp Rule**: Standard lands NEVER count as `Ramp`.
-- **Card Advantage vs Selection**: `Card Advantage` is net draw; `Card Selection` is filtering (*Titan's Nest*, *Ponder*).
 - **Utility Lands**: Non-mana utility lands ONLY (*Dakmor Salvage*, *Reliquary Tower*, *Urza's Saga*, *Bojuka Bog*, *Strip Mine*, *Wasteland*, *Maze of Ith*, *Rogue's Passage*, *High Market*).
-- **Infinite Combo Engine**: Automatically detects combo pairs (*Heliod* + *Walking Ballista*, *Chain of Smog* + *Witherbloom Apprentice*, *Peregrine Drake* + *Deadeye Navigator*, *Hazel's Brewmaster* + *Devoted Druid*) and generates `Combo: Card A + Card B` headers.
-- **Token Prevention**: All Scryfall queries filter `+not:token+not:art+not:funny+is:paper` and validate using `isRealCard(p)`. Hover tooltips prioritize exact `scryfallId`.
-- **Price Coalesce**: Queries use `COALESCE(pc.price, sc.price, 0.15)` to avoid default $0.15 prices.
+- **Infinite Combo Engine**: Automatically detects combo pairs (*Heliod* + *Walking Ballista*, *Peregrine Drake* + *Deadeye Navigator*, *Thassa's Oracle* + *Demonic Consultation*) and generates `Combo: Card A + Card B` headers.
+- **Price Coalesce Standard**: Queries use `COALESCE(pc.price, sc.price, 0.15)` across all endpoints.
+
+---
+
+## 📐 A2UI Core Engine & Client Protocol (`public/a2ui.js`, `public/style.css`)
+
+- **Client Renderer**: `window.A2UI.render(payload, container)` parses declarative JSON payloads (`{ type: "a2ui_widget", component: "...", props: {...} }`) into glassmorphic DOM elements with entry transitions (`a2ui-widget-enter`).
+- **Component Schemas**:
+  - `A2UICard`: Interactive card tile with artwork, action pills, hover 3D tilt, and affiliate link (`xJoE0d`).
+  - `A2UIGauge`: Radial/linear gauge for win rates and deck power levels.
+  - `A2UIActionPills`: Interactive action pills for quick filters and deck actions.
+  - `A2UIRuleBanner`: Rule citation banner rendered in the Play Realm rules advisor drawer for MTG rules citations (CR 704.5k, CR 903.10).
+
+---
+
+## 🎮 Play Realm & AAA MTG Arena Engine (`public/sandbox.html`, `sandbox.js`, `sandbox.css`)
+
+- **Interactive Canvas Particle Shader**: 60fps WUBRG mana ember floating particles in `#arena-canvas-bg` with magnetic mouse aura attraction physics (160px radius) and pulsing alpha glows.
+- **Visual Spell Target Beams & Combat Arrows**: `drawTargetBeam(sourceEl, targetEl, isCombat)` renders glowing animated SVG energy beams (`#combat-arrows-svg`) connecting casting cards to targets with directional arrowheads (`#arrowhead`).
+- **3D Card Tilt Physics**: Perspective rotation (`perspective(600px)`), foil sheen specular highlights, and gold glow elevation on mousemove.
+- **Web Audio API Sound Engine**: Low-latency synthesized sound cues for `card_draw`, `land_play`, `spell_cast`, `creature_cast`, `combat_hit`, `tap_mana`, `phase_step`, and `game_over`.
+- **Rules Enforcement (CR 704 / CR 903.10)**: Automated SBAs (0 life, library loss, 10 poison, creature lethal damage, Legend rule, 21+ Commander damage).
+
+---
+
+## 🧪 Master Test Suite Execution (14 Passing Test Suites)
+
+Always verify changes by executing the master test orchestrator:
+```powershell
+python execution/verify_master_suite_orchestrator.py
+```
+This runs all 14 automated Python test suites in `execution/`:
+1. `verify_ai_game_rules_engine.py` (AI Opponents & Rules Engine)
+2. `verify_auto_tagging_engine.py` (Auto-Tagging & Infinite Combos)
+3. `verify_deck_goodies_and_trade.py` (Proxy Generator & Trade Calculator)
+4. `verify_tournament_pods_engine.py` (4P Pods & Swiss Leaderboards)
+5. `verify_collection_and_social_engine.py` (Search, Collection & Social)
+6. `verify_deck_analytics_engine.py` (Deck Analytics & Price Coalesce)
+7. `verify_youtube_replays.py` (YouTube Replays & Web Audio FX)
+8. `verify_a2ui_engine.py` (A2UI Schema & Core Client Renderer)
+9. `verify_a2ui_chat_and_tuner.py` (A2UI Rule Banners & Deck Tuner)
+10. `verify_arena_conquest_suite.py` (Visual Target Beams & 3D Tilt)
+11. `verify_canvas_and_hud_engine.py` (Magnetic Canvas Particles & HUD)
+12. `simulate_100_mtg_arena_matches.py` (100-Game Match Simulation)
+13. `verify_full_ui_button_and_modal_suite.py` (Full-Surface UI & Modal Audit)
+14. `verify_master_suite_orchestrator.py` (Master Suite Validation)
+
+---
+
+## 🚀 Local Verification & Deployment Workflow
+
+1. **Test Locally First**: Always implement, run, and verify changes on local server (`http://localhost:3000`).
+2. **Obtain User Approval**: Ask permission before pushing to live deployment unless explicitly instructed.
+3. **Comprehensive Live Deployment**:
+   1. `git add -A`
+   2. `git commit -m "..."`
+   3. `git push origin main`
+   4. `powershell -ExecutionPolicy Bypass -File .\deploy-gcp.ps1`
