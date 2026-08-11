@@ -141,6 +141,8 @@
       const data = await res.json();
       if (data.success) {
         wishlistCards = data.wishlist || [];
+        window._griMoreWishlistCards = wishlistCards; // expose for TCGplayer export
+
         
         // Show standard headers and search bars
         document.getElementById('active-collection-header-row').style.display = 'flex';
@@ -1158,3 +1160,20 @@
   }
 
 })();
+
+// ── TCGplayer Wishlist & Collection Cart Export ───────────────────────────────
+window.exportWishlistToTCGplayer = function() {
+  try {
+    const wishlistCards = window._griMoreWishlistCards || [];
+    if (!wishlistCards.length) {
+      alert('Your wishlist is empty. Add some cards first!');
+      return;
+    }
+    const lines = wishlistCards.map(c => `${c.quantity || 1} ${c.card_name}`).join('\n');
+    const massUrl = `https://www.tcgplayer.com/massentry?productline=Magic&c=${encodeURIComponent(lines)}`;
+    const affiliateUrl = `https://partner.tcgplayer.com/xJoE0d?u=${encodeURIComponent(massUrl)}`;
+    window.open(affiliateUrl, '_blank', 'noopener,noreferrer');
+  } catch(e) {
+    console.error('[TCGplayer Wishlist Export]', e);
+  }
+};

@@ -10600,3 +10600,52 @@ function initGoogleSignInButtons() {
 })();
 
 
+
+// ── TCGplayer Affiliate Cart Export ─────────────────────────────────────────
+// Builds a mass-entry URL from the current deck builder cards and opens TCGplayer
+// with the affiliate link: https://partner.tcgplayer.com/xJoE0d
+window.exportDeckToTCGplayer = function() {
+  try {
+    // Gather current deck cards from builder state (globals set during builder session)
+    const allCards = [];
+    if (window.builderCommander && window.builderCommander.length > 0) {
+      window.builderCommander.forEach(c => {
+        if (c.name) allCards.push({ name: c.name, qty: c.qty || 1 });
+      });
+    }
+    if (window.builderMainboard && window.builderMainboard.length > 0) {
+      window.builderMainboard.forEach(c => {
+        if (c.name) {
+          const lowerName = c.name.toLowerCase();
+          const isBasic = ['plains','island','swamp','mountain','forest','wastes'].some(b =>
+            lowerName === b || lowerName === `snow-covered ${b}`
+          );
+          if (!isBasic) allCards.push({ name: c.name, qty: c.qty || 1 });
+        }
+      });
+    }
+
+    if (allCards.length === 0) {
+      alert('No cards in your deck builder to export. Add some cards first!');
+      return;
+    }
+
+    // Build TCGplayer mass-entry format: "Qty CardName\n..."
+    const massEntryLines = allCards.map(c => `${c.qty} ${c.name}`).join('\n');
+    const massEntryUrl = `https://www.tcgplayer.com/massentry?productline=Magic&c=${encodeURIComponent(massEntryLines)}`;
+
+    // Open via affiliate link
+    const affiliateUrl = `https://partner.tcgplayer.com/xJoE0d?u=${encodeURIComponent(massEntryUrl)}`;
+    window.open(affiliateUrl, '_blank', 'noopener,noreferrer');
+
+    // Show success toast if toast function is available
+    if (typeof window.showToast === 'function') {
+      window.showToast(`Exported ${allCards.length} unique cards to TCGplayer cart!`, 'success');
+    } else {
+      console.log(`[TCGplayer] Exported ${allCards.length} unique cards.`);
+    }
+  } catch (e) {
+    console.error('[TCGplayer Export Error]', e);
+    alert('Could not export to TCGplayer. Please try again.');
+  }
+};
