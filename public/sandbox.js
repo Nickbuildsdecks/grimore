@@ -1242,20 +1242,28 @@ const Arena = (() => {
       tooltip.style.top = `${Math.max(10, top)}px`;
       tooltip.style.display = 'block';
     });
-    // 3D Perspective Card Tilt Listener (Phase 2)
+    // 3D Perspective Card Tilt Listener & Foil Glow Effect
+    el.style.perspective = '600px';
     el.addEventListener('mousemove', (e) => {
       const rect = el.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const centerX = rect.width / 2;
       const centerY = rect.height / 2;
-      const rotateX = ((y - centerY) / centerY) * -14;
-      const rotateY = ((x - centerX) / centerX) * 14;
-      img.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.06)`;
+      const rotateX = ((y - centerY) / centerY) * -16;
+      const rotateY = ((x - centerX) / centerX) * 16;
+      const isTapped = card._tapped;
+      const baseRotation = isTapped ? 'rotate(90deg)' : '';
+      img.style.transform = `perspective(600px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.08) ${baseRotation}`;
+      img.style.boxShadow = `0 14px 28px rgba(168,85,247,0.45), 0 0 12px rgba(245,158,11,0.3)`;
+      img.style.transition = 'transform 0.08s ease-out, box-shadow 0.08s ease-out';
     });
 
     el.addEventListener('mouseleave', () => {
-      img.style.transform = 'none';
+      const isTapped = card._tapped;
+      img.style.transform = isTapped ? 'rotate(90deg)' : 'none';
+      img.style.boxShadow = 'none';
+      img.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease';
       const tooltip = document.getElementById('card-hover-preview-tooltip');
       if (tooltip) tooltip.style.display = 'none';
     });
