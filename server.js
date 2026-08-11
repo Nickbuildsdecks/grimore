@@ -3420,7 +3420,7 @@ app.post('/api/decks/:deckId/reprice-card-cheapest', async (req, res) => {
 });
 
 // GET all public community decks for discover feed (Bulletproof atomic loading)
-app.get('/api/decks/discover', async (req, res) => {
+app.get(['/api/decks/discover', '/api/decks/public'], async (req, res) => {
   try {
     const decks = await db.query(`
       SELECT d.*, 
