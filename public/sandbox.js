@@ -1079,6 +1079,41 @@ const Arena = (() => {
     }
   }
 
+  // ── VISUAL SPELL TARGETING BEAMS & COMBAT ARROWS ───────────
+  function drawTargetBeam(sourceEl, targetEl, isCombat = false) {
+    const svg = document.getElementById('combat-arrows-svg');
+    if (!svg || !sourceEl || !targetEl) return;
+
+    const sRect = sourceEl.getBoundingClientRect();
+    const tRect = targetEl.getBoundingClientRect();
+
+    const x1 = sRect.left + sRect.width / 2;
+    const y1 = sRect.top + sRect.height / 2;
+    const x2 = tRect.left + tRect.width / 2;
+    const y2 = tRect.top + tRect.height / 2;
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1);
+    line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2);
+    line.setAttribute('y2', y2);
+    line.setAttribute('class', isCombat ? 'combat-attack-line' : 'target-beam-line');
+    line.setAttribute('marker-end', 'url(#arrowhead)');
+
+    svg.appendChild(line);
+
+    setTimeout(() => {
+      if (line.parentNode) line.parentNode.removeChild(line);
+    }, 2200);
+  }
+
+  function clearTargetBeams() {
+    const svg = document.getElementById('combat-arrows-svg');
+    if (!svg) return;
+    const lines = svg.querySelectorAll('line');
+    lines.forEach(l => l.remove());
+  }
+
   // ── AUTOMATED STATE-BASED ACTIONS (CR 704 / Phase 3) ───────
   function checkStateBasedActions() {
     // CR 704.5a: Life 0 or less loss check

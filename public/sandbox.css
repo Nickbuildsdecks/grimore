@@ -963,3 +963,36 @@ html, body {
   animation: phasePulse 0.6s ease-out;
 }
 
+/* ── Visual Target Beams & Combat Arrows ─────────────────────── */
+#combat-arrows-svg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9000;
+}
+
+@keyframes beamPulse {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+.target-beam-line {
+  stroke: #a855f7;
+  stroke-width: 3.5;
+  stroke-dasharray: 8 4;
+  animation: beamPulse 0.6s linear infinite;
+  filter: drop-shadow(0 0 6px #a855f7);
+}
+
+.combat-attack-line {
+  stroke: #ef4444;
+  stroke-width: 4;
+  stroke-dasharray: 10 4;
+  animation: beamPulse 0.4s linear infinite;
+  filter: drop-shadow(0 0 8px #ef4444);
+}
+
+
