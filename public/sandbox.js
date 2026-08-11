@@ -161,9 +161,23 @@ const Arena = (() => {
       opacity: Math.random() * 0.6 + 0.15,
     }));
 
+    let mouseX = -1000, mouseY = -1000;
+    const onMouseMove = (e) => { mouseX = e.clientX; mouseY = e.clientY; };
+    window.addEventListener('mousemove', onMouseMove);
+
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       particles.forEach(p => {
+        // Magnetic mouse aura attraction
+        const dx = mouseX - p.x;
+        const dy = mouseY - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 160 && dist > 0) {
+          const force = (160 - dist) / 160 * 0.012;
+          p.x += (dx / dist) * force * 10;
+          p.y += (dy / dist) * force * 10;
+        }
+
         ctx.save();
         ctx.globalAlpha = p.opacity;
         ctx.beginPath();
@@ -181,7 +195,7 @@ const Arena = (() => {
       raf = requestAnimationFrame(draw);
     }
     draw();
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); window.removeEventListener('mousemove', onMouseMove); };
   }
 
   // ── Drawer & Pop-out Controls ─────────────────────────────
@@ -2611,7 +2625,92 @@ const Arena = (() => {
     if (modeSelect) {
       modeSelect.value = fmt;
       switchGameMode(fmt);
+  // ── INTERACTIVE CANVAS PARTICLE SHADER (60FPS Mana Embers) ──
+  function initArenaParticleCanvas() {
+    const canvas = document.getElementById('arena-canvas-bg');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    });
+
+    const colors = [
+      'rgba(254, 240, 138, ',
+      'rgba(56, 189, 248, ',
+      'rgba(192, 132, 252, ',
+      'rgba(248, 113, 113, ',
+      'rgba(74, 222, 128, ',
+      'rgba(168, 85, 247, '
+    ];
+
+    const particles = [];
+    const count = Math.min(65, Math.floor(width / 24));
+
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4 - 0.2,
+        radius: Math.random() * 2.2 + 1.2,
+        colorPrefix: colors[Math.floor(Math.random() * colors.length)],
+        alpha: Math.random() * 0.5 + 0.25,
+        pulseSpeed: Math.random() * 0.02 + 0.008
+      });
     }
+
+    let mouseX = -1000;
+    let mouseY = -1000;
+    window.addEventListener('mousemove', (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+
+    function renderFrame() {
+      ctx.clearRect(0, 0, width, height);
+
+      particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0) p.x = width;
+        if (p.x > width) p.x = 0;
+        if (p.y < 0) p.y = height;
+        if (p.y > height) p.y = 0;
+
+        const dx = mouseX - p.x;
+        const dy = mouseY - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 180 && dist > 0) {
+          const force = (180 - dist) / 180 * 0.015;
+          p.x += (dx / dist) * force * 15;
+          p.y += (dy / dist) * force * 15;
+        }
+
+        p.alpha += p.pulseSpeed;
+        if (p.alpha > 0.75 || p.alpha < 0.2) p.pulseSpeed = -p.pulseSpeed;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = `${p.colorPrefix}${Math.max(0.1, Math.min(0.8, p.alpha))})`;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = `${p.colorPrefix}${Math.max(0.02, p.alpha * 0.15)})`;
+        ctx.fill();
+      });
+
+      requestAnimationFrame(renderFrame);
+    }
+
+    renderFrame();
   }
 
   return {
