@@ -1552,6 +1552,41 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.post('/api/auth/guest', async (req, res) => {
+  try {
+    let player = await db.get("SELECT * FROM players WHERE username = 'guest'");
+    if (!player) {
+      const hash = await bcrypt.hash('guestpass123', 10);
+      try {
+        await db.run(
+          "INSERT INTO players (username, store_nickname, email, password_hash, is_admin, role) VALUES (?, ?, ?, ?, ?, ?)",
+          ['guest', 'Guest Player', 'guest@grimore.local', hash, 0, 'player']
+        );
+        player = await db.get("SELECT * FROM players WHERE username = 'guest'");
+      } catch (dbErr) {}
+    }
+    req.session.player = {
+      id: player ? player.id : 1,
+      username: player ? player.username : 'guest',
+      storeNickname: player ? player.store_nickname : 'Guest Player',
+      isAdmin: false,
+      role: 'player',
+      avatarUrl: '',
+      profileCommander: ''
+    };
+    res.json({ success: true, user: req.session.player });
+  } catch (e) {
+    req.session.player = {
+      id: 1,
+      username: 'guest',
+      storeNickname: 'Guest Player',
+      isAdmin: false,
+      role: 'player'
+    };
+    res.json({ success: true, user: req.session.player });
+  }
+});
+
 app.post('/api/auth/logout', (req, res) => {
   req.session.destroy();
   res.json({ success: true });

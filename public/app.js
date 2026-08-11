@@ -507,6 +507,22 @@ window.handleLogin = async function(event) {
   }
 };
 
+window.handleGuestLogin = async function(event) {
+  if (event) event.preventDefault();
+  try {
+    const res = await fetch('/api/auth/guest', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      currentUser = data.user;
+      await checkAuthStatus();
+      window.showSection('discover', false);
+    }
+  } catch (e) {
+    console.error("Guest login error:", e);
+    window.showSection('discover', false);
+  }
+};
+
 window.handleRegister = async function(event) {
   if (event) event.preventDefault();
   const usernameInput = document.getElementById('reg-username');
