@@ -10605,22 +10605,6 @@ function initGoogleSignInButtons() {
 // Builds a mass-entry URL from the current deck builder cards and opens TCGplayer
 // with the affiliate link: https://partner.tcgplayer.com/xJoE0d
 window.exportDeckToTCGplayer = function() {
-  try {
-    // Gather current deck cards from builder state (globals set during builder session)
-    const allCards = [];
-    if (window.builderCommander && window.builderCommander.length > 0) {
-      window.builderCommander.forEach(c => {
-        if (c.name) allCards.push({ name: c.name, qty: c.qty || 1 });
-      });
-    }
-    if (window.builderMainboard && window.builderMainboard.length > 0) {
-      window.builderMainboard.forEach(c => {
-        if (c.name) {
-          const lowerName = c.name.toLowerCase();
-          const isBasic = ['plains','island','swamp','mountain','forest','wastes'].some(b =>
-            lowerName === b || lowerName === `snow-covered ${b}`
-          );
-          if (!isBasic) allCards.push({ name: c.name, qty: c.qty || 1 });
         }
       });
     }
@@ -10648,4 +10632,72 @@ window.exportDeckToTCGplayer = function() {
     console.error('[TCGplayer Export Error]', e);
     alert('Could not export to TCGplayer. Please try again.');
   }
+};
+
+// ── Interactive Deck Analytics: Mana Curve & Color Breakdown Charts ──────────
+window.renderDeckManaAnalytics = function(cards, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container || !Array.isArray(cards) || cards.length === 0) return;
+
+  const cmcCounts = [0, 0, 0, 0, 0, 0, 0, 0];
+  const colorCounts = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+  let totalNonLands = 0;
+
+  cards.forEach(c => {
+    const qty = c.qty || c.quantity || 1;
+    const typeStr = (c.type_line || c.type || '').toLowerCase();
+    const isLand = typeStr.includes('land');
+    const cmc = Math.floor(c.cmc || 0);
+
+    if (!isLand) {
+      totalNonLands += qty;
+      const bucket = Math.min(Math.max(0, cmc), 7);
+      cmcCounts[bucket] += qty;
+    }
+
+    const manaCost = (c.mana_cost || c.manaCost || '').toUpperCase();
+    if (manaCost.includes('W')) colorCounts.W += qty;
+    if (manaCost.includes('U')) colorCounts.U += qty;
+    if (manaCost.includes('B')) colorCounts.B += qty;
+    if (manaCost.includes('R')) colorCounts.R += qty;
+    if (manaCost.includes('G')) colorCounts.G += qty;
+    if (!manaCost.includes('W') && !manaCost.includes('U') && !manaCost.includes('B') && !manaCost.includes('R') && !manaCost.includes('G') && !isLand) {
+      colorCounts.C += qty;
+    }
+  });
+
+  const maxCmcCount = Math.max(...cmcCounts, 1);
+
+  let barsHtml = '';
+  cmcCounts.forEach((count, cmcVal) => {
+    const heightPct = Math.round((count / maxCmcCount) * 100);
+    const label = cmcVal === 7 ? '7+' : cmcVal;
+    barsHtml += `
+      <div style="display:flex; flex-direction:column; align-items:center; flex:1; gap:4px;">
+        <span style="font-size:0.65rem; font-weight:700; color:var(--text-muted);">${count}</span>
+        <div style="width:100%; height:55px; background:rgba(255,255,255,0.04); border-radius:4px; display:flex; align-items:flex-end; overflow:hidden;">
+          <div style="width:100%; height:${heightPct}%; background:linear-gradient(180deg, #a855f7 0%, #38bdf8 100%); border-radius:2px; transition:height 0.3s ease;"></div>
+        </div>
+        <span style="font-size:0.68rem; font-weight:700; color:var(--text-main); font-family:var(--font-code);">${label}</span>
+      </div>
+    `;
+  });
+
+  container.innerHTML = `
+    <div class="deck-analytics-widget" style="padding:0.75rem; background:rgba(12,13,20,0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; margin-top:0.75rem;">
+      <div style="font-size:0.75rem; font-weight:700; color:var(--color-primary); margin-bottom:0.5rem; text-transform:uppercase; letter-spacing:0.04em;">Mana Curve (CMC)</div>
+      <div style="display:flex; gap:6px; align-items:flex-end; height:80px; margin-bottom:0.75rem;">
+        ${barsHtml}
+      </div>
+      <div style="font-size:0.72rem; font-weight:700; color:var(--text-muted); margin-bottom:0.35rem;">Color Distribution</div>
+      <div style="display:flex; height:8px; border-radius:4px; overflow:hidden; gap:2px; background:rgba(255,255,255,0.05);">
+        ${colorCounts.W > 0 ? `<div style="flex:${colorCounts.W}; background:#fef08a;" title="White: ${colorCounts.W}"></div>` : ''}
+        ${colorCounts.U > 0 ? `<div style="flex:${colorCounts.U}; background:#38bdf8;" title="Blue: ${colorCounts.U}"></div>` : ''}
+        ${colorCounts.B > 0 ? `<div style="flex:${colorCounts.B}; background:#c084fc;" title="Black: ${colorCounts.B}"></div>` : ''}
+        ${colorCounts.R > 0 ? `<div style="flex:${colorCounts.R}; background:#f87171;" title="Red: ${colorCounts.R}"></div>` : ''}
+        ${colorCounts.G > 0 ? `<div style="flex:${colorCounts.G}; background:#4ade80;" title="Green: ${colorCounts.G}"></div>` : ''}
+        ${colorCounts.C > 0 ? `<div style="flex:${colorCounts.C}; background:#94a3b8;" title="Colorless: ${colorCounts.C}"></div>` : ''}
+      </div>
+    </div>
+  `;
 };
