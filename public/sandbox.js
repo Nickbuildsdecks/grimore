@@ -216,12 +216,24 @@ const Arena = (() => {
   function advise(msg, type = 'info', ruleId = null) {
     const feed = document.getElementById('advisor-rules-feed');
     if (!feed) return;
-    const el = document.createElement('div');
-    el.className = `rules-message ${type}`;
-    el.innerHTML = msg + (ruleId ? `<span class="rules-cite">Rule ${ruleId}</span>` : '');
-    feed.appendChild(el);
+
+    if (ruleId && window.A2UI) {
+      window.A2UI.render({
+        type: 'a2ui_widget',
+        component: 'A2UIRuleBanner',
+        props: {
+          ruleId: `Rule ${ruleId}`,
+          text: msg.replace(/<[^>]*>/g, '')
+        }
+      }, feed);
+    } else {
+      const el = document.createElement('div');
+      el.className = `rules-message ${type}`;
+      el.innerHTML = msg + (ruleId ? `<span class="rules-cite">Rule ${ruleId}</span>` : '');
+      feed.appendChild(el);
+    }
+
     feed.scrollTop = feed.scrollHeight;
-    // Keep feed from getting too long
     while (feed.children.length > 80) feed.removeChild(feed.firstChild);
 
     // Show unread indicator if drawer is tucked away
