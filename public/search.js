@@ -341,13 +341,12 @@
         rn.y += rn.offsetY;
 
         ctx.save();
-        ctx.font = `${rn.size}px 'Courier New', monospace`;
+        ctx.beginPath();
+        ctx.arc(rn.x, rn.y + bobY, Math.max(1.2, rn.size * 0.22), 0, Math.PI * 2);
         ctx.fillStyle = `hsla(${rn.hue},90%,80%,${currentAlpha})`;
         ctx.shadowColor = `hsla(${rn.hue},100%,65%,${currentAlpha * 2.5})`;
         ctx.shadowBlur = 18;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(rn.char, rn.x, rn.y + bobY);
+        ctx.fill();
         ctx.restore();
       });
       ctx.restore();

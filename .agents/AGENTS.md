@@ -123,3 +123,7 @@ Be pragmatic. Be reliable. Self-anneal.
 - **Infinite Combo Engine**: Automatically detects combo pairs (*Heliod* + *Walking Ballista*, *Chain of Smog* + *Witherbloom Apprentice*, *Peregrine Drake* + *Deadeye Navigator*, *Hazel's Brewmaster* + *Devoted Druid*) and generates `Combo: Card A + Card B` headers.
 - **Token Prevention**: All Scryfall queries filter `+not:token+not:art+not:funny+is:paper` and validate using `isRealCard(p)`. Hover tooltips prioritize exact `scryfallId`.
 - **Price Coalesce**: Queries use `COALESCE(pc.price, sc.price, 0.15)` to avoid default $0.15 prices.
+
+### 🌐 Navigation & Feature Routing Rule
+- **Direct Page Transitions**: All feature links, navbar buttons, and primary app destinations MUST navigate directly within the same browser tab (`window.location.href = '/path'` or direct `<a>` link).
+- **No Unnecessary New Tabs**: Do NOT spawn secondary browser tabs using `target="_blank"` or `window.open(..., '_blank')` for internal site features or sub-pages (e.g. Arena, Collections, Decks). `_blank` is strictly reserved for external third-party links (e.g. TCGplayer cart export, Patreon).

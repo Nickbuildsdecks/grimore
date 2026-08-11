@@ -145,6 +145,183 @@ app.get('/sandbox', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sandbox.html'));
 });
 
+// Middleware: Localhost Dev Security Guard (strictly blocks production / external access)
+const localDevOnlyGuard = (req, res, next) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  const ip = req.ip || req.socket?.remoteAddress || '';
+  const host = req.hostname || req.headers.host || '';
+
+  const isLocal = host.includes('localhost') || host.includes('127.0.0.1') || ip.includes('127.0.0.1') || ip === '::1' || ip === '::ffff:127.0.0.1';
+
+  if (isProd || !isLocal) {
+    return res.status(404).send('Not Found');
+  }
+  next();
+};
+
+app.use('/changes', localDevOnlyGuard);
+app.use('/api/dev', localDevOnlyGuard);
+
+// Grimore Visual Change Tracker Dashboard — dedicated route (Localhost Only)
+app.get('/changes', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'changes.html'));
+});
+
+// ── DEV TOOLS: VISUAL GIT CHANGE MANAGEMENT API ──────────────────────────────
+const { execSync } = require('child_process');
+
+app.get('/api/dev/git-status', (req, res) => {
+  try {
+    const branchStatus = execSync('git status --porcelain -b', { encoding: 'utf8' });
+    let logAhead = '';
+    try {
+      logAhead = execSync('git log origin/main..HEAD --oneline', { encoding: 'utf8' }).trim();
+    } catch(e) {
+      logAhead = '';
+    }
+    
+    let diffStat = '';
+    try {
+      diffStat = execSync('git diff --stat', { encoding: 'utf8' }).trim();
+    } catch(e) {
+      diffStat = '';
+    }
+
+    const statusLines = branchStatus.split('\n').filter(Boolean);
+    const branchLine = statusLines[0] || '';
+    const aheadMatch = branchLine.match(/ahead (\d+)/);
+    const aheadCount = aheadMatch ? parseInt(aheadMatch[1], 10) : 0;
+
+    const unpushedCommits = logAhead ? logAhead.split('\n').map(line => {
+      const parts = line.split(' ');
+      return { hash: parts[0], title: parts.slice(1).join(' ') };
+    }) : [];
+
+    const modifiedFiles = [];
+    const untrackedFiles = [];
+
+    // Filter out internal dashboard files from git status buckets
+    const isDashboardFile = (p) => p.startsWith('public/changes.') || p === '.gitignore';
+
+    for (let i = 1; i < statusLines.length; i++) {
+      const line = statusLines[i];
+      const code = line.slice(0, 2).trim();
+      const filePath = line.slice(3).trim();
+      if (isDashboardFile(filePath)) continue; // Never stage or show internal change tracker files
+
+      if (code === '??') {
+        untrackedFiles.push(filePath);
+      } else {
+        modifiedFiles.push({ code: code || 'M', path: filePath });
+      }
+    }
+
+    const buckets = [
+      {
+        id: 'sandbox-replays',
+        title: '🎴 Playtest Sandbox & YouTube Replay Engine',
+        description: '4P multiplayer battlefield, video match replay harness, combat stack overlays, sound FX.',
+        files: []
+      },
+      {
+        id: 'account-importer',
+        title: '📥 Account Migration & Deck Importer',
+        description: 'Bulk Moxfield/Archidekt/text importer dialogs, player account deck syncing.',
+        files: []
+      },
+      {
+        id: 'ai-judge-rules',
+        title: '🤖 Grim AI Judge & Anti-Hallucination Directive',
+        description: 'Dual-source CR + IPG citation rules engine and Gemini flash model configuration.',
+        files: []
+      },
+      {
+        id: 'visual-design-canvas',
+        title: '🎨 Visual Particle Canvas & Styling Polish',
+        description: 'Glowing ambient dots renderer, modal dialog styling, navigation rules.',
+        files: []
+      },
+      {
+        id: 'skill-suite-scripts',
+        title: '🛠️ Modular Skill Suite & Verification Scripts',
+        description: '10 custom agent skills in .agents/skills/ and 6 automated test verification scripts in execution/.',
+        files: []
+      }
+    ];
+
+    const assignBucket = (filePath) => {
+      if (filePath.includes('sandbox') || filePath.includes('youtube')) return 'sandbox-replays';
+      if (filePath.includes('import') || filePath.includes('account') || filePath.includes('app.js') || filePath.includes('index.html')) return 'account-importer';
+      if (filePath.includes('judge') || filePath.includes('gemini')) return 'ai-judge-rules';
+      if (filePath.includes('search.js') || filePath.includes('AmbientCanvas') || filePath.includes('style.css')) return 'visual-design-canvas';
+      if (filePath.includes('.agents') || filePath.includes('execution/')) return 'skill-suite-scripts';
+      return 'account-importer';
+    };
+
+    modifiedFiles.forEach(f => {
+      const bId = assignBucket(f.path);
+      const b = buckets.find(b => b.id === bId);
+      if (b) b.files.push(f);
+    });
+
+    untrackedFiles.forEach(path => {
+      const bId = assignBucket(path);
+      const b = buckets.find(b => b.id === bId);
+      if (b) b.files.push({ code: '??', path });
+    });
+
+    res.json({
+      success: true,
+      branch: branchLine.replace('## ', ''),
+      aheadCount,
+      unpushedCommits,
+      diffStat,
+      modifiedCount: modifiedFiles.length,
+      untrackedCount: untrackedFiles.length,
+      buckets
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/dev/git-stage', (req, res) => {
+  try {
+    const { paths } = req.body || {};
+    if (!paths || !Array.isArray(paths) || paths.length === 0) {
+      return res.status(400).json({ error: "No paths provided to stage" });
+    }
+    const escapedPaths = paths.map(p => `"${p.replace(/"/g, '')}"`).join(' ');
+    execSync(`git add ${escapedPaths}`);
+    res.json({ success: true, message: `Staged ${paths.length} file(s)/folder(s).` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/dev/git-commit', (req, res) => {
+  try {
+    const { message } = req.body || {};
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: "Commit message is required" });
+    }
+    const cleanMsg = message.replace(/"/g, '\\"');
+    const output = execSync(`git commit -m "${cleanMsg}"`, { encoding: 'utf8' });
+    res.json({ success: true, output });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/dev/git-push', (req, res) => {
+  try {
+    const output = execSync('git push origin main', { encoding: 'utf8' });
+    res.json({ success: true, output });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Gemini AI Rules & Interaction Reasoning Endpoint
 const aiAdvisorQuerySchema = z.object({
   query: z.string().min(1).max(1000),
@@ -3213,7 +3390,7 @@ app.get('/api/decks/discover', async (req, res) => {
     const currentPlayerId = req.session.player ? req.session.player.id : null;
     
     for (let deck of decks) {
-      const cards = await db.query("SELECT card_name, quantity, custom_tag, COALESCE(cheapest_price, 0) AS cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deck.id]);
+      const cards = await db.query("SELECT card_name, quantity, custom_tag, 0 AS cheapest_card_price, scryfall_id, is_commander FROM deck_cards WHERE deck_id = ?", [deck.id]);
       const commanderCard = cards.find(c => c.is_commander === 1) || (cards.length > 0 ? cards[0] : null);
       const likesCount = await db.get("SELECT COUNT(*) as count FROM deck_likes WHERE deck_id = ?", [deck.id]);
       const clonesCount = await db.get("SELECT COUNT(*) as count FROM decks WHERE cloned_from_deck_id = ?", [deck.id]);
@@ -3574,6 +3751,184 @@ app.post('/api/decks/:deckId/like', async (req, res) => {
     }
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Universal Account Migration Endpoint ──────────────────
+app.post('/api/decks/import-account', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first to import your account." });
+
+  const { platform, username, decksText } = req.body || {};
+  const playerId = req.session.player.id;
+
+  try {
+    const importedDecks = [];
+
+    if (platform === 'moxfield') {
+      if (!username || !username.trim()) return res.status(400).json({ error: "Moxfield username is required." });
+      const cleanUser = username.trim();
+      const searchUrl = `https://api.moxfield.com/v2/decks/search?authorUsernames=${encodeURIComponent(cleanUser)}&page=1&pageSize=100`;
+
+      const headers = { 'User-Agent': process.env.MOXFIELD_USER_AGENT || 'MoxKey; NickBuildsDecks 019b18d35e85' };
+      const response = await fetch(searchUrl, { headers });
+      if (!response.ok) {
+        return res.status(400).json({ error: `Could not fetch Moxfield account for "${cleanUser}". Check username or public privacy settings.` });
+      }
+
+      const data = await response.json();
+      const publicDecks = data.data || [];
+      if (publicDecks.length === 0) {
+        return res.status(404).json({ error: `No public decks found for Moxfield user "${cleanUser}".` });
+      }
+
+      for (let moxDeck of publicDecks.slice(0, 25)) {
+        try {
+          const detailUrl = `https://api.moxfield.com/v2/decks/all/${moxDeck.publicId}`;
+          const detailRes = await fetch(detailUrl, { headers });
+          if (!detailRes.ok) continue;
+          const detail = await detailRes.json();
+
+          const deckId = 'd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+          const deckName = detail.name || moxDeck.name || 'Imported Deck';
+          const format = (detail.format || 'commander').toLowerCase();
+
+          await db.run(
+            `INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, budget_limit, is_public, format)
+             VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, 1, 100, 0, ?)`,
+            [deckId, playerId, `https://www.moxfield.com/decks/${moxDeck.publicId}`, deckName, format]
+          );
+
+          // Add commanders
+          const commanders = detail.commanders ? Object.keys(detail.commanders) : [];
+          for (let cmdName of commanders) {
+            await db.run(
+              `INSERT INTO deck_cards (deck_id, card_name, cheapest_card_price, quantity, is_commander, scryfall_id) VALUES (?, ?, 0.15, 1, 1, ?)`,
+              [deckId, cmdName, detail.commanders[cmdName]?.card?.scryfall_id || null]
+            );
+          }
+
+          // Add mainboard cards
+          const mainboard = detail.mainboard ? Object.entries(detail.mainboard) : [];
+          for (let [cardName, item] of mainboard) {
+            const qty = item.quantity || 1;
+            const scryId = item.card?.scryfall_id || null;
+            await db.run(
+              `INSERT INTO deck_cards (deck_id, card_name, cheapest_card_price, quantity, is_commander, scryfall_id) VALUES (?, ?, 0.15, ?, 0, ?)`,
+              [deckId, cardName, qty, scryId]
+            );
+          }
+
+          await validateDeckLegality(deckId);
+          importedDecks.push({ id: deckId, name: deckName, cardCount: mainboard.length + commanders.length });
+
+          // Polite 100ms pacing delay between deck imports
+          await new Promise(r => setTimeout(r, 100));
+        } catch (e) {
+          console.error(`Failed importing moxfield deck ${moxDeck.publicId}:`, e);
+        }
+      }
+    } else if (platform === 'archidekt') {
+      if (!username || !username.trim()) return res.status(400).json({ error: "Archidekt username is required." });
+      const cleanUser = username.trim();
+      const archUrl = `https://archidekt.com/api/decks/owner/${encodeURIComponent(cleanUser)}/`;
+      const response = await fetch(archUrl);
+      if (!response.ok) {
+        return res.status(400).json({ error: `Could not fetch Archidekt account for "${cleanUser}".` });
+      }
+
+      const data = await response.json();
+      const publicDecks = data.results || data || [];
+      if (!Array.isArray(publicDecks) || publicDecks.length === 0) {
+        return res.status(404).json({ error: `No public decks found for Archidekt user "${cleanUser}".` });
+      }
+
+      for (let archDeck of publicDecks.slice(0, 25)) {
+        try {
+          const detailUrl = `https://archidekt.com/api/decks/${archDeck.id}/`;
+          const detailRes = await fetch(detailUrl);
+          if (!detailRes.ok) continue;
+          const detail = await detailRes.json();
+
+          const deckId = 'd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+          const deckName = detail.name || 'Archidekt Import';
+
+          await db.run(
+            `INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, budget_limit, is_public, format)
+             VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, 1, 100, 0, 'commander')`,
+            [deckId, playerId, `https://archidekt.com/decks/${archDeck.id}`, deckName]
+          );
+
+          const cards = detail.cards || [];
+          for (let c of cards) {
+            const cardName = c.card?.oracleCard?.name || c.card?.name;
+            if (!cardName) continue;
+            const qty = c.quantity || 1;
+            const isCmd = c.categories && c.categories.includes('Commander') ? 1 : 0;
+            await db.run(
+              `INSERT INTO deck_cards (deck_id, card_name, cheapest_card_price, quantity, is_commander) VALUES (?, ?, 0.15, ?, ?)`,
+              [deckId, cardName, qty, isCmd]
+            );
+          }
+
+          await validateDeckLegality(deckId);
+          importedDecks.push({ id: deckId, name: deckName, cardCount: cards.length });
+          await new Promise(r => setTimeout(r, 100));
+        } catch (e) {
+          console.error(`Failed importing Archidekt deck ${archDeck.id}:`, e);
+        }
+      }
+    } else if (platform === 'text' || platform === 'file') {
+      if (!decksText || !decksText.trim()) return res.status(400).json({ error: "Deck text is required." });
+      
+      const lines = decksText.trim().split('\n');
+      let currentDeckName = 'Imported Deck 1';
+      let currentCards = [];
+
+      const flushCurrentDeck = async () => {
+        if (currentCards.length === 0) return;
+        const deckId = 'd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        const uniqueUrl = `https://grimore.app/deck/${deckId}`;
+        await db.run(
+          `INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, last_checked, is_legal, budget_limit, is_public, format)
+           VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, 1, 100, 0, 'commander')`,
+          [deckId, playerId, uniqueUrl, currentDeckName]
+        );
+
+        for (let c of currentCards) {
+          await db.run(
+            `INSERT INTO deck_cards (deck_id, card_name, cheapest_card_price, quantity, is_commander) VALUES (?, ?, 0.15, ?, ?)`,
+            [deckId, c.name, c.qty, c.isCmd ? 1 : 0]
+          );
+        }
+        await validateDeckLegality(deckId);
+        importedDecks.push({ id: deckId, name: currentDeckName, cardCount: currentCards.length });
+      };
+
+      for (let line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('Deck:')) {
+          await flushCurrentDeck();
+          currentDeckName = trimmed.replace(/^(\/\/|#|Deck:)\s*/, '').trim() || `Imported Deck ${importedDecks.length + 1}`;
+          currentCards = [];
+          continue;
+        }
+
+        const match = trimmed.match(/^(\d+)?x?\s*(.+)$/i);
+        if (match) {
+          const qty = parseInt(match[1] || '1', 10);
+          const name = match[2].replace(/\(.*?\)/g, '').replace(/\*F\*/g, '').trim();
+          const isCmd = line.toLowerCase().includes('*cmdr*') || line.toLowerCase().includes('commander');
+          if (name) currentCards.push({ name, qty, isCmd });
+        }
+      }
+      await flushCurrentDeck();
+    }
+
+    res.json({ success: true, count: importedDecks.length, decks: importedDecks });
+  } catch (e) {
+    console.error("Account migration error:", e);
+    res.status(500).json({ error: e.message || "Failed to process account migration." });
   }
 });
 
@@ -5869,17 +6224,224 @@ app.get('/api/cards/details', async (req, res) => {
       cmc: details.cmc !== undefined ? details.cmc : 0,
       colors: details.colors || [],
       rarity: details.rarity || "common",
-      legalities: {
-        commander: "legal",
-        standard: "not_legal",
-        modern: "not_legal",
-        legacy: "not_legal",
-        pioneer: "not_legal",
-        pauper: "not_legal"
-      }
+      legalities: { commander: "legal" }
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ── YOUTUBE REPLAY HARNESS ENDPOINTS ────────────────────────────────
+const YOUTUBE_REPLAYS = [
+  {
+    id: "gk-ep40-atraxa-v-edgar",
+    title: "Game Knights #40: Atraxa vs Edgar Markov vs Krenko vs Yuriko",
+    channel: "Command Zone",
+    format: "Commander 4P",
+    players: [
+      { id: "p1", name: "JLK", commander: "Atraxa, Praetors' Voice", life: 40 },
+      { id: "p2", name: "Jimmy", commander: "Edgar Markov", life: 40 },
+      { id: "p3", name: "Guest 1", commander: "Krenko, Mob Boss", life: 40 },
+      { id: "p4", name: "Guest 2", commander: "Yuriko, the Tiger's Shadow", life: 40 }
+    ],
+    steps: [
+      { step: 1, turn: 1, player: "p1", action: "PLAY_LAND", card: "Command Tower", text: "JLK plays Command Tower." },
+      { step: 2, turn: 1, player: "p1", action: "CAST_SPELL", card: "Sol Ring", text: "JLK casts Sol Ring." },
+      { step: 3, turn: 1, player: "p1", action: "TAP_CARD", card: "Command Tower", text: "JLK taps Command Tower for mana." },
+      { step: 4, turn: 1, player: "p1", action: "PASS_PRIORITY", text: "Priority passes clockwise around the table." },
+      { step: 5, turn: 1, player: "p1", action: "RESOLVE_STACK", text: "Sol Ring enters the battlefield." },
+      { step: 6, turn: 1, player: "p2", action: "PLAY_LAND", card: "Blood Crypt", text: "Jimmy plays Blood Crypt untapped (pays 2 life)." },
+      { step: 7, turn: 1, player: "p2", action: "CHANGE_LIFE", target: "p2", amount: -2, text: "Jimmy pays 2 life for Blood Crypt (38 HP)." },
+      { step: 8, turn: 1, player: "p3", action: "PLAY_LAND", card: "Mountain", text: "Guest 1 plays Mountain." },
+      { step: 9, turn: 1, player: "p4", action: "PLAY_LAND", card: "Island", text: "Guest 2 plays Island." },
+      { step: 10, turn: 2, player: "p1", action: "CAST_COMMANDER", commander: "Atraxa, Praetors' Voice", text: "JLK casts Commander Atraxa, Praetors' Voice." },
+      { step: 11, turn: 2, player: "p1", action: "PASS_PRIORITY", text: "Priority passes around the table." },
+      { step: 12, turn: 2, player: "p1", action: "RESOLVE_STACK", text: "Atraxa enters the battlefield!" },
+      { step: 13, turn: 2, player: "p2", action: "CAST_SPELL", card: "Vampire Nighthawk", text: "Jimmy casts Vampire Nighthawk." },
+      { step: 14, turn: 2, player: "p3", action: "CAST_COMMANDER", commander: "Krenko, Mob Boss", text: "Guest 1 casts Commander Krenko." },
+      { step: 15, turn: 3, player: "p1", action: "ATTACK", attacker: "Atraxa, Praetors' Voice", target: "p2", text: "JLK attacks Jimmy with Atraxa (4 damage, Lifelink)." },
+      { step: 16, turn: 3, player: "p1", action: "DEAL_COMMANDER_DAMAGE", attacker: "p1", defender: "p2", amount: 4, text: "Atraxa deals 4 Commander Damage to Jimmy (36 HP)." },
+      { step: 17, turn: 3, player: "p1", action: "CHANGE_LIFE", target: "p1", amount: 4, text: "JLK gains 4 life from Lifelink (44 HP)." }
+    ]
+  },
+  {
+    id: "cedh-final-2026",
+    title: "cEDH World Championship Final: Rograkh/Silas vs Tymna/Kraum",
+    channel: "Play to Win",
+    format: "cEDH 4P",
+    players: [
+      { id: "p1", name: "Player A", commander: "Rograkh, Son of Rohgahh", life: 40 },
+      { id: "p2", name: "Player B", commander: "Tymna the Weaver", life: 40 },
+      { id: "p3", name: "Player C", commander: "Kraum, Ludevic's Opus", life: 40 },
+      { id: "p4", name: "Player D", commander: "Thrasios, Triton Hero", life: 40 }
+    ],
+    steps: [
+      { step: 1, turn: 1, player: "p1", action: "PLAY_LAND", card: "Gemstone Caverns", text: "Player A starts with Gemstone Caverns in play." },
+      { step: 2, turn: 1, player: "p1", action: "CAST_SPELL", card: "Mox Diamond", text: "Player A casts Mox Diamond, discarding Polluted Delta." },
+      { step: 3, turn: 1, player: "p1", action: "CAST_SPELL", card: "Rhystic Study", text: "Player A attempts Turn 1 Rhystic Study!" },
+      { step: 4, turn: 1, player: "p2", action: "CAST_SPELL", card: "Force of Will", text: "Player B casts Force of Will pitching Brainstorm!" },
+      { step: 5, turn: 1, player: "p2", action: "RESOLVE_STACK", text: "Force of Will counters Rhystic Study!" }
+    ]
+  }
+];
+
+app.get('/api/sandbox/replays', (req, res) => {
+  res.json({ success: true, replays: YOUTUBE_REPLAYS });
+});
+
+app.get('/api/sandbox/replays/:replayId', (req, res) => {
+  const replay = YOUTUBE_REPLAYS.find(r => r.id === req.params.replayId);
+  if (!replay) return res.status(404).json({ error: "Replay not found." });
+  res.json({ success: true, replay });
+});
+
+// ── AI OPPONENT META DECKS & DECK PARSER FOR ARENA PLAYTEST ENGINE ─────────
+const AI_META_DECKS = [
+  {
+    id: "modern-burn",
+    name: "Modern Red Deck Wins (Burn)",
+    format: "modern",
+    archetype: "Aggro",
+    description: "Lightning-fast 60-card Modern Burn with Goblin Guide, Monastery Swiftspear, and Lightning Bolt.",
+    cards: [
+      { name: "Goblin Guide", qty: 4, type: "Creature — Goblin Scout", manaCost: "{R}", cmc: 1, power: 2, toughness: 2 },
+      { name: "Monastery Swiftspear", qty: 4, type: "Creature — Human Monk", manaCost: "{R}", cmc: 1, power: 1, toughness: 2 },
+      { name: "Eidolon of the Great Revel", qty: 4, type: "Enchantment Creature — Spirit", manaCost: "{R}{R}", cmc: 2, power: 2, toughness: 2 },
+      { name: "Lightning Bolt", qty: 4, type: "Instant", manaCost: "{R}", cmc: 1 },
+      { name: "Lava Spike", qty: 4, type: "Sorcery", manaCost: "{R}", cmc: 1 },
+      { name: "Rift Bolt", qty: 4, type: "Sorcery", manaCost: "{2}{R}", cmc: 3 },
+      { name: "Boros Charm", qty: 4, type: "Instant", manaCost: "{R}{W}", cmc: 2 },
+      { name: "Searing Blaze", qty: 4, type: "Instant", manaCost: "{R}{R}", cmc: 2 },
+      { name: "Skewer the Critics", qty: 4, type: "Sorcery", manaCost: "{2}{R}", cmc: 3 },
+      { name: "Inspiring Vantage", qty: 4, type: "Land — Mountain Plains", manaCost: "", cmc: 0 },
+      { name: "Sacred Foundry", qty: 4, type: "Land — Mountain Plains", manaCost: "", cmc: 0 },
+      { name: "Arid Mesa", qty: 4, type: "Land — Fetch", manaCost: "", cmc: 0 },
+      { name: "Mountain", qty: 12, type: "Basic Land — Mountain", manaCost: "", cmc: 0 }
+    ]
+  },
+  {
+    id: "modern-murktide",
+    name: "Modern Izzet Murktide",
+    format: "modern",
+    archetype: "Midrange / Tempo",
+    description: "Premier Modern tempo deck with Dragon's Rage Channeler, Murktide Regent, and Counterspell.",
+    cards: [
+      { name: "Dragon's Rage Channeler", qty: 4, type: "Creature — Human Shaman", manaCost: "{R}", cmc: 1, power: 1, toughness: 1 },
+      { name: "Ragavan, Nimble Pilferer", qty: 4, type: "Legendary Creature — Monkey Pirate", manaCost: "{R}", cmc: 1, power: 2, toughness: 1 },
+      { name: "Murktide Regent", qty: 4, type: "Creature — Dragon", manaCost: "{5}{U}{U}", cmc: 7, power: 3, toughness: 3 },
+      { name: "Lightning Bolt", qty: 4, type: "Instant", manaCost: "{R}", cmc: 1 },
+      { name: "Counterspell", qty: 4, type: "Instant", manaCost: "{U}{U}", cmc: 2 },
+      { name: "Expressive Iteration", qty: 4, type: "Sorcery", manaCost: "{U}{R}", cmc: 2 },
+      { name: "Unholy Heat", qty: 4, type: "Instant", manaCost: "{R}", cmc: 1 },
+      { name: "Mishra's Bauble", qty: 4, type: "Artifact", manaCost: "{0}", cmc: 0 },
+      { name: "Consider", qty: 4, type: "Instant", manaCost: "{U}", cmc: 1 },
+      { name: "Steam Vents", qty: 4, type: "Land — Island Mountain", manaCost: "", cmc: 0 },
+      { name: "Scalding Tarn", qty: 4, type: "Land — Fetch", manaCost: "", cmc: 0 },
+      { name: "Spirebluff Canal", qty: 4, type: "Land — Fast", manaCost: "", cmc: 0 },
+      { name: "Island", qty: 8, type: "Basic Land — Island", manaCost: "", cmc: 0 },
+      { name: "Mountain", qty: 4, type: "Basic Land — Mountain", manaCost: "", cmc: 0 }
+    ]
+  },
+  {
+    id: "edh-atraxa",
+    name: "EDH Atraxa +1/+1 Counters",
+    format: "edh",
+    archetype: "Commander 100",
+    commander: "Atraxa, Praetors' Voice",
+    description: "4-Color Proliferate and +1/+1 Counters EDH Deck led by Atraxa.",
+    cards: [
+      { name: "Atraxa, Praetors' Voice", qty: 1, isCommander: true, type: "Legendary Creature — Angel Horror", manaCost: "{G}{W}{U}{B}", cmc: 4, power: 4, toughness: 4 },
+      { name: "Sol Ring", qty: 1, type: "Artifact", manaCost: "{1}", cmc: 1 },
+      { name: "Arcane Signet", qty: 1, type: "Artifact", manaCost: "{2}", cmc: 2 },
+      { name: "Command Tower", qty: 1, type: "Land", manaCost: "", cmc: 0 },
+      { name: "Hardened Scales", qty: 1, type: "Enchantment", manaCost: "{G}", cmc: 1 },
+      { name: "Doubling Season", qty: 1, type: "Enchantment", manaCost: "{4}{G}", cmc: 5 },
+      { name: "Evolution Sage", qty: 1, type: "Creature — Elf Druid", manaCost: "{2}{G}", cmc: 3, power: 3, toughness: 2 },
+      { name: "Forgotten Ancient", qty: 1, type: "Creature — Elemental", manaCost: "{3}{G}", cmc: 4, power: 0, toughness: 3 },
+      { name: "Swords to Plowshares", qty: 1, type: "Instant", manaCost: "{W}", cmc: 1 },
+      { name: "Counterspell", qty: 1, type: "Instant", manaCost: "{U}{U}", cmc: 2 },
+      { name: "Forest", qty: 10, type: "Basic Land — Forest", manaCost: "", cmc: 0 },
+      { name: "Island", qty: 10, type: "Basic Land — Island", manaCost: "", cmc: 0 },
+      { name: "Plains", qty: 10, type: "Basic Land — Plains", manaCost: "", cmc: 0 },
+      { name: "Swamp", qty: 10, type: "Basic Land — Swamp", manaCost: "", cmc: 0 }
+    ]
+  }
+];
+
+app.get('/api/sandbox/ai-meta-decks', (req, res) => {
+  res.json({ success: true, decks: AI_META_DECKS });
+});
+
+app.get('/api/decks', async (req, res) => {
+  try {
+    let decks = [];
+    if (req.session && req.session.player) {
+      decks = await db.query(
+        `SELECT d.id, d.deck_name as name, d.format, d.cheapest_total_price, d.is_public,
+                (SELECT COUNT(*) FROM deck_cards WHERE deck_id = d.id) as card_count,
+                (SELECT card_name FROM deck_cards WHERE deck_id = d.id AND is_commander = 1 LIMIT 1) as commander
+         FROM decks d
+         WHERE d.player_id = ?
+         ORDER BY d.rowid DESC`,
+        [req.session.player.id]
+      );
+    } else {
+      decks = await db.query(
+        `SELECT d.id, d.deck_name as name, d.format, d.cheapest_total_price, d.is_public,
+                (SELECT COUNT(*) FROM deck_cards WHERE deck_id = d.id) as card_count,
+                (SELECT card_name FROM deck_cards WHERE deck_id = d.id AND is_commander = 1 LIMIT 1) as commander
+         FROM decks d
+         WHERE d.is_public = 1
+         ORDER BY d.rowid DESC
+         LIMIT 20`
+      );
+    }
+    res.json({ success: true, decks: decks || [] });
+  } catch (err) {
+    console.error("Error fetching /api/decks:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/sandbox/parse-deck', async (req, res) => {
+  try {
+    const { deckText, format } = req.body || {};
+    if (!deckText || !deckText.trim()) return res.status(400).json({ error: "Deck text is required" });
+
+    const lines = deckText.trim().split('\n');
+    const parsedCards = [];
+
+    for (let line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('Deck:')) continue;
+
+      const match = trimmed.match(/^(\d+)?x?\s*(.+)$/i);
+      if (match) {
+        const qty = parseInt(match[1] || '1', 10);
+        const name = match[2].replace(/\(.*?\)/g, '').replace(/\*F\*/g, '').trim();
+        const isCommander = line.toLowerCase().includes('*cmdr*') || line.toLowerCase().includes('commander');
+        if (name) {
+          try {
+            const details = await getCheapestCardPrice(name);
+            parsedCards.push({
+              name: details.name || name,
+              qty,
+              isCommander,
+              type: details.type_line || "Spell",
+              manaCost: details.mana_cost || "",
+              cmc: details.cmc !== undefined ? details.cmc : 1,
+              oracleText: details.oracle_text || "",
+              scryfallId: details.scryfallId
+            });
+          } catch(e) {
+            parsedCards.push({ name, qty, isCommander, type: "Spell", manaCost: "{1}", cmc: 1 });
+          }
+        }
+      }
+    }
+    res.json({ success: true, count: parsedCards.length, cards: parsedCards });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -7021,15 +7583,13 @@ app.get('/api/sandbox/room/:code', (req, res) => {
 });
 
 // Start Server
+server.listen(PORT, () => {
+  console.log(`Grimore Server (with Socket.IO & better-sqlite3) running on http://localhost:${PORT}`);
+});
+
 db.initDb().then(() => {
   console.log("Database initialized successfully.");
-  server.listen(PORT, () => {
-    console.log(`Grimore Server (with Socket.IO & better-sqlite3) running on http://localhost:${PORT}`);
-  });
 }).catch(err => {
   console.error("Database initialization warning:", err);
-  server.listen(PORT, () => {
-    console.log(`Grimore Server running on http://localhost:${PORT}`);
-  });
 });
 

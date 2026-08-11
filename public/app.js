@@ -360,12 +360,12 @@
         cn.offsetX *= 0.94;
         cn.x += cn.offsetX;
 
-        ctx.font = `${cn.size}px 'Fira Code', 'Consolas', monospace`;
+        ctx.beginPath();
+        ctx.arc(cn.x, cn.y, Math.max(1.2, cn.size * 0.22), 0, Math.PI * 2);
         ctx.fillStyle = `hsla(${cn.hue}, 95%, 70%, ${alpha})`;
         ctx.shadowColor = `hsla(${cn.hue}, 100%, 65%, ${alpha * 2.5})`;
         ctx.shadowBlur = 10;
-        ctx.textAlign = 'center';
-        ctx.fillText(cn.token, cn.x, cn.y);
+        ctx.fill();
       });
       ctx.restore();
 
@@ -1474,6 +1474,7 @@ function initGoogleSignInButtons() {
     const titles = {
       'dashboard': 'Player Dashboard',
       'discover': 'Discover Decks',
+      'swipe': 'Swipe Stack',
       'decks': 'My Decks',
       'search': 'Card Search Database',
       'tournaments': 'Events Hub',
@@ -1490,6 +1491,15 @@ function initGoogleSignInButtons() {
     // Display section
     const targetSection = document.getElementById(`${sectionName}-view`);
     if (targetSection) targetSection.classList.add('active');
+
+    if (sectionName === 'swipe') {
+      if (typeof window.switchDiscoverViewMode === 'function') window.switchDiscoverViewMode('swipe');
+      if (typeof window.loadDiscoverDecks === 'function') window.loadDiscoverDecks();
+    }
+
+    if (sectionName === 'sandbox') {
+      if (typeof window.promptSandboxPlayMode === 'function') window.promptSandboxPlayMode();
+    }
 
     // Manage history state
     if (pushHistory) {
@@ -1810,61 +1820,126 @@ function initGoogleSignInButtons() {
   }
 
 
-  window.handleImportMoxfieldAccount = async function(event) {
-    if (event) event.preventDefault();
-    const username = prompt("Enter your Moxfield username to import all public decks:");
-    if (!username) return;
+  window.openUniversalImportModal = function() {
+    const modal = document.getElementById('universal-import-modal');
+    if (modal) {
+      modal.classList.add('active');
+      switchUniversalTab('moxfield');
+    }
+  };
 
-    window.showArcaneProgress("Importing Moxfield Account", `Searching public decks for user '${username.trim()}'...`, 10);
+  window.switchUniversalTab = function(platform) {
+    document.getElementById('universal-platform').value = platform;
+    const cards = document.querySelectorAll('.arcane-platform-card');
+    cards.forEach(c => c.classList.remove('active'));
     
-    let progressPct = 10;
-    const progressTimer = setInterval(() => {
-      if (progressPct < 90) {
-        progressPct += 5;
-        let msg = `Fetching decklists & prices for '${username.trim()}' (${progressPct}%)...`;
-        if (progressPct > 60) msg = `Resolving card legalities & tournament rules...`;
-        window.updateArcaneProgress(progressPct, msg);
+    const activeCard = document.querySelector(`.arcane-platform-card[data-platform="${platform}"]`);
+    if (activeCard) activeCard.classList.add('active');
+
+    if (window.playUiSound) window.playUiSound('mana_tap');
+
+    const usernameGroup = document.getElementById('universal-username-group');
+    const usernameLabel = document.getElementById('universal-username-label');
+    const usernameInput = document.getElementById('universal-username');
+    const textGroup = document.getElementById('universal-text-group');
+
+    if (platform === 'moxfield') {
+      usernameGroup.style.display = 'block';
+      textGroup.style.display = 'none';
+      usernameLabel.innerHTML = '<span>Moxfield Account Username</span>';
+      usernameInput.placeholder = 'e.g. NickBuildsDecks';
+    } else if (platform === 'archidekt') {
+      usernameGroup.style.display = 'block';
+      textGroup.style.display = 'none';
+      usernameLabel.innerHTML = '<span>Archidekt Account Username</span>';
+      usernameInput.placeholder = 'e.g. ArchidektUser123';
+    } else if (platform === 'file' || platform === 'text') {
+      usernameGroup.style.display = 'none';
+      textGroup.style.display = 'block';
+    }
+  };
+
+  window.handleUniversalAccountImport = async function(event) {
+    if (event) event.preventDefault();
+    const platform = document.getElementById('universal-platform').value;
+    const username = document.getElementById('universal-username').value;
+    const decksText = document.getElementById('universal-text').value;
+
+    const alertBox = document.getElementById('universal-import-alert');
+    const progressContainer = document.getElementById('universal-progress-container');
+    const progressStatus = document.getElementById('universal-progress-status');
+    const progressPercent = document.getElementById('universal-progress-percent');
+    const progressBar = document.getElementById('universal-progress-bar');
+    const submitBtn = document.getElementById('btn-submit-universal-import');
+
+    alertBox.style.display = 'none';
+    progressContainer.style.display = 'flex';
+    submitBtn.disabled = true;
+
+    let progress = 10;
+    progressStatus.textContent = `Connecting to ${platform.toUpperCase()}...`;
+    progressPercent.textContent = `10%`;
+    progressBar.style.width = `10%`;
+
+    const timer = setInterval(() => {
+      if (progress < 90) {
+        progress += 10;
+        progressPercent.textContent = `${progress}%`;
+        progressBar.style.width = `${progress}%`;
+        if (progress > 40) progressStatus.textContent = `Processing decklists & card legalities...`;
+        if (progress > 70) progressStatus.textContent = `Applying functional auto-tagging & price estimates...`;
       }
-    }, 800);
+    }, 500);
 
     try {
-      const res = await fetch('/api/moxfield/import-account', {
+      const res = await fetch('/api/decks/import-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim() })
+        body: JSON.stringify({ platform, username, decksText })
       });
-      clearInterval(progressTimer);
-      window.updateArcaneProgress(100, "Import process complete!");
-      const data = await res.json();
-      setTimeout(() => window.hideArcaneProgress(), 300);
 
+      clearInterval(timer);
+      progressPercent.textContent = `100%`;
+      progressBar.style.width = `100%`;
+      submitBtn.disabled = false;
+
+      const data = await res.json();
       if (!res.ok || !data.success) {
-        alert(data.error || "Failed to import Moxfield account.");
+        alertBox.style.display = 'block';
+        alertBox.style.background = 'rgba(239, 68, 68, 0.2)';
+        alertBox.style.border = '1px solid #ef4444';
+        alertBox.style.color = '#fca5a5';
+        alertBox.textContent = data.error || `Failed to import ${platform} decks.`;
         return;
       }
-      const importedCount = data.importedCount || 0;
-      const importedDecks = data.importedDecks || [];
-      const skippedDecks = data.skippedDecks || [];
-      let message = `Successfully imported/updated ${importedCount} deck(s):\n`;
-      importedDecks.forEach(d => {
-        message += ` - ${d.name} ($${(d.totalPrice || 0).toFixed(2)})${d.isLegal ? '' : ' [ILLEGAL]'}\n`;
-      });
-      if (skippedDecks.length > 0) {
-        message += `\nSkipped ${skippedDecks.length} deck(s):\n`;
-        skippedDecks.forEach(d => {
-          message += ` - ${d.name} (${d.error})\n`;
-        });
-      }
-      alert(message);
-      if (typeof loadMyDecks === 'function') {
-        loadMyDecks();
-      }
+
+      alertBox.style.display = 'block';
+      alertBox.style.background = 'rgba(34, 197, 94, 0.2)';
+      alertBox.style.border = '1px solid #22c55e';
+      alertBox.style.color = '#86efac';
+      alertBox.textContent = `🎉 Success! Imported ${data.count} deck(s) into your Grimore collection.`;
+
+      if (typeof loadDecks === 'function') loadDecks();
+
+      setTimeout(() => {
+        document.getElementById('universal-import-modal').classList.remove('active');
+        progressContainer.style.display = 'none';
+        alertBox.style.display = 'none';
+      }, 2000);
     } catch (e) {
-      clearInterval(progressTimer);
-      console.error("Moxfield account import failed:", e);
-      window.hideArcaneProgress();
-      alert("An error occurred while importing Moxfield account.");
+      clearInterval(timer);
+      submitBtn.disabled = false;
+      alertBox.style.display = 'block';
+      alertBox.style.background = 'rgba(239, 68, 68, 0.2)';
+      alertBox.style.border = '1px solid #ef4444';
+      alertBox.style.color = '#fca5a5';
+      alertBox.textContent = e.message || "Network error occurred during migration.";
     }
+  };
+
+  window.handleImportMoxfieldAccount = async function(event) {
+    if (event) event.preventDefault();
+    openUniversalImportModal();
   };
 
   window.handleRegisterDeck = async function(event) {
@@ -8964,11 +9039,11 @@ function initGoogleSignInButtons() {
   };
 
   window.renderDiscoverSwipeStack = function() {
-    const stackEl = document.getElementById('swipe-card-stack');
+    const stackEl = document.getElementById('swipe-card-stack') || document.getElementById('standalone-swipe-card-stack');
     if (!stackEl) return;
 
     if (!currentDiscoverDecks || currentDiscoverDecks.length === 0 || currentSwipeIndex >= currentDiscoverDecks.length) {
-      stackEl.innerHTML = `
+      const emptyHtml = `
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; color: var(--text-medium); padding: 2rem;">
           <svg viewBox="0 0 24 24" style="width: 48px; height: 48px; fill: var(--color-primary); margin-bottom: 1rem;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
           <h3 style="color: var(--text-pure); margin-bottom: 0.5rem; font-family: 'Cinzel', serif;">End of the Stack</h3>
@@ -8976,6 +9051,10 @@ function initGoogleSignInButtons() {
           <button class="btn btn-primary" onclick="currentSwipeIndex=0; renderDiscoverSwipeStack();">Shuffle &amp; Start Over</button>
         </div>
       `;
+      const stackEl1 = document.getElementById('swipe-card-stack');
+      const stackEl2 = document.getElementById('standalone-swipe-card-stack');
+      if (stackEl1) stackEl1.innerHTML = emptyHtml;
+      if (stackEl2) stackEl2.innerHTML = emptyHtml;
       return;
     }
 
@@ -9048,7 +9127,11 @@ function initGoogleSignInButtons() {
       </div>
     `;
 
-    stackEl.innerHTML = html;
+    const stackEl1 = document.getElementById('swipe-card-stack');
+    const stackEl2 = document.getElementById('standalone-swipe-card-stack');
+    if (stackEl1) stackEl1.innerHTML = html;
+    if (stackEl2) stackEl2.innerHTML = html;
+
     initCardDragging();
   };
 
@@ -10128,11 +10211,28 @@ function initGoogleSignInButtons() {
     }
   };
 
+  const PRESET_TOKEN_DATA = {
+    'Treasure': { imgUrl: 'https://cards.scryfall.io/normal/front/e/0/e0ee0c16-bc57-4186-ae76-79cfabf0e47c.jpg', type: 'Token Artifact — Treasure', text: '{T}, Sacrifice this artifact: Add one mana of any color.', pt: '' },
+    'Food': { imgUrl: 'https://cards.scryfall.io/normal/front/b/f/bf9c4f1c-7a6c-4828-8fa4-d0aa3e1e2474.jpg', type: 'Token Artifact — Food', text: '{2}, {T}, Sacrifice this artifact: You gain 3 life.', pt: '' },
+    'Clue': { imgUrl: 'https://cards.scryfall.io/normal/front/d/e/de96b026-64d8-4f01-9257-19597c413b19.jpg', type: 'Token Artifact — Clue', text: '{2}, Sacrifice this artifact: Draw a card.', pt: '' },
+    '1/1 Goblin': { imgUrl: 'https://cards.scryfall.io/normal/front/f/8/f8e4e7ee-45df-4d69-a1b4-2453e20ec422.jpg', type: 'Token Creature — Goblin', text: '', pt: '1/1' },
+    '2/2 Zombie': { imgUrl: 'https://cards.scryfall.io/normal/front/1/7/17ffc0a8-bfa3-40e1-b4ec-c840f1ebaa17.jpg', type: 'Token Creature — Zombie', text: '', pt: '2/2' },
+    '1/1 Elf': { imgUrl: 'https://cards.scryfall.io/normal/front/5/8/58794c9a-5f33-4c91-a169-2f22c1db4274.jpg', type: 'Token Creature — Elf Warrior', text: '', pt: '1/1' },
+    '3/3 Beast': { imgUrl: 'https://cards.scryfall.io/normal/front/4/5/456e792f-a63e-436d-9276-f335b1c55255.jpg', type: 'Token Creature — Beast', text: '', pt: '3/3' },
+    '4/4 Angel': { imgUrl: 'https://cards.scryfall.io/normal/front/3/9/39e6a0d2-97b7-48f8-b391-7667f5394200.jpg', type: 'Token Creature — Angel', text: 'Flying', pt: '4/4' },
+    '5/5 Dragon': { imgUrl: 'https://cards.scryfall.io/normal/front/3/e/3e1a0b3b-8c6c-4890-a7d0-158a4369e992.jpg', type: 'Token Creature — Dragon', text: 'Flying', pt: '5/5' },
+    '0/0 Construct': { imgUrl: 'https://cards.scryfall.io/normal/front/9/7/978280f5-46b5-4a57-8919-8eb47b0a30b2.jpg', type: 'Token Artifact Creature — Construct', text: 'Gets +1/+1 for each artifact you control.', pt: '0/0' }
+  };
+
   window.spawnPresetToken = function(name, type, power, toughness, scryfallId) {
+    const data = PRESET_TOKEN_DATA[name] || {};
     const token = {
       card_name: name,
-      type_line: type,
-      scryfall_id: scryfallId || '',
+      type_line: data.type || type,
+      oracle_text: data.text || '',
+      power: data.pt ? data.pt.split('/')[0] : (power || ''),
+      toughness: data.pt ? data.pt.split('/')[1] : (toughness || ''),
+      imgUrl: data.imgUrl || (scryfallId ? `https://cards.scryfall.io/normal/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg` : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}+Token&format=image`),
       instanceId: 'token_' + Math.random().toString(36).substr(2, 9),
       tapped: false,
       counters: 0
@@ -10300,22 +10400,66 @@ function initGoogleSignInButtons() {
     if (playerGrid) {
       playerGrid.innerHTML = '';
       sbBattlefield.forEach(c => {
-        const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=small` : '';
+        const imgUrl = c.imgUrl || (c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=normal` : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.card_name)}&format=image`);
         const type = (c.type_line || '').toLowerCase();
         let borderCol = type.includes('land') ? '#a3e635' : (type.includes('creature') ? '#4ade80' : '#38bdf8');
+        const ptStr = (c.power || c.toughness) ? `${c.power}/${c.toughness}` : '';
+        
         playerGrid.innerHTML += `
-          <div style="position: relative; border-radius: 6px; overflow: hidden; border: 1px solid ${borderCol}; background: #000; height: 145px; display: flex; flex-direction: column; justify-content: space-between; transform: ${c.tapped ? 'rotate(90deg) scale(0.85)' : 'none'}; transition: transform 0.2s ease;" title="${escapeHtml(c.card_name)}">
-            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="font-size: 0.65rem; color: white; padding: 2px;">${escapeHtml(c.card_name)}</div>`}
-            ${c.counters > 0 ? `<div style="position: absolute; top: 2px; right: 2px; background: #10b981; color: white; font-weight: 800; font-size: 0.65rem; padding: 1px 4px; border-radius: 4px;">+${c.counters}/+${c.counters}</div>` : ''}
-            <div style="position: absolute; bottom: 2px; left: 2px; right: 2px; display: flex; gap: 2px;">
-              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.6rem; padding: 1px; flex: 1;" onclick="window.toggleCardTap('${c.instanceId}')">Tap</button>
-              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.6rem; padding: 1px; flex: 1;" onclick="window.addCounterToCard('${c.instanceId}')">+1</button>
-              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.6rem; padding: 1px; flex: 1;" onclick="window.cloneCard('${c.instanceId}')">Clone</button>
-              <button type="button" class="btn btn-danger btn-sm" style="font-size: 0.6rem; padding: 1px;" onclick="window.moveCardToGraveyard('${c.instanceId}')">✕</button>
+          <div style="position: relative; border-radius: 8px; overflow: hidden; border: 1.5px solid ${borderCol}; background: #0c0a14; height: 165px; display: flex; flex-direction: column; justify-content: space-between; transform: ${c.tapped ? 'rotate(90deg) scale(0.88)' : 'none'}; transition: transform 0.2s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 4px 14px rgba(0,0,0,0.6);" title="${escapeHtml(c.card_name)}">
+            <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+            <div style="display: none; padding: 0.4rem; flex-direction: column; justify-content: space-between; height: 100%; font-size: 0.68rem; background: rgba(12,10,20,0.95); color: #f1f5f9;">
+              <div>
+                <div style="font-weight: 800; color: var(--color-gold); font-size: 0.72rem; line-height: 1.2;">${escapeHtml(c.card_name)}</div>
+                <div style="font-size: 0.6rem; color: #38bdf8; font-style: italic; margin-top: 2px;">${escapeHtml(c.type_line || '')}</div>
+                ${c.oracle_text ? `<div style="font-size: 0.58rem; color: #94a3b8; margin-top: 4px; line-height: 1.2;">${escapeHtml(c.oracle_text)}</div>` : ''}
+              </div>
+              ${ptStr ? `<div style="align-self: flex-end; font-weight: 800; font-size: 0.72rem; background: rgba(0,0,0,0.8); border: 1px solid var(--border-medium); padding: 1px 5px; border-radius: 4px; color: #4ade80;">${ptStr}</div>` : ''}
+            </div>
+            ${c.counters > 0 ? `<div style="position: absolute; top: 3px; right: 3px; background: #10b981; color: white; font-weight: 800; font-size: 0.65rem; padding: 2px 6px; border-radius: 99px; box-shadow: 0 0 8px rgba(16,185,129,0.6); z-index: 5;">+${c.counters}/+${c.counters}</div>` : ''}
+            ${ptStr ? `<div style="position: absolute; top: 3px; left: 3px; background: rgba(0,0,0,0.75); color: #4ade80; font-weight: 800; font-size: 0.62rem; padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(74,222,128,0.4); z-index: 5;">${ptStr}</div>` : ''}
+            <div style="position: absolute; bottom: 3px; left: 3px; right: 3px; display: flex; gap: 3px; z-index: 10; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); padding: 2px; border-radius: 4px;">
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.58rem; padding: 2px; flex: 1; font-weight: 700;" onclick="window.toggleCardTap('${c.instanceId}')">Tap</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.58rem; padding: 2px; flex: 1; font-weight: 700;" onclick="window.addCounterToCard('${c.instanceId}')">+1</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.58rem; padding: 2px; flex: 1; font-weight: 700;" onclick="window.cloneCard('${c.instanceId}')">Clone</button>
+              <button type="button" class="btn btn-danger btn-sm" style="font-size: 0.58rem; padding: 2px;" onclick="window.moveCardToGraveyard('${c.instanceId}')">✕</button>
             </div>
           </div>`;
       });
     }
+  };
+
+  // ── GAME MODE SELECTION PROMPT ─────────────────────────────
+  window.selectSandboxPlayMode = function(mode) {
+    const modal = document.getElementById('sandbox-mode-select-modal');
+    if (modal) modal.style.display = 'none';
+
+    if (mode === '4p') {
+      window.location.href = '/sandbox.html';
+    } else if (mode === 'ai') {
+      const aiPanel = document.getElementById('sandbox-ai-panel');
+      if (aiPanel) aiPanel.style.display = 'flex';
+      const badge = document.getElementById('sb-room-badge');
+      if (badge) badge.textContent = '1v1 AI Battle';
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> 1v1 AI Battle Realm started vs Grim AI.</div>`;
+      }
+    } else {
+      const aiPanel = document.getElementById('sandbox-ai-panel');
+      if (aiPanel) aiPanel.style.display = 'none';
+      const badge = document.getElementById('sb-room-badge');
+      if (badge) badge.textContent = 'Solo Goldfish Realm';
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> Solo Goldfish Realm started.</div>`;
+      }
+    }
+  };
+
+  window.promptSandboxPlayMode = function() {
+    const modal = document.getElementById('sandbox-mode-select-modal');
+    if (modal) modal.style.display = 'flex';
   };
 
   // ── MULTIPLAYER ROOM & TOP-RIGHT REALM TOOLS DRAWER ENGINE ─────────────────

@@ -40,8 +40,9 @@ export function DeckPriceAnalytics({ cards, onOptimizePrices }: DeckPriceAnalyti
 
   const openTCGDirect = () => {
     const queryStr = cards.map((c) => `${c.qty} ${c.name}`).join("||")
-    const tcgUrl = `https://store.tcgplayer.com/massentry?c=${encodeURIComponent(queryStr)}&utm_source=grimore`
-    window.open(tcgUrl, "_blank")
+    const tcgMassEntryUrl = `https://store.tcgplayer.com/massentry?c=${encodeURIComponent(queryStr)}`
+    const affiliateUrl = `https://partner.tcgplayer.com/xJoE0d?u=${encodeURIComponent(tcgMassEntryUrl)}`
+    window.open(affiliateUrl, "_blank")
   }
 
   const openCardKingdomDirect = () => {

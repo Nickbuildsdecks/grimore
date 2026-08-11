@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grimore</title>
   <meta name="description" content="Sleek, minimalist dark theme manager for Magic: The Gathering Commander decks, visual budget building, social deck sharing, and local store events.">
-  <meta name='impact-site-verification' value='4fe02577-08b4-4537-9dc8-bf3e5d2c714f'>
-  <link rel="icon" type="image/svg+xml" href="logo.svg">
-    <link rel="stylesheet" href="style.css?v=100">
+  <!-- AAA Video Game Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=Outfit:wght@500;700;800;900&family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=100">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -39,6 +41,10 @@
           <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           <span>My Decks</span>
         </button>
+        <button class="nav-btn" id="nav-btn-swipe" aria-label="Swipe Stack" title="Swipe Stack" onclick="showSection('swipe')">
+          <svg viewBox="0 0 24 24" style="fill: #ef4444; stroke: none; filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.6));"><path d="M16.5 4C15 6.5 13.5 8 13.5 10C13.5 10.5 13.7 11 14 11.5C12 11 11 9.5 11 7.5C8.5 10 7 12.5 7 15.5C7 18.5 9.5 21 12.5 21C15.5 21 18 18.5 18 15.5C18 11.5 16.5 7.5 16.5 4Z"/></svg>
+          <span>Swipe Stack</span>
+        </button>
         <button class="nav-btn" id="nav-btn-search" aria-label="Card Search" title="Card Search" onclick="window.location.href='search.html'">
           <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
           <span>Card Search</span>
@@ -55,10 +61,22 @@
           <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zm0 10h8v8H3zM13 3h8v8h-8zm0 10h8v8h-8z"/></svg>
           <span>Collections</span>
         </button>
-        <button class="nav-btn" id="nav-btn-sandbox" aria-label="Grimore Arena" title="Grimore Premium Arena — MTG Playtest Sandbox" onclick="window.open('/sandbox.html','_blank')">
+        <button class="nav-btn" id="nav-btn-sandbox" aria-label="Grimore Arena" title="Grimore Premium Arena — MTG Playtest Sandbox" onclick="window.location.href='/sandbox.html'">
           <svg viewBox="0 0 24 24"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
           <span>Arena</span>
         </button>
+        <button class="nav-btn" id="nav-btn-changes" aria-label="Command Center" title="Grimore Local Command Center" style="display: none;" onclick="window.location.href='/changes'">
+          <svg viewBox="0 0 24 24" style="fill:#8b5cf6;"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+          <span>Command Center</span>
+        </button>
+        <script>
+          if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            document.addEventListener('DOMContentLoaded', () => {
+              const cBtn = document.getElementById('nav-btn-changes');
+              if (cBtn) cBtn.style.display = 'flex';
+            });
+          }
+        </script>
         <button class="nav-btn" id="nav-btn-drafts" aria-label="Draft Simulator" title="Draft Simulator" onclick="showSection('drafts')">
           <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/></svg>
           <span>Draft Pods</span>
@@ -214,8 +232,46 @@
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
             <div style="display: inline-flex; background: var(--bg-dark); padding: 3px; border-radius: 8px; border: 1px solid var(--border-light);">
-              <button type="button" id="btn-discover-view-grid" class="btn btn-sm btn-primary" onclick="switchDiscoverViewMode('grid')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;">🎴 Grid</button>
-              <button type="button" id="btn-discover-view-swipe" class="btn btn-sm btn-secondary" onclick="switchDiscoverViewMode('swipe')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;">🔥 Swipe Stack</button>
+              <button type="button" id="btn-discover-view-grid" class="btn btn-sm btn-primary" onclick="switchDiscoverViewMode('grid')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;">
+                <svg viewBox="0 0 24 24" aria-hidden="true" style="width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                Grid
+              </button>
+              <button type="button" id="btn-discover-view-swipe" class="btn btn-sm btn-secondary" onclick="switchDiscoverViewMode('swipe')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;">
+                <svg viewBox="0 0 32 32" aria-hidden="true" style="width: 17px; height: 17px; filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.75));">
+                  <defs>
+                    <linearGradient id="hdFlameGradOuter" x1="0" y1="1" x2="0" y2="0">
+                      <stop offset="0%" stop-color="#dc2626"/>
+                      <stop offset="55%" stop-color="#ef4444"/>
+                      <stop offset="100%" stop-color="#f97316"/>
+                    </linearGradient>
+                    <linearGradient id="hdFlameGradInner" x1="0" y1="1" x2="0" y2="0">
+                      <stop offset="0%" stop-color="#ea580c"/>
+                      <stop offset="60%" stop-color="#facc15"/>
+                      <stop offset="100%" stop-color="#ffffff"/>
+                    </linearGradient>
+                    <radialGradient id="hdFlameCoreGlow" cx="50%" cy="70%" r="50%">
+                      <stop offset="0%" stop-color="#ffffff"/>
+                      <stop offset="60%" stop-color="#fef08a"/>
+                      <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+                    </radialGradient>
+                  </defs>
+
+                  <!-- Outer Ambient Flame Base -->
+                  <path fill="url(#hdFlameGradOuter)" d="M22 6c-2 3.5-4 5.5-4 8.5 0 .7.2 1.4.5 2C16 15 14.5 13 14.5 10c-3.5 3.5-5.5 7-5.5 11 0 6.1 4.9 11 11 11s11-4.9 11-11c0-6-3.5-11.5-9-15z" transform="scale(0.82) translate(1.5, 0)"/>
+
+                  <!-- Inner Hot Core -->
+                  <path fill="url(#hdFlameGradInner)" d="M16 16c-2.8 0-5 2.2-5 5 0 1.6.8 3 2 3.8.5-.7 1.2-1.3 2-1.8 1.2.5 2 1.1 2.5 1.8 1.2-.8 2-2.2 2-3.8 0-2.8-2.2-5-4.5-5z" transform="scale(0.82) translate(1.5, 0)"/>
+
+                  <!-- Core Plasma Glow -->
+                  <circle cx="14.5" cy="17.5" r="3.2" fill="url(#hdFlameCoreGlow)"/>
+
+                  <!-- Ember Spark Particles -->
+                  <circle cx="9" cy="8" r="0.9" fill="#fef08a" opacity="0.9"/>
+                  <circle cx="21" cy="6" r="0.75" fill="#facc15" opacity="0.85"/>
+                  <circle cx="24" cy="13" r="0.8" fill="#f97316" opacity="0.9"/>
+                </svg>
+                Swipe Stack
+              </button>
             </div>
             <select id="discover-sort" class="input-field" style="margin: 0; width: 130px; background: var(--bg-dark); cursor: pointer;" onchange="loadDiscoverDecks()">
               <option value="recent">Recent Decks</option>
@@ -233,6 +289,46 @@
         <!-- Dynamic Swipe Stack Container -->
         <div id="discover-swipe-container" class="swipe-container" style="display: none;">
           <div id="swipe-card-stack" class="swipe-card-stack">
+            <!-- Dynamic swiping cards render here -->
+          </div>
+          <div class="swipe-actions">
+            <button type="button" class="swipe-btn swipe-btn-pass" aria-label="Pass / Skip" title="Pass (Left Arrow)" onclick="triggerSwipeAction('left')">
+              <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <button type="button" class="swipe-btn swipe-btn-inspect" aria-label="Inspect Deck" title="Inspect Deck (Enter)" onclick="triggerSwipeAction('inspect')">
+              <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: currentColor;"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+            </button>
+            <button type="button" class="swipe-btn swipe-btn-like" aria-label="Like Deck" title="Like / Save Deck (Right Arrow)" onclick="triggerSwipeAction('right')">
+              <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: currentColor;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dedicated Flagship Swipe Stack Arena View -->
+    <section id="swipe-view" class="view-section">
+      <div class="panel" style="background: linear-gradient(145deg, rgba(15, 15, 23, 0.95), rgba(8, 8, 14, 0.98)); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(239, 68, 68, 0.15); padding: 1.75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.85rem;">
+            <div style="width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(249, 115, 22, 0.15)); border: 1px solid rgba(239, 68, 68, 0.4); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);">
+              <svg viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: #ef4444; filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.6));"><path d="M16.5 4C15 6.5 13.5 8 13.5 10C13.5 10.5 13.7 11 14 11.5C12 11 11 9.5 11 7.5C8.5 10 7 12.5 7 15.5C7 18.5 9.5 21 12.5 21C15.5 21 18 18.5 18 15.5C18 11.5 16.5 7.5 16.5 4Z"/></svg>
+            </div>
+            <div>
+              <h2 style="margin: 0; font-size: 1.45rem; font-family: 'Cinzel', serif; font-weight: 900; color: var(--text-pure); letter-spacing: 0.5px;">SWIPE STACK</h2>
+              <span style="font-family: 'Rajdhani', sans-serif; font-size: 0.8rem; font-weight: 700; color: #ff6b6b; letter-spacing: 1px; text-transform: uppercase;">Interactive Deck Matcher & Discovery Engine</span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <span style="font-family: 'Outfit', sans-serif; font-size: 0.8rem; color: var(--text-muted); background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+              Hotkeys: <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff;">←</kbd> Pass | <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff;">→</kbd> Like
+            </span>
+          </div>
+        </div>
+
+        <!-- Swipe Card Stack Area -->
+        <div id="standalone-swipe-container" class="swipe-container" style="display: flex;">
+          <div id="standalone-swipe-card-stack" class="swipe-card-stack">
             <!-- Dynamic swiping cards render here -->
           </div>
           <div class="swipe-actions">
@@ -307,9 +403,13 @@
 
           <!-- Actions aligned right -->
           <div class="deck-library-actions">
+            <button type="button" class="btn btn-primary" onclick="openUniversalImportModal()" style="font-weight: 700;">
+              <svg viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Import Account
+            </button>
             <button type="button" class="btn btn-secondary" onclick="toggleImportForm()">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
-              Import
+              Quick Import
             </button>
             <button type="button" class="btn btn-gold" onclick="openVisualDeckbuilder()">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -781,7 +881,7 @@
     </div>
 
     <!-- Three-Panel Layout -->
-    <div class="deck-view-grid" style="display: grid; grid-template-columns: 310px 2.3fr 0.5fr; gap: 1.5rem; flex-grow: 1; overflow: hidden; padding-top: 1rem;">
+    <div class="deck-view-grid" style="display: grid; grid-template-columns: 310px 2.3fr 0.5fr; gap: 1rem; flex-grow: 1; overflow: hidden; padding-top: 0.5rem;">
 
       <!-- Panel 1: Commander Showroom & Analytics -->
       <div style="display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 1.25rem; overflow: hidden; gap: 1rem;">
@@ -1945,6 +2045,83 @@
     </div>
   </div>
 
+  <!-- AAA Universal Account Migration Modal -->
+  <div id="universal-import-modal" class="modal-overlay" onclick="if(event.target===this) this.classList.remove('active')">
+    <div class="modal arcane-portal-modal" onclick="event.stopPropagation()">
+      <!-- Header -->
+      <div style="position: relative; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgba(168, 85, 247, 0.25); padding-bottom: 1rem; margin-bottom: 1.25rem;">
+        <h3 style="margin: 0; font-size: 1.35rem; font-family: 'Outfit', sans-serif; font-weight: 800; color: var(--text-pure); text-align: center; width: 100%;">Universal Account Migration</h3>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('universal-import-modal').classList.remove('active')" style="position: absolute; right: 0; top: -2px; border-radius: 8px;">✕ Close</button>
+      </div>
+
+      <p style="font-size: 0.88rem; color: var(--text-medium); margin-bottom: 1.25rem; line-height: 1.5;">
+        Select your source platform to instantly sync your entire MTG deck collection to Grimore.
+      </p>
+
+      <!-- Platform Selection Cards Grid -->
+      <div class="arcane-platform-grid">
+        <div class="arcane-platform-card active universal-tab" onclick="switchUniversalTab('moxfield')" data-platform="moxfield">
+          <span style="font-family:'Outfit', sans-serif; font-size:0.95rem; font-weight:800; color:var(--text-pure);">Moxfield</span>
+        </div>
+
+        <div class="arcane-platform-card universal-tab" onclick="switchUniversalTab('archidekt')" data-platform="archidekt">
+          <span style="font-family:'Outfit', sans-serif; font-size:0.95rem; font-weight:800; color:var(--text-pure);">Archidekt</span>
+        </div>
+
+        <div class="arcane-platform-card universal-tab" onclick="switchUniversalTab('file')" data-platform="file">
+          <span style="font-family:'Outfit', sans-serif; font-size:0.95rem; font-weight:800; color:var(--text-pure);">ManaBox</span>
+        </div>
+
+        <div class="arcane-platform-card universal-tab" onclick="switchUniversalTab('text')" data-platform="text">
+          <span style="font-family:'Outfit', sans-serif; font-size:0.95rem; font-weight:800; color:var(--text-pure);">Raw Text</span>
+        </div>
+      </div>
+
+      <!-- Form Control Container -->
+      <form id="universal-import-form" onsubmit="handleUniversalAccountImport(event)" style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <input type="hidden" id="universal-platform" value="moxfield">
+
+        <div id="universal-username-group" style="background: rgba(10, 10, 16, 0.7); padding: 1.25rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
+          <label class="form-label" id="universal-username-label" for="universal-username" style="font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--text-pure); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>Moxfield Account Username</span>
+          </label>
+          <input type="text" id="universal-username" class="input-field" placeholder="e.g. NickBuildsDecks" style="background: var(--bg-dark); font-size: 1rem; height: 46px; border-radius: 10px; border: 1px solid rgba(168, 85, 247, 0.3); color: #ffffff;">
+          <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; display: block;">
+            All public Commander and format decks under this username will be synced to your Grimore collection as private decks.
+          </span>
+        </div>
+
+        <div id="universal-text-group" style="display: none; background: rgba(10, 10, 16, 0.7); padding: 1.25rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
+          <label class="form-label" for="universal-text" style="font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--text-pure); margin-bottom: 0.5rem; display: block;">
+            Multi-Deck Text Block (Separate decks with // Deck Name)
+          </label>
+          <textarea id="universal-text" class="input-field" rows="8" placeholder="// My Kaalia Deck&#10;1 Kaalia of the Vast *CMDR*&#10;1 Sol Ring&#10;1 Command Tower&#10;&#10;// My Yuriko Deck&#10;1 Yuriko, the Tiger's Shadow *CMDR*&#10;1 Ponder" style="background: var(--bg-dark); font-family: 'Rajdhani', monospace; font-size: 0.9rem; border-radius: 10px; border: 1px solid rgba(6, 182, 212, 0.3); line-height: 1.4;"></textarea>
+        </div>
+
+        <!-- Progress Indicator Bar -->
+        <div id="universal-progress-container" style="display: none; flex-direction: column; gap: 0.5rem; background: rgba(168, 85, 247, 0.08); padding: 1rem; border-radius: 12px; border: 1px solid rgba(168, 85, 247, 0.25);">
+          <div style="display: flex; justify-content: space-between; font-family: 'Outfit', sans-serif; font-size: 0.85rem; font-weight: 700; color: #c084fc;">
+            <span id="universal-progress-status">Initiating Migration...</span>
+            <span id="universal-progress-percent" style="font-family: 'Rajdhani', sans-serif; font-size: 0.95rem;">0%</span>
+          </div>
+          <div style="width: 100%; height: 10px; background: rgba(0, 0, 0, 0.6); border-radius: 6px; overflow: hidden; border: 1px solid rgba(168, 85, 247, 0.3);">
+            <div id="universal-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #a855f7, #06b6d4, #f59e0b); box-shadow: 0 0 15px rgba(168, 85, 247, 0.8); transition: width 0.3s ease;"></div>
+          </div>
+        </div>
+
+        <div id="universal-import-alert" style="display: none; padding: 0.85rem 1rem; border-radius: 10px; font-family: 'Outfit', sans-serif; font-size: 0.9rem; font-weight: 700;"></div>
+
+        <!-- Submit Controls -->
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.25rem;">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('universal-import-modal').classList.remove('active')" style="border-radius: 10px; height: 44px; padding: 0 1.25rem;">Cancel</button>
+          <button type="submit" id="btn-submit-universal-import" class="btn btn-primary" style="height: 44px; padding: 0 1.75rem; font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 0.95rem; border-radius: 10px; background: linear-gradient(135deg, #a855f7, #7e22ce); box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4); display: flex; align-items: center; gap: 0.5rem;">
+            <span>Initiate Migration</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Forgot Password Recovery Modal -->
   <div id="modal-forgot-password" class="modal-overlay" onclick="this.classList.remove('active')">
     <div class="modal" style="max-width: 420px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; padding: 1.5rem;" onclick="event.stopPropagation()">
@@ -2500,6 +2677,29 @@
       Grimore is unofficial Fan Content permitted under the Fan Content Policy. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.
     </p>
   </footer>
+
+  <!-- GAME PLAY REALM MODE SELECTION MODAL -->
+  <div id="sandbox-mode-select-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 30000; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);">
+    <div class="modal" style="max-width: 540px; width: 92%; border: 1px solid var(--color-gold); padding: 1.75rem; background: var(--bg-card); border-radius: 16px; display: flex; flex-direction: column; gap: 1.25rem; box-shadow: 0 25px 80px rgba(0,0,0,0.95); text-align: center;">
+      <h2 style="font-family: 'Cinzel', serif; font-weight: 800; color: var(--color-gold); margin: 0; font-size: 1.4rem;">⚔️ Select Game Play Realm Mode</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">How would you like to enter the Grimore MTG Arena today?</p>
+      
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <button type="button" class="btn btn-gold" style="padding: 1rem; font-weight: 800; font-size: 0.95rem; display: flex; align-items: center; justify-content: space-between;" onclick="window.selectSandboxPlayMode('4p')">
+          <span>🏆 4-Player Commander Pod</span>
+          <span style="font-size: 0.72rem; font-weight: 600; opacity: 0.85;">vs 3 Opponents</span>
+        </button>
+        <button type="button" class="btn btn-secondary" style="padding: 0.85rem; font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; justify-content: space-between;" onclick="window.selectSandboxPlayMode('ai')">
+          <span>⚔️ 1v1 AI Battle Arena</span>
+          <span style="font-size: 0.72rem; font-weight: 600; color: #ef4444;">vs Grim AI</span>
+        </button>
+        <button type="button" class="btn btn-secondary" style="padding: 0.85rem; font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; justify-content: space-between;" onclick="window.selectSandboxPlayMode('goldfish')">
+          <span>🎯 Solo Goldfish Sandbox</span>
+          <span style="font-size: 0.72rem; font-weight: 600; color: #38bdf8;">Freeform Testing</span>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js?v=100"></script>
 </body>

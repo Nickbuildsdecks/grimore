@@ -126,10 +126,10 @@ export function AmbientCanvas({ className }: { className?: string }) {
         if (rn.x < -40) rn.x = w + 20
         if (rn.x > w + 40) rn.x = -20
 
-        ctx.font = `${rn.size}px 'Fira Code', monospace`
+        ctx.beginPath()
+        ctx.arc(rn.x, rn.y + bobY, Math.max(1.2, rn.size * 0.22), 0, Math.PI * 2)
         ctx.fillStyle = `hsla(${rn.hue},70%,72%,${rn.alpha * 0.5})`
-        ctx.textAlign = "center"
-        ctx.fillText(rn.char, rn.x, rn.y + bobY)
+        ctx.fill()
       })
       ctx.restore()
 

@@ -5,6 +5,12 @@
 
 'use strict';
 
+// ── HTML Escape Helper ────────────────────────────────────
+function escapeHtml(text) {
+  if (typeof text !== 'string') return text || '';
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
 // ── MTG Comprehensive Rules Reference ────────────────────────
 const MTG_RULES = {
   '116.1': 'Players may cast spells and activate abilities only when they have priority.',
@@ -104,6 +110,19 @@ const Arena = (() => {
     phase: 'main1',
     phaseIdx: PHASE_ORDER.indexOf('main1'),
     stack: [],
+    replay: { active: false, match: null, stepIdx: 0, autoPlay: false, interval: null },
+    focusOpponent: 'p2',
+    opponents: {
+      p2: { name: 'Grim (AI)', life: 40, commander: 'Grim', battlefield: [], graveyard: [], exile: [] },
+      p3: { name: 'Player 3', life: 40, commander: 'Atrasa', battlefield: [], graveyard: [], exile: [] },
+      p4: { name: 'Player 4', life: 40, commander: 'Krenko', battlefield: [], graveyard: [], exile: [] }
+    },
+    cmdMatrix: {
+      player: { p2: 0, p3: 0, p4: 0 },
+      p2: { player: 0, p3: 0, p4: 0 },
+      p3: { player: 0, p2: 0, p4: 0 },
+      p4: { player: 0, p2: 0, p3: 0 },
+    },
     zones: {
       player:   { library: [], hand: [], battlefield: [], graveyard: [], exile: [] },
       opponent: { library: [], hand: [], battlefield: [], graveyard: [], exile: [] },
@@ -165,6 +184,24 @@ const Arena = (() => {
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
   }
 
+  // ── Drawer & Pop-out Controls ─────────────────────────────
+  function toggleAdvisorDrawer(forceState) {
+    const advisor = document.getElementById('arena-advisor');
+    const overlay = document.getElementById('advisor-overlay');
+    if (!advisor) return;
+    const isCurrentlyOpen = advisor.classList.contains('open');
+    const shouldOpen = forceState !== undefined ? forceState : !isCurrentlyOpen;
+
+    advisor.classList.toggle('open', shouldOpen);
+    if (overlay) overlay.classList.toggle('open', shouldOpen);
+
+    // Hide unread dot when opening
+    if (shouldOpen) {
+      const dot = document.getElementById('advisor-unread-dot');
+      if (dot) dot.style.display = 'none';
+    }
+  }
+
   // ── Toast / Advisor Feed ──────────────────────────────────
   function toast(msg, type = 'info', ruleId = null) {
     const container = document.getElementById('toast-container');
@@ -186,6 +223,13 @@ const Arena = (() => {
     feed.scrollTop = feed.scrollHeight;
     // Keep feed from getting too long
     while (feed.children.length > 80) feed.removeChild(feed.firstChild);
+
+    // Show unread indicator if drawer is tucked away
+    const advisor = document.getElementById('arena-advisor');
+    if (advisor && !advisor.classList.contains('open')) {
+      const dot = document.getElementById('advisor-unread-dot');
+      if (dot) dot.style.display = 'inline-block';
+    }
   }
 
   // ── SBA (State-Based Actions) ─────────────────────────────
@@ -297,6 +341,18 @@ const Arena = (() => {
     return c;
   }
 
+  function triggerFloatingDamageNumber(targetElement, delta) {
+    if (!targetElement) return;
+    const rect = targetElement.getBoundingClientRect();
+    const floatEl = document.createElement('div');
+    floatEl.className = `floating-number ${delta >= 0 ? 'gain' : 'damage'}`;
+    floatEl.textContent = `${delta >= 0 ? '+' : ''}${delta}`;
+    floatEl.style.left = `${rect.left + rect.width / 2}px`;
+    floatEl.style.top = `${rect.top}px`;
+    document.body.appendChild(floatEl);
+    setTimeout(() => floatEl.remove(), 1000);
+  }
+
   // ── Life & Counters ───────────────────────────────────────
   function changeLife(who, delta) {
     state.life[who] = Math.max(0, state.life[who] + delta);
@@ -307,17 +363,21 @@ const Arena = (() => {
       el.classList.remove('damage-flash','gain-flash');
       void el.offsetWidth;
       el.classList.add(delta < 0 ? 'damage-flash' : 'gain-flash');
+      triggerFloatingDamageNumber(el, delta);
       setTimeout(() => el.classList.remove('damage-flash','gain-flash'), 450);
     }
-    checkSBAs();
+    playAudioSound(delta >= 0 ? 'life_gain' : 'life_damage');
+    checkStateBasedActions();
   }
 
   // ── Mana Pool ─────────────────────────────────────────────
   function addMana(color, amount = 1) {
     state.mana[color] = (state.mana[color] || 0) + amount;
     renderManaPool();
+    playAudioSound('tap_mana');
     advise(`Added ${amount} ${color} mana to your pool.`, 'log');
   }
+
 
   function clearManaPool() {
     state.mana = {W:0,U:0,B:0,R:0,G:0,C:0};
@@ -389,7 +449,7 @@ const Arena = (() => {
     }
   }
 
-  function passPhase() {
+  function passPhaseInternal() {
     if (state.stack.length > 0) {
       advise('You must resolve or respond to items on the stack before advancing.', 'warning', '116.3b');
       toast('Stack not empty — resolve or respond first.', 'warn');
@@ -405,6 +465,7 @@ const Arena = (() => {
     }
     setPhase(PHASE_ORDER[nextIdx]);
   }
+
 
   function jumpToPhase(phase) {
     advise(`Jumping to ${PHASE_LABELS[phase]} phase.`, 'log');
@@ -452,8 +513,10 @@ const Arena = (() => {
     state.zones.player.hand.push(c);
     renderHand();
     updateZoneCounts();
+    playAudioSound('card_draw');
     advise(`Drew: <strong>${c.name}</strong>`, 'log');
   }
+
 
   // ── Untap All ─────────────────────────────────────────────
   function untapAll() {
@@ -583,6 +646,7 @@ const Arena = (() => {
     state.zones[owner].battlefield.push(c);
     renderBattlefield(owner);
     updateZoneCounts();
+    playAudioSound('card_play');
   }
 
   function renderBattlefield(owner) {
@@ -598,6 +662,463 @@ const Arena = (() => {
     state.zones[owner].battlefield.forEach(card => {
       const el = createCardElement(card, owner, 'battlefield');
       zone.appendChild(el);
+    });
+  }
+
+  function renderOpponentMiniPod(playerKey) {
+    const opp = state.opponents[playerKey];
+    if (!opp) return;
+
+    const nameEl = document.getElementById(`pod-name-${playerKey}`);
+    const hpEl = document.getElementById(`pod-hp-badge-${playerKey}`);
+    const row = document.getElementById(`opp-cards-row-${playerKey}`);
+
+    if (nameEl) nameEl.textContent = opp.name;
+    if (hpEl) hpEl.textContent = `${opp.life} HP`;
+
+    if (row) {
+      row.innerHTML = '';
+      if (!opp.battlefield || !opp.battlefield.length) {
+        row.innerHTML = '<span style="font-size:0.58rem;color:#64748b;font-style:italic;">No cards on board</span>';
+        return;
+      }
+
+      opp.battlefield.forEach(card => {
+        const mini = document.createElement('div');
+        mini.className = 'opp-mini-card';
+        const scryfallId = card.scryfallId || card.scryfall_id || card.id || '';
+        const imgUrl = (scryfallId && scryfallId.length > 5)
+          ? `https://cards.scryfall.io/normal/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg`
+          : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name || 'Card')}&format=image&version=normal`;
+
+        mini.innerHTML = `<img src="${imgUrl}" title="${escapeHtml(card.name || '')}">`;
+        mini.addEventListener('mouseenter', (e) => showHoverPreviewTooltip(e, card));
+        mini.addEventListener('mouseleave', hideHoverPreviewTooltip);
+        row.appendChild(mini);
+      });
+    }
+  }
+
+  function renderAllOpponentMiniPods() {
+    ['p2', 'p3', 'p4'].forEach(pk => renderOpponentMiniPod(pk));
+  }
+
+  // ── 4-Player Pod Focus Switcher ───────────────────────────
+  function switchFocusPlayer(playerKey) {
+    if (!state.opponents[playerKey]) return;
+    state.focusOpponent = playerKey;
+    
+    // Update topbar pills
+    document.querySelectorAll('.pod-player-pill').forEach(pill => {
+      pill.classList.toggle('active', pill.dataset.player === playerKey);
+    });
+
+    // Update Mini Pods active highlight
+    ['p2', 'p3', 'p4'].forEach(pk => {
+      const pod = document.getElementById(`opp-pod-${pk}`);
+      if (pod) pod.classList.toggle('active', pk === playerKey);
+    });
+
+    const opp = state.opponents[playerKey];
+    // Update opponent life & label in topbar
+    const oppLife = document.getElementById('opp-life');
+    const oppLabel = document.getElementById('opp-label');
+    if (oppLife) oppLife.textContent = opp.life;
+    if (oppLabel) oppLabel.textContent = opp.name;
+
+    // Render detailed active opponent battlefield
+    const oppBf = document.getElementById('opponent-battlefield');
+    if (oppBf) {
+      const label = document.getElementById('opp-bf-label') || oppBf.querySelector('.bf-zone-label');
+      if (label) label.textContent = `${opp.name}'s Battlefield`;
+      const oldCards = oppBf.querySelectorAll('.arena-card');
+      oldCards.forEach(c => c.remove());
+      (opp.battlefield || []).forEach(card => {
+        const el = createCardElement(card, playerKey, 'battlefield');
+        oppBf.appendChild(el);
+      });
+    }
+
+    renderAllOpponentMiniPods();
+    advise(`Switched focus to <strong>${opp.name}</strong>'s battlefield.`, 'log');
+  }
+
+  // ── 4P Commander Damage Matrix ─────────────────────────────
+  function openCmdMatrixModal() {
+    const modal = document.getElementById('cmd-matrix-modal');
+    const table = document.getElementById('cmd-matrix-table');
+    if (!modal || !table) return;
+
+    const players = [
+      { id: 'player', name: 'You' },
+      { id: 'p2', name: 'Grim (AI)' },
+      { id: 'p3', name: 'Player 3' },
+      { id: 'p4', name: 'Player 4' }
+    ];
+
+    let html = `
+      <tr>
+        <th>Attacker \\ Defender</th>
+        ${players.map(p => `<th>${p.name}</th>`).join('')}
+      </tr>
+    `;
+
+    players.forEach(attacker => {
+      html += `<tr><th>${attacker.name}'s Cmdr</th>`;
+      players.forEach(defender => {
+        if (attacker.id === defender.id) {
+          html += `<td style="color:#64748b;">—</td>`;
+        } else {
+          const dmg = (state.cmdMatrix[attacker.id] && state.cmdMatrix[attacker.id][defender.id]) || 0;
+          html += `
+            <td>
+              <input type="number" min="0" max="21" class="cmd-matrix-input" value="${dmg}" onchange="Arena.updateCmdMatrix('${attacker.id}','${defender.id}',this.value)">
+              / 21
+            </td>
+          `;
+        }
+      });
+      html += `</tr>`;
+    });
+
+    table.innerHTML = html;
+    modal.classList.add('open');
+  }
+
+  function updateCmdMatrix(attackerId, defenderId, val) {
+    const num = Math.max(0, parseInt(val) || 0);
+    if (!state.cmdMatrix[attackerId]) state.cmdMatrix[attackerId] = {};
+    state.cmdMatrix[attackerId][defenderId] = num;
+    if (num >= 21) {
+      advise(`Commander Damage Threshold Reached: ${attackerId} dealt 21+ damage to ${defenderId}! (CR 903.10)`, 'error');
+      toast(`Commander Damage Lethal! (${num}/21)`, 'error', '903.10');
+    }
+  }
+
+  // ── YOUTUBE REPLAY HARNESS ENGINE ─────────────────────────
+  async function openReplayModal() {
+    const modal = document.getElementById('replay-select-modal');
+    const list = document.getElementById('replay-modal-list');
+    if (!modal || !list) return;
+
+    modal.classList.add('open');
+    list.innerHTML = '<div style="text-align:center;padding:1rem;color:#94a3b8;font-size:0.8rem;">Loading YouTube Commander matches...</div>';
+
+    try {
+      const res = await fetch('/api/sandbox/replays');
+      const data = await res.json();
+      if (!data.replays || !data.replays.length) {
+        list.innerHTML = '<div style="text-align:center;padding:1rem;color:#64748b;">No replays available.</div>';
+        return;
+      }
+
+      list.innerHTML = '';
+      data.replays.forEach(r => {
+        const div = document.createElement('div');
+        div.style.cssText = 'background:rgba(255,255,255,0.03);border:1px solid var(--glass-border-md);border-radius:8px;padding:0.85rem 1.2rem;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:all 0.2s ease;';
+        div.innerHTML = `
+          <div>
+            <div style="font-weight:700;font-size:0.9rem;color:#f1f5f9;">${r.title}</div>
+            <div style="font-size:0.72rem;color:#94a3b8;margin-top:2px;">Channel: ${r.channel} · ${r.format} · ${r.steps.length} Steps</div>
+          </div>
+          <button class="arena-btn arena-btn-magical" style="font-size:0.7rem;padding:4px 10px;">▶ Load & Replicate</button>
+        `;
+        div.addEventListener('click', () => loadReplayMatch(r.id));
+        list.appendChild(div);
+      });
+    } catch (e) {
+      list.innerHTML = '<div style="text-align:center;padding:1rem;color:#ef4444;">Failed to load replays.</div>';
+    }
+  }
+
+  async function loadReplayMatch(replayId) {
+    const modal = document.getElementById('replay-select-modal');
+    if (modal) modal.classList.remove('open');
+
+    try {
+      const res = await fetch(`/api/sandbox/replays/${replayId}`);
+      const data = await res.json();
+      if (!data.replay) return;
+
+      const r = data.replay;
+      state.replay = {
+        active: true,
+        match: r,
+        stepIdx: 0,
+        autoPlay: false,
+        interval: null
+      };
+
+      // Set up players
+      const p1 = r.players[0];
+      const p2 = r.players[1];
+      const p3 = r.players[2];
+      const p4 = r.players[3];
+
+      if (p2) state.opponents.p2.name = `${p2.name} (${p2.commander})`;
+      if (p3) state.opponents.p3.name = `${p3.name} (${p3.commander})`;
+      if (p4) state.opponents.p4.name = `${p4.name} (${p4.commander})`;
+
+      // Show Replay Bar
+      const bar = document.getElementById('youtube-replay-bar');
+      if (bar) bar.style.display = 'flex';
+      const titleEl = document.getElementById('replay-title');
+      if (titleEl) titleEl.textContent = r.title;
+
+      switchFocusPlayer('p2');
+      updateReplayStepUI();
+      advise(`Loaded YouTube Replay: <strong>${r.title}</strong>. Step through actions using the control bar!`, 'success');
+      toast(`Replay Engine Active (${r.steps.length} Steps)`, 'info');
+    } catch (e) {
+      console.error("Replay load error:", e);
+    }
+  }
+
+  function updateReplayStepUI() {
+    if (!state.replay.active || !state.replay.match) return;
+    const steps = state.replay.match.steps;
+    const currentStep = steps[state.replay.stepIdx];
+
+    const stepInfo = document.getElementById('replay-step-info');
+    if (stepInfo) stepInfo.textContent = `Step ${state.replay.stepIdx + 1} / ${steps.length}`;
+
+    if (currentStep) {
+      executeReplayAction(currentStep);
+    }
+  }
+
+  function executeReplayAction(step) {
+    if (step.text) {
+      advise(`<strong>[Step ${step.step}]</strong> ${step.text}`, 'log');
+    }
+
+    if (step.action === 'PLAY_LAND' || step.action === 'CAST_SPELL') {
+      const card = { name: step.card || step.commander, card_name: step.card || step.commander, type_line: step.action === 'PLAY_LAND' ? 'Land' : 'Spell' };
+      if (step.player === 'player' || step.player === 'p1') {
+        putOnBattlefield(card, 'player');
+      } else if (state.opponents[step.player]) {
+        state.opponents[step.player].battlefield.push(assignUid(card));
+        if (state.focusOpponent === step.player) switchFocusPlayer(step.player);
+      }
+    } else if (step.action === 'CHANGE_LIFE') {
+      if (step.target === 'player' || step.target === 'p1') {
+        changeLife('player', step.amount);
+      } else if (state.opponents[step.target]) {
+        state.opponents[step.target].life += step.amount;
+        if (state.focusOpponent === step.target) switchFocusPlayer(step.target);
+      }
+    } else if (step.action === 'DEAL_COMMANDER_DAMAGE') {
+      const atk = step.attacker === 'p1' ? 'player' : step.attacker;
+      const def = step.defender === 'p1' ? 'player' : step.defender;
+      updateCmdMatrix(atk, def, step.amount);
+    } else if (step.action === 'RESOLVE_STACK') {
+      toast(`Stack Item Resolved`, 'success');
+    }
+    renderAllOpponentMiniPods();
+  }
+
+  function replayNextStep() {
+    if (!state.replay.active || !state.replay.match) return;
+    if (state.replay.stepIdx < state.replay.match.steps.length - 1) {
+      state.replay.stepIdx++;
+      updateReplayStepUI();
+    } else {
+      pauseAutoReplay();
+      toast(`Replay Completed!`, 'success');
+    }
+  }
+
+  function replayPrevStep() {
+    if (!state.replay.active || !state.replay.match) return;
+    if (state.replay.stepIdx > 0) {
+      state.replay.stepIdx--;
+      updateReplayStepUI();
+    }
+  }
+
+  function toggleReplayAutoPlay() {
+    if (!state.replay.active) return;
+    const btn = document.getElementById('btn-replay-play');
+    if (state.replay.autoPlay) {
+      pauseAutoReplay();
+    } else {
+      state.replay.autoPlay = true;
+      if (btn) btn.textContent = '⏸ Pause';
+      state.replay.interval = setInterval(() => {
+        replayNextStep();
+      }, 1800);
+    }
+  }
+
+  function pauseAutoReplay() {
+    state.replay.autoPlay = false;
+    if (state.replay.interval) clearInterval(state.replay.interval);
+    const btn = document.getElementById('btn-replay-play');
+    if (btn) btn.textContent = '▶ Auto Play';
+  }
+
+  function closeReplayEngine() {
+    pauseAutoReplay();
+    state.replay.active = false;
+    const bar = document.getElementById('youtube-replay-bar');
+    if (bar) bar.style.display = 'none';
+    toast(`Replay Engine Closed`, 'info');
+  }
+
+  // ── WEB AUDIO SYNTHESIZER SOUND ENGINE (Phase 4) ───────────
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let audioCtx = null;
+
+  function playAudioSound(type) {
+    try {
+      if (!audioCtx && AudioCtx) audioCtx = new AudioCtx();
+      if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === 'card_play' || type === 'card_draw') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.1);
+        gain.gain.setValueAtTime(0.13, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+        osc.start(now);
+        osc.stop(now + 0.1);
+      } else if (type === 'mana_tap' || type === 'tap_mana') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(660, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.linearRampToValueAtTime(0.001, now + 0.08);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      } else if (type === 'spell_cast') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.exponentialRampToValueAtTime(660, now + 0.25);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      } else if (type === 'creature_cast') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(500, now + 0.2);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      } else if (type === 'land_play') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(280, now + 0.22);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.22);
+        osc.start(now);
+        osc.stop(now + 0.22);
+      } else if (type === 'combat_hit') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(120, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.3);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now);
+        osc.stop(now + 0.3);
+      } else if (type === 'phase_step') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, now);
+        gain.gain.setValueAtTime(0.07, now);
+        gain.gain.linearRampToValueAtTime(0.001, now + 0.08);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      } else if (type === 'game_over') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.5);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
+        osc.start(now);
+        osc.stop(now + 0.5);
+      } else if (type === 'life_gain') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.setValueAtTime(554.37, now + 0.08);
+        osc.frequency.setValueAtTime(659.25, now + 0.16);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      } else if (type === 'life_damage') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.18);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.18);
+        osc.start(now);
+        osc.stop(now + 0.18);
+      }
+    } catch (e) {
+      // Audio fallback
+    }
+  }
+
+  // ── AUTOMATED STATE-BASED ACTIONS (CR 704 / Phase 3) ───────
+  function checkStateBasedActions() {
+    // CR 704.5a: Life 0 or less loss check
+    if (state.life.player <= 0) {
+      advise(`CR 704.5a State-Based Action: You have 0 or less life (${state.life.player} HP). Game Over!`, 'error');
+      toast(`Game Over — 0 Life`, 'error', '704.5a');
+    }
+    Object.keys(state.opponents).forEach(pk => {
+      if (state.opponents[pk].life <= 0) {
+        advise(`CR 704.5a State-Based Action: ${state.opponents[pk].name} has 0 or less life (${state.opponents[pk].life} HP). Player eliminated!`, 'warning');
+        toast(`${state.opponents[pk].name} Eliminated (0 HP)`, 'warning', '704.5a');
+      }
+    });
+
+    // CR 704.5c: Poison 10 or more loss check
+    if (state.poison >= 10) {
+      advise(`CR 704.5c State-Based Action: You have 10 or more poison counters (${state.poison}). Game Over!`, 'error');
+      toast(`Game Over — 10 Poison`, 'error', '704.5c');
+    }
+  }
+
+  // ── DYNAMIC STACK OVERLAY RENDER ───────────────────────────
+  function renderStackOverlay() {
+    const overlay = document.getElementById('arena-stack-overlay');
+    const container = document.getElementById('stack-cards-container');
+    const countEl = document.getElementById('stack-count');
+    if (!overlay || !container) return;
+
+    if (!state.stack || !state.stack.length) {
+      overlay.style.display = 'none';
+      if (countEl) countEl.textContent = '0';
+      return;
+    }
+
+    overlay.style.display = 'flex';
+    if (countEl) countEl.textContent = state.stack.length;
+    container.innerHTML = '';
+
+    state.stack.forEach((item, idx) => {
+      const card = item.card || item;
+      const el = document.createElement('div');
+      el.className = 'stack-item-card';
+      const scryfallId = card.scryfallId || card.scryfall_id || card.id || '';
+      const imgUrl = (scryfallId && scryfallId.length > 5)
+        ? `https://cards.scryfall.io/normal/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg`
+        : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name || 'Spell')}&format=image&version=normal`;
+
+      el.innerHTML = `
+        <img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt="${card.name || 'Spell'}">
+        <div style="position:absolute;top:2px;right:2px;background:rgba(239,68,68,0.9);color:white;font-weight:800;font-size:0.6rem;padding:1px 5px;border-radius:99px;">#${state.stack.length - idx}</div>
+      `;
+      container.appendChild(el);
     });
   }
 
@@ -631,17 +1152,54 @@ const Arena = (() => {
     el.setAttribute('aria-label', card.name);
     el.draggable = zone === 'hand';
 
-    // Card image
+    // Card image (HD Large Version)
     const img = document.createElement('img');
     const scryfallId = card.scryfallId || card.scryfall_id || card.id || '';
-    if (scryfallId) {
-      img.src = `https://api.scryfall.com/cards/${scryfallId}?format=image&version=normal`;
-    } else {
-      img.src = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
-    }
+    const hdImgUrl = (scryfallId && scryfallId.length > 5)
+      ? `https://cards.scryfall.io/large/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg`
+      : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=large`;
+
+    img.src = hdImgUrl;
     img.alt = card.name;
     img.onerror = () => { img.style.display = 'none'; el.innerHTML += `<div style="font-size:0.58rem;color:#64748b;text-align:center;padding:4px;line-height:1.3;">${card.name}</div>`; };
     el.appendChild(img);
+
+    // Card Hover HD Inspector Tooltip Listener
+    el.addEventListener('mouseenter', (e) => {
+      let tooltip = document.getElementById('card-hover-preview-tooltip');
+      if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'card-hover-preview-tooltip';
+        tooltip.style.cssText = 'position:fixed;z-index:99999;pointer-events:none;display:none;width:240px;height:335px;border-radius:12px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,0.9);border:1.5px solid var(--color-gold);background:#0f172a;';
+        tooltip.innerHTML = '<img id="card-hover-img" style="width:100%;height:100%;object-fit:cover;display:block;">';
+        document.body.appendChild(tooltip);
+      }
+      const hoverImg = document.getElementById('card-hover-img');
+      if (hoverImg) hoverImg.src = hdImgUrl;
+      const rect = el.getBoundingClientRect();
+      const left = rect.right + 15 + 240 > window.innerWidth ? rect.left - 255 : rect.right + 15;
+      const top = Math.min(rect.top - 20, window.innerHeight - 355);
+      tooltip.style.left = `${Math.max(10, left)}px`;
+      tooltip.style.top = `${Math.max(10, top)}px`;
+      tooltip.style.display = 'block';
+    });
+    // 3D Perspective Card Tilt Listener (Phase 2)
+    el.addEventListener('mousemove', (e) => {
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const rotateX = ((y - centerY) / centerY) * -14;
+      const rotateY = ((x - centerX) / centerX) * 14;
+      img.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.06)`;
+    });
+
+    el.addEventListener('mouseleave', () => {
+      img.style.transform = 'none';
+      const tooltip = document.getElementById('card-hover-preview-tooltip');
+      if (tooltip) tooltip.style.display = 'none';
+    });
 
     // P/T badge
     const pt = parsePT(card);
@@ -920,6 +1478,7 @@ const Arena = (() => {
 
   // ── Stack Render ──────────────────────────────────────────
   function renderStack() {
+    renderStackOverlay();
     const list = document.getElementById('advisor-stack-list');
     const countBadge = document.getElementById('stack-count-badge');
     const resolveBtn = document.getElementById('btn-resolve');
@@ -1127,6 +1686,121 @@ const Arena = (() => {
     if (panel) panel.classList.remove('open');
   }
 
+  function drawOpeningHand(n = 7) {
+    const toDraw = Math.min(n, state.zones.player.library.length);
+    for (let i = 0; i < toDraw; i++) {
+      drawCard('player');
+    }
+  }
+
+  async function loadAvailableDecks() {
+    const grid = document.getElementById('deck-select-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div style="text-align:center;padding:2rem;color:#475569;font-size:0.8rem;">Loading your decks...</div>';
+
+    let decks = [];
+    try {
+      // Fetch user's saved decks & discover community decks
+      const [myRes, discRes] = await Promise.allSettled([
+        fetch('/api/decks/my-decks', { credentials: 'include' }),
+        fetch('/api/decks/discover', { credentials: 'include' })
+      ]);
+
+      if (myRes.status === 'fulfilled' && myRes.value.ok) {
+        const d = await myRes.value.json();
+        const list = Array.isArray(d) ? d : (d.decks || d.data || []);
+        decks.push(...list);
+      }
+      if (discRes.status === 'fulfilled' && discRes.value.ok) {
+        const d = await discRes.value.json();
+        const list = Array.isArray(d) ? d : (d.decks || d.data || []);
+        list.forEach(dc => {
+          if (!decks.some(existing => existing.id === dc.id)) decks.push(dc);
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching decks:', err);
+    }
+
+    if (!decks.length) {
+      grid.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:0.8rem;">No saved decks found in database. Use the Quick Import box above or create a deck in the Deck Builder!</div>';
+      return;
+    }
+
+    grid.innerHTML = '';
+    decks.forEach(deck => {
+      const item = document.createElement('div');
+      item.className = 'deck-select-item';
+      item.innerHTML = `
+        <div>
+          <div class="deck-select-name">${deck.deck_name || deck.name || 'Unnamed Deck'}</div>
+          <div class="deck-select-meta">${deck.card_count || deck.cardCount || '?'} cards${deck.format ? ` · ${deck.format}` : ''}</div>
+        </div>
+        <div class="deck-select-cmd">${deck.commander || ''}</div>
+      `;
+      item.addEventListener('click', () => loadDeck(deck));
+      grid.appendChild(item);
+    });
+  }
+
+  async function importPastedDecklist() {
+    const input = document.getElementById('deck-import-text');
+    if (!input || !input.value.trim()) return;
+    const text = input.value.trim();
+
+    const selectPanel = document.getElementById('deck-select-panel');
+    const splash = document.getElementById('deck-load-splash');
+    const splashMsg = document.getElementById('splash-msg');
+
+    if (selectPanel) selectPanel.style.display = 'none';
+    if (splash) splash.style.display = 'flex';
+    if (splashMsg) splashMsg.textContent = 'Parsing decklist & querying MTG cards...';
+
+    try {
+      const lines = text.split('\n').filter(l => l.trim());
+      const parsedCards = [];
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#')) continue;
+        const match = trimmed.match(/^(\d+)?x?\s*(.+)$/i);
+        const qty = match && match[1] ? parseInt(match[1]) : 1;
+        const name = match && match[2] ? match[2].trim() : trimmed;
+
+        for (let i = 0; i < qty; i++) {
+          parsedCards.push({
+            card_name: name,
+            name: name,
+            instanceId: 'import_' + Math.random().toString(36).substr(2, 9)
+          });
+        }
+      }
+
+      if (!parsedCards.length) throw new Error('No valid cards found in text.');
+
+      if (splashMsg) splashMsg.textContent = `Loaded ${parsedCards.length} cards. Shuffling library...`;
+
+      // Set first card as commander if legend
+      const cmdCandidate = parsedCards[0];
+      if (cmdCandidate) {
+        const cmdWithUid = assignUid(Object.assign({}, cmdCandidate));
+        setCommander(cmdWithUid);
+      }
+
+      state.zones.player.library = parsedCards.map(c => assignUid(c));
+      shuffleLibrary();
+      drawOpeningHand(7);
+
+      if (splash) splash.style.display = 'none';
+      advise(`Imported deck with <strong>${parsedCards.length} cards</strong>!`, 'success');
+      toast(`Deck Loaded! (${parsedCards.length} cards)`, 'info');
+    } catch (err) {
+      if (splash) splash.style.display = 'none';
+      if (selectPanel) selectPanel.style.display = 'flex';
+      alert(`Import failed: ${err.message}`);
+    }
+  }
+
   function filterTokens(query) {
     const q = query.toLowerCase();
     document.querySelectorAll('#token-grid .token-btn').forEach(btn => {
@@ -1202,54 +1876,226 @@ const Arena = (() => {
     updateZoneCounts();
   }
 
-  // ── Deck Loading from Grimore API ────────────────────────
+  // ── FULL-SCREEN SETUP DASHBOARD HANDLERS ────────────────
+  let loadedDecksList = { user: [], meta: [] };
+  state.selectedPlayerDeck = null;
+  state.selectedAIDeck = null;
+
+  function selectSetupMode(mode) {
+    state.matchMode = mode;
+    document.querySelectorAll('.mode-card').forEach(c => {
+      c.classList.toggle('active', c.dataset.format === mode);
+    });
+
+    const lifeInput = document.getElementById('starting-life-input');
+    if (lifeInput) {
+      if (mode === 'modern' || mode === 'goldfish') lifeInput.value = 20;
+      else if (mode === 'edh' || mode === 'pod') lifeInput.value = 40;
+    }
+
+    switchGameMode(mode);
+  }
+
   async function loadDecks() {
-    const grid = document.getElementById('deck-select-grid');
-    if (!grid) return;
-    grid.innerHTML = '<div style="text-align:center;padding:2rem;color:#475569;font-size:0.8rem;">Loading your decks...</div>';
+    const playerGrid = document.getElementById('player-deck-grid');
+    const oppGrid = document.getElementById('opp-deck-grid');
+    if (!playerGrid && !oppGrid) return;
 
+    if (playerGrid) playerGrid.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--color-cyan);font-size:0.8rem;">⚡ Loading your decks...</div>';
+    if (oppGrid) oppGrid.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--color-cyan);font-size:0.8rem;">⚡ Loading AI Meta Decks...</div>';
+
+    loadedDecksList = { user: [], meta: [] };
+
+    // 1. Fetch AI Meta Presets
     try {
-      const res = await fetch('/api/decks', { credentials: 'include' });
-      const data = await res.json();
-      const decks = data.decks || data || [];
+      const metaRes = await fetch('/api/sandbox/ai-meta-decks');
+      if (metaRes.ok) {
+        const metaContentType = metaRes.headers.get('content-type') || '';
+        if (metaContentType.includes('application/json')) {
+          const metaData = await metaRes.json();
+          if (metaData.decks && Array.isArray(metaData.decks)) {
+            metaData.decks.forEach(d => { d._isPreset = true; });
+            loadedDecksList.meta = metaData.decks;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load AI meta decks:", e);
+    }
 
-      if (!decks.length) {
-        grid.innerHTML = '<div style="text-align:center;padding:2rem;color:#6b7280;font-size:0.8rem;">No decks found. Create a deck in the Deck Builder first.</div>';
-        return;
+    // 2. Fetch User Saved Decks
+    try {
+      const userRes = await fetch('/api/decks', { credentials: 'include' });
+      if (userRes.ok) {
+        const userContentType = userRes.headers.get('content-type') || '';
+        if (userContentType.includes('application/json')) {
+          const userData = await userRes.json();
+          const userDecks = userData.decks || (Array.isArray(userData) ? userData : []);
+          userDecks.forEach(d => { d._isPreset = false; });
+          loadedDecksList.user = userDecks;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load user decks:", e);
+    }
+
+    renderDeckGrid('player', [ ...loadedDecksList.user, ...loadedDecksList.meta ]);
+    renderDeckGrid('opp', [ ...loadedDecksList.meta, ...loadedDecksList.user ]);
+
+    // Auto-select defaults
+    const allAvailable = [ ...loadedDecksList.user, ...loadedDecksList.meta ];
+    if (allAvailable.length > 0) {
+      selectPlayerDeck(allAvailable[0]);
+    }
+    if (loadedDecksList.meta.length > 0) {
+      selectOpponentDeck(loadedDecksList.meta[0]);
+    }
+  }
+
+  function renderDeckGrid(target, decksList) {
+    const grid = document.getElementById(target === 'player' ? 'player-deck-grid' : 'opp-deck-grid');
+    if (!grid) return;
+
+    if (!decksList.length) {
+      grid.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:0.8rem;">No decks found. Use Quick Import below!</div>';
+      return;
+    }
+
+    grid.innerHTML = '';
+    decksList.forEach(deck => {
+      const tile = document.createElement('div');
+      tile.className = 'deck-select-tile' + (deck._isPreset ? ' preset-deck-item' : '');
+      const dName = deck.name || deck.deck_name || 'Unnamed Deck';
+      const dCardCount = deck.cards ? deck.cards.length : (deck.card_count || deck.cardCount || '?');
+      const dFormat = deck.format ? deck.format.toUpperCase() : 'MTG';
+
+      const isSelected = target === 'player'
+        ? (state.selectedPlayerDeck && (state.selectedPlayerDeck.id === deck.id || state.selectedPlayerDeck.name === dName))
+        : (state.selectedAIDeck && (state.selectedAIDeck.id === deck.id || state.selectedAIDeck.name === dName));
+
+      if (isSelected) {
+        tile.classList.add(target === 'player' ? 'selected' : 'selected-cyan');
       }
 
-      grid.innerHTML = '';
-      decks.forEach(deck => {
-        const item = document.createElement('div');
-        item.className = 'deck-select-item';
-        item.innerHTML = `
-          <div>
-            <div class="deck-select-name">${deck.name || 'Unnamed Deck'}</div>
-            <div class="deck-select-meta">${deck.card_count || deck.cardCount || '?'} cards${deck.format ? ` · ${deck.format}` : ''}</div>
-          </div>
-          <div class="deck-select-cmd">${deck.commander || ''}</div>
-        `;
-        item.addEventListener('click', () => loadDeck(deck));
-        grid.appendChild(item);
+      tile.innerHTML = `
+        <div class="tile-left">
+          <div class="tile-name">${dName}</div>
+          <div class="tile-meta">${dCardCount} cards · ${dFormat}</div>
+          ${deck.commander ? `<div class="tile-cmd">👑 ${deck.commander}</div>` : ''}
+        </div>
+        ${deck._isPreset ? '<span class="preset-badge">AI PRESET</span>' : ''}
+      `;
+
+      tile.addEventListener('click', () => {
+        if (target === 'player') selectPlayerDeck(deck);
+        else selectOpponentDeck(deck);
       });
-    } catch (err) {
-      grid.innerHTML = '<div style="text-align:center;padding:2rem;color:#6b7280;font-size:0.8rem;">Could not load decks. Make sure the server is running.</div>';
+
+      grid.appendChild(tile);
+    });
+  }
+
+  function selectPlayerDeck(deck) {
+    state.selectedPlayerDeck = deck;
+    const label = document.getElementById('player-selected-label');
+    const dName = deck.name || deck.deck_name || 'Selected Deck';
+    if (label) label.textContent = `Selected: ${dName}`;
+    renderDeckGrid('player', [ ...loadedDecksList.user, ...loadedDecksList.meta ]);
+  }
+
+  function selectOpponentDeck(deck) {
+    state.selectedAIDeck = deck;
+    const label = document.getElementById('opp-selected-label');
+    const dName = deck.name || deck.deck_name || 'Selected Deck';
+    if (label) label.textContent = `Selected: ${dName}`;
+    renderDeckGrid('opp', [ ...loadedDecksList.meta, ...loadedDecksList.user ]);
+  }
+
+  function filterPlayerDecks(query) {
+    const q = query.toLowerCase().trim();
+    const allDecks = [ ...loadedDecksList.user, ...loadedDecksList.meta ];
+    const filtered = allDecks.filter(d => (d.name || d.deck_name || '').toLowerCase().includes(q) || (d.commander || '').toLowerCase().includes(q));
+    renderDeckGrid('player', filtered);
+  }
+
+  function filterOpponentDecks(query) {
+    const q = query.toLowerCase().trim();
+    const allDecks = [ ...loadedDecksList.meta, ...loadedDecksList.user ];
+    const filtered = allDecks.filter(d => (d.name || d.deck_name || '').toLowerCase().includes(q) || (d.commander || '').toLowerCase().includes(q));
+    renderDeckGrid('opp', filtered);
+  }
+
+  async function launchConfiguredMatch() {
+    if (!state.selectedPlayerDeck) {
+      toast("Please select a Player deck first!", "error");
+      return;
     }
+
+    const lifeInput = document.getElementById('starting-life-input');
+    if (lifeInput && lifeInput.value) {
+      const startingLife = parseInt(lifeInput.value, 10);
+      state.life.player = startingLife;
+      state.life.opponent = startingLife;
+    }
+
+    // Load AI Opponent Deck into Opponent Zone
+    if (state.selectedAIDeck) {
+      let oppCards = Array.isArray(state.selectedAIDeck.cards) ? [...state.selectedAIDeck.cards] : [];
+      if (!oppCards.length && state.selectedAIDeck.id) {
+        try {
+          const res = await fetch(`/api/decks/${state.selectedAIDeck.id}/cards`, { credentials: 'include' });
+          if (res.ok) {
+            const data = await res.json();
+            oppCards = data.cards || (Array.isArray(data) ? data : []);
+          }
+        } catch (e) {}
+      }
+
+      if (oppCards.length > 0) {
+        state.zones.opponent.library = oppCards.map(c => assignUid(c));
+        // Shuffle AI library
+        for (let i = state.zones.opponent.library.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [state.zones.opponent.library[i], state.zones.opponent.library[j]] = [state.zones.opponent.library[j], state.zones.opponent.library[i]];
+        }
+        // Draw 7 AI cards
+        state.zones.opponent.hand = [];
+        for (let i = 0; i < 7 && state.zones.opponent.library.length > 0; i++) {
+          state.zones.opponent.hand.push(state.zones.opponent.library.pop());
+        }
+        const oppLabel = document.getElementById('opp-label');
+        if (oppLabel) oppLabel.textContent = state.selectedAIDeck.name || 'AI Opponent';
+      }
+    }
+
+    // Load Player Deck
+    await loadDeck(state.selectedPlayerDeck);
   }
 
   async function loadDeck(deck) {
     const selectPanel = document.getElementById('deck-select-panel');
     const splash = document.getElementById('deck-load-splash');
     const splashMsg = document.getElementById('splash-msg');
+    const dName = deck.name || deck.deck_name || 'Selected Deck';
 
     if (selectPanel) selectPanel.style.display = 'none';
     if (splash) splash.style.display = 'flex';
-    if (splashMsg) splashMsg.textContent = `Loading "${deck.name}"...`;
+    if (splashMsg) splashMsg.textContent = `Loading "${dName}"...`;
 
     try {
-      const res = await fetch(`/api/decks/${deck.id}/cards`, { credentials: 'include' });
-      const data = await res.json();
-      let cards = data.cards || data || [];
+      let cards = Array.isArray(deck.cards) ? [...deck.cards] : [];
+
+      if (!cards.length && deck.id) {
+        const res = await fetch(`/api/decks/${deck.id}/cards`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          cards = data.cards || (Array.isArray(data) ? data : []);
+        }
+      }
+
+      if (!cards.length) {
+        throw new Error("Deck contains no cards.");
+      }
 
       if (splashMsg) splashMsg.textContent = 'Identifying commander...';
 
@@ -1267,8 +2113,8 @@ const Arena = (() => {
       state.zones.player.library = cards.map(c => assignUid(c));
       shuffleLibrary();
 
-      state.deckId = deck.id;
-      state.deckName = deck.name;
+      state.deckId = deck.id || 'deck_' + Date.now();
+      state.deckName = dName;
 
       if (splashMsg) splashMsg.textContent = 'Drawing opening hand...';
       await new Promise(r => setTimeout(r, 600));
@@ -1281,7 +2127,21 @@ const Arena = (() => {
       setPhase('main1');
       updateZoneCounts();
 
-      advise(`Deck loaded: <strong>${deck.name}</strong> (${state.zones.player.library.length} cards in library). 7-card opening hand drawn.`, 'success');
+      advise(`Deck loaded: <strong>${dName}</strong> (${state.zones.player.library.length} cards in library). 7-card opening hand drawn.`, 'success');
+      toast(`${dName} loaded! Good luck!`, 'info');
+
+      const modeBadge = document.getElementById('mode-badge');
+      if (modeBadge) modeBadge.textContent = deck.format ? deck.format.toUpperCase() : 'Solo';
+
+      document.title = `${dName} — Grimore Play Realm`;
+
+    } catch (err) {
+      if (splash) splash.style.display = 'none';
+      if (selectPanel) selectPanel.style.display = 'flex';
+      advise('Failed to load deck: ' + err.message, 'error');
+      toast('Failed to load deck.', 'error');
+    }
+  }
       toast(`${deck.name} loaded! Good luck!`, 'info');
 
       const modeBadge = document.getElementById('mode-badge');
@@ -1297,14 +2157,228 @@ const Arena = (() => {
     }
   }
 
-  // ── Keyboard Shortcuts ────────────────────────────────────
-  function initKeyboard() {
-    document.addEventListener('keydown', e => {
-      if (e.key === 'F6') { e.preventDefault(); passPhase(); }
-      if (e.key === 'Escape') { closeModal(); document.getElementById('card-ctx-menu').style.display = 'none'; }
-      if (e.key === 'd' && e.ctrlKey) { e.preventDefault(); drawCard(); }
-    });
+  // ── Sound engine is consolidated above at line 972 ──────────
+
+  // ── Floating Combat Damage Numbers ───────────────────────
+  function spawnDamageFloat(amount, target) {
+    const el = document.createElement('div');
+    el.className = 'damage-float';
+    el.textContent = `-${amount}`;
+    el.style.cssText = `
+      position:fixed; pointer-events:none; z-index:9999;
+      font-family:var(--font-tech,Rajdhani,sans-serif); font-size:2.2rem; font-weight:800;
+      color:#f87171; text-shadow:0 0 12px rgba(248,113,113,0.7);
+      left:${target === 'player' ? '15%' : '65%'}; top:50%;
+      transform:translateX(-50%) translateY(0);
+      animation:floatDmg 1.4s ease-out forwards;
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1500);
   }
+
+  // ── Commander Tax Tracking ────────────────────────────────
+  state.commanderTaxPlayer = 0;
+  state.commanderTaxOpponent = 0;
+
+  function incrementCommanderTax(who) {
+    if (who === 'player') {
+      state.commanderTaxPlayer += 2;
+      const badge = document.getElementById('cmdr-tax-badge');
+      if (badge) badge.textContent = `Tax: +${state.commanderTaxPlayer}`;
+      advise(`Commander Tax is now +${state.commanderTaxPlayer} for your commander.`, 'info');
+    } else {
+      state.commanderTaxOpponent += 2;
+      advise(`AI Commander Tax: +${state.commanderTaxOpponent}`, 'log');
+    }
+  }
+
+  // ── AI OPPONENT AUTOMATED TURNS & DECISION ENGINE ─────────
+  async function executeAITurn() {
+    advise('<strong>AI Opponent (Grim) starts their turn.</strong>', 'warning');
+    playAudioSound('phase_step');
+
+    // 1. UNTAP STEP — untap all AI permanents
+    advise('AI: Untap Step', 'log');
+    state.zones.opponent.battlefield.forEach(c => { c._tapped = false; });
+    renderBattlefield('opponent');
+    await new Promise(r => setTimeout(r, 500));
+
+    // 2. UPKEEP STEP
+    advise('AI: Upkeep', 'log');
+    playAudioSound('phase_step');
+    await new Promise(r => setTimeout(r, 350));
+
+    // 3. DRAW STEP
+    advise('AI: Draw Step', 'log');
+    if (state.zones.opponent.library.length > 0) {
+      state.zones.opponent.hand.push(state.zones.opponent.library.pop());
+      updateZoneCounts();
+      playAudioSound('card_draw');
+    } else {
+      advise('<strong>AI loses: library empty!</strong>', 'error');
+      playAudioSound('game_over');
+      return;
+    }
+    await new Promise(r => setTimeout(r, 600));
+
+    // 4. MAIN PHASE 1 — Play land, cast spells
+    advise('AI: Main Phase 1', 'info');
+
+    // Play one land per turn
+    const landInHand = state.zones.opponent.hand.find(c => detectCardTypes(c).isLand);
+    if (landInHand) {
+      state.zones.opponent.hand = state.zones.opponent.hand.filter(c => c._uid !== landInHand._uid);
+      landInHand._tapped = false;
+      landInHand._types = detectCardTypes(landInHand);
+      state.zones.opponent.battlefield.push(landInHand);
+      renderBattlefield('opponent');
+      updateZoneCounts();
+      advise(`AI played land: <strong>${landInHand.name}</strong>`, 'success');
+      playAudioSound('land_play');
+      await new Promise(r => setTimeout(r, 700));
+    }
+
+    // Cast curve-optimal spells (try to spend mana efficiently)
+    const oppLands = state.zones.opponent.battlefield.filter(c => detectCardTypes(c).isLand && !c._tapped);
+    const manaAvailable = oppLands.length;
+    const castable = state.zones.opponent.hand
+      .filter(c => !detectCardTypes(c).isLand && (c.cmc || 1) <= manaAvailable)
+      .sort((a, b) => (b.cmc || 1) - (a.cmc || 1));
+
+    if (castable.length > 0) {
+      const spell = castable[0];
+      const cost = spell.cmc || 1;
+      // Tap lands to pay
+      let tapped = 0;
+      for (const land of oppLands) {
+        if (tapped >= cost) break;
+        land._tapped = true;
+        tapped++;
+      }
+      state.zones.opponent.hand = state.zones.opponent.hand.filter(c => c._uid !== spell._uid);
+      spell._types = detectCardTypes(spell);
+      if (spell._types.isCreature) {
+        spell._summoning_sick = true;
+        state.zones.opponent.battlefield.push(spell);
+        renderBattlefield('opponent');
+        advise(`AI cast creature: <strong>${spell.name}</strong> (${cost} CMC)`, 'success');
+        playAudioSound('creature_cast');
+      } else {
+        state.zones.opponent.graveyard.push(spell);
+        advise(`AI cast spell: <strong>${spell.name}</strong>`, 'warning');
+        playAudioSound('spell_cast');
+      }
+      updateZoneCounts();
+      await new Promise(r => setTimeout(r, 900));
+    }
+
+    // 5. COMBAT PHASE — Smart favorable attack evaluation
+    advise('AI: Combat Phase', 'warning');
+    playAudioSound('phase_step');
+
+    const playerCreatures = state.zones.player.battlefield.filter(c => detectCardTypes(c).isCreature && !c._tapped);
+    const aiCreatures = state.zones.opponent.battlefield.filter(c => {
+      const t = detectCardTypes(c);
+      return t.isCreature && !c._tapped && !c._summoning_sick;
+    });
+
+    // AI attacks only if: no blockers, or total power > player blocking power
+    const playerBlockPower = playerCreatures.reduce((sum, c) => {
+      const pt = parsePT(c) || { power: 1, toughness: 1 };
+      return sum + pt.toughness; // measure block-stopping capacity by toughness
+    }, 0);
+
+    const aiTotalPower = aiCreatures.reduce((sum, c) => {
+      const pt = parsePT(c) || { power: 2, toughness: 2 };
+      return sum + pt.power;
+    }, 0);
+
+    const shouldAttack = aiCreatures.length > 0 && (playerCreatures.length === 0 || aiTotalPower > playerBlockPower);
+    if (shouldAttack) {
+      aiCreatures.forEach(c => { c._tapped = true; });
+      renderBattlefield('opponent');
+
+      // Simulate simple blocking: each AI attacker checks if a player creature can block
+      let totalUnblockedDmg = 0;
+      let blockedDmg = 0;
+      const blockersAvail = [...playerCreatures];
+
+      aiCreatures.forEach(attacker => {
+        const aPT = parsePT(attacker) || { power: 2, toughness: 2 };
+        const blockerIdx = blockersAvail.findIndex(blocker => {
+          const bPT = parsePT(blocker) || { power: 1, toughness: 1 };
+          return bPT.toughness >= aPT.power || detectCardTypes(blocker).hasFlying === detectCardTypes(attacker).hasFlying;
+        });
+        if (blockerIdx >= 0) {
+          const blocker = blockersAvail.splice(blockerIdx, 1)[0];
+          const bPT = parsePT(blocker) || { power: 1, toughness: 1 };
+          blockedDmg += aPT.power;
+          // Blocker dies if toughness <= attacker power
+          if (bPT.toughness <= aPT.power) {
+            state.zones.player.battlefield = state.zones.player.battlefield.filter(c => c._uid !== blocker._uid);
+            state.zones.player.graveyard.push(blocker);
+            advise(`Your <strong>${blocker.name}</strong> was destroyed in combat.`, 'error');
+          }
+        } else {
+          totalUnblockedDmg += aPT.power;
+        }
+      });
+
+      if (totalUnblockedDmg > 0) {
+        changeLife('player', -totalUnblockedDmg);
+        spawnDamageFloat(totalUnblockedDmg, 'player');
+        playAudioSound('combat_hit');
+        advise(`AI deals <strong>${totalUnblockedDmg}</strong> combat damage to you!`, 'error');
+      } else {
+        advise(`All AI attackers were blocked! 0 damage to player.`, 'info');
+      }
+
+      renderBattlefield('player');
+      renderBattlefield('opponent');
+      updateZoneCounts();
+    } else if (aiCreatures.length > 0) {
+      advise('AI holds back — attacks not favorable.', 'log');
+    }
+    await new Promise(r => setTimeout(r, 900));
+
+    // Remove summoning sickness after AI turn ends
+    state.zones.opponent.battlefield.forEach(c => { c._summoning_sick = false; });
+
+    // 6. END STEP & CLEANUP — pass turn back
+    advise('AI: End Step — Your Turn!', 'info');
+    setPhase('main1');
+    state.turn++;
+    advise(`<strong>Turn ${state.turn} — Your Turn!</strong>`, 'success');
+    toast(`Turn ${state.turn} — Your Turn!`, 'info');
+  }
+
+  // Enhanced Pass Phase handling (triggers AI turn when player finishes Cleanup step)
+  function passPhase() {
+    // Enforce: cannot advance with items on stack
+    if (state.stack.length > 0) {
+      advise('Resolve the stack before passing priority.', 'warning', '116.3b');
+      toast('Stack not empty!', 'warn');
+      return;
+    }
+
+    const nextIdx = (state.phaseIdx + 1) % PHASE_ORDER.length;
+    const nextPhase = PHASE_ORDER[nextIdx];
+
+    if (nextIdx === 0) {
+      advise(`--- Turn ${state.turn} ---`, 'info');
+    }
+
+    setPhase(nextPhase);
+    playAudioSound('phase_step');
+
+    // After player's cleanup, trigger AI turn
+    if (nextPhase === 'cleanup') {
+      setTimeout(() => {
+        executeAITurn();
+      }, 1000);
+    }
+  }
+
 
   // ── Global Click: Dismiss Menus ───────────────────────────
   function initGlobalDismiss() {
@@ -1335,11 +2409,13 @@ const Arena = (() => {
   }
 
   async function askAIAdvisor() {
-
     const input = document.getElementById('ai-query-input');
     if (!input || !input.value.trim()) return;
     const query = input.value.trim();
     input.value = '';
+
+    // Auto-open advisor drawer when user asks Grim
+    toggleAdvisorDrawer(true);
 
     advise(`Asking Grim: "<em>${query}</em>"...`, 'info');
 
@@ -1365,12 +2441,81 @@ const Arena = (() => {
   }
 
 
+  function switchGameMode(mode) {
+    state.matchMode = mode;
+    const podStrip = document.getElementById('pod-switcher-strip');
+    const cmdToggle = document.getElementById('cmdzone-drawer-toggle');
+    const replayBar = document.getElementById('youtube-replay-bar');
+
+    if (mode === 'modern' || mode === 'goldfish') {
+      state.life.player = 20;
+      state.life.opponent = 20;
+      if (podStrip) podStrip.style.display = 'none';
+      if (cmdToggle) cmdToggle.style.display = 'none';
+      if (replayBar) replayBar.style.display = 'none';
+    } else if (mode === 'edh') {
+      state.life.player = 40;
+      state.life.opponent = 40;
+      if (podStrip) podStrip.style.display = 'none';
+      if (cmdToggle) cmdToggle.style.display = 'inline-block';
+      if (replayBar) replayBar.style.display = 'none';
+    } else if (mode === 'pod') {
+      state.life.player = 40;
+      state.life.opponent = 40;
+      if (podStrip) podStrip.style.display = 'flex';
+      if (cmdToggle) cmdToggle.style.display = 'inline-block';
+      if (replayBar) replayBar.style.display = 'none';
+    } else if (mode === 'replay') {
+      if (replayBar) replayBar.style.display = 'flex';
+      openReplayModal();
+    }
+
+    const pLife = document.getElementById('player-life');
+    const oLife = document.getElementById('opp-life');
+    if (pLife) pLife.textContent = state.life.player;
+    if (oLife) oLife.textContent = state.life.opponent;
+
+    advise(`Switched Play Realm Mode to: <strong>${mode.toUpperCase()}</strong>`, 'info');
+    toast(`Play Realm Mode: ${mode.toUpperCase()}`, 'info');
+  }
+
+  function toggleCmdDrawer(show) {
+    const drawer = document.getElementById('arena-cmdzone-drawer');
+    if (!drawer) return;
+    if (typeof show === 'boolean') {
+      drawer.classList.toggle('open', show);
+    } else {
+      drawer.classList.toggle('open');
+    }
+  }
+
+  function setMatchFormat(fmt) {
+    document.querySelectorAll('.format-tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.format === fmt);
+    });
+    const modeSelect = document.getElementById('realm-mode-select');
+    if (modeSelect) {
+      modeSelect.value = fmt;
+      switchGameMode(fmt);
+    }
+  }
+
   return {
     init,
+    // Setup Dashboard Handlers
+    selectSetupMode, filterPlayerDecks, filterOpponentDecks, selectPlayerDeck, selectOpponentDeck, launchConfiguredMatch,
+    // Mode & Format Switchers
+    switchGameMode, setMatchFormat, toggleCmdDrawer,
+    // Drawer
+    toggleAdvisorDrawer,
     // Phase controls
     passPhase, jumpToPhase, setPhase,
     // Life
     changeLife,
+    // 4-Player Pod Focus & Cmdr Matrix
+    switchFocusPlayer,
+    openCmdMatrixModal,
+    updateCmdMatrix,
     // Mana
     addMana, clearManaPool,
     // Drawing
@@ -1388,8 +2533,10 @@ const Arena = (() => {
     toggleTokenSpawner, spawnToken, filterTokens, promptCustomToken,
     // AI Advisor
     askAIAdvisor,
-    // Utility
-    rollDie, newGame, skipDeckSelect, exitToMain,
+    // Replay Engine
+    openReplayModal, loadReplayMatch, replayNextStep, replayPrevStep, toggleReplayAutoPlay, closeReplayEngine,
+    // Utility & Deck Import
+    rollDie, newGame, skipDeckSelect, exitToMain, importPastedDecklist,
     // Context menu internal handlers
     _ctxAttack, _ctxAddCounter, _ctxMoveZone, _ctxClone,
   };

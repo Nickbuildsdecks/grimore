@@ -1300,7 +1300,7 @@ main {
   height: 100vh;
   overflow: hidden;
   margin: 0;
-  padding: 1.5rem;
+  padding: 0 0.75rem 0.75rem 0.75rem;
   background-color: transparent;
   box-sizing: border-box;
 }
@@ -1324,7 +1324,7 @@ main {
   height: 100vh;
   overflow: hidden;
   margin: 0;
-  padding: 1.5rem;
+  padding: 0 0.75rem 0.75rem 0.75rem;
   background-color: transparent;
   box-sizing: border-box;
 }
@@ -1343,6 +1343,98 @@ main {
 }
 #app-layout.sidebar-hidden main {
   padding: 0;
+}
+
+/* ── AAA Arcane Account Migration Portal Styling ────────────────── */
+.arcane-portal-modal {
+  max-width: 720px !important;
+  width: 95% !important;
+  background: linear-gradient(145deg, rgba(15, 15, 23, 0.95), rgba(8, 8, 14, 0.98)) !important;
+  border: 1px solid rgba(168, 85, 247, 0.35) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(168, 85, 247, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(24px) !important;
+  padding: 2rem !important;
+}
+
+.arcane-platform-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
+.arcane-platform-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem 0.5rem;
+  background: rgba(18, 18, 28, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.arcane-platform-card:hover {
+  transform: translateY(-3px);
+  background: rgba(28, 28, 44, 0.9);
+  border-color: rgba(168, 85, 247, 0.5);
+  box-shadow: 0 6px 20px rgba(168, 85, 247, 0.25);
+}
+
+.arcane-platform-card.active {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(99, 102, 241, 0.15));
+  border: 2px solid #a855f7;
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.4), inset 0 0 15px rgba(168, 85, 247, 0.2);
+}
+
+.arcane-platform-card.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #a855f7, #06b6d4, #f59e0b);
+}
+
+.arcane-platform-icon {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  transition: transform 0.25s ease;
+}
+
+.arcane-platform-card:hover .arcane-platform-icon {
+  transform: scale(1.15) rotate(-3deg);
+}
+
+.arcane-badge-pill {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.arcane-platform-card.active .arcane-badge-pill {
+  background: #a855f7;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.6);
 }
 
 @keyframes fadeIn {

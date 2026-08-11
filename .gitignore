@@ -39,3 +39,9 @@ Desktop.ini
 *.njsproj
 *.sln
 *.sw?
+
+# Strictly Local Dev Command Center & Change Tracker (Never committed to Git or GCP)
+public/changes.html
+public/changes.css
+public/changes.js
+
