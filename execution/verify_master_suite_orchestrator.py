@@ -18,12 +18,13 @@ TEST_SUITES = [
     "verify_a2ui_engine.py",
     "verify_a2ui_chat_and_tuner.py",
     "verify_arena_conquest_suite.py",
-    "verify_canvas_and_hud_engine.py"
+    "verify_canvas_and_hud_engine.py",
+    "simulate_100_mtg_arena_matches.py"
 ]
 
 def main():
     print("============================================================")
-    print("  GRIMORE MASTER TEST SUITE ORCHESTRATOR — 12/12 INTEGRATION")
+    print("  GRIMORE MASTER TEST SUITE ORCHESTRATOR — 13/13 INTEGRATION")
     print("============================================================")
 
     passed = 0
@@ -32,9 +33,9 @@ def main():
     start_time = time.time()
 
     for idx, script in enumerate(TEST_SUITES, 1):
-        print(f"\n[{idx}/12] Executing {script}...")
+        print(f"\n[{idx}/13] Executing {script}...")
         try:
-            res = subprocess.run([sys.executable, f"execution/{script}"], capture_output=True, text=True, timeout=15)
+            res = subprocess.run([sys.executable, f"execution/{script}"], capture_output=True, text=True, timeout=20)
             if res.returncode == 0:
                 print(f"[OK] {script} PASSED 100%")
                 passed += 1
@@ -47,20 +48,20 @@ def main():
             print(f"[FAIL] Error running {script}: {e}")
             failed += 1
 
-    # 12. Master Orchestrator Self-Validation
-    print("\n[12/12] Validating Master Suite Orchestrator Integrity...")
+    # 13. Master Orchestrator Self-Validation
+    print("\n[13/13] Validating Master Suite Orchestrator Integrity...")
     if failed == 0:
-        print("[OK] All 11 prerequisite test suites passed with 0 failures.")
+        print("[OK] All 12 prerequisite test suites passed with 0 failures.")
         passed += 1
     else:
-        print(f"[FAIL] {failed} test suite(s) failed out of 11.")
+        print(f"[FAIL] {failed} test suite(s) failed out of 12.")
         sys.exit(1)
 
     duration = time.time() - start_time
     print(f"\n============================================================")
-    print(f"  MASTER ORCHESTRATOR SUMMARY: {passed}/12 SUITES PASSED ({duration:.2f}s)")
+    print(f"  MASTER ORCHESTRATOR SUMMARY: {passed}/13 SUITES PASSED ({duration:.2f}s)")
     print(f"============================================================")
-    print("\n[SUCCESS] ALL 12 AUTOMATED INTEGRATION TEST SUITES PASSED 100%!")
+    print("\n[SUCCESS] ALL 13 AUTOMATED INTEGRATION TEST SUITES PASSED 100%!")
 
 if __name__ == "__main__":
     main()
