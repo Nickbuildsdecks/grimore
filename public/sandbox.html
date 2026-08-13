@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Outfit:wght@500;700;800;900&family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="sandbox.css">
+  <link rel="stylesheet" href="style.css?v=101">
+  <link rel="stylesheet" href="sandbox.css?v=101">
 </head>
 <body class="realm-body">
 
@@ -45,6 +45,9 @@
         <h1 class="setup-title">PLAYTEST MATCH SETUP HUB</h1>
       </div>
       <div class="setup-header-actions">
+        <button class="arena-btn arena-btn-ghost btn-sm mp-header-btn" onclick="MP.openLobby()">
+          Live Multiplayer
+        </button>
         <button class="arena-btn arena-btn-ghost btn-sm" onclick="Arena.skipDeckSelect()">
           🧙 Solo Goldfish Mode
         </button>
@@ -523,7 +526,9 @@
 
 <!-- Load A2UI Core & JS Engine -->
 <script src="a2ui.js"></script>
-<script src="sandbox.js"></script>
+<script src="sandbox.js?v=101"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="multiplayer-client.js"></script>
 
 </body>
 </html>

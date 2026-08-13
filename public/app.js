@@ -138,8 +138,6 @@
 
   let authMagicCleanup = null;
   let appBgCleanup = null;
-  let activeSection = 'discover';
-  let currentUser = null;
 
   function initMagicCanvas(canvasId) {
     const canvas = document.getElementById(canvasId);
@@ -589,16 +587,10 @@ window.triggerGoogleSignIn = function() {
         scope: 'email profile openid',
         callback: async (tokenResponse) => {
           if (tokenResponse.access_token) {
-            try {
-              const userInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-              }).then(res => res.json());
-
-              window.processGoogleSignInEmail(userInfo.email, userInfo.name, userInfo.sub, userInfo.picture);
-            } catch (err) {
-              console.error("Failed to fetch Google userinfo:", err);
-              alert("Google Sign-In failed: " + err.message);
-            }
+            // Send the raw access token to the backend, which verifies it was issued for
+            // this app and reads the email from Google directly. We never send a
+            // client-supplied email — the server rejects that as a takeover vector.
+            await window.processGoogleAccessToken(tokenResponse.access_token);
           }
         }
       });
@@ -616,12 +608,12 @@ window.triggerGoogleSignIn = function() {
   }
 };
 
-window.processGoogleSignInEmail = async function(email, name, googleId, picture) {
+window.processGoogleAccessToken = async function(accessToken) {
   try {
     const res = await fetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name: name || email.split('@')[0], googleId, picture })
+      body: JSON.stringify({ accessToken })
     });
     const data = await res.json();
     if (data.success) {
@@ -816,7 +808,7 @@ function initGoogleSignInButtons() {
           requests.forEach(r => {
             html += `
               <div style="border:1px solid rgba(234,179,8,0.25);border-radius:8px;padding:0.65rem 0.75rem;margin-bottom:0.4rem;background:rgba(234,179,8,0.04);display:flex;align-items:center;justify-content:space-between;">
-                <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${r.sender_name}</span>
+                <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${escapeHtml(r.sender_name)}</span>
                 <div style="display:flex;gap:0.4rem;">
                   <button class="btn btn-sm" onclick="acceptFriendRequest('${r.id}')" style="font-size:0.72rem;padding:3px 8px;background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.4);color:#10b981;">✓ Accept</button>
                   <button class="btn btn-sm btn-secondary" onclick="declineFriendRequest('${r.id}')" style="font-size:0.72rem;padding:3px 8px;">✕ Decline</button>
@@ -833,8 +825,8 @@ function initGoogleSignInButtons() {
           friends.forEach(f => {
             html += `
               <div style="border:1px solid var(--border-light);border-radius:8px;padding:0.65rem 0.75rem;margin-bottom:0.4rem;background:var(--bg-surface);display:flex;align-items:center;justify-content:space-between;">
-                <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${f.friend_name} <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;">@${f.friend_username}</span></span>
-                <button class="btn btn-sm" onclick="openComposeModal('${f.friend_username}')" style="font-size:0.72rem;padding:3px 8px;background:rgba(168,85,247,0.1);border-color:var(--color-primary);color:var(--color-primary);">✉️ Message</button>
+                <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${escapeHtml(f.friend_name)} <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;">@${escapeHtml(f.friend_username)}</span></span>
+                <button class="btn btn-sm" onclick="openComposeModal(this.dataset.username)" data-username="${escapeHtml(f.friend_username)}" style="font-size:0.72rem;padding:3px 8px;background:rgba(168,85,247,0.1);border-color:var(--color-primary);color:var(--color-primary);">✉️ Message</button>
               </div>`;
           });
         }
@@ -859,11 +851,11 @@ function initGoogleSignInButtons() {
         return `
           <div class="message-row" id="msgrow-${m.id}" onclick="expandMessage('${m.id}', '${tab}')" style="border:1px solid var(--border-light);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;cursor:pointer;background:${isUnread ? 'rgba(168,85,247,0.06)' : 'var(--bg-surface)'};transition:background 0.2s;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-weight:${isUnread ? '700' : '500'};color:${isUnread ? 'var(--color-primary)' : 'var(--text-high)'};font-size:0.82rem;">${name}</span>
+              <span style="font-weight:${isUnread ? '700' : '500'};color:${isUnread ? 'var(--color-primary)' : 'var(--text-high)'};font-size:0.82rem;">${escapeHtml(name)}</span>
               <span style="font-size:0.7rem;color:var(--text-muted);">${timeStr}</span>
             </div>
-            <div style="font-size:0.8rem;color:var(--text-medium);margin-top:0.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${m.subject}</div>
-            <div id="msgbody-${m.id}" style="display:none;margin-top:0.6rem;font-size:0.82rem;color:var(--text-high);line-height:1.5;white-space:pre-wrap;border-top:1px solid var(--border-light);padding-top:0.6rem;">${m.body}</div>
+            <div style="font-size:0.8rem;color:var(--text-medium);margin-top:0.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(m.subject)}</div>
+            <div id="msgbody-${m.id}" style="display:none;margin-top:0.6rem;font-size:0.82rem;color:var(--text-high);line-height:1.5;white-space:pre-wrap;border-top:1px solid var(--border-light);padding-top:0.6rem;">${escapeHtml(m.body)}</div>
           </div>`;
       }).join('');
       if (tab === 'inbox') loadInboxUnreadCount();
@@ -3824,7 +3816,7 @@ function initGoogleSignInButtons() {
 
       const credit = document.getElementById('inspector-deck-credit');
       if (data.originalCreatorName) {
-        credit.innerHTML = `Forked from <span style="color:var(--color-primary); font-weight:700;">${data.originalCreatorName}</span>`;
+        credit.innerHTML = `Forked from <span style="color:var(--color-primary); font-weight:700;">${escapeHtml(data.originalCreatorName)}</span>`;
       } else {
         credit.innerHTML = '';
       }
@@ -3835,7 +3827,7 @@ function initGoogleSignInButtons() {
         if (data.customTags && data.customTags.length > 0) {
           data.customTags.forEach(tag => {
             tagsContainer.innerHTML += `
-              <span class="badge" style="background: rgba(168, 85, 247, 0.15); color: var(--color-primary); border: 1px solid rgba(168, 85, 247, 0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: 600;">${tag}</span>
+              <span class="badge" style="background: rgba(168, 85, 247, 0.15); color: var(--color-primary); border: 1px solid rgba(168, 85, 247, 0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: 600;">${escapeHtml(tag)}</span>
             `;
           });
         }
@@ -3848,8 +3840,8 @@ function initGoogleSignInButtons() {
       } else {
         data.comments.forEach(c => {
           const time = new Date(c.created_at).toLocaleDateString();
-          const avatarHtml = c.avatar_url
-            ? `<img src="${c.avatar_url}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;" alt="avatar">`
+          const avatarHtml = safeImageUrl(c.avatar_url)
+            ? `<img src="${escapeHtml(c.avatar_url)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;" alt="avatar">`
             : `<svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: var(--color-primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>`;
 
           list.innerHTML += `
@@ -3859,10 +3851,10 @@ function initGoogleSignInButtons() {
               </div>
               <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 0.15rem;">
                 <div class="comment-meta" style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted);">
-                  <strong style="color: var(--text-high); cursor: pointer;" onclick="viewPublicProfile('${c.player_id}')">${c.store_nickname}</strong>
+                  <strong style="color: var(--text-high); cursor: pointer;" onclick="viewPublicProfile('${c.player_id}')">${escapeHtml(c.store_nickname)}</strong>
                   <span>${time}</span>
                 </div>
-                <div style="font-size:0.8rem; color:var(--text-high);">${c.comment_text}</div>
+                <div style="font-size:0.8rem; color:var(--text-high);">${escapeHtml(c.comment_text)}</div>
               </div>
             </div>
           `;
@@ -3929,6 +3921,10 @@ function initGoogleSignInButtons() {
   let builderFeaturedCardName = null;
   let builderIsPublic = 1;
   let builderKeepCheapest = 0;
+  // True only once an existing deck's cards have finished loading (or the builder
+  // was opened for a brand-new deck). Guards triggerAutoSave from overwriting a
+  // real deck with an empty card list when the load failed mid-flight.
+  let builderLoadComplete = false;
 
   window.toggleImportForm = function() {
     const wrapper = document.getElementById('import-deck-wrapper');
@@ -4143,6 +4139,9 @@ function initGoogleSignInButtons() {
     builderCommander = [];
     builderMainboard = [];
     builderActivePreviewCard = null;
+    // Block autosave until this deck's cards are confirmed loaded. For a brand-new
+    // deck (no deckId) there is nothing to load, so the builder is ready immediately.
+    builderLoadComplete = !deckId;
 
     const tagsInput = document.getElementById('builder-deck-tags');
     if (tagsInput) tagsInput.value = '';
@@ -4217,6 +4216,7 @@ function initGoogleSignInButtons() {
         builderFeaturedCardName = cached.featured_card_name || builderFeaturedCardName;
         if (formatSelect && cached.format) formatSelect.value = cached.format;
         hasMemoryHit = true;
+        builderLoadComplete = true;
         renderBuilderDecklist();
       }
     }
@@ -4273,14 +4273,32 @@ function initGoogleSignInButtons() {
               if (c.is_commander === 1) builderCommander.push(cardObj);
               else builderMainboard.push(cardObj);
             });
+            // Cards are confirmed loaded — autosave is now safe.
+            builderLoadComplete = true;
           }
+        } else if (!hasMemoryHit) {
+          // Server returned a non-OK status and we have no cached copy. Do NOT
+          // leave an editable empty builder pointed at a real deck: a later
+          // autosave would overwrite it with zero cards. Detach and show an error.
+          throw new Error(`Deck load failed with status ${metaRes ? metaRes.status : 'unknown'}`);
         }
       } catch (e) {
         console.error("Failed to load deck cards or metadata:", e);
+        if (!hasMemoryHit) {
+          // Detach from the real deck so autosave cannot fire against it.
+          builderDeckId = null;
+          builderLoadComplete = false;
+          const mZoneErr = document.getElementById('builder-zone-mainboard');
+          if (mZoneErr) {
+            mZoneErr.innerHTML = `<div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-muted); font-size: 0.9rem; gap: 0.75rem;"><span style="color: var(--color-loss);">Could not load this deck's cards. Your saved deck is safe.</span><button class="btn btn-secondary btn-sm" onclick="openVisualDeckbuilder('${escapeHtml(String(deckId))}', '', 1, null, '${escapeHtml(String(format || 'commander'))}', ${keepCheapest ? 1 : 0})">Retry</button></div>`;
+          }
+        }
       } finally {
         renderBuilderDecklist();
       }
     } else {
+      // Brand-new deck — nothing to load.
+      builderLoadComplete = true;
       renderBuilderDecklist();
     }
   };
@@ -4892,7 +4910,7 @@ function initGoogleSignInButtons() {
       alert("No active deck loaded to delete.");
       return;
     }
-    window.openDeleteConfirmModal(`Are you sure you want to permanently delete "${deckName}"? This action cannot be undone.`, async () => {
+    window.openDeleteConfirmModal(`Are you sure you want to delete "${deckName}"? It will be moved to the Recycle Bin, where you can restore it.`, async () => {
       try {
         window.startTopProgress();
         const res = await fetch(`/api/decks/${deckId}`, { method: 'DELETE' });
@@ -5779,13 +5797,52 @@ function initGoogleSignInButtons() {
   };
 
   let autoSaveTimeout = null;
+  let builderSaveInFlight = null; // serialize saves so a new-deck create can't double-fire
+  let builderDirty = false;
+
+  // Small persistent save-status indicator in the builder header.
+  function setBuilderSaveStatus(kind, text) {
+    let el = document.getElementById('builder-save-status');
+    if (!el) {
+      const host = document.getElementById('builder-deck-name') || document.body;
+      el = document.createElement('div');
+      el.id = 'builder-save-status';
+      el.style.cssText = 'font-size:0.72rem;margin-top:4px;font-weight:600;';
+      if (host && host.parentNode) host.parentNode.insertBefore(el, host.nextSibling);
+      else document.body.appendChild(el);
+    }
+    if (kind === 'saved') { el.style.color = 'var(--text-muted)'; el.textContent = text || 'All changes saved'; }
+    else if (kind === 'saving') { el.style.color = 'var(--text-muted)'; el.textContent = text || 'Saving…'; }
+    else if (kind === 'error') { el.style.color = 'var(--color-loss, #ef4444)'; el.textContent = text || 'Not saved — will retry'; }
+    else el.textContent = '';
+  }
+
+  // Warn before leaving with unsaved changes.
+  window.addEventListener('beforeunload', (e) => {
+    if (builderDirty) { e.preventDefault(); e.returnValue = ''; }
+  });
 
   window.triggerAutoSave = async function() {
+    // Never autosave an existing deck whose cards have not finished loading — a
+    // failed/incomplete load leaves builderCommander/builderMainboard empty, and
+    // saving that would wipe the real deck. (New decks set builderLoadComplete=true.)
+    if (builderDeckId && !builderLoadComplete) {
+      console.warn("Autosave skipped: deck cards not loaded yet.");
+      return;
+    }
+    // Serialize: if a save is already running, wait for it first so two quick actions on a
+    // brand-new deck (deckId still null) don't create two decks.
+    if (builderSaveInFlight) {
+      try { await builderSaveInFlight; } catch (e) {}
+    }
     const deckNameInput = document.getElementById('builder-deck-name');
     if (!deckNameInput) return;
     const deckName = deckNameInput.value;
     if (!deckName || !deckName.trim() || isProfane(deckName)) {
-      return; // Do not auto-save invalid names
+      // Surface why saving is blocked instead of silently dropping edits.
+      builderDirty = true;
+      setBuilderSaveStatus('error', 'Not saved — deck name is empty or not allowed.');
+      return;
     }
 
     const format = document.getElementById('builder-deck-format') ? document.getElementById('builder-deck-format').value : 'commander';
@@ -5795,7 +5852,8 @@ function initGoogleSignInButtons() {
     const tagsInput = document.getElementById('builder-deck-tags');
     const customTags = tagsInput ? tagsInput.value.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
 
-    try {
+    setBuilderSaveStatus('saving');
+    builderSaveInFlight = (async () => {
       const res = await fetch('/api/decks/builder-save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5811,15 +5869,24 @@ function initGoogleSignInButtons() {
           customTags
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.deckId) {
-          builderDeckId = data.deckId;
-        }
-        loadMyDecks(); // Refresh collection view in background
+      if (!res.ok) throw new Error(`Save failed (HTTP ${res.status})`);
+      const data = await res.json();
+      if (data.success && data.deckId) {
+        builderDeckId = data.deckId;
       }
+      loadMyDecks(); // Refresh collection view in background
+    })();
+
+    try {
+      await builderSaveInFlight;
+      builderDirty = false;
+      setBuilderSaveStatus('saved');
     } catch (e) {
       console.error("Auto-save failed:", e);
+      builderDirty = true;
+      setBuilderSaveStatus('error', 'Not saved — check your connection or log in again.');
+    } finally {
+      builderSaveInFlight = null;
     }
   };
 
@@ -6101,12 +6168,19 @@ function initGoogleSignInButtons() {
   }
 
   function escapeHtml(text) {
-    return text
+    return String(text == null ? '' : text)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  // Returns true only for http(s) URLs, so attacker-supplied avatar/image URLs
+  // (javascript:, data:, etc.) are rejected before being placed in an <img src>.
+  function safeImageUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    return /^https?:\/\//i.test(url.trim());
   }
 
   function updateSandboxCountersUI() {
@@ -6648,7 +6722,7 @@ function initGoogleSignInButtons() {
     }
 
     decks.forEach(deck => {
-      const tagsHtml = (deck.customTags || []).map(t => `<span class="tag-badge" style="font-size: 0.65rem; padding: 2px 6px; background: rgba(168, 85, 247, 0.08); border: 1px solid var(--border-light); border-radius: 4px; color: var(--color-primary);">${t}</span>`).join(' ');
+      const tagsHtml = (deck.customTags || []).map(t => `<span class="tag-badge" style="font-size: 0.65rem; padding: 2px 6px; background: rgba(168, 85, 247, 0.08); border: 1px solid var(--border-light); border-radius: 4px; color: var(--color-primary);">${escapeHtml(t)}</span>`).join(' ');
 
       const cardEl = document.createElement('div');
       cardEl.className = 'deck-card panel';
@@ -6661,8 +6735,8 @@ function initGoogleSignInButtons() {
       cardEl.style.cursor = 'pointer';
       cardEl.onclick = () => inspectDeckCards(deck.id, deck.deckName);
 
-      const avatarHtml = deck.creatorAvatar
-        ? `<img src="${deck.creatorAvatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-light);" alt="Avatar">`
+      const avatarHtml = safeImageUrl(deck.creatorAvatar)
+        ? `<img src="${escapeHtml(deck.creatorAvatar)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-light);" alt="Avatar">`
         : `<img src="logo.svg" style="width: 24px; height: 24px; border-radius: 50%; object-fit: contain; border: 1px solid var(--border-light); background: var(--bg-dark);" alt="Avatar">`;
 
       let legalClass = deck.isLegal ? 'badge-win' : 'badge-loss';
@@ -6689,16 +6763,16 @@ function initGoogleSignInButtons() {
         <div style="padding: 1rem; display: flex; flex-grow: 1; flex-direction: column; justify-content: space-between; gap: 0.5rem; overflow: hidden;">
           <div>
             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.25rem; gap: 0.5rem;">
-              <h3 style="font-size: 1.05rem; margin: 0; font-family: 'Cinzel', serif; font-weight: 800; color: var(--text-pure); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1;">${deck.deckName}</h3>
-              <span class="badge ${legalClass}" style="flex-shrink: 0;" title="${legalTitle}">${legalLabel}</span>
+              <h3 style="font-size: 1.05rem; margin: 0; font-family: 'Cinzel', serif; font-weight: 800; color: var(--text-pure); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1;">${escapeHtml(deck.deckName)}</h3>
+              <span class="badge ${legalClass}" style="flex-shrink: 0;" title="${escapeHtml(legalTitle)}">${legalLabel}</span>
             </div>
 
             <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">
               ${avatarHtml}
               <div>
-                Created by <strong style="color: var(--text-high);">${deck.creatorName}</strong>
-                ${deck.creatorCommander ? `<span style="font-size:0.65rem; color:var(--color-gold); display:block;">Signature: 👑 ${deck.creatorCommander}</span>` : ''}
-                ${deck.originalCreator ? `<span style="font-size:0.65rem; display:block;">Cloned from <strong>${deck.originalCreator}</strong></span>` : ''}
+                Created by <strong style="color: var(--text-high);">${escapeHtml(deck.creatorName)}</strong>
+                ${deck.creatorCommander ? `<span style="font-size:0.65rem; color:var(--color-gold); display:block;">Signature: 👑 ${escapeHtml(deck.creatorCommander)}</span>` : ''}
+                ${deck.originalCreator ? `<span style="font-size:0.65rem; display:block;">Cloned from <strong>${escapeHtml(deck.originalCreator)}</strong></span>` : ''}
               </div>
             </div>
 
@@ -6968,8 +7042,8 @@ function initGoogleSignInButtons() {
 
       // Avatar
       const avatarContainer = document.getElementById('public-profile-avatar-container');
-      if (data.profile.avatar_url) {
-        avatarContainer.innerHTML = `<img src="${data.profile.avatar_url}" style="width: 56px; height: 56px; border-radius: 50%; object-fit: cover;" alt="avatar">`;
+      if (safeImageUrl(data.profile.avatar_url)) {
+        avatarContainer.innerHTML = `<img src="${escapeHtml(data.profile.avatar_url)}" style="width: 56px; height: 56px; border-radius: 50%; object-fit: cover;" alt="avatar">`;
       } else {
         avatarContainer.innerHTML = `<svg viewBox="0 0 24 24" style="width: 56px; height: 56px; fill: var(--color-primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>`;
       }
@@ -9154,15 +9228,31 @@ function initGoogleSignInButtons() {
       </div>
     `;
 
+    // Render the card into ONLY the currently-visible stack. Writing the same markup
+    // (which contains id="active-swipe-card") into both containers produced a duplicate id,
+    // so drag/fling targeted the hidden discover copy while the visible card just teleported.
     const stackEl1 = document.getElementById('swipe-card-stack');
     const stackEl2 = document.getElementById('standalone-swipe-card-stack');
-    if (stackEl1) stackEl1.innerHTML = html;
-    if (stackEl2) stackEl2.innerHTML = html;
+    const isVisible = (el) => el && (el.offsetParent !== null || el.getClientRects().length > 0);
+    const target = isVisible(stackEl2) ? stackEl2 : (isVisible(stackEl1) ? stackEl1 : (stackEl1 || stackEl2));
+    if (stackEl1) stackEl1.innerHTML = (stackEl1 === target) ? html : '';
+    if (stackEl2) stackEl2.innerHTML = (stackEl2 === target) ? html : '';
 
     initCardDragging();
   };
 
+  // Window-level drag handlers from the previous card, removed before re-binding so they
+  // don't accumulate (they closure-capture detached nodes and cause mobile jank).
+  let _swipeWindowHandlers = null;
+
   function initCardDragging() {
+    if (_swipeWindowHandlers) {
+      window.removeEventListener('mousemove', _swipeWindowHandlers.move);
+      window.removeEventListener('touchmove', _swipeWindowHandlers.move);
+      window.removeEventListener('mouseup', _swipeWindowHandlers.up);
+      window.removeEventListener('touchend', _swipeWindowHandlers.up);
+      _swipeWindowHandlers = null;
+    }
     const card = document.getElementById('active-swipe-card');
     if (!card) return;
 
@@ -9203,6 +9293,7 @@ function initGoogleSignInButtons() {
     window.addEventListener('touchmove', onPointerMove, { passive: true });
     window.addEventListener('mouseup', onPointerUp);
     window.addEventListener('touchend', onPointerUp);
+    _swipeWindowHandlers = { move: onPointerMove, up: onPointerUp };
   }
 
   window.triggerSwipeAction = function(action) {
@@ -10624,6 +10715,17 @@ function initGoogleSignInButtons() {
     }
   };
 
+  // Bridge: expose the current deck builder's cards (commander + mainboard) to
+  // global-scope helpers such as window.exportDeckToTCGplayer, which lives
+  // outside this IIFE and cannot see builderCommander/builderMainboard directly.
+  window.getBuilderCards = function() {
+    const out = [];
+    [...(builderCommander || []), ...(builderMainboard || [])].forEach(c => {
+      if (c && c.name) out.push({ qty: c.qty || c.quantity || 1, name: c.name });
+    });
+    return out;
+  };
+
 })();
 
 
@@ -10632,9 +10734,8 @@ function initGoogleSignInButtons() {
 // Builds a mass-entry URL from the current deck builder cards and opens TCGplayer
 // with the affiliate link: https://partner.tcgplayer.com/xJoE0d
 window.exportDeckToTCGplayer = function() {
-        }
-      });
-    }
+  try {
+    const allCards = (typeof window.getBuilderCards === 'function') ? window.getBuilderCards() : [];
 
     if (allCards.length === 0) {
       alert('No cards in your deck builder to export. Add some cards first!');

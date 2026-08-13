@@ -1,3 +1,16 @@
+// Grimore test-debris cleaner — SAFE REWRITE.
+//
+// The previous version identified "test" data by timestamp prefix (id LIKE 'd_1786%')
+// and name prefix (deck_name LIKE 'Test%', username LIKE 'Test%'). Those patterns match
+// ALL decks/players created during the launch window and real users like "Testarossa" or
+// decks like "Greatest Hits". Running it deleted live user data with no confirmation.
+//
+// This version NEVER guesses. It deletes only the exact deck/player IDs you pass on the
+// command line, uses parameterized queries, and refuses to do anything without --confirm.
+//
+// Usage:
+//   node execution/cleanup_live_test_decks.js --deck d_123 --deck d_456 --player p_789 --confirm
+//
 let db;
 try {
   db = require('./db');
@@ -5,58 +18,61 @@ try {
   db = require('../db');
 }
 
+function parseArgs(argv) {
+  const deckIds = [];
+  const playerIds = [];
+  let confirm = false;
+  for (let i = 2; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--confirm') confirm = true;
+    else if (a === '--deck') { if (argv[i + 1]) deckIds.push(argv[++i]); }
+    else if (a === '--player') { if (argv[i + 1]) playerIds.push(argv[++i]); }
+  }
+  return { deckIds, playerIds, confirm };
+}
+
+function placeholders(n) {
+  return Array.from({ length: n }, () => '?').join(',');
+}
+
 async function cleanupTestDebris() {
+  const { deckIds, playerIds, confirm } = parseArgs(process.argv);
+
+  if (deckIds.length === 0 && playerIds.length === 0) {
+    console.log("No IDs provided. Nothing to do.");
+    console.log("Usage: node execution/cleanup_live_test_decks.js --deck <id> [--player <id> ...] --confirm");
+    process.exit(0);
+  }
+
+  if (!confirm) {
+    console.log("Refusing to delete without --confirm. Would delete:");
+    deckIds.forEach(id => console.log(`  deck   ${id}`));
+    playerIds.forEach(id => console.log(`  player ${id}`));
+    console.log("Re-run with --confirm to proceed.");
+    process.exit(1);
+  }
+
   await db.initDb();
-  console.log("=== Grimore Live Test Debris Cleaner ===");
+  console.log("=== Grimore Test Debris Cleaner (explicit IDs only) ===");
 
-  try {
-    await db.run("PRAGMA foreign_keys = OFF;");
-  } catch (e) {
-    // Postgres does not use PRAGMA
+  if (deckIds.length > 0) {
+    const ph = placeholders(deckIds.length);
+    await db.run(`DELETE FROM deck_likes WHERE deck_id IN (${ph})`, deckIds);
+    await db.run(`DELETE FROM deck_cards WHERE deck_id IN (${ph})`, deckIds);
+    await db.run(`DELETE FROM decks WHERE id IN (${ph})`, deckIds);
+    console.log(`Deleted ${deckIds.length} deck(s) by explicit id.`);
   }
 
-  // Find test decks (e.g. deck_name starting with 'Test', 'Cloned', 'Quick Import', or id starting with 'd_17')
-  const testDecks = await db.query(`
-    SELECT id, deck_name, player_id 
-    FROM decks 
-    WHERE deck_name LIKE 'Test%' 
-       OR deck_name LIKE 'Cloned%' 
-       OR deck_name LIKE 'Quick Import%'
-       OR id LIKE 'd_1786%'
-       OR player_id LIKE 'p_1786%'
-  `);
-
-  console.log(`Found ${testDecks.length} test deck(s) to remove from live database:`);
-  testDecks.forEach(d => console.log(` - [${d.id}] ${d.deck_name} (User: ${d.player_id})`));
-
-  // Find test players
-  const testPlayers = await db.query(`SELECT id, store_nickname FROM players WHERE id LIKE 'p_1786%' OR username LIKE 'Test%'`);
-
-  if (testDecks.length > 0) {
-    const deckIds = testDecks.map(d => `'${d.id}'`).join(',');
-    
-    // Delete deck likes & cards & decks
-    await db.run(`DELETE FROM deck_likes WHERE deck_id IN (${deckIds})`);
-    await db.run(`DELETE FROM deck_cards WHERE deck_id IN (${deckIds})`);
-    await db.run(`DELETE FROM decks WHERE id IN (${deckIds})`);
-    console.log(`Deleted ${testDecks.length} test deck(s) from live database.`);
+  if (playerIds.length > 0) {
+    const ph = placeholders(playerIds.length);
+    await db.run(`DELETE FROM deck_likes WHERE player_id IN (${ph})`, playerIds);
+    await db.run(`DELETE FROM deck_cards WHERE deck_id IN (SELECT id FROM decks WHERE player_id IN (${ph}))`, playerIds);
+    await db.run(`DELETE FROM decks WHERE player_id IN (${ph})`, playerIds);
+    await db.run(`DELETE FROM players WHERE id IN (${ph})`, playerIds);
+    console.log(`Deleted ${playerIds.length} player account(s) by explicit id.`);
   }
 
-  if (testPlayers.length > 0) {
-    const playerIds = testPlayers.map(p => `'${p.id}'`).join(',');
-    
-    await db.run(`DELETE FROM deck_likes WHERE player_id IN (${playerIds})`);
-    await db.run(`DELETE FROM deck_cards WHERE deck_id IN (SELECT id FROM decks WHERE player_id IN (${playerIds}))`);
-    await db.run(`DELETE FROM decks WHERE player_id IN (${playerIds})`);
-    await db.run(`DELETE FROM players WHERE id IN (${playerIds})`);
-    console.log(`Deleted ${testPlayers.length} test player account(s) from live database.`);
-  }
-
-  try {
-    await db.run("PRAGMA foreign_keys = ON;");
-  } catch (e) {}
-
-  console.log("=== Live Cleanup Complete ===");
+  console.log("=== Cleanup Complete ===");
 }
 
 cleanupTestDebris().catch(console.error);

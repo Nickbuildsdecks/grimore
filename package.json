@@ -1,5 +1,5 @@
 {
-  "name": "grimoire",
+  "name": "grimore",
   "version": "1.0.0",
   "description": "Premium All-Encompassing MTG Suite Web Server",
   "main": "server.js",
@@ -8,7 +8,10 @@
     "dev": "node --max-old-space-size=768 server.js",
     "build": "npm run build:web",
     "build:web": "npm --prefix web run build",
-    "test:recommendations": "node --test test/recommendation-engine.test.js"
+    "test:recommendations": "node --test test/recommendation-engine.test.js",
+    "test:multiplayer": "node --test test/multiplayer-engine.test.js",
+    "test:unit": "node --test test/recommendation-engine.test.js test/multiplayer-engine.test.js test/maintenance-scripts.test.js test/billing-gating.test.js",
+    "preflight": "node scripts/preflight.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -22,7 +25,6 @@
     "pg": "^8.22.0",
     "redis": "^6.1.0",
     "socket.io": "^4.8.3",
-    "sqlite3": "^5.1.7",
     "zod": "^4.4.3"
   },
   "author": "Antigravity",

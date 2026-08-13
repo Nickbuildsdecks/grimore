@@ -996,3 +996,56 @@ html, body {
 }
 
 
+
+/* ── Live Multiplayer Lobby & Chat ─────────────────────────── */
+.mp-modal { max-width: 640px; }
+.mp-section { margin-bottom: 20px; padding: 14px; border: 1px solid rgba(148,163,184,0.15); border-radius: 12px; background: rgba(15,20,32,0.55); backdrop-filter: blur(12px); }
+.mp-section-title { font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: 0.08em; font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 10px; }
+.mp-section-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.mp-section-title-row .mp-section-title { margin-bottom: 0; }
+.mp-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.mp-label { display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem; color: #94a3b8; font-weight: 600; }
+.mp-input { width: 100%; }
+.mp-btn-primary { background: linear-gradient(135deg, #6d28d9, #4f46e5); color: #fff; border: none; font-weight: 700; }
+.mp-btn-primary:hover { filter: brightness(1.15); }
+.mp-join-row { display: flex; gap: 8px; }
+.mp-code-input { text-transform: uppercase; letter-spacing: 0.12em; font-family: 'Fira Code', monospace; }
+.mp-public-list { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
+.mp-pod-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 8px; background: rgba(30,41,59,0.5); }
+.mp-pod-row-info { display: flex; flex-direction: column; }
+.mp-pod-row-name { font-weight: 700; font-size: 0.85rem; color: #e2e8f0; }
+.mp-pod-row-meta { font-size: 0.75rem; color: #94a3b8; }
+.mp-empty { font-size: 0.75rem; color: #94a3b8; font-style: italic; padding: 8px; }
+.mp-room-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.mp-room-title { font-family: 'Cinzel', serif; font-size: 1.1rem; font-weight: 800; color: #e2e8f0; }
+.mp-room-meta { font-size: 0.72rem; color: #94a3b8; margin-top: 2px; }
+.mp-code-badge-wrap { display: flex; align-items: center; gap: 8px; }
+.mp-code-badge { font-family: 'Fira Code', monospace; font-weight: 700; font-size: 1rem; letter-spacing: 0.15em; color: #c4b5fd; background: rgba(109,40,217,0.18); border: 1px solid rgba(139,92,246,0.35); padding: 6px 12px; border-radius: 8px; }
+.mp-players-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.mp-player-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: rgba(30,41,59,0.5); }
+.mp-player-row.me { border: 1px solid rgba(139,92,246,0.4); }
+.mp-seat-badge { font-size: 0.65rem; font-weight: 700; color: #94a3b8; background: rgba(51,65,85,0.6); padding: 2px 8px; border-radius: 999px; }
+.mp-player-name { font-size: 0.85rem; font-weight: 600; color: #e2e8f0; flex: 1; }
+.mp-host-badge { font-size: 0.6rem; font-weight: 800; letter-spacing: 0.1em; color: #fbbf24; background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.3); padding: 2px 8px; border-radius: 999px; }
+.mp-room-actions { display: flex; align-items: center; gap: 10px; }
+.mp-wait-hint { font-size: 0.75rem; color: #94a3b8; font-style: italic; flex: 1; }
+#mp-chat-dock { position: fixed; bottom: 16px; right: 16px; z-index: 900; display: none; flex-direction: column; align-items: flex-end; gap: 6px; }
+#mp-chat-dock.active { display: flex; }
+#mp-chat-panel { display: none; width: 280px; background: rgba(11,14,20,0.92); border: 1px solid rgba(148,163,184,0.2); border-radius: 12px; backdrop-filter: blur(14px); overflow: hidden; }
+#mp-chat-panel.open { display: block; }
+#mp-chat-log { max-height: 200px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+.mp-chat-msg { font-size: 0.75rem; color: #cbd5e1; line-height: 1.35; }
+.mp-chat-name { font-weight: 700; color: #a78bfa; }
+.mp-chat-input-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(148,163,184,0.12); }
+.mp-chat-input-row .mp-input { flex: 1; background: rgba(30,41,59,0.6); border: 1px solid rgba(148,163,184,0.2); border-radius: 8px; color: #e2e8f0; padding: 6px 8px; font-size: 0.75rem; }
+
+/* ── Mobile responsiveness (previously the Play Realm had ZERO media queries, so the
+   fixed 340px setup column and side panels were clipped/unusable on phones). ── */
+@media (max-width: 900px) {
+  .setup-dashboard-body {
+    grid-template-columns: 1fr !important;
+    overflow: auto !important;
+  }
+  .mp-form-grid { grid-template-columns: 1fr; }
+  #mp-chat-panel { width: 100%; }
+}

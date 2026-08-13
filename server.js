@@ -20,6 +20,7 @@ try {
 } catch (e) {}
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const path = require('path');
@@ -53,36 +54,18 @@ const { z } = require('zod');
 
 const app = express();
 const server = http.createServer(app);
+// Restrict Socket.IO to known origins in production (env-driven allowlist); wildcard is
+// only used when no allowlist is configured (local dev).
+const SOCKET_ALLOWED_ORIGINS = (process.env.SOCKET_ALLOWED_ORIGINS || process.env.PUBLIC_ORIGIN || '')
+  .split(',').map(o => o.trim()).filter(Boolean);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { origin: SOCKET_ALLOWED_ORIGINS.length ? SOCKET_ALLOWED_ORIGINS : '*' }
 });
 
 // Real-Time Socket.IO Multiplayer & Arena Sync Engine
-io.on('connection', (socket) => {
-  console.log('[Socket.IO] Client connected:', socket.id);
-
-  socket.on('join-room', (roomId) => {
-    socket.join(roomId);
-    socket.emit('joined-room', { roomId, socketId: socket.id });
-    console.log(`[Socket.IO] Socket ${socket.id} joined room ${roomId}`);
-  });
-
-  socket.on('arena-action', (data) => {
-    if (data && data.roomId) {
-      socket.to(data.roomId).emit('arena-action', data);
-    }
-  });
-
-  socket.on('arena-state-sync', (data) => {
-    if (data && data.roomId) {
-      socket.to(data.roomId).emit('arena-state-update', data.state);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('[Socket.IO] Client disconnected:', socket.id);
-  });
-});
+// Lobby pods, join codes, public lobby list, and in-game state relay
+// live in multiplayer.js (legacy join-room / arena-* events included).
+require('./multiplayer').attach(io);
 
 // Gemini AI Rules Advisor Setup
 const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -107,10 +90,52 @@ function isProfane(text) {
   return badWords.some(w => normalized.includes(w));
 }
 
+// Minimum password policy. Returns an error string if the password is too weak, else null.
+function passwordPolicyError(password) {
+  if (!password || typeof password !== 'string' || password.length < 8) {
+    return "Password must be at least 8 characters long.";
+  }
+  return null;
+}
+
+// Baseline security headers (defense-in-depth; Caddy also sets these for the domain, but
+// this also covers the direct-IP path). Kept conservative so nothing legitimate breaks.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 // Middleware
+// Stripe webhook needs the RAW body for signature verification — mount raw for that exact path
+// BEFORE express.json so the JSON parser does not consume it. (flag-dark; see billing.js)
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json({ limit: '20mb' }));
 
 app.use(express.urlencoded({ extended: true }));
+
+// Premium billing routes + gate. Inert unless PREMIUM_GATING=on AND Stripe keys are present;
+// the gate is a pass-through while dark, so this changes nothing user-facing until enabled.
+const billing = require('./billing');
+billing.registerRoutes(app, db);
+const premiumGate = billing.requirePremium(db);
+
+// Guard the internal dev "Command Center" assets BEFORE express.static can serve them.
+// Otherwise GET /changes.html (the literal file) bypasses the /changes route guard and
+// exposes the internal tooling page in production.
+app.use((req, res, next) => {
+  if (/^\/changes\.(html|js|css)$/i.test(req.path)) {
+    const isProd = process.env.NODE_ENV === 'production';
+    const ip = req.ip || req.socket?.remoteAddress || '';
+    const host = req.hostname || req.headers.host || '';
+    const isLocal = host.includes('localhost') || host.includes('127.0.0.1') || ip.includes('127.0.0.1') || ip === '::1' || ip === '::ffff:127.0.0.1';
+    if (isProd || !isLocal) return res.status(404).send('Not Found');
+  }
+  next();
+});
+
 // Serve Grimore primary Web Suite
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: function (res, filePath) {
@@ -140,6 +165,12 @@ if (fs.existsSync(reactIndexPath)) {
   });
 }
 
+// Lightweight liveness/health endpoint — used by the docker-compose healthcheck and any
+// external uptime monitor. Cheap, no DB access, always JSON.
+const healthHandler = (req, res) => res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
+
 // Grimore Premium Arena Sandbox — dedicated route
 app.get('/sandbox', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sandbox.html'));
@@ -168,7 +199,7 @@ app.get('/changes', (req, res) => {
 });
 
 // ── DEV TOOLS: VISUAL GIT CHANGE MANAGEMENT API ──────────────────────────────
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 
 app.get('/api/dev/git-status', (req, res) => {
   try {
@@ -219,31 +250,31 @@ app.get('/api/dev/git-status', (req, res) => {
     const buckets = [
       {
         id: 'sandbox-replays',
-        title: '🎴 Playtest Sandbox & YouTube Replay Engine',
+        title: 'Playtest Sandbox & YouTube Replay Engine',
         description: '4P multiplayer battlefield, video match replay harness, combat stack overlays, sound FX.',
         files: []
       },
       {
         id: 'account-importer',
-        title: '📥 Account Migration & Deck Importer',
+        title: 'Account Migration & Deck Importer',
         description: 'Bulk Moxfield/Archidekt/text importer dialogs, player account deck syncing.',
         files: []
       },
       {
         id: 'ai-judge-rules',
-        title: '🤖 Grim AI Judge & Anti-Hallucination Directive',
+        title: 'Grim AI Judge & Anti-Hallucination Directive',
         description: 'Dual-source CR + IPG citation rules engine and Gemini flash model configuration.',
         files: []
       },
       {
         id: 'visual-design-canvas',
-        title: '🎨 Visual Particle Canvas & Styling Polish',
+        title: 'Visual Particle Canvas & Styling Polish',
         description: 'Glowing ambient dots renderer, modal dialog styling, navigation rules.',
         files: []
       },
       {
         id: 'skill-suite-scripts',
-        title: '🛠️ Modular Skill Suite & Verification Scripts',
+        title: 'Modular Skill Suite & Verification Scripts',
         description: '10 custom agent skills in .agents/skills/ and 6 automated test verification scripts in execution/.',
         files: []
       }
@@ -281,7 +312,7 @@ app.get('/api/dev/git-status', (req, res) => {
       buckets
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -291,11 +322,11 @@ app.post('/api/dev/git-stage', (req, res) => {
     if (!paths || !Array.isArray(paths) || paths.length === 0) {
       return res.status(400).json({ error: "No paths provided to stage" });
     }
-    const escapedPaths = paths.map(p => `"${p.replace(/"/g, '')}"`).join(' ');
-    execSync(`git add ${escapedPaths}`);
+    // execFileSync with an argument array — no shell, so paths cannot inject commands.
+    execFileSync('git', ['add', '--', ...paths.map(String)]);
     res.json({ success: true, message: `Staged ${paths.length} file(s)/folder(s).` });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -305,11 +336,11 @@ app.post('/api/dev/git-commit', (req, res) => {
     if (!message || !message.trim()) {
       return res.status(400).json({ error: "Commit message is required" });
     }
-    const cleanMsg = message.replace(/"/g, '\\"');
-    const output = execSync(`git commit -m "${cleanMsg}"`, { encoding: 'utf8' });
+    // Argument array — the message is passed as a single argv entry, never through a shell.
+    const output = execFileSync('git', ['commit', '-m', String(message)], { encoding: 'utf8' });
     res.json({ success: true, output });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -318,7 +349,7 @@ app.post('/api/dev/git-push', (req, res) => {
     const output = execSync('git push origin main', { encoding: 'utf8' });
     res.json({ success: true, output });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -328,7 +359,20 @@ const aiAdvisorQuerySchema = z.object({
   boardState: z.string().optional()
 });
 
-app.post('/api/sandbox/ai-advisor', async (req, res) => {
+// Tight per-client limiter for the paid Gemini endpoint so an anonymous caller can't
+// run up API spend. Defined here (before the route that uses it) to avoid a temporal
+// dead zone — the route is registered above where the other rate limiters are declared.
+const aiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'AI advisor rate limit reached. Please wait a moment.' }
+});
+
+app.post('/api/sandbox/ai-advisor', aiLimiter, premiumGate, async (req, res) => {
+  // Require a logged-in session — this endpoint drives billable Gemini calls.
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
   const parseResult = aiAdvisorQuerySchema.safeParse(req.body);
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Invalid input parameters.', details: parseResult.error.format() });
@@ -387,7 +431,6 @@ ${boardState ? `Current Board Context: ${boardState}` : ''}`;
   }
 });
 
-const rateLimit = require('express-rate-limit');
 const { createClient } = require('redis');
 const { RedisStore } = require('connect-redis');
 
@@ -430,17 +473,36 @@ const importLimiter = rateLimit({
   message: { success: false, error: 'Deck import rate limit reached. Please wait a moment.' }
 });
 
+// Behind the single Caddy reverse proxy hop: trust exactly one proxy so req.ip resolves
+// to the real client (via X-Forwarded-For) instead of the proxy's address. Without this,
+// every client shares one rate-limit bucket and secure cookies won't be set correctly.
+app.set('trust proxy', 1);
+
 app.use(globalLimiter);
 app.use('/api/auth', authLimiter);
 app.use('/api/decks/import', importLimiter);
 
 // Sessions setup
+// SECURITY: the session secret must never be a hardcoded, source-committed value in
+// production — anyone who reads the repo could forge signed session cookies. Require
+// SESSION_SECRET in production (fail fast at boot); outside production, generate a
+// random per-process secret so dev never relies on a shared committed string.
+if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+  console.error('FATAL: SESSION_SECRET must be set in production. Refusing to start.');
+  process.exit(1);
+}
+const SESSION_SECRET = process.env.SESSION_SECRET || require('crypto').randomBytes(48).toString('hex');
 app.use(session({
   store: sessionStore,
-  secret: process.env.SESSION_SECRET || 'grimore_secret_key_123984',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24 hours
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    httpOnly: true,              // not readable from JS (mitigates XSS cookie theft)
+    sameSite: 'lax',             // CSRF hardening for cross-site requests
+    secure: 'auto'               // send over HTTPS when the (trusted) proxy terminates TLS
+  }
 }));
 
 const scryfallService = require('./scryfallService');
@@ -450,7 +512,7 @@ async function sanitizeDeckCardsScryfallIds() {
     const rows = await db.query(
       `SELECT dc.deck_id, dc.card_name, dc.scryfall_id, sc.scryfall_id as real_scryfall_id
        FROM deck_cards dc
-       JOIN scryfall_cards sc ON dc.card_name = sc.card_name
+       JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(sc.card_name)
        WHERE dc.scryfall_id IS NOT NULL AND dc.scryfall_id != sc.scryfall_id`
     );
     for (const r of rows) {
@@ -565,6 +627,35 @@ function fetchJson(url) {
         (data) => { resolve(data); },
         (err) => { reject(err); }
       );
+  });
+}
+
+// Lightweight JSON GET that supports custom headers (e.g. Bearer auth) and does NOT
+// route through the Scryfall rate-limit queue. Used for Google token verification.
+function httpsGetJson(url, extraHeaders = {}) {
+  return new Promise((resolve, reject) => {
+    // Auth depends on this (Google tokeninfo/userinfo). Without a timeout, a hung upstream
+    // would leave the login request pending forever and pile up sockets. Fail fast at 8s.
+    const req = https.get(url, {
+      headers: Object.assign({ 'Accept': 'application/json' }, extraHeaders),
+      timeout: 8000
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          if (res.statusCode >= 400) {
+            reject(new Error(`HTTP Error ${res.statusCode}: ${data}`));
+          } else {
+            resolve(JSON.parse(data));
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on('timeout', () => { req.destroy(new Error('Request timed out')); });
+    req.on('error', reject);
   });
 }
 
@@ -1481,6 +1572,10 @@ app.post('/api/auth/register', async (req, res) => {
   if (!emailRegex.test(email)) {
     return res.status(400).json({ error: "Invalid email format." });
   }
+  const pwErr = passwordPolicyError(password);
+  if (pwErr) {
+    return res.status(400).json({ error: pwErr });
+  }
   if (isProfane(username) || isProfane(storeNickname)) {
     return res.status(400).json({ error: "Inappropriate content detected. Please choose a different name." });
   }
@@ -1514,7 +1609,7 @@ app.post('/api/auth/register', async (req, res) => {
       [
         welcomeId,
         id,
-        '👋 Welcome to Grimore!',
+        'Welcome to Grimore!',
         `Welcome ${storeNickname}! This program is in early development. I will be adding new features and fixing bugs frequently. If you have any input regarding new features, changes to current features, or bugs, please message me through the Feedback button in the lower-left corner of your screen.`
       ]
     );
@@ -1522,7 +1617,7 @@ app.post('/api/auth/register', async (req, res) => {
     res.json({ success: true, message: "Registration successful! You can now log in." });
 
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1535,26 +1630,16 @@ app.post('/api/auth/login', async (req, res) => {
   const cleanUser = username.trim().toLowerCase();
   try {
     let player = await db.get("SELECT * FROM players WHERE username = ?", [cleanUser]);
+    // Login must NOT auto-create accounts — that let anyone squat unregistered usernames
+    // and bypassed the registration flow's email/profanity gating. Account creation
+    // happens only via /api/auth/register.
     if (!player) {
-      // Auto-create user account if it doesn't exist yet so any login attempt succeeds seamlessly
-      const hash = await bcrypt.hash(password, 10);
-      try {
-        await db.run(
-          "INSERT INTO players (username, store_nickname, email, password_hash, is_admin, role) VALUES (?, ?, ?, ?, ?, ?)",
-          [cleanUser, username.trim(), `${cleanUser}@grimore.local`, hash, 0, 'player']
-        );
-        player = await db.get("SELECT * FROM players WHERE username = ?", [cleanUser]);
-      } catch (insertErr) {
-        console.error("Auto-registration on login failed:", insertErr);
-      }
-    } else {
-      const valid = await bcrypt.compare(password, player.password_hash);
-      if (!valid) {
-        return res.status(400).json({ error: "Incorrect password for this username." });
-      }
+      return res.status(400).json({ error: "Invalid username or password." });
     }
 
-    if (!player) {
+    const valid = await bcrypt.compare(password, player.password_hash);
+    if (!valid) {
+      // Generic message — do not reveal whether the username exists.
       return res.status(400).json({ error: "Invalid username or password." });
     }
 
@@ -1569,7 +1654,7 @@ app.post('/api/auth/login', async (req, res) => {
     };
     res.json({ success: true, user: req.session.player });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1617,12 +1702,24 @@ const { OAuth2Client } = require('google-auth-library');
 const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = new OAuth2Client(googleClientId);
 
+// Exact-match allowlist of Google account emails that map to the p_admin account.
+// Overridable via ADMIN_GOOGLE_EMAILS (comma-separated). Substring matching is NOT
+// used here — an attacker could otherwise register nickgothard5@attacker.com.
+const ADMIN_GOOGLE_EMAILS = (process.env.ADMIN_GOOGLE_EMAILS || 'nickgothard5@gmail.com,772wally@gmail.com')
+  .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+
 app.post('/api/auth/google', async (req, res) => {
-  const { credential, email: directEmail, googleId: directGoogleId, name: directName } = req.body;
+  const { credential, accessToken } = req.body;
 
   try {
     let payload = null;
 
+    // A verified Google identity is REQUIRED. We never build an identity from
+    // client-supplied email/googleId fields — doing so allowed full account takeover.
+    // Two accepted proofs, both verified server-side against Google:
+    //   1. An ID-token `credential` (GIS One Tap / renderButton).
+    //   2. An OAuth `accessToken` (GIS popup token client) — we verify the token was
+    //      issued for OUR client_id via tokeninfo, then read the email from Google.
     if (credential) {
       if (googleClientId) {
         try {
@@ -1639,24 +1736,68 @@ app.post('/api/auth/google', async (req, res) => {
       if (!payload) {
         try {
           const tokenInfoUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`;
-          payload = await fetchJson(tokenInfoUrl);
+          const info = await fetchJson(tokenInfoUrl);
+          // The tokeninfo endpoint must confirm the token was issued for OUR client
+          // and by Google; otherwise it is not a valid sign-in for this app.
+          const audOk = !googleClientId || info.aud === googleClientId;
+          const issOk = info.iss === 'accounts.google.com' || info.iss === 'https://accounts.google.com';
+          const notExpired = !info.exp || (parseInt(info.exp, 10) * 1000) > Date.now();
+          if (audOk && issOk && notExpired && info.email) {
+            payload = info;
+          } else {
+            console.warn("Tokeninfo payload rejected (aud/iss/exp/email check failed).");
+          }
         } catch (err) {
           console.warn("Tokeninfo fallback failed:", err.message);
         }
       }
     }
 
-    if (!payload && directEmail) {
-      payload = {
-        sub: directGoogleId || 'google_' + Date.now(),
-        email: directEmail,
-        name: directName || directEmail.split('@')[0],
-        picture: ''
-      };
+    // OAuth access-token flow (GIS popup token client). We must confirm the token was
+    // minted for OUR client_id before trusting it — otherwise an access token issued to
+    // any other Google app for a victim could be replayed here to impersonate them.
+    if (!payload && accessToken) {
+      try {
+        const tokenInfoUrl = `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`;
+        const info = await httpsGetJson(tokenInfoUrl);
+        const audOk = !googleClientId || info.aud === googleClientId || info.azp === googleClientId;
+        const notExpired = !info.exp || (parseInt(info.exp, 10) * 1000) > Date.now();
+        if (audOk && notExpired) {
+          // tokeninfo may omit profile fields; fetch them from userinfo with the same token.
+          let email = info.email;
+          let profile = {};
+          try {
+            profile = await httpsGetJson('https://www.googleapis.com/oauth2/v3/userinfo', {
+              Authorization: `Bearer ${accessToken}`
+            });
+            email = email || profile.email;
+          } catch (uErr) {
+            console.warn("Google userinfo fetch failed:", uErr.message);
+          }
+          if (email) {
+            payload = {
+              email,
+              email_verified: info.email_verified !== undefined ? info.email_verified : profile.email_verified,
+              sub: info.sub || profile.sub,
+              name: profile.name,
+              picture: profile.picture
+            };
+          }
+        } else {
+          console.warn("Access-token tokeninfo rejected (aud/azp/exp check failed).");
+        }
+      } catch (err) {
+        console.warn("Access-token verification failed:", err.message);
+      }
     }
 
     if (!payload || !payload.email) {
-      return res.status(400).json({ error: "Missing Google credential or email." });
+      return res.status(401).json({ error: "A valid Google credential is required." });
+    }
+
+    // Google marks unverified emails; never trust an unverified address.
+    if (payload.email_verified === false || payload.email_verified === 'false') {
+      return res.status(401).json({ error: "Google email is not verified." });
     }
 
     const googleId = payload.sub;
@@ -1669,8 +1810,8 @@ app.post('/api/auth/google', async (req, res) => {
       player = await db.get("SELECT * FROM players WHERE LOWER(email) = LOWER(?)", [email]);
     }
 
-    // Auto-link primary owner Google emails to p_admin
-    if (email.toLowerCase().includes('nickgothard5') || email.toLowerCase().includes('772wally')) {
+    // Auto-link the owner's verified Google email(s) to p_admin — exact match only.
+    if (ADMIN_GOOGLE_EMAILS.includes(email.toLowerCase())) {
       const adminPlayer = await db.get("SELECT * FROM players WHERE id = 'p_admin'");
       if (adminPlayer) {
         player = adminPlayer;
@@ -1678,6 +1819,11 @@ app.post('/api/auth/google', async (req, res) => {
     }
 
     if (player) {
+      // google_id is UNIQUE. If this Google identity is already attached to a DIFFERENT
+      // player row (e.g. an account auto-created on an earlier sign-in, now being linked
+      // to p_admin), detach it there first so the UPDATE below can't hit a unique
+      // collision (Postgres constraint players_google_id_key).
+      await db.run("UPDATE players SET google_id = NULL WHERE google_id = ? AND id != ?", [googleId, player.id]);
       await db.run("UPDATE players SET google_id = ?, email = ? WHERE id = ?", [googleId, email, player.id]);
     }
 
@@ -1710,7 +1856,7 @@ app.post('/api/auth/google', async (req, res) => {
     res.json({ success: true, user: req.session.player });
   } catch (e) {
     console.error("Google authentication error:", e);
-    res.status(500).json({ error: "Google authentication failed: " + e.message });
+    res.status(500).json({ error: "Google authentication failed." });
   }
 });
 
@@ -1731,7 +1877,7 @@ app.get('/api/players/list', async (req, res) => {
     const list = await db.query("SELECT id, store_nickname, username, role FROM players ORDER BY store_nickname ASC");
     res.json(list);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1749,7 +1895,7 @@ app.post('/api/players/:playerId/role', async (req, res) => {
     await db.run("UPDATE players SET role = ?, is_admin = ? WHERE id = ?", [role, isAdminVal, playerId]);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1762,7 +1908,7 @@ app.get('/api/seasons/active', async (req, res) => {
     const season = await db.get("SELECT * FROM seasons WHERE is_active = 1");
     res.json(season);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1771,7 +1917,7 @@ app.get('/api/seasons', async (req, res) => {
     const seasons = await db.query("SELECT * FROM seasons ORDER BY created_at DESC");
     res.json(seasons);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1800,7 +1946,7 @@ app.post('/api/seasons', async (req, res) => {
 
     res.json({ success: true, seasonId: id });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1812,7 +1958,7 @@ app.post('/api/seasons/:seasonId/register', async (req, res) => {
     await db.run("INSERT OR IGNORE INTO player_stats (player_id, season_id) VALUES (?, ?)", [playerId, seasonId]);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1840,7 +1986,7 @@ app.post('/api/seasons/rules', async (req, res) => {
 
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1852,7 +1998,7 @@ app.get('/api/movers', async (req, res) => {
     const movers = await db.query("SELECT * FROM price_movers ORDER BY ABS(percentage_change) DESC LIMIT 15");
     res.json(movers);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -2513,7 +2659,7 @@ app.post('/api/decks/register', async (req, res) => {
     res.json({ success: true, deckId, cardNames: cardNamesWithPrices.map(c => c.name), deckName: deckData.name || "Moxfield Deck" });
   } catch (e) {
     console.error("Deck registration error:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -2754,12 +2900,14 @@ app.post('/api/moxfield/import-account', async (req, res) => {
 
   } catch (e) {
     console.error("Moxfield Account Import error:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
 app.get('/api/decks/reprice-init/:deckId', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
   const { deckId } = req.params;
+  const playerId = req.session.player.id;
   try {
     // Check if deck is locked because pairings have been generated for the active season
     const activePairings = await db.get(`
@@ -2768,12 +2916,13 @@ app.get('/api/decks/reprice-init/:deckId', async (req, res) => {
       JOIN pods p ON p.season_id = s.id
       WHERE ar.deck_id = ?
     `, [deckId]);
-    
+
     if (activePairings) {
       return res.status(400).json({ error: "Deck is locked. You cannot update a deck during an active tournament." });
     }
 
-    const deck = await db.get("SELECT * FROM decks WHERE id = ?", [deckId]);
+    // Ownership-scoped: a caller can only reprice (and thereby delete/rewrite) their OWN deck.
+    const deck = await db.get("SELECT * FROM decks WHERE id = ? AND player_id = ?", [deckId, playerId]);
     if (!deck) return res.status(404).json({ error: "Deck not found." });
 
     // Handle manually created or pasted text decks (without a real Moxfield URL)
@@ -2914,13 +3063,19 @@ app.get('/api/decks/reprice-init/:deckId', async (req, res) => {
 
     res.json({ success: true, cardNames: cardNamesWithPrices.map(c => c.name), deckName: deckData.name || deck.deck_name });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
 app.post('/api/decks/reprice-card', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
   const { deckId, cardName } = req.body;
+  const playerId = req.session.player.id;
   try {
+    // Ownership check before touching this deck's card rows.
+    const ownedDeck = await db.get("SELECT id FROM decks WHERE id = ? AND player_id = ?", [deckId, playerId]);
+    if (!ownedDeck) return res.status(404).json({ error: "Deck not found." });
+
     // Retrieve the price directly from what was initialized from Moxfield
     const current = await db.get("SELECT cheapest_card_price FROM deck_cards WHERE deck_id = ? AND card_name = ?", [deckId, cardName]);
     const price = current ? current.cheapest_card_price : 0.10;
@@ -2933,29 +3088,35 @@ app.post('/api/decks/reprice-card', async (req, res) => {
 
     res.json({ success: true, cardName, price });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
 app.post('/api/decks/reprice-finalize/:deckId', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
   const { deckId } = req.params;
+  const playerId = req.session.player.id;
   try {
+    // Ownership check — only the deck owner may finalize its pricing/legality.
+    const ownedDeck = await db.get("SELECT id FROM decks WHERE id = ? AND player_id = ?", [deckId, playerId]);
+    if (!ownedDeck) return res.status(404).json({ error: "Deck not found." });
+
     const result = await db.get("SELECT SUM(cheapest_card_price * quantity) as total FROM deck_cards WHERE deck_id = ?", [deckId]);
     const totalPrice = parseFloat((result.total || 0).toFixed(2));
-    
+
     // Validate deck legality against all active rules (banlist, rarities, colors, budget)
     const validation = await validateDeckLegality(deckId);
     const isLegal = validation.isLegal ? 1 : 0;
     const legalityReason = validation.reason || null;
 
     await db.run(
-      "UPDATE decks SET cheapest_total_price = ?, last_checked = CURRENT_TIMESTAMP, is_legal = ?, legality_reason = ? WHERE id = ?",
-      [totalPrice, isLegal, legalityReason, deckId]
+      "UPDATE decks SET cheapest_total_price = ?, last_checked = CURRENT_TIMESTAMP, is_legal = ?, legality_reason = ? WHERE id = ? AND player_id = ?",
+      [totalPrice, isLegal, legalityReason, deckId, playerId]
     );
 
     res.json({ success: true, totalPrice, isLegal: isLegal === 1, reason: legalityReason });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3020,10 +3181,11 @@ async function fetchCardTags(cardName, scryfallId) {
     }
 
     try {
-      await db.run(
-        "INSERT OR REPLACE INTO scryfall_card_tags (card_name, tags, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
-        [cardName, JSON.stringify(tags)]
-      );
+      // Dialect-safe upsert keyed on card_name (INSERT OR REPLACE is SQLite-only).
+      const upsertSql = db.isPostgres
+        ? "INSERT INTO scryfall_card_tags (card_name, tags, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT (card_name) DO UPDATE SET tags = EXCLUDED.tags, last_updated = CURRENT_TIMESTAMP"
+        : "INSERT OR REPLACE INTO scryfall_card_tags (card_name, tags, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)";
+      await db.run(upsertSql, [cardName, JSON.stringify(tags)]);
     } catch (e) {
       console.error("Failed to save parsed tags to cache:", e);
     }
@@ -3124,8 +3286,18 @@ function categorizeCardByTags(cardName, typeLine, tags = [], oracleText = '') {
     return Array.from(matchedTags);
   }
 
-  if (name === 'demonic tutor' || name === 'vampiric tutor' || name === 'worldy tutor' || name === 'mystical tutor' || name === 'enlightened tutor' || name === 'gamble' || name === 'green sun\'s zenith' || name === 'finale of devastation') {
+  if (name === 'demonic tutor' || name === 'vampiric tutor' || name === 'worldly tutor' || name === 'mystical tutor' || name === 'enlightened tutor' || name === 'gamble' || name === 'green sun\'s zenith' || name === 'finale of devastation') {
     matchedTags.add('Tutors');
+    return Array.from(matchedTags);
+  }
+
+  // 0b. Wincons / Finishers (directive priority #2). Named staples + "you win"/"loses the
+  // game"/extra-turn wording. Checked before removal/ramp so finishers aren't mislabeled.
+  if (name === 'thassa\'s oracle' || name === 'approach of the second sun' || name === 'craterhoof behemoth' ||
+      name === 'torment of hailfire' || name === 'expropriate' || name === 'koma, cosmos serpent' ||
+      oracle.includes('you win the game') || oracle.includes('that player loses the game') ||
+      oracle.includes('take an extra turn')) {
+    matchedTags.add('Wincons/Finishers');
     return Array.from(matchedTags);
   }
 
@@ -3134,18 +3306,21 @@ function categorizeCardByTags(cardName, typeLine, tags = [], oracleText = '') {
     return Array.from(matchedTags);
   }
 
-  // 1. Tutors
-  if (oracle.includes('search your library for a card') || oracle.includes('search your library for an') || oracle.includes('search your library for a creature') || oracle.includes('search your library for a instant') || oracle.includes('search your library for a sorcery') || oracle.includes('search your library for a enchantment')) {
+  // 1. Tutors ('a instant'/'a enchantment' were ungrammatical dead branches — 'an' covers them)
+  if (oracle.includes('search your library for a card') || oracle.includes('search your library for an') || oracle.includes('search your library for a creature') || oracle.includes('search your library for a sorcery')) {
     matchedTags.add('Tutors');
   }
 
-  // 2. Stax
-  if (oracle.includes('spells cost {') || oracle.includes('opponents can\'t cast') || oracle.includes('can\'t untap')) {
+  // 2. Stax — broadened to the common phrasings (Winter Orb "don't untap", Rule of Law
+  // "can't cast more than", Grand Arbiter "cost {N} more to cast", global "players can't").
+  if (oracle.includes('spells cost {') || oracle.includes('opponents can\'t cast') || oracle.includes('can\'t untap') ||
+      oracle.includes('don\'t untap') || oracle.includes('players can\'t') || oracle.includes('can\'t be cast') ||
+      oracle.includes('more to cast')) {
     matchedTags.add('Stax');
   }
 
   // 3. Mass Removal vs Single Target Removal
-  const isMass = oracle.includes('destroy all') || oracle.includes('exile all') || oracle.includes('each creature gets -') || oracle.includes('destroy all nonland') || oracle.includes('return all');
+  const isMass = oracle.includes('destroy all') || oracle.includes('exile all') || oracle.includes('each creature gets -') || oracle.includes('all creatures get -') || oracle.includes('destroy all nonland') || oracle.includes('return all') || oracle.includes('damage to each creature') || oracle.includes('each player sacrifices') || oracle.includes('sacrifices all');
   if (isMass) {
     matchedTags.add('Mass Removal');
   } else if (oracle.includes('destroy target') || oracle.includes('exile target') || oracle.includes('counter target spell') || oracle.includes('return target permanent') || (oracle.includes('deal') && oracle.includes('damage to target'))) {
@@ -3170,8 +3345,11 @@ function categorizeCardByTags(cardName, typeLine, tags = [], oracleText = '') {
     matchedTags.add('Card Selection');
   }
 
-  // 7. Reanimation & Recursion
-  if (oracle.includes('from a graveyard to the battlefield') || oracle.includes('from your graveyard to the battlefield')) {
+  // 7. Reanimation & Recursion (include the "onto the battlefield" wording — Reanimate,
+  // Animate Dead, Necromancy — plus named aura reanimators)
+  if (oracle.includes('from a graveyard to the battlefield') || oracle.includes('from your graveyard to the battlefield') ||
+      oracle.includes('from a graveyard onto the battlefield') || oracle.includes('from your graveyard onto the battlefield') ||
+      name === 'animate dead' || name === 'necromancy' || name === 'dance of the dead') {
     matchedTags.add('Reanimation');
   } else if (oracle.includes('from your graveyard to your hand')) {
     matchedTags.add('Recursion');
@@ -3214,7 +3392,15 @@ function categorizeCardByTags(cardName, typeLine, tags = [], oracleText = '') {
 
   // 12. Utility Lands vs Lands (Fetch lands belong ONLY in Lands, never Utility Lands)
   if (isLand) {
-    const isFetchLand = oracle.includes('pay 1 life, sacrifice') || oracle.includes('search your library for a land card') || oracle.includes('search your library for a basic land') || name.includes('delta') || name.includes('rainforest') || name.includes('tarn') || name.includes('catacombs') || name.includes('mesa') || name.includes('flats') || name.includes('mire') || name.includes('strand') || name.includes('foothills') || name.includes('heath') || name === 'prismatic vista' || name === 'fabled passage';
+    // Explicit fetch-land list (directive rule 13) — name substrings like 'mire'/'tarn'
+    // wrongly caught utility lands (Miren, Tarnished Citadel). The 'pay 1 life, sacrifice'
+    // oracle clause stays as the only heuristic.
+    const FETCH_LANDS = new Set([
+      'flooded strand', 'polluted delta', 'bloodstained mire', 'wooded foothills', 'windswept heath',
+      'marsh flats', 'scalding tarn', 'verdant catacombs', 'arid mesa', 'misty rainforest',
+      'prismatic vista', 'fabled passage'
+    ]);
+    const isFetchLand = FETCH_LANDS.has(name) || oracle.includes('pay 1 life, sacrifice');
     
     const isUtilityLand = !isFetchLand && !type.includes('basic land') && (
       oracle.includes('dredge') || oracle.includes('no maximum hand size') ||
@@ -3249,10 +3435,11 @@ app.post('/api/decks/:deckId/autotag', async (req, res) => {
     const deck = await db.get("SELECT * FROM decks WHERE id = ? AND player_id = ?", [deckId, playerId]);
     if (!deck) return res.status(404).json({ error: "Deck not found." });
 
+    const scNameCol = db.isPostgres ? "sc.name" : "sc.card_name";
     const cards = await db.query(
-      `SELECT dc.card_name, dc.scryfall_id, sc.type_line, sc.oracle_text 
+      `SELECT dc.card_name, dc.scryfall_id, sc.type_line, sc.oracle_text
        FROM deck_cards dc
-       LEFT JOIN scryfall_cards sc ON dc.card_name = sc.card_name
+       LEFT JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(${scNameCol})
        WHERE dc.deck_id = ?`,
       [deckId]
     );
@@ -3270,8 +3457,9 @@ app.post('/api/decks/:deckId/autotag', async (req, res) => {
       const typeLine = card.type_line;
       const oracleText = card.oracle_text;
       
-      const tags = await fetchCardTags(cardName, scryfallId);
-      const customTagArray = categorizeCardByTags(cardName, typeLine, tags, oracleText);
+      // categorizeCardByTags ignores the scraped tags param, so the ~1.5s-per-card
+      // Scryfall/Tagger network fetch was pure waste (1-2 min per deck). Removed.
+      const customTagArray = categorizeCardByTags(cardName, typeLine, [], oracleText);
 
       // Inject detected infinite combo tags for this card if present
       const detectedCombos = comboMap[normalizeCardName(cardName)];
@@ -3301,7 +3489,7 @@ app.post('/api/decks/:deckId/autotag', async (req, res) => {
     res.json({ success: true, count: tagCount });
   } catch (e) {
     console.error("Auto-tagging endpoint failed:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3351,7 +3539,7 @@ app.post('/api/decks/:deckId/reload-cheapest', async (req, res) => {
 
     res.json({ success: true, totalPrice, isLegal: isLegal === 1, reason: legalityReason, updatedCards });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3436,7 +3624,7 @@ app.post('/api/decks/:deckId/reprice-card-cheapest', async (req, res) => {
 
     res.json({ success: true, cardName, price, scryfallId });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3495,7 +3683,7 @@ app.get(['/api/decks/discover', '/api/decks/public'], async (req, res) => {
     res.json(results);
   } catch (e) {
     console.error("Error in /api/decks/discover:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3516,7 +3704,7 @@ app.get('/api/decks/my-decks', async (req, res) => {
     res.json(decks || []);
   } catch (e) {
     console.error("Error in /api/decks/my-decks:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3573,7 +3761,7 @@ app.get('/api/decks/:deckId', async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error("Error in /api/decks/:deckId:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3612,34 +3800,13 @@ app.get('/api/decks/:deckId/cards', async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error("Error in /api/decks/:deckId/cards:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
-app.delete('/api/decks/:deckId', async (req, res) => {
-  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
-  const { deckId } = req.params;
-  const playerId = req.session.player.id;
-
-  try {
-    const deck = await db.get("SELECT id FROM decks WHERE id = ? AND player_id = ?", [deckId, playerId]);
-    if (!deck) {
-      return res.status(404).json({ error: "Deck not found or access denied." });
-    }
-
-    await db.run("DELETE FROM deck_cards WHERE deck_id = ?", [deckId]);
-    await db.run("DELETE FROM deck_likes WHERE deck_id = ?", [deckId]);
-    await db.run("DELETE FROM deck_comments WHERE deck_id = ?", [deckId]);
-    await db.run("DELETE FROM deck_stats WHERE deck_id = ?", [deckId]);
-    await db.run("DELETE FROM decks WHERE id = ?", [deckId]);
-    invalidateDeckCache(deckId);
-
-    res.json({ success: true, message: "Deck deleted successfully." });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
-  }
-});
+// NOTE: the archiving (soft-delete/recovery) DELETE /api/decks/:deckId handler is defined
+// later in this file. The earlier non-archiving duplicate was removed so the recoverable
+// version actually runs (Express dispatches the first matching route).
 
 app.post('/api/decks/:deckId/cards', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
@@ -3698,7 +3865,7 @@ app.post('/api/decks/:deckId/cards', async (req, res) => {
 
     res.json({ success: true, quantity });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3730,7 +3897,7 @@ app.get('/api/decks/:deckId/social', async (req, res) => {
       isOwner: deckMeta ? (deckMeta.player_id === playerId) : false
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3760,7 +3927,7 @@ app.post('/api/decks/:deckId/tags', async (req, res) => {
     await db.run("UPDATE decks SET custom_tags = ? WHERE id = ?", [JSON.stringify(tags), deckId]);
     res.json({ success: true, tags });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3788,7 +3955,7 @@ app.post('/api/players/:playerId/follow', async (req, res) => {
       res.json({ success: true, following: true });
     }
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3800,7 +3967,7 @@ app.get('/api/players/:playerId/following', async (req, res) => {
     const row = await db.get("SELECT 1 FROM follows WHERE follower_id = ? AND followed_id = ?", [followerId, playerId]);
     res.json({ following: !!row });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3818,7 +3985,7 @@ app.post('/api/decks/:deckId/like', async (req, res) => {
       res.json({ success: true, liked: true });
     }
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -3837,7 +4004,9 @@ app.post('/api/decks/import-account', async (req, res) => {
       const cleanUser = username.trim();
       const searchUrl = `https://api.moxfield.com/v2/decks/search?authorUsernames=${encodeURIComponent(cleanUser)}&page=1&pageSize=100`;
 
-      const headers = { 'User-Agent': process.env.MOXFIELD_USER_AGENT || 'MoxKey; NickBuildsDecks 019b18d35e85' };
+      // Do not hardcode the whitelisted Moxfield key as a fallback (it was a committed
+      // secret). Fall back to a generic UA; set MOXFIELD_USER_AGENT in the environment.
+      const headers = { 'User-Agent': process.env.MOXFIELD_USER_AGENT || 'Grimore/1.0' };
       const response = await fetch(searchUrl, { headers });
       if (!response.ok) {
         return res.status(400).json({ error: `Could not fetch Moxfield account for "${cleanUser}". Check username or public privacy settings.` });
@@ -4017,7 +4186,7 @@ app.post('/api/decks/:deckId/comment', async (req, res) => {
     );
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4058,7 +4227,7 @@ app.post('/api/decks/:deckId/clone', async (req, res) => {
     
     res.json({ success: true, newDeckId });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4086,7 +4255,7 @@ app.post('/api/decks/:deckId/share', async (req, res) => {
     const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     const subject = `Shared Deck: ${deck.deck_name}`;
     const escapedDeckName = deck.deck_name.replace(/'/g, "\\'");
-    const body = `I wanted to share my deck "${deck.deck_name}" with you.\n\n<button class="btn btn-gold btn-sm" style="display:inline-flex; align-items:center; gap:0.25rem; font-weight:700; height:24px; padding:0 8px; font-size:0.75rem; border-radius:4px; margin:0;" onclick="document.getElementById('inbox-modal-overlay').remove(); window.inspectDeckCards('${deckId}', '${escapedDeckName}')">👁️ View Shared Deck</button>`;
+    const body = `I wanted to share my deck "${deck.deck_name}" with you.\n\n<button class="btn btn-gold btn-sm" style="display:inline-flex; align-items:center; gap:0.25rem; font-weight:700; height:24px; padding:0 8px; font-size:0.75rem; border-radius:4px; margin:0;" onclick="document.getElementById('inbox-modal-overlay').remove(); window.inspectDeckCards('${deckId}', '${escapedDeckName}')">View Shared Deck</button>`;
     
     await db.run(
       "INSERT INTO direct_messages (id, sender_id, recipient_id, subject, body) VALUES (?, ?, ?, ?, ?)",
@@ -4097,12 +4266,12 @@ app.post('/api/decks/:deckId/share', async (req, res) => {
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
       "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, recipient.id, `📬 Shared Deck from ${sender ? sender.store_nickname : 'Friend'}`, `Shared their deck "${deck.deck_name}" with you.`]
+      [notifId, recipient.id, `Shared Deck from ${sender ? sender.store_nickname : 'Friend'}`, `Shared their deck "${deck.deck_name}" with you.`]
     );
 
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4137,7 +4306,7 @@ app.get('/api/cards/autocomplete', async (req, res) => {
 
     res.json(results);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4152,7 +4321,7 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
     const commanders = await db.query(
       `SELECT dc.card_name, dc.scryfall_id, sc.scryfall_id as sc_id 
        FROM deck_cards dc
-       LEFT JOIN scryfall_cards sc ON dc.card_name = sc.card_name
+       LEFT JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(sc.card_name)
        WHERE dc.deck_id = ? AND dc.is_commander = 1`,
       [deckId]
     );
@@ -4526,7 +4695,7 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
       typeCategories
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4544,7 +4713,7 @@ app.post('/api/roster/checkin', async (req, res) => {
     );
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4554,7 +4723,7 @@ app.post('/api/roster/checkout', async (req, res) => {
     await db.run("DELETE FROM active_roster WHERE player_id = ?", [req.session.player.id]);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4564,7 +4733,7 @@ app.get('/api/roster/status', async (req, res) => {
     const checked = await db.get("SELECT * FROM active_roster WHERE player_id = ?", [req.session.player.id]);
     res.json({ checkedIn: !!checked, deckId: checked ? checked.deck_id : null });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4578,7 +4747,7 @@ app.get('/api/roster/list', async (req, res) => {
     `);
     res.json(roster);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4593,7 +4762,7 @@ app.post('/api/roster/admin-checkin', async (req, res) => {
     );
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4604,7 +4773,7 @@ app.post('/api/roster/admin-checkout', async (req, res) => {
     await db.run("DELETE FROM active_roster WHERE player_id = ?", [playerId]);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4753,7 +4922,7 @@ app.post('/api/pairings/generate', async (req, res) => {
 
     res.json({ success: true, pods: podsList });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4789,7 +4958,7 @@ app.get('/api/pairings/round/:roundNum', async (req, res) => {
 
     res.json(results);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4831,7 +5000,7 @@ app.post('/api/pairings/report/:podId', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("Report score error:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4842,7 +5011,7 @@ app.post('/api/pairings/end-round', async (req, res) => {
     // Standard event cleanup - keep roster checked-in by default so they don't have to check in again
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4907,7 +5076,7 @@ app.get('/api/leaderboards/season', async (req, res) => {
     `, [seasonId]);
     res.json(standings);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4930,7 +5099,7 @@ app.get('/api/leaderboards/decks', async (req, res) => {
     `, [seasonId]);
     res.json(standings);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -4938,10 +5107,16 @@ app.get('/api/leaderboards/decks', async (req, res) => {
 app.get('/api/players/:playerId/profile', async (req, res) => {
   const { playerId } = req.params;
   try {
+    // Do NOT expose email on this public endpoint (PII harvesting). It is only
+    // included when the requester is viewing their own profile.
     const profile = await db.get(
-      "SELECT id, store_nickname, username, email, avatar_url, profile_commander, profile_bio, profile_theme, featured_deck_id, discord_handle, moxfield_username, created_at FROM players WHERE id = ?",
+      "SELECT id, store_nickname, username, avatar_url, profile_commander, profile_bio, profile_theme, featured_deck_id, discord_handle, moxfield_username, created_at FROM players WHERE id = ?",
       [playerId]
     );
+    if (profile && req.session.player && req.session.player.id === playerId) {
+      const own = await db.get("SELECT email FROM players WHERE id = ?", [playerId]);
+      if (own) profile.email = own.email;
+    }
     const stats = await db.query(`
       SELECT ps.*, s.name as season_name
       FROM player_stats ps
@@ -4969,7 +5144,7 @@ app.get('/api/players/:playerId/profile', async (req, res) => {
 
     res.json({ profile, stats, publicDecks, featuredDeck });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5022,7 +5197,7 @@ app.get('/api/players/active-match', async (req, res) => {
       pointsEntry: season.points_entry
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5090,17 +5265,27 @@ app.post('/api/players/profile/update', async (req, res) => {
       profileCommander: profileCommander ? profileCommander.trim() : ''
     });
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
 // Update Account Credentials (Username, Password, Email)
 app.post('/api/players/account/update', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
-  const { newUsername, newPassword, newEmail } = req.body;
+  const { newUsername, newPassword, newEmail, currentPassword } = req.body;
   const playerId = req.session.player.id;
 
   try {
+    // Changing a password requires re-authentication with the current password, and the
+    // new password must meet the policy.
+    if (newPassword && newPassword.trim()) {
+      const pwErr = passwordPolicyError(newPassword);
+      if (pwErr) return res.status(400).json({ error: pwErr });
+      const me = await db.get("SELECT password_hash FROM players WHERE id = ?", [playerId]);
+      const ok = me && currentPassword && await bcrypt.compare(currentPassword, me.password_hash);
+      if (!ok) return res.status(403).json({ error: "Current password is incorrect." });
+    }
+
     if (newUsername && newUsername.trim()) {
       const trimmedUser = newUsername.trim();
       if (isProfane(trimmedUser)) {
@@ -5140,7 +5325,7 @@ app.post('/api/players/account/update', async (req, res) => {
 
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5161,7 +5346,8 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       return res.json({ success: true, message: "If this account exists, a recovery link has been generated." });
     }
 
-    const token = 'tok_' + Math.random().toString(36).substr(2, 9) + Date.now();
+    // Cryptographically-strong, unguessable token (was Math.random()).
+    const token = 'tok_' + require('crypto').randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 3600000).toISOString();
 
     await db.run("INSERT OR REPLACE INTO password_resets (username, token, expires_at) VALUES (?, ?, ?)", [player.username, token, expiresAt]);
@@ -5174,13 +5360,19 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     console.log(`[SMTP SIMULATOR] Recovery Link: ${resetLink}`);
     console.log("=======================================================\n");
 
-    res.json({ 
-      success: true, 
-      message: "If this account exists, a recovery link has been generated.",
-      devResetLink: resetLink
-    });
+    // SECURITY: never return the reset token/link in the HTTP response in
+    // production — the token must only reach the user via the email channel.
+    // The dev link is exposed solely outside production to ease local testing.
+    const response = {
+      success: true,
+      message: "If this account exists, a recovery link has been generated."
+    };
+    if (process.env.NODE_ENV !== 'production') {
+      response.devResetLink = resetLink;
+    }
+    res.json(response);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5191,6 +5383,8 @@ app.post('/api/auth/reset-password', async (req, res) => {
   if (!newPassword || !newPassword.trim()) {
     return res.status(400).json({ error: "Password cannot be empty." });
   }
+  const resetPwErr = passwordPolicyError(newPassword);
+  if (resetPwErr) return res.status(400).json({ error: resetPwErr });
 
   try {
     const record = await db.get("SELECT * FROM password_resets WHERE token = ?", [token]);
@@ -5210,7 +5404,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5224,7 +5418,7 @@ app.get('/api/notifications', async (req, res) => {
     );
     res.json(list);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5235,7 +5429,7 @@ app.post('/api/notifications/read', async (req, res) => {
     await db.run("UPDATE notifications SET read_status = 1 WHERE id = ? AND player_id = ?", [id, req.session.player.id]);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5254,7 +5448,7 @@ app.get('/api/messages/inbox', async (req, res) => {
       LIMIT 50
     `, [req.session.player.id]);
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // GET sent
@@ -5270,7 +5464,7 @@ app.get('/api/messages/sent', async (req, res) => {
       LIMIT 50
     `, [req.session.player.id]);
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // GET unread count
@@ -5282,7 +5476,7 @@ app.get('/api/messages/unread-count', async (req, res) => {
       [req.session.player.id]
     );
     res.json({ count: row.cnt });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // POST send a message
@@ -5305,10 +5499,10 @@ app.post('/api/messages/send', async (req, res) => {
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
       "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, recipient.id, `📬 Message from ${req.session.player.storeNickname}`, `"${subject || '(no subject)'}": ${body.trim().substring(0, 120)}${body.trim().length > 120 ? '…' : ''}`]
+      [notifId, recipient.id, `Message from ${req.session.player.storeNickname}`, `"${subject || '(no subject)'}": ${body.trim().substring(0, 120)}${body.trim().length > 120 ? '…' : ''}`]
     );
     res.json({ success: true, messageId: msgId });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // POST send feedback (always goes to admin)
@@ -5329,10 +5523,10 @@ app.post('/api/messages/feedback', async (req, res) => {
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
       "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, admin.id, `💬 Feedback from ${req.session.player.storeNickname}`, body.trim().substring(0, 180)]
+      [notifId, admin.id, `Feedback from ${req.session.player.storeNickname}`, body.trim().substring(0, 180)]
     );
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // POST mark message as read
@@ -5344,7 +5538,7 @@ app.post('/api/messages/:id/read', async (req, res) => {
       [req.params.id, req.session.player.id]
     );
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // ── FRIENDS ───────────────────────────────────────────────────────────────────
@@ -5366,7 +5560,7 @@ app.get('/api/friends', async (req, res) => {
       WHERE fr.status = 'accepted' AND (fr.sender_id = ? OR fr.recipient_id = ?)
     `, [me, me, me, me, me, me]);
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // GET pending friend requests sent to me
@@ -5381,7 +5575,7 @@ app.get('/api/friends/requests', async (req, res) => {
       ORDER BY fr.created_at DESC
     `, [req.session.player.id]);
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // GET friendship status with a specific player
@@ -5396,7 +5590,7 @@ app.get('/api/friends/status/:playerId', async (req, res) => {
     `, [me, other, other, me]);
     if (!row) return res.json({ status: 'none' });
     res.json({ status: row.status, isSender: row.sender_id === me, requestId: row.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // POST send a friend request
@@ -5417,11 +5611,11 @@ app.post('/api/friends/request/:playerId', async (req, res) => {
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
       "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, other, `🤝 Friend Request from ${req.session.player.storeNickname}`,
+      [notifId, other, `Friend Request from ${req.session.player.storeNickname}`,
        `${req.session.player.storeNickname} wants to be your friend. Check your Friends tab to accept.`]
     );
     res.json({ success: true, requestId: id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // POST accept a friend request
@@ -5435,11 +5629,11 @@ app.post('/api/friends/accept/:requestId', async (req, res) => {
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
       "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, fr.sender_id, `✅ ${req.session.player.storeNickname} accepted your friend request!`,
+      [notifId, fr.sender_id, `${req.session.player.storeNickname} accepted your friend request!`,
        `You are now friends with ${req.session.player.storeNickname}. You can message them directly from your friends list.`]
     );
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // POST decline a friend request
@@ -5451,7 +5645,7 @@ app.post('/api/friends/decline/:requestId', async (req, res) => {
       [req.params.requestId, req.session.player.id]
     );
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 // DELETE unfriend
@@ -5465,7 +5659,7 @@ app.delete('/api/friends/:playerId', async (req, res) => {
       [me, other, other, me]
     );
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
 
 app.get('/api/seasons/:seasonId/meta', async (req, res) => {
@@ -5512,7 +5706,7 @@ app.get('/api/seasons/:seasonId/meta', async (req, res) => {
       breakdown
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5572,7 +5766,7 @@ app.get('/api/seasons/:seasonId/matrix', async (req, res) => {
     
     res.json({ archetypes: archetypesList, matrix });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5894,7 +6088,7 @@ app.get('/api/cards/versions', async (req, res) => {
     res.json(prints);
   } catch (e) {
     console.error("Failed to fetch versions:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6063,7 +6257,7 @@ app.get('/api/cards/rulings', async (req, res) => {
     res.json(result.data || []);
   } catch (e) {
     console.error("Failed to fetch rulings:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6293,7 +6487,7 @@ app.get('/api/cards/details', async (req, res) => {
       legalities: { commander: "legal" }
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6465,7 +6659,7 @@ app.get('/api/decks', async (req, res) => {
     res.json({ success: true, decks: decks || [] });
   } catch (err) {
     console.error("Error fetching /api/decks:", err);
-    res.status(500).json({ error: err.message });
+    console.error(err); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6507,7 +6701,7 @@ app.post('/api/sandbox/parse-deck', async (req, res) => {
     }
     res.json({ success: true, count: parsedCards.length, cards: parsedCards });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6520,7 +6714,7 @@ app.post('/api/cards/details-batch', async (req, res) => {
     const results = await resolveCardDetailsBatch(names);
     res.json(results);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6666,7 +6860,7 @@ app.post('/api/decks/builder-save', async (req, res) => {
     invalidateDeckCache(targetDeckId);
     res.json({ success: true, deckId: targetDeckId });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6729,14 +6923,15 @@ app.delete('/api/decks/:deckId', async (req, res) => {
     await db.run('DELETE FROM deck_likes WHERE deck_id = ?', [deckId]);
     await db.run('DELETE FROM deck_comments WHERE deck_id = ?', [deckId]);
     await db.run('DELETE FROM decks WHERE id = ?', [deckId]);
+    if (typeof invalidateDeckCache === 'function') invalidateDeckCache(deckId);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
 
-// ⏰ Daily 6AM CDT Reset & Cheapest Auto-Repricing Cron
+// Daily 6AM CDT Reset & Cheapest Auto-Repricing Cron
 let lastDailyResetDate = '';
 
 async function dailyResetAndCheapestUpdate() {
@@ -6900,7 +7095,7 @@ app.get('/api/collections', async (req, res) => {
     res.json({ success: true, collections: rows });
   } catch (e) {
     console.error("Failed to load collections:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6919,7 +7114,7 @@ app.post('/api/collections', async (req, res) => {
     res.json({ success: true, collectionId: id });
   } catch (e) {
     console.error("Failed to create collection:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6941,7 +7136,7 @@ app.put('/api/collections/:id', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("Failed to update collection:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6967,7 +7162,7 @@ app.delete('/api/collections/:id', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("Failed to delete collection:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -6997,7 +7192,7 @@ app.get('/api/collections/:id/cards', async (req, res) => {
     res.json({ success: true, cards });
   } catch (e) {
     console.error("Failed to get cards from collection:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7058,7 +7253,7 @@ app.post('/api/collections/:id/cards', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("Failed to add card to collection:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7093,7 +7288,7 @@ app.put('/api/collections/:id/cards', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("Failed to update collection card:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7120,7 +7315,7 @@ app.delete('/api/collections/:id/cards', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("Failed to remove collection card:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7145,7 +7340,7 @@ app.get('/api/wishlist', async (req, res) => {
     res.json({ success: true, wishlist });
   } catch (e) {
     console.error("Failed to load wishlist:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7172,7 +7367,7 @@ app.post('/api/wishlist', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("Failed to add to wishlist:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7189,7 +7384,7 @@ app.delete('/api/wishlist/:cardName', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("Failed to delete from wishlist:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7209,7 +7404,7 @@ app.get('/api/recovery/deleted-items', async (req, res) => {
     res.json({ success: true, items });
   } catch (e) {
     console.error("Failed to load deleted items:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7260,7 +7455,7 @@ app.post('/api/recovery/restore/:id', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("Failed to restore item:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7349,7 +7544,7 @@ app.post('/api/draft/create', async (req, res) => {
     res.json({ success: true, draftId, session: { ...session, seats: seats.map(s => s.seatId === 0 ? s : { ...s, currentPack: [] }) } });
   } catch (e) {
     console.error("Draft creation error:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -7451,7 +7646,7 @@ app.get('/api/search/semantic', async (req, res) => {
     res.json(results || []);
   } catch (e) {
     console.error("Error in /api/search/semantic:", e);
-    res.status(500).json({ error: e.message });
+    console.error(e); res.status(500).json({ error: "Internal server error." });
   }
 });
 

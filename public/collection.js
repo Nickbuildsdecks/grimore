@@ -25,9 +25,16 @@
 
   document.addEventListener('DOMContentLoaded', async () => {
     const authed = await checkAuthStatus();
-    if (!authed) {
+    // Only bounce to login when the server EXPLICITLY says not logged in. A transient
+    // network/500 error returns null and should not log the user out.
+    if (authed === false) {
       alert("Please log in first.");
       window.location.href = 'index.html';
+      return;
+    }
+    if (authed === null) {
+      const container = document.getElementById('collection-cards-view');
+      if (container) container.innerHTML = `<div style="text-align:center;color:var(--color-loss);padding:3rem 1rem;">Couldn't reach the server. <button class="btn btn-secondary btn-sm" onclick="location.reload()">Retry</button></div>`;
       return;
     }
 
@@ -43,18 +50,21 @@
   });
 
   // Check login status
+  // Returns true (logged in), false (server says NOT logged in), or null (transient error).
   async function checkAuthStatus() {
     try {
       const res = await fetch('/api/auth/status');
+      if (!res.ok) return null;
       const data = await res.json();
       if (data.loggedIn) {
         currentUser = data.user || data.player;
         return true;
       }
+      return false;
     } catch (e) {
       console.error("Auth status error:", e);
+      return null;
     }
-    return false;
   }
 
   // Load collections from server
@@ -503,8 +513,7 @@
       }
 
       cards.forEach(c => {
-        const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.card_name)}&format=image&version=normal`;
-        const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=normal` : fallbackUrl;
+        const imgUrl = buildCardImageUrl(c.scryfall_id, c.card_name, 'normal');
         
         const cardEl = document.createElement('div');
         cardEl.className = 'search-card-item';
@@ -548,20 +557,20 @@
           ${qtyBadge}
           ${foilBadge}
           ${tradeBadge}
-          <div class="search-card-image-wrap" style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #121212; position: relative;" data-card-name="${c.card_name}">
-            <img src="${imgUrl}" alt="${c.card_name}" loading="lazy" style="width: 100%; height: 100%; object-fit: contain; transition: transform 0.2s ease;"
+          <div class="search-card-image-wrap" style="width: 100%; aspect-ratio: 2.5/3.5; overflow: hidden; background: #121212; position: relative;" data-card-name="${escapeHtml(c.card_name)}">
+            <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(c.card_name)}" loading="lazy" style="width: 100%; height: 100%; object-fit: contain; transition: transform 0.2s ease;"
                  onmouseover="this.style.transform='scale(1.03)'"
                  onmouseout="this.style.transform='none'"
                  onerror="this.src='logo.svg'">
           </div>
           
           <div style="padding: 0.6rem; display: flex; flex-direction: column; gap: 2px; flex-grow: 1; justify-content: space-between;">
-            <div style="font-weight: 700; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-pure);" title="${c.card_name}">${escapeHtml(c.card_name)}</div>
+            <div style="font-weight: 700; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-pure);" title="${escapeHtml(c.card_name)}">${escapeHtml(c.card_name)}</div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
               <span style="font-size: 0.75rem; font-weight: 700; color: var(--color-secondary);">$${(c.price || 0.15).toFixed(2)}</span>
               <div style="display: flex; gap: 4px;" onclick="event.stopPropagation();">
-                <button class="btn btn-secondary btn-sm" onclick="updateCardQty('${c.card_name}', '${c.scryfall_id || ''}', ${c.is_foil}, '${c.condition}', '${c.language}', ${c.quantity - 1})" style="width: 22px; height: 22px; padding:0; margin:0; font-size:0.8rem; font-weight:900; display:flex; align-items:center; justify-content:center;">-</button>
-                <button class="btn btn-secondary btn-sm" onclick="updateCardQty('${c.card_name}', '${c.scryfall_id || ''}', ${c.is_foil}, '${c.condition}', '${c.language}', ${c.quantity + 1})" style="width: 22px; height: 22px; padding:0; margin:0; font-size:0.8rem; font-weight:900; display:flex; align-items:center; justify-content:center;">+</button>
+                <button class="btn btn-secondary btn-sm" data-act="qty" data-name="${escapeHtml(c.card_name)}" data-sid="${escapeHtml(c.scryfall_id || '')}" data-foil="${c.is_foil ? 1 : 0}" data-cond="${escapeHtml(c.condition || '')}" data-lang="${escapeHtml(c.language || '')}" data-qty="${c.quantity - 1}" style="width: 22px; height: 22px; padding:0; margin:0; font-size:0.8rem; font-weight:900; display:flex; align-items:center; justify-content:center;">-</button>
+                <button class="btn btn-secondary btn-sm" data-act="qty" data-name="${escapeHtml(c.card_name)}" data-sid="${escapeHtml(c.scryfall_id || '')}" data-foil="${c.is_foil ? 1 : 0}" data-cond="${escapeHtml(c.condition || '')}" data-lang="${escapeHtml(c.language || '')}" data-qty="${c.quantity + 1}" style="width: 22px; height: 22px; padding:0; margin:0; font-size:0.8rem; font-weight:900; display:flex; align-items:center; justify-content:center;">+</button>
                 <button class="btn btn-gold btn-sm" onclick="openCardDetailsModal(${JSON.stringify(c).replace(/"/g, '&quot;')})" style="height: 22px; padding: 0 5px; margin: 0; font-size: 0.65rem; font-weight: 700;">Edit</button>
               </div>
             </div>
@@ -593,8 +602,8 @@
 
         rowEl.innerHTML = `
           <div style="font-weight: 800; color: var(--color-primary); font-size: 0.85rem; min-width: 24px;">x${c.quantity}</div>
-          <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0; cursor: pointer;" onclick="if(window.openCardInspectorDrawer) window.openCardInspectorDrawer({ name: '${escapeSingleQuote(c.card_name)}', scryfallId: '${c.scryfall_id || ''}' })">
-            <div style="font-weight: 700; color: var(--text-pure); display: flex; align-items: center; gap: 0.5rem;" data-card-name="${c.card_name}">
+          <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0; cursor: pointer;" data-act="inspect" data-name="${escapeHtml(c.card_name)}" data-sid="${escapeHtml(c.scryfall_id || '')}">
+            <div style="font-weight: 700; color: var(--text-pure); display: flex; align-items: center; gap: 0.5rem;" data-card-name="${escapeHtml(c.card_name)}">
               <span class="card-item-name">${escapeHtml(c.card_name)}</span>
               ${foilSpan}
               ${tradeSpan}
@@ -604,8 +613,8 @@
           <div style="font-size: 0.72rem; color: var(--text-medium); min-width: 60px;">${escapeHtml(c.condition)} | ${escapeHtml(c.language)}</div>
           <div style="font-size: 0.8rem; font-weight: 700; color: var(--color-secondary); min-width: 60px; text-align: right;">$${(c.price || 0.15).toFixed(2)}</div>
           <div style="display: flex; gap: 4px;" onclick="event.stopPropagation();">
-            <button class="btn btn-secondary btn-sm" onclick="updateCardQty('${c.card_name}', '${c.scryfall_id || ''}', ${c.is_foil}, '${c.condition}', '${c.language}', ${c.quantity - 1})" style="width: 22px; height: 22px; padding:0; margin:0; font-weight:900;">-</button>
-            <button class="btn btn-secondary btn-sm" onclick="updateCardQty('${c.card_name}', '${c.scryfall_id || ''}', ${c.is_foil}, '${c.condition}', '${c.language}', ${c.quantity + 1})" style="width: 22px; height: 22px; padding:0; margin:0; font-weight:900;">+</button>
+            <button class="btn btn-secondary btn-sm" data-act="qty" data-name="${escapeHtml(c.card_name)}" data-sid="${escapeHtml(c.scryfall_id || '')}" data-foil="${c.is_foil ? 1 : 0}" data-cond="${escapeHtml(c.condition || '')}" data-lang="${escapeHtml(c.language || '')}" data-qty="${c.quantity - 1}" style="width: 22px; height: 22px; padding:0; margin:0; font-weight:900;">-</button>
+            <button class="btn btn-secondary btn-sm" data-act="qty" data-name="${escapeHtml(c.card_name)}" data-sid="${escapeHtml(c.scryfall_id || '')}" data-foil="${c.is_foil ? 1 : 0}" data-cond="${escapeHtml(c.condition || '')}" data-lang="${escapeHtml(c.language || '')}" data-qty="${c.quantity + 1}" style="width: 22px; height: 22px; padding:0; margin:0; font-weight:900;">+</button>
             <button class="btn btn-gold btn-sm" onclick="openCardDetailsModal(${JSON.stringify(c).replace(/"/g, '&quot;')})" style="height: 22px; padding: 0 5px; margin: 0; font-size: 0.65rem; font-weight: 700;">Edit</button>
           </div>
         `;
@@ -626,6 +635,16 @@
       return;
     }
 
+    // Wishlist header with the TCGplayer affiliate cart export (previously the export
+    // function existed but had no UI trigger, so the affiliate flow was unreachable).
+    const headerEl = document.createElement('div');
+    headerEl.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:0.25rem 1rem 0.75rem; gap:0.75rem;';
+    headerEl.innerHTML = `
+      <span style="font-size:0.78rem; color:var(--text-muted);">${wishlistCards.length} card${wishlistCards.length === 1 ? '' : 's'} on your wishlist</span>
+      <button class="btn btn-gold btn-sm" onclick="exportWishlistToTCGplayer()" style="font-weight:700; font-size:0.72rem; padding:5px 12px;" title="Open your whole wishlist in a TCGplayer cart">Buy Wishlist on TCGplayer</button>
+    `;
+    container.appendChild(headerEl);
+
     wishlistCards.forEach(c => {
       const rowEl = document.createElement('div');
       rowEl.className = 'search-card-list-item';
@@ -639,16 +658,16 @@
 
       rowEl.innerHTML = `
         <div style="font-weight: 800; color: var(--color-primary); font-size: 0.85rem; min-width: 24px;">x${c.quantity}</div>
-        <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0; cursor: pointer;" onclick="if(window.openCardInspectorDrawer) window.openCardInspectorDrawer({ name: '${escapeSingleQuote(c.card_name)}', scryfallId: '${c.scryfall_id || ''}' })">
-          <div style="font-weight: 700; color: var(--text-pure);" data-card-name="${c.card_name}">
+        <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0; cursor: pointer;" data-act="inspect" data-name="${escapeHtml(c.card_name)}" data-sid="${escapeHtml(c.scryfall_id || '')}">
+          <div style="font-weight: 700; color: var(--text-pure);" data-card-name="${escapeHtml(c.card_name)}">
             <span class="card-item-name">${escapeHtml(c.card_name)}</span>
           </div>
           <div style="font-size: 0.68rem; color: var(--text-muted);">${escapeHtml(c.type_line)}</div>
         </div>
         <div style="font-size: 0.8rem; font-weight: 700; color: var(--color-secondary); min-width: 60px; text-align: right;">$${(c.price || 0.15).toFixed(2)}</div>
         <div style="display: flex; gap: 4px;" onclick="event.stopPropagation();">
-          <button class="btn btn-secondary btn-sm" onclick="addWishlistCardToCollection('${c.card_name}', '${c.scryfall_id || ''}')" style="height: 22px; padding: 0 8px; margin: 0; font-size: 0.65rem; font-weight: 700; border-color: #10b981; color: #10b981;" title="Mark as acquired and add to active collection">Acquired</button>
-          <button class="btn btn-secondary btn-sm" onclick="deleteFromWishlist('${c.card_name}')" style="width: 22px; height: 22px; padding:0; margin:0; border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Delete from wishlist">🗑️</button>
+          <button class="btn btn-secondary btn-sm" data-act="wl-acquire" data-name="${escapeHtml(c.card_name)}" data-sid="${escapeHtml(c.scryfall_id || '')}" style="height: 22px; padding: 0 8px; margin: 0; font-size: 0.65rem; font-weight: 700; border-color: #10b981; color: #10b981;" title="Mark as acquired and add to active collection">Acquired</button>
+          <button class="btn btn-secondary btn-sm" data-act="wl-del" data-name="${escapeHtml(c.card_name)}" style="width: 22px; height: 22px; padding:0; margin:0; border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Delete from wishlist">🗑️</button>
         </div>
       `;
       container.appendChild(rowEl);
@@ -659,7 +678,7 @@
   window.updateCardQty = async function(cardName, scryfallId, isFoil, condition, language, newQty) {
     if (newQty <= 0) {
       // Expose stylish delete confirmation
-      window.askStylishDeleteConfirmation(`Are you sure you want to remove Sol Ring from your binder?`, "DELETE", async () => {
+      window.askStylishDeleteConfirmation(`Are you sure you want to remove ${escapeHtml(cardName)} from your binder?`, "DELETE", async () => {
         await deleteCollectionCard(cardName, scryfallId, isFoil, condition, language);
       });
       return;
@@ -1158,6 +1177,45 @@
     if (!str) return '';
     return str.replace(/'/g, "\\'");
   }
+
+  // Build a card image URL from the cards.scryfall.io CDN (which is meant for hotlinking and
+  // is not rate-limited) instead of api.scryfall.com/cards/:id (~10 req/s, asked not to be
+  // hotlinked). Falls back to the /cards/named endpoint when there is no valid Scryfall id.
+  function buildCardImageUrl(scryfallId, cardName, size) {
+    size = size || 'normal';
+    const idOk = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(scryfallId || '');
+    if (idOk) {
+      return `https://cards.scryfall.io/${size}/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg`;
+    }
+    return `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName || 'Card')}&format=image&version=${size}`;
+  }
+
+  // Delegated click handling for card rows/buttons. Card names are read from
+  // data-* attributes (dataset) rather than interpolated into inline onclick
+  // strings, which previously broke on apostrophe cards (Urza's Saga) and was a
+  // stored-XSS vector when a crafted card_name was clicked.
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-act]');
+    if (!el) return;
+    const d = el.dataset;
+    switch (d.act) {
+      case 'qty':
+        e.stopPropagation();
+        window.updateCardQty(d.name, d.sid || '', Number(d.foil) || 0, d.cond || '', d.lang || '', Number(d.qty));
+        break;
+      case 'wl-acquire':
+        e.stopPropagation();
+        if (window.addWishlistCardToCollection) window.addWishlistCardToCollection(d.name, d.sid || '');
+        break;
+      case 'wl-del':
+        e.stopPropagation();
+        if (window.deleteFromWishlist) window.deleteFromWishlist(d.name);
+        break;
+      case 'inspect':
+        if (window.openCardInspectorDrawer) window.openCardInspectorDrawer({ name: d.name, scryfallId: d.sid || '' });
+        break;
+    }
+  });
 
 })();
 

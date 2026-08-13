@@ -4,8 +4,13 @@ Grimore Master Test Suite Orchestrator — 12th Automated Integration Test Suite
 Executes and validates all 12 core system test suites across Grimore.
 """
 import sys
+import os
 import subprocess
 import time
+
+# Resolve child scripts relative to THIS file so the orchestrator works regardless of the
+# current working directory (it previously only worked when launched from the repo root).
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 TEST_SUITES = [
     "verify_ai_game_rules_engine.py",
@@ -36,7 +41,7 @@ def main():
     for idx, script in enumerate(TEST_SUITES, 1):
         print(f"\n[{idx}/14] Executing {script}...")
         try:
-            res = subprocess.run([sys.executable, f"execution/{script}"], capture_output=True, text=True, timeout=20)
+            res = subprocess.run([sys.executable, os.path.join(HERE, script)], capture_output=True, text=True, timeout=20)
             if res.returncode == 0:
                 print(f"[OK] {script} PASSED 100%")
                 passed += 1

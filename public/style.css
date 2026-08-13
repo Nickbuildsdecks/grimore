@@ -3,6 +3,16 @@
 
 :root {
   --bg-dark: #050508;           /* Obsidian Black */
+  /* Previously-undefined tokens referenced across the stylesheet (notifications badge,
+     card shadows, mobile glow). Defining them here so those styles actually render. */
+  --color-high: #ef4444;        /* alert/badge red */
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.75);
+  --glow-primary: 0 0 28px rgba(168, 85, 247, 0.35);
+  /* Layering scale so overlays stop fighting with ad-hoc z-index values. */
+  --z-nav: 100;
+  --z-drawer: 500;
+  --z-modal: 600;
+  --z-toast: 900;
   --bg-card: rgba(8, 8, 12, 0.85); /* More opaque Deep Purple-Black card background */
   --bg-surface: rgba(18, 19, 30, 0.7); /* Space Slate glass */
   --bg-surface-hover: rgba(30, 31, 48, 0.9); /* Hover Slate glass */
@@ -42,33 +52,24 @@
   color-scheme: dark;
 }
 
-/* Universal Focus Reset — Zero Yellow Focus Rings Anywhere on Grimore */
-*,
-*::before,
-*::after {
-  outline-color: transparent !important;
+/* Focus handling (accessibility):
+   - Remove the ring only for POINTER focus (:focus:not(:focus-visible)).
+   - Keep a strong, WCAG 2.4.7 / 1.4.11-compliant focus indicator for KEYBOARD users.
+   Uses a real `outline` (not box-shadow) so it also renders in Windows forced-colors mode. */
+*:focus:not(:focus-visible) {
+  outline: none;
 }
 
-*:focus,
 *:focus-visible,
-input:focus,
 input:focus-visible,
-select:focus,
 select:focus-visible,
-textarea:focus,
 textarea:focus-visible,
-button:focus,
 button:focus-visible,
-a:focus,
 a:focus-visible,
-summary:focus,
 summary:focus-visible,
-[tabindex]:focus,
 [tabindex]:focus-visible {
-  outline: none !important;
-  outline-color: transparent !important;
-  outline-style: none !important;
-  outline-width: 0 !important;
+  outline: 2px solid #a855f7 !important;
+  outline-offset: 2px !important;
 }
 
 /* ==========================================================================
@@ -880,9 +881,6 @@ select option:checked,
   #lifetracker-view .life-control-btn,
   .search-page .search-submit-button {
     transition: none !important;
-  }
-}
-
   }
 }
 
@@ -8470,4 +8468,17 @@ body:not(.light-theme) .sidebar {
 .a2ui-pill-btn.active {
   background: rgba(168, 85, 247, 0.25) !important;
   border-color: var(--color-primary, #a855f7) !important;
+}
+
+/* ── Mobile performance: backdrop-filter forces per-frame GPU readback of everything
+   behind the layer. 93 blur declarations (some full-viewport, up to blur(25px)) crippled
+   scrolling on low-end phones. The design already uses high-alpha (0.85+) solid fills, so
+   dropping the blur on small screens costs almost nothing visually. ── */
+@media (max-width: 768px) {
+  *,
+  *::before,
+  *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
 }

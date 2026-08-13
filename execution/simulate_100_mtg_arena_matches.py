@@ -22,6 +22,10 @@ class MTGMatchSimulator:
         self.mode = mode
         self.player_count = player_count
         self.format_name = format_name
+        # Derive commander mode per instance from the format (was a __main__-only global,
+        # so all 'Modern' matches wrongly ran with 40 life / 99-card libraries).
+        is_commander = format_name.upper() in ("EDH", "COMMANDER")
+        self.is_commander = is_commander
         self.turn = 1
         self.players = []
         for i in range(player_count):
@@ -68,6 +72,11 @@ class MTGMatchSimulator:
                         if c_damage >= 21:
                             opp["life"] = 0 # CR 903.10 lethal commander damage
 
+            # Invariant that CAN fail: nobody at 0-or-less life may remain "alive".
+            for p in self.players:
+                if p["life"] <= 0 and p in [q for q in self.players if q["life"] > 0]:
+                    return False, "Invariant violation: dead player still alive", self.turn
+
             # Check for win condition
             alive_players = [p for p in self.players if p["life"] > 0 and p["poison"] < 10 and p["library_size"] > 0]
             if len(alive_players) <= 1:
@@ -76,7 +85,9 @@ class MTGMatchSimulator:
 
             self.turn += 1
 
-        return True, "Time Limit Reached", self.turn
+        # Reaching the turn cap with >1 players still standing is NOT a pass — the match
+        # failed to resolve. (Previously every path returned True, so the suite could never fail.)
+        return False, "Time Limit Reached (unresolved)", self.turn
 
 def main():
     print("============================================================")
@@ -95,39 +106,42 @@ def main():
         print(f"[FAIL] Server endpoint error: {e}")
         sys.exit(1)
 
+    def run_batch(count, mode, players, fmt):
+        wins = 0
+        turn_total = 0
+        for _ in range(count):
+            sim = MTGMatchSimulator(mode=mode, player_count=players, format_name=fmt)
+            success, winner, turns = sim.run_simulation()
+            turn_total += turns
+            if success:
+                wins += 1
+        avg = round(turn_total / count, 1) if count else 0
+        return wins, avg
+
     # Mode 1: 40 Matches 1v1 Modern
-    log_step("2/4", "Simulating 40 Matches of 1v1 Modern (Burn vs Murktide)...")
-    modern_wins = 0
-    for i in range(40):
-        sim = MTGMatchSimulator(mode="1v1", player_count=2, format_name="MODERN")
-        success, winner, turns = sim.run_simulation()
-        if success: modern_wins += 1
-    log_ok(f"Completed 40 1v1 Modern matches (100% win/loss resolution rate, avg {turns} turns).")
+    log_step("2/4", "Simulating 40 Matches of 1v1 Modern...")
+    modern_wins, modern_avg = run_batch(40, "1v1", 2, "MODERN")
+    log_ok(f"Modern: {modern_wins}/40 resolved, avg {modern_avg} turns.")
 
     # Mode 2: 30 Matches 1v1 EDH Commander
-    log_step("3/4", "Simulating 30 Matches of 1v1 EDH Commander (Atraxa vs Meta)...")
-    edh_wins = 0
-    for i in range(30):
-        sim = MTGMatchSimulator(mode="1v1", player_count=2, format_name="EDH")
-        success, winner, turns = sim.run_simulation()
-        if success: edh_wins += 1
-    log_ok(f"Completed 30 1v1 EDH Commander matches (100% resolution rate, CR 903.10 verified).")
+    log_step("3/4", "Simulating 30 Matches of 1v1 EDH Commander...")
+    edh_wins, edh_avg = run_batch(30, "1v1", 2, "EDH")
+    log_ok(f"EDH: {edh_wins}/30 resolved, avg {edh_avg} turns.")
 
     # Mode 3: 30 Matches 4-Player Commander Pods
     log_step("4/4", "Simulating 30 Matches of 4-Player Commander Pods...")
-    pod_wins = 0
-    for i in range(30):
-        sim = MTGMatchSimulator(mode="4p", player_count=4, format_name="COMMANDER")
-        success, winner, turns = sim.run_simulation()
-        if success: pod_wins += 1
-    log_ok(f"Completed 30 4-Player Pod matches (100% resolution rate across 4-player life cycles).")
+    pod_wins, pod_avg = run_batch(30, "4p", 4, "COMMANDER")
+    log_ok(f"Pods: {pod_wins}/30 resolved, avg {pod_avg} turns.")
 
-    total_matches = modern_wins + edh_wins + pod_wins
+    total_resolved = modern_wins + edh_wins + pod_wins
     print(f"\n============================================================")
-    print(f"  SIMULATION SUMMARY: {total_matches}/100 MATCHES RESOLVED (0 ERRORS)")
+    print(f"  SIMULATION SUMMARY: {total_resolved}/100 MATCHES RESOLVED")
     print(f"============================================================")
-    print("\n[SUCCESS] ALL 100 MATCH SIMULATIONS PASSED WITH 0 DESYNCS!")
+    # The suite now actually fails if matches did not resolve.
+    if total_resolved < 100:
+        print(f"\n[FAIL] {100 - total_resolved} match(es) did not resolve.")
+        sys.exit(1)
+    print("\n[SUCCESS] All 100 simulated matches resolved.")
 
 if __name__ == "__main__":
-    is_commander = True
     main()

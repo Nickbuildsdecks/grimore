@@ -4,7 +4,7 @@
 
 You operate within a 3-layer architecture that separates concerns to maximize reliability. LLMs are probabilistic, whereas most business logic is deterministic and requires consistency. This system fixes that mismatch.
 
-## 📐 The 3-Layer Architecture
+## The 3-Layer Architecture
 
 **Layer 1: Directive (What to do)**
 - SOPs written in Markdown, live in `directives/`
@@ -20,18 +20,19 @@ You operate within a 3-layer architecture that separates concerns to maximize re
 
 ---
 
-## 📋 Project Context & Architecture Summary
+## Project Context & Architecture Summary
 
 ### Overview
 - **Project Name**: Grimore (formerly Libram / Rostra / Grimoire)
 - **Description**: Premium All-Encompassing MTG Suite & Arena Gameplay Web Server
-- **Core Stack**: Node.js, Express, SQLite3 (via `better-sqlite3` WAL mode), Vanilla CSS, HTML5, Web Audio API, Canvas Shaders
-- **Primary Database**: `grimore.db` (main data store in workspace root)
+- **Core Stack**: Node.js, Express, Socket.IO, Vanilla CSS/HTML5/Web Audio/Canvas frontend, plus an optional React SPA mounted at `/react` (built from `web/`).
+- **Database (dual-mode via `db.js`)**: SQLite (`better-sqlite3`, WAL) for local dev; **Postgres + Redis in Docker for production** (selected when `POSTGRES_URL` is set — see `docker-compose.yml`). `grimore.db` is the LOCAL dev store only; production data lives on the VM's Postgres/volume, never re-seeded from a dev machine.
+- **Deploy**: `deploy-gcp.ps1` ships code to the GCP VM and restarts containers. It does NOT copy the local DB and does NOT auto-run the Postgres migration (that is a manual, backed-up, one-time operation behind `FORCE_RESEED=1`). Secrets come from a VM-side `.env` loaded via `env_file` in compose — never shipped in the deploy zip.
 - **Server Startup Command**: `node --max-old-space-size=768 server.js` (runs on `http://localhost:3000`)
 
 ---
 
-## 🎯 Product Philosophy & Optics Rules
+## Product Philosophy & Optics Rules
 
 1. **Casual Commander First Optics**:
    - Initial optics, home/discover feeds, card search, visual deck building, and suggestions must be ultra-clean, inviting, approachable, and uncluttered.
@@ -50,7 +51,7 @@ You operate within a 3-layer architecture that separates concerns to maximize re
 
 ---
 
-## 🏷️ Auto-Tagging & MTG Classification Specification (`directives/auto_tagging_engine.md`)
+## Auto-Tagging & MTG Classification Specification (`directives/auto_tagging_engine.md`)
 
 - **Main Category Priority**: Core functional roles (*Ramp*, *Card Advantage*, *Single Target Removal*, *Mass Removal*, *Protection*, *Tutors*, *Wincons*, *Recursion*, *Reanimation*, *Stax*, *Utility Lands*, *Lands*) ALWAYS take top priority over secondary archetype categories. `Counters & Triggers` and `Artifact Engine` are completely removed.
 - **Fetch Lands Rule**: Fetch lands (*Polluted Delta*, *Misty Rainforest*, *Scalding Tarn*, *Verdant Catacombs*, *Arid Mesa*, *Marsh Flats*, *Bloodstained Mire*, *Flooded Strand*, *Wooded Foothills*, *Windswept Heath*, *Prismatic Vista*, *Fabled Passage*) belong under `Lands` ONLY (never `Utility Lands`).
@@ -63,7 +64,7 @@ You operate within a 3-layer architecture that separates concerns to maximize re
 
 ---
 
-## 📐 A2UI Core Engine & Client Protocol (`public/a2ui.js`, `public/style.css`)
+## A2UI Core Engine & Client Protocol (`public/a2ui.js`, `public/style.css`)
 
 - **Client Renderer**: `window.A2UI.render(payload, container)` parses declarative JSON payloads (`{ type: "a2ui_widget", component: "...", props: {...} }`) into glassmorphic DOM elements with entry transitions (`a2ui-widget-enter`).
 - **Component Schemas**:
@@ -74,7 +75,7 @@ You operate within a 3-layer architecture that separates concerns to maximize re
 
 ---
 
-## 🎮 Play Realm & AAA MTG Arena Engine (`public/sandbox.html`, `sandbox.js`, `sandbox.css`)
+## Play Realm & AAA MTG Arena Engine (`public/sandbox.html`, `sandbox.js`, `sandbox.css`)
 
 - **Interactive Canvas Particle Shader**: 60fps WUBRG mana ember floating particles in `#arena-canvas-bg` with magnetic mouse aura attraction physics (160px radius) and pulsing alpha glows.
 - **Visual Spell Target Beams & Combat Arrows**: `drawTargetBeam(sourceEl, targetEl, isCombat)` renders glowing animated SVG energy beams (`#combat-arrows-svg`) connecting casting cards to targets with directional arrowheads (`#arrowhead`).
@@ -84,7 +85,7 @@ You operate within a 3-layer architecture that separates concerns to maximize re
 
 ---
 
-## 🧪 Master Test Suite Execution (14 Passing Test Suites)
+## Master Test Suite Execution (14 Passing Test Suites)
 
 Always verify changes by executing the master test orchestrator:
 ```powershell
@@ -108,7 +109,7 @@ This runs all 14 automated Python test suites in `execution/`:
 
 ---
 
-## 🚀 Local Verification & Deployment Workflow
+## Local Verification & Deployment Workflow
 
 1. **Test Locally First**: Always implement, run, and verify changes on local server (`http://localhost:3000`).
 2. **Obtain User Approval**: Ask permission before pushing to live deployment unless explicitly instructed.

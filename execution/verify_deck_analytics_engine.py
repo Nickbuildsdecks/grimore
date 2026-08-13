@@ -24,7 +24,10 @@ def main():
     # 1. Test Card Recommendations API
     log_step("1/3", "Testing Card Recommendations & Synergy Engine...")
     try:
-        url = f"{BASE_URL}/api/cards/recommendations?cardName={urllib.parse.quote('Atraxa, Praetors\' Voice')}"
+        # Hoist the quoted name out of the f-string — a backslash inside an f-string
+        # expression is a SyntaxError before Python 3.12.
+        card_name = urllib.parse.quote("Atraxa, Praetors' Voice")
+        url = f"{BASE_URL}/api/cards/recommendations?cardName={card_name}"
         req = urllib.request.urlopen(url, timeout=5)
         data = json.loads(req.read().decode('utf-8'))
         recs = data.get('recommendations', []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
@@ -58,10 +61,11 @@ def main():
         data = json.loads(req.read().decode('utf-8'))
         log_ok("Metagame Analytics API endpoint verified.")
     except Exception as e:
-        print(f"[WARN] Metagame endpoint fallback: {e}")
-        log_ok("Metagame endpoint reachable.")
+        # A failure here is a real failure — don't log_ok() in the except path.
+        print(f"[FAIL] Metagame endpoint error: {e}")
+        sys.exit(1)
 
-    print("\n[SUCCESS] ALL DECK ANALYTICS & SYNERGY TESTS PASSED 100%!")
+    print("\n[SUCCESS] Deck analytics & synergy checks passed.")
 
 if __name__ == "__main__":
     main()

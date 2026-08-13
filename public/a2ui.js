@@ -73,15 +73,15 @@
         transition: transform 0.18s ease, border-color 0.18s ease;
       `;
 
-      const scryfallId = props.scryfallId || props.scryfall_id || '';
-      const imgUrl = (scryfallId && scryfallId.length > 5)
+      const scryfallId = this.safeScryfallId(props.scryfallId || props.scryfall_id || '');
+      const imgUrl = scryfallId
         ? `https://cards.scryfall.io/small/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg`
         : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(props.name || 'Card')}&format=image&version=small`;
 
       const priceStr = props.price ? `$${parseFloat(props.price).toFixed(2)}` : '';
 
       el.innerHTML = `
-        <img src="${imgUrl}" alt="${this.escapeHtml(props.name || 'Card')}" style="width: 48px; height: 68px; object-fit: cover; border-radius: 6px; flex-shrink: 0;" onerror="this.style.display='none'">
+        <img src="${this.escapeHtml(imgUrl)}" alt="${this.escapeHtml(props.name || 'Card')}" style="width: 48px; height: 68px; object-fit: cover; border-radius: 6px; flex-shrink: 0;" onerror="this.style.display='none'">
         <div style="flex-grow: 1; min-width: 0;">
           <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-pure, #fff); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(props.name || 'Card')}</div>
           <div style="font-size: 0.7rem; color: var(--text-muted, #94a3b8); margin-top: 2px;">${this.escapeHtml(props.type || props.typeLine || 'MTG Card')}</div>
@@ -130,10 +130,10 @@
         gap: 0.35rem;
       `;
 
-      const pct = Math.max(0, Math.min(100, props.value || 0));
+      const pct = Math.max(0, Math.min(100, this.safeNum(props.value, 0)));
       const label = props.label || 'Progress';
       const sub = props.subtitle || `${pct}%`;
-      const color = props.color || 'var(--color-primary, #a855f7)';
+      const color = this.safeColor(props.color, 'var(--color-primary, #a855f7)');
 
       el.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -170,8 +170,8 @@
           padding: 3px 10px;
           height: 26px;
           font-weight: 600;
-          border-color: ${act.color || 'rgba(168,85,247,0.3)'};
-          color: ${act.textColor || 'var(--text-high, #f8fafc)'};
+          border-color: ${this.safeColor(act.color, 'rgba(168,85,247,0.3)')};
+          color: ${this.safeColor(act.textColor, 'var(--text-high, #f8fafc)')};
         `;
         btn.textContent = act.label || 'Action';
         btn.onclick = () => {
@@ -219,6 +219,24 @@
     escapeHtml(str) {
       if (typeof str !== 'string') return str || '';
       return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    },
+
+    // A2UI payloads come from server/AI responses (prompt-injectable). Validate any value
+    // that lands in an attribute or CSS context rather than trusting it.
+    safeScryfallId(id) {
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '') ? id : '';
+    },
+    safeColor(color, fallback) {
+      const c = String(color || '').trim();
+      if (/^#[0-9a-f]{3,8}$/i.test(c) || /^[a-z]+$/i.test(c) || /^var\(--[\w-]+(,\s*[^)]+)?\)$/i.test(c) ||
+          /^(rgb|rgba|hsl|hsla)\([\d.,%\s/]+\)$/i.test(c)) {
+        return c;
+      }
+      return fallback;
+    },
+    safeNum(value, fallback) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : (fallback || 0);
     }
   };
 

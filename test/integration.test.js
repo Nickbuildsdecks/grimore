@@ -47,14 +47,17 @@ test('GET /api/auth/me returns non-logged in status initially', async () => {
   assert.equal(res.body.loggedIn, false);
 });
 
-test('POST /api/auth/login validates credentials and sets session', async () => {
+// Credentials come from the environment — never commit a real account's password.
+// If TEST_USER/TEST_PASS are not set, this test is skipped rather than exercising a
+// hardcoded production login.
+test('POST /api/auth/login validates credentials and sets session', { skip: !process.env.TEST_USER || !process.env.TEST_PASS }, async () => {
   const res = await requestJson('/api/auth/login', {
     method: 'POST',
-    body: { username: 'nickbuildsdecks', password: 'C3n0t@ph' }
+    body: { username: process.env.TEST_USER, password: process.env.TEST_PASS }
   });
   assert.equal(res.status, 200);
   assert.equal(res.body.success, true);
-  assert.equal(res.body.user.username, 'nickbuildsdecks');
+  assert.equal(res.body.user.username, process.env.TEST_USER);
 });
 
 test('GET /api/decks/discover returns public community decks array', async () => {
@@ -79,7 +82,8 @@ test('GET /api/recommendations returns structured candidate list', async () => {
   assert.equal(res.status, 200);
 });
 
-test.after(async () => {
-  const { run } = require('../db');
-  await run("DELETE FROM decks WHERE deck_name LIKE '%test%' OR id LIKE '%test%'");
-});
+// NOTE: These tests are read-only and create no decks, so there is nothing to tear down.
+// The previous teardown ran `DELETE FROM decks WHERE deck_name LIKE '%test%' OR id LIKE '%test%'`,
+// which — against the live DB these tests hit — deleted real users' decks ("Greatest Hits",
+// "Contest Winner", etc.). Never delete by name/id substring. If a future test creates data,
+// track the exact IDs it created and delete only those, and point the suite at a throwaway DB.

@@ -20,6 +20,17 @@ scratch/
 grimore-gcp-export.zip
 gcp-export/
 
+# Python bytecode (from execution/ verification scripts)
+__pycache__/
+*.pyc
+
+# One-off root probe/scratch scripts (never meant for the repo or deploy context)
+/test_*.js
+/search_*.js
+/find_*.js
+/dump_*.js
+/read_conv.js
+
 # Log files
 npm-debug.log*
 yarn-debug.log*

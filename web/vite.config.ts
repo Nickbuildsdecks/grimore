@@ -16,7 +16,9 @@ export default defineConfig({
     port: 5100,
     proxy: {
       "/api": {
-        target: "http://localhost:5001",
+        // The Express server listens on 3000 (server.js), not 5001. The old target made
+        // every API call in `npm run dev` fail with connection-refused.
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
     },

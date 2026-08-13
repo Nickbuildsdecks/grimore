@@ -722,7 +722,18 @@
 
     try {
       const res = await fetch(`/api/cards/search?q=${encodeURIComponent(query)}&sort=${encodeURIComponent(sortVal)}&dir=${encodeURIComponent(dirVal)}&page=${searchCurrentPage}&limit=100`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+
+      // Distinguish a server error from a genuine empty result — otherwise a 500 was shown
+      // as "No matching cards found", making users blame their query.
+      if (!res.ok || data.error) {
+        if (grid) {
+          grid.style.display = 'grid';
+          grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--color-loss); padding: 5rem 0;">Search failed. Please try again in a moment.</div>`;
+        }
+        if (loader) loader.style.display = 'none';
+        return;
+      }
 
       const cards = data.cards || [];
       searchTotalCards = data.totalCards || 0;
@@ -1356,7 +1367,9 @@
           isPublic: deckData.is_public !== undefined ? deckData.is_public : 1,
           featuredCardName: deckData.featured_card_name || null,
           format: deckData.format || 'commander',
-          keepCheapest: 0
+          // Preserve the deck's keep-cheapest setting instead of forcing it off (which
+          // silently disabled the preference every time a card was added here).
+          keepCheapest: deckData.keep_cheapest !== undefined ? deckData.keep_cheapest : 0
         })
       });
       const saveResult = await saveRes.json();

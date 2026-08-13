@@ -16,8 +16,8 @@ const MTG_RULES = {
   '116.1': 'Players may cast spells and activate abilities only when they have priority.',
   '116.3b': 'The active player receives priority after a spell or ability resolves.',
   '307.1': 'Sorceries can only be cast during your main phase when the stack is empty and you have priority.',
-  '305.1': 'Instants can be cast at any time you have priority, including during opponents\' turns.',
-  '304.1': 'Creatures enter tapped if they have the "enters tapped" ability.',
+  '304.1': 'Instants can be cast at any time you have priority, including during opponents\' turns.',
+  '305.1': 'A player may play at most one land per turn, only during their own main phase with an empty stack.',
   '508.1': 'Attacking creatures must be able to attack the chosen player or planeswalker.',
   '509.1': 'Blocking must be done by untapped creatures you control.',
   '700.4': 'A legendary permanent is a permanent with the supertype legendary.',
@@ -27,11 +27,11 @@ const MTG_RULES = {
   '704.5g': 'If a creature has toughness greater than 0, and the total damage marked on it is greater than or equal to its toughness, that creature has been dealt lethal damage and is destroyed.',
   '704.5h': 'If a creature has toughness greater than 0, and it\'s been dealt damage by a source with deathtouch since the last time state-based actions were checked, that creature is destroyed.',
   '704.5i': 'If a planeswalker has 0 loyalty counters on it, it\'s put into its owner\'s graveyard.',
-  '702.15': 'Haste — This creature can attack and use activated abilities with the tap symbol as soon as it comes under your control.',
-  '702.14': 'Vigilance — Attacking doesn\'t cause this creature to tap.',
-  '702.19': 'Flying — This creature can\'t be blocked except by creatures with flying or reach.',
-  '702.5': 'Deathtouch — Any amount of damage this deals to a creature is enough to destroy it.',
-  '702.15a': 'Lifelink — Damage dealt by this source also causes its controller to gain that much life.',
+  '702.10': 'Haste — This creature can attack and use activated abilities with the tap symbol as soon as it comes under your control.',
+  '702.21': 'Vigilance — Attacking doesn\'t cause this creature to tap.',
+  '702.9': 'Flying — This creature can\'t be blocked except by creatures with flying or reach.',
+  '702.2': 'Deathtouch — Any amount of damage this deals to a creature is enough to destroy it.',
+  '702.15': 'Lifelink — Damage dealt by this source also causes its controller to gain that much life.',
   '903.9': 'If a commander would be put into its owner\'s library from anywhere, that player may exile it instead. The same applies to the graveyard.',
   '903.10': 'A player who has been dealt 21 or more combat damage by the same commander over the course of the game loses the game.',
 };
@@ -56,29 +56,37 @@ const SORCERY_SPEED_PHASES = ['main1','main2'];
 
 // ── Card Type Detection ──────────────────────────────────────
 function detectCardTypes(card) {
-  const text = ((card.typeLine || card.type_line || card.type || '') + ' ' + (card.text || card.oracle_text || '')).toLowerCase();
+  // Card TYPES must come from the type line only. Deriving them from oracle text put
+  // "Destroy target creature" instants onto the battlefield as creatures, made spells that
+  // merely mention 'instant' castable at instant speed, etc.
+  const typeLine = (card.typeLine || card.type_line || card.type || '').toLowerCase();
+  // Keywords are parsed from the oracle/ability text with word boundaries so they aren't
+  // matched inside unrelated words.
+  const oracle = (card.text || card.oracle_text || '').toLowerCase();
+  const kw = (word) => new RegExp(`\\b${word}\\b`).test(oracle);
+  const doubleStrike = kw('double strike');
   return {
-    isCreature:     text.includes('creature'),
-    isLand:         text.includes('land'),
-    isInstant:      text.includes('instant'),
-    isSorcery:      text.includes('sorcery'),
-    isArtifact:     text.includes('artifact'),
-    isEnchantment:  text.includes('enchantment'),
-    isPlaneswalker: text.includes('planeswalker'),
-    hasHaste:       text.includes('haste'),
-    hasVigilance:   text.includes('vigilance'),
-    hasFlying:      text.includes('flying'),
-    hasDeathtouch:  text.includes('deathtouch'),
-    hasLifelink:    text.includes('lifelink'),
-    hasReach:       text.includes('reach'),
-    hasFlash:       text.includes('flash'),
-    hasFirstStrike: text.includes('first strike') && !text.includes('double strike'),
-    hasDoubleStrike:text.includes('double strike'),
-    hasTrample:     text.includes('trample'),
-    hasIndestructible: text.includes('indestructible'),
-    hasShroud:      text.includes('shroud'),
-    hasHexproof:    text.includes('hexproof'),
-    isLegendary:    text.includes('legendary'),
+    isCreature:     typeLine.includes('creature'),
+    isLand:         typeLine.includes('land'),
+    isInstant:      typeLine.includes('instant'),
+    isSorcery:      typeLine.includes('sorcery'),
+    isArtifact:     typeLine.includes('artifact'),
+    isEnchantment:  typeLine.includes('enchantment'),
+    isPlaneswalker: typeLine.includes('planeswalker'),
+    hasHaste:       kw('haste'),
+    hasVigilance:   kw('vigilance'),
+    hasFlying:      kw('flying'),
+    hasDeathtouch:  kw('deathtouch'),
+    hasLifelink:    kw('lifelink'),
+    hasReach:       kw('reach'),
+    hasFlash:       kw('flash'),
+    hasFirstStrike: kw('first strike') && !doubleStrike,
+    hasDoubleStrike: doubleStrike,
+    hasTrample:     kw('trample'),
+    hasIndestructible: kw('indestructible'),
+    hasShroud:      kw('shroud'),
+    hasHexproof:    kw('hexproof'),
+    isLegendary:    typeLine.includes('legendary'),
   };
 }
 
@@ -131,12 +139,33 @@ const Arena = (() => {
     life: { player: 40, opponent: 40 },
     mana: { W:0, U:0, B:0, R:0, G:0, C:0 },
     poison: 0,
+    gameOver: false,
     combatAttackers: [],
     sicknessList: new Set(), // card IDs that have summoning sickness
     nextId: 1,
     modalZone: null,
     modalCards: [],
   };
+
+  // Show a game-over overlay/banner and lock further play until a new game starts.
+  function showGameOver(message) {
+    try {
+      let el = document.getElementById('sandbox-game-over');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'sandbox-game-over';
+        el.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(3,3,5,0.82);backdrop-filter:blur(4px);';
+        document.body.appendChild(el);
+      }
+      const safe = escapeHtml(message || 'Game Over');
+      el.innerHTML = `<div style="text-align:center;padding:2rem 2.5rem;border:1px solid rgba(168,85,247,0.4);border-radius:16px;background:#0b0b12;max-width:90vw;">
+        <div style="font-size:1.6rem;font-weight:800;color:#f1f5f9;margin-bottom:0.75rem;">Game Over</div>
+        <div style="font-size:0.95rem;color:#cbd5e1;margin-bottom:1.25rem;">${safe}</div>
+        <button onclick="this.closest('#sandbox-game-over').remove()" style="cursor:pointer;font-size:0.85rem;padding:8px 16px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:rgba(168,85,247,0.15);color:#f1f5f9;">Dismiss</button>
+      </div>`;
+      el.style.display = 'flex';
+    } catch (e) { /* non-fatal UI */ }
+  }
 
   // ── Canvas Background ─────────────────────────────────────
   function initCanvas() {
@@ -259,87 +288,10 @@ const Arena = (() => {
   }
 
   // ── SBA (State-Based Actions) ─────────────────────────────
+  // Thin delegator so every caller routes through the single canonical engine
+  // (checkStateBasedActions), which handles both sides, counters, and the game-over flag.
   function checkSBAs() {
-    let anyTriggered = false;
-
-    // 704.5a — Player at 0 life
-    if (state.life.player <= 0) {
-      advise('You have 0 or less life. You lose the game!', 'error', '704.5a');
-      toast('You have 0 or less life — you lose!', 'error', '704.5a');
-      return;
-    }
-    if (state.life.opponent <= 0) {
-      advise('Opponent has 0 or less life. Opponent loses the game!', 'success', '704.5a');
-      toast('Opponent has 0 or less life — opponent loses!', 'info');
-      return;
-    }
-
-    // 704.5b — Empty library draw
-    // (handled in drawCard())
-
-    // Poison: 10 or more
-    if (state.poison >= 10) {
-      advise('You have 10 poison counters. You lose the game!', 'error');
-      toast('10 poison counters — you lose!', 'error');
-      return;
-    }
-
-    // 704.5g — Creatures with lethal damage
-    const toKill = state.zones.player.battlefield.filter(card => {
-      if (!card._types?.isCreature) return false;
-      const pt = parsePT(card);
-      if (!pt) return false;
-      const dmg = card._damage || 0;
-      const effectiveToughness = pt.toughness + (card._counters?.pp || 0) - (card._counters?.mm || 0);
-      return dmg > 0 && dmg >= effectiveToughness;
-    });
-
-    toKill.forEach(card => {
-      removeFromBattlefield(card, 'player');
-      moveToZone(card, 'player', 'graveyard');
-      anyTriggered = true;
-      advise(`${card.name} was destroyed (lethal damage: ${card._damage} >= toughness).`, 'warning', '704.5g');
-    });
-
-    // 704.5i — Planeswalkers at 0 loyalty
-    const deadPW = state.zones.player.battlefield.filter(card => {
-      return card._types?.isPlaneswalker && (card._loyaltyCounters || 0) <= 0;
-    });
-    deadPW.forEach(card => {
-      removeFromBattlefield(card, 'player');
-      moveToZone(card, 'player', 'graveyard');
-      anyTriggered = true;
-      advise(`${card.name} (planeswalker) has 0 loyalty counters and was put into the graveyard.`, 'warning', '704.5i');
-    });
-
-    // 704.5k — Legendary rule
-    const bfByName = {};
-    state.zones.player.battlefield.forEach(card => {
-      if (card._types?.isLegendary) {
-        if (!bfByName[card.name]) bfByName[card.name] = [];
-        bfByName[card.name].push(card);
-      }
-    });
-    Object.entries(bfByName).forEach(([name, cards]) => {
-      if (cards.length > 1) {
-        // Auto-keep last played (first in array = older)
-        for (let i = 0; i < cards.length - 1; i++) {
-          removeFromBattlefield(cards[i], 'player');
-          moveToZone(cards[i], 'player', 'graveyard');
-          anyTriggered = true;
-        }
-        advise(`Legendary rule: Two copies of "${name}" on the battlefield. Older copy sent to graveyard.`, 'warning', '704.5k');
-      }
-    });
-
-    if (anyTriggered) {
-      const flash = document.createElement('div');
-      flash.className = 'sba-flash';
-      document.body.appendChild(flash);
-      setTimeout(() => flash.remove(), 500);
-      renderBattlefield('player');
-      updateZoneCounts();
-    }
+    checkStateBasedActions();
   }
 
   // ── Zone Management ───────────────────────────────────────
@@ -460,6 +412,9 @@ const Arena = (() => {
     // Auto-effects per phase
     if (phase === 'untap') {
       untapAll();
+      // Reset the one-land-per-turn flag so the player can play a land again this turn
+      // (it was only ever cleared on a brand-new game, making the game unplayable past turn 1).
+      state._landPlayedThisTurn = false;
       // Remove summoning sickness from creatures that survived a full turn
       state.zones.player.battlefield.forEach(card => {
         if (card._types?.isCreature) state.sicknessList.delete(card._uid);
@@ -468,6 +423,11 @@ const Arena = (() => {
     if (phase === 'draw' && state.turn > 1) {
       drawCard();
     }
+    if (phase === 'combat') {
+      // Deal the player's declared combat damage (previously combatAttackers was written
+      // but never read, so attacking did nothing and you could only lower AI life by hand).
+      resolvePlayerCombatDamage();
+    }
     if (phase === 'cleanup') {
       // Remove damage markers (rule 514.1)
       state.zones.player.battlefield.forEach(c => { c._damage = 0; });
@@ -475,23 +435,45 @@ const Arena = (() => {
     }
   }
 
-  function passPhaseInternal() {
-    if (state.stack.length > 0) {
-      advise('You must resolve or respond to items on the stack before advancing.', 'warning', '116.3b');
-      toast('Stack not empty — resolve or respond first.', 'warn');
-      return;
+  // Resolve combat damage from the player's declared attackers to the focused opponent.
+  function resolvePlayerCombatDamage() {
+    if (!state.combatAttackers || state.combatAttackers.length === 0) return;
+    let total = 0;
+    let commanderDmg = 0;
+    const cmdUid = state.commanderZone && state.commanderZone.card ? state.commanderZone.card._uid : null;
+    state.combatAttackers.forEach(uid => {
+      const card = state.zones.player.battlefield.find(c => c._uid === uid);
+      if (!card) return;
+      const pt = parsePT(card) || { power: 0 };
+      const power = Math.max(0, pt.power || 0);
+      total += power;
+      if (cmdUid && uid === cmdUid) commanderDmg += power;
+    });
+
+    if (total > 0) {
+      const oppName = (state.opponents[state.focusOpponent] && state.opponents[state.focusOpponent].name) || 'the opponent';
+      changeLife('opponent', -total);
+      if (typeof spawnDamageFloat === 'function') spawnDamageFloat(total, 'opponent');
+      playAudioSound('combat_hit');
+      advise(`You deal <strong>${escapeHtml(String(total))}</strong> combat damage to ${escapeHtml(oppName)}!`, 'success');
+
+      if (commanderDmg > 0) {
+        const prev = (state.cmdMatrix['player'] && state.cmdMatrix['player'][state.focusOpponent]) || 0;
+        const nowDmg = prev + commanderDmg;
+        updateCmdMatrix('player', state.focusOpponent, nowDmg);
+        if (nowDmg >= 21) {
+          advise(`CR 903.10: ${escapeHtml(oppName)} has taken 21+ commander damage and loses the game!`, 'error', '903.10');
+          state.life.opponent = 0;
+          changeLife('opponent', 0);
+        }
+      }
     }
 
-    const nextIdx = (state.phaseIdx + 1) % PHASE_ORDER.length;
-    if (nextIdx === 0) {
-      // New turn
-      state.turn++;
-      document.getElementById('turn-num').textContent = state.turn;
-      advise(`Turn ${state.turn} begins.`, 'info');
-    }
-    setPhase(PHASE_ORDER[nextIdx]);
+    // Damage is dealt once per combat; clear so it is not reapplied and untap the attackers'
+    // "attacking" highlight.
+    state.combatAttackers = [];
+    document.querySelectorAll('.attacking').forEach(el => el.classList.remove('attacking'));
   }
-
 
   function jumpToPhase(phase) {
     advise(`Jumping to ${PHASE_LABELS[phase]} phase.`, 'log');
@@ -523,15 +505,21 @@ const Arena = (() => {
     if (!card._types?.isCreature) return false;
     if (card._tapped) { return false; } // already tapped
     if (state.sicknessList.has(card._uid) && !card._types?.hasHaste) return false;
-    if (!COMBAT_PHASES.includes(state.phase)) return false;
+    // CR 508.1: attackers are declared during the Declare Attackers step only
+    // (beginCombat allowed as a convenience for the pre-attack step).
+    if (state.phase !== 'declareAttackers' && state.phase !== 'beginCombat') return false;
     return true;
   }
 
   // ── Draw Card ─────────────────────────────────────────────
   function drawCard() {
+    if (state.gameOver) return;
     if (state.zones.player.library.length === 0) {
+      // CR 704.5b: attempting to draw from an empty library is a loss.
+      state.gameOver = true;
       advise('You attempted to draw from an empty library. You lose the game!', 'error', '704.5b');
       toast('Empty library — you lose!', 'error', '704.5b');
+      showGameOver('You lose — drew from an empty library.');
       return;
     }
     const card = state.zones.player.library.shift();
@@ -540,7 +528,7 @@ const Arena = (() => {
     renderHand();
     updateZoneCounts();
     playAudioSound('card_draw');
-    advise(`Drew: <strong>${c.name}</strong>`, 'log');
+    advise(`Drew: <strong>${escapeHtml(c.name)}</strong>`, 'log');
   }
 
 
@@ -553,6 +541,7 @@ const Arena = (() => {
 
   // ── Play Card from Hand ───────────────────────────────────
   function playCardFromHand(card) {
+    if (state.gameOver) { toast('The game is over. Start a new game to keep playing.', 'warn'); return; }
     const types = card._types || detectCardTypes(card);
 
     // Land special rule
@@ -570,7 +559,7 @@ const Arena = (() => {
       state._landPlayedThisTurn = true;
       putOnBattlefield(card, 'player');
       removeCardFromHand(card);
-      advise(`Played land: <strong>${card.name}</strong>`, 'success');
+      advise(`Played land: <strong>${escapeHtml(card.name)}</strong>`, 'success');
       // Auto-generate mana based on land type
       autoGenerateLandMana(card);
       return;
@@ -580,12 +569,12 @@ const Arena = (() => {
     if (!canCastAtSorcerySpeed(card)) {
       if (!SORCERY_SPEED_PHASES.includes(state.phase) && !types.isInstant && !types.hasFlash) {
         toast(`Cannot cast ${card.name} — sorceries/creatures/enchantments require your main phase with an empty stack.`, 'warn', '307.1');
-        advise(`Cannot cast <strong>${card.name}</strong> — sorcery speed only (your main phase, empty stack).`, 'error', '307.1');
+        advise(`Cannot cast <strong>${escapeHtml(card.name)}</strong> — sorcery speed only (your main phase, empty stack).`, 'error', '307.1');
         return;
       }
       if (state.activePlayer !== 'player') {
         toast(`Cannot cast ${card.name} — it's not your turn and it's not an instant.`, 'warn', '116.1');
-        advise(`Cannot cast <strong>${card.name}</strong> — not your turn.`, 'error', '116.1');
+        advise(`Cannot cast <strong>${escapeHtml(card.name)}</strong> — not your turn.`, 'error', '116.1');
         return;
       }
     }
@@ -601,7 +590,7 @@ const Arena = (() => {
     state.stack.push(stackItem);
     removeCardFromHand(card);
     renderStack();
-    advise(`Cast <strong>${card.name}</strong> — added to stack. Opponent may respond.`, 'info', '116.1');
+    advise(`Cast <strong>${escapeHtml(card.name)}</strong> — added to stack. Opponent may respond.`, 'info', '116.1');
     toast(`${card.name} on the stack!`, 'info');
     checkForAutoResolve();
   }
@@ -636,16 +625,16 @@ const Arena = (() => {
     // Permanents -> battlefield
     if (types.isCreature || types.isArtifact || types.isEnchantment || types.isPlaneswalker) {
       putOnBattlefield(card, 'player');
-      advise(`<strong>${card.name}</strong> resolved and entered the battlefield.`, 'success');
+      advise(`<strong>${escapeHtml(card.name)}</strong> resolved and entered the battlefield.`, 'success');
       // Summoning sickness on creatures without haste
       if (types.isCreature && !types.hasHaste) {
         state.sicknessList.add(card._uid);
-        advise(`${card.name} has summoning sickness — cannot attack until your next turn.`, 'warning', '702.15');
+        advise(`${card.name} has summoning sickness — cannot attack until your next turn.`, 'warning', '702.10');
       }
     } else {
       // Instants / sorceries go to graveyard
       moveToZone(card, 'player', 'graveyard');
-      advise(`<strong>${card.name}</strong> resolved and went to the graveyard.`, 'success');
+      advise(`<strong>${escapeHtml(card.name)}</strong> resolved and went to the graveyard.`, 'success');
     }
 
     toast(`${card.name} resolved!`, 'info');
@@ -713,11 +702,16 @@ const Arena = (() => {
         const mini = document.createElement('div');
         mini.className = 'opp-mini-card';
         const scryfallId = card.scryfallId || card.scryfall_id || card.id || '';
-        const imgUrl = (scryfallId && scryfallId.length > 5)
+        // Only a well-formed Scryfall UUID is allowed into the CDN path. Remote pod
+        // members control this field, so a raw value could break out of the src
+        // attribute and inject script. Build via DOM APIs, never innerHTML.
+        const validId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(scryfallId);
+        const img = document.createElement('img');
+        img.src = validId
           ? `https://cards.scryfall.io/normal/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg`
           : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name || 'Card')}&format=image&version=normal`;
-
-        mini.innerHTML = `<img src="${imgUrl}" title="${escapeHtml(card.name || '')}">`;
+        img.title = card.name || '';
+        mini.appendChild(img);
         mini.addEventListener('mouseenter', (e) => showHoverPreviewTooltip(e, card));
         mini.addEventListener('mouseleave', hideHoverPreviewTooltip);
         row.appendChild(mini);
@@ -766,7 +760,7 @@ const Arena = (() => {
     }
 
     renderAllOpponentMiniPods();
-    advise(`Switched focus to <strong>${opp.name}</strong>'s battlefield.`, 'log');
+    advise(`Switched focus to <strong>${escapeHtml(opp.name)}</strong>'s battlefield.`, 'log');
   }
 
   // ── 4P Commander Damage Matrix ─────────────────────────────
@@ -785,7 +779,7 @@ const Arena = (() => {
     let html = `
       <tr>
         <th>Attacker \\ Defender</th>
-        ${players.map(p => `<th>${p.name}</th>`).join('')}
+        ${players.map(p => `<th>${escapeHtml(p.name)}</th>`).join('')}
       </tr>
     `;
 
@@ -844,8 +838,8 @@ const Arena = (() => {
         div.style.cssText = 'background:rgba(255,255,255,0.03);border:1px solid var(--glass-border-md);border-radius:8px;padding:0.85rem 1.2rem;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:all 0.2s ease;';
         div.innerHTML = `
           <div>
-            <div style="font-weight:700;font-size:0.9rem;color:#f1f5f9;">${r.title}</div>
-            <div style="font-size:0.72rem;color:#94a3b8;margin-top:2px;">Channel: ${r.channel} · ${r.format} · ${r.steps.length} Steps</div>
+            <div style="font-weight:700;font-size:0.9rem;color:#f1f5f9;">${escapeHtml(r.title || '')}</div>
+            <div style="font-size:0.72rem;color:#94a3b8;margin-top:2px;">Channel: ${escapeHtml(r.channel || '')} · ${escapeHtml(r.format || '')} · ${r.steps.length} Steps</div>
           </div>
           <button class="arena-btn arena-btn-magical" style="font-size:0.7rem;padding:4px 10px;">▶ Load & Replicate</button>
         `;
@@ -1129,77 +1123,111 @@ const Arena = (() => {
   }
 
   // ── AUTOMATED STATE-BASED ACTIONS (CR 704 / Phase 3) ───────
+  // The single canonical state-based-action engine. Computes effective toughness including
+  // +1/+1 / -1/-1 counters, handles 704.5f (toughness <= 0) and 704.5g (lethal damage) for
+  // BOTH sides, keeps the NEWEST legend, and sets state.gameOver on a loss condition.
+  const effectiveToughness = (c) => {
+    const pt = parsePT(c) || { power: 0, toughness: 0 };
+    return (pt.toughness || 0) + (c._counters?.pp || 0) - (c._counters?.mm || 0);
+  };
+
   function checkStateBasedActions() {
-    // CR 704.5a: Life 0 or less loss check
-    if (state.life.player <= 0) {
-      advise(`CR 704.5a State-Based Action: You have 0 or less life (${state.life.player} HP). Game Over!`, 'error');
+    // CR 704.5a: life loss
+    if (state.life.player <= 0 && !state.gameOver) {
+      state.gameOver = true;
+      advise(`CR 704.5a: You have 0 or less life (${state.life.player} HP). Game Over!`, 'error', '704.5a');
       toast(`Game Over — 0 Life`, 'error', '704.5a');
       playAudioSound('game_over');
+      showGameOver('You lose — 0 or less life.');
+    }
+    if (state.life.opponent <= 0 && !state.gameOver) {
+      state.gameOver = true;
+      advise(`CR 704.5a: Opponent has 0 or less life. You win!`, 'success', '704.5a');
+      toast(`Opponent eliminated (0 HP)`, 'info', '704.5a');
+      showGameOver('You win — opponent at 0 life!');
     }
     Object.keys(state.opponents).forEach(pk => {
       if (state.opponents[pk].life <= 0) {
-        advise(`CR 704.5a State-Based Action: ${state.opponents[pk].name} has 0 or less life (${state.opponents[pk].life} HP). Player eliminated!`, 'warning');
-        toast(`${state.opponents[pk].name} Eliminated (0 HP)`, 'warning', '704.5a');
+        advise(`CR 704.5a: ${state.opponents[pk].name} has 0 or less life. Player eliminated!`, 'warning', '704.5a');
       }
     });
 
-    // CR 704.5c: Poison 10 or more loss check
-    if (state.poison >= 10) {
-      advise(`CR 704.5c State-Based Action: You have 10 or more poison counters (${state.poison}). Game Over!`, 'error');
+    // CR 704.5c: poison
+    if (state.poison >= 10 && !state.gameOver) {
+      state.gameOver = true;
+      advise(`CR 704.5c: You have 10+ poison counters (${state.poison}). Game Over!`, 'error', '704.5c');
       toast(`Game Over — 10 Poison`, 'error', '704.5c');
       playAudioSound('game_over');
+      showGameOver('You lose — 10 poison counters.');
     }
 
-    // CR 903.10: Commander Damage 21+ lethal check
-    if (state.commanderZone && state.commanderZone.damageDealt >= 21) {
-      advise(`CR 903.10 State-Based Action: Took 21+ lethal commander damage (${state.commanderZone.damageDealt}). Game Over!`, 'error');
-      toast(`Game Over — 21 Lethal Commander Damage`, 'error', '903.10');
+    // CR 903.10: commander damage 21+ (tracked via cmdMatrix — damage TO the player from any
+    // single opponent's commander). commanderZone.damageDealt kept for backward-compat.
+    let maxCmdToPlayer = state.commanderZone ? (state.commanderZone.damageDealt || 0) : 0;
+    Object.keys(state.opponents).forEach(pk => {
+      const d = (state.cmdMatrix[pk] && state.cmdMatrix[pk].player) || 0;
+      if (d > maxCmdToPlayer) maxCmdToPlayer = d;
+    });
+    if (maxCmdToPlayer >= 21 && !state.gameOver) {
+      state.gameOver = true;
+      advise(`CR 903.10: You took 21+ commander damage (${maxCmdToPlayer}). Game Over!`, 'error', '903.10');
+      toast(`Game Over — 21 Commander Damage`, 'error', '903.10');
       playAudioSound('game_over');
+      showGameOver('You lose — 21+ commander damage.');
     }
 
-    // CR 704.5g: Creature Lethal Damage check
+    // CR 704.5f (toughness <= 0) and 704.5g (lethal damage) for both sides.
     ['player', 'opponent'].forEach(side => {
-      const bf = state.zones[side].battlefield;
+      if (!state.zones[side]) return;
       const dying = [];
-      bf.forEach(c => {
+      state.zones[side].battlefield.forEach(c => {
         const types = c._types || detectCardTypes(c);
-        if (types.isCreature) {
-          const pt = parsePT(c) || { power: 1, toughness: 1 };
-          if (c._damage && c._damage >= pt.toughness && pt.toughness > 0) {
-            dying.push(c);
-          }
-        }
+        if (!types.isCreature) return;
+        const et = effectiveToughness(c);
+        const dmg = c._damage || 0;
+        if (et <= 0 || (dmg > 0 && dmg >= et)) dying.push(c);
       });
       dying.forEach(c => {
         state.zones[side].battlefield = state.zones[side].battlefield.filter(x => x._uid !== c._uid);
         state.zones[side].graveyard.push(c);
-        advise(`CR 704.5g State-Based Action: <strong>${c.name}</strong> has received lethal damage (${c._damage}) and was put into graveyard.`, 'warning', '704.5g');
+        advise(`CR 704.5: <strong>${escapeHtml(c.name)}</strong> was put into the graveyard.`, 'warning', '704.5');
       });
-      if (dying.length > 0) {
-        renderBattlefield(side);
-        updateZoneCounts();
-      }
+      if (dying.length > 0) { renderBattlefield(side); updateZoneCounts(); }
     });
 
-    // CR 704.5k: Legendary Rule check
+    // CR 704.5i: planeswalkers at 0 loyalty (both sides).
     ['player', 'opponent'].forEach(side => {
-      const bf = state.zones[side].battlefield;
+      if (!state.zones[side]) return;
+      const deadPW = state.zones[side].battlefield.filter(c => {
+        const types = c._types || detectCardTypes(c);
+        return types.isPlaneswalker && (c._loyaltyCounters || 0) <= 0;
+      });
+      deadPW.forEach(c => {
+        state.zones[side].battlefield = state.zones[side].battlefield.filter(x => x._uid !== c._uid);
+        state.zones[side].graveyard.push(c);
+        advise(`CR 704.5i: <strong>${escapeHtml(c.name)}</strong> has 0 loyalty and was put into the graveyard.`, 'warning', '704.5i');
+      });
+      if (deadPW.length > 0) { renderBattlefield(side); updateZoneCounts(); }
+    });
+
+    // CR 704.5k: legend rule — keep the NEWEST copy (last in play order).
+    ['player', 'opponent'].forEach(side => {
+      if (!state.zones[side]) return;
       const legendsByName = {};
-      bf.forEach(c => {
+      state.zones[side].battlefield.forEach(c => {
         const types = c._types || detectCardTypes(c);
         if (types.isLegendary) {
-          if (!legendsByName[c.name]) legendsByName[c.name] = [];
-          legendsByName[c.name].push(c);
+          (legendsByName[c.name] = legendsByName[c.name] || []).push(c);
         }
       });
       Object.keys(legendsByName).forEach(name => {
-        if (legendsByName[name].length > 1) {
-          // Put extra copies into graveyard
-          const extras = legendsByName[name].slice(1);
+        const copies = legendsByName[name];
+        if (copies.length > 1) {
+          const extras = copies.slice(0, -1); // remove all but the newest
           extras.forEach(extra => {
             state.zones[side].battlefield = state.zones[side].battlefield.filter(x => x._uid !== extra._uid);
             state.zones[side].graveyard.push(extra);
-            advise(`CR 704.5k Legend Rule: Duplicate legend <strong>${extra.name}</strong> put into graveyard.`, 'warning', '704.5k');
+            advise(`CR 704.5k Legend Rule: older <strong>${escapeHtml(extra.name)}</strong> put into graveyard.`, 'warning', '704.5k');
           });
           renderBattlefield(side);
           updateZoneCounts();
@@ -1207,6 +1235,7 @@ const Arena = (() => {
       });
     });
   }
+
 
   // ── DYNAMIC STACK OVERLAY RENDER ───────────────────────────
   function renderStackOverlay() {
@@ -1230,12 +1259,13 @@ const Arena = (() => {
       const el = document.createElement('div');
       el.className = 'stack-item-card';
       const scryfallId = card.scryfallId || card.scryfall_id || card.id || '';
-      const imgUrl = (scryfallId && scryfallId.length > 5)
+      const validId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(scryfallId);
+      const imgUrl = validId
         ? `https://cards.scryfall.io/normal/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg`
         : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name || 'Spell')}&format=image&version=normal`;
 
       el.innerHTML = `
-        <img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt="${card.name || 'Spell'}">
+        <img src="${escapeHtml(imgUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt="${escapeHtml(card.name || 'Spell')}">
         <div style="position:absolute;top:2px;right:2px;background:rgba(239,68,68,0.9);color:white;font-weight:800;font-size:0.6rem;padding:1px 5px;border-radius:99px;">#${state.stack.length - idx}</div>
       `;
       container.appendChild(el);
@@ -1275,13 +1305,22 @@ const Arena = (() => {
     // Card image (HD Large Version)
     const img = document.createElement('img');
     const scryfallId = card.scryfallId || card.scryfall_id || card.id || '';
-    const hdImgUrl = (scryfallId && scryfallId.length > 5)
+    const validId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(scryfallId);
+    const hdImgUrl = validId
       ? `https://cards.scryfall.io/large/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg`
-      : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=large`;
+      : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name || 'Card')}&format=image&version=large`;
 
     img.src = hdImgUrl;
     img.alt = card.name;
-    img.onerror = () => { img.style.display = 'none'; el.innerHTML += `<div style="font-size:0.58rem;color:#64748b;text-align:center;padding:4px;line-height:1.3;">${card.name}</div>`; };
+    // Fallback label via textContent — never concatenate a remote-controlled card
+    // name into innerHTML (that was a stored-XSS sink on focused opponent boards).
+    img.onerror = () => {
+      img.style.display = 'none';
+      const fallback = document.createElement('div');
+      fallback.style.cssText = 'font-size:0.58rem;color:#64748b;text-align:center;padding:4px;line-height:1.3;';
+      fallback.textContent = card.name || '';
+      el.appendChild(fallback);
+    };
     el.appendChild(img);
 
     // Card Hover HD Inspector Tooltip Listener
@@ -1412,7 +1451,7 @@ const Arena = (() => {
   function handleBattlefieldCardClick(card, el) {
     card._tapped = !card._tapped;
     el.classList.toggle('tapped', card._tapped);
-    advise(`${card._tapped ? 'Tapped' : 'Untapped'} <strong>${card.name}</strong>.`, 'log');
+    advise(`${card._tapped ? 'Tapped' : 'Untapped'} <strong>${escapeHtml(card.name)}</strong>.`, 'log');
     if (card._types?.isLand && card._tapped) {
       autoGenerateLandMana(card);
     }
@@ -1481,6 +1520,7 @@ const Arena = (() => {
   // Context menu action handlers
   function _ctxAttack(uid) {
     document.getElementById('card-ctx-menu').style.display = 'none';
+    if (state.gameOver) { toast('The game is over.', 'warn'); return; }
     const card = state.zones.player.battlefield.find(c => c._uid === uid);
     if (!card) return;
     if (!canAttack(card)) { toast('This creature cannot attack right now.', 'warn'); return; }
@@ -1525,7 +1565,7 @@ const Arena = (() => {
     state.zones.player.battlefield.push(clone);
     state.sicknessList.add(clone._uid);
     renderBattlefield('player');
-    advise(`Cloned <strong>${card.name}</strong>. Token added to battlefield with summoning sickness.`, 'info');
+    advise(`Cloned <strong>${escapeHtml(card.name)}</strong>. Token added to battlefield with summoning sickness.`, 'info');
   }
 
   // ── Interaction Highlighting ──────────────────────────────
@@ -1630,8 +1670,8 @@ const Arena = (() => {
       el.innerHTML = `
         <span class="stack-item-index">${position}</span>
         <div>
-          <div class="stack-item-name">${item.card.name}</div>
-          <div class="stack-item-desc">${item.description}</div>
+          <div class="stack-item-name">${escapeHtml(item.card.name || '')}</div>
+          <div class="stack-item-desc">${escapeHtml(item.description || '')}</div>
         </div>
       `;
       list.appendChild(el);
@@ -1733,7 +1773,7 @@ const Arena = (() => {
     state.zones.player.hand.push(card);
     renderHand();
     updateZoneCounts();
-    advise(`Tutored <strong>${card.name}</strong> from library to hand.`, 'success');
+    advise(`Tutored <strong>${escapeHtml(card.name)}</strong> from library to hand.`, 'success');
     closeModal();
     // Shuffle library (represented in state — order re-randomized)
     shuffleLibrary();
@@ -1745,7 +1785,7 @@ const Arena = (() => {
     state.zones.player.hand.push(card);
     renderHand();
     updateZoneCounts();
-    advise(`Returned <strong>${card.name}</strong> from graveyard to hand.`, 'success');
+    advise(`Returned <strong>${escapeHtml(card.name)}</strong> from graveyard to hand.`, 'success');
     closeModal();
   }
 
@@ -1764,7 +1804,7 @@ const Arena = (() => {
       slot.appendChild(img);
     }
     updateCommanderTaxDisplay();
-    advise(`Commander set: <strong>${card.name}</strong>. Commander tax starts at 0.`, 'info', '903.9');
+    advise(`Commander set: <strong>${escapeHtml(card.name)}</strong>. Commander tax starts at 0.`, 'info', '903.9');
   }
 
   function castCommander() {
@@ -1774,13 +1814,17 @@ const Arena = (() => {
       toast('Can only cast your commander at sorcery speed during your main phase.', 'warn', '307.1');
       return;
     }
-    state.commanderZone.tax++;
-    updateCommanderTaxDisplay();
+    // CR 903.8: tax = 2 for each PREVIOUS cast. The first cast costs +0, so compute the tax
+    // from the current count, then increment for next time.
+    const additionalMana = state.commanderZone.tax * 2;
+    const priorCasts = state.commanderZone.tax;
     const c = assignUid(Object.assign({}, card));
-    const stackItem = { id: state.nextId++, card: c, controller: 'player', type: 'spell', description: `Commander spell. Tax applied: ${state.commanderZone.tax} additional mana.` };
+    const stackItem = { id: state.nextId++, card: c, controller: 'player', type: 'spell', description: `Commander spell. Tax applied: ${additionalMana} additional mana.` };
     state.stack.push(stackItem);
     renderStack();
-    advise(`Casting commander <strong>${card.name}</strong>. Commander tax now ${state.commanderZone.tax * 2} additional mana (${state.commanderZone.tax} applications).`, 'info', '903.9');
+    advise(`Casting commander <strong>${escapeHtml(card.name)}</strong>. Commander tax: ${additionalMana} additional mana (${priorCasts} previous cast${priorCasts === 1 ? '' : 's'}).`, 'info', '903.8');
+    state.commanderZone.tax++;
+    updateCommanderTaxDisplay();
     checkForAutoResolve();
   }
 
@@ -1821,56 +1865,6 @@ const Arena = (() => {
     }
   }
 
-  async function loadAvailableDecks() {
-    const grid = document.getElementById('deck-select-grid');
-    if (!grid) return;
-    grid.innerHTML = '<div style="text-align:center;padding:2rem;color:#475569;font-size:0.8rem;">Loading your decks...</div>';
-
-    let decks = [];
-    try {
-      // Fetch user's saved decks & discover community decks
-      const [myRes, discRes] = await Promise.allSettled([
-        fetch('/api/decks/my-decks', { credentials: 'include' }),
-        fetch('/api/decks/discover', { credentials: 'include' })
-      ]);
-
-      if (myRes.status === 'fulfilled' && myRes.value.ok) {
-        const d = await myRes.value.json();
-        const list = Array.isArray(d) ? d : (d.decks || d.data || []);
-        decks.push(...list);
-      }
-      if (discRes.status === 'fulfilled' && discRes.value.ok) {
-        const d = await discRes.value.json();
-        const list = Array.isArray(d) ? d : (d.decks || d.data || []);
-        list.forEach(dc => {
-          if (!decks.some(existing => existing.id === dc.id)) decks.push(dc);
-        });
-      }
-    } catch (err) {
-      console.error('Error fetching decks:', err);
-    }
-
-    if (!decks.length) {
-      grid.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:0.8rem;">No saved decks found in database. Use the Quick Import box above or create a deck in the Deck Builder!</div>';
-      return;
-    }
-
-    grid.innerHTML = '';
-    decks.forEach(deck => {
-      const item = document.createElement('div');
-      item.className = 'deck-select-item';
-      item.innerHTML = `
-        <div>
-          <div class="deck-select-name">${deck.deck_name || deck.name || 'Unnamed Deck'}</div>
-          <div class="deck-select-meta">${deck.card_count || deck.cardCount || '?'} cards${deck.format ? ` · ${deck.format}` : ''}</div>
-        </div>
-        <div class="deck-select-cmd">${deck.commander || ''}</div>
-      `;
-      item.addEventListener('click', () => loadDeck(deck));
-      grid.appendChild(item);
-    });
-  }
-
   async function importPastedDecklist() {
     const input = document.getElementById('deck-import-text');
     if (!input || !input.value.trim()) return;
@@ -1908,14 +1902,18 @@ const Arena = (() => {
 
       if (splashMsg) splashMsg.textContent = `Loaded ${parsedCards.length} cards. Shuffling library...`;
 
-      // Set first card as commander if legend
+      // Only promote the first card to the command zone if it is actually a legendary
+      // creature, and REMOVE it from the library so it is not duplicated in both zones.
+      let libraryCards = parsedCards;
       const cmdCandidate = parsedCards[0];
-      if (cmdCandidate) {
+      const cmdTypes = cmdCandidate ? detectCardTypes(cmdCandidate) : null;
+      if (cmdCandidate && cmdTypes && cmdTypes.isLegendary && cmdTypes.isCreature) {
         const cmdWithUid = assignUid(Object.assign({}, cmdCandidate));
         setCommander(cmdWithUid);
+        libraryCards = parsedCards.slice(1);
       }
 
-      state.zones.player.library = parsedCards.map(c => assignUid(c));
+      state.zones.player.library = libraryCards.map(c => assignUid(c));
       shuffleLibrary();
       drawOpeningHand(7);
 
@@ -1990,9 +1988,19 @@ const Arena = (() => {
     state.life = { player: 40, opponent: 40 };
     state.mana = {W:0,U:0,B:0,R:0,G:0,C:0};
     state.poison = 0;
+    state.gameOver = false;
+    state.cmdMatrix = {
+      player: { p2: 0, p3: 0, p4: 0 },
+      p2: { player: 0, p3: 0, p4: 0 },
+      p3: { player: 0, p2: 0, p4: 0 },
+      p4: { player: 0, p2: 0, p3: 0 },
+    };
+    if (state.commanderZone) state.commanderZone.damageDealt = 0;
     state.combatAttackers = [];
     state.sicknessList = new Set();
     state._landPlayedThisTurn = false;
+    const goEl = document.getElementById('sandbox-game-over');
+    if (goEl) goEl.remove();
     document.getElementById('player-life').textContent = 40;
     document.getElementById('opp-life').textContent = 40;
     document.getElementById('turn-num').textContent = 1;
@@ -2107,9 +2115,9 @@ const Arena = (() => {
 
       tile.innerHTML = `
         <div class="tile-left">
-          <div class="tile-name">${dName}</div>
-          <div class="tile-meta">${dCardCount} cards · ${dFormat}</div>
-          ${deck.commander ? `<div class="tile-cmd">👑 ${deck.commander}</div>` : ''}
+          <div class="tile-name">${escapeHtml(dName)}</div>
+          <div class="tile-meta">${escapeHtml(String(dCardCount))} cards · ${escapeHtml(dFormat)}</div>
+          ${deck.commander ? `<div class="tile-cmd">👑 ${escapeHtml(deck.commander)}</div>` : ''}
         </div>
         ${deck._isPreset ? '<span class="preset-badge">AI PRESET</span>' : ''}
       `;
@@ -2270,20 +2278,6 @@ const Arena = (() => {
       toast('Failed to load deck.', 'error');
     }
   }
-      toast(`${deck.name} loaded! Good luck!`, 'info');
-
-      const modeBadge = document.getElementById('mode-badge');
-      if (modeBadge) modeBadge.textContent = 'Solo';
-
-      document.title = `${deck.name} — Grimore Arena`;
-
-    } catch (err) {
-      if (splash) splash.style.display = 'none';
-      if (selectPanel) selectPanel.style.display = 'flex';
-      advise('Failed to load deck. Check server connection.', 'error');
-      toast('Failed to load deck.', 'error');
-    }
-  }
 
   // ── Sound engine is consolidated above at line 972 ──────────
 
@@ -2433,9 +2427,13 @@ const Arena = (() => {
 
       aiCreatures.forEach(attacker => {
         const aPT = parsePT(attacker) || { power: 2, toughness: 2 };
+        const attackerTypes = detectCardTypes(attacker);
         const blockerIdx = blockersAvail.findIndex(blocker => {
+          const bTypes = detectCardTypes(blocker);
+          // CR 702.9c: a creature with flying can only be blocked by flying or reach.
+          if (attackerTypes.hasFlying && !bTypes.hasFlying && !bTypes.hasReach) return false;
           const bPT = parsePT(blocker) || { power: 1, toughness: 1 };
-          return bPT.toughness >= aPT.power || detectCardTypes(blocker).hasFlying === detectCardTypes(attacker).hasFlying;
+          return bPT.toughness >= aPT.power;
         });
         if (blockerIdx >= 0) {
           const blocker = blockersAvail.splice(blockerIdx, 1)[0];
@@ -2472,16 +2470,24 @@ const Arena = (() => {
     // Remove summoning sickness after AI turn ends
     state.zones.opponent.battlefield.forEach(c => { c._summoning_sick = false; });
 
-    // 6. END STEP & CLEANUP — pass turn back
+    // 6. Hand the turn back to the player through the proper start-of-turn sequence so
+    // untap/upkeep/draw actually run (previously it jumped straight to main1, leaving the
+    // player's permanents tapped forever and skipping the draw).
     advise('AI: End Step — Your Turn!', 'info');
-    setPhase('main1');
     state.turn++;
+    const turnEl = document.getElementById('turn-num');
+    if (turnEl) turnEl.textContent = state.turn;
+    setPhase('untap');   // untaps permanents, clears summoning sickness, resets land drop
+    setPhase('upkeep');
+    setPhase('draw');    // draws for the turn (turn > 1)
+    setPhase('main1');
     advise(`<strong>Turn ${state.turn} — Your Turn!</strong>`, 'success');
     toast(`Turn ${state.turn} — Your Turn!`, 'info');
   }
 
   // Enhanced Pass Phase handling (triggers AI turn when player finishes Cleanup step)
   function passPhase() {
+    if (state.gameOver) { toast('The game is over. Start a new game to keep playing.', 'warn'); return; }
     // Enforce: cannot advance with items on stack
     if (state.stack.length > 0) {
       advise('Resolve the stack before passing priority.', 'warning', '116.3b');
@@ -2522,6 +2528,35 @@ const Arena = (() => {
     });
   }
 
+  // ── Keyboard shortcuts ────────────────────────────────────
+  // F6 = pass priority, Ctrl/Cmd+D = draw a card, Esc = close open panels.
+  // (Restored — a prior truncated edit deleted this function but left the call
+  // in init(), which crashed the whole Play Realm boot sequence.)
+  function initKeyboard() {
+    if (window._grimoreKeyboardBound) return;
+    window._grimoreKeyboardBound = true;
+    document.addEventListener('keydown', (e) => {
+      const target = e.target || {};
+      const tag = (target.tagName || '').toUpperCase();
+      // Never hijack keys while the user is typing in a field.
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+
+      if (e.key === 'F6') {
+        e.preventDefault();
+        passPhase();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        drawCard();
+      } else if (e.key === 'Escape') {
+        const menu = document.getElementById('card-ctx-menu');
+        if (menu) menu.style.display = 'none';
+        const tokenPanel = document.getElementById('token-spawner-panel');
+        if (tokenPanel) tokenPanel.style.display = 'none';
+        if (typeof toggleAdvisorDrawer === 'function') toggleAdvisorDrawer(false);
+      }
+    });
+  }
+
   // ── Public Init ───────────────────────────────────────────
   function init() {
     initCanvas();
@@ -2545,7 +2580,7 @@ const Arena = (() => {
     // Auto-open advisor drawer when user asks Grim
     toggleAdvisorDrawer(true);
 
-    advise(`Asking Grim: "<em>${query}</em>"...`, 'info');
+    advise(`Asking Grim: "<em>${escapeHtml(query)}</em>"...`, 'info');
 
     // Build current board context snippet
     const bfCards = state.zones.player.battlefield.map(c => c.name).join(', ');
@@ -2559,7 +2594,7 @@ const Arena = (() => {
       });
       const data = await res.json();
       if (data.answer) {
-        advise(`<strong>Grim:</strong> ${data.answer}`, 'success', data.ruleCitation || null);
+        advise(`<strong>Grim:</strong> ${escapeHtml(data.answer)}`, 'success', data.ruleCitation || null);
       } else if (data.error) {
         advise(`Grim is unavailable: ${data.error}`, 'warning');
       }
@@ -2625,92 +2660,102 @@ const Arena = (() => {
     if (modeSelect) {
       modeSelect.value = fmt;
       switchGameMode(fmt);
+    }
+  }
+
   // ── INTERACTIVE CANVAS PARTICLE SHADER (60FPS Mana Embers) ──
-  function initArenaParticleCanvas() {
-    const canvas = document.getElementById('arena-canvas-bg');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
 
-    let width = canvas.width = window.innerWidth;
-    let height = canvas.height = window.innerHeight;
 
-    window.addEventListener('resize', () => {
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+  // ── Live Multiplayer Bridge (used by multiplayer-client.js / MP) ──
+  // Maps remote human players onto the p2..p4 opponent slots and exposes
+  // a serializable snapshot of the local player's board for sync.
+  function _mpBegin(opts) {
+    const seats = (opts && opts.seats) || [];
+    const mySeat = opts && opts.mySeat;
+    switchGameMode('pod');
+    const others = seats.filter(s => s.seat !== mySeat).sort((a, b) => a.seat - b.seat);
+    const slots = ['p2', 'p3', 'p4'];
+    state._mpSlotBySeat = {};
+    slots.forEach((slot, i) => {
+      const s = others[i];
+      if (s) {
+        state.opponents[slot].name = s.name;
+        state.opponents[slot].life = state.life.player;
+        state.opponents[slot].battlefield = [];
+        state.opponents[slot].graveyard = [];
+        state.opponents[slot].exile = [];
+        state._mpSlotBySeat[s.seat] = slot;
+      } else {
+        state.opponents[slot].name = '— Empty Seat —';
+        state.opponents[slot].battlefield = [];
+      }
     });
+    renderAllOpponentMiniPods();
+    const first = others[0];
+    if (first) switchFocusPlayer(state._mpSlotBySeat[first.seat]);
+    advise('Live multiplayer pod engaged. Opposing boards sync in real time.', 'info');
+  }
 
-    const colors = [
-      'rgba(254, 240, 138, ',
-      'rgba(56, 189, 248, ',
-      'rgba(192, 132, 252, ',
-      'rgba(248, 113, 113, ',
-      'rgba(74, 222, 128, ',
-      'rgba(168, 85, 247, '
-    ];
+  function _mpGetSnapshot() {
+    return {
+      life: state.life.player,
+      poison: state.poison,
+      commander: state.commanderZone.card ? (state.commanderZone.card.name || null) : null,
+      handCount: state.zones.player.hand.length,
+      graveyardCount: state.zones.player.graveyard.length,
+      turn: state.turn,
+      phase: state.phase,
+      // Emit the engine's real field names (the state stores _tapped/_counters, not
+      // tapped/counters) AND the _-prefixed shape createCardElement expects, so remote
+      // players see opponents' tapped state, P/T, and counters correctly.
+      battlefield: state.zones.player.battlefield.map(c => {
+        const pt = parsePT(c) || {};
+        return {
+          name: c.name || '',
+          scryfallId: c.scryfallId || c.scryfall_id || c.id || null,
+          _uid: c._uid,
+          _tapped: !!c._tapped,
+          _types: c._types || detectCardTypes(c),
+          _counters: { pp: (c._counters && c._counters.pp) || 0, mm: (c._counters && c._counters.mm) || 0 },
+          power: pt.power,
+          toughness: pt.toughness,
+          power_toughness: (pt.power !== undefined && pt.toughness !== undefined) ? `${pt.power}/${pt.toughness}` : undefined,
+        };
+      }),
+    };
+  }
 
-    const particles = [];
-    const count = Math.min(65, Math.floor(width / 24));
+  function _mpApplyRemote(seat, snap) {
+    if (!snap || !state._mpSlotBySeat) return;
+    const slot = state._mpSlotBySeat[seat];
+    if (!slot || !state.opponents[slot]) return;
+    const opp = state.opponents[slot];
+    opp.life = typeof snap.life === 'number' ? snap.life : opp.life;
+    opp.battlefield = Array.isArray(snap.battlefield) ? snap.battlefield : [];
+    if (snap.commander) opp.commander = snap.commander;
+    opp.handCount = snap.handCount;
+    opp.graveyardCount = snap.graveyardCount;
+    renderOpponentMiniPod(slot);
 
-    for (let i = 0; i < count; i++) {
-      particles.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4 - 0.2,
-        radius: Math.random() * 2.2 + 1.2,
-        colorPrefix: colors[Math.floor(Math.random() * colors.length)],
-        alpha: Math.random() * 0.5 + 0.25,
-        pulseSpeed: Math.random() * 0.02 + 0.008
-      });
+    // Refresh the focused-opponent detail view quietly (no advisor spam).
+    if (state.focusOpponent === slot) {
+      const oppLife = document.getElementById('opp-life');
+      const oppLabel = document.getElementById('opp-label');
+      if (oppLife) oppLife.textContent = opp.life;
+      if (oppLabel) oppLabel.textContent = opp.name;
+      const oppBf = document.getElementById('opponent-battlefield');
+      if (oppBf) {
+        oppBf.querySelectorAll('.arena-card').forEach(c => c.remove());
+        (opp.battlefield || []).forEach(card => {
+          oppBf.appendChild(createCardElement(card, slot, 'battlefield'));
+        });
+      }
     }
+  }
 
-    let mouseX = -1000;
-    let mouseY = -1000;
-    window.addEventListener('mousemove', (e) => {
-      mouseX = e.clientX;
-      mouseY = e.clientY;
-    });
-
-    function renderFrame() {
-      ctx.clearRect(0, 0, width, height);
-
-      particles.forEach(p => {
-        p.x += p.vx;
-        p.y += p.vy;
-
-        if (p.x < 0) p.x = width;
-        if (p.x > width) p.x = 0;
-        if (p.y < 0) p.y = height;
-        if (p.y > height) p.y = 0;
-
-        const dx = mouseX - p.x;
-        const dy = mouseY - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 180 && dist > 0) {
-          const force = (180 - dist) / 180 * 0.015;
-          p.x += (dx / dist) * force * 15;
-          p.y += (dy / dist) * force * 15;
-        }
-
-        p.alpha += p.pulseSpeed;
-        if (p.alpha > 0.75 || p.alpha < 0.2) p.pulseSpeed = -p.pulseSpeed;
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `${p.colorPrefix}${Math.max(0.1, Math.min(0.8, p.alpha))})`;
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius * 2.5, 0, Math.PI * 2);
-        ctx.fillStyle = `${p.colorPrefix}${Math.max(0.02, p.alpha * 0.15)})`;
-        ctx.fill();
-      });
-
-      requestAnimationFrame(renderFrame);
-    }
-
-    renderFrame();
+  function _mpNotify(msg, type) {
+    toast(msg, type || 'info');
+    advise(msg, type || 'log');
   }
 
   return {
@@ -2752,6 +2797,8 @@ const Arena = (() => {
     rollDie, newGame, skipDeckSelect, exitToMain, importPastedDecklist,
     // Context menu internal handlers
     _ctxAttack, _ctxAddCounter, _ctxMoveZone, _ctxClone,
+    // Live Multiplayer Bridge
+    _mpBegin, _mpGetSnapshot, _mpApplyRemote, _mpNotify,
   };
 })();
 

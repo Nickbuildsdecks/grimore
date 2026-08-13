@@ -12,6 +12,16 @@ global.mtgjsonSyncStatus = {
 };
 
 async function downloadAndUnzipMTGJSON() {
+  // The MTGJSON import works by ATTACHing a SQLite file, which Postgres cannot do. Fail fast here
+  // instead of downloading ~200MB and then erroring at the ATTACH step on a Postgres deployment.
+  if (dbHelper.isPostgres) {
+    const msg = "MTGJSON sync requires the SQLite backend; it cannot run on the Postgres deployment.";
+    global.mtgjsonSyncStatus.status = 'error';
+    global.mtgjsonSyncStatus.message = msg;
+    global.mtgjsonSyncStatus.error = msg;
+    throw new Error(msg);
+  }
+
   if (global.mtgjsonSyncStatus.status === 'downloading' || global.mtgjsonSyncStatus.status === 'unzipping') {
     throw new Error("A database sync task is already in progress.");
   }

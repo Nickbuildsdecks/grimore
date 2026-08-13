@@ -69,7 +69,7 @@ async function prewarmCardPrices() {
   }
   console.log(`✓ Local cache pre-warmed ${localUpdates} card prices.`);
 
-  // 2. Re-calculate cheapest total price for all 93 decks
+  // 2. Re-calculate cheapest total price for all decks
   const allDecks = await query("SELECT id, deck_name FROM decks");
   console.log(`Recalculating cheapest total prices for ${allDecks.length} decks...`);
 
@@ -87,7 +87,7 @@ async function prewarmCardPrices() {
     );
   }
 
-  console.log("✓ All 93 deck total prices recalculated and updated successfully.");
+  console.log(`OK: recalculated cheapest total prices for ${allDecks.length} deck(s).`);
   console.log("=== CARD PRICE PRE-WARMING COMPLETE ===\n");
 }
 
