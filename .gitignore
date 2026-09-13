@@ -56,3 +56,7 @@ public/changes.html
 public/changes.css
 public/changes.js
 
+
+# v2 monorepo build output
+dist/
+.turbo/
