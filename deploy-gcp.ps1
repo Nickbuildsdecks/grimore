@@ -39,6 +39,15 @@ function Show-DeploymentProgress {
     Write-Host "`n[PROGRESS $Percent%] [$bar] $Status" -ForegroundColor Yellow
 }
 
+# STEP 0: Preflight — block the deploy if any JS fails to parse or a CSS file is brace-unbalanced.
+# Catches AI-edit truncations / duplicate declarations before they ship (see scripts/preflight.js).
+Write-Host "`n[PREFLIGHT] Validating source before build..." -ForegroundColor Yellow
+node (Join-Path $PSScriptRoot "scripts/preflight.js")
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Preflight failed - aborting deploy. Fix the parse/brace errors above and retry."
+    exit 1
+}
+
 # STEP 1: Local Pre-Compilation
 Show-DeploymentProgress -Percent 20 -Status "[1/5] Building React frontend static bundle locally..."
 Set-Location -Path (Join-Path $PSScriptRoot "web")
@@ -51,7 +60,7 @@ if (Test-Path "gcp-export") { Remove-Item "gcp-export" -Recurse -Force }
 New-Item -ItemType Directory -Path "gcp-export" -Force | Out-Null
 
 $filesToCopy = @(
-    "server.js", "db.js", "mtgjsonService.js", "scryfallService.js",
+    "server.js", "db.js", "mtgjsonService.js", "scryfallService.js", "multiplayer.js",
     "package.json", "package-lock.json", "Dockerfile", ".dockerignore",
     "docker-compose.yml", "Caddyfile", ".env.example", "logo.svg", "logo.ico"
 )
@@ -65,16 +74,16 @@ Copy-Item "public" -Destination "gcp-export\public" -Recurse -Force
 if (Test-Path "execution") {
     Copy-Item "execution" -Destination "gcp-export\execution" -Recurse -Force
 }
-if (Test-Path "grimore.db") {
-    Copy-Item "grimore.db" -Destination "gcp-export\grimore.db" -Force
-    New-Item -ItemType Directory -Path "gcp-export\data" -Force | Out-Null
-    Copy-Item "grimore.db" -Destination "gcp-export\data\grimore.db" -Force
-}
+
+# SECURITY / DATA-SAFETY: never ship the local dev grimore.db to the VM.
+# Doing so (a) baked the full user database into Docker image layers, and
+# (b) overwrote live production data with a stale local snapshot on every deploy.
+# Production data lives only on the VM (persisted via the ./data docker volume).
 
 # Copy pre-built React dist directory
-if (Test-Path "web\dist") {
-    New-Item -ItemType Directory -Path "gcp-export\web" -Force | Out-Null
-    Copy-Item "web\dist" -Destination "gcp-export\web\dist" -Recurse -Force
+if (Test-Path "apps\web\dist") {
+    New-Item -ItemType Directory -Path "gcp-export\apps\web" -Force | Out-Null
+    Copy-Item "apps\web\dist" -Destination "gcp-export\apps\web\dist" -Recurse -Force
 }
 
 # STEP 3: Compressing Export Zip
@@ -91,9 +100,13 @@ if ($LASTEXITCODE -ne 0) {
     exit
 }
 
-# STEP 5: Fast Remote Container Swap & Database Sync
-Show-DeploymentProgress -Percent 95 -Status "[5/5] Restarting live containers and syncing database..."
-ssh -o StrictHostKeyChecking=no "${VM_USER}@${VM_IP}" "unzip -o ~/grimore-gcp-export.zip -d ~/grimore; cd ~/grimore && sudo docker-compose up --build -d; sleep 3; sudo docker exec grimore-app node execution/migrate_sqlite_to_postgres.js"
+# STEP 5: Fast Remote Container Swap
+# NOTE: the automatic `migrate_sqlite_to_postgres.js` step was REMOVED. It ran on every
+# deploy and TRUNCATEd production tables, re-seeding them from the shipped local DB — i.e.
+# guaranteed user-data loss after launch. Run any one-time migration MANUALLY, with a
+# backup, behind the migration script's own FORCE_RESEED guard.
+Show-DeploymentProgress -Percent 95 -Status "[5/5] Restarting live containers..."
+ssh -o StrictHostKeyChecking=no "${VM_USER}@${VM_IP}" "unzip -o ~/grimore-gcp-export.zip -d ~/grimore; cd ~/grimore && sudo docker-compose up --build -d"
 
 Show-DeploymentProgress -Percent 100 -Status "Deployment Complete! Grimore is Live!"
 

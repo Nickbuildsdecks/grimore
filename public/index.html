@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grimore</title>
   <meta name="description" content="Sleek, minimalist dark theme manager for Magic: The Gathering Commander decks, visual budget building, social deck sharing, and local store events.">
-  <meta name='impact-site-verification' value='4fe02577-08b4-4537-9dc8-bf3e5d2c714f'>
-  <link rel="icon" type="image/svg+xml" href="logo.svg">
-    <link rel="stylesheet" href="style.css?v=100">
+  <!-- AAA Video Game Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=Outfit:wght@500;700;800;900&family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=101">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -39,6 +41,10 @@
           <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           <span>My Decks</span>
         </button>
+        <button class="nav-btn" id="nav-btn-swipe" aria-label="Swipe Stack" title="Swipe Stack" onclick="showSection('swipe')">
+          <svg viewBox="0 0 24 24" style="fill: #ef4444; stroke: none; filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.6));"><path d="M16.5 4C15 6.5 13.5 8 13.5 10C13.5 10.5 13.7 11 14 11.5C12 11 11 9.5 11 7.5C8.5 10 7 12.5 7 15.5C7 18.5 9.5 21 12.5 21C15.5 21 18 18.5 18 15.5C18 11.5 16.5 7.5 16.5 4Z"/></svg>
+          <span>Swipe Stack</span>
+        </button>
         <button class="nav-btn" id="nav-btn-search" aria-label="Card Search" title="Card Search" onclick="window.location.href='search.html'">
           <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
           <span>Card Search</span>
@@ -54,6 +60,26 @@
         <button class="nav-btn" id="nav-btn-collections" aria-label="Collections" title="Collections" onclick="window.location.href='collection.html'">
           <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zm0 10h8v8H3zM13 3h8v8h-8zm0 10h8v8h-8z"/></svg>
           <span>Collections</span>
+        </button>
+        <button class="nav-btn" id="nav-btn-sandbox" aria-label="Grimore Arena" title="Grimore Premium Arena — MTG Playtest Sandbox" onclick="window.location.href='/sandbox.html'">
+          <svg viewBox="0 0 24 24"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+          <span>Arena</span>
+        </button>
+        <button class="nav-btn" id="nav-btn-changes" aria-label="Command Center" title="Grimore Local Command Center" style="display: none;" onclick="window.location.href='/changes'">
+          <svg viewBox="0 0 24 24" style="fill:#8b5cf6;"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+          <span>Command Center</span>
+        </button>
+        <script>
+          if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            document.addEventListener('DOMContentLoaded', () => {
+              const cBtn = document.getElementById('nav-btn-changes');
+              if (cBtn) cBtn.style.display = 'flex';
+            });
+          }
+        </script>
+        <button class="nav-btn" id="nav-btn-drafts" aria-label="Draft Simulator" title="Draft Simulator" onclick="showSection('drafts')">
+          <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/></svg>
+          <span>Draft Pods</span>
         </button>
         <button class="nav-btn" id="nav-btn-patreon" aria-label="Support on Patreon" title="Support on Patreon" onclick="window.open('https://www.patreon.com/NickBuildsDecks', '_blank')" style="margin-top: auto; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 0.75rem; color: #ff424d;">
           <svg viewBox="0 0 24 24" style="fill: currentColor; width: 18px; height: 18px;"><path d="M15.217 0c-4.856 0-8.795 3.939-8.795 8.795 0 4.839 3.939 8.795 8.795 8.795 4.839 0 8.796-3.956 8.796-8.795C24.013 3.939 20.056 0 15.217 0zm-15.217 24h4.13V4.8H0V24z"/></svg>
@@ -206,8 +232,46 @@
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
             <div style="display: inline-flex; background: var(--bg-dark); padding: 3px; border-radius: 8px; border: 1px solid var(--border-light);">
-              <button type="button" id="btn-discover-view-grid" class="btn btn-sm btn-primary" onclick="switchDiscoverViewMode('grid')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;">🎴 Grid</button>
-              <button type="button" id="btn-discover-view-swipe" class="btn btn-sm btn-secondary" onclick="switchDiscoverViewMode('swipe')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;">🔥 Swipe Stack</button>
+              <button type="button" id="btn-discover-view-grid" class="btn btn-sm btn-primary" onclick="switchDiscoverViewMode('grid')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;">
+                <svg viewBox="0 0 24 24" aria-hidden="true" style="width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                Grid
+              </button>
+              <button type="button" id="btn-discover-view-swipe" class="btn btn-sm btn-secondary" onclick="switchDiscoverViewMode('swipe')" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;">
+                <svg viewBox="0 0 32 32" aria-hidden="true" style="width: 17px; height: 17px; filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.75));">
+                  <defs>
+                    <linearGradient id="hdFlameGradOuter" x1="0" y1="1" x2="0" y2="0">
+                      <stop offset="0%" stop-color="#dc2626"/>
+                      <stop offset="55%" stop-color="#ef4444"/>
+                      <stop offset="100%" stop-color="#f97316"/>
+                    </linearGradient>
+                    <linearGradient id="hdFlameGradInner" x1="0" y1="1" x2="0" y2="0">
+                      <stop offset="0%" stop-color="#ea580c"/>
+                      <stop offset="60%" stop-color="#facc15"/>
+                      <stop offset="100%" stop-color="#ffffff"/>
+                    </linearGradient>
+                    <radialGradient id="hdFlameCoreGlow" cx="50%" cy="70%" r="50%">
+                      <stop offset="0%" stop-color="#ffffff"/>
+                      <stop offset="60%" stop-color="#fef08a"/>
+                      <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+                    </radialGradient>
+                  </defs>
+
+                  <!-- Outer Ambient Flame Base -->
+                  <path fill="url(#hdFlameGradOuter)" d="M22 6c-2 3.5-4 5.5-4 8.5 0 .7.2 1.4.5 2C16 15 14.5 13 14.5 10c-3.5 3.5-5.5 7-5.5 11 0 6.1 4.9 11 11 11s11-4.9 11-11c0-6-3.5-11.5-9-15z" transform="scale(0.82) translate(1.5, 0)"/>
+
+                  <!-- Inner Hot Core -->
+                  <path fill="url(#hdFlameGradInner)" d="M16 16c-2.8 0-5 2.2-5 5 0 1.6.8 3 2 3.8.5-.7 1.2-1.3 2-1.8 1.2.5 2 1.1 2.5 1.8 1.2-.8 2-2.2 2-3.8 0-2.8-2.2-5-4.5-5z" transform="scale(0.82) translate(1.5, 0)"/>
+
+                  <!-- Core Plasma Glow -->
+                  <circle cx="14.5" cy="17.5" r="3.2" fill="url(#hdFlameCoreGlow)"/>
+
+                  <!-- Ember Spark Particles -->
+                  <circle cx="9" cy="8" r="0.9" fill="#fef08a" opacity="0.9"/>
+                  <circle cx="21" cy="6" r="0.75" fill="#facc15" opacity="0.85"/>
+                  <circle cx="24" cy="13" r="0.8" fill="#f97316" opacity="0.9"/>
+                </svg>
+                Swipe Stack
+              </button>
             </div>
             <select id="discover-sort" class="input-field" style="margin: 0; width: 130px; background: var(--bg-dark); cursor: pointer;" onchange="loadDiscoverDecks()">
               <option value="recent">Recent Decks</option>
@@ -225,6 +289,46 @@
         <!-- Dynamic Swipe Stack Container -->
         <div id="discover-swipe-container" class="swipe-container" style="display: none;">
           <div id="swipe-card-stack" class="swipe-card-stack">
+            <!-- Dynamic swiping cards render here -->
+          </div>
+          <div class="swipe-actions">
+            <button type="button" class="swipe-btn swipe-btn-pass" aria-label="Pass / Skip" title="Pass (Left Arrow)" onclick="triggerSwipeAction('left')">
+              <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <button type="button" class="swipe-btn swipe-btn-inspect" aria-label="Inspect Deck" title="Inspect Deck (Enter)" onclick="triggerSwipeAction('inspect')">
+              <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: currentColor;"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+            </button>
+            <button type="button" class="swipe-btn swipe-btn-like" aria-label="Like Deck" title="Like / Save Deck (Right Arrow)" onclick="triggerSwipeAction('right')">
+              <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: currentColor;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dedicated Flagship Swipe Stack Arena View -->
+    <section id="swipe-view" class="view-section">
+      <div class="panel" style="background: linear-gradient(145deg, rgba(15, 15, 23, 0.95), rgba(8, 8, 14, 0.98)); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(239, 68, 68, 0.15); padding: 1.75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.85rem;">
+            <div style="width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(249, 115, 22, 0.15)); border: 1px solid rgba(239, 68, 68, 0.4); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);">
+              <svg viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: #ef4444; filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.6));"><path d="M16.5 4C15 6.5 13.5 8 13.5 10C13.5 10.5 13.7 11 14 11.5C12 11 11 9.5 11 7.5C8.5 10 7 12.5 7 15.5C7 18.5 9.5 21 12.5 21C15.5 21 18 18.5 18 15.5C18 11.5 16.5 7.5 16.5 4Z"/></svg>
+            </div>
+            <div>
+              <h2 style="margin: 0; font-size: 1.45rem; font-family: 'Cinzel', serif; font-weight: 900; color: var(--text-pure); letter-spacing: 0.5px;">SWIPE STACK</h2>
+              <span style="font-family: 'Rajdhani', sans-serif; font-size: 0.8rem; font-weight: 700; color: #ff6b6b; letter-spacing: 1px; text-transform: uppercase;">Interactive Deck Matcher & Discovery Engine</span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <span style="font-family: 'Outfit', sans-serif; font-size: 0.8rem; color: var(--text-muted); background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+              Hotkeys: <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff;">←</kbd> Pass | <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff;">→</kbd> Like
+            </span>
+          </div>
+        </div>
+
+        <!-- Swipe Card Stack Area -->
+        <div id="standalone-swipe-container" class="swipe-container" style="display: flex;">
+          <div id="standalone-swipe-card-stack" class="swipe-card-stack">
             <!-- Dynamic swiping cards render here -->
           </div>
           <div class="swipe-actions">
@@ -299,9 +403,13 @@
 
           <!-- Actions aligned right -->
           <div class="deck-library-actions">
+            <button type="button" class="btn btn-primary" onclick="openUniversalImportModal()" style="font-weight: 700;">
+              <svg viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Import Account
+            </button>
             <button type="button" class="btn btn-secondary" onclick="toggleImportForm()">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
-              Import
+              Quick Import
             </button>
             <button type="button" class="btn btn-gold" onclick="openVisualDeckbuilder()">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -677,6 +785,45 @@
               </table>
             </div>
           </div>
+    </section>
+
+    <!-- Draft Pods Section -->
+    <section id="drafts-view" class="view-section">
+      <div class="container" style="max-width: 1200px; padding: 2rem 1rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <h2 style="font-family: 'Cinzel', serif; font-weight: 800; color: var(--text-pure); margin: 0; font-size: 1.6rem;">🎲 Booster Draft & Sealed Simulator</h2>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.25rem 0 0 0;">Draft 8-player pods with intelligent AI bots or test Sealed Deck formats.</p>
+          </div>
+          <button type="button" class="btn btn-gold" onclick="window.createNewDraftSession()">✨ Start New 8-Seat Draft Pod</button>
+        </div>
+
+        <div id="draft-table-container" style="display: none; background: rgba(12, 13, 20, 0.85); border: 1px solid var(--border-medium); border-radius: var(--radius-lg); padding: 1.5rem; flex-direction: column; gap: 1.5rem; box-shadow: 0 16px 40px rgba(0,0,0,0.6);">
+          <!-- Draft Status Topline -->
+          <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.3); padding: 0.75rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-light);">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <span style="font-size: 0.85rem; font-weight: 800; color: var(--color-gold);">Pack <span id="draft-pack-num">1</span> of 3</span>
+              <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted);">Pick <span id="draft-pick-num">1</span> of 15</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
+              <span>8-Seat Pod (7 AI Bots Active)</span>
+            </div>
+          </div>
+
+          <!-- Current Pack Grid -->
+          <div>
+            <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin: 0 0 0.75rem 0; letter-spacing: 0.05em;">Current Pack Cards (Click card to pick)</h4>
+            <div id="draft-pack-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem; min-height: 200px;"></div>
+          </div>
+
+          <!-- Drafted Pool -->
+          <div style="border-top: 1px solid var(--border-light); padding-top: 1rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+              <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--color-gold); margin: 0; letter-spacing: 0.05em;">Drafted Pool (<span id="draft-pool-count">0</span> cards)</h4>
+              <button type="button" id="btn-export-draft-deck" class="btn btn-secondary btn-sm" onclick="window.exportDraftedPoolToDeck()" style="display: none;">📥 Export Pool to My Decks</button>
+            </div>
+            <div id="draft-pool-grid" style="display: flex; flex-wrap: wrap; gap: 0.5rem; min-height: 120px; background: rgba(0,0,0,0.2); border: 1px dashed var(--border-medium); border-radius: var(--radius-md); padding: 0.75rem;"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -734,7 +881,7 @@
     </div>
 
     <!-- Three-Panel Layout -->
-    <div class="deck-view-grid" style="display: grid; grid-template-columns: 310px 2.3fr 0.5fr; gap: 1.5rem; flex-grow: 1; overflow: hidden; padding-top: 1rem;">
+    <div class="deck-view-grid" style="display: grid; grid-template-columns: 310px 2.3fr 0.5fr; gap: 1rem; flex-grow: 1; overflow: hidden; padding-top: 0.5rem;">
 
       <!-- Panel 1: Commander Showroom & Analytics -->
       <div style="display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 1.25rem; overflow: hidden; gap: 1rem;">
@@ -1034,7 +1181,11 @@
             <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: nowrap; flex-shrink: 0;">
               <input type="text" id="builder-deck-name" class="input-field" placeholder="Deck Name" style="width: 140px; height: 28px; margin: 0; padding: 0 0.5rem; font-size: 0.75rem; font-weight: 600; background: var(--bg-surface);" value="My Custom Deck" oninput="window.debouncedAutoSave()">
               <button type="button" class="btn btn-gold btn-sm" onclick="openCardSearchModal()" style="height: 28px; font-size: 0.75rem; padding: 0 0.65rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; border-radius: var(--radius-sm); margin: 0;"><svg viewBox="0 0 24 24" style="width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search</button>
-              <button id="builder-suggestions-btn" type="button" class="btn btn-secondary btn-sm" onclick="openSuggestionsPage()" style="height: 28px; font-size: 0.75rem; padding: 0 0.65rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; border-radius: var(--radius-sm); margin: 0;" title="Get card suggestions from EDHREC"><svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: #f59e0b; stroke: #f59e0b; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1.55.59 2.94 1.5 4 .76.76 1.23 1.52 1.41 2.5z"/></svg> Suggestions</button>
+              <button type="button" class="btn btn-gold btn-sm" onclick="window.launchSandboxFromBuilder()" style="height: 28px; font-size: 0.75rem; font-weight: 700; margin: 0; padding: 0 0.65rem; display: inline-flex; align-items: center; gap: 0.35rem; color: #000;" title="Launch Full-Page Playtest Sandbox">🎮 Launch Sandbox</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="window.openDeckTunerModal()" style="height: 28px; font-size: 0.75rem; font-weight: 700; margin: 0; padding: 0 0.65rem; display: inline-flex; align-items: center; gap: 0.35rem; color: #f59e0b;" title="Deck Hyper-Tuner & AI Advisor">Tuner</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="window.openProxyPrintModal()" style="height: 28px; font-size: 0.75rem; font-weight: 700; margin: 0; padding: 0 0.65rem; display: inline-flex; align-items: center; gap: 0.35rem; color: #a855f7;" title="Print 3x3 Proxy Sheets">Proxies</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-tcg-cart-export" onclick="window.exportDeckToTCGplayer()" style="height: 28px; font-size: 0.75rem; font-weight: 700; margin: 0; padding: 0 0.65rem; display: inline-flex; align-items: center; gap: 0.35rem; color: #f59e0b; border-color: rgba(245,158,11,0.3);" title="Buy this deck on TCGplayer (affiliate link)">Buy</button>
+
               <button type="button" id="builder-settings-toggle" class="btn btn-secondary btn-sm" onclick="window.toggleBuilderAdvancedSettings()" style="height: 28px; font-size: 0.75rem; font-weight: 700; margin: 0; padding: 0 0.65rem; display: inline-flex; align-items: center; gap: 0.35rem;" title="Advanced Deck Settings">
                 <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: #9ca3af; stroke: none; flex-shrink: 0;"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg>
                 Advanced
@@ -1686,9 +1837,189 @@
             <span style="font-size: 0.6rem;">Damage</span>
           </button>
         </div>
-      </div>
     </div>
   </section>
+
+  <!-- ========================================================================= -->
+  <!-- DEDICATED FULL-PAGE MTG PLAYTEST SANDBOX & AI BATTLE ARENA PAGE           -->
+  <!-- ========================================================================= -->
+  <section id="sandbox-view" class="view-section" style="padding: 1rem; max-width: 1800px; margin: 0 auto; width: 100%;">
+    
+    <!-- Clean Top Control Bar with Top-Right Realm Tools Drawer Trigger -->
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--bg-card); padding: 0.6rem 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--border-light); margin-bottom: 0.75rem;">
+      
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="showSection('decks')" style="font-weight: 700; color: var(--color-gold);">◀ Exit Realm</button>
+        
+        <h2 style="font-family: 'Cinzel', serif; font-weight: 800; color: var(--color-gold); margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+          🎮 MTG Playing Realm
+        </h2>
+        <span id="sb-room-badge" style="font-size: 0.75rem; color: #38bdf8; font-weight: 700; background: rgba(56, 189, 248, 0.1); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3);">Solo Realm</span>
+      </div>
+
+      <!-- Top Right Realm Tools Drawer Trigger -->
+      <button type="button" class="btn btn-gold btn-sm" onclick="window.toggleSandboxToolsDrawer()" style="font-weight: 800; display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem;">
+        ⚙️ Realm Tools & Settings ▾
+      </button>
+
+    </div>
+
+    <!-- Main Sandbox Layout Grid: Left Playmat Arena + Tall Skinnier Right Action Console -->
+    <div style="display: grid; grid-template-columns: 1fr 250px; gap: 1rem; align-items: stretch;">
+      
+      <!-- Left Column: Arena Battlefield & Hand Piles -->
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        
+        <!-- AI Opponent Arena Panel (Visible when AI mode enabled) -->
+        <div id="sandbox-ai-panel" style="display: none; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: var(--radius-md); padding: 0.75rem; flex-direction: column; gap: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.35rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span id="sb-ai-name" style="font-weight: 800; color: #ef4444; font-size: 1rem;">Atraxa, Praetors' Voice</span>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Turn <strong id="sb-ai-turn">1</strong> • Phase: <strong id="sb-ai-phase" style="color: #38bdf8;">Main 1</strong></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span style="font-size: 1.1rem; font-weight: 800; color: #ef4444;">AI Life: <strong id="sb-ai-life">40</strong></span>
+              <button type="button" class="btn btn-gold btn-sm" onclick="window.executeNextAiPhase()">Step Phase</button>
+              <button type="button" class="btn btn-danger btn-sm" onclick="window.playerPassTurnToAi()">Full AI Turn</button>
+            </div>
+          </div>
+          <!-- AI Battlefield Cards Grid -->
+          <div id="sb-ai-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.5rem; min-height: 100px; background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: var(--radius-sm); border: 1px dashed var(--border-medium);">
+            <!-- AI cards rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- Player Battlefield Arena (Seamless Organic Playmat) -->
+        <div style="background: radial-gradient(ellipse at center, rgba(20, 16, 32, 0.6) 0%, rgba(8, 6, 14, 0.95) 100%); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 16px; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; box-shadow: inset 0 0 50px rgba(0,0,0,0.6);">
+          
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.5rem;">
+            <span style="font-family: 'Cinzel', serif; font-weight: 700; color: var(--color-gold); font-size: 0.95rem;">⚔️ Player Battlefield</span>
+            <div style="display: flex; align-items: center; gap: 1rem; font-size: 0.85rem; font-weight: 700;">
+              <span>Player Life: <strong id="sb-player-life" style="color: #4ade80; font-size: 1.1rem;">40</strong></span>
+              <button type="button" class="btn btn-secondary btn-sm" style="padding: 1px 6px;" onclick="window.changeSandboxLife(1)">+1</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="padding: 1px 6px;" onclick="window.changeSandboxLife(-1)">-1</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="padding: 1px 6px;" onclick="window.changeSandboxLife(-5)">-5</button>
+              <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 0.5rem;">Total Permanents: <strong id="sb-board-count">0</strong></span>
+            </div>
+          </div>
+
+          <!-- Seamless Open Player Battlefield Playmat -->
+          <div id="sb-player-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 0.85rem; min-height: 380px; padding: 0.5rem; align-content: start;">
+            <!-- All player permanents rendered seamlessly together on open playmat -->
+          </div>
+
+        </div>
+
+        <!-- Bottom Tray: Hand, Command Zone, Piles -->
+        <div style="display: grid; grid-template-columns: 140px 1fr 140px 140px; gap: 0.75rem; align-items: stretch;">
+          
+          <!-- Command Zone Box -->
+          <div style="background: var(--bg-card); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: var(--radius-md); padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; align-items: center; text-align: center;">
+            <span style="font-size: 0.7rem; font-weight: 700; color: var(--color-gold);">Command Zone</span>
+            <div id="sb-commander-card" style="width: 100px; height: 130px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border-medium); background: #000; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; color: var(--text-muted);">
+              No Commander
+            </div>
+            <button type="button" class="btn btn-gold btn-sm" style="width: 100%; font-size: 0.68rem; padding: 2px 4px;" onclick="window.sandboxCastCommander()">Cast (+<span id="sb-cmd-tax">0</span> Tax)</button>
+          </div>
+
+          <!-- Hand Zone Tray -->
+          <div style="background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-pure);">Your Hand (<span id="sb-hand-count">0</span> cards)</span>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.65rem; padding: 1px 6px;" onclick="window.sandboxDrawCard()">Draw Card</button>
+            </div>
+            <!-- Hand Cards Grid -->
+            <div id="sb-hand-grid" style="display: flex; gap: 0.5rem; overflow-x: auto; min-height: 140px; padding: 0.25rem; background: rgba(0,0,0,0.3); border-radius: var(--radius-sm); border: 1px dashed var(--border-medium); align-items: center;">
+              <!-- Cards in hand rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Library Stack Box -->
+          <div style="background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; align-items: center; justify-content: center; text-align: center;">
+            <span style="font-size: 0.7rem; font-weight: 700; color: #38bdf8;">Library Stack</span>
+            <div style="font-size: 1.4rem; font-weight: 800; color: var(--text-pure);" id="sb-library-count">99</div>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">Cards Remaining</span>
+            <button type="button" class="btn btn-secondary btn-sm" style="width: 100%; font-size: 0.68rem; margin-top: 0.25rem;" onclick="window.openSandboxLibraryModal()">🔍 Search Deck</button>
+          </div>
+
+          <!-- Graveyard & Exile Stack Box -->
+          <div style="background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; align-items: center; justify-content: center; text-align: center;">
+            <span style="font-size: 0.7rem; font-weight: 700; color: #fb923c;">Graveyard (<span id="sb-gy-count">0</span>)</span>
+            <button type="button" class="btn btn-secondary btn-sm" style="width: 100%; font-size: 0.68rem;" onclick="window.openSandboxGraveyardModal()">Inspect GY</button>
+            <span style="font-size: 0.7rem; font-weight: 700; color: #c084fc; margin-top: 0.25rem;">Exile (<span id="sb-exile-count">0</span>)</span>
+            <button type="button" class="btn btn-secondary btn-sm" style="width: 100%; font-size: 0.68rem;" onclick="window.openSandboxExileModal()">Inspect Exile</button>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Right Column: Tall Skinnier Action Console Panel -->
+      <div style="display: flex; flex-direction: column; gap: 0.75rem; height: 100%;">
+        
+        <!-- AI Opening Hand Evaluator -->
+        <div style="background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.25rem;">
+            <span style="font-weight: 700; font-size: 0.75rem; color: var(--color-gold);">AI Hand Evaluator</span>
+            <span id="sb-hand-grade-badge" class="badge" style="background: #3b82f6; font-size: 0.65rem; padding: 2px 6px;">Grade B+</span>
+          </div>
+          <div id="sb-hand-eval-text" style="font-size: 0.72rem; color: var(--text-high); line-height: 1.35;">
+            Evaluating opening hand...
+          </div>
+        </div>
+
+        <!-- Tall Action Log Console Panel -->
+        <div style="background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-height: 550px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.35rem;">
+            <span style="font-weight: 700; font-size: 0.75rem; color: var(--text-pure);">Game Action Log</span>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">Turn <strong id="sb-turn-num">1</strong></span>
+          </div>
+          <div id="sb-log-container" style="flex: 1; min-height: 480px; max-height: 700px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 0.7rem; color: #a7f3d0; background: #05050a; border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 0.6rem; display: flex; flex-direction: column; gap: 0.35rem; line-height: 1.4;">
+            <div>> Playtest Sandbox initialized. Select a deck to begin.</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </section>
+
+  <!-- AUXILIARY MODAL: Visual Library Inspector & Tutor Overlay -->
+  <div id="sandbox-library-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 13000;">
+    <div class="modal" style="max-width: 950px; width: 95%; height: 85vh; border: 1px solid var(--border-medium); padding: 1.25rem; background: var(--bg-card); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 0.75rem; overflow: hidden;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem;">
+        <h3 style="font-family: 'Cinzel', serif; font-weight: 700; color: #38bdf8; margin: 0; font-size: 1.1rem;">🔍 Visual Library Tutor Inspector</h3>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('sandbox-library-modal').style.display='none'">✕ Close</button>
+      </div>
+      <input type="text" id="sb-lib-search-input" class="input-field" placeholder="Search cards in library..." style="margin: 0; background: var(--bg-surface); height: 32px; font-size: 0.8rem;" oninput="window.filterSandboxLibrary(this.value)">
+      <div id="sb-lib-grid" style="overflow-y: auto; flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem; padding: 0.5rem; background: rgba(0,0,0,0.3); border-radius: var(--radius-sm);">
+        <!-- Library cards rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- AUXILIARY MODAL: Token Spawner Overlay -->
+  <div id="sandbox-token-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 13000;">
+    <div class="modal" style="max-width: 600px; width: 95%; max-height: 80vh; border: 1px solid #a855f7; padding: 1.25rem; background: var(--bg-card); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 0.75rem; overflow: hidden;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem;">
+        <h3 style="font-family: 'Cinzel', serif; font-weight: 700; color: #a855f7; margin: 0; font-size: 1.1rem;">🪙 Universal Token Spawner</h3>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('sandbox-token-modal').style.display='none'">✕ Close</button>
+      </div>
+      <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-pure);">Preset MTG Tokens:</div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.spawnPresetToken('Treasure', 'Artifact', 0, 0, '8b233a00-1111-4555-8777-111122223333')">🟡 Treasure Token</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.spawnPresetToken('Food', 'Artifact', 0, 0, 'ea6644f2-959c-4eb2-a6e5-4f2a24911d23')">🍏 Food Token</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.spawnPresetToken('Clue', 'Artifact', 0, 0, 'cb02bfe0-55e1-4545-a9fa-99908a8d1e2a')">🔍 Clue Token</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.spawnPresetToken('1/1 Goblin', 'Creature', 1, 1)">🔴 1/1 Goblin</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.spawnPresetToken('2/2 Zombie', 'Creature', 2, 2)">🟣 2/2 Zombie</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.spawnPresetToken('3/3 Beast', 'Creature', 3, 3)">🟢 3/3 Beast</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.spawnPresetToken('4/4 Angel', 'Creature', 4, 4)">⚪ 4/4 Angel</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.spawnPresetToken('5/5 Dragon', 'Creature', 5, 5)">🔴 5/5 Dragon</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.spawnPresetToken('0/0 Construct', 'Creature', 0, 0)">⚙️ 0/0 Construct</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Playtest Zone Inspector Modal -->
   <div id="modal-playtest-list" class="modal-overlay" onclick="this.classList.remove('active')">
@@ -1713,6 +2044,83 @@
       <div id="versions-modal-grid" style="overflow-y:auto; flex-grow:1; display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:1.25rem; padding-top:1rem; padding-bottom:1rem;">
         <!-- Dynamically rendered printings -->
       </div>
+    </div>
+  </div>
+
+  <!-- AAA Universal Account Migration Modal -->
+  <div id="universal-import-modal" class="modal-overlay" onclick="if(event.target===this) this.classList.remove('active')">
+    <div class="modal arcane-portal-modal" onclick="event.stopPropagation()">
+      <!-- Header -->
+      <div style="position: relative; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgba(168, 85, 247, 0.25); padding-bottom: 1rem; margin-bottom: 1.25rem;">
+        <h3 style="margin: 0; font-size: 1.35rem; font-family: 'Outfit', sans-serif; font-weight: 800; color: var(--text-pure); text-align: center; width: 100%;">Universal Account Migration</h3>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('universal-import-modal').classList.remove('active')" style="position: absolute; right: 0; top: -2px; border-radius: 8px;">✕ Close</button>
+      </div>
+
+      <p style="font-size: 0.88rem; color: var(--text-medium); margin-bottom: 1.25rem; line-height: 1.5;">
+        Select your source platform to instantly sync your entire MTG deck collection to Grimore.
+      </p>
+
+      <!-- Platform Selection Cards Grid -->
+      <div class="arcane-platform-grid">
+        <div class="arcane-platform-card active universal-tab" onclick="switchUniversalTab('moxfield')" data-platform="moxfield">
+          <span style="font-family:'Outfit', sans-serif; font-size:0.95rem; font-weight:800; color:var(--text-pure);">Moxfield</span>
+        </div>
+
+        <div class="arcane-platform-card universal-tab" onclick="switchUniversalTab('archidekt')" data-platform="archidekt">
+          <span style="font-family:'Outfit', sans-serif; font-size:0.95rem; font-weight:800; color:var(--text-pure);">Archidekt</span>
+        </div>
+
+        <div class="arcane-platform-card universal-tab" onclick="switchUniversalTab('file')" data-platform="file">
+          <span style="font-family:'Outfit', sans-serif; font-size:0.95rem; font-weight:800; color:var(--text-pure);">ManaBox</span>
+        </div>
+
+        <div class="arcane-platform-card universal-tab" onclick="switchUniversalTab('text')" data-platform="text">
+          <span style="font-family:'Outfit', sans-serif; font-size:0.95rem; font-weight:800; color:var(--text-pure);">Raw Text</span>
+        </div>
+      </div>
+
+      <!-- Form Control Container -->
+      <form id="universal-import-form" onsubmit="handleUniversalAccountImport(event)" style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <input type="hidden" id="universal-platform" value="moxfield">
+
+        <div id="universal-username-group" style="background: rgba(10, 10, 16, 0.7); padding: 1.25rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
+          <label class="form-label" id="universal-username-label" for="universal-username" style="font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--text-pure); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>Moxfield Account Username</span>
+          </label>
+          <input type="text" id="universal-username" class="input-field" placeholder="e.g. NickBuildsDecks" style="background: var(--bg-dark); font-size: 1rem; height: 46px; border-radius: 10px; border: 1px solid rgba(168, 85, 247, 0.3); color: #ffffff;">
+          <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; display: block;">
+            All public Commander and format decks under this username will be synced to your Grimore collection as private decks.
+          </span>
+        </div>
+
+        <div id="universal-text-group" style="display: none; background: rgba(10, 10, 16, 0.7); padding: 1.25rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
+          <label class="form-label" for="universal-text" style="font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--text-pure); margin-bottom: 0.5rem; display: block;">
+            Multi-Deck Text Block (Separate decks with // Deck Name)
+          </label>
+          <textarea id="universal-text" class="input-field" rows="8" placeholder="// My Kaalia Deck&#10;1 Kaalia of the Vast *CMDR*&#10;1 Sol Ring&#10;1 Command Tower&#10;&#10;// My Yuriko Deck&#10;1 Yuriko, the Tiger's Shadow *CMDR*&#10;1 Ponder" style="background: var(--bg-dark); font-family: 'Rajdhani', monospace; font-size: 0.9rem; border-radius: 10px; border: 1px solid rgba(6, 182, 212, 0.3); line-height: 1.4;"></textarea>
+        </div>
+
+        <!-- Progress Indicator Bar -->
+        <div id="universal-progress-container" style="display: none; flex-direction: column; gap: 0.5rem; background: rgba(168, 85, 247, 0.08); padding: 1rem; border-radius: 12px; border: 1px solid rgba(168, 85, 247, 0.25);">
+          <div style="display: flex; justify-content: space-between; font-family: 'Outfit', sans-serif; font-size: 0.85rem; font-weight: 700; color: #c084fc;">
+            <span id="universal-progress-status">Initiating Migration...</span>
+            <span id="universal-progress-percent" style="font-family: 'Rajdhani', sans-serif; font-size: 0.95rem;">0%</span>
+          </div>
+          <div style="width: 100%; height: 10px; background: rgba(0, 0, 0, 0.6); border-radius: 6px; overflow: hidden; border: 1px solid rgba(168, 85, 247, 0.3);">
+            <div id="universal-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #a855f7, #06b6d4, #f59e0b); box-shadow: 0 0 15px rgba(168, 85, 247, 0.8); transition: width 0.3s ease;"></div>
+          </div>
+        </div>
+
+        <div id="universal-import-alert" style="display: none; padding: 0.85rem 1rem; border-radius: 10px; font-family: 'Outfit', sans-serif; font-size: 0.9rem; font-weight: 700;"></div>
+
+        <!-- Submit Controls -->
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.25rem;">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('universal-import-modal').classList.remove('active')" style="border-radius: 10px; height: 44px; padding: 0 1.25rem;">Cancel</button>
+          <button type="submit" id="btn-submit-universal-import" class="btn btn-primary" style="height: 44px; padding: 0 1.75rem; font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 0.95rem; border-radius: 10px; background: linear-gradient(135deg, #a855f7, #7e22ce); box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4); display: flex; align-items: center; gap: 0.5rem;">
+            <span>Initiate Migration</span>
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -1920,6 +2328,383 @@
     </div>
   </div>
 
-  <script src="app.js?v=100"></script>
+  <!-- MODAL: Goldfish Playtest Simulator & Opening Hand AI Evaluator -->
+  <div id="goldfish-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 12000;">
+    <div class="modal" style="max-width: 900px; width: 95%; height: 85vh; border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(56, 189, 248, 0.2); padding: 1.5rem; background: var(--bg-card); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 1rem; overflow: hidden;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <h3 style="font-family: 'Cinzel', serif; font-weight: 800; color: #38bdf8; margin: 0; font-size: 1.25rem;">⚔️ Goldfish Playtest & AI Hand Evaluator</h3>
+          <span id="goldfish-ai-grade" class="deck-status-pill is-legal" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: #38bdf8; font-weight: 800;">Hand Grade: Rating...</span>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeGoldfishModal()" style="margin: 0;">✕ Close</button>
+      </div>
+
+      <!-- Playtest Control Toolbar -->
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; background: rgba(0,0,0,0.3); padding: 0.6rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <button type="button" class="btn btn-gold btn-sm" onclick="window.drawOpeningHand()">🔄 New 7 Cards</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.performLondonMulligan()">♠️ London Mulligan</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.drawPlaytestCard()">📥 Draw Card</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.nextPlaytestTurn()">⏩ Next Turn (<span id="playtest-turn-num">1</span>)</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem; font-size: 0.8rem; font-weight: 700;">
+          <span style="color: var(--text-muted);">Mana Pool:</span>
+          <span style="color: #fef08a;">W: <strong id="mana-w">0</strong></span>
+          <span style="color: #38bdf8;">U: <strong id="mana-u">0</strong></span>
+          <span style="color: #c084fc;">B: <strong id="mana-b">0</strong></span>
+          <span style="color: #f87171;">R: <strong id="mana-r">0</strong></span>
+          <span style="color: #4ade80;">G: <strong id="mana-g">0</strong></span>
+          <span style="color: #94a3b8;">C: <strong id="mana-c">0</strong></span>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="window.resetManaPool()" style="padding: 2px 6px; font-size: 0.68rem;">Reset Mana</button>
+        </div>
+      </div>
+
+      <!-- Main Playtest Layout (Hand, Battlefield, Log) -->
+      <div style="display: grid; grid-template-columns: 1fr 280px; gap: 1rem; flex: 1; overflow: hidden;">
+        <!-- Left: Hand & Battlefield Cards -->
+        <div style="display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; padding-right: 0.5rem;">
+          <div>
+            <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin: 0 0 0.5rem 0; letter-spacing: 0.05em;">Current Hand (<span id="playtest-hand-count">0</span> cards)</h4>
+            <div id="playtest-hand-container" style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem; min-height: 140px;"></div>
+          </div>
+          <div style="flex: 1;">
+            <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin: 0 0 0.5rem 0; letter-spacing: 0.05em;">Battlefield & Permanents (<span id="playtest-board-count">0</span>)</h4>
+            <div id="playtest-board-container" style="display: flex; flex-wrap: wrap; gap: 0.5rem; min-height: 160px; background: rgba(0,0,0,0.2); border: 1px dashed var(--border-medium); border-radius: var(--radius-md); padding: 0.75rem;"></div>
+          </div>
+        </div>
+
+        <!-- Right: AI Hand Evaluation & Turn Log -->
+        <div style="display: flex; flex-direction: column; gap: 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 0.75rem; overflow: hidden;">
+          <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--color-gold); margin: 0; letter-spacing: 0.05em;">AI Hand Evaluation</h4>
+          <div id="playtest-ai-eval-text" style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; background: rgba(0,0,0,0.2); padding: 0.6rem; border-radius: var(--radius-sm);">Analyzing opening hand...</div>
+
+          <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin: 0.5rem 0 0 0; letter-spacing: 0.05em;">Turn Action Log</h4>
+          <div id="playtest-log-container" style="flex: 1; overflow-y: auto; font-family: monospace; font-size: 0.7rem; color: #a7f3d0; background: #050508; border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: 3x3 Proxy Sheet Exporter -->
+  <div id="proxy-print-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 12000;">
+    <div class="modal" style="max-width: 950px; width: 95%; height: 90vh; border: 1px solid rgba(168, 85, 247, 0.4); box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(168, 85, 247, 0.25); padding: 1.5rem; background: var(--bg-card); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 1rem; overflow: hidden;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem;">
+        <div>
+          <h3 style="font-family: 'Cinzel', serif; font-weight: 800; color: #a855f7; margin: 0; font-size: 1.25rem;">🖨️ High-Res 3x3 Proxy Print Sheets</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0.25rem 0 0 0;">Formats deck cards into 9-up printable sheets with cut guidelines. Standard 63mm × 88mm MTG poker dimensions.</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="button" class="btn btn-gold btn-sm" onclick="window.triggerProxyPrint()">🖨️ Print Sheets (Ctrl+P)</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="closeProxyPrintModal()">✕ Close</button>
+        </div>
+      </div>
+
+      <div id="proxy-print-container" style="flex: 1; overflow-y: auto; padding: 1rem; background: #111118; border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 2rem; align-items: center;"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: Advanced AI Commander Opponent Simulator -->
+  <div id="ai-opponent-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 12000;">
+    <div class="modal" style="max-width: 1100px; width: 95%; height: 90vh; border: 1px solid rgba(239, 68, 68, 0.5); box-shadow: 0 20px 60px rgba(0,0,0,0.95), 0 0 35px rgba(239, 68, 68, 0.3); padding: 1.25rem; background: var(--bg-card); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 0.75rem; overflow: hidden;">
+      
+      <!-- Top Control Bar -->
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem; flex-shrink: 0;">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <h3 style="font-family: 'Cinzel', serif; font-weight: 800; color: #ef4444; margin: 0; font-size: 1.2rem;">AI Commander Opponent Engine</h3>
+          <div style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 700; color: var(--color-gold);">
+            <span>Turn <strong id="ai-match-turn-num">1</strong></span> • <span id="ai-match-phase-display" style="color: #38bdf8;">Main 1</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <button type="button" class="btn btn-danger btn-sm" onclick="window.startAiCombatGame()" style="font-weight: 700;">Reset Match</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeAiOpponentModal()">✕ Close</button>
+        </div>
+      </div>
+
+      <!-- Select AI Opponent Deck & Phase Stepper Bar -->
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: rgba(0,0,0,0.35); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); border: 1px solid var(--border-light); flex-shrink: 0;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-grow: 1;">
+          <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-pure); flex-shrink: 0;">AI Deck:</label>
+          <select id="ai-opponent-select" class="input-field" style="margin: 0; height: 28px; font-size: 0.75rem; background: var(--bg-surface);" onchange="window.selectAiOpponentDeck(this.value)">
+            <option value="atraxa">Atraxa, Praetors' Voice (Proliferate / Planeswalkers)</option>
+            <option value="krenko">Krenko, Mob Boss (Goblin Aggro / Tokens)</option>
+            <option value="muldrotha">Muldrotha, the Gravetide (Graveyard Value Engine)</option>
+            <option value="urza">Urza, Lord High Artificer (Mono-Blue Artifact Stax)</option>
+            <option value="edgar">Edgar Markov (Vampire Tribal Eminence Aggro)</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 0.35rem;">
+          <button type="button" class="btn btn-gold btn-sm" onclick="window.executeNextAiPhase()" style="font-weight: 700;">Step Next Phase</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="window.playerPassTurnToAi()" style="font-weight: 700;">Execute Full AI Turn</button>
+        </div>
+      </div>
+
+      <!-- Main Arena Layout (2-Player Combat Field + Right Reasoning Log) -->
+      <div style="display: grid; grid-template-columns: 2.2fr 1fr; gap: 0.75rem; flex: 1; overflow: hidden;">
+        
+        <!-- Left: 2-Player Battlefield (AI Top vs Player Bottom) -->
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; padding-right: 0.25rem;">
+          
+          <!-- Top: AI Opponent Board -->
+          <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.35rem;">
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span id="ai-opponent-name-display" style="font-weight: 800; color: #ef4444; font-size: 0.9rem;">Atraxa, Praetors' Voice</span>
+                <span style="font-size: 0.7rem; color: var(--text-muted);">Library: <strong id="ai-library-count">92</strong> | Hand: <strong id="ai-hand-count">7</strong></span>
+              </div>
+              <div style="font-size: 1.1rem; font-weight: 800; color: #ef4444;">AI Life: <strong id="ai-match-life">40</strong></div>
+            </div>
+            <!-- AI Mana Pool -->
+            <div style="display: flex; gap: 0.4rem; font-size: 0.68rem; font-weight: 700; color: var(--text-muted); align-items: center;">
+              <span>AI Mana Pool:</span>
+              <span style="color:#fef08a;">W:<strong id="ai-mana-w">0</strong></span>
+              <span style="color:#60a5fa;">U:<strong id="ai-mana-u">0</strong></span>
+              <span style="color:#c084fc;">B:<strong id="ai-mana-b">0</strong></span>
+              <span style="color:#f87171;">R:<strong id="ai-mana-r">0</strong></span>
+              <span style="color:#4ade80;">G:<strong id="ai-mana-g">0</strong></span>
+              <span style="color:#cbd5e1;">C:<strong id="ai-mana-c">0</strong></span>
+            </div>
+            <!-- AI Battlefield Cards Grid -->
+            <div id="ai-battlefield-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)); gap: 0.4rem; min-height: 110px; background: rgba(0,0,0,0.3); padding: 0.4rem; border-radius: var(--radius-sm); border: 1px dashed var(--border-medium);">
+              <!-- AI Permanents rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Divider Controls -->
+          <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.4); padding: 0.35rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
+            <span style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted);">Combat Sandbox Controls:</span>
+            <div style="display: flex; gap: 0.35rem;">
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.68rem; padding: 2px 6px;" onclick="window.playerDealDamageToAi(3)">Attack AI (3 Dmg)</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.68rem; padding: 2px 6px;" onclick="window.playerDealDamageToAi(7)">Attack AI (7 Dmg)</button>
+              <button type="button" class="btn btn-danger btn-sm" style="font-size: 0.68rem; padding: 2px 6px;" onclick="window.playerCastRemovalOnAiBoard()">Cast Removal on AI Board</button>
+            </div>
+          </div>
+
+          <!-- Bottom: Human Player Board -->
+          <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: var(--radius-md); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 0.35rem;">
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-weight: 800; color: #38bdf8; font-size: 0.9rem;">Your Deck</span>
+                <span style="font-size: 0.7rem; color: var(--text-muted);">Commander Damage Taken: <strong id="player-cmd-dmg-taken" style="color: #ef4444;">0</strong>/21</span>
+              </div>
+              <div style="font-size: 1.1rem; font-weight: 800; color: #4ade80;">Your Life: <strong id="player-ai-match-life">40</strong></div>
+            </div>
+            <!-- Player Battlefield Cards Grid -->
+            <div id="player-ai-match-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)); gap: 0.4rem; min-height: 110px; background: rgba(0,0,0,0.3); padding: 0.4rem; border-radius: var(--radius-sm); border: 1px dashed var(--border-medium);">
+              <!-- Player Cards rendered dynamically -->
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right: AI Decision Heuristics & Tactical Reasoning Log -->
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: var(--radius-md); border: 1px solid var(--border-light); overflow: hidden;">
+          <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.35rem;">
+            <span style="font-weight: 700; font-size: 0.75rem; color: var(--color-gold);">AI Reasoning & Tactics Trace</span>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">Decision Engine v2.0</span>
+          </div>
+          <div id="ai-combat-log-container" style="flex: 1; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 0.7rem; color: #fca5a5; background: #05050a; border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; line-height: 1.4;">
+            <div>> AI Combat Simulator initialized. Select AI deck and click "Execute Full AI Turn" or "Step Next Phase".</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL: System 6 MTG Deck Hyper-Tuner & AI Advisor -->
+  <div id="deck-tuner-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 12000;">
+    <div class="modal" style="max-width: 900px; width: 95%; height: 85vh; border: 1px solid rgba(245, 158, 11, 0.4); box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(245, 158, 11, 0.25); padding: 1.5rem; background: var(--bg-card); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 1rem; overflow: hidden;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem;">
+        <div>
+          <h3 style="font-family: 'Cinzel', serif; font-weight: 800; color: #f59e0b; margin: 0; font-size: 1.25rem;">⚡ MTG Deck Hyper-Tuner & AI Advisor</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0.25rem 0 0 0;">Diagnoses functional role gaps, mana curve bottlenecks, and provides 1-click addition/cut recommendations.</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeDeckTunerModal()">✕ Close</button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; flex: 1; overflow: hidden;">
+        <!-- Left: Functional Diagnostics -->
+        <div style="display: flex; flex-direction: column; gap: 0.75rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-light); overflow-y: auto;">
+          <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--color-gold); margin: 0; letter-spacing: 0.05em;">Deck Health & Gap Diagnostics</h4>
+          <div id="deck-tuner-diagnostics" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
+        </div>
+
+        <!-- Right: AI Additions & Cuts Suggestions -->
+        <div style="display: flex; flex-direction: column; gap: 0.75rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-light); overflow-y: auto;">
+          <h4 style="font-size: 0.8rem; text-transform: uppercase; color: #4ade80; margin: 0; letter-spacing: 0.05em;">Recommended Additions & Cuts</h4>
+          <div id="deck-tuner-recommendations" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: System 7 Tournament Director Suite -->
+  <div id="tournament-director-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 12000;">
+    <div class="modal" style="max-width: 900px; width: 95%; height: 85vh; border: 1px solid rgba(168, 85, 247, 0.4); box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(168, 85, 247, 0.25); padding: 1.5rem; background: var(--bg-card); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 1rem; overflow: hidden;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem;">
+        <div>
+          <h3 style="font-family: 'Cinzel', serif; font-weight: 800; color: #a855f7; margin: 0; font-size: 1.25rem;">🏆 Swiss Pairing & Tournament Director Suite</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0.25rem 0 0 0;">Generates Swiss pairings with Buchholz tie-breakers, round timers, and match slips.</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="button" class="btn btn-gold btn-sm" onclick="window.printMatchSlips()">🖨️ Print Match Slips</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeTournamentDirectorModal()">✕ Close</button>
+        </div>
+      </div>
+
+      <div id="tournament-director-content" style="flex: 1; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-light);"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: System 8 Collection Trade Matcher -->
+  <div id="trade-matcher-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 12000;">
+    <div class="modal" style="max-width: 800px; width: 95%; height: 75vh; border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(56, 189, 248, 0.25); padding: 1.5rem; background: var(--bg-card); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 1rem; overflow: hidden;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem;">
+        <div>
+          <h3 style="font-family: 'Cinzel', serif; font-weight: 800; color: #38bdf8; margin: 0; font-size: 1.25rem;">🤝 Playgroup Trade Matcher</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0.25rem 0 0 0;">Matches cards in your trade binder with wishlist cards of local players in your store.</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeTradeMatcherModal()">✕ Close</button>
+      </div>
+
+      <div id="trade-matcher-results" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem;"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: System 9 Custom Category Rule Builder -->
+  <div id="custom-rules-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 12000;">
+    <div class="modal" style="max-width: 600px; width: 90%; border: 1px solid var(--color-primary); box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(168, 85, 247, 0.25); padding: 1.5rem; background: var(--bg-card); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 1rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 0.75rem;">
+        <h3 style="font-family: 'Cinzel', serif; font-weight: 800; color: var(--text-pure); margin: 0; font-size: 1.2rem;">🏷️ Custom Category Rule Builder</h3>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeCustomRulesModal()">✕ Close</button>
+      </div>
+
+      <form onsubmit="window.handleCreateCustomCategoryRule(event)" style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <div class="form-group" style="margin: 0;">
+          <label class="form-label" style="font-size: 0.75rem;">Category Rule Name (e.g. #Blink, #Enrage, #Treasure)</label>
+          <input type="text" id="custom-rule-name-input" class="input-field" placeholder="e.g. #Blink" required style="background: var(--bg-dark);">
+        </div>
+        <div class="form-group" style="margin: 0;">
+          <label class="form-label" style="font-size: 0.75rem;">Oracle Keywords or Card Name Filter</label>
+          <input type="text" id="custom-rule-keyword-input" class="input-field" placeholder="e.g. exile, return to the battlefield" required style="background: var(--bg-dark);">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="window.closeCustomRulesModal()">Cancel</button>
+          <button type="submit" class="btn btn-gold">Save Category Rule</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOP-RIGHT SLIDE-OUT SANDBOX REALM TOOLS & SETTINGS DRAWER (HALF AS WIDE: 200px) -->
+  <div id="sandbox-tools-drawer" style="position: fixed; top: 0; right: 0; width: 210px; height: 100vh; z-index: 10000; background: rgba(10, 8, 18, 0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-left: 1px solid rgba(255, 255, 255, 0.08); box-shadow: -10px 0 25px rgba(0,0,0,0.7); padding: 0.85rem; display: none; flex-direction: column; gap: 0.85rem; overflow-y: auto; color: var(--text-pure); font-size: 0.72rem;">
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
+      <span style="font-family: 'Cinzel', serif; font-weight: 800; color: var(--color-gold); font-size: 0.88rem; display: flex; align-items: center; gap: 0.35rem;">
+        ⚙️ Realm Tools
+      </span>
+      <button type="button" class="btn btn-secondary btn-sm" style="padding: 1px 5px; font-size: 0.65rem;" onclick="window.toggleSandboxToolsDrawer()">✕ Close</button>
+    </div>
+
+    <!-- Section 1: Multiplayer Lobby & Play Modes -->
+    <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem;">
+      <span style="font-size: 0.68rem; font-weight: 800; color: var(--color-gold); text-transform: uppercase; letter-spacing: 0.04em;">⚔️ Play Mode</span>
+      
+      <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+        <button type="button" id="sandbox-mode-goldfish" class="btn btn-gold btn-sm" style="width: 100%; font-size: 0.68rem; padding: 2px 4px;" onclick="window.setSandboxMode('goldfish')">Goldfish Solo</button>
+        <button type="button" id="sandbox-mode-ai" class="btn btn-secondary btn-sm" style="width: 100%; font-size: 0.68rem; padding: 2px 4px;" onclick="window.setSandboxMode('ai')">⚔️ AI Opponent</button>
+      </div>
+
+      <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.4rem; display: flex; flex-direction: column; gap: 0.35rem;">
+        <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700;">Multiplayer Room:</span>
+        <button type="button" class="btn btn-secondary btn-sm" style="width: 100%; font-size: 0.65rem; color: #38bdf8; padding: 2px;" onclick="window.createMultiplayerRoom()">+ Create Room</button>
+        <div style="display: flex; gap: 0.25rem;">
+          <input type="text" id="sb-room-code-input" class="input-field" placeholder="Code" style="flex: 1; margin: 0; height: 26px; font-size: 0.65rem; background: #000; text-transform: uppercase; padding: 2px 4px;">
+          <button type="button" class="btn btn-gold btn-sm" style="font-size: 0.65rem; padding: 2px 6px;" onclick="window.joinMultiplayerRoom()">Join</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 2: Deck Loader & Match Actions -->
+    <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem;">
+      <span style="font-size: 0.68rem; font-weight: 800; color: var(--color-gold); text-transform: uppercase; letter-spacing: 0.04em;">🎴 Match Actions</span>
+      
+      <select id="sandbox-deck-select" class="input-field" style="margin: 0; font-size: 0.68rem; background: #000; height: 28px; padding: 2px;" onchange="window.loadDeckIntoSandbox(this.value)">
+        <option value="">Select Deck...</option>
+      </select>
+
+      <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+        <button type="button" class="btn btn-gold btn-sm" style="font-size: 0.68rem; padding: 3px;" onclick="window.startSandboxGame()">🔄 Reset Match</button>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.68rem; padding: 3px;" onclick="window.sandboxLondonMulligan()">♠️ London Mulligan</button>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.68rem; padding: 3px;" onclick="window.sandboxDrawCard()">🎴 Draw 1 Card</button>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.68rem; padding: 3px; color: #ef4444;" onclick="window.sandboxClearBoard()">🧹 Clear Board</button>
+      </div>
+    </div>
+
+    <!-- Section 3: Universal Token Spawner -->
+    <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem;">
+      <span style="font-size: 0.68rem; font-weight: 800; color: #a855f7; text-transform: uppercase; letter-spacing: 0.04em;">🪙 Quick Tokens</span>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem;">
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.62rem; padding: 2px;" onclick="window.spawnPresetToken('Treasure Token', 'Artifact Token', 0, 0)">Treasure</button>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.62rem; padding: 2px;" onclick="window.spawnPresetToken('Food Token', 'Artifact Token', 0, 0)">Food</button>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.62rem; padding: 2px;" onclick="window.spawnPresetToken('Clue Token', 'Artifact Token', 0, 0)">Clue</button>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.62rem; padding: 2px;" onclick="window.spawnPresetToken('Goblin Token', 'Creature Token', 1, 1)">1/1 Goblin</button>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.62rem; padding: 2px;" onclick="window.spawnPresetToken('Zombie Token', 'Creature Token', 2, 2)">2/2 Zombie</button>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.62rem; padding: 2px;" onclick="window.spawnPresetToken('Beast Token', 'Creature Token', 3, 3)">3/3 Beast</button>
+      </div>
+      <button type="button" class="btn btn-gold btn-sm" style="font-size: 0.65rem; width: 100%; padding: 2px;" onclick="window.openSandboxTokenModal()">Search All Tokens</button>
+    </div>
+
+    <!-- Section 4: Floating Mana Pool -->
+    <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.4rem;">
+      <span style="font-size: 0.68rem; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.04em;">💧 Mana Pool</span>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.25rem;">
+        <button type="button" class="btn btn-sm" style="padding: 1px 4px; font-size: 0.65rem; background: #854d0e; color: #fef08a;" onclick="window.addSandboxMana('W')">W:<strong id="sb-mana-w">0</strong></button>
+        <button type="button" class="btn btn-sm" style="padding: 1px 4px; font-size: 0.65rem; background: #1e3a8a; color: #60a5fa;" onclick="window.addSandboxMana('U')">U:<strong id="sb-mana-u">0</strong></button>
+        <button type="button" class="btn btn-sm" style="padding: 1px 4px; font-size: 0.65rem; background: #3b0764; color: #c084fc;" onclick="window.addSandboxMana('B')">B:<strong id="sb-mana-b">0</strong></button>
+        <button type="button" class="btn btn-sm" style="padding: 1px 4px; font-size: 0.65rem; background: #7f1d1d; color: #f87171;" onclick="window.addSandboxMana('R')">R:<strong id="sb-mana-r">0</strong></button>
+        <button type="button" class="btn btn-sm" style="padding: 1px 4px; font-size: 0.65rem; background: #14532d; color: #4ade80;" onclick="window.addSandboxMana('G')">G:<strong id="sb-mana-g">0</strong></button>
+        <button type="button" class="btn btn-sm" style="padding: 1px 4px; font-size: 0.65rem; background: #334155; color: #cbd5e1;" onclick="window.addSandboxMana('C')">C:<strong id="sb-mana-c">0</strong></button>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" style="padding: 1px; font-size: 0.62rem; width: 100%;" onclick="window.resetSandboxMana()">Reset Mana</button>
+    </div>
+
+  </div>
+
+  <!-- Official WotC Fan Content Policy Legal Disclaimer Footer -->
+  <footer style="margin-top:2rem;padding:1.5rem 1rem;text-align:center;font-size:0.68rem;color:#475569;border-top:1px solid rgba(255,255,255,0.04);background:rgba(0,0,0,0.2);">
+    <p style="max-width:800px;margin:0 auto;line-height:1.5;">
+      Grimore is unofficial Fan Content permitted under the Fan Content Policy. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.
+    </p>
+  </footer>
+
+  <!-- GAME PLAY REALM MODE SELECTION MODAL -->
+  <div id="sandbox-mode-select-modal" class="modal-overlay" style="display: none; justify-content: center; align-items: center; z-index: 30000; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);">
+    <div class="modal" style="max-width: 540px; width: 92%; border: 1px solid var(--color-gold); padding: 1.75rem; background: var(--bg-card); border-radius: 16px; display: flex; flex-direction: column; gap: 1.25rem; box-shadow: 0 25px 80px rgba(0,0,0,0.95); text-align: center;">
+      <h2 style="font-family: 'Cinzel', serif; font-weight: 800; color: var(--color-gold); margin: 0; font-size: 1.4rem;">⚔️ Select Game Play Realm Mode</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">How would you like to enter the Grimore MTG Arena today?</p>
+      
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <button type="button" class="btn btn-gold" style="padding: 1rem; font-weight: 800; font-size: 0.95rem; display: flex; align-items: center; justify-content: space-between;" onclick="window.selectSandboxPlayMode('4p')">
+          <span>🏆 4-Player Commander Pod</span>
+          <span style="font-size: 0.72rem; font-weight: 600; opacity: 0.85;">vs 3 Opponents</span>
+        </button>
+        <button type="button" class="btn btn-secondary" style="padding: 0.85rem; font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; justify-content: space-between;" onclick="window.selectSandboxPlayMode('ai')">
+          <span>⚔️ 1v1 AI Battle Arena</span>
+          <span style="font-size: 0.72rem; font-weight: 600; color: #ef4444;">vs Grim AI</span>
+        </button>
+        <button type="button" class="btn btn-secondary" style="padding: 0.85rem; font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; justify-content: space-between;" onclick="window.selectSandboxPlayMode('goldfish')">
+          <span>🎯 Solo Goldfish Sandbox</span>
+          <span style="font-size: 0.72rem; font-weight: 600; color: #38bdf8;">Freeform Testing</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="a2ui.js"></script>
+  <script src="app.js?v=101"></script>
 </body>
 </html>
+

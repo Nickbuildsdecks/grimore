@@ -1,0 +1,32 @@
+{
+  "name": "@grimore/theme",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Elevated Grimoire design system: tokens, Tailwind v4 theme, and typed token values.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tokens.css": "./tokens.css",
+    "./tailwind": "./tailwind.css",
+    "./tailwind.css": "./tailwind.css"
+  },
+  "files": [
+    "dist",
+    "tokens.css",
+    "tailwind.css"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

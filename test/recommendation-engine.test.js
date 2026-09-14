@@ -27,7 +27,57 @@ test("classifies functional roles without treating normal lands as ramp", () => 
 
   assert.ok(ramp.roles.includes("Ramp"));
   assert.ok(!land.roles.includes("Ramp"));
-  assert.ok(land.roles.includes("Utility Lands"));
+  // Command Tower is a pure mana land — it belongs in "Lands", NOT "Utility Lands"
+  // (directive rule 13). The old assertion cemented the misclassification.
+  assert.ok(land.roles.includes("Lands"));
+  assert.ok(!land.roles.includes("Utility Lands"));
+});
+
+test("spot removal excludes graveyard recursion and blink", () => {
+  const removal = extractCardFeatures({
+    name: "Swords to Plowshares",
+    type_line: "Instant",
+    oracle_text: "Exile target creature. Its controller gains life equal to its power.",
+    colors: ["W"], cmc: 1,
+  });
+  const recursion = extractCardFeatures({
+    name: "Eternal Witness",
+    type_line: "Creature — Human Shaman",
+    oracle_text: "When Eternal Witness enters the battlefield, return target card from your graveyard to your hand.",
+    colors: ["G"], cmc: 3,
+  });
+  const blink = extractCardFeatures({
+    name: "Ephemerate",
+    type_line: "Instant",
+    oracle_text: "Exile target creature you control, then return it to the battlefield under its owner's control.",
+    colors: ["W"], cmc: 1,
+  });
+
+  assert.ok(removal.roles.includes("Single Target Removal"), "real removal is tagged");
+  // "return target ... from your graveyard" is Recursion, not removal.
+  assert.ok(!recursion.roles.includes("Single Target Removal"), "recursion is not removal");
+  assert.ok(recursion.roles.includes("Recursion"));
+  // "exile target ... return it" is a blink, not removal.
+  assert.ok(!blink.roles.includes("Single Target Removal"), "blink is not removal");
+});
+
+test("utility land requires a non-mana ability", () => {
+  const utility = extractCardFeatures({
+    name: "Bojuka Bog",
+    type_line: "Land",
+    oracle_text: "Bojuka Bog enters the battlefield tapped. When Bojuka Bog enters, exile target player's graveyard. {T}: Add {B}.",
+    colors: [], cmc: 0,
+  });
+  const dual = extractCardFeatures({
+    name: "Watery Grave",
+    type_line: "Land — Island Swamp",
+    oracle_text: "({T}: Add {U} or {B}.) As Watery Grave enters, you may pay 2 life. If you don't, it enters tapped.",
+    colors: [], cmc: 0,
+  });
+  assert.ok(utility.roles.includes("Utility Lands"), "graveyard-hate land is Utility");
+  // A shock dual is a mana land — "Lands", not "Utility Lands".
+  assert.ok(dual.roles.includes("Lands"));
+  assert.ok(!dual.roles.includes("Utility Lands"));
 });
 
 test("keeps separate deck fingerprints instead of blending incompatible decks", () => {

@@ -1,4 +1,11 @@
 (function() {
+  // Deck state — declared up front (initialized to empty) so that if loadSuggestions()
+  // resolves before loadDeckDetails() (they run concurrently via Promise.all), the render
+  // path reads empty arrays instead of throwing a ReferenceError and blanking the page.
+  let activeDeckData = null;
+  let activeDeckCommander = [];
+  let activeDeckMainboard = [];
+
   // Top progress bar and global progress overlay helpers
   window.startTopProgress = function() {
     const bar = document.getElementById('top-progress-bar');
@@ -632,7 +639,26 @@
     renderCategoriesSidebar();
     refreshCurrentCategoryView();
 
-    // Fire atomic card addition to server asynchronously (~50 bytes payload)
+    // Roll the optimistic in-memory change back if the server save fails, so the UI never
+    // claims a card was added when it wasn't.
+    const rollback = () => {
+      const idx = activeDeckMainboard.findIndex(c => c.name.toLowerCase() === card.name.toLowerCase());
+      if (idx !== -1) {
+        const c = activeDeckMainboard[idx];
+        c.quantity = (c.quantity || 1) - 1;
+        c.qty = c.quantity;
+        if (c.quantity <= 0) activeDeckMainboard.splice(idx, 1);
+      }
+      if (buttonEl) {
+        buttonEl.disabled = false;
+        buttonEl.textContent = '+';
+        buttonEl.style.background = '';
+        buttonEl.style.color = '';
+      }
+      renderCategoriesSidebar();
+      refreshCurrentCategoryView();
+    };
+
     fetch(`/api/decks/${encodeURIComponent(deckId)}/cards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -641,13 +667,17 @@
         price: card.price || 0.15,
         scryfallId: card.scryfallId || null
       })
-    }).then(res => res.json()).then(saveResult => {
-      if (saveResult.error) {
-        window.showToast(`⚠️ Failed to save ${card.name}: ${saveResult.error}`);
-      }
-    }).catch(e => {
-      console.error("Atomic card save error:", e);
-    });
+    }).then(res => res.ok ? res.json() : res.json().catch(() => ({ error: `HTTP ${res.status}` })).then(j => Promise.reject(j.error || `HTTP ${res.status}`)))
+      .then(saveResult => {
+        if (saveResult && saveResult.error) {
+          window.showToast(`Failed to save ${card.name}: ${saveResult.error}`);
+          rollback();
+        }
+      }).catch(err => {
+        console.error("Atomic card save error:", err);
+        window.showToast(`Could not save ${card.name} — reverted.`);
+        rollback();
+      });
   };
 
   // ── INSPECTOR DRAWER ────────────────────────────────────────────────
@@ -685,7 +715,7 @@
 
     document.getElementById('inspector-card-name').textContent = card.name;
     document.getElementById('inspector-type').textContent = card.type_line;
-    document.getElementById('inspector-price').textContent = `$${Number(card.price).toFixed(2)}`;
+    document.getElementById('inspector-price').textContent = `$${Number(card.price || 0.15).toFixed(2)}`;
 
     const fallbackUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}&format=image&version=normal`;
     const imgUrl = card.scryfallId 
@@ -763,17 +793,20 @@
 
         item.onclick = () => {
           document.getElementById('inspector-card-img').src = v.image_uri;
-          document.getElementById('inspector-price').textContent = `$${Number(v.price).toFixed(2)}`;
+          document.getElementById('inspector-price').textContent = `$${Number(v.price || 0.15).toFixed(2)}`;
           selectedInspectorPrinting = {
             name: cardName,
             price: v.price || 0.15,
-            scryfallId: v.scryfall_id || null,
+            // The /api/cards/versions endpoint returns the printing id as `id` (search.js
+            // reads v.id). Reading v.scryfall_id here always yielded null, so rulings never
+            // loaded and the chosen printing wasn't saved.
+            scryfallId: v.id || null,
             type_line: activeInspectorCard ? activeInspectorCard.type_line : 'Card',
             colors: activeInspectorCard ? activeInspectorCard.colors : [],
             rarity: v.rarity || 'common'
           };
-          if (v.scryfall_id) {
-            loadCardRulings(v.scryfall_id);
+          if (v.id) {
+            loadCardRulings(v.id);
           }
         };
 

@@ -1,7 +1,16 @@
 grimore.gg, www.grimore.gg {
     reverse_proxy app:3000
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
 }
 
+# Plain-HTTP access via the raw VM IP is retained for pre-DNS bring-up only. Once DNS
+# points at the VM, prefer redirecting this block to https://grimore.gg so logins and
+# session cookies never transit in cleartext.
 http://{$VM_IP} {
     reverse_proxy app:3000
 }

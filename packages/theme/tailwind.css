@@ -1,0 +1,196 @@
+/* ==========================================================================
+   The Elevated Grimoire - Tailwind v4 theme bridge
+   --------------------------------------------------------------------------
+   Maps `--g-*` tokens (tokens.css) into Tailwind v4 theme variables so the
+   design system is reachable as utilities: bg-surface-1, text-brand-from,
+   font-display, shadow-elevation-3, rounded-g-lg, duration-base, etc.
+
+   Import order in an app entry:
+     @import "tailwindcss";
+     @import "@grimore/theme/tokens.css";
+     @import "@grimore/theme/tailwind";
+
+   No raw values here: every entry references a token, so hex stays in
+   tokens.css only.
+   ========================================================================== */
+
+@theme inline {
+  /* Fonts */
+  --font-display: var(--g-font-display);
+  --font-body: var(--g-font-body);
+  --font-mono: var(--g-font-mono);
+
+  /* Obsidian neutrals */
+  --color-obsidian-50: var(--g-obsidian-50);
+  --color-obsidian-100: var(--g-obsidian-100);
+  --color-obsidian-200: var(--g-obsidian-200);
+  --color-obsidian-300: var(--g-obsidian-300);
+  --color-obsidian-400: var(--g-obsidian-400);
+  --color-obsidian-500: var(--g-obsidian-500);
+  --color-obsidian-600: var(--g-obsidian-600);
+  --color-obsidian-700: var(--g-obsidian-700);
+  --color-obsidian-800: var(--g-obsidian-800);
+  --color-obsidian-850: var(--g-obsidian-850);
+  --color-obsidian-900: var(--g-obsidian-900);
+  --color-obsidian-950: var(--g-obsidian-950);
+
+  /* Brand */
+  --color-violet-300: var(--g-violet-300);
+  --color-violet-400: var(--g-violet-400);
+  --color-violet-500: var(--g-violet-500);
+  --color-violet-600: var(--g-violet-600);
+  --color-violet-700: var(--g-violet-700);
+  --color-magenta-300: var(--g-magenta-300);
+  --color-magenta-400: var(--g-magenta-400);
+  --color-magenta-500: var(--g-magenta-500);
+  --color-magenta-600: var(--g-magenta-600);
+  --color-magenta-700: var(--g-magenta-700);
+  --color-brand-from: var(--g-brand-from);
+  --color-brand-to: var(--g-brand-to);
+  --color-gold-400: var(--g-gold-400);
+  --color-gold-500: var(--g-gold-500);
+  --color-gold-600: var(--g-gold-600);
+  --color-cyan-400: var(--g-cyan-400);
+  --color-cyan-500: var(--g-cyan-500);
+
+  /* WUBRG */
+  --color-mana-w: var(--g-mana-w);
+  --color-mana-w-deep: var(--g-mana-w-deep);
+  --color-mana-u: var(--g-mana-u);
+  --color-mana-u-deep: var(--g-mana-u-deep);
+  --color-mana-b: var(--g-mana-b);
+  --color-mana-b-deep: var(--g-mana-b-deep);
+  --color-mana-r: var(--g-mana-r);
+  --color-mana-r-deep: var(--g-mana-r-deep);
+  --color-mana-g: var(--g-mana-g);
+  --color-mana-g-deep: var(--g-mana-g-deep);
+  --color-mana-c: var(--g-mana-c);
+  --color-mana-c-deep: var(--g-mana-c-deep);
+
+  /* Semantic surfaces */
+  --color-surface-base: var(--g-surface-base);
+  --color-surface-0: var(--g-surface-0);
+  --color-surface-1: var(--g-surface-1);
+  --color-surface-2: var(--g-surface-2);
+  --color-surface-3: var(--g-surface-3);
+  --color-surface-4: var(--g-surface-4);
+  --color-surface-inverse: var(--g-surface-inverse);
+
+  /* Semantic text */
+  --color-ink: var(--g-text-primary);
+  --color-ink-secondary: var(--g-text-secondary);
+  --color-ink-muted: var(--g-text-muted);
+  --color-ink-faint: var(--g-text-faint);
+  --color-ink-inverse: var(--g-text-inverse);
+  --color-ink-on-brand: var(--g-text-on-brand);
+
+  /* Semantic borders */
+  --color-line-subtle: var(--g-border-subtle);
+  --color-line: var(--g-border-default);
+  --color-line-strong: var(--g-border-strong);
+  --color-line-brand: var(--g-border-brand);
+  --color-line-focus: var(--g-border-focus);
+
+  /* Accents + status */
+  --color-accent: var(--g-accent);
+  --color-accent-hover: var(--g-accent-hover);
+  --color-accent-active: var(--g-accent-active);
+  --color-accent-secondary: var(--g-accent-secondary);
+  --color-accent-tertiary: var(--g-accent-tertiary);
+  --color-accent-info: var(--g-accent-info);
+  --color-success: var(--g-status-success);
+  --color-warning: var(--g-status-warning);
+  --color-danger: var(--g-status-danger);
+  --color-info: var(--g-status-info);
+  --color-ring: var(--g-ring);
+
+  /* Glass */
+  --color-glass: var(--g-glass-bg);
+  --color-glass-strong: var(--g-glass-bg-strong);
+  --color-glass-subtle: var(--g-glass-bg-subtle);
+  --color-glass-border: var(--g-glass-border);
+  --color-glass-highlight: var(--g-glass-highlight);
+  --blur-glass: var(--g-glass-blur);
+  --blur-glass-strong: var(--g-glass-blur-strong);
+
+  /* Gradients (usable via bg-linear-brand / bg-(image:--g-brand-gradient)) */
+  --background-image-brand: var(--g-brand-gradient);
+  --background-image-brand-soft: var(--g-brand-gradient-soft);
+  --background-image-mana-multi: var(--g-mana-multi);
+
+  /* Radii */
+  --radius-g-xs: var(--g-radius-xs);
+  --radius-g-sm: var(--g-radius-sm);
+  --radius-g-md: var(--g-radius-md);
+  --radius-g-lg: var(--g-radius-lg);
+  --radius-g-xl: var(--g-radius-xl);
+  --radius-g-2xl: var(--g-radius-2xl);
+  --radius-g-full: var(--g-radius-full);
+
+  /* Elevation */
+  --shadow-elevation-1: var(--g-elevation-1);
+  --shadow-elevation-2: var(--g-elevation-2);
+  --shadow-elevation-3: var(--g-elevation-3);
+  --shadow-elevation-4: var(--g-elevation-4);
+  --shadow-elevation-5: var(--g-elevation-5);
+  --shadow-brand-glow: var(--g-brand-glow);
+
+  /* Motion */
+  --duration-instant: var(--g-duration-instant);
+  --duration-fast: var(--g-duration-fast);
+  --duration-base: var(--g-duration-base);
+  --duration-slow: var(--g-duration-slow);
+  --duration-slower: var(--g-duration-slower);
+  --ease-standard: var(--g-ease-standard);
+  --ease-enter: var(--g-ease-enter);
+  --ease-exit: var(--g-ease-exit);
+  --ease-spring: var(--g-ease-spring);
+  --animate-rise: var(--g-motion-rise);
+  --animate-fade: var(--g-motion-fade);
+  --animate-scale-in: var(--g-motion-scale-in);
+  --animate-shimmer: var(--g-motion-shimmer);
+
+  /* Type scale */
+  --text-g-xs: var(--g-text-xs);
+  --text-g-sm: var(--g-text-sm);
+  --text-g-base: var(--g-text-base);
+  --text-g-lg: var(--g-text-lg);
+  --text-g-xl: var(--g-text-xl);
+  --text-g-2xl: var(--g-text-2xl);
+  --text-g-3xl: var(--g-text-3xl);
+  --text-g-4xl: var(--g-text-4xl);
+  --text-g-5xl: var(--g-text-5xl);
+  --text-g-6xl: var(--g-text-6xl);
+  --leading-g-tight: var(--g-leading-tight);
+  --leading-g-snug: var(--g-leading-snug);
+  --leading-g-normal: var(--g-leading-normal);
+  --leading-g-relaxed: var(--g-leading-relaxed);
+  --tracking-g-tight: var(--g-tracking-tight);
+  --tracking-g-wide: var(--g-tracking-wide);
+  --tracking-g-caps: var(--g-tracking-caps);
+}
+
+/* Glass surface utility: obsidian glassmorphism in one class. */
+@utility glass {
+  background: var(--g-glass-bg);
+  border: 1px solid var(--g-glass-border);
+  backdrop-filter: blur(var(--g-glass-blur)) saturate(var(--g-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--g-glass-blur)) saturate(var(--g-glass-saturate));
+  box-shadow: var(--g-elevation-2), inset 0 1px 0 var(--g-glass-highlight);
+}
+
+@utility glass-strong {
+  background: var(--g-glass-bg-strong);
+  border: 1px solid var(--g-glass-border);
+  backdrop-filter: blur(var(--g-glass-blur-strong)) saturate(var(--g-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--g-glass-blur-strong)) saturate(var(--g-glass-saturate));
+  box-shadow: var(--g-elevation-3), inset 0 1px 0 var(--g-glass-highlight);
+}
+
+/* Brand gradient text. */
+@utility text-brand-gradient {
+  background: var(--g-brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}

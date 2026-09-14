@@ -1,4 +1,4 @@
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
@@ -28,22 +28,74 @@ if (pgUrl) {
     ? path.join(dataDir, 'grimore.db') 
     : path.join(__dirname, 'grimore.db');
 
-  sqliteDb = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-      console.error('Error connecting to SQLite database:', err.message);
-    } else {
-      console.log('Connected to Grimore SQLite database.');
-      sqliteDb.run("PRAGMA foreign_keys = ON;", (err) => {
-        if (err) console.error("Failed to enable foreign keys:", err.message);
-      });
-    }
-  });
+  try {
+    sqliteDb = new Database(dbPath);
+    sqliteDb.pragma('journal_mode = WAL');
+    sqliteDb.pragma('foreign_keys = ON');
+    sqliteDb.pragma('synchronous = NORMAL');
+    console.log('Connected to Grimore SQLite database via better-sqlite3 (WAL Mode).');
+  } catch (err) {
+    // Fail fast: a null sqliteDb would make every subsequent query throw a confusing
+    // "Cannot read properties of null" 500. Better to crash at boot so the operator sees it.
+    console.error('FATAL: cannot open SQLite database:', err.message);
+    process.exit(1);
+  }
 }
 
-// Convert SQLite '?' parameters to PostgreSQL '$1, $2, ...'
+// Graceful shutdown: checkpoint the WAL and close the DB so we don't leave a large,
+// un-checkpointed -wal file (and a possibly-inconsistent snapshot) on restart/redeploy.
+function closeDbAndExit(signal) {
+  try {
+    if (sqliteDb) {
+      sqliteDb.pragma('wal_checkpoint(TRUNCATE)');
+      sqliteDb.close();
+      console.log(`[shutdown] SQLite checkpointed and closed on ${signal}.`);
+    }
+  } catch (e) {
+    console.error('[shutdown] error closing SQLite:', e.message);
+  }
+  process.exit(0);
+}
+process.on('SIGTERM', () => closeDbAndExit('SIGTERM'));
+process.on('SIGINT', () => closeDbAndExit('SIGINT'));
+
+// Convert SQLite '?' parameters to PostgreSQL '$1, $2, ...'.
+// Skips '?' characters that appear inside single- or double-quoted string literals so a
+// literal question mark (e.g. LIKE '%?%') does not shift the parameter numbering.
 function convertSqlPlaceholders(sql) {
   let index = 1;
-  return sql.replace(/\?/g, () => `$${index++}`);
+  let out = '';
+  let quote = null; // null, "'", or '"'
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    if (quote) {
+      out += ch;
+      if (ch === quote) {
+        // handle doubled-quote escape ('' or "")
+        if (sql[i + 1] === quote) { out += sql[++i]; }
+        else quote = null;
+      }
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+      out += ch;
+    } else if (ch === '?') {
+      out += `$${index++}`;
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+// Prepared Statement Cache for better-sqlite3
+const stmtCache = new Map();
+function getStmt(sql) {
+  let stmt = stmtCache.get(sql);
+  if (!stmt) {
+    stmt = sqliteDb.prepare(sql);
+    stmtCache.set(sql, stmt);
+  }
+  return stmt;
 }
 
 // Helper for DB queries using Promises
@@ -52,42 +104,95 @@ const query = (sql, params = []) => {
     const pgSql = convertSqlPlaceholders(sql);
     return pgPool.query(pgSql, params).then(res => res.rows);
   }
-  return new Promise((resolve, reject) => {
-    sqliteDb.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
+  try {
+    const stmt = getStmt(sql);
+    return Promise.resolve(stmt.all(...params));
+  } catch (err) {
+    return Promise.reject(err);
+  }
 };
 
 const run = (sql, params = []) => {
   if (isPostgres) {
-    const pgSql = convertSqlPlaceholders(sql);
-    return pgPool.query(pgSql, params).then(res => ({
-      id: res.rows && res.rows[0] ? res.rows[0].id : null,
-      changes: res.rowCount
-    }));
+    let pgSql = convertSqlPlaceholders(sql);
+    // Postgres has no lastInsertRowid. For INSERTs lacking an explicit RETURNING clause,
+    // append RETURNING id so callers that use the returned id work the same as on SQLite.
+    if (/^\s*insert\s/i.test(pgSql) && !/\breturning\b/i.test(pgSql)) {
+      pgSql = pgSql.replace(/;?\s*$/, ' RETURNING id');
+    }
+    return pgPool.query(pgSql, params)
+      .then(res => ({
+        id: res.rows && res.rows[0] ? res.rows[0].id : null,
+        changes: res.rowCount
+      }))
+      .catch(err => {
+        // A missing "id" column on RETURNING is not fatal — retry without it.
+        if (/column "id" does not exist/i.test(err.message)) {
+          return pgPool.query(convertSqlPlaceholders(sql), params)
+            .then(res => ({ id: null, changes: res.rowCount }));
+        }
+        throw err;
+      });
   }
-  return new Promise((resolve, reject) => {
-    sqliteDb.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve({ id: this.lastID, changes: this.changes });
-    });
-  });
+  try {
+    const stmt = getStmt(sql);
+    const info = stmt.run(...params);
+    return Promise.resolve({ id: info.lastInsertRowid, changes: info.changes });
+  } catch (err) {
+    return Promise.reject(err);
+  }
 };
+
+// Run fn inside a real transaction. On Postgres, BEGIN/COMMIT/ROLLBACK are pinned to ONE
+// pooled client (raw BEGIN/COMMIT through the pool land on different connections and are
+// no-ops). On SQLite, better-sqlite3 is synchronous so we bracket with BEGIN/COMMIT.
+async function withTransaction(fn) {
+  if (isPostgres) {
+    const client = await pgPool.connect();
+    const clientRun = (sql, params = []) => client.query(convertSqlPlaceholders(sql), params)
+      .then(res => ({ id: res.rows && res.rows[0] ? res.rows[0].id : null, changes: res.rowCount }));
+    const clientGet = (sql, params = []) => client.query(convertSqlPlaceholders(sql), params)
+      .then(res => res.rows[0] || null);
+    const clientQuery = (sql, params = []) => client.query(convertSqlPlaceholders(sql), params)
+      .then(res => res.rows);
+    try {
+      await client.query('BEGIN');
+      const result = await fn({ run: clientRun, get: clientGet, query: clientQuery });
+      await client.query('COMMIT');
+      return result;
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+  // SQLite path — synchronous engine, safe to bracket manually.
+  await run('BEGIN');
+  try {
+    const result = await fn({ run, get, query });
+    await run('COMMIT');
+    return result;
+  } catch (e) {
+    try { await run('ROLLBACK'); } catch (_) {}
+    throw e;
+  }
+}
 
 const get = (sql, params = []) => {
   if (isPostgres) {
     const pgSql = convertSqlPlaceholders(sql);
     return pgPool.query(pgSql, params).then(res => res.rows[0] || null);
   }
-  return new Promise((resolve, reject) => {
-    sqliteDb.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+  try {
+    const stmt = getStmt(sql);
+    const res = stmt.get(...params);
+    return Promise.resolve(res || null);
+  } catch (err) {
+    return Promise.reject(err);
+  }
 };
+
 
 // Initialize Tables
 async function initDb() {
@@ -328,11 +433,9 @@ async function initDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )`,
       `CREATE TABLE IF NOT EXISTS scryfall_card_tags (
-        id SERIAL PRIMARY KEY,
-        card_name TEXT NOT NULL,
-        tag_name TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (card_name, tag_name)
+        card_name TEXT PRIMARY KEY,
+        tags TEXT,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )`,
       `CREATE TABLE IF NOT EXISTS collections (
         id SERIAL PRIMARY KEY,
@@ -440,6 +543,13 @@ async function initDb() {
       `ALTER TABLE deck_stats ADD COLUMN IF NOT EXISTS total_matches INTEGER DEFAULT 0`,
       `ALTER TABLE deck_stats ADD COLUMN IF NOT EXISTS season_id TEXT`,
       `ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS card_name TEXT`,
+      // Premium billing (additive; flag-dark — unused until PREMIUM_GATING=on). See billing.js.
+      `ALTER TABLE players ADD COLUMN IF NOT EXISTS premium_status TEXT DEFAULT 'free'`,
+      `ALTER TABLE players ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
+      `ALTER TABLE players ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`,
+      `ALTER TABLE players ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP`,
+      `CREATE TABLE IF NOT EXISTS billing_events (id SERIAL PRIMARY KEY, stripe_event_id TEXT UNIQUE NOT NULL, type TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+      `CREATE INDEX IF NOT EXISTS idx_players_stripe_customer ON players(stripe_customer_id)`,
       `CREATE INDEX IF NOT EXISTS idx_deck_cards_commander ON deck_cards(deck_id, is_commander)`,
       `CREATE INDEX IF NOT EXISTS idx_decks_player ON decks(player_id)`,
       `CREATE INDEX IF NOT EXISTS idx_scryfall_cards_card_name ON scryfall_cards(card_name)`,
@@ -498,6 +608,25 @@ async function initDb() {
   } catch (e) {
     // Column already exists
   }
+
+  // Premium billing columns (additive; flag-dark — unused until PREMIUM_GATING=on). SQLite has no
+  // ADD COLUMN IF NOT EXISTS on older engines, so each is guarded individually. See billing.js.
+  for (const col of [
+    "premium_status TEXT DEFAULT 'free'",
+    "stripe_customer_id TEXT",
+    "stripe_subscription_id TEXT",
+    "premium_until DATETIME"
+  ]) {
+    try { await run(`ALTER TABLE players ADD COLUMN ${col}`); } catch (e) { /* already exists */ }
+  }
+  await run(`
+    CREATE TABLE IF NOT EXISTS billing_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      stripe_event_id TEXT UNIQUE NOT NULL,
+      type TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
   await run(`
     CREATE TABLE IF NOT EXISTS decks (
@@ -560,48 +689,35 @@ async function initDb() {
     )
   `);
 
+  // scryfall_cards — matches the LIVE SQLite schema (card_name keyed, no name/id/set_code).
+  // The Scryfall importer and server.js SQLite queries both use these columns.
   await run(`
     CREATE TABLE IF NOT EXISTS scryfall_cards (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      set_code TEXT NOT NULL,
-      set_name TEXT,
-      collector_number TEXT NOT NULL,
-      rarity TEXT,
-      price REAL,
-      foil_price REAL,
-      image_uri TEXT,
-      scryfall_uri TEXT,
+      card_name TEXT PRIMARY KEY,
+      scryfall_id TEXT,
       type_line TEXT,
+      oracle_text TEXT,
       mana_cost TEXT,
       cmc REAL,
-      oracle_text TEXT,
       colors TEXT,
-      color_identity TEXT,
-      legalities TEXT,
-      edhrec_rank INTEGER,
-      keywords TEXT,
-      card_faces TEXT,
-      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+      price REAL,
+      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+      rarity TEXT DEFAULT 'common'
     )
   `);
 
+  // card_price_cache — matches the LIVE SQLite schema (card_name keyed).
   await run(`
     CREATE TABLE IF NOT EXISTS card_price_cache (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      scryfall_id TEXT UNIQUE NOT NULL,
-      card_name TEXT NOT NULL,
-      set_code TEXT NOT NULL,
-      collector_number TEXT NOT NULL,
-      price REAL NOT NULL,
-      foil_price REAL,
-      image_uri TEXT,
-      scryfall_uri TEXT,
+      card_name TEXT PRIMARY KEY,
+      price REAL,
+      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+      scryfall_id TEXT,
       type_line TEXT,
+      oracle_text TEXT,
       mana_cost TEXT,
-      cmc REAL,
-      rarity TEXT,
-      cached_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      cmc REAL DEFAULT 0,
+      colors TEXT
     )
   `);
 
@@ -805,21 +921,142 @@ async function initDb() {
     )
   `);
 
+  // Social / collection / notification tables — DDL matched EXACTLY to the live SQLite
+  // schema (verified against the production grimore.db) so a fresh deploy creates the same
+  // shapes server.js queries against (e.g. follows.followed_id, notifications.read_status).
+  await run(`
+    CREATE TABLE IF NOT EXISTS deck_likes (
+      deck_id TEXT NOT NULL,
+      player_id TEXT NOT NULL,
+      PRIMARY KEY (deck_id, player_id),
+      FOREIGN KEY(deck_id) REFERENCES decks(id),
+      FOREIGN KEY(player_id) REFERENCES players(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS deck_comments (
+      id TEXT PRIMARY KEY,
+      deck_id TEXT NOT NULL,
+      player_id TEXT NOT NULL,
+      comment_text TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      player_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      read_status INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(player_id) REFERENCES players(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS player_stats (
+      player_id TEXT NOT NULL,
+      season_id TEXT NOT NULL,
+      total_points INTEGER DEFAULT 0,
+      total_kills INTEGER DEFAULT 0,
+      total_wins INTEGER DEFAULT 0,
+      total_matches INTEGER DEFAULT 0,
+      PRIMARY KEY (player_id, season_id),
+      FOREIGN KEY(player_id) REFERENCES players(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS scryfall_card_tags (
+      card_name TEXT PRIMARY KEY,
+      tags TEXT,
+      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS collections (
+      id TEXT PRIMARY KEY,
+      player_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      settings TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS collection_cards (
+      collection_id TEXT NOT NULL,
+      card_name TEXT NOT NULL,
+      scryfall_id TEXT,
+      quantity INTEGER DEFAULT 1,
+      is_foil INTEGER DEFAULT 0,
+      is_for_trade INTEGER DEFAULT 0,
+      condition TEXT DEFAULT 'NM',
+      language TEXT DEFAULT 'EN',
+      purchase_price REAL DEFAULT NULL,
+      added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (collection_id, card_name, scryfall_id, is_foil, condition, language),
+      FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS follows (
+      follower_id TEXT NOT NULL,
+      followed_id TEXT NOT NULL,
+      PRIMARY KEY (follower_id, followed_id),
+      FOREIGN KEY(follower_id) REFERENCES players(id),
+      FOREIGN KEY(followed_id) REFERENCES players(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS deleted_items (
+      id TEXT PRIMARY KEY,
+      item_type TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      player_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      data TEXT NOT NULL,
+      deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   try {
     await run("ALTER TABLE deck_cards ADD COLUMN cheapest_card_price REAL DEFAULT 0.0");
   } catch (e) {
     // Column already exists
   }
 
-  await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_card_name ON deck_cards(card_name);`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_deck_cards_commander ON deck_cards(deck_id, is_commander);`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_decks_player ON decks(player_id);`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_scryfall_cards_card_name ON scryfall_cards(card_name);`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_deck_likes_deck_player ON deck_likes(deck_id, player_id);`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_deck_comments_deck ON deck_comments(deck_id);`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_player_collection_player ON player_collection(player_id);`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_preference_events_player ON preference_events(player_id, last_seen_at DESC);`);
+  // Backfill columns registration/queries rely on for older SQLite player tables.
+  const playerColumnMigrations = [
+    "ALTER TABLE players ADD COLUMN role TEXT DEFAULT 'player'",
+    "ALTER TABLE players ADD COLUMN avatar_url TEXT",
+    "ALTER TABLE players ADD COLUMN profile_commander TEXT",
+    "ALTER TABLE players ADD COLUMN profile_bio TEXT"
+  ];
+  for (const m of playerColumnMigrations) {
+    try { await run(m); } catch (e) { /* column exists */ }
+  }
+
+  // Index creation is best-effort: a pre-existing DB may have a drifted schema (e.g. an
+  // older scryfall_cards without a `name` column), and a single missing-column error must
+  // NOT abort initDb — that would take the whole app down on boot. Each index is guarded.
+  const indexStatements = [
+    `CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_deck_cards_card_name ON deck_cards(card_name)`,
+    `CREATE INDEX IF NOT EXISTS idx_deck_cards_commander ON deck_cards(deck_id, is_commander)`,
+    `CREATE INDEX IF NOT EXISTS idx_decks_player ON decks(player_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_scryfall_cards_card_name ON scryfall_cards(card_name)`,
+    // Expression index so the hot LOWER(card_name)=LOWER(?) price joins are index-backed
+    // on SQLite (a plain index can't serve a LOWER(col) predicate).
+    `CREATE INDEX IF NOT EXISTS idx_scryfall_cards_lower_card_name ON scryfall_cards(LOWER(card_name))`,
+    `CREATE INDEX IF NOT EXISTS idx_card_price_cache_lower_card_name ON card_price_cache(LOWER(card_name))`,
+    `CREATE INDEX IF NOT EXISTS idx_deck_likes_deck_player ON deck_likes(deck_id, player_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_deck_comments_deck ON deck_comments(deck_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_player_collection_player ON player_collection(player_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_preference_events_player ON preference_events(player_id, last_seen_at DESC)`,
+  ];
+  for (const stmt of indexStatements) {
+    try { await run(stmt); } catch (e) { console.warn('[initDb] skipped index:', e.message); }
+  }
 
   console.log("SQLite database initialized successfully.");
   await seedAdminAccount();
@@ -827,15 +1064,33 @@ async function initDb() {
 
 async function seedAdminAccount() {
   try {
-    const existingAdmin = await get("SELECT id FROM players WHERE username = 'nickbuildsdecks'");
+    // Admin credentials come from the environment — never a source-committed password.
+    // ADMIN_USER/ADMIN_PASSWORD override the defaults; if no password is provided a
+    // random one-time password is generated and printed to the server log once.
+    const adminUser = process.env.ADMIN_USER || 'nickbuildsdecks';
+    const existingAdmin = await get("SELECT id FROM players WHERE username = ?", [adminUser]);
     if (!existingAdmin) {
       const bcrypt = require('bcryptjs');
-      const hash = bcrypt.hashSync('C3n0t@ph', 10);
+      let adminPassword = process.env.ADMIN_PASSWORD;
+      let generated = false;
+      if (!adminPassword) {
+        adminPassword = require('crypto').randomBytes(18).toString('base64url');
+        generated = true;
+      }
+      const hash = bcrypt.hashSync(adminPassword, 10);
       await run(
         "INSERT INTO players (id, username, password_hash, store_nickname, is_admin, role) VALUES (?, ?, ?, ?, 1, 'admin')",
-        ['p_admin', 'nickbuildsdecks', hash, 'Nick']
+        ['p_admin', adminUser, hash, 'Nick']
       );
-      console.log("Default admin account 'nickbuildsdecks' seeded successfully.");
+      if (generated) {
+        console.log("\n==================== ADMIN ACCOUNT SEEDED ====================");
+        console.log(`  Username: ${adminUser}`);
+        console.log(`  One-time password (change this immediately): ${adminPassword}`);
+        console.log("  Set ADMIN_USER / ADMIN_PASSWORD in the environment to control this.");
+        console.log("==============================================================\n");
+      } else {
+        console.log(`Default admin account '${adminUser}' seeded from ADMIN_PASSWORD env var.`);
+      }
     }
   } catch (err) {
     console.warn("Admin account seed notice:", err.message);
@@ -847,6 +1102,7 @@ module.exports = {
   query,
   run,
   get,
+  withTransaction,
   initDb,
   isPostgres
 };

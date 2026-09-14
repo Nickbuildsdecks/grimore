@@ -1,5 +1,5 @@
 {
-  "name": "grimoire",
+  "name": "grimore",
   "version": "1.0.0",
   "description": "Premium All-Encompassing MTG Suite Web Server",
   "main": "server.js",
@@ -7,11 +7,21 @@
     "start": "node --max-old-space-size=768 server.js",
     "dev": "node --max-old-space-size=768 server.js",
     "build": "npm run build:web",
-    "build:web": "npm --prefix web run build",
-    "test:recommendations": "node --test test/recommendation-engine.test.js"
+    "build:web": "pnpm --filter @grimore/web build",
+    "test:recommendations": "node --test test/recommendation-engine.test.js",
+    "test:multiplayer": "node --test test/multiplayer-engine.test.js",
+    "test:unit": "node --test test/recommendation-engine.test.js test/multiplayer-engine.test.js test/maintenance-scripts.test.js test/billing-gating.test.js",
+    "preflight": "node scripts/preflight.js",
+    "v2:build": "turbo run build --filter=./packages/* --filter=./apps/*",
+    "v2:typecheck": "turbo run typecheck --filter=./packages/* --filter=./apps/*",
+    "v2:test": "turbo run test --filter=./packages/* --filter=./apps/*",
+    "v2:guards": "node scripts/guards.js",
+    "v2:migrate": "pnpm --filter @grimore/db migrate"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^13.0.3",
     "connect-redis": "^9.0.0",
     "express": "^4.19.2",
     "express-rate-limit": "^8.6.0",
@@ -19,8 +29,31 @@
     "google-auth-library": "^10.9.1",
     "pg": "^8.22.0",
     "redis": "^6.1.0",
-    "sqlite3": "^5.1.7"
+    "socket.io": "^4.8.3",
+    "zod": "^4.4.3"
   },
   "author": "Antigravity",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0"
+  },
+  "packageManager": "pnpm@10.0.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "packageExtensions": {
+      "@socket.io/redis-streams-adapter": {
+        "peerDependencies": {
+          "redis": "^4.6.5"
+        },
+        "peerDependenciesMeta": {
+          "redis": {
+            "optional": false
+          }
+        }
+      }
+    }
+  }
 }

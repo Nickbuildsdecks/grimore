@@ -1,9 +1,14 @@
 **/node_modules
 *.db
+*.db-wal
+*.db-shm
 .git
 .agents
 *.log
+.env
 scratch
+gcp-export
+grimore-gcp-export.zip
 fly.toml
 Dockerfile
 data/

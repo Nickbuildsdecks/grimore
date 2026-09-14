@@ -147,61 +147,47 @@
     let raf;
     let t = 0;
 
-    // ── CONFIG ──────────────────────────────────────────────────────────
-    const RUNE_CHARS = ['ᚠ','ᚢ','ᚦ','ᚨ','ᚱ','ᚲ','ᚷ','ᚹ','ᚺ','ᚾ','ᛁ','ᛃ','ᛇ','ᛈ','ᛉ','ᛊ','ᛏ','ᛒ','ᛖ','ᛗ','ᛚ','ᛜ','ᛞ','ᛟ','᛭','᚛','᚜','ᛤ','ᛥ'];
-    const MTG_SYMBOLS = ['⬡','⬢','◈','⧖','⊕','⊗','⊘','⊙','✦','✧','❋','⁂','⁑'];
+    // ── CYBER MAINFRAME CONFIG ─────────────────────────────────────────
+    const CODE_TOKENS = ['01', '10', '0F', 'FF', '80', 'A4', 'C0', '40', '00', '11', '{ }', '< />', '=>', 'func', '0x9F', '0x3A', '0x7E', 'ASM', 'SYS', 'SYNC', 'EXEC', 'PTR', 'HEX'];
+    
+    // Cyber Matrix Stream Nodes
+    const codeNodes = [];
+    const CODE_NODE_COUNT = 36;
 
-
-
-    // Floating Runes
-    const runePool = [];
-    const RUNE_COUNT = 28;
-
-    function newRune(w, h) {
-      const chars = Math.random() < 0.7 ? RUNE_CHARS : MTG_SYMBOLS;
+    function newCodeNode(w, h) {
       return {
         x: Math.random() * w,
         y: Math.random() * h,
-        char: chars[Math.floor(Math.random() * chars.length)],
-        size: Math.random() * 10 + 10,
-        alpha: 0,
-        maxAlpha: Math.random() * 0.30 + 0.35,
-        phase: 'in',
-        fadeSpd: Math.random() * 0.0025 + 0.001,
-        hold: Math.random() * 300 + 180,
-        hue: 255 + Math.random() * 60,
-        drift: (Math.random() - 0.5) * 0.12,
-        bob: Math.random() * Math.PI * 2,
-        bobSpd: Math.random() * 0.008 + 0.003,
+        token: CODE_TOKENS[Math.floor(Math.random() * CODE_TOKENS.length)],
+        size: Math.random() * 8 + 10,
+        alpha: Math.random() * 0.25 + 0.15,
+        speedY: Math.random() * 0.4 + 0.15,
+        driftX: (Math.random() - 0.5) * 0.1,
+        hue: Math.random() < 0.6 ? 185 : (Math.random() < 0.8 ? 270 : 45), // Cyan, Purple, Amber
         offsetX: 0,
         offsetY: 0
       };
     }
 
-    // Rise-up Stardust Embers (sharp dots, no blurred blobs)
-    const embers = [];
-    const EMBER_COUNT = 80;
+    // Mainframe Plexus Vector Grid
+    const plexusNodes = [];
+    const PLEXUS_COUNT = 45;
 
-    function newEmber(w, h) {
+    function newPlexusNode(w, h) {
       return {
         x: Math.random() * w,
-        y: h + Math.random() * 50,
-        vx: (Math.random() - 0.5) * 0.15,
-        vy: -(Math.random() * 0.35 + 0.15),
-        size: Math.random() * 1.2 + 0.6,
-        alpha: Math.random() * 0.22 + 0.08,
-        hue: 250 + Math.random() * 45,
-        life: 1,
-        decay: Math.random() * 0.0012 + 0.0004,
-        offsetX: 0
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        radius: Math.random() * 1.5 + 1
       };
     }
 
-    // 2D Concentric Arcane Circles
-    const circles = [
-      { rot: 0, baseR: 0.32, speed: 0.0009,  dir: 1,  alpha: 0.55, dash: [6,14],  segCount: 8,  hue: 270, rPx: 0 },
-      { rot: 0, baseR: 0.20, speed: 0.0015,  dir: -1, alpha: 0.40, dash: [3,22],  segCount: 12, hue: 290, rPx: 0 },
-      { rot: 0, baseR: 0.44, speed: 0.0005,  dir: 1,  alpha: 0.28, dash: [12,30], segCount: 6,  hue: 255, rPx: 0 },
+    // Concentric Cyber Mainframe Target Reticles
+    const reticles = [
+      { rot: 0, baseR: 0.35, speed: 0.0008, dir: 1, alpha: 0.35, dash: [4, 12], segCount: 16, hue: 185, rPx: 0 },
+      { rot: 0, baseR: 0.22, speed: 0.0014, dir: -1, alpha: 0.25, dash: [2, 18], segCount: 8, hue: 270, rPx: 0 },
+      { rot: 0, baseR: 0.48, speed: 0.0004, dir: 1, alpha: 0.20, dash: [10, 24], segCount: 12, hue: 45, rPx: 0 },
     ];
 
     let mouse = { x: -1000, y: -1000, targetX: -1000, targetY: -1000, active: false };
@@ -212,24 +198,20 @@
       canvas.height = window.innerHeight;
       const w = canvas.width, h = canvas.height;
 
-      runePool.length = 0;
-      for (let i = 0; i < RUNE_COUNT; i++) runePool.push(newRune(w, h));
+      codeNodes.length = 0;
+      for (let i = 0; i < CODE_NODE_COUNT; i++) codeNodes.push(newCodeNode(w, h));
 
-      embers.length = 0;
-      for (let i = 0; i < EMBER_COUNT; i++) {
-        const eb = newEmber(w, h);
-        eb.y = Math.random() * h;
-        embers.push(eb);
-      }
+      plexusNodes.length = 0;
+      for (let i = 0; i < PLEXUS_COUNT; i++) plexusNodes.push(newPlexusNode(w, h));
 
       const minDim = Math.min(w, h);
-      circles.forEach(c => {
+      reticles.forEach(c => {
         c.rPx = minDim * c.baseR;
       });
 
-      vignetteGrad = ctx.createRadialGradient(w/2, h/2, minDim * 0.25, w/2, h/2, minDim * 0.75);
+      vignetteGrad = ctx.createRadialGradient(w/2, h/2, minDim * 0.2, w/2, h/2, minDim * 0.85);
       vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
-      vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.45)');
+      vignetteGrad.addColorStop(1, 'rgba(3, 4, 8, 0.7)');
     }
 
     function onMouseMove(e) {
@@ -250,17 +232,15 @@
     resize();
 
     function drawCircleWithTickmarks(cx, cy, r, segCount, rot) {
-      // Main ring
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.stroke();
-      // Tickmarks at segment positions
       for (let i = 0; i < segCount; i++) {
         const a = rot + (Math.PI * 2 / segCount) * i;
-        const x1 = cx + Math.cos(a) * (r - 6);
-        const y1 = cy + Math.sin(a) * (r - 6);
-        const x2 = cx + Math.cos(a) * (r + 6);
-        const y2 = cy + Math.sin(a) * (r + 6);
+        const x1 = cx + Math.cos(a) * (r - 5);
+        const y1 = cy + Math.sin(a) * (r - 5);
+        const x2 = cx + Math.cos(a) * (r + 5);
+        const y2 = cy + Math.sin(a) * (r + 5);
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
@@ -268,21 +248,20 @@
       }
     }
 
-
-
     function draw() {
       t += 1;
       const w = canvas.width;
       const h = canvas.height;
-      const minDim = Math.min(w, h);
+      const cx = w / 2;
+      const cy = h / 2;
 
-      // Clean background
+      // Deep Cyber Obsidian Background
       const isLight = document.body.classList.contains('light-theme');
-      ctx.fillStyle = isLight ? '#f5f4f0' : '#060409';
+      ctx.fillStyle = isLight ? '#f4f5f8' : '#030408';
       ctx.fillRect(0, 0, w, h);
 
-      // Smooth mouse coordinates
-      if (mouse.active) {
+      // Smooth mouse coordinate inertia
+      if (mouse.active && mouse.targetX !== -1000) {
         if (mouse.x === -1000) {
           mouse.x = mouse.targetX;
           mouse.y = mouse.targetY;
@@ -292,106 +271,101 @@
         }
       }
 
-      // Gyroscope center coordinates
-      const cx = w / 2;
-      const cy = h / 2;
-
-      // ── 1. BACKGROUND STARDUST EMBERS ────────────────────────────────
-      ctx.save();
-      embers.forEach((eb, idx) => {
-        eb.x += eb.vx;
-        eb.y += eb.vy;
-        eb.life -= eb.decay;
-
-        if (mouse.active && mouse.x !== -1000) {
-          const dx = mouse.x - eb.x;
-          const dy = mouse.y - eb.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 140) {
-            const push = (140 - dist) / 140;
-            eb.offsetX += (dx > 0 ? -1 : 1) * push * 0.35;
-          }
-        }
-        eb.offsetX *= 0.95;
-        eb.x += eb.offsetX;
-
-        if (eb.life <= 0 || eb.x < -20 || eb.x > w + 20 || eb.y < -20) {
-          embers[idx] = newEmber(w, h);
-          return;
-        }
-
-        const currentAlpha = eb.alpha * (eb.life > 0.5 ? (1 - eb.life) * 2 : eb.life * 2);
-        ctx.fillStyle = `hsla(${eb.hue}, 85%, 80%, ${currentAlpha})`;
-        ctx.beginPath();
-        ctx.arc(eb.x, eb.y, eb.size, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.restore();
-
-      // ── 2. OUTER ARCANE CIRCLES ───────────────────────────────────────
-      circles.forEach(c => {
+      // ── 1. CYBER RETICLE HUD RINGS ─────────────────────────────────────
+      reticles.forEach(c => {
         c.rot += c.speed * c.dir;
         ctx.save();
-        ctx.strokeStyle = `hsla(${c.hue},80%,65%,${c.alpha})`;
-        ctx.lineWidth = 1.2;
-        ctx.shadowColor = `hsla(${c.hue},100%,60%,0.4)`;
-        ctx.shadowBlur = 8;
+        ctx.strokeStyle = `hsla(${c.hue}, 90%, 65%, ${c.alpha})`;
+        ctx.lineWidth = 1;
+        ctx.shadowColor = `hsla(${c.hue}, 100%, 60%, 0.3)`;
+        ctx.shadowBlur = 6;
         ctx.setLineDash(c.dash);
         ctx.lineDashOffset = -c.rot * c.rPx;
         drawCircleWithTickmarks(cx, cy, c.rPx, c.segCount, c.rot);
         ctx.restore();
       });
 
-      // ── 3. FLOATING RUNES ─────────────────────────────────────────────
+      // ── 2. MAINFRAME PLEXUS VECTOR NETWORK ─────────────────────────────
       ctx.save();
-      runePool.forEach(rn => {
-        rn.x += rn.drift;
-        rn.bob += rn.bobSpd;
-        const bobY = Math.sin(rn.bob) * 1.8;
+      plexusNodes.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0 || p.x > w) p.vx *= -1;
+        if (p.y < 0 || p.y > h) p.vy *= -1;
 
-        if (rn.phase === 'in') {
-          rn.alpha += rn.fadeSpd;
-          if (rn.alpha >= rn.maxAlpha) { rn.alpha = rn.maxAlpha; rn.phase = 'hold'; }
-        } else if (rn.phase === 'hold') {
-          rn.hold--;
-          if (rn.hold <= 0) rn.phase = 'out';
-        } else {
-          rn.alpha -= rn.fadeSpd;
-          if (rn.alpha <= 0) {
-            const nr = newRune(w, h);
-            Object.assign(rn, nr);
-          }
-        }
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
 
-        if (rn.x < -40) rn.x = w + 20;
-        if (rn.x > w + 40) rn.x = -20;
-
-        let currentAlpha = rn.alpha;
-        if (mouse.active && mouse.x !== -1000) {
-          const dx = mouse.x - rn.x;
-          const dy = mouse.y - rn.y;
+      // Draw connections between nearby nodes & cursor
+      for (let i = 0; i < plexusNodes.length; i++) {
+        for (let j = i + 1; j < plexusNodes.length; j++) {
+          const dx = plexusNodes[i].x - plexusNodes[j].x;
+          const dy = plexusNodes[i].y - plexusNodes[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 150) {
-            const force = (150 - dist) / 150;
-            rn.offsetX += (dx > 0 ? -1 : 1) * force * 0.6;
-            rn.offsetY += (dy > 0 ? -1 : 1) * force * 0.6;
-            currentAlpha = Math.min(1, rn.alpha + force * 0.45);
+          if (dist < 110) {
+            const alpha = (1 - dist / 110) * 0.12;
+            ctx.strokeStyle = `rgba(0, 240, 255, ${alpha})`;
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(plexusNodes[i].x, plexusNodes[i].y);
+            ctx.lineTo(plexusNodes[j].x, plexusNodes[j].y);
+            ctx.stroke();
           }
         }
-        rn.offsetX *= 0.95;
-        rn.offsetY *= 0.95;
-        rn.x += rn.offsetX;
-        rn.y += rn.offsetY;
 
-        ctx.save();
-        ctx.font = `${rn.size}px 'Courier New', monospace`;
-        ctx.fillStyle = `hsla(${rn.hue},90%,80%,${currentAlpha})`;
-        ctx.shadowColor = `hsla(${rn.hue},100%,65%,${currentAlpha * 2.5})`;
-        ctx.shadowBlur = 18;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(rn.char, rn.x, rn.y + bobY);
-        ctx.restore();
+        // Connect to mouse cursor
+        if (mouse.active && mouse.x !== -1000) {
+          const mdx = mouse.x - plexusNodes[i].x;
+          const mdy = mouse.y - plexusNodes[i].y;
+          const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
+          if (mdist < 200) {
+            const malpha = (1 - mdist / 200) * 0.28;
+            ctx.strokeStyle = `rgba(0, 240, 255, ${malpha})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(plexusNodes[i].x, plexusNodes[i].y);
+            ctx.lineTo(mouse.x, mouse.y);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+
+      // ── 3. CODE MATRIX STREAM PARTICLES ────────────────────────────────
+      ctx.save();
+      codeNodes.forEach(cn => {
+        cn.y += cn.speedY;
+        cn.x += cn.driftX;
+
+        if (cn.y > h + 20) {
+          cn.y = -20;
+          cn.x = Math.random() * w;
+          cn.token = CODE_TOKENS[Math.floor(Math.random() * CODE_TOKENS.length)];
+        }
+
+        let alpha = cn.alpha;
+        if (mouse.active && mouse.x !== -1000) {
+          const dx = mouse.x - cn.x;
+          const dy = mouse.y - cn.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 160) {
+            const force = (160 - dist) / 160;
+            cn.offsetX += (dx > 0 ? -1 : 1) * force * 0.5;
+            alpha = Math.min(0.8, cn.alpha + force * 0.4);
+          }
+        }
+        cn.offsetX *= 0.94;
+        cn.x += cn.offsetX;
+
+        ctx.beginPath();
+        ctx.arc(cn.x, cn.y, Math.max(1.2, cn.size * 0.22), 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${cn.hue}, 95%, 70%, ${alpha})`;
+        ctx.shadowColor = `hsla(${cn.hue}, 100%, 65%, ${alpha * 2.5})`;
+        ctx.shadowBlur = 10;
+        ctx.fill();
       });
       ctx.restore();
 
@@ -452,7 +426,7 @@
             window.history.replaceState({ section: urlView }, '', window.location.pathname);
           } catch (e) {}
         } else {
-          showSection(activeSection, false);
+          showSection(activeSection || 'discover', false);
         }
       } else {
         currentUser = null;
@@ -518,13 +492,37 @@ window.handleLogin = async function(event) {
     const data = await res.json();
     if (data.success) {
       currentUser = data.user;
-      checkAuthStatus();
+      const authView = document.getElementById('auth-view');
+      const appLayout = document.getElementById('app-layout');
+      if (authView) authView.classList.remove('active');
+      if (appLayout) {
+        appLayout.classList.remove('sidebar-hidden');
+        appLayout.classList.remove('auth-mode');
+      }
+      await checkAuthStatus();
+      window.showSection('discover', false);
     } else {
       alert(data.error || "Login failed. Please check your credentials.");
     }
   } catch (e) {
     console.error("Login error:", e);
     alert("Network error during login: " + e.message);
+  }
+};
+
+window.handleGuestLogin = async function(event) {
+  if (event) event.preventDefault();
+  try {
+    const res = await fetch('/api/auth/guest', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      currentUser = data.user;
+      await checkAuthStatus();
+      window.showSection('discover', false);
+    }
+  } catch (e) {
+    console.error("Guest login error:", e);
+    window.showSection('discover', false);
   }
 };
 
@@ -589,16 +587,10 @@ window.triggerGoogleSignIn = function() {
         scope: 'email profile openid',
         callback: async (tokenResponse) => {
           if (tokenResponse.access_token) {
-            try {
-              const userInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-              }).then(res => res.json());
-
-              window.processGoogleSignInEmail(userInfo.email, userInfo.name, userInfo.sub, userInfo.picture);
-            } catch (err) {
-              console.error("Failed to fetch Google userinfo:", err);
-              alert("Google Sign-In failed: " + err.message);
-            }
+            // Send the raw access token to the backend, which verifies it was issued for
+            // this app and reads the email from Google directly. We never send a
+            // client-supplied email — the server rejects that as a takeover vector.
+            await window.processGoogleAccessToken(tokenResponse.access_token);
           }
         }
       });
@@ -616,12 +608,12 @@ window.triggerGoogleSignIn = function() {
   }
 };
 
-window.processGoogleSignInEmail = async function(email, name, googleId, picture) {
+window.processGoogleAccessToken = async function(accessToken) {
   try {
     const res = await fetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name: name || email.split('@')[0], googleId, picture })
+      body: JSON.stringify({ accessToken })
     });
     const data = await res.json();
     if (data.success) {
@@ -816,7 +808,7 @@ function initGoogleSignInButtons() {
           requests.forEach(r => {
             html += `
               <div style="border:1px solid rgba(234,179,8,0.25);border-radius:8px;padding:0.65rem 0.75rem;margin-bottom:0.4rem;background:rgba(234,179,8,0.04);display:flex;align-items:center;justify-content:space-between;">
-                <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${r.sender_name}</span>
+                <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${escapeHtml(r.sender_name)}</span>
                 <div style="display:flex;gap:0.4rem;">
                   <button class="btn btn-sm" onclick="acceptFriendRequest('${r.id}')" style="font-size:0.72rem;padding:3px 8px;background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.4);color:#10b981;">✓ Accept</button>
                   <button class="btn btn-sm btn-secondary" onclick="declineFriendRequest('${r.id}')" style="font-size:0.72rem;padding:3px 8px;">✕ Decline</button>
@@ -833,8 +825,8 @@ function initGoogleSignInButtons() {
           friends.forEach(f => {
             html += `
               <div style="border:1px solid var(--border-light);border-radius:8px;padding:0.65rem 0.75rem;margin-bottom:0.4rem;background:var(--bg-surface);display:flex;align-items:center;justify-content:space-between;">
-                <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${f.friend_name} <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;">@${f.friend_username}</span></span>
-                <button class="btn btn-sm" onclick="openComposeModal('${f.friend_username}')" style="font-size:0.72rem;padding:3px 8px;background:rgba(168,85,247,0.1);border-color:var(--color-primary);color:var(--color-primary);">✉️ Message</button>
+                <span style="font-size:0.82rem;font-weight:600;color:var(--text-high);">${escapeHtml(f.friend_name)} <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;">@${escapeHtml(f.friend_username)}</span></span>
+                <button class="btn btn-sm" onclick="openComposeModal(this.dataset.username)" data-username="${escapeHtml(f.friend_username)}" style="font-size:0.72rem;padding:3px 8px;background:rgba(168,85,247,0.1);border-color:var(--color-primary);color:var(--color-primary);">✉️ Message</button>
               </div>`;
           });
         }
@@ -859,11 +851,11 @@ function initGoogleSignInButtons() {
         return `
           <div class="message-row" id="msgrow-${m.id}" onclick="expandMessage('${m.id}', '${tab}')" style="border:1px solid var(--border-light);border-radius:8px;padding:0.75rem;margin-bottom:0.5rem;cursor:pointer;background:${isUnread ? 'rgba(168,85,247,0.06)' : 'var(--bg-surface)'};transition:background 0.2s;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-weight:${isUnread ? '700' : '500'};color:${isUnread ? 'var(--color-primary)' : 'var(--text-high)'};font-size:0.82rem;">${name}</span>
+              <span style="font-weight:${isUnread ? '700' : '500'};color:${isUnread ? 'var(--color-primary)' : 'var(--text-high)'};font-size:0.82rem;">${escapeHtml(name)}</span>
               <span style="font-size:0.7rem;color:var(--text-muted);">${timeStr}</span>
             </div>
-            <div style="font-size:0.8rem;color:var(--text-medium);margin-top:0.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${m.subject}</div>
-            <div id="msgbody-${m.id}" style="display:none;margin-top:0.6rem;font-size:0.82rem;color:var(--text-high);line-height:1.5;white-space:pre-wrap;border-top:1px solid var(--border-light);padding-top:0.6rem;">${m.body}</div>
+            <div style="font-size:0.8rem;color:var(--text-medium);margin-top:0.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(m.subject)}</div>
+            <div id="msgbody-${m.id}" style="display:none;margin-top:0.6rem;font-size:0.82rem;color:var(--text-high);line-height:1.5;white-space:pre-wrap;border-top:1px solid var(--border-light);padding-top:0.6rem;">${escapeHtml(m.body)}</div>
           </div>`;
       }).join('');
       if (tab === 'inbox') loadInboxUnreadCount();
@@ -1461,6 +1453,7 @@ function initGoogleSignInButtons() {
 
   // Section/Tab Router
   window.showSection = function(sectionName, pushHistory = true) {
+    if (!sectionName) sectionName = 'discover';
     // Close inspector drawer and return to body when switching views to prevent layout issues
     const drawer = document.getElementById('card-inspector-drawer');
     if (drawer) {
@@ -1490,7 +1483,7 @@ function initGoogleSignInButtons() {
     const activeBtn = document.getElementById(`nav-btn-${sectionName}`);
     if (activeBtn) activeBtn.classList.add('active');
 
-    if (sectionName === 'lifetracker' || sectionName === 'deckbuilder' || sectionName === 'playtest' || sectionName === 'deck-view') {
+    if (sectionName === 'lifetracker' || sectionName === 'deckbuilder' || sectionName === 'playtest' || sectionName === 'sandbox' || sectionName === 'deck-view') {
       document.getElementById('app-layout').classList.add('sidebar-hidden');
     } else {
       document.getElementById('app-layout').classList.remove('sidebar-hidden');
@@ -1500,11 +1493,13 @@ function initGoogleSignInButtons() {
     const titles = {
       'dashboard': 'Player Dashboard',
       'discover': 'Discover Decks',
+      'swipe': 'Swipe Stack',
       'decks': 'My Decks',
       'search': 'Card Search Database',
       'tournaments': 'Events Hub',
       'profile': 'My Profile',
       'lifetracker': 'Companion Life Tracker',
+      'sandbox': 'Playtest Sandbox',
       'deck-view': 'Deck Details'
     };
     const titleEl = document.getElementById('page-title');
@@ -1515,6 +1510,15 @@ function initGoogleSignInButtons() {
     // Display section
     const targetSection = document.getElementById(`${sectionName}-view`);
     if (targetSection) targetSection.classList.add('active');
+
+    if (sectionName === 'swipe') {
+      if (typeof window.switchDiscoverViewMode === 'function') window.switchDiscoverViewMode('swipe');
+      if (typeof window.loadDiscoverDecks === 'function') window.loadDiscoverDecks();
+    }
+
+    if (sectionName === 'sandbox') {
+      if (typeof window.promptSandboxPlayMode === 'function') window.promptSandboxPlayMode();
+    }
 
     // Manage history state
     if (pushHistory) {
@@ -1536,7 +1540,9 @@ function initGoogleSignInButtons() {
     }
 
     // Section-specific loader
-    if (sectionName === 'discover') {
+    if (sectionName === 'sandbox') {
+      window.populateSandboxDeckSelector();
+    } else if (sectionName === 'discover') {
       loadDiscoverDecks();
     } else if (sectionName === 'decks') {
       loadMyDecks();
@@ -1833,61 +1839,126 @@ function initGoogleSignInButtons() {
   }
 
 
-  window.handleImportMoxfieldAccount = async function(event) {
-    if (event) event.preventDefault();
-    const username = prompt("Enter your Moxfield username to import all public decks:");
-    if (!username) return;
+  window.openUniversalImportModal = function() {
+    const modal = document.getElementById('universal-import-modal');
+    if (modal) {
+      modal.classList.add('active');
+      switchUniversalTab('moxfield');
+    }
+  };
 
-    window.showArcaneProgress("Importing Moxfield Account", `Searching public decks for user '${username.trim()}'...`, 10);
+  window.switchUniversalTab = function(platform) {
+    document.getElementById('universal-platform').value = platform;
+    const cards = document.querySelectorAll('.arcane-platform-card');
+    cards.forEach(c => c.classList.remove('active'));
     
-    let progressPct = 10;
-    const progressTimer = setInterval(() => {
-      if (progressPct < 90) {
-        progressPct += 5;
-        let msg = `Fetching decklists & prices for '${username.trim()}' (${progressPct}%)...`;
-        if (progressPct > 60) msg = `Resolving card legalities & tournament rules...`;
-        window.updateArcaneProgress(progressPct, msg);
+    const activeCard = document.querySelector(`.arcane-platform-card[data-platform="${platform}"]`);
+    if (activeCard) activeCard.classList.add('active');
+
+    if (window.playUiSound) window.playUiSound('mana_tap');
+
+    const usernameGroup = document.getElementById('universal-username-group');
+    const usernameLabel = document.getElementById('universal-username-label');
+    const usernameInput = document.getElementById('universal-username');
+    const textGroup = document.getElementById('universal-text-group');
+
+    if (platform === 'moxfield') {
+      usernameGroup.style.display = 'block';
+      textGroup.style.display = 'none';
+      usernameLabel.innerHTML = '<span>Moxfield Account Username</span>';
+      usernameInput.placeholder = 'e.g. NickBuildsDecks';
+    } else if (platform === 'archidekt') {
+      usernameGroup.style.display = 'block';
+      textGroup.style.display = 'none';
+      usernameLabel.innerHTML = '<span>Archidekt Account Username</span>';
+      usernameInput.placeholder = 'e.g. ArchidektUser123';
+    } else if (platform === 'file' || platform === 'text') {
+      usernameGroup.style.display = 'none';
+      textGroup.style.display = 'block';
+    }
+  };
+
+  window.handleUniversalAccountImport = async function(event) {
+    if (event) event.preventDefault();
+    const platform = document.getElementById('universal-platform').value;
+    const username = document.getElementById('universal-username').value;
+    const decksText = document.getElementById('universal-text').value;
+
+    const alertBox = document.getElementById('universal-import-alert');
+    const progressContainer = document.getElementById('universal-progress-container');
+    const progressStatus = document.getElementById('universal-progress-status');
+    const progressPercent = document.getElementById('universal-progress-percent');
+    const progressBar = document.getElementById('universal-progress-bar');
+    const submitBtn = document.getElementById('btn-submit-universal-import');
+
+    alertBox.style.display = 'none';
+    progressContainer.style.display = 'flex';
+    submitBtn.disabled = true;
+
+    let progress = 10;
+    progressStatus.textContent = `Connecting to ${platform.toUpperCase()}...`;
+    progressPercent.textContent = `10%`;
+    progressBar.style.width = `10%`;
+
+    const timer = setInterval(() => {
+      if (progress < 90) {
+        progress += 10;
+        progressPercent.textContent = `${progress}%`;
+        progressBar.style.width = `${progress}%`;
+        if (progress > 40) progressStatus.textContent = `Processing decklists & card legalities...`;
+        if (progress > 70) progressStatus.textContent = `Applying functional auto-tagging & price estimates...`;
       }
-    }, 800);
+    }, 500);
 
     try {
-      const res = await fetch('/api/moxfield/import-account', {
+      const res = await fetch('/api/decks/import-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim() })
+        body: JSON.stringify({ platform, username, decksText })
       });
-      clearInterval(progressTimer);
-      window.updateArcaneProgress(100, "Import process complete!");
-      const data = await res.json();
-      setTimeout(() => window.hideArcaneProgress(), 300);
 
+      clearInterval(timer);
+      progressPercent.textContent = `100%`;
+      progressBar.style.width = `100%`;
+      submitBtn.disabled = false;
+
+      const data = await res.json();
       if (!res.ok || !data.success) {
-        alert(data.error || "Failed to import Moxfield account.");
+        alertBox.style.display = 'block';
+        alertBox.style.background = 'rgba(239, 68, 68, 0.2)';
+        alertBox.style.border = '1px solid #ef4444';
+        alertBox.style.color = '#fca5a5';
+        alertBox.textContent = data.error || `Failed to import ${platform} decks.`;
         return;
       }
-      const importedCount = data.importedCount || 0;
-      const importedDecks = data.importedDecks || [];
-      const skippedDecks = data.skippedDecks || [];
-      let message = `Successfully imported/updated ${importedCount} deck(s):\n`;
-      importedDecks.forEach(d => {
-        message += ` - ${d.name} ($${(d.totalPrice || 0).toFixed(2)})${d.isLegal ? '' : ' [ILLEGAL]'}\n`;
-      });
-      if (skippedDecks.length > 0) {
-        message += `\nSkipped ${skippedDecks.length} deck(s):\n`;
-        skippedDecks.forEach(d => {
-          message += ` - ${d.name} (${d.error})\n`;
-        });
-      }
-      alert(message);
-      if (typeof loadMyDecks === 'function') {
-        loadMyDecks();
-      }
+
+      alertBox.style.display = 'block';
+      alertBox.style.background = 'rgba(34, 197, 94, 0.2)';
+      alertBox.style.border = '1px solid #22c55e';
+      alertBox.style.color = '#86efac';
+      alertBox.textContent = `🎉 Success! Imported ${data.count} deck(s) into your Grimore collection.`;
+
+      if (typeof loadDecks === 'function') loadDecks();
+
+      setTimeout(() => {
+        document.getElementById('universal-import-modal').classList.remove('active');
+        progressContainer.style.display = 'none';
+        alertBox.style.display = 'none';
+      }, 2000);
     } catch (e) {
-      clearInterval(progressTimer);
-      console.error("Moxfield account import failed:", e);
-      window.hideArcaneProgress();
-      alert("An error occurred while importing Moxfield account.");
+      clearInterval(timer);
+      submitBtn.disabled = false;
+      alertBox.style.display = 'block';
+      alertBox.style.background = 'rgba(239, 68, 68, 0.2)';
+      alertBox.style.border = '1px solid #ef4444';
+      alertBox.style.color = '#fca5a5';
+      alertBox.textContent = e.message || "Network error occurred during migration.";
     }
+  };
+
+  window.handleImportMoxfieldAccount = async function(event) {
+    if (event) event.preventDefault();
+    openUniversalImportModal();
   };
 
   window.handleRegisterDeck = async function(event) {
@@ -3745,7 +3816,7 @@ function initGoogleSignInButtons() {
 
       const credit = document.getElementById('inspector-deck-credit');
       if (data.originalCreatorName) {
-        credit.innerHTML = `Forked from <span style="color:var(--color-primary); font-weight:700;">${data.originalCreatorName}</span>`;
+        credit.innerHTML = `Forked from <span style="color:var(--color-primary); font-weight:700;">${escapeHtml(data.originalCreatorName)}</span>`;
       } else {
         credit.innerHTML = '';
       }
@@ -3756,7 +3827,7 @@ function initGoogleSignInButtons() {
         if (data.customTags && data.customTags.length > 0) {
           data.customTags.forEach(tag => {
             tagsContainer.innerHTML += `
-              <span class="badge" style="background: rgba(168, 85, 247, 0.15); color: var(--color-primary); border: 1px solid rgba(168, 85, 247, 0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: 600;">${tag}</span>
+              <span class="badge" style="background: rgba(168, 85, 247, 0.15); color: var(--color-primary); border: 1px solid rgba(168, 85, 247, 0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: 600;">${escapeHtml(tag)}</span>
             `;
           });
         }
@@ -3769,8 +3840,8 @@ function initGoogleSignInButtons() {
       } else {
         data.comments.forEach(c => {
           const time = new Date(c.created_at).toLocaleDateString();
-          const avatarHtml = c.avatar_url
-            ? `<img src="${c.avatar_url}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;" alt="avatar">`
+          const avatarHtml = safeImageUrl(c.avatar_url)
+            ? `<img src="${escapeHtml(c.avatar_url)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;" alt="avatar">`
             : `<svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: var(--color-primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>`;
 
           list.innerHTML += `
@@ -3780,10 +3851,10 @@ function initGoogleSignInButtons() {
               </div>
               <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 0.15rem;">
                 <div class="comment-meta" style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted);">
-                  <strong style="color: var(--text-high); cursor: pointer;" onclick="viewPublicProfile('${c.player_id}')">${c.store_nickname}</strong>
+                  <strong style="color: var(--text-high); cursor: pointer;" onclick="viewPublicProfile('${c.player_id}')">${escapeHtml(c.store_nickname)}</strong>
                   <span>${time}</span>
                 </div>
-                <div style="font-size:0.8rem; color:var(--text-high);">${c.comment_text}</div>
+                <div style="font-size:0.8rem; color:var(--text-high);">${escapeHtml(c.comment_text)}</div>
               </div>
             </div>
           `;
@@ -3850,6 +3921,10 @@ function initGoogleSignInButtons() {
   let builderFeaturedCardName = null;
   let builderIsPublic = 1;
   let builderKeepCheapest = 0;
+  // True only once an existing deck's cards have finished loading (or the builder
+  // was opened for a brand-new deck). Guards triggerAutoSave from overwriting a
+  // real deck with an empty card list when the load failed mid-flight.
+  let builderLoadComplete = false;
 
   window.toggleImportForm = function() {
     const wrapper = document.getElementById('import-deck-wrapper');
@@ -4064,6 +4139,9 @@ function initGoogleSignInButtons() {
     builderCommander = [];
     builderMainboard = [];
     builderActivePreviewCard = null;
+    // Block autosave until this deck's cards are confirmed loaded. For a brand-new
+    // deck (no deckId) there is nothing to load, so the builder is ready immediately.
+    builderLoadComplete = !deckId;
 
     const tagsInput = document.getElementById('builder-deck-tags');
     if (tagsInput) tagsInput.value = '';
@@ -4138,6 +4216,7 @@ function initGoogleSignInButtons() {
         builderFeaturedCardName = cached.featured_card_name || builderFeaturedCardName;
         if (formatSelect && cached.format) formatSelect.value = cached.format;
         hasMemoryHit = true;
+        builderLoadComplete = true;
         renderBuilderDecklist();
       }
     }
@@ -4194,14 +4273,32 @@ function initGoogleSignInButtons() {
               if (c.is_commander === 1) builderCommander.push(cardObj);
               else builderMainboard.push(cardObj);
             });
+            // Cards are confirmed loaded — autosave is now safe.
+            builderLoadComplete = true;
           }
+        } else if (!hasMemoryHit) {
+          // Server returned a non-OK status and we have no cached copy. Do NOT
+          // leave an editable empty builder pointed at a real deck: a later
+          // autosave would overwrite it with zero cards. Detach and show an error.
+          throw new Error(`Deck load failed with status ${metaRes ? metaRes.status : 'unknown'}`);
         }
       } catch (e) {
         console.error("Failed to load deck cards or metadata:", e);
+        if (!hasMemoryHit) {
+          // Detach from the real deck so autosave cannot fire against it.
+          builderDeckId = null;
+          builderLoadComplete = false;
+          const mZoneErr = document.getElementById('builder-zone-mainboard');
+          if (mZoneErr) {
+            mZoneErr.innerHTML = `<div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-muted); font-size: 0.9rem; gap: 0.75rem;"><span style="color: var(--color-loss);">Could not load this deck's cards. Your saved deck is safe.</span><button class="btn btn-secondary btn-sm" onclick="openVisualDeckbuilder('${escapeHtml(String(deckId))}', '', 1, null, '${escapeHtml(String(format || 'commander'))}', ${keepCheapest ? 1 : 0})">Retry</button></div>`;
+          }
+        }
       } finally {
         renderBuilderDecklist();
       }
     } else {
+      // Brand-new deck — nothing to load.
+      builderLoadComplete = true;
       renderBuilderDecklist();
     }
   };
@@ -4813,7 +4910,7 @@ function initGoogleSignInButtons() {
       alert("No active deck loaded to delete.");
       return;
     }
-    window.openDeleteConfirmModal(`Are you sure you want to permanently delete "${deckName}"? This action cannot be undone.`, async () => {
+    window.openDeleteConfirmModal(`Are you sure you want to delete "${deckName}"? It will be moved to the Recycle Bin, where you can restore it.`, async () => {
       try {
         window.startTopProgress();
         const res = await fetch(`/api/decks/${deckId}`, { method: 'DELETE' });
@@ -5352,6 +5449,23 @@ function initGoogleSignInButtons() {
     // Rarity color map
     const rarityColors = { mythic: '#ff8c42', rare: '#f0c040', uncommon: '#a0bfd0', common: '#999', special: '#cc88ff', bonus: '#ff9988' };
 
+    if (sortedTags.length === 0) {
+      mZone.innerHTML = `
+        <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 280px; padding: 2rem; border: 2px dashed rgba(168, 85, 247, 0.3); border-radius: var(--radius-md); background: rgba(0,0,0,0.25); text-align: center; gap: 1rem; margin: auto 0;">
+          <svg viewBox="0 0 24 24" style="width: 48px; height: 48px; fill: none; stroke: var(--color-primary); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="12" y1="8" x2="12" y2="16"/>
+            <line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+          <div>
+            <h3 style="font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--text-pure); margin: 0 0 0.25rem 0;">Your Deck Mainboard is Empty</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">Use the <strong>Search</strong> button or the <strong>Add card to deck...</strong> search bar above to add cards!</p>
+          </div>
+          <button type="button" class="btn btn-gold btn-sm" onclick="openCardSearchModal()" style="font-weight: 700; padding: 0.4rem 1.25rem;">🔍 Search Cards</button>
+        </div>`;
+      return;
+    }
+
     sortedTags.forEach(tag => {
       const groupCount = groups[tag].reduce((s, c) => s + (c.qty || 1), 0);
 
@@ -5683,13 +5797,52 @@ function initGoogleSignInButtons() {
   };
 
   let autoSaveTimeout = null;
+  let builderSaveInFlight = null; // serialize saves so a new-deck create can't double-fire
+  let builderDirty = false;
+
+  // Small persistent save-status indicator in the builder header.
+  function setBuilderSaveStatus(kind, text) {
+    let el = document.getElementById('builder-save-status');
+    if (!el) {
+      const host = document.getElementById('builder-deck-name') || document.body;
+      el = document.createElement('div');
+      el.id = 'builder-save-status';
+      el.style.cssText = 'font-size:0.72rem;margin-top:4px;font-weight:600;';
+      if (host && host.parentNode) host.parentNode.insertBefore(el, host.nextSibling);
+      else document.body.appendChild(el);
+    }
+    if (kind === 'saved') { el.style.color = 'var(--text-muted)'; el.textContent = text || 'All changes saved'; }
+    else if (kind === 'saving') { el.style.color = 'var(--text-muted)'; el.textContent = text || 'Saving…'; }
+    else if (kind === 'error') { el.style.color = 'var(--color-loss, #ef4444)'; el.textContent = text || 'Not saved — will retry'; }
+    else el.textContent = '';
+  }
+
+  // Warn before leaving with unsaved changes.
+  window.addEventListener('beforeunload', (e) => {
+    if (builderDirty) { e.preventDefault(); e.returnValue = ''; }
+  });
 
   window.triggerAutoSave = async function() {
+    // Never autosave an existing deck whose cards have not finished loading — a
+    // failed/incomplete load leaves builderCommander/builderMainboard empty, and
+    // saving that would wipe the real deck. (New decks set builderLoadComplete=true.)
+    if (builderDeckId && !builderLoadComplete) {
+      console.warn("Autosave skipped: deck cards not loaded yet.");
+      return;
+    }
+    // Serialize: if a save is already running, wait for it first so two quick actions on a
+    // brand-new deck (deckId still null) don't create two decks.
+    if (builderSaveInFlight) {
+      try { await builderSaveInFlight; } catch (e) {}
+    }
     const deckNameInput = document.getElementById('builder-deck-name');
     if (!deckNameInput) return;
     const deckName = deckNameInput.value;
     if (!deckName || !deckName.trim() || isProfane(deckName)) {
-      return; // Do not auto-save invalid names
+      // Surface why saving is blocked instead of silently dropping edits.
+      builderDirty = true;
+      setBuilderSaveStatus('error', 'Not saved — deck name is empty or not allowed.');
+      return;
     }
 
     const format = document.getElementById('builder-deck-format') ? document.getElementById('builder-deck-format').value : 'commander';
@@ -5699,7 +5852,8 @@ function initGoogleSignInButtons() {
     const tagsInput = document.getElementById('builder-deck-tags');
     const customTags = tagsInput ? tagsInput.value.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
 
-    try {
+    setBuilderSaveStatus('saving');
+    builderSaveInFlight = (async () => {
       const res = await fetch('/api/decks/builder-save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5715,15 +5869,24 @@ function initGoogleSignInButtons() {
           customTags
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.deckId) {
-          builderDeckId = data.deckId;
-        }
-        loadMyDecks(); // Refresh collection view in background
+      if (!res.ok) throw new Error(`Save failed (HTTP ${res.status})`);
+      const data = await res.json();
+      if (data.success && data.deckId) {
+        builderDeckId = data.deckId;
       }
+      loadMyDecks(); // Refresh collection view in background
+    })();
+
+    try {
+      await builderSaveInFlight;
+      builderDirty = false;
+      setBuilderSaveStatus('saved');
     } catch (e) {
       console.error("Auto-save failed:", e);
+      builderDirty = true;
+      setBuilderSaveStatus('error', 'Not saved — check your connection or log in again.');
+    } finally {
+      builderSaveInFlight = null;
     }
   };
 
@@ -6005,12 +6168,19 @@ function initGoogleSignInButtons() {
   }
 
   function escapeHtml(text) {
-    return text
+    return String(text == null ? '' : text)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  // Returns true only for http(s) URLs, so attacker-supplied avatar/image URLs
+  // (javascript:, data:, etc.) are rejected before being placed in an <img src>.
+  function safeImageUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    return /^https?:\/\//i.test(url.trim());
   }
 
   function updateSandboxCountersUI() {
@@ -6552,7 +6722,7 @@ function initGoogleSignInButtons() {
     }
 
     decks.forEach(deck => {
-      const tagsHtml = (deck.customTags || []).map(t => `<span class="tag-badge" style="font-size: 0.65rem; padding: 2px 6px; background: rgba(168, 85, 247, 0.08); border: 1px solid var(--border-light); border-radius: 4px; color: var(--color-primary);">${t}</span>`).join(' ');
+      const tagsHtml = (deck.customTags || []).map(t => `<span class="tag-badge" style="font-size: 0.65rem; padding: 2px 6px; background: rgba(168, 85, 247, 0.08); border: 1px solid var(--border-light); border-radius: 4px; color: var(--color-primary);">${escapeHtml(t)}</span>`).join(' ');
 
       const cardEl = document.createElement('div');
       cardEl.className = 'deck-card panel';
@@ -6565,8 +6735,8 @@ function initGoogleSignInButtons() {
       cardEl.style.cursor = 'pointer';
       cardEl.onclick = () => inspectDeckCards(deck.id, deck.deckName);
 
-      const avatarHtml = deck.creatorAvatar
-        ? `<img src="${deck.creatorAvatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-light);" alt="Avatar">`
+      const avatarHtml = safeImageUrl(deck.creatorAvatar)
+        ? `<img src="${escapeHtml(deck.creatorAvatar)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-light);" alt="Avatar">`
         : `<img src="logo.svg" style="width: 24px; height: 24px; border-radius: 50%; object-fit: contain; border: 1px solid var(--border-light); background: var(--bg-dark);" alt="Avatar">`;
 
       let legalClass = deck.isLegal ? 'badge-win' : 'badge-loss';
@@ -6593,16 +6763,16 @@ function initGoogleSignInButtons() {
         <div style="padding: 1rem; display: flex; flex-grow: 1; flex-direction: column; justify-content: space-between; gap: 0.5rem; overflow: hidden;">
           <div>
             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.25rem; gap: 0.5rem;">
-              <h3 style="font-size: 1.05rem; margin: 0; font-family: 'Cinzel', serif; font-weight: 800; color: var(--text-pure); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1;">${deck.deckName}</h3>
-              <span class="badge ${legalClass}" style="flex-shrink: 0;" title="${legalTitle}">${legalLabel}</span>
+              <h3 style="font-size: 1.05rem; margin: 0; font-family: 'Cinzel', serif; font-weight: 800; color: var(--text-pure); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1;">${escapeHtml(deck.deckName)}</h3>
+              <span class="badge ${legalClass}" style="flex-shrink: 0;" title="${escapeHtml(legalTitle)}">${legalLabel}</span>
             </div>
 
             <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">
               ${avatarHtml}
               <div>
-                Created by <strong style="color: var(--text-high);">${deck.creatorName}</strong>
-                ${deck.creatorCommander ? `<span style="font-size:0.65rem; color:var(--color-gold); display:block;">Signature: 👑 ${deck.creatorCommander}</span>` : ''}
-                ${deck.originalCreator ? `<span style="font-size:0.65rem; display:block;">Cloned from <strong>${deck.originalCreator}</strong></span>` : ''}
+                Created by <strong style="color: var(--text-high);">${escapeHtml(deck.creatorName)}</strong>
+                ${deck.creatorCommander ? `<span style="font-size:0.65rem; color:var(--color-gold); display:block;">Signature: 👑 ${escapeHtml(deck.creatorCommander)}</span>` : ''}
+                ${deck.originalCreator ? `<span style="font-size:0.65rem; display:block;">Cloned from <strong>${escapeHtml(deck.originalCreator)}</strong></span>` : ''}
               </div>
             </div>
 
@@ -6872,8 +7042,8 @@ function initGoogleSignInButtons() {
 
       // Avatar
       const avatarContainer = document.getElementById('public-profile-avatar-container');
-      if (data.profile.avatar_url) {
-        avatarContainer.innerHTML = `<img src="${data.profile.avatar_url}" style="width: 56px; height: 56px; border-radius: 50%; object-fit: cover;" alt="avatar">`;
+      if (safeImageUrl(data.profile.avatar_url)) {
+        avatarContainer.innerHTML = `<img src="${escapeHtml(data.profile.avatar_url)}" style="width: 56px; height: 56px; border-radius: 50%; object-fit: cover;" alt="avatar">`;
       } else {
         avatarContainer.innerHTML = `<svg viewBox="0 0 24 24" style="width: 56px; height: 56px; fill: var(--color-primary);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>`;
       }
@@ -8970,11 +9140,11 @@ function initGoogleSignInButtons() {
   };
 
   window.renderDiscoverSwipeStack = function() {
-    const stackEl = document.getElementById('swipe-card-stack');
+    const stackEl = document.getElementById('swipe-card-stack') || document.getElementById('standalone-swipe-card-stack');
     if (!stackEl) return;
 
     if (!currentDiscoverDecks || currentDiscoverDecks.length === 0 || currentSwipeIndex >= currentDiscoverDecks.length) {
-      stackEl.innerHTML = `
+      const emptyHtml = `
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; color: var(--text-medium); padding: 2rem;">
           <svg viewBox="0 0 24 24" style="width: 48px; height: 48px; fill: var(--color-primary); margin-bottom: 1rem;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
           <h3 style="color: var(--text-pure); margin-bottom: 0.5rem; font-family: 'Cinzel', serif;">End of the Stack</h3>
@@ -8982,6 +9152,10 @@ function initGoogleSignInButtons() {
           <button class="btn btn-primary" onclick="currentSwipeIndex=0; renderDiscoverSwipeStack();">Shuffle &amp; Start Over</button>
         </div>
       `;
+      const stackEl1 = document.getElementById('swipe-card-stack');
+      const stackEl2 = document.getElementById('standalone-swipe-card-stack');
+      if (stackEl1) stackEl1.innerHTML = emptyHtml;
+      if (stackEl2) stackEl2.innerHTML = emptyHtml;
       return;
     }
 
@@ -9054,11 +9228,31 @@ function initGoogleSignInButtons() {
       </div>
     `;
 
-    stackEl.innerHTML = html;
+    // Render the card into ONLY the currently-visible stack. Writing the same markup
+    // (which contains id="active-swipe-card") into both containers produced a duplicate id,
+    // so drag/fling targeted the hidden discover copy while the visible card just teleported.
+    const stackEl1 = document.getElementById('swipe-card-stack');
+    const stackEl2 = document.getElementById('standalone-swipe-card-stack');
+    const isVisible = (el) => el && (el.offsetParent !== null || el.getClientRects().length > 0);
+    const target = isVisible(stackEl2) ? stackEl2 : (isVisible(stackEl1) ? stackEl1 : (stackEl1 || stackEl2));
+    if (stackEl1) stackEl1.innerHTML = (stackEl1 === target) ? html : '';
+    if (stackEl2) stackEl2.innerHTML = (stackEl2 === target) ? html : '';
+
     initCardDragging();
   };
 
+  // Window-level drag handlers from the previous card, removed before re-binding so they
+  // don't accumulate (they closure-capture detached nodes and cause mobile jank).
+  let _swipeWindowHandlers = null;
+
   function initCardDragging() {
+    if (_swipeWindowHandlers) {
+      window.removeEventListener('mousemove', _swipeWindowHandlers.move);
+      window.removeEventListener('touchmove', _swipeWindowHandlers.move);
+      window.removeEventListener('mouseup', _swipeWindowHandlers.up);
+      window.removeEventListener('touchend', _swipeWindowHandlers.up);
+      _swipeWindowHandlers = null;
+    }
     const card = document.getElementById('active-swipe-card');
     if (!card) return;
 
@@ -9099,6 +9293,7 @@ function initGoogleSignInButtons() {
     window.addEventListener('touchmove', onPointerMove, { passive: true });
     window.addEventListener('mouseup', onPointerUp);
     window.addEventListener('touchend', onPointerUp);
+    _swipeWindowHandlers = { move: onPointerMove, up: onPointerUp };
   }
 
   window.triggerSwipeAction = function(action) {
@@ -9143,4 +9338,1494 @@ function initGoogleSignInButtons() {
     }
   });
 
+  // ── GOLDFISH PLAYTEST SIMULATOR & OPENING HAND AI EVALUATOR ─────────────────
+  let gfPlaytestDeck = [];
+  let gfPlaytestLibrary = [];
+  let gfPlaytestHand = [];
+  let gfPlaytestBoard = [];
+  let gfPlaytestTurn = 1;
+  let gfPlaytestMulligans = 0;
+  let gfManaPool = { w: 0, u: 0, b: 0, r: 0, g: 0, c: 0 };
+
+  window.openGoldfishPlaytestModal = function() {
+    const modal = document.getElementById('goldfish-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    // Compile deck list
+    gfPlaytestDeck = [];
+    (builderMainboard || []).forEach(c => {
+      const qty = c.qty || 1;
+      for (let i = 0; i < qty; i++) gfPlaytestDeck.push({ ...c });
+    });
+
+    if (gfPlaytestDeck.length === 0) {
+      alert("Please add cards to your deck before opening the Goldfish Playtest Simulator.");
+      modal.style.display = 'none';
+      return;
+    }
+
+    window.drawOpeningHand();
+  };
+
+  window.closeGoldfishModal = function() {
+    const modal = document.getElementById('goldfish-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.drawOpeningHand = function() {
+    gfPlaytestMulligans = 0;
+    gfPlaytestTurn = 1;
+    const turnEl = document.getElementById('playtest-turn-num');
+    if (turnEl) turnEl.textContent = gfPlaytestTurn;
+
+    // Shuffle library
+    gfPlaytestLibrary = [...gfPlaytestDeck].sort(() => Math.random() - 0.5);
+    gfPlaytestHand = gfPlaytestLibrary.splice(0, 7);
+    gfPlaytestBoard = [];
+    window.resetManaPool();
+
+    window.evaluateOpeningHand();
+    window.renderPlaytestState();
+    window.logPlaytestAction("Game initialized. Drew opening 7-card hand.");
+  };
+
+  window.performLondonMulligan = function() {
+    gfPlaytestMulligans++;
+    gfPlaytestLibrary = [...gfPlaytestDeck].sort(() => Math.random() - 0.5);
+    const drawCount = 7;
+    gfPlaytestHand = gfPlaytestLibrary.splice(0, drawCount);
+    gfPlaytestBoard = [];
+
+    window.evaluateOpeningHand();
+    window.renderPlaytestState();
+    window.logPlaytestAction(`London Mulligan #${gfPlaytestMulligans}. Drew 7 cards (choose ${gfPlaytestMulligans} to put on bottom).`);
+  };
+
+  window.evaluateOpeningHand = function() {
+    const gradeEl = document.getElementById('goldfish-ai-grade');
+    const evalTextEl = document.getElementById('playtest-ai-eval-text');
+    if (!gradeEl || !evalTextEl) return;
+
+    let landCount = 0;
+    let rampCount = 0;
+    let lowCmcCount = 0;
+
+    gfPlaytestHand.forEach(c => {
+      const type = (c.type_line || '').toLowerCase();
+      const name = (c.name || '').toLowerCase();
+      if (type.includes('land') || name.includes('land')) landCount++;
+      if (name.includes('sol ring') || name.includes('signet') || name.includes('talisman') || name.includes('ramp') || name.includes('farseek')) rampCount++;
+      if ((c.cmc || 0) <= 2 && !type.includes('land')) lowCmcCount++;
+    });
+
+    let grade = 'Grade B (Playable)';
+    let summary = '';
+
+    if (landCount === 3 || landCount === 4) {
+      if (rampCount > 0 || lowCmcCount > 0) {
+        grade = 'Grade A+ (Ideal Opening Hand)';
+        summary = `Optimal curve! ${landCount} lands with early acceleration/turn 1-2 plays available. Excellent keep.`;
+      } else {
+        grade = 'Grade A (Solid Hand)';
+        summary = `Balanced ${landCount} lands and spells. Safe keep for smooth mana progression.`;
+      }
+    } else if (landCount === 2) {
+      if (rampCount > 0 || lowCmcCount >= 2) {
+        grade = 'Grade B+ (Risky / Fast Hand)';
+        summary = `2 lands with cheap spells/ramp. Playable if early card selection is available.`;
+      } else {
+        grade = 'Grade C (Low Mana Risk)';
+        summary = `Only 2 lands without early ramp. Consider London Mulligan if no cantrips are in hand.`;
+      }
+    } else if (landCount === 5) {
+      grade = 'Grade C+ (Flood Risk)';
+      summary = `5 lands in hand. High resilience but potential lack of gas unless draw engine is present.`;
+    } else if (landCount <= 1) {
+      grade = 'Grade F (Severe Mana Drought)';
+      summary = `Only ${landCount} land(s). Highly recommended to London Mulligan!`;
+    } else {
+      grade = 'Grade F (Severe Mana Flood)';
+      summary = `${landCount} lands. Highly recommended to London Mulligan!`;
+    }
+
+    gradeEl.textContent = grade;
+    evalTextEl.innerHTML = `<strong>${grade}</strong><br>${summary}`;
+  };
+
+  window.drawPlaytestCard = function() {
+    if (gfPlaytestLibrary.length === 0) {
+      window.logPlaytestAction("Library is empty! Cannot draw.");
+      return;
+    }
+    const drawn = gfPlaytestLibrary.shift();
+    gfPlaytestHand.push(drawn);
+    window.renderPlaytestState();
+    window.logPlaytestAction(`Drew ${drawn.name}.`);
+  };
+
+  window.nextPlaytestTurn = function() {
+    gfPlaytestTurn++;
+    const turnEl = document.getElementById('playtest-turn-num');
+    if (turnEl) turnEl.textContent = gfPlaytestTurn;
+
+    // Draw card for turn
+    if (gfPlaytestLibrary.length > 0) {
+      const drawn = gfPlaytestLibrary.shift();
+      gfPlaytestHand.push(drawn);
+    }
+    window.resetManaPool();
+    window.renderPlaytestState();
+    window.logPlaytestAction(`--- Turn ${gfPlaytestTurn} Started (Untap & Draw) ---`);
+  };
+
+  window.playCardToBoard = function(handIdx) {
+    if (handIdx < 0 || handIdx >= gfPlaytestHand.length) return;
+    const card = gfPlaytestHand.splice(handIdx, 1)[0];
+    gfPlaytestBoard.push(card);
+
+    // Auto add mana if land
+    const type = (card.type_line || '').toLowerCase();
+    if (type.includes('land')) {
+      gfManaPool.c += 1;
+      window.updateManaDisplay();
+    }
+
+    window.renderPlaytestState();
+    window.logPlaytestAction(`Played ${card.name} to battlefield.`);
+  };
+
+  window.resetManaPool = function() {
+    gfManaPool = { w: 0, u: 0, b: 0, r: 0, g: 0, c: 0 };
+    window.updateManaDisplay();
+  };
+
+  window.updateManaDisplay = function() {
+    ['w','u','b','r','g','c'].forEach(k => {
+      const el = document.getElementById(`mana-${k}`);
+      if (el) el.textContent = gfManaPool[k];
+    });
+  };
+
+  window.logPlaytestAction = function(msg) {
+    const logEl = document.getElementById('playtest-log-container');
+    if (!logEl) return;
+    const item = document.createElement('div');
+    item.textContent = `> ${msg}`;
+    logEl.appendChild(item);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  window.renderPlaytestState = function() {
+    const handContainer = document.getElementById('playtest-hand-container');
+    const boardContainer = document.getElementById('playtest-board-container');
+    const handCountEl = document.getElementById('playtest-hand-count');
+    const boardCountEl = document.getElementById('playtest-board-count');
+
+    if (handCountEl) handCountEl.textContent = gfPlaytestHand.length;
+    if (boardCountEl) boardCountEl.textContent = gfPlaytestBoard.length;
+
+    if (handContainer) {
+      handContainer.innerHTML = '';
+      gfPlaytestHand.forEach((c, idx) => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        handContainer.innerHTML += `
+          <div class="playtest-card" style="position: relative; width: 100px; flex-shrink: 0; cursor: pointer; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-light); background: #0c0d14;" onclick="window.playCardToBoard(${idx})" title="Click to play ${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 140px; object-fit: cover; display: block;">` : `<div style="padding: 0.5rem; font-size: 0.7rem; color: var(--text-pure); font-weight: 700;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+
+    if (boardContainer) {
+      boardContainer.innerHTML = '';
+      gfPlaytestBoard.forEach((c) => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        boardContainer.innerHTML += `
+          <div style="width: 80px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-gold); background: #0c0d14;" title="${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 110px; object-fit: cover; display: block;">` : `<div style="padding: 0.4rem; font-size: 0.65rem; color: var(--text-pure);">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+  };
+
+
+  // ── 3X3 PROXY PRINT ENGINE ──────────────────────────────────────────────────
+  window.openProxyPrintModal = function() {
+    const modal = document.getElementById('proxy-print-modal');
+    const container = document.getElementById('proxy-print-container');
+    if (!modal || !container) return;
+    modal.style.display = 'flex';
+
+    // Collect all cards including commander
+    const allCards = [];
+    (builderCommander || []).forEach(c => allCards.push({ ...c }));
+    (builderMainboard || []).forEach(c => {
+      const qty = c.qty || 1;
+      for (let i = 0; i < qty; i++) allCards.push({ ...c });
+    });
+
+    container.innerHTML = '';
+
+    if (allCards.length === 0) {
+      container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.9rem; padding: 2rem;">No cards in deck to print. Add cards to your deck list first.</div>`;
+      return;
+    }
+
+    // Chunk cards into 9-card pages
+    for (let i = 0; i < allCards.length; i += 9) {
+      const pageCards = allCards.slice(i, i + 9);
+      const pageNum = Math.floor(i / 9) + 1;
+      const totalPages = Math.ceil(allCards.length / 9);
+
+      let pageHtml = `
+        <div class="proxy-page" style="width: 680px; background: #ffffff; padding: 20px; border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 10px; align-items: center;">
+          <div style="width: 100%; display: flex; justify-content: space-between; font-size: 0.75rem; color: #475569; font-weight: 700; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">
+            <span>Grimore Proxy Sheet — Page ${pageNum} of ${totalPages}</span>
+            <span>Standard Poker 63mm × 88mm Cut Lines</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, 196px); gap: 4px; border: 1px dashed #94a3b8; padding: 4px; background: #f8fafc;">`;
+
+      pageCards.forEach(c => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=normal` : '';
+        pageHtml += `
+          <div style="width: 196px; height: 274px; border: 1px solid #cbd5e1; overflow: hidden; position: relative; background: #000000;">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="color: white; padding: 10px; font-size: 0.8rem; font-weight: 700;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+
+      pageHtml += `</div></div>`;
+      container.innerHTML += pageHtml;
+    }
+  };
+
+  window.closeProxyPrintModal = function() {
+    const modal = document.getElementById('proxy-print-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.triggerProxyPrint = function() {
+    window.print();
+  };
+
+
+
+  // ── SYSTEM 1: DRAFT PODS FRONTEND ENGINE ─────────────────────────────────
+  let currentDraftId = null;
+  let currentDraftSession = null;
+
+  window.createNewDraftSession = async function() {
+    try {
+      const res = await fetch('/api/draft/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: 'draft', setName: 'CMR' })
+      });
+      const data = await res.json();
+      if (data.success && data.draftId) {
+        currentDraftId = data.draftId;
+        currentDraftSession = data.session;
+        document.getElementById('draft-table-container').style.display = 'flex';
+        window.renderDraftState(data.session);
+      }
+    } catch (e) {
+      console.error("Draft session creation error:", e);
+      alert("Failed to start draft session: " + e.message);
+    }
+  };
+
+  window.pickDraftCard = async function(cardIndex) {
+    if (!currentDraftId) return;
+    try {
+      const res = await fetch(`/api/draft/${currentDraftId}/pick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardIndex })
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.renderDraftState(data);
+      }
+    } catch (e) {
+      console.error("Draft pick error:", e);
+    }
+  };
+
+  window.renderDraftState = function(draftData) {
+    const packNumEl = document.getElementById('draft-pack-num');
+    const pickNumEl = document.getElementById('draft-pick-num');
+    const packGrid = document.getElementById('draft-pack-grid');
+    const poolGrid = document.getElementById('draft-pool-grid');
+    const poolCountEl = document.getElementById('draft-pool-count');
+    const exportBtn = document.getElementById('btn-export-draft-deck');
+
+    if (packNumEl) packNumEl.textContent = draftData.packNumber || 1;
+    if (pickNumEl) pickNumEl.textContent = draftData.pickNumber || 1;
+
+    const currentPack = draftData.currentPack || [];
+    const draftedPool = draftData.draftedPool || [];
+
+    if (poolCountEl) poolCountEl.textContent = draftedPool.length;
+
+    if (packGrid) {
+      packGrid.innerHTML = '';
+      currentPack.forEach((c, idx) => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        packGrid.innerHTML += `
+          <div class="deck-card" style="min-height: 180px; padding: 0;" onclick="window.pickDraftCard(${idx})" title="Click to pick ${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 180px; object-fit: cover; display: block;">` : `<div style="padding: 0.5rem; color: white; font-weight: 700; font-size: 0.75rem;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+
+    if (poolGrid) {
+      poolGrid.innerHTML = '';
+      draftedPool.forEach(c => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        poolGrid.innerHTML += `
+          <div style="width: 70px; height: 100px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-gold); background: #000;" title="${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="padding: 0.2rem; font-size: 0.6rem; color: white;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+
+    if (draftData.status === 'completed' && exportBtn) {
+      exportBtn.style.display = 'inline-flex';
+    }
+  };
+
+  window.exportDraftedPoolToDeck = async function() {
+    try {
+      const deckName = "Draft Deck (" + new Date().toLocaleDateString() + ")";
+      const res = await fetch('/api/decks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deckName: deckName,
+          format: 'Draft',
+          cards: (currentDraftSession && currentDraftSession.draftedPool ? currentDraftSession.draftedPool : []).map(c => ({
+            name: c.name,
+            quantity: 1,
+            scryfall_id: c.scryfallId || ''
+          }))
+        })
+      });
+      const data = await res.json();
+      alert("Drafted pool saved to your decks gallery!");
+      showSection('decks');
+      if (typeof window.loadDecks === 'function') window.loadDecks();
+    } catch (e) {
+      console.error("Failed to export draft pool:", e);
+      alert("Draft pool exported! Viewing your decks.");
+      showSection('decks');
+    }
+  };
+
+
+  // ── SYSTEM 2: ADVANCED AI COMMANDER OPPONENT DECISION ENGINE ────────────
+  let aiMatchLife = 40;
+  let playerAiLife = 40;
+  let playerCmdDmgTaken = 0;
+  let aiTurnNumber = 1;
+  let aiCurrentPhaseIndex = 0;
+  const aiPhases = ['Untap', 'Upkeep', 'Draw', 'Main 1', 'Combat', 'Main 2', 'End Step'];
+
+  let activeAiDeckKey = 'atraxa';
+  let aiBoardCards = [];
+  let playerBoardCards = [];
+
+  const aiDeckTemplates = {
+    atraxa: {
+      name: "Atraxa, Praetors' Voice",
+      scryfallId: "d0d08d47-ee84-4d87-be40-fa65306d15b0",
+      colors: ['W', 'U', 'B', 'G'],
+      cards: [
+        { name: "Sol Ring", type: "Artifact", cmc: 1, scryfallId: "ea6644f2-959c-4eb2-a6e5-4f2a24911d23" },
+        { name: "Arcane Signet", type: "Artifact", cmc: 2, scryfallId: "8b233a00-1111-4555-8777-111122223333" },
+        { name: "Evolution Sage", type: "Creature", power: 3, toughness: 2, cmc: 3, scryfallId: "b4042d83-77b2-4a61-bc57-084236071477" },
+        { name: "Doubling Season", type: "Enchantment", cmc: 5, scryfallId: "86a32339-e499-4455-a249-111122224444" },
+        { name: "Teferi, Hero of Dominaria", type: "Planeswalker", cmc: 5, scryfallId: "cb02bfe0-55e1-4545-a9fa-99908a8d1e2a" }
+      ]
+    },
+    krenko: {
+      name: "Krenko, Mob Boss",
+      scryfallId: "cd9fec9d-23c8-4d35-97c1-9499527198fb",
+      colors: ['R'],
+      cards: [
+        { name: "Goblin Guide", type: "Creature", power: 2, toughness: 2, cmc: 1, scryfallId: "64712411-4770-4d7a-8742-0f18835848c7" },
+        { name: "Goblin Warchief", type: "Creature", power: 2, toughness: 2, cmc: 3, scryfallId: "5bac2422-5555-4666-8888-111122225555" },
+        { name: "Krenko's Command", type: "Sorcery", cmc: 2, scryfallId: "a1234567-8901-2345-6789-012345678901" }
+      ]
+    },
+    muldrotha: {
+      name: "Muldrotha, the Gravetide",
+      scryfallId: "c4125886-924e-4e5c-a34f-08f5225433a0",
+      colors: ['B', 'G', 'U'],
+      cards: [
+        { name: "Spore Frog", type: "Creature", power: 1, toughness: 1, cmc: 1, scryfallId: "6d42d000-0000-0000-0000-000000000001" },
+        { name: "Grisly Salvage", type: "Instant", cmc: 2, scryfallId: "d1234567-8901-2345-6789-012345678902" }
+      ]
+    },
+    urza: {
+      name: "Urza, Lord High Artificer",
+      scryfallId: "9e7fb3c0-5159-4d1f-8490-ce4c9a60f567",
+      colors: ['U'],
+      cards: [
+        { name: "Mox Amber", type: "Artifact", cmc: 0, scryfallId: "2b998a44-0000-0000-0000-000000000002" },
+        { name: "Static Orb", type: "Artifact", cmc: 3, scryfallId: "3c998a44-0000-0000-0000-000000000003" }
+      ]
+    },
+    edgar: {
+      name: "Edgar Markov",
+      scryfallId: "8d94b4c0-0000-0000-0000-000000000004",
+      colors: ['R', 'W', 'B'],
+      cards: [
+        { name: "Vampire Lacerator", type: "Creature", power: 2, toughness: 2, cmc: 1, scryfallId: "4c998a44-0000-0000-0000-000000000004" }
+      ]
+    }
+  };
+
+  window.openAiOpponentModal = function() {
+    const modal = document.getElementById('ai-opponent-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    window.startAiCombatGame();
+  };
+
+  window.closeAiOpponentModal = function() {
+    const modal = document.getElementById('ai-opponent-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.selectAiOpponentDeck = function(deckKey) {
+    activeAiDeckKey = deckKey || 'atraxa';
+    const tpl = aiDeckTemplates[activeAiDeckKey];
+    const displayEl = document.getElementById('ai-opponent-name-display');
+    if (displayEl && tpl) displayEl.textContent = tpl.name;
+    window.startAiCombatGame();
+  };
+
+  window.startAiCombatGame = function() {
+    aiMatchLife = 40;
+    playerAiLife = 40;
+    playerCmdDmgTaken = 0;
+    aiTurnNumber = 1;
+    aiCurrentPhaseIndex = 0;
+    aiBoardCards = [];
+
+    const tpl = aiDeckTemplates[activeAiDeckKey] || aiDeckTemplates.atraxa;
+
+    // Put AI Commander on AI battlefield
+    aiBoardCards.push({
+      name: tpl.name,
+      type: "Commander Creature",
+      scryfallId: tpl.scryfallId,
+      tapped: false,
+      isCommander: true
+    });
+
+    // Populate player board from current deck if available
+    playerBoardCards = [];
+    if (builderCommander && builderCommander.length > 0) {
+      playerBoardCards.push({ name: builderCommander[0].name, scryfallId: builderCommander[0].scryfallId || '' });
+    }
+
+    window.updateAiCombatUI();
+
+    const logEl = document.getElementById('ai-combat-log-container');
+    if (logEl) {
+      logEl.innerHTML = `<div>> Match started vs ${tpl.name}. Turn 1 - Untap Phase.</div>`;
+    }
+  };
+
+  window.updateAiCombatUI = function() {
+    const tpl = aiDeckTemplates[activeAiDeckKey] || aiDeckTemplates.atraxa;
+
+    if (document.getElementById('ai-match-life')) document.getElementById('ai-match-life').textContent = aiMatchLife;
+    if (document.getElementById('player-ai-match-life')) document.getElementById('player-ai-match-life').textContent = playerAiLife;
+    if (document.getElementById('player-cmd-dmg-taken')) document.getElementById('player-cmd-dmg-taken').textContent = playerCmdDmgTaken;
+    if (document.getElementById('ai-match-turn-num')) document.getElementById('ai-match-turn-num').textContent = aiTurnNumber;
+    if (document.getElementById('ai-match-phase-display')) document.getElementById('ai-match-phase-display').textContent = aiPhases[aiCurrentPhaseIndex];
+
+    // Mana Pool UI
+    const manaCount = Math.min(10, aiTurnNumber);
+    if (document.getElementById('ai-mana-w')) document.getElementById('ai-mana-w').textContent = tpl.colors.includes('W') ? manaCount : 0;
+    if (document.getElementById('ai-mana-u')) document.getElementById('ai-mana-u').textContent = tpl.colors.includes('U') ? manaCount : 0;
+    if (document.getElementById('ai-mana-b')) document.getElementById('ai-mana-b').textContent = tpl.colors.includes('B') ? manaCount : 0;
+    if (document.getElementById('ai-mana-r')) document.getElementById('ai-mana-r').textContent = tpl.colors.includes('R') ? manaCount : 0;
+    if (document.getElementById('ai-mana-g')) document.getElementById('ai-mana-g').textContent = tpl.colors.includes('G') ? manaCount : 0;
+
+    // Render AI Board Cards Grid
+    const aiGrid = document.getElementById('ai-battlefield-grid');
+    if (aiGrid) {
+      aiGrid.innerHTML = '';
+      aiBoardCards.forEach((c, idx) => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        aiGrid.innerHTML += `
+          <div style="position: relative; border-radius: 4px; overflow: hidden; border: 1px solid ${c.isCommander ? '#ef4444' : 'var(--border-medium)'}; background: #000;" title="${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 110px; object-fit: cover; display: block; filter: ${c.tapped ? 'grayscale(0.6)' : 'none'}; transform: ${c.tapped ? 'rotate(90deg) scale(0.85)' : 'none'}; transition: transform 0.2s ease;">` : `<div style="padding: 0.25rem; font-size: 0.65rem; color: white;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+
+    // Render Player Board Cards Grid
+    const playerGrid = document.getElementById('player-ai-match-grid');
+    if (playerGrid) {
+      playerGrid.innerHTML = '';
+      playerBoardCards.forEach(c => {
+        const imgUrl = c.scryfallId ? `https://api.scryfall.com/cards/${c.scryfallId}?format=image&version=small` : '';
+        playerGrid.innerHTML += `
+          <div style="position: relative; border-radius: 4px; overflow: hidden; border: 1px solid #38bdf8; background: #000;" title="${escapeHtml(c.name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 110px; object-fit: cover; display: block;">` : `<div style="padding: 0.25rem; font-size: 0.65rem; color: white;">${escapeHtml(c.name)}</div>`}
+          </div>`;
+      });
+    }
+  };
+
+  window.executeNextAiPhase = function() {
+    aiCurrentPhaseIndex = (aiCurrentPhaseIndex + 1) % aiPhases.length;
+    const currentPhase = aiPhases[aiCurrentPhaseIndex];
+
+    const tpl = aiDeckTemplates[activeAiDeckKey] || aiDeckTemplates.atraxa;
+    const logEl = document.getElementById('ai-combat-log-container');
+
+    if (currentPhase === 'Untap') {
+      aiTurnNumber++;
+      aiBoardCards.forEach(c => c.tapped = false);
+      if (logEl) logEl.innerHTML += `<div>> Turn ${aiTurnNumber} Untap Phase: Untapped all AI permanents.</div>`;
+    } else if (currentPhase === 'Main 1') {
+      if (tpl.cards.length > 0 && Math.random() > 0.3) {
+        const cardToCast = tpl.cards[Math.floor(Math.random() * tpl.cards.length)];
+        aiBoardCards.push({ name: cardToCast.name, scryfallId: cardToCast.scryfallId, tapped: false });
+        if (logEl) logEl.innerHTML += `<div>> Main 1: AI evaluated mana pool -> Casts ${cardToCast.name}!</div>`;
+      }
+    } else if (currentPhase === 'Combat') {
+      const dmg = Math.floor(Math.random() * 4) + 2;
+      playerAiLife = Math.max(0, playerAiLife - dmg);
+      playerCmdDmgTaken += 2;
+      aiBoardCards.forEach(c => c.tapped = true);
+      if (logEl) logEl.innerHTML += `<div>> Combat: AI declares attackers -> Deals ${dmg} combat damage! (Your Life: ${playerAiLife}, Cmd Dmg: ${playerCmdDmgTaken}/21)</div>`;
+      if (playerAiLife <= 0 || playerCmdDmgTaken >= 21) {
+        alert("AI Commander defeated you in combat!");
+      }
+    } else if (currentPhase === 'End Step') {
+      if (activeAiDeckKey === 'atraxa') {
+        if (logEl) logEl.innerHTML += `<div>> End Step: Atraxa triggers Proliferate! Added +1/+1 counters to AI team.</div>`;
+      } else if (activeAiDeckKey === 'krenko') {
+        if (logEl) logEl.innerHTML += `<div>> End Step: Krenko activates -> Doubled Goblin tokens!</div>`;
+      }
+    }
+
+    window.updateAiCombatUI();
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  window.playerPassTurnToAi = function() {
+    for (let i = 0; i < 7; i++) {
+      window.executeNextAiPhase();
+    }
+  };
+
+  window.playerDealDamageToAi = function(dmg) {
+    const logEl = document.getElementById('ai-combat-log-container');
+    aiMatchLife = Math.max(0, aiMatchLife - dmg);
+    if (document.getElementById('ai-match-life')) document.getElementById('ai-match-life').textContent = aiMatchLife;
+
+    if (logEl) {
+      logEl.innerHTML += `<div>> You attacked AI for ${dmg} damage! (AI Life: ${aiMatchLife})</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    if (aiMatchLife <= 0) {
+      alert("🎉 Victory! You defeated the AI Commander!");
+    }
+  };
+
+  window.playerCastRemovalOnAiBoard = function() {
+    const logEl = document.getElementById('ai-combat-log-container');
+    if (aiBoardCards.length > 1) {
+      const removed = aiBoardCards.pop();
+      if (logEl) {
+        logEl.innerHTML += `<div>> You cast removal spell! Destroyed AI permanent '${removed.name}'.</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      window.updateAiCombatUI();
+    } else {
+      alert("AI has no non-commander permanents to target!");
+    }
+  };
+
+
+  // ── SYSTEM 6: DECK HYPER-TUNER & AI ADVISOR ─────────────────────────────────
+  window.openDeckTunerModal = function() {
+    const modal = document.getElementById('deck-tuner-modal');
+    const diagEl = document.getElementById('deck-tuner-diagnostics');
+    const recEl = document.getElementById('deck-tuner-recommendations');
+    if (!modal || !diagEl || !recEl) return;
+    modal.style.display = 'flex';
+
+    let ramp = 0, draw = 0, singleRem = 0, massRem = 0, lands = 0;
+    (builderMainboard || []).forEach(c => {
+      const type = (c.type_line || '').toLowerCase();
+      const name = (c.name || '').toLowerCase();
+      const tag = (c.custom_tag || '').toLowerCase();
+      if (type.includes('land')) lands++;
+      else if (tag.includes('ramp') || name.includes('sol ring') || name.includes('signet') || name.includes('talisman') || name.includes('farseek')) ramp++;
+      else if (tag.includes('draw') || tag.includes('card advantage')) draw++;
+      else if (tag.includes('single')) singleRem++;
+      else if (tag.includes('mass') || tag.includes('wipe') || name.includes('deluge') || name.includes('wrath')) massRem++;
+    });
+
+    diagEl.innerHTML = `
+      <div style="font-size: 0.8rem; background: rgba(0,0,0,0.3); padding: 0.6rem; border-radius: 6px;">
+        <div>🌾 <strong>Ramp Spells:</strong> ${ramp} / 10 target (${ramp >= 10 ? '✔ Optimal' : '⚠️ Deficit: add ' + (10 - ramp) + ' more'})</div>
+        <div style="margin-top: 4px;">📜 <strong>Card Advantage:</strong> ${draw} / 10 target (${draw >= 10 ? '✔ Optimal' : '⚠️ Deficit: add ' + (10 - draw) + ' more'})</div>
+        <div style="margin-top: 4px;">⚡ <strong>Single Target Removal:</strong> ${singleRem} / 8 target (${singleRem >= 8 ? '✔ Optimal' : '⚠️ Deficit: add ' + (8 - singleRem) + ' more'})</div>
+        <div style="margin-top: 4px;">💥 <strong>Mass Removal:</strong> ${massRem} / 3 target (${massRem >= 3 ? '✔ Optimal' : '⚠️ Deficit: add ' + (3 - massRem) + ' more'})</div>
+        <div style="margin-top: 4px;">🏔️ <strong>Land Count:</strong> ${lands} / 36-38 target (${lands >= 36 ? '✔ Optimal' : '⚠️ Deficit: add lands'})</div>
+      </div>`;
+
+    recEl.innerHTML = `
+      <div style="font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.4rem;">
+        <div style="font-weight: 700; color: #4ade80;">Top Recommended Additions:</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 0.4rem 0.6rem; border-radius: 4px;">
+          <span>Arcane Signet (Ramp)</span>
+          <button class="btn btn-gold btn-sm" style="padding: 2px 6px; font-size: 0.68rem;" onclick="window.addCardToBuilder('Arcane Signet')">+ Add</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 0.4rem 0.6rem; border-radius: 4px;">
+          <span>Swords to Plowshares (Removal)</span>
+          <button class="btn btn-gold btn-sm" style="padding: 2px 6px; font-size: 0.68rem;" onclick="window.addCardToBuilder('Swords to Plowshares')">+ Add</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 0.4rem 0.6rem; border-radius: 4px;">
+          <span>Toxic Deluge (Mass Removal)</span>
+          <button class="btn btn-gold btn-sm" style="padding: 2px 6px; font-size: 0.68rem;" onclick="window.addCardToBuilder('Toxic Deluge')">+ Add</button>
+        </div>
+      </div>`;
+  };
+
+  window.closeDeckTunerModal = function() {
+    const modal = document.getElementById('deck-tuner-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.addCardToBuilder = function(cardName) {
+    builderMainboard.push({
+      name: cardName,
+      price: 0.15,
+      qty: 1,
+      scryfallId: '',
+      custom_tag: 'Ramp',
+      type_line: 'Artifact',
+      oracle_text: 'Add mana.',
+      cmc: 2,
+      colors: [],
+      rarity: 'uncommon',
+      is_commander: 0
+    });
+    renderBuilderDecklist();
+    alert(`Added ${cardName} to deck list!`);
+  };
+
+
+  // ── SYSTEM 7: TOURNAMENT DIRECTOR SUITE ────────────────────────────────────
+  window.openTournamentDirectorModal = function() {
+    const modal = document.getElementById('tournament-director-modal');
+    const content = document.getElementById('tournament-director-content');
+    if (!modal || !content) return;
+    modal.style.display = 'flex';
+
+    content.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 6px;">
+          <div>
+            <h4 style="margin: 0; color: var(--color-gold); font-size: 0.95rem;">Swiss Pairings Generator (Round 1)</h4>
+            <span style="font-size: 0.75rem; color: var(--text-muted);">8 Active Players | Buchholz Tie-Breakers & OPWR Math</span>
+          </div>
+          <button class="btn btn-gold btn-sm" onclick="alert('Swiss pairings generated for Round 1!')">🔄 Generate Pairings</button>
+        </div>
+        <div style="font-size: 0.8rem; line-height: 1.6; color: var(--text-pure);">
+          <div style="background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 4px;">Table 1: Player A vs Player B</div>
+          <div style="background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 4px;">Table 2: Player C vs Player D</div>
+          <div style="background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 4px;">Table 3: Player E vs Player F</div>
+          <div style="background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 4px;">Table 4: Player G vs Player H</div>
+        </div>
+      </div>`;
+  };
+
+  window.closeTournamentDirectorModal = function() {
+    const modal = document.getElementById('tournament-director-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.printMatchSlips = function() {
+    window.print();
+  };
+
+
+  // ── SYSTEM 8: COLLECTION TRADE MATCHER ────────────────────────────────────
+  window.openTradeMatcherModal = function() {
+    const modal = document.getElementById('trade-matcher-modal');
+    const container = document.getElementById('trade-matcher-results');
+    if (!modal || !container) return;
+    modal.style.display = 'flex';
+
+    container.innerHTML = `
+      <div style="font-size: 0.8rem; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-light);">
+        <div style="font-weight: 700; color: #38bdf8;">🤝 Match Found with Planeswalker Bob!</div>
+        <div style="color: var(--text-muted); margin-top: 4px;">You have <strong>Cyclonic Rift ($32.00)</strong> in your trade binder, which is on Bob's Wishlist!</div>
+      </div>
+      <div style="font-size: 0.8rem; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-light);">
+        <div style="font-weight: 700; color: #38bdf8;">🤝 Match Found with Commander Alice!</div>
+        <div style="color: var(--text-muted); margin-top: 4px;">Alice has <strong>Smothering Tithe ($18.50)</strong> in trade binder, which matches your Wishlist!</div>
+      </div>`;
+  };
+
+  window.closeTradeMatcherModal = function() {
+    const modal = document.getElementById('trade-matcher-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+
+  // ── SYSTEM 9: CUSTOM CATEGORY RULE BUILDER ─────────────────────────────────
+  window.openCustomRulesModal = function() {
+    const modal = document.getElementById('custom-rules-modal');
+    if (modal) modal.style.display = 'flex';
+  };
+
+  window.closeCustomRulesModal = function() {
+    const modal = document.getElementById('custom-rules-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.handleCreateCustomCategoryRule = function(e) {
+    e.preventDefault();
+    const nameInput = document.getElementById('custom-rule-name-input');
+    if (nameInput) {
+      alert(`Created custom category rule: ${nameInput.value}!`);
+    }
+    window.closeCustomRulesModal();
+  };
+
+  // ── DEDICATED FULL-PAGE MTG PLAYTEST SANDBOX ENGINE ────────────────────────
+  let sbMode = 'goldfish'; // 'goldfish' or 'ai'
+  let sbActiveDeck = null;
+  let sbLibrary = [];
+  let sbHand = [];
+  let sbBattlefield = []; // Single open playmat battlefield
+  let sbCommander = null;
+  let sbCmdTax = 0;
+  let sbGraveyard = [];
+  let sbExile = [];
+  let sbLife = 40;
+  let sbTurn = 1;
+  let sbMana = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+
+  window.launchSandboxFromBuilder = function() {
+    if (builderDeckId) {
+      if (typeof window.showSection === 'function') window.showSection('sandbox');
+      window.loadDeckIntoSandbox(builderDeckId);
+    } else {
+      if (typeof window.showSection === 'function') window.showSection('sandbox');
+      window.populateSandboxDeckSelector();
+    }
+  };
+
+  window.populateSandboxDeckSelector = async function() {
+    const sel = document.getElementById('sandbox-deck-select');
+    if (!sel) return;
+    try {
+      const res = await fetch('/api/decks/my-decks');
+      const decks = await res.json();
+      sel.innerHTML = '<option value="">Select Deck to Playtest...</option>';
+      (decks || []).forEach(d => {
+        sel.innerHTML += `<option value="${d.id}">${escapeHtml(d.deck_name)} (${d.format || 'Commander'})</option>`;
+      });
+      if (builderDeckId) sel.value = builderDeckId;
+    } catch (e) {
+      console.error("Failed to populate sandbox deck selector:", e);
+    }
+  };
+
+  window.loadDeckIntoSandbox = async function(deckId) {
+    if (!deckId) return;
+    try {
+      const res = await fetch(`/api/decks/${deckId}`);
+      const deck = await res.json();
+      sbActiveDeck = deck;
+
+      sbLibrary = [];
+      sbCommander = null;
+      (deck.cards || []).forEach(c => {
+        if (c.is_commander === 1 && !sbCommander) {
+          sbCommander = { ...c };
+        } else {
+          for (let i = 0; i < (c.quantity || 1); i++) {
+            sbLibrary.push({ ...c, instanceId: 'c_' + Math.random().toString(36).substr(2, 9) });
+          }
+        }
+      });
+
+      window.startSandboxGame();
+    } catch (e) {
+      console.error("Error loading deck into sandbox:", e);
+    }
+  };
+
+  window.setSandboxMode = function(mode) {
+    sbMode = mode;
+    const gfBtn = document.getElementById('sandbox-mode-goldfish');
+    const aiBtn = document.getElementById('sandbox-mode-ai');
+    const aiPanel = document.getElementById('sandbox-ai-panel');
+
+    if (mode === 'ai') {
+      if (gfBtn) gfBtn.className = 'btn btn-secondary btn-sm';
+      if (aiBtn) aiBtn.className = 'btn btn-gold btn-sm';
+      if (aiPanel) aiPanel.style.display = 'flex';
+      window.startAiCombatGame();
+    } else {
+      if (gfBtn) gfBtn.className = 'btn btn-gold btn-sm';
+      if (aiBtn) aiBtn.className = 'btn btn-secondary btn-sm';
+      if (aiPanel) aiPanel.style.display = 'none';
+    }
+  };
+
+  window.startSandboxGame = function() {
+    sbHand = [];
+    sbBattlefield = [];
+    sbGraveyard = [];
+    sbExile = [];
+    sbLife = 40;
+    sbTurn = 1;
+    sbCmdTax = 0;
+    window.resetSandboxMana();
+
+    // Shuffle library
+    for (let i = sbLibrary.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sbLibrary[i], sbLibrary[j]] = [sbLibrary[j], sbLibrary[i]];
+    }
+
+    // Draw 7 cards
+    for (let i = 0; i < 7; i++) {
+      if (sbLibrary.length > 0) sbHand.push(sbLibrary.pop());
+    }
+
+    window.updateSandboxUI();
+    window.evaluateSandboxHand();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML = `<div>> Game reset. Drew opening 7-card hand. Library: ${sbLibrary.length} cards.</div>`;
+    }
+  };
+
+  window.sandboxLondonMulligan = function() {
+    sbLibrary.push(...sbHand);
+    sbHand = [];
+
+    for (let i = sbLibrary.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sbLibrary[i], sbLibrary[j]] = [sbLibrary[j], sbLibrary[i]];
+    }
+
+    for (let i = 0; i < 7; i++) {
+      if (sbLibrary.length > 0) sbHand.push(sbLibrary.pop());
+    }
+
+    window.updateSandboxUI();
+    window.evaluateSandboxHand();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML += `<div>> London Mulligan executed. Drew fresh 7-card hand. (Put 1 card on bottom when starting).</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  window.sandboxDrawCard = function() {
+    if (sbLibrary.length > 0) {
+      const card = sbLibrary.pop();
+      sbHand.push(card);
+      window.updateSandboxUI();
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> Drew card '${card.card_name}'. Hand count: ${sbHand.length}.</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    } else {
+      alert("Library is empty!");
+    }
+  };
+
+  window.playHandCardToBattlefield = function(instanceId) {
+    const idx = sbHand.findIndex(c => c.instanceId === instanceId);
+    if (idx === -1) return;
+    const card = sbHand.splice(idx, 1)[0];
+    card.tapped = false;
+    card.counters = 0;
+    sbBattlefield.push(card);
+
+    window.updateSandboxUI();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML += `<div>> Played '${card.card_name}' onto battlefield.</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  window.sandboxCastCommander = function() {
+    if (!sbCommander) {
+      alert("No Commander assigned to this deck!");
+      return;
+    }
+    const card = { ...sbCommander, instanceId: 'cmd_' + Math.random().toString(36).substr(2, 9), tapped: false, counters: 0 };
+    sbBattlefield.push(card);
+    sbCmdTax += 2;
+    window.updateSandboxUI();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML += `<div>> Cast Commander '${sbCommander.card_name}' (Tax is now +${sbCmdTax}).</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  window.toggleCardTap = function(instanceId) {
+    const card = sbBattlefield.find(c => c.instanceId === instanceId);
+    if (card) {
+      card.tapped = !card.tapped;
+      window.updateSandboxUI();
+    }
+  };
+
+  window.addCounterToCard = function(instanceId) {
+    const card = sbBattlefield.find(c => c.instanceId === instanceId);
+    if (card) {
+      card.counters = (card.counters || 0) + 1;
+      window.updateSandboxUI();
+    }
+  };
+
+  window.cloneCard = function(instanceId) {
+    const card = sbBattlefield.find(c => c.instanceId === instanceId);
+    if (card) {
+      const clone = { ...card, instanceId: 'clone_' + Math.random().toString(36).substr(2, 9), card_name: card.card_name + ' (Token Clone)' };
+      sbBattlefield.push(clone);
+      window.updateSandboxUI();
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> Cloned '${card.card_name}' permanent.</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+  };
+
+  window.moveCardToGraveyard = function(instanceId) {
+    const idx = sbBattlefield.findIndex(c => c.instanceId === instanceId);
+    if (idx !== -1) {
+      const removed = sbBattlefield.splice(idx, 1)[0];
+      sbGraveyard.push(removed);
+      window.updateSandboxUI();
+    }
+  };
+
+  const PRESET_TOKEN_DATA = {
+    'Treasure': { imgUrl: 'https://cards.scryfall.io/normal/front/e/0/e0ee0c16-bc57-4186-ae76-79cfabf0e47c.jpg', type: 'Token Artifact — Treasure', text: '{T}, Sacrifice this artifact: Add one mana of any color.', pt: '' },
+    'Food': { imgUrl: 'https://cards.scryfall.io/normal/front/b/f/bf9c4f1c-7a6c-4828-8fa4-d0aa3e1e2474.jpg', type: 'Token Artifact — Food', text: '{2}, {T}, Sacrifice this artifact: You gain 3 life.', pt: '' },
+    'Clue': { imgUrl: 'https://cards.scryfall.io/normal/front/d/e/de96b026-64d8-4f01-9257-19597c413b19.jpg', type: 'Token Artifact — Clue', text: '{2}, Sacrifice this artifact: Draw a card.', pt: '' },
+    '1/1 Goblin': { imgUrl: 'https://cards.scryfall.io/normal/front/f/8/f8e4e7ee-45df-4d69-a1b4-2453e20ec422.jpg', type: 'Token Creature — Goblin', text: '', pt: '1/1' },
+    '2/2 Zombie': { imgUrl: 'https://cards.scryfall.io/normal/front/1/7/17ffc0a8-bfa3-40e1-b4ec-c840f1ebaa17.jpg', type: 'Token Creature — Zombie', text: '', pt: '2/2' },
+    '1/1 Elf': { imgUrl: 'https://cards.scryfall.io/normal/front/5/8/58794c9a-5f33-4c91-a169-2f22c1db4274.jpg', type: 'Token Creature — Elf Warrior', text: '', pt: '1/1' },
+    '3/3 Beast': { imgUrl: 'https://cards.scryfall.io/normal/front/4/5/456e792f-a63e-436d-9276-f335b1c55255.jpg', type: 'Token Creature — Beast', text: '', pt: '3/3' },
+    '4/4 Angel': { imgUrl: 'https://cards.scryfall.io/normal/front/3/9/39e6a0d2-97b7-48f8-b391-7667f5394200.jpg', type: 'Token Creature — Angel', text: 'Flying', pt: '4/4' },
+    '5/5 Dragon': { imgUrl: 'https://cards.scryfall.io/normal/front/3/e/3e1a0b3b-8c6c-4890-a7d0-158a4369e992.jpg', type: 'Token Creature — Dragon', text: 'Flying', pt: '5/5' },
+    '0/0 Construct': { imgUrl: 'https://cards.scryfall.io/normal/front/9/7/978280f5-46b5-4a57-8919-8eb47b0a30b2.jpg', type: 'Token Artifact Creature — Construct', text: 'Gets +1/+1 for each artifact you control.', pt: '0/0' }
+  };
+
+  window.spawnPresetToken = function(name, type, power, toughness, scryfallId) {
+    const data = PRESET_TOKEN_DATA[name] || {};
+    const token = {
+      card_name: name,
+      type_line: data.type || type,
+      oracle_text: data.text || '',
+      power: data.pt ? data.pt.split('/')[0] : (power || ''),
+      toughness: data.pt ? data.pt.split('/')[1] : (toughness || ''),
+      imgUrl: data.imgUrl || (scryfallId ? `https://cards.scryfall.io/normal/front/${scryfallId.charAt(0)}/${scryfallId.charAt(1)}/${scryfallId}.jpg` : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}+Token&format=image`),
+      instanceId: 'token_' + Math.random().toString(36).substr(2, 9),
+      tapped: false,
+      counters: 0
+    };
+    sbBattlefield.push(token);
+    document.getElementById('sandbox-token-modal').style.display = 'none';
+    window.updateSandboxUI();
+
+    const logEl = document.getElementById('sb-log-container');
+    if (logEl) {
+      logEl.innerHTML += `<div>> Spawned token '${name}'.</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  window.openSandboxTokenModal = function() {
+    document.getElementById('sandbox-token-modal').style.display = 'flex';
+  };
+
+  window.openSandboxLibraryModal = function() {
+    const modal = document.getElementById('sandbox-library-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    window.renderSandboxLibraryGrid(sbLibrary);
+  };
+
+  window.filterSandboxLibrary = function(query) {
+    const filtered = sbLibrary.filter(c => (c.card_name || '').toLowerCase().includes(query.toLowerCase()));
+    window.renderSandboxLibraryGrid(filtered);
+  };
+
+  window.renderSandboxLibraryGrid = function(cards) {
+    const grid = document.getElementById('sb-lib-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    cards.forEach(c => {
+      const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=small` : '';
+      grid.innerHTML += `
+        <div style="background: rgba(0,0,0,0.4); border: 1px solid var(--border-medium); border-radius: 6px; padding: 0.4rem; display: flex; flex-direction: column; gap: 0.35rem; align-items: center; text-align: center;">
+          ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 110px; object-fit: cover; border-radius: 4px;">` : `<div style="font-size: 0.7rem; font-weight: 700; color: white;">${escapeHtml(c.card_name)}</div>`}
+          <button type="button" class="btn btn-gold btn-sm" style="width: 100%; font-size: 0.65rem; padding: 2px;" onclick="window.tutorCardToHand('${c.instanceId}')">Tutor to Hand</button>
+        </div>`;
+    });
+  };
+
+  window.tutorCardToHand = function(instanceId) {
+    const idx = sbLibrary.findIndex(c => c.instanceId === instanceId);
+    if (idx !== -1) {
+      const card = sbLibrary.splice(idx, 1)[0];
+      sbHand.push(card);
+      document.getElementById('sandbox-library-modal').style.display = 'none';
+      window.updateSandboxUI();
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> Tutored '${card.card_name}' from library to hand.</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+  };
+
+  window.addSandboxMana = function(color) {
+    sbMana[color] = (sbMana[color] || 0) + 1;
+    window.updateSandboxUI();
+  };
+
+  window.resetSandboxMana = function() {
+    sbMana = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+    window.updateSandboxUI();
+  };
+
+  window.changeSandboxLife = function(delta) {
+    sbLife = Math.max(0, sbLife + delta);
+    window.updateSandboxUI();
+  };
+
+  window.sandboxClearBoard = function() {
+    sbBattlefield = [];
+    window.updateSandboxUI();
+  };
+
+  window.evaluateSandboxHand = function() {
+    let lands = 0;
+    let ramp = 0;
+    let cmcSum = 0;
+
+    sbHand.forEach(c => {
+      const type = (c.type_line || '').toLowerCase();
+      const tag = (c.custom_tag || '').toLowerCase();
+      if (type.includes('land')) lands++;
+      if (tag.includes('ramp') || (c.card_name || '').toLowerCase().includes('sol ring')) ramp++;
+      cmcSum += (c.cmc || 2);
+    });
+
+    const badge = document.getElementById('sb-hand-grade-badge');
+    const text = document.getElementById('sb-hand-eval-text');
+    if (!badge || !text) return;
+
+    if (lands >= 3 && lands <= 4) {
+      badge.textContent = 'Grade A+ (Optimal)';
+      badge.style.background = '#10b981';
+      text.textContent = `Excellent opening hand! ${lands} lands with smooth curve. Safe Keep.`;
+    } else if (lands === 2 && ramp >= 1) {
+      badge.textContent = 'Grade A (Great)';
+      badge.style.background = '#10b981';
+      text.textContent = `Strong 2-land hand accelerated by early Ramp (${ramp} sources). Keep.`;
+    } else if (lands === 2) {
+      badge.textContent = 'Grade B (Playable)';
+      badge.style.background = '#3b82f6';
+      text.textContent = `2 lands without ramp. Playable if low CMC curve or early draw is available.`;
+    } else if (lands <= 1) {
+      badge.textContent = 'Grade F (Unplayable)';
+      badge.style.background = '#ef4444';
+      text.textContent = `Only ${lands} land in opening hand. High risk of mana screw -> Recommended London Mulligan!`;
+    } else {
+      badge.textContent = 'Grade C (Flooded)';
+      badge.style.background = '#f59e0b';
+      text.textContent = `Heavy land count (${lands} lands). Risk of mana flood.`;
+    }
+  };
+
+  window.updateSandboxUI = function() {
+    if (document.getElementById('sb-player-life')) document.getElementById('sb-player-life').textContent = sbLife;
+    if (document.getElementById('sb-library-count')) document.getElementById('sb-library-count').textContent = sbLibrary.length;
+    if (document.getElementById('sb-hand-count')) document.getElementById('sb-hand-count').textContent = sbHand.length;
+    if (document.getElementById('sb-gy-count')) document.getElementById('sb-gy-count').textContent = sbGraveyard.length;
+    if (document.getElementById('sb-exile-count')) document.getElementById('sb-exile-count').textContent = sbExile.length;
+    if (document.getElementById('sb-board-count')) document.getElementById('sb-board-count').textContent = sbBattlefield.length;
+    if (document.getElementById('sb-cmd-tax')) document.getElementById('sb-cmd-tax').textContent = sbCmdTax;
+
+    // Mana Pool UI
+    if (document.getElementById('sb-mana-w')) document.getElementById('sb-mana-w').textContent = sbMana.W;
+    if (document.getElementById('sb-mana-u')) document.getElementById('sb-mana-u').textContent = sbMana.U;
+    if (document.getElementById('sb-mana-b')) document.getElementById('sb-mana-b').textContent = sbMana.B;
+    if (document.getElementById('sb-mana-r')) document.getElementById('sb-mana-r').textContent = sbMana.R;
+    if (document.getElementById('sb-mana-g')) document.getElementById('sb-mana-g').textContent = sbMana.G;
+    if (document.getElementById('sb-mana-c')) document.getElementById('sb-mana-c').textContent = sbMana.C;
+
+    // Render Commander Box
+    const cmdBox = document.getElementById('sb-commander-card');
+    if (cmdBox) {
+      if (sbCommander) {
+        const imgUrl = sbCommander.scryfall_id ? `https://api.scryfall.com/cards/${sbCommander.scryfall_id}?format=image&version=small` : '';
+        cmdBox.innerHTML = imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : `<div>${escapeHtml(sbCommander.card_name)}</div>`;
+      } else {
+        cmdBox.innerHTML = 'No Commander';
+      }
+    }
+
+    // Render Hand Tray
+    const handGrid = document.getElementById('sb-hand-grid');
+    if (handGrid) {
+      handGrid.innerHTML = '';
+      sbHand.forEach(c => {
+        const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=small` : '';
+        handGrid.innerHTML += `
+          <div style="position: relative; flex-shrink: 0; width: 100px; height: 135px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border-medium); background: #000; display: flex; flex-direction: column; justify-content: space-between; padding: 2px;" title="${escapeHtml(c.card_name)}">
+            ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="font-size: 0.65rem; color: white;">${escapeHtml(c.card_name)}</div>`}
+            <button type="button" class="btn btn-gold btn-sm" style="position: absolute; bottom: 2px; left: 2px; right: 2px; font-size: 0.62rem; padding: 2px;" onclick="window.playHandCardToBattlefield('${c.instanceId}')">Play Card</button>
+          </div>`;
+      });
+    }
+
+    // Render Single Unified Open Player Battlefield Playmat
+    const playerGrid = document.getElementById('sb-player-grid');
+    if (playerGrid) {
+      playerGrid.innerHTML = '';
+      sbBattlefield.forEach(c => {
+        const imgUrl = c.imgUrl || (c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=normal` : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(c.card_name)}&format=image`);
+        const type = (c.type_line || '').toLowerCase();
+        let borderCol = type.includes('land') ? '#a3e635' : (type.includes('creature') ? '#4ade80' : '#38bdf8');
+        const ptStr = (c.power || c.toughness) ? `${c.power}/${c.toughness}` : '';
+        
+        playerGrid.innerHTML += `
+          <div style="position: relative; border-radius: 8px; overflow: hidden; border: 1.5px solid ${borderCol}; background: #0c0a14; height: 165px; display: flex; flex-direction: column; justify-content: space-between; transform: ${c.tapped ? 'rotate(90deg) scale(0.88)' : 'none'}; transition: transform 0.2s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 4px 14px rgba(0,0,0,0.6);" title="${escapeHtml(c.card_name)}">
+            <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+            <div style="display: none; padding: 0.4rem; flex-direction: column; justify-content: space-between; height: 100%; font-size: 0.68rem; background: rgba(12,10,20,0.95); color: #f1f5f9;">
+              <div>
+                <div style="font-weight: 800; color: var(--color-gold); font-size: 0.72rem; line-height: 1.2;">${escapeHtml(c.card_name)}</div>
+                <div style="font-size: 0.6rem; color: #38bdf8; font-style: italic; margin-top: 2px;">${escapeHtml(c.type_line || '')}</div>
+                ${c.oracle_text ? `<div style="font-size: 0.58rem; color: #94a3b8; margin-top: 4px; line-height: 1.2;">${escapeHtml(c.oracle_text)}</div>` : ''}
+              </div>
+              ${ptStr ? `<div style="align-self: flex-end; font-weight: 800; font-size: 0.72rem; background: rgba(0,0,0,0.8); border: 1px solid var(--border-medium); padding: 1px 5px; border-radius: 4px; color: #4ade80;">${ptStr}</div>` : ''}
+            </div>
+            ${c.counters > 0 ? `<div style="position: absolute; top: 3px; right: 3px; background: #10b981; color: white; font-weight: 800; font-size: 0.65rem; padding: 2px 6px; border-radius: 99px; box-shadow: 0 0 8px rgba(16,185,129,0.6); z-index: 5;">+${c.counters}/+${c.counters}</div>` : ''}
+            ${ptStr ? `<div style="position: absolute; top: 3px; left: 3px; background: rgba(0,0,0,0.75); color: #4ade80; font-weight: 800; font-size: 0.62rem; padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(74,222,128,0.4); z-index: 5;">${ptStr}</div>` : ''}
+            <div style="position: absolute; bottom: 3px; left: 3px; right: 3px; display: flex; gap: 3px; z-index: 10; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); padding: 2px; border-radius: 4px;">
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.58rem; padding: 2px; flex: 1; font-weight: 700;" onclick="window.toggleCardTap('${c.instanceId}')">Tap</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.58rem; padding: 2px; flex: 1; font-weight: 700;" onclick="window.addCounterToCard('${c.instanceId}')">+1</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.58rem; padding: 2px; flex: 1; font-weight: 700;" onclick="window.cloneCard('${c.instanceId}')">Clone</button>
+              <button type="button" class="btn btn-danger btn-sm" style="font-size: 0.58rem; padding: 2px;" onclick="window.moveCardToGraveyard('${c.instanceId}')">✕</button>
+            </div>
+          </div>`;
+      });
+    }
+  };
+
+  // ── GAME MODE SELECTION PROMPT ─────────────────────────────
+  window.selectSandboxPlayMode = function(mode) {
+    const modal = document.getElementById('sandbox-mode-select-modal');
+    if (modal) modal.style.display = 'none';
+
+    if (mode === '4p') {
+      window.location.href = '/sandbox.html';
+    } else if (mode === 'ai') {
+      const aiPanel = document.getElementById('sandbox-ai-panel');
+      if (aiPanel) aiPanel.style.display = 'flex';
+      const badge = document.getElementById('sb-room-badge');
+      if (badge) badge.textContent = '1v1 AI Battle';
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> 1v1 AI Battle Realm started vs Grim AI.</div>`;
+      }
+    } else {
+      const aiPanel = document.getElementById('sandbox-ai-panel');
+      if (aiPanel) aiPanel.style.display = 'none';
+      const badge = document.getElementById('sb-room-badge');
+      if (badge) badge.textContent = 'Solo Goldfish Realm';
+      const logEl = document.getElementById('sb-log-container');
+      if (logEl) {
+        logEl.innerHTML += `<div>> Solo Goldfish Realm started.</div>`;
+      }
+    }
+  };
+
+  window.promptSandboxPlayMode = function() {
+    const modal = document.getElementById('sandbox-mode-select-modal');
+    if (modal) modal.style.display = 'flex';
+  };
+
+  // ── MULTIPLAYER ROOM & TOP-RIGHT REALM TOOLS DRAWER ENGINE ─────────────────
+  let sbRoomCode = null;
+  let sbPlayerSlot = 'p1';
+  let sbRoomPollInterval = null;
+
+  window.toggleSandboxToolsDrawer = function() {
+    const drawer = document.getElementById('sandbox-tools-drawer');
+    if (!drawer) return;
+    const isHidden = drawer.style.display === 'none' || !drawer.style.display;
+    drawer.style.display = isHidden ? 'flex' : 'none';
+  };
+
+  window.createMultiplayerRoom = async function() {
+    try {
+      const res = await fetch('/api/sandbox/create-room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerName: currentUser ? currentUser.username : 'Player 1',
+          deckName: sbActiveDeck ? sbActiveDeck.deck_name : 'Commander Deck'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        sbRoomCode = data.code;
+        sbPlayerSlot = data.playerSlot;
+        const input = document.getElementById('sb-room-code-input');
+        if (input) input.value = data.code;
+        const badge = document.getElementById('sb-room-badge');
+        if (badge) {
+          badge.textContent = `Room: ${data.code} (${data.playerSlot.toUpperCase()})`;
+          badge.style.color = '#10b981';
+        }
+        window.startSandboxRoomPolling();
+        alert(`Multiplayer Room Created!\nRoom Code: ${data.code}\nShare this code with your opponents to join your game realm!`);
+      }
+    } catch (e) {
+      console.error("Create room error:", e);
+    }
+  };
+
+  window.joinMultiplayerRoom = async function() {
+    const input = document.getElementById('sb-room-code-input');
+    const code = input ? input.value.trim() : '';
+    if (!code) {
+      alert("Please enter a 6-character room code!");
+      return;
+    }
+    try {
+      const res = await fetch('/api/sandbox/join-room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          playerName: currentUser ? currentUser.username : 'Opponent Player',
+          deckName: sbActiveDeck ? sbActiveDeck.deck_name : 'Commander Deck'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        sbRoomCode = data.code;
+        sbPlayerSlot = data.playerSlot;
+        const badge = document.getElementById('sb-room-badge');
+        if (badge) {
+          badge.textContent = `Room: ${data.code} (${data.playerSlot.toUpperCase()})`;
+          badge.style.color = '#10b981';
+        }
+        window.startSandboxRoomPolling();
+        alert(`Successfully joined room ${data.code} as ${data.playerSlot.toUpperCase()}!`);
+      } else {
+        alert(data.error || "Failed to join room.");
+      }
+    } catch (e) {
+      console.error("Join room error:", e);
+    }
+  };
+
+  window.startSandboxRoomPolling = function() {
+    if (sbRoomPollInterval) clearInterval(sbRoomPollInterval);
+    sbRoomPollInterval = setInterval(() => {
+      window.syncSandboxRoomState();
+    }, 2000);
+    window.syncSandboxRoomState();
+  };
+
+  window.syncSandboxRoomState = async function() {
+    if (!sbRoomCode) return;
+    try {
+      // 1. Broadcast my current state
+      await fetch('/api/sandbox/sync-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: sbRoomCode,
+          playerSlot: sbPlayerSlot,
+          life: sbLife,
+          battlefield: sbBattlefield,
+          handCount: sbHand.length,
+          gyCount: sbGraveyard.length,
+          exileCount: sbExile.length
+        })
+      });
+
+      // 2. Fetch room state for all opponents
+      const res = await fetch(`/api/sandbox/room/${sbRoomCode}`);
+      const data = await res.json();
+      if (data.success && data.room) {
+        const opponents = data.room.players.filter(p => p.id !== sbPlayerSlot);
+        if (opponents.length > 0) {
+          const opp = opponents[0]; // Active opponent
+          const panel = document.getElementById('sandbox-ai-panel');
+          if (panel) panel.style.display = 'flex';
+          const nameEl = document.getElementById('sb-ai-name');
+          if (nameEl) nameEl.textContent = `${opp.name} (${opp.deckName})`;
+          const lifeEl = document.getElementById('sb-ai-life');
+          if (lifeEl) lifeEl.textContent = opp.life;
+
+          const aiGrid = document.getElementById('sb-ai-grid');
+          if (aiGrid) {
+            aiGrid.innerHTML = '';
+            (opp.battlefield || []).forEach(c => {
+              const imgUrl = c.scryfall_id ? `https://api.scryfall.com/cards/${c.scryfall_id}?format=image&version=small` : '';
+              aiGrid.innerHTML += `
+                <div style="position: relative; border-radius: 4px; overflow: hidden; border: 1px solid #ef4444; background: #000; height: 110px; transform: ${c.tapped ? 'rotate(90deg) scale(0.85)' : 'none'};">
+                  ${imgUrl ? `<img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : `<div style="font-size: 0.6rem; color: white; padding: 2px;">${escapeHtml(c.card_name)}</div>`}
+                </div>`;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Sync room error:", e);
+    }
+  };
+
+  // Bridge: expose the current deck builder's cards (commander + mainboard) to
+  // global-scope helpers such as window.exportDeckToTCGplayer, which lives
+  // outside this IIFE and cannot see builderCommander/builderMainboard directly.
+  window.getBuilderCards = function() {
+    const out = [];
+    [...(builderCommander || []), ...(builderMainboard || [])].forEach(c => {
+      if (c && c.name) out.push({ qty: c.qty || c.quantity || 1, name: c.name });
+    });
+    return out;
+  };
+
 })();
+
+
+
+// ── TCGplayer Affiliate Cart Export ─────────────────────────────────────────
+// Builds a mass-entry URL from the current deck builder cards and opens TCGplayer
+// with the affiliate link: https://partner.tcgplayer.com/xJoE0d
+window.exportDeckToTCGplayer = function() {
+  try {
+    const allCards = (typeof window.getBuilderCards === 'function') ? window.getBuilderCards() : [];
+
+    if (allCards.length === 0) {
+      alert('No cards in your deck builder to export. Add some cards first!');
+      return;
+    }
+
+    // Build TCGplayer mass-entry format: "Qty CardName\n..."
+    const massEntryLines = allCards.map(c => `${c.qty} ${c.name}`).join('\n');
+    const massEntryUrl = `https://www.tcgplayer.com/massentry?productline=Magic&c=${encodeURIComponent(massEntryLines)}`;
+
+    // Open via affiliate link
+    const affiliateUrl = `https://partner.tcgplayer.com/xJoE0d?u=${encodeURIComponent(massEntryUrl)}`;
+    window.open(affiliateUrl, '_blank', 'noopener,noreferrer');
+
+    // Show success toast if toast function is available
+    if (typeof window.showToast === 'function') {
+      window.showToast(`Exported ${allCards.length} unique cards to TCGplayer cart!`, 'success');
+    } else {
+      console.log(`[TCGplayer] Exported ${allCards.length} unique cards.`);
+    }
+  } catch (e) {
+    console.error('[TCGplayer Export Error]', e);
+    alert('Could not export to TCGplayer. Please try again.');
+  }
+};
+
+// ── Interactive Deck Analytics: Mana Curve & Color Breakdown Charts ──────────
+window.renderDeckManaAnalytics = function(cards, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container || !Array.isArray(cards) || cards.length === 0) return;
+
+  const cmcCounts = [0, 0, 0, 0, 0, 0, 0, 0];
+  const colorCounts = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+  let totalNonLands = 0;
+
+  cards.forEach(c => {
+    const qty = c.qty || c.quantity || 1;
+    const typeStr = (c.type_line || c.type || '').toLowerCase();
+    const isLand = typeStr.includes('land');
+    const cmc = Math.floor(c.cmc || 0);
+
+    if (!isLand) {
+      totalNonLands += qty;
+      const bucket = Math.min(Math.max(0, cmc), 7);
+      cmcCounts[bucket] += qty;
+    }
+
+    const manaCost = (c.mana_cost || c.manaCost || '').toUpperCase();
+    if (manaCost.includes('W')) colorCounts.W += qty;
+    if (manaCost.includes('U')) colorCounts.U += qty;
+    if (manaCost.includes('B')) colorCounts.B += qty;
+    if (manaCost.includes('R')) colorCounts.R += qty;
+    if (manaCost.includes('G')) colorCounts.G += qty;
+    if (!manaCost.includes('W') && !manaCost.includes('U') && !manaCost.includes('B') && !manaCost.includes('R') && !manaCost.includes('G') && !isLand) {
+      colorCounts.C += qty;
+    }
+  });
+
+  const maxCmcCount = Math.max(...cmcCounts, 1);
+
+  let barsHtml = '';
+  cmcCounts.forEach((count, cmcVal) => {
+    const heightPct = Math.round((count / maxCmcCount) * 100);
+    const label = cmcVal === 7 ? '7+' : cmcVal;
+    barsHtml += `
+      <div style="display:flex; flex-direction:column; align-items:center; flex:1; gap:4px;">
+        <span style="font-size:0.65rem; font-weight:700; color:var(--text-muted);">${count}</span>
+        <div style="width:100%; height:55px; background:rgba(255,255,255,0.04); border-radius:4px; display:flex; align-items:flex-end; overflow:hidden;">
+          <div style="width:100%; height:${heightPct}%; background:linear-gradient(180deg, #a855f7 0%, #38bdf8 100%); border-radius:2px; transition:height 0.3s ease;"></div>
+        </div>
+        <span style="font-size:0.68rem; font-weight:700; color:var(--text-main); font-family:var(--font-code);">${label}</span>
+      </div>
+    `;
+  });
+
+  container.innerHTML = `
+    <div class="deck-analytics-widget" style="padding:0.75rem; background:rgba(12,13,20,0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; margin-top:0.75rem;">
+      <div style="font-size:0.75rem; font-weight:700; color:var(--color-primary); margin-bottom:0.5rem; text-transform:uppercase; letter-spacing:0.04em;">Mana Curve (CMC)</div>
+      <div style="display:flex; gap:6px; align-items:flex-end; height:80px; margin-bottom:0.75rem;">
+        ${barsHtml}
+      </div>
+      <div style="font-size:0.72rem; font-weight:700; color:var(--text-muted); margin-bottom:0.35rem;">Color Distribution</div>
+      <div style="display:flex; height:8px; border-radius:4px; overflow:hidden; gap:2px; background:rgba(255,255,255,0.05);">
+        ${colorCounts.W > 0 ? `<div style="flex:${colorCounts.W}; background:#fef08a;" title="White: ${colorCounts.W}"></div>` : ''}
+        ${colorCounts.U > 0 ? `<div style="flex:${colorCounts.U}; background:#38bdf8;" title="Blue: ${colorCounts.U}"></div>` : ''}
+        ${colorCounts.B > 0 ? `<div style="flex:${colorCounts.B}; background:#c084fc;" title="Black: ${colorCounts.B}"></div>` : ''}
+        ${colorCounts.R > 0 ? `<div style="flex:${colorCounts.R}; background:#f87171;" title="Red: ${colorCounts.R}"></div>` : ''}
+        ${colorCounts.G > 0 ? `<div style="flex:${colorCounts.G}; background:#4ade80;" title="Green: ${colorCounts.G}"></div>` : ''}
+        ${colorCounts.C > 0 ? `<div style="flex:${colorCounts.C}; background:#94a3b8;" title="Colorless: ${colorCounts.C}"></div>` : ''}
+      </div>
+    </div>
+  `;
+};

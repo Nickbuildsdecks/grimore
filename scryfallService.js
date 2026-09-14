@@ -142,12 +142,14 @@ async function downloadAndImportScryfallBulk(force = false) {
         const set_name = card.set_name || "";
         const image_uri = (card.image_uris && (card.image_uris.normal || card.image_uris.large || card.image_uris.small)) || (card.card_faces && card.card_faces[0] && card.card_faces[0].image_uris && card.card_faces[0].image_uris.normal) || "";
         
-        let price = 0.05;
+        // Leave price NULL when Scryfall has no USD price, so the single documented
+        // COALESCE(..., 0.15) floor applies everywhere instead of a divergent 0.05 default.
+        let price = null;
         if (card.prices) {
           const usd = parseFloat(card.prices.usd);
           const usdLow = parseFloat(card.prices.usd_low);
           if (usd) price = usd;
-          if (usdLow && usdLow < price) price = usdLow;
+          if (usdLow && (price === null || usdLow < price)) price = usdLow;
         }
 
         if (db.isPostgres) {
@@ -160,9 +162,12 @@ async function downloadAndImportScryfallBulk(force = false) {
             [scryfallId, name, set_code, set_name, collector_number, type_line, oracle_text, mana_cost, cmc, colors, price, image_uri, rarity]
           );
         } else {
+          // Write exactly the columns the LIVE SQLite scryfall_cards table has
+          // (card_name-keyed schema — no id/name/set_code/image_uri). Verified against the
+          // production grimore.db. `name` is the card's name, stored as card_name.
           await db.run(
-            `INSERT OR REPLACE INTO scryfall_cards 
-             (card_name, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, price, rarity, last_updated) 
+            `INSERT OR REPLACE INTO scryfall_cards
+             (card_name, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, price, rarity, last_updated)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [name, scryfallId, type_line, oracle_text, mana_cost, cmc, colors, price, rarity]
           );

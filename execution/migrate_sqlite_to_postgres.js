@@ -1,4 +1,6 @@
-const sqlite3 = require('sqlite3').verbose();
+// Uses better-sqlite3 (already a dependency) as the SQLite reader so the heavier `sqlite3`
+// native module no longer has to be installed/compiled just for this one-off migration.
+const Database = require('better-sqlite3');
 const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
@@ -28,15 +30,12 @@ async function migrateData() {
 
   console.log(`Using source SQLite database at: ${dbPath}`);
 
-  const sqliteDb = new sqlite3.Database(dbPath);
+  // Open read-only; better-sqlite3 handles WAL source files fine and we never write here.
+  const sqliteDb = new Database(dbPath, { readonly: true, fileMustExist: true });
   const pgPool = new Pool({ connectionString: pgUrl });
 
-  const getSqliteRows = (table) => new Promise((resolve, reject) => {
-    sqliteDb.all(`SELECT * FROM ${table}`, [], (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
+  // better-sqlite3 is synchronous; callers still `await` this, which is harmless on a value.
+  const getSqliteRows = (table) => sqliteDb.prepare(`SELECT * FROM ${table}`).all();
 
   const getPgColumns = async (table) => {
     const res = await pgPool.query(
@@ -80,6 +79,25 @@ async function migrateData() {
     'scryfall_cards' // Large cache table goes LAST
   ];
 
+  // SAFETY GUARD: this migration TRUNCATEs deck_cards/scryfall_cards and re-seeds them from
+  // the source SQLite file. Refuse to run against a populated target unless the operator
+  // explicitly opts in with FORCE_RESEED=1 (after taking a backup). This is what stops an
+  // accidental run from wiping live Postgres deck data.
+  const forceReseed = process.env.FORCE_RESEED === '1';
+  try {
+    const existing = await pgPool.query("SELECT COUNT(*)::int AS n FROM deck_cards");
+    if (existing.rows[0].n > 0 && !forceReseed) {
+      console.error(`ERROR: target deck_cards already has ${existing.rows[0].n} rows.`);
+      console.error("Refusing to TRUNCATE and re-seed. Back up the database, then set FORCE_RESEED=1 to override.");
+      await pgPool.end();
+      sqliteDb.close();
+      process.exit(1);
+    }
+  } catch (e) {
+    // A failed count usually means the table does not exist yet — safe to continue to DDL.
+    console.warn("WARN: pre-flight count on deck_cards failed (continuing):", e.message);
+  }
+
   try {
     await pgPool.query("TRUNCATE deck_cards, scryfall_cards CASCADE;");
     await pgPool.query("ALTER TABLE scryfall_cards ALTER COLUMN set_code DROP NOT NULL;");
@@ -89,16 +107,20 @@ async function migrateData() {
     await pgPool.query("ALTER TABLE card_price_cache ALTER COLUMN set_code DROP NOT NULL;");
     await pgPool.query("ALTER TABLE card_price_cache ALTER COLUMN collector_number DROP NOT NULL;");
     await pgPool.query("ALTER TABLE card_price_cache ALTER COLUMN scryfall_id DROP NOT NULL;");
-  } catch (e) {}
+  } catch (e) {
+    // Do NOT swallow this — a failed truncate/DDL leaves the DB in an unknown state.
+    console.error("FATAL: schema preparation / truncate failed:", e.message);
+    await pgPool.end();
+    sqliteDb.close();
+    process.exit(1);
+  }
 
   for (const table of tables) {
     try {
       // Check if table exists in SQLite
-      const tableCheck = await new Promise((resolve) => {
-        sqliteDb.get(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, [table], (err, row) => {
-          resolve(!!row);
-        });
-      });
+      const tableCheck = !!sqliteDb
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
+        .get(table);
 
       if (!tableCheck) {
         console.log(`- Table '${table}': does not exist in SQLite (skipped).`);

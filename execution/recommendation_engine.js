@@ -119,7 +119,12 @@ function extractCardFeatures(card = {}) {
 
   const isLand = types.includes("Land");
   const isMassRemoval = /(destroy|exile|return) all|each creature gets|all creatures get|deals? \d+ damage to each creature/.test(text);
-  const isSpotRemoval = /(destroy|exile|return) target|counter target spell|deals? \d+ damage to target/.test(text);
+  // Spot removal per directive rule 5 = destroy/exile target or counter target spell.
+  // Exclude graveyard recursion ("return target ... from your graveyard") and blink
+  // ("exile target ... return it"), which are NOT removal.
+  const isSpotRemoval = (/(destroy|exile) target|counter target spell|deals? \d+ damage to target/.test(text))
+    && !/from (a|your) graveyard/.test(text)
+    && !/exile target .+ return (it|that|them)/.test(text);
 
   if (!isLand && (
     /\badd \{?[wubrgc]\}?|add (one|two|three|an amount of) mana|treasure token/.test(text) ||
@@ -140,12 +145,18 @@ function extractCardFeatures(card = {}) {
   ) roles.push("Protection");
   if (/search your library for (a|an|up to|any) (card|creature|artifact|enchantment|instant|sorcery)/.test(text)) roles.push("Tutors");
   if (/you win the game|opponent loses the game|take an extra turn|extra combat phase|life total becomes 0/.test(text)) roles.push("Wincons / Finishers");
-  if (/return target .+ card from your graveyard to (your hand|the top of your library)/.test(text)) roles.push("Recursion");
-  if (/return target .+ card from (a|your) graveyard to the battlefield|put target .+ card from a graveyard onto the battlefield/.test(text)) roles.push("Reanimation");
+  if (/return target .*card from (a|your) graveyard to (your hand|the top of your library)/.test(text)) roles.push("Recursion");
+  if (/return target .*card from (a|your) graveyard to the battlefield|put target .*card from a graveyard onto the battlefield/.test(text)) roles.push("Reanimation");
   if (/mill \w+ cards|put the top \w+ cards? of your library into your graveyard/.test(text)) roles.push("Graveyard Fillers");
   if (/sacrifice (a|another|one or more) .+[:.,]|sacrifice .+:/.test(text)) roles.push("Sacrifice Outlets");
   if (/spells cost|can'?t cast|don'?t untap|can'?t untap|players can'?t|opponents can'?t|enters the battlefield tapped/.test(text)) roles.push("Stax");
-  if (isLand) roles.push(/:\s|when .+ enters|whenever .+ land/.test(text) ? "Utility Lands" : "Lands");
+  // A land is "Utility" only when it has a NON-mana ability. Every mana land has a
+  // "{T}: Add ..." line, so the old `/:\s/` test mislabeled Command Tower/duals/fetches as
+  // Utility Lands (directive rule 13 lists those under "Lands").
+  if (isLand) {
+    const landUtility = /can'?t be blocked|no maximum hand size|dredge|destroy target|exile target|add loyalty|:\s*(draw|scry|surveil|create|mill|sacrifice|deal|proliferate)/.test(text);
+    roles.push(landUtility ? "Utility Lands" : "Lands");
+  }
 
   if (/\bartifact\b|treasure|clue|food|vehicle|equipment/.test(text)) themes.push("Artifacts");
   if (/\benchantment\b|aura|constellation/.test(text)) themes.push("Enchantments");
