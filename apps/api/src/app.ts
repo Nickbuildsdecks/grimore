@@ -15,6 +15,7 @@ import { playersRouter } from './routes/players.js';
 import { friendsRouter, followsRouter, messagesRouter, notificationsRouter } from './routes/social.js';
 import { recoveryRouter, wishlistRouter } from './routes/wishlist.js';
 import { leagueRouter } from './routes/league.js';
+import { sandboxRouter } from './routes/sandbox.js';
 import { ApiError, errorHandler } from './lib/errors.js';
 
 export interface AppContext {
@@ -110,6 +111,7 @@ export function createApp(ctx: AppContext): Express {
   // The league slice owns four path prefixes, so it mounts at /api rather than being split into four
   // routers that would each need the same season/role helpers.
   app.use('/api', leagueRouter(ctx));
+  app.use('/api', sandboxRouter(ctx));
 
   app.use((_req: Request, _res: Response, next: NextFunction) => next(new ApiError(404, 'NOT_FOUND', 'Route not found')));
   app.use(errorHandler(log));

@@ -512,3 +512,64 @@ re-sync.
 
 `/api/cards/recommendations` — the recommender reads `preference_events` and `card_swipes` and is a
 engine in its own right, not a route port. It belongs with the auto-tagging work.
+
+---
+
+# Wave 5 — Play Realm support + booster draft (`apps/api/src/routes/sandbox.ts`)
+
+Replays (2), AI meta decks (1), the decklist parser (1) and the draft engine (3) = 7 routes. No
+migration. 14 new tests; api suite 157 -> 171, workspace 270 -> 284.
+Port status: **86 of 126 legacy routes**.
+
+## Draft state moved from a module Map to Redis
+
+Legacy kept drafts in `const activeDraftSessions = new Map()`. That loses every in-progress draft on
+restart or deploy, and breaks outright behind more than one API process — a pick routed to the wrong
+instance 404s. A test asserts a second app instance over the same Redis sees the same draft.
+
+## The draft engine is rewritten, not ported
+
+Legacy's pick handler **rotated the packs and then asked whether the human's pack was empty**. After
+rotation that is a different pack — the one just passed in from a neighbour — so the pack-number
+advance and the completion check both read the wrong thing. It also **never removed a bot's pick from
+its pack**, so bot packs never shrank while the human's did.
+
+A booster draft is well defined, so this implements it correctly: every seat picks from its own pack
+simultaneously, all packs rotate one seat, and a new round opens only when the packs are exhausted,
+three rounds in total. A test drives a whole draft and asserts the human ends with exactly
+`packSize x 3` cards.
+
+## Other legacy bugs fixed
+
+- **No authentication and no ownership on any draft route.** Any caller who knew a draft id could read
+  it and pick for the human seat. Creating a draft now requires a session and only its creator may
+  read or pick.
+- `ORDER BY RANDOM() LIMIT 240` sorts the entire card table to take 240 rows. Replaced with
+  `TABLESAMPLE SYSTEM (2)` and a bounded fallback for a card table too small to sample.
+- **Legacy registered `/api/draft/create`, `/api/draft/:id` and `/api/draft/:id/pick` twice.** Express
+  takes the first registration, so the second set of handlers was dead code. (`/api/search/semantic` is
+  also registered twice — same problem, still to port.)
+- `parse-deck` resolved every line with its own card lookup, so a 100-card list meant 100 queries. One
+  batched query now, and a name the card table does not know is flagged `unresolved` rather than
+  silently becoming a generic "Spell".
+- Other seats' packs are never sent to the client. Legacy's create response blanked them but its
+  pick response returned only the human's, inconsistently; hidden information is now hidden everywhere.
+
+## NOT ported — needs Nick's decision
+
+**The four `/api/sandbox/*-room` routes duplicate `apps/realtime`.** `create-room`, `join-room`,
+`sync-state` and `room/:code` keep an in-memory `sandboxRooms` object with:
+
+- no authentication on any of the four,
+- **no slot ownership check** — anyone with a room code can overwrite any player's life total and board
+  state via `sync-state`,
+- 4-digit codes (`GRIM-1234`), where a collision silently overwrites the existing room,
+- rooms that never expire, and vanish on restart.
+
+`apps/realtime` already implements this properly: a Redis-backed `PodStore` with seat tokens, a
+reconnect grace period, `BRAVE-OTTER-42` codes, and Socket.IO handlers. **Two options, and the choice
+is a product one:** (a) re-implement the four HTTP routes as a thin facade over `PodStore`, keeping the
+legacy `public/sandbox.html` working after cutover; or (b) declare them superseded and move that page
+onto sockets. Question raised with Nick.
+
+`/api/sandbox/ai-advisor` also stays un-ported: it needs Gemini, which is blocked (D5).

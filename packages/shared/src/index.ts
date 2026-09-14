@@ -8,5 +8,6 @@ export * from "./contracts/players.js";
 export * from "./contracts/social.js";
 export * from "./contracts/wishlist.js";
 export * from "./contracts/league.js";
+export * from "./contracts/sandbox.js";
 export * from "./realtime/events.js";
 export * from "./realtime/redis.js";
