@@ -272,3 +272,141 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('deck repricing + legality (require
     await ctx.pool.query(`DELETE FROM pods WHERE id = 'pod_lock'`);
   });
 });
+
+describe.skipIf(!DATABASE_URL || !REDIS_URL)('deck auto-tagging (requires DATABASE_URL + REDIS_URL)', () => {
+  let ctx: AppContext;
+  let app: ReturnType<typeof createApp>;
+  const dbName = `grimore_autotag_test_${Date.now()}`;
+  let alice: ReturnType<typeof request.agent>;
+  let bob: ReturnType<typeof request.agent>;
+
+  async function signup(username: string) {
+    const agent = request.agent(app);
+    expect((await agent.post('/api/auth/register').send({
+      username, password: PASSWORD, storeNickname: username, email: `${username}@example.com`,
+    })).status).toBe(201);
+    await agent.post('/api/auth/login').send({ username, password: PASSWORD });
+    return agent;
+  }
+
+  beforeAll(async () => {
+    const admin = new pg.Pool({ connectionString: DATABASE_URL, max: 1 });
+    await admin.query(`CREATE DATABASE ${dbName}`);
+    await admin.end();
+    const u = new URL(DATABASE_URL!);
+    u.pathname = `/${dbName}`;
+    ctx = await createContext(parseEnv({
+      NODE_ENV: 'test', DATABASE_URL: u.toString(), REDIS_URL, SESSION_SECRET: 'test-secret', LOG_LEVEL: 'silent',
+    }));
+    await runMigrations(ctx.pool);
+    app = createApp(ctx);
+    await ctx.pool.query(
+      `INSERT INTO scryfall_cards (id, name, card_name, type_line, oracle_text, price) VALUES
+        ('f0000000-0000-4000-8000-000000000001','Sol Ring','Sol Ring','Artifact','{T}: Add {C}{C}.',1.25),
+        ('f0000000-0000-4000-8000-000000000002','Wrath of God','Wrath of God','Sorcery','Destroy all creatures. They cannot be regenerated.',8),
+        ('f0000000-0000-4000-8000-000000000003','Polluted Delta','Polluted Delta','Land','{T}, Pay 1 life, Sacrifice: Search your library for an Island or Swamp card.',25),
+        ('f0000000-0000-4000-8000-000000000004','Reanimate','Reanimate','Sorcery','Return target creature card from a graveyard to the battlefield.',12),
+        ('f0000000-0000-4000-8000-000000000005','Heliod, Sun-Crowned','Heliod, Sun-Crowned','Legendary Enchantment Creature','Whenever you gain life, put a +1/+1 counter on target creature.',5),
+        ('f0000000-0000-4000-8000-000000000006','Walking Ballista','Walking Ballista','Artifact Creature','Remove a +1/+1 counter: it deals 1 damage to target creature.',15),
+        ('f0000000-0000-4000-8000-000000000007','Forest','Forest','Basic Land — Forest','',0.1),
+        ('f0000000-0000-4000-8000-000000000008','Vanilla Bear','Vanilla Bear','Creature — Bear','',0.2)`,
+    );
+    alice = await signup('alice_tag');
+    bob = await signup('bob_tag');
+  });
+
+  afterAll(async () => {
+    await closeContext(ctx);
+    const admin = new pg.Pool({ connectionString: DATABASE_URL, max: 1 });
+    await admin.query(`DROP DATABASE ${dbName}`);
+    await admin.end();
+  });
+
+  it('tags a whole deck by function and stores the tags', async () => {
+    const deck = await alice.post('/api/decks/builder-save').send({
+      deck_name: 'Tag Me',
+      cards: [
+        { card_name: 'Sol Ring' }, { card_name: 'Wrath of God' }, { card_name: 'Polluted Delta' },
+        { card_name: 'Reanimate' }, { card_name: 'Heliod, Sun-Crowned', is_commander: true },
+        { card_name: 'Walking Ballista' }, { card_name: 'Forest', quantity: 10 }, { card_name: 'Vanilla Bear' },
+      ],
+    });
+    const deckId = deck.body.deckId;
+    const r = await alice.post(`/api/decks/${deckId}/autotag`);
+    expect(r.status).toBe(200);
+    expect(r.body.count).toBe(8);
+
+    const rows = await ctx.pool.query('SELECT card_name, custom_tag FROM deck_cards WHERE deck_id = $1', [deckId]);
+    const tagsOf = (name: string) => JSON.parse(rows.rows.find((c) => c.card_name === name).custom_tag);
+
+    expect(tagsOf('Sol Ring')).toContain('Ramp');
+    // A board wipe is never spot removal.
+    expect(tagsOf('Wrath of God')).toContain('Mass Removal');
+    expect(tagsOf('Wrath of God')).not.toContain('Single Target Removal');
+    // A fetch land is Lands only, despite "search your library" in its text.
+    expect(tagsOf('Polluted Delta')).toEqual(['Lands']);
+    // Reanimation is never Blink & ETB.
+    expect(tagsOf('Reanimate')).toContain('Reanimation');
+    expect(tagsOf('Reanimate')).not.toContain('Blink & ETB');
+    // Basics are Lands, never Ramp.
+    expect(tagsOf('Forest')).toEqual(['Lands']);
+    // Nothing matched, so Unique -- and alone.
+    expect(tagsOf('Vanilla Bear')).toEqual(['Unique']);
+  });
+
+  it('detects the infinite combo and heads both pieces with it', async () => {
+    const deck = await alice.post('/api/decks/builder-save').send({
+      deck_name: 'Combo Deck',
+      cards: [
+        { card_name: 'Heliod, Sun-Crowned', is_commander: true },
+        { card_name: 'Walking Ballista' },
+        { card_name: 'Sol Ring' },
+      ],
+    });
+    const r = await alice.post(`/api/decks/${deck.body.deckId}/autotag`);
+    expect(r.status).toBe(200);
+    const rows = await ctx.pool.query('SELECT card_name, custom_tag FROM deck_cards WHERE deck_id = $1', [deck.body.deckId]);
+    const tagsOf = (name: string) => JSON.parse(rows.rows.find((c) => c.card_name === name).custom_tag);
+    expect(tagsOf('Heliod, Sun-Crowned')[0]).toBe('Combo: Heliod + Walking Ballista');
+    expect(tagsOf('Walking Ballista')[0]).toBe('Combo: Heliod + Walking Ballista');
+    // A card outside the combo keeps its own role.
+    expect(tagsOf('Sol Ring')).toEqual(['Ramp']);
+  });
+
+  it('tags nothing as a combo when only half of it is in the deck', async () => {
+    const deck = await alice.post('/api/decks/builder-save').send({
+      deck_name: 'Half Combo', cards: [{ card_name: 'Walking Ballista' }, { card_name: 'Sol Ring' }],
+    });
+    await alice.post(`/api/decks/${deck.body.deckId}/autotag`);
+    const rows = await ctx.pool.query('SELECT custom_tag FROM deck_cards WHERE deck_id = $1', [deck.body.deckId]);
+    expect(rows.rows.every((c) => !String(c.custom_tag).includes('Combo:'))).toBe(true);
+  });
+
+  it('handles an empty deck, requires a session, and refuses another player\'s deck', async () => {
+    const empty = await alice.post('/api/decks/builder-save').send({ deck_name: 'Empty', cards: [] });
+    const r = await alice.post(`/api/decks/${empty.body.deckId}/autotag`);
+    expect(r.status).toBe(200);
+    expect(r.body.count).toBe(0);
+
+    const deck = await alice.post('/api/decks/builder-save').send({
+      deck_name: 'Private Tags', is_public: false, cards: [{ card_name: 'Sol Ring' }],
+    });
+    expect((await request(app).post(`/api/decks/${deck.body.deckId}/autotag`)).status).toBe(401);
+    expect((await bob.post(`/api/decks/${deck.body.deckId}/autotag`)).status).toBe(404);
+  });
+
+  it('re-tagging is idempotent and does not touch other decks', async () => {
+    const a = await alice.post('/api/decks/builder-save').send({ deck_name: 'A', cards: [{ card_name: 'Sol Ring' }] });
+    const b = await alice.post('/api/decks/builder-save').send({ deck_name: 'B', cards: [{ card_name: 'Sol Ring' }] });
+    await ctx.pool.query(`UPDATE deck_cards SET custom_tag = '["hand-written"]' WHERE deck_id = $1`, [b.body.deckId]);
+
+    await alice.post(`/api/decks/${a.body.deckId}/autotag`);
+    await alice.post(`/api/decks/${a.body.deckId}/autotag`);
+    const first = await ctx.pool.query('SELECT custom_tag FROM deck_cards WHERE deck_id = $1', [a.body.deckId]);
+    expect(JSON.parse(first.rows[0].custom_tag)).toEqual(['Ramp']);
+    // Legacy keyed its UPDATE on card_name alone, so tagging one deck rewrote every deck's copy of
+    // that card. This one is keyed on the row id.
+    const other = await ctx.pool.query('SELECT custom_tag FROM deck_cards WHERE deck_id = $1', [b.body.deckId]);
+    expect(JSON.parse(other.rows[0].custom_tag)).toEqual(['hand-written']);
+  });
+});
