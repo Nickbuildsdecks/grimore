@@ -35,12 +35,14 @@ import {
   DeckSummary,
   DiscoverQuery,
   Id,
+  RepriceCardInput,
   TagsInput,
   type DeckCardInput,
 } from '@grimore/shared';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
 import { isAdmin, requireAuth, sessionPlayerId } from '../lib/auth.js';
+import { validateDeckLegality } from '../lib/legality.js';
 
 interface DeckRow {
   id: string;
@@ -532,6 +534,228 @@ export function decksRouter(ctx: AppContext): Router {
         throw err;
       }
       res.json({ success: true });
+    }),
+  );
+
+  // ── Repricing and legality ──────────────────────────────────────────────────────────────────────
+  // Legacy split this across five routes that grew apart: three of them recomputed the deck total with
+  // slightly different rounding, and two called validateDeckLegality while the others did not. They
+  // share one implementation here.
+
+  /** Recomputes the total and the legality verdict together, so they can never disagree. */
+  async function settleDeck(db: PoolClient, deckId: string) {
+    const verdict = await validateDeckLegality(db, deckId);
+    await db.query(
+      `UPDATE decks SET cheapest_total_price = $1, is_legal = $2, legality_reason = $3,
+                        last_checked = CURRENT_TIMESTAMP, updated_at = now()
+       WHERE id = $4`,
+      [verdict.totalPrice, verdict.isLegal ? 1 : 0, verdict.reason || null, deckId],
+    );
+    return verdict;
+  }
+
+  /**
+   * Re-prices every card in a deck from the local card tables.
+   *
+   * Legacy had two paths here: a local one, and one that re-fetched the whole decklist from Moxfield.
+   * api.moxfield.com is not reachable from this environment, so a Moxfield-linked deck returns 503
+   * rather than silently doing nothing. TODO(moxfield): restore the sync path when the host is allowed.
+   */
+  r.get(
+    '/reprice-init/:deckId',
+    requireAuth,
+    wrap(async (req, res) => {
+      const deckId = Id.parse(req.params.deckId);
+      const playerId = sessionPlayerId(req);
+      const result = await withTransaction(pool, async (client) => {
+        const deck = await loadOwnedDeck(client, deckId, playerId, true);
+
+        // A deck that has been paired into a live round must not change underneath the table. Legacy
+        // checked this against `active_roster` and `pods`, neither of which existed until migration 0009.
+        const locked = await client.query(
+          `SELECT 1 FROM active_roster ar
+           JOIN pods p ON p.season_id = (SELECT id FROM seasons WHERE is_active = 1)
+           WHERE ar.deck_id = $1 AND p.completed = 0`,
+          [deckId],
+        );
+        if (locked.rowCount) {
+          throw new ApiError(409, 'DECK_LOCKED', 'This deck is in an active round and cannot be repriced.');
+        }
+
+        const url = (deck.moxfield_url as string | null) ?? '';
+        if (url.includes('moxfield.com/decks/')) {
+          throw new ApiError(503, 'MOXFIELD_UNAVAILABLE',
+            'Moxfield sync is unavailable. Re-pricing a linked deck needs api.moxfield.com.');
+        }
+
+        // Re-price from the local tables, keeping basics at zero unless the deck opts them in.
+        await client.query(
+          `UPDATE deck_cards dc SET
+             cheapest_card_price = CASE
+               WHEN LOWER(dc.card_name) = ANY($2::text[]) AND COALESCE(d.include_basic_lands_in_price, 0) = 0 THEN 0
+               ELSE COALESCE(
+                 (SELECT s.price FROM scryfall_cards s
+                  WHERE LOWER(s.name) = LOWER(dc.card_name) ORDER BY s.price ASC NULLS LAST LIMIT 1),
+                 dc.cheapest_card_price, $3)
+             END,
+             scryfall_id = COALESCE(
+               (SELECT s.id FROM scryfall_cards s
+                WHERE LOWER(s.name) = LOWER(dc.card_name) ORDER BY s.price ASC NULLS LAST LIMIT 1),
+               dc.scryfall_id)
+           FROM decks d
+           WHERE dc.deck_id = $1 AND d.id = $1`,
+          [deckId, [...BASIC_LANDS], 0.15],
+        );
+        const verdict = await settleDeck(client, deckId);
+        const names = await client.query('SELECT card_name FROM deck_cards WHERE deck_id = $1 ORDER BY card_name', [deckId]);
+        return { verdict, cardNames: names.rows.map((c) => c.card_name as string), deckName: deck.deck_name as string };
+      });
+      res.json({
+        success: true,
+        cardNames: result.cardNames,
+        deckName: result.deckName,
+        totalPrice: result.verdict.totalPrice,
+        isLegal: result.verdict.isLegal,
+        reason: result.verdict.reason || null,
+      });
+    }),
+  );
+
+  /** Writes one card's current deck price through to the shared price cache. */
+  r.post(
+    '/reprice-card',
+    requireAuth,
+    wrap(async (req, res) => {
+      const input = RepriceCardInput.parse(req.body);
+      const playerId = sessionPlayerId(req);
+      const price = await withTransaction(pool, async (client) => {
+        await loadOwnedDeck(client, input.deckId, playerId);
+        const q = await client.query(
+          'SELECT cheapest_card_price FROM deck_cards WHERE deck_id = $1 AND LOWER(card_name) = LOWER($2) LIMIT 1',
+          [input.deckId, input.cardName],
+        );
+        if (!q.rowCount) throw new ApiError(404, 'NOT_FOUND', 'That card is not in this deck.');
+        const value = Number(q.rows[0].cheapest_card_price ?? 0.15);
+        // Legacy used SQLite's INSERT OR REPLACE, which raises on Postgres — so feeding the shared
+        // price cache, the whole point of this route, never happened.
+        const existing = await client.query(
+          'SELECT id FROM card_price_cache WHERE LOWER(card_name) = LOWER($1) ORDER BY id LIMIT 1',
+          [input.cardName],
+        );
+        if (existing.rowCount) {
+          await client.query('UPDATE card_price_cache SET price = $1, cached_at = CURRENT_TIMESTAMP WHERE id = $2', [
+            value, existing.rows[0].id,
+          ]);
+        } else {
+          await client.query('INSERT INTO card_price_cache (card_name, price) VALUES ($1, $2)', [input.cardName, value]);
+        }
+        return value;
+      });
+      res.json({ success: true, cardName: input.cardName, price });
+    }),
+  );
+
+  r.post(
+    '/reprice-finalize/:deckId',
+    requireAuth,
+    wrap(async (req, res) => {
+      const deckId = Id.parse(req.params.deckId);
+      const playerId = sessionPlayerId(req);
+      const verdict = await withTransaction(pool, async (client) => {
+        await loadOwnedDeck(client, deckId, playerId, true);
+        return settleDeck(client, deckId);
+      });
+      res.json({ success: true, totalPrice: verdict.totalPrice, isLegal: verdict.isLegal, reason: verdict.reason || null });
+    }),
+  );
+
+  /** Re-prices every card to the cheapest known printing and re-checks legality. */
+  r.post(
+    '/:deckId/reload-cheapest',
+    requireAuth,
+    wrap(async (req, res) => {
+      const deckId = Id.parse(req.params.deckId);
+      const playerId = sessionPlayerId(req);
+      const result = await withTransaction(pool, async (client) => {
+        await loadOwnedDeck(client, deckId, playerId, true);
+        const updated = await client.query(
+          `UPDATE deck_cards dc SET
+             cheapest_card_price = CASE
+               WHEN LOWER(dc.card_name) = ANY($2::text[]) AND COALESCE(d.include_basic_lands_in_price, 0) = 0 THEN 0
+               ELSE COALESCE(
+                 (SELECT p.price FROM card_price_cache p
+                  WHERE LOWER(p.card_name) = LOWER(dc.card_name) ORDER BY p.price ASC NULLS LAST LIMIT 1),
+                 (SELECT s.price FROM scryfall_cards s
+                  WHERE LOWER(s.name) = LOWER(dc.card_name) ORDER BY s.price ASC NULLS LAST LIMIT 1),
+                 $3)
+             END,
+             scryfall_id = COALESCE(
+               (SELECT s.id FROM scryfall_cards s
+                WHERE LOWER(s.name) = LOWER(dc.card_name) ORDER BY s.price ASC NULLS LAST LIMIT 1),
+               dc.scryfall_id)
+           FROM decks d
+           WHERE dc.deck_id = $1 AND d.id = $1
+           RETURNING dc.card_name, dc.cheapest_card_price, dc.scryfall_id`,
+          [deckId, [...BASIC_LANDS], 0.15],
+        );
+        const verdict = await settleDeck(client, deckId);
+        return { verdict, updatedCards: updated.rows };
+      });
+      res.json({
+        success: true,
+        totalPrice: result.verdict.totalPrice,
+        isLegal: result.verdict.isLegal,
+        reason: result.verdict.reason || null,
+        updatedCards: result.updatedCards,
+      });
+    }),
+  );
+
+  /**
+   * Re-prices a single card to its cheapest printing that is legal in the deck's format.
+   *
+   * Legacy asked Scryfall for every printing. Against the local table this is the cheapest row whose
+   * legalities include the deck's format. TODO(scryfall-fallback): a printing the nightly sync has not
+   * imported cannot be found, so the price can only be as fresh as the card table.
+   */
+  r.post(
+    '/:deckId/reprice-card-cheapest',
+    requireAuth,
+    wrap(async (req, res) => {
+      const deckId = Id.parse(req.params.deckId);
+      const { cardName } = RepriceCardInput.pick({ cardName: true }).parse(req.body);
+      const playerId = sessionPlayerId(req);
+      const result = await withTransaction(pool, async (client) => {
+        const deck = await loadOwnedDeck(client, deckId, playerId, true);
+        const format = (deck.format as string | null) || 'commander';
+        const cheapest = await client.query(
+          `SELECT s.id, s.price FROM scryfall_cards s
+           WHERE LOWER(s.name) = LOWER($1)
+             AND ($2 = 'custom' OR COALESCE(try_jsonb(s.legalities) ->> $2, 'legal') IN ('legal', 'restricted'))
+           ORDER BY s.price ASC NULLS LAST LIMIT 1`,
+          [cardName, format],
+        );
+        const row = cheapest.rows[0];
+        const price = isBasicLand(cardName) && Number(deck.include_basic_lands_in_price ?? 0) !== 1
+          ? 0
+          : Number(row?.price ?? 0.15);
+        const upd = await client.query(
+          `UPDATE deck_cards SET cheapest_card_price = $1, scryfall_id = COALESCE($2, scryfall_id)
+           WHERE deck_id = $3 AND LOWER(card_name) = LOWER($4)`,
+          [price, row?.id ?? null, deckId, cardName],
+        );
+        if (!upd.rowCount) throw new ApiError(404, 'NOT_FOUND', 'That card is not in this deck.');
+        const verdict = await settleDeck(client, deckId);
+        return { price, scryfallId: row?.id ?? null, verdict };
+      });
+      res.json({
+        success: true,
+        cardName,
+        price: result.price,
+        scryfallId: result.scryfallId,
+        totalPrice: result.verdict.totalPrice,
+        isLegal: result.verdict.isLegal,
+      });
     }),
   );
 

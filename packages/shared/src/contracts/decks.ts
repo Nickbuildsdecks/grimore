@@ -209,3 +209,10 @@ export const DiscoverQuery = z.object({
   q: z.string().trim().max(100).optional(),
 });
 export type DiscoverQuery = z.infer<typeof DiscoverQuery>;
+
+/** POST /api/decks/reprice-card and /:deckId/reprice-card-cheapest. */
+export const RepriceCardInput = z.object({
+  deckId: Id.default(""),
+  cardName: z.string().trim().min(1).max(200),
+});
+export type RepriceCardInput = z.infer<typeof RepriceCardInput>;

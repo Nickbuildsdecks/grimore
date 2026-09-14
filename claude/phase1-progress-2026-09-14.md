@@ -428,3 +428,45 @@ either be seated at that pod or hold an organizer role. A test covers the anonym
   belongs in a job, not a request handler. Deck legality is re-checked on save.
 - `podSizes` is exported and unit-tested independently of the database: for every turnout from 3 to 40
   it must seat everyone at tables of 3-5.
+
+---
+
+# Wave 3 — deck repricing + legality (`apps/api/src/routes/decks.ts`, `lib/legality.ts`)
+
+Five reprice routes plus the deck legality validator, with migration `0010_deck_pricing_legality.sql`.
+13 new tests; api suite 131 -> 144, workspace 244 -> 257. Port status: **74 of 126 legacy routes**.
+
+## Five more missing columns
+
+`validateDeckLegality` reads `seasons.allowed_rarities`, `seasons.allowed_colors`,
+`seasons.budget_limit`, `seasons.max_rares` and `decks.budget_limit`; reprice-init and reload-cheapest
+read `decks.include_basic_lands_in_price`. **None of them existed.** 0009 added the first two of the
+season ones; 0010 adds the rest. Because legality is called from reprice-finalize, reload-cheapest and
+the season rules editor, all three raised.
+
+`reprice-card` used SQLite's `INSERT OR REPLACE` against `card_price_cache`, which raises on Postgres —
+so feeding the shared price cache, the entire purpose of that route, never happened.
+
+## Deliberate deviations
+
+- **One implementation, not five.** Legacy spread pricing across five routes that had grown apart:
+  three recomputed the deck total with slightly different rounding, and two called
+  `validateDeckLegality` while the others did not, so a deck's stored `is_legal` could disagree with its
+  stored price. `settleDeck()` recomputes both together, so they cannot diverge.
+- **Repricing is one UPDATE, not a loop.** Legacy issued one UPDATE per card, outside any transaction.
+  Note for anyone editing it: an `UPDATE ... FROM ... LEFT JOIN LATERAL` **cannot** reference the update
+  target inside the LATERAL — the cheapest-printing lookup has to be a correlated scalar subquery in the
+  SET list. That cost a debugging cycle.
+- **Legality never fails a deck over a gap in the card cache.** A card the local `scryfall_cards` table
+  does not know is treated as unrestricted rather than illegal, and basic lands are exempt from every
+  restriction. A test covers both.
+- **`reprice-init` returns 503 for a Moxfield-linked deck** rather than silently doing nothing:
+  `api.moxfield.com` is blocked here. `TODO(moxfield)` marks the sync path.
+- The deck lock during a live round now works — it checks `active_roster` and `pods`, which did not
+  exist until migration 0009.
+
+## Still not ported from the decks group
+
+`register` / `import-account` (Moxfield, blocked), `:deckId/share` (Scryfall), `:deckId/autotag` and
+`:deckId/suggestions` (the auto-tagging engine in `directives/auto_tagging_engine.md`, its own piece of
+work). Four routes.
