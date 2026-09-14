@@ -65,6 +65,41 @@ function downloadBulkFile(url, destPath) {
   });
 }
 
+/**
+ * The card upsert, one statement per dialect, hoisted out of the import loop so a test can execute
+ * it against the real migrated schema. Nothing else in the loop is reachable without a ~500MB
+ * download from Scryfall, which is how the two bugs below survived.
+ *
+ * Postgres: the column list used to carry `scryfall_id`, which `scryfall_cards` does not have and
+ * never had — the rest of the codebase reads the Scryfall UUID as `sc.id` on Postgres and
+ * `sc.scryfall_id` only on SQLite (see the `db.isPostgres ? "sc.id" : "sc.scryfall_id"` switches in
+ * server.js). Every insert therefore raised `column "scryfall_id" of relation "scryfall_cards" does
+ * not exist`, and the import loop's catch — labelled "Ignore parse errors" but wrapping the write
+ * too — discarded it. The Postgres bulk sync has never written a row.
+ *
+ * The conflict clause also refreshed only six of the fourteen columns, so on a re-sync an oracle
+ * text correction, a rarity change or a set rename could never land. It now refreshes everything
+ * except the key.
+ */
+const CARD_UPSERT_PG = `
+  INSERT INTO scryfall_cards
+    (id, name, card_name, set_code, set_name, collector_number, type_line, oracle_text,
+     mana_cost, cmc, colors, price, image_uri, rarity, last_updated)
+  VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+  ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, card_name = EXCLUDED.card_name, set_code = EXCLUDED.set_code,
+    set_name = EXCLUDED.set_name, collector_number = EXCLUDED.collector_number,
+    type_line = EXCLUDED.type_line, oracle_text = EXCLUDED.oracle_text,
+    mana_cost = EXCLUDED.mana_cost, cmc = EXCLUDED.cmc, colors = EXCLUDED.colors,
+    price = EXCLUDED.price, image_uri = EXCLUDED.image_uri, rarity = EXCLUDED.rarity,
+    last_updated = CURRENT_TIMESTAMP`;
+
+// The live SQLite table is card_name-keyed and has no id/name/set_code/image_uri columns.
+const CARD_UPSERT_SQLITE = `
+  INSERT OR REPLACE INTO scryfall_cards
+    (card_name, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, price, rarity, last_updated)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`;
+
 async function downloadAndImportScryfallBulk(force = false) {
   // Check if we already have cards and don't need a force reload
   if (!force) {
@@ -102,6 +137,11 @@ async function downloadAndImportScryfallBulk(force = false) {
     if (!db.isPostgres) await db.run("BEGIN TRANSACTION");
     
     let cardCount = 0;
+    // Write failures were being counted as parse failures and dropped. Track them separately so a
+    // sync that cannot write a single row reports that instead of "Parsed 0 cards."
+    let parseFailures = 0;
+    let writeFailures = 0;
+    let firstWriteError = null;
     try {
       const readline = require('readline');
       const fileStream = fs.createReadStream(tempPath, { encoding: 'utf8' });
@@ -153,22 +193,14 @@ async function downloadAndImportScryfallBulk(force = false) {
         }
 
         if (db.isPostgres) {
-          await db.run(
-            `INSERT INTO scryfall_cards 
-             (id, name, card_name, scryfall_id, set_code, set_name, collector_number, type_line, oracle_text, mana_cost, cmc, colors, price, image_uri, rarity, last_updated) 
-             VALUES ($1, $2, $2, $1, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
-             ON CONFLICT (id) DO UPDATE SET 
-             name = EXCLUDED.name, card_name = EXCLUDED.card_name, type_line = EXCLUDED.type_line, price = EXCLUDED.price, image_uri = EXCLUDED.image_uri, set_code = EXCLUDED.set_code`,
+          await db.run(CARD_UPSERT_PG,
             [scryfallId, name, set_code, set_name, collector_number, type_line, oracle_text, mana_cost, cmc, colors, price, image_uri, rarity]
           );
         } else {
           // Write exactly the columns the LIVE SQLite scryfall_cards table has
           // (card_name-keyed schema — no id/name/set_code/image_uri). Verified against the
           // production grimore.db. `name` is the card's name, stored as card_name.
-          await db.run(
-            `INSERT OR REPLACE INTO scryfall_cards
-             (card_name, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, price, rarity, last_updated)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          await db.run(CARD_UPSERT_SQLITE,
             [name, scryfallId, type_line, oracle_text, mana_cost, cmc, colors, price, rarity]
           );
         }
@@ -187,12 +219,20 @@ async function downloadAndImportScryfallBulk(force = false) {
           if (jsonStr.endsWith(',')) {
             jsonStr = jsonStr.slice(0, -1);
           }
+          let parsed = null;
           try {
-            const card = JSON.parse(jsonStr);
-            await insertCard(card);
-            cardCount++;
+            parsed = JSON.parse(jsonStr);
           } catch (e) {
-            // Ignore parse errors
+            parseFailures++;
+          }
+          if (parsed) {
+            try {
+              await insertCard(parsed);
+              cardCount++;
+            } catch (writeErr) {
+              writeFailures++;
+              if (!firstWriteError) firstWriteError = writeErr;
+            }
           }
           continue;
         }
@@ -209,19 +249,41 @@ async function downloadAndImportScryfallBulk(force = false) {
             if (jsonStr.endsWith(',')) {
               jsonStr = jsonStr.slice(0, -1);
             }
+            let parsed = null;
             try {
-              const card = JSON.parse(jsonStr);
-              await insertCard(card);
-              cardCount++;
+              parsed = JSON.parse(jsonStr);
             } catch (e) {
-              // Ignore parse errors
+              parseFailures++;
+            }
+            if (parsed) {
+              try {
+                await insertCard(parsed);
+                cardCount++;
+              } catch (writeErr) {
+                writeFailures++;
+                if (!firstWriteError) firstWriteError = writeErr;
+              }
             }
           }
         }
       }
 
       if (!db.isPostgres) await db.run("COMMIT");
-      console.log(`Import completed in ${((Date.now() - insertStart) / 1000).toFixed(2)}s. Parsed ${cardCount} cards.`);
+      console.log(
+        `Import completed in ${((Date.now() - insertStart) / 1000).toFixed(2)}s. ` +
+        `Wrote ${cardCount} cards (${parseFailures} unparseable, ${writeFailures} rejected by the database).`
+      );
+      // A handful of rejects is bad data in the dump. Every row rejected is a broken statement or a
+      // schema mismatch, and reporting that as a successful sync is what hid the missing column.
+      if (writeFailures > 0 && cardCount === 0) {
+        throw new Error(
+          `Scryfall import wrote no rows: all ${writeFailures} inserts were rejected by the database. ` +
+          `First error: ${firstWriteError && firstWriteError.message}`
+        );
+      }
+      if (writeFailures > 0) {
+        console.warn(`Scryfall import: ${writeFailures} rows rejected. First error:`, firstWriteError);
+      }
     } catch (writeErr) {
       if (!db.isPostgres) {
         try {
@@ -257,5 +319,8 @@ function setupDailySync() {
 
 module.exports = {
   downloadAndImportScryfallBulk,
-  setupDailySync
+  setupDailySync,
+  // Exported for the schema test in apps/api — see the comment on CARD_UPSERT_PG.
+  CARD_UPSERT_PG,
+  CARD_UPSERT_SQLITE
 };

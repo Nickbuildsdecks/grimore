@@ -822,3 +822,47 @@ against Postgres 16 + Redis 7, plus `node scripts/guards.js`, full typecheck, an
 A sweep of the filter over the full Scryfall card-name corpus, which is the real test of the
 false-positive rate. `api.scryfall.com` is still blocked on the session proxy and there is no local
 card dump, so the corpus cases are hand-picked from known Scunthorpe families and the `scrap` cards.
+
+## Checkpoint — the Postgres card sync has never written a row
+
+Not a route port. `scryfall_cards` is the table `apps/api`'s card search reads, and the job that
+fills it cannot write to Postgres at all.
+
+`scryfallService.js` builds its bulk upsert with a `scryfall_id` column. `scryfall_cards` has no
+such column — not in the baseline, not in any later migration. The rest of the codebase already
+knows this: `server.js` reads the Scryfall UUID through
+`db.isPostgres ? "sc.id" : "sc.scryfall_id"` in three places, because `scryfall_id` is the SQLite
+spelling and `id` is the Postgres one. The sync missed the switch, so every insert raised
+`column "scryfall_id" of relation "scryfall_cards" does not exist`.
+
+It was invisible because the import loop's `catch` is labelled `// Ignore parse errors` but wraps
+the write as well as the `JSON.parse`. Every rejection was counted as a bad line and dropped, and
+the job logged `Parsed 0 cards` and returned normally.
+
+Fixed:
+
+- `scryfall_id` dropped from the Postgres column list. Its value was `$1` — the same parameter
+  already written to `id` — so nothing is lost.
+- The conflict clause refreshed six of fourteen columns, so a re-sync could never land an oracle
+  text correction, a rarity change or a set rename. It now refreshes everything but the key.
+- Parse failures and write failures are counted separately. A sync where every insert is rejected
+  now throws instead of reporting success, and partial rejection warns with the first error.
+- Both statements are hoisted to exported module constants (`CARD_UPSERT_PG`, `CARD_UPSERT_SQLITE`)
+  so they can be executed without the ~500MB download that made them untestable.
+
+**Tests:** `apps/api/src/card-sync-schema.test.ts`, 4 tests, runs the real statement against the
+migrated schema — no network. Verified by reintroducing the column and watching all four fail with
+the production error. Workspace 400 -> 404.
+
+### For Nick
+
+This says nothing about whether production's `scryfall_cards` is *empty* — it was seeded once from
+SQLite during the Postgres cutover, so it likely holds data from that date and has not moved since.
+Worth checking the max `last_updated` on the VM:
+
+```sql
+SELECT count(*), max(last_updated) FROM scryfall_cards;
+```
+
+If that timestamp is the cutover date, prices and oracle text have been frozen ever since, and the
+first successful sync after this fix will be a large one.
