@@ -60,3 +60,4 @@ public/changes.js
 # v2 monorepo build output
 dist/
 .turbo/
+dump.rdb

@@ -32,11 +32,6 @@
  *  - Profile updates wrote every column unconditionally, so a client that omitted a field wiped it.
  *  - Account update returned 400 for a taken username, which is a conflict, not a malformed request.
  *
- * ## Not ported
- *
- *  - Profanity filtering (`isProfane`) on nicknames, bios and handles. The decks slice made the same
- *    call; it should land once as a shared moderation utility rather than being reimplemented per slice.
- *    Marked TODO(moderation) at each site.
  */
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
@@ -53,6 +48,7 @@ import {
 } from '@grimore/shared';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
+import { rejectProfanity } from '../lib/moderation.js';
 import { requireAuth, sessionPlayerId } from '../lib/auth.js';
 
 /** Everything on the public profile. `email` is added separately, and only for the owner. */
@@ -141,7 +137,13 @@ export function playersRouter(ctx: AppContext): Router {
     wrap(async (req, res) => {
       const input = ProfileUpdateInput.parse(req.body);
       const playerId = sessionPlayerId(req);
-      // TODO(moderation): legacy ran isProfane() over the nickname, commander, bio and handles here.
+      rejectProfanity({
+        Nickname: input.storeNickname,
+        Commander: input.profileCommander,
+        Bio: input.profileBio,
+        'Discord handle': input.discordHandle,
+        'Moxfield username': input.moxfieldUsername,
+      });
 
       const updated = await withTransaction(pool, async (client: PoolClient) => {
         if (input.featuredDeckId) {
@@ -181,7 +183,7 @@ export function playersRouter(ctx: AppContext): Router {
 
       await withTransaction(pool, async (client: PoolClient) => {
         if (input.newUsername) {
-          // TODO(moderation): legacy ran isProfane() over the username here.
+          rejectProfanity({ Username: input.newUsername });
           // The Username contract already lowercased it; the check matches how logins look accounts up.
           if (await usernameTaken(client, input.newUsername, playerId)) {
             throw new ApiError(409, 'USERNAME_TAKEN', 'Username is already taken.');
