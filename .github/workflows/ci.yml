@@ -31,8 +31,7 @@ jobs:
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: 10 }
+      - uses: pnpm/action-setup@v4  # version comes from package.json packageManager
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
@@ -40,3 +39,4 @@ jobs:
       - run: pnpm -r --filter './packages/*' run build
       - run: pnpm -r --filter './packages/*' --filter './apps/*' run typecheck
       - run: pnpm -r --filter './packages/*' --filter './apps/*' run test
+      - run: pnpm --filter @grimore/web build
