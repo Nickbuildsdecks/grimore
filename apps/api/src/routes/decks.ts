@@ -41,6 +41,7 @@ import {
 } from '@grimore/shared';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
+import { rejectProfaneList, rejectProfanity } from '../lib/moderation.js';
 import { isAdmin, requireAuth, sessionPlayerId } from '../lib/auth.js';
 import { validateDeckLegality } from '../lib/legality.js';
 import { tagDeck } from '@grimore/auto-tagger';
@@ -262,6 +263,10 @@ export function decksRouter(ctx: AppContext): Router {
     wrap(async (req, res) => {
       const input = BuilderSaveInput.parse(req.body);
       const playerId = sessionPlayerId(req);
+      rejectProfanity({ 'Deck name': input.deck_name });
+      rejectProfaneList('Deck tags', input.custom_tags);
+      // Card names come from Scryfall, but a per-card tag is free text the owner typed.
+      rejectProfaneList('Card tags', input.cards.map((c: DeckCardInput) => c.custom_tag));
       const cards = input.cards.map((c: DeckCardInput) => ({
         card_name: c.card_name,
         quantity: c.quantity,
@@ -445,6 +450,7 @@ export function decksRouter(ctx: AppContext): Router {
       const deckId = Id.parse(req.params.deckId);
       const input = CommentInput.parse(req.body);
       const playerId = sessionPlayerId(req);
+      rejectProfanity({ Comment: input.commentText });
       await loadViewableDeck(pool, deckId, playerId);
       const ins = await pool.query(
         `INSERT INTO deck_comments (deck_id, player_id, comment_text) VALUES ($1, $2, $3)
@@ -462,6 +468,7 @@ export function decksRouter(ctx: AppContext): Router {
       const deckId = Id.parse(req.params.deckId);
       const input = TagsInput.parse(req.body);
       const playerId = sessionPlayerId(req);
+      rejectProfaneList('Deck tags', input.tags);
       await loadOwnedDeck(pool, deckId, playerId);
       await pool.query('UPDATE decks SET custom_tags = $1, updated_at = now() WHERE id = $2', [JSON.stringify(input.tags), deckId]);
       res.json({ success: true, tags: input.tags });

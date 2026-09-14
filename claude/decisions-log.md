@@ -72,6 +72,14 @@ have been stored there and no data is at risk. Creating a second table would lea
 
 **Why:** four copies of a word list drift apart. One utility in `packages/shared`, one test suite.
 
+**Landed 2026-09-14** as `packages/shared/src/moderation.ts` (47 tests) with `apps/api/src/lib/moderation.ts`
+as the throwing wrapper. Legacy's word list is kept verbatim; the *matching* is rewritten, because
+legacy's single `replace(/[^a-z0-9]/g, '')` was wrong in both directions — it joined adjacent words
+("Goblins Hit Hard" → "goblinshithard"), matched substrings inside real words (`Scrap Mastery`,
+`Scrapheap Scrounger`), and still let `sh1t`, `f*ck` and `f4ggot` through because the strip ran
+before any folding. Matching is now per token, with a per-word allow list, leet folding, a
+single-character wildcard and a deduplicating pass.
+
 ## D9 — A stacked PR does NOT retarget when its base merges
 
 **Decided:** when landing a stack of PRs, either merge the **top** PR (which contains the whole chain)
@@ -159,7 +167,9 @@ route lands. Done when `legacyUrl()` has no callers (D4).
 
 ## Cross-cutting, any wave
 
-- The shared moderation utility (D7).
+- ~~The shared moderation utility (D7)~~ — landed as `packages/shared/src/moderation.ts`, wired into
+  decks (name, tags, per-card tags, comments), players (profile fields, username) and league (season
+  and league names). `apps/web` can call the same matcher to warn before submit; nothing does yet.
 - `scryfallService.js` writes a `scryfall_id` column to `scryfall_cards` that does not exist in the
   baseline schema, so the Postgres bulk card sync cannot ever have succeeded. Needs its own fix.
 - `reprice-card` uses `INSERT OR REPLACE`, which is SQLite-only syntax and raises on Postgres.

@@ -775,3 +775,50 @@ and number, and a needle list silently misses half the variants.
 Scryfall and Moxfield. It also has a latent bug worth fixing whenever it is ported: **`playerId` is
 never defined in the handler's scope**, so the cache-hit path throws `ReferenceError` — meaning the
 6-hour suggestion cache has never successfully served a request.
+
+## Checkpoint — shared moderation utility (D7)
+
+`packages/shared/src/moderation.ts` + `apps/api/src/lib/moderation.ts`. Closes the five
+`TODO(moderation)` markers left across the player and league slices, and adds the four deck sites
+legacy guarded that the decks slice had never marked.
+
+Legacy's word list is carried over unchanged. The **matching** is rewritten, because legacy's
+one-line normaliser was wrong in both directions:
+
+| Input | Legacy | Now | Why |
+| --- | --- | --- | --- |
+| `Scrap Mastery` | rejected | allowed | "crap" is a substring of "scrap" — and this is a real card |
+| `Scrapheap Scrounger` | rejected | allowed | same |
+| `Goblins Hit Hard` | rejected | allowed | stripping the spaces made it "goblinshithard" |
+| `Dickinson` | rejected | allowed | substring again |
+| `sh1t` | allowed | rejected | stripping ran before folding, so digits never became letters |
+| `f*ck` | allowed | rejected | the mask character is now one wildcard letter |
+| `f4ggot` | allowed | rejected | leet folding |
+| `fuuuck` | allowed | rejected | deduplicating pass |
+| `f-u-c-k` | rejected | rejected | unchanged |
+
+The allow list is scoped per word rather than globally, so a token starting "scrap" is exempt from
+`crap` only — `scrapfuck` is still rejected. A test holds that.
+
+**Guarded sites:** deck name, deck tags, per-card tags, deck comments, profile nickname / commander /
+bio / Discord handle / Moxfield username, username change, season name, league name.
+
+**Tests:** 47 in `packages/shared`, 12 route-level in `apps/api`. Workspace 341 → 400, all green
+against Postgres 16 + Redis 7, plus `node scripts/guards.js`, full typecheck, and the web build.
+
+### Two things worth your eye
+
+- **The rejection never echoes the matched word back.** It is the user's own text, and returning it
+  renders the slur in the UI. A test asserts the response body does not contain it.
+- **`apps/api` error codes do not match the shared `ApiErrorCode` enum.** `errors.ts` says the
+  envelope "matches `@grimore/shared` ApiError", but the routes emit `VALIDATION` / `NOT_FOUND`
+  while the enum declares `validation_error` / `not_found`, and `ApiError.code` is typed as a bare
+  `string` so nothing catches the drift. Pre-existing, not introduced here; the new `PROFANITY` code
+  follows the existing route convention rather than the enum. Worth reconciling in its own change —
+  it is a one-line type change plus a rename sweep, and it will touch every route file.
+
+### Not verified
+
+A sweep of the filter over the full Scryfall card-name corpus, which is the real test of the
+false-positive rate. `api.scryfall.com` is still blocked on the session proxy and there is no local
+card dump, so the corpus cases are hand-picked from known Scunthorpe families and the `scrap` cards.

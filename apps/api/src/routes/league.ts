@@ -71,6 +71,7 @@ import {
 } from '@grimore/shared';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
+import { rejectProfanity } from '../lib/moderation.js';
 import { requireAuth, sessionPlayerId } from '../lib/auth.js';
 
 type OrganizerRole = 'admin' | 'judge' | 'scorekeeper';
@@ -166,7 +167,7 @@ export function leagueRouter(ctx: AppContext): Router {
       const playerId = sessionPlayerId(req);
       await requireRole(pool, playerId, ['admin']);
       const input = CreateSeasonInput.parse(req.body);
-      // TODO(moderation): legacy ran isProfane() over the season name here.
+      rejectProfanity({ 'Season name': input.name });
       const seasonId = await withTransaction(pool, async (client: PoolClient) => {
         // One transaction: legacy deactivated the old season and inserted the new one separately, so a
         // failure between them left the league with no active season.
@@ -201,7 +202,7 @@ export function leagueRouter(ctx: AppContext): Router {
       const playerId = sessionPlayerId(req);
       await requireRole(pool, playerId, ['admin', 'judge']);
       const input = UpdateSeasonRulesInput.parse(req.body);
-      // TODO(moderation): legacy ran isProfane() over the league name here.
+      rejectProfanity({ 'League name': input.name });
       const updated = await withTransaction(pool, async (client: PoolClient) => {
         const season = await requireActiveSeason(client);
         const sets: string[] = [];
