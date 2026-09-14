@@ -39,5 +39,4 @@ jobs:
       - run: node scripts/guards.js
       - run: pnpm -r --filter './packages/*' run build
       - run: pnpm -r --filter './packages/*' --filter './apps/*' run typecheck
-      - run: pnpm -r --filter './packages/*' --filter '@grimore/api' run test
-      # apps/realtime Redis-backed tests: pending (see claude/phase0-progress-2026-09-13.md)
+      - run: pnpm -r --filter './packages/*' --filter './apps/*' run test

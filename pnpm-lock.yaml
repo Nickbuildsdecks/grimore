@@ -4,6 +4,8 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+packageExtensionsChecksum: sha256-j/cDYvc+vH17U4EsetTTxdXBcroRarb3GbSP5Y7dHT0=
+
 importers:
 
   .:
@@ -126,7 +128,7 @@ importers:
         version: link:../../packages/shared
       '@socket.io/redis-streams-adapter':
         specifier: ^0.2.2
-        version: 0.2.3(socket.io-adapter@2.5.8)
+        version: 0.2.3(redis@4.7.1)(socket.io-adapter@2.5.8)
       pino:
         specifier: ^9.5.0
         version: 9.14.0
@@ -576,6 +578,7 @@ packages:
     resolution: {integrity: sha512-c8b+ZO6L10TQx7HbVwbupJQ3yj4aZOzxN1u8paIM8tFxJBJUiujdm0SryWC0xv7gIG8LbPsXIHiBHGi7TEVVqQ==}
     engines: {node: '>=14.0.0'}
     peerDependencies:
+      redis: ^4.6.5
       socket.io-adapter: ^2.5.4
 
   '@turbo/darwin-64@2.10.12':
@@ -1808,10 +1811,11 @@ snapshots:
 
   '@socket.io/component-emitter@3.1.2': {}
 
-  '@socket.io/redis-streams-adapter@0.2.3(socket.io-adapter@2.5.8)':
+  '@socket.io/redis-streams-adapter@0.2.3(redis@4.7.1)(socket.io-adapter@2.5.8)':
     dependencies:
       '@msgpack/msgpack': 2.8.0
       debug: 4.3.7
+      redis: 4.7.1
       socket.io-adapter: 2.5.8
     transitivePeerDependencies:
       - supports-color
