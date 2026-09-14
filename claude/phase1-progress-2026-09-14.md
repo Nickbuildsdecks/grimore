@@ -201,3 +201,53 @@ Profanity filtering (`isProfane`) on nicknames, bios and handles — the decks s
 It should land once as a shared moderation utility rather than being reimplemented per slice; marked
 `TODO(moderation)` at each site. Also out of scope here: `/api/players/list` and `/api/players/:id/role`
 (admin), `/api/players/active-match` (tournaments), and `/api/players/:id/follow` (next chunk, social).
+
+## Checkpoint 5 — social slice (`apps/api/src/routes/social.ts`)
+
+Friends (6 routes), messages (6), notifications (2) and follows (2), plus migration `0007_social.sql`
+and `packages/shared/src/contracts/social.ts`. 24 new tests; api suite 68 -> 92.
+
+### Every social route failed on Postgres
+
+Three independent schema divergences, each fatal on its own:
+
+1. **`friend_requests` does not exist.** All six `/api/friends` routes query a table the baseline schema
+   never created. 0007 creates it.
+2. **`direct_messages` does not exist either.** All six `/api/messages` routes query it.
+3. **`follows` is keyed `(follower_id, following_id)`**, but every legacy query names `followed_id`.
+
+And on top of those, **`notifications.type` is NOT NULL with no default while every legacy INSERT omits
+it** — so even the notification writes that do not use a text id would raise.
+
+#### Decision: messages use the existing `messages` table, not a new `direct_messages`
+
+The baseline already has a `messages` table with exactly the right shape — `id, sender_id, recipient_id,
+subject, body, is_read, created_at`. Creating a second `direct_messages` table to match the legacy
+handler's name would leave two tables for one concept. **No data is at risk in making this choice:** with
+no `direct_messages` table on Postgres, no message can ever have been stored there. Legacy's
+`read_status` column name was the same kind of drift — the column is `is_read`.
+
+`notifications.id` stays the integer serial from the schema; legacy inserted `notif_<ts>_<rand>` text
+ids, the same mistake the decks slice found in `deck_comments`.
+
+### Other legacy bugs fixed
+
+- **Friend requests were not symmetric.** The pair had no uniqueness, so two players who requested each
+  other simultaneously produced two rows and an ambiguous status. 0007 adds a unique index on the
+  unordered pair, `(LEAST(sender, recipient), GREATEST(sender, recipient))`.
+- **A declined request was permanent.** Decline wrote `status='declined'`, and the "already exists" guard
+  then matched that row forever — the two players could never become friends. Declining now deletes the
+  row, and a fresh request works.
+- **Accept never checked the current status**, so an already-answered request could be re-accepted,
+  re-notifying the sender every time.
+- **Sending a message was not atomic** with writing the recipient's notification. Both now share a
+  transaction, as do friend request / accept / follow.
+- **`follows` had no uniqueness**, so a double-click inserted the row twice and the unfollow toggle then
+  needed two clicks to clear it.
+- **Notifications were capped at 10** with no way to page and no way to mark all read. `limit` and
+  `unreadOnly` are query parameters now, and `{ all: true }` clears the bell.
+- Marking a message read reported success even when the id belonged to someone else's message. Now 404.
+- Unfriending, and declining a request that was not there, both reported success. Now 404.
+- Notification text used `req.session.player.storeNickname`, which goes stale after a profile rename. It
+  is read from the database row; a test renames a player mid-flight to hold this.
+- Feedback with no admin account in the database 500d; it now returns 503 with a clear message.
