@@ -98,3 +98,59 @@ file; the response shape is already Scryfall's, so adding it later is additive.
 - **Separate latent bug, not fixed here:** `scryfallService.js` writes a `scryfall_id` column into
   `scryfall_cards` on the Postgres branch (line ~157). That column does not exist in the baseline
   schema, so the Postgres bulk sync cannot ever have succeeded. Worth its own fix.
+
+## Checkpoint 3 — collections slice (`apps/api/src/routes/collections.ts`)
+
+Eight routes (`GET/POST /api/collections`, `PUT/DELETE /api/collections/:id`,
+`GET/POST/PUT/DELETE /api/collections/:id/cards`) plus migration `0005_collections_ids_and_columns.sql`.
+17 new route tests + 2 migration tests; api suite 34 -> 51, db suite 4 -> 6.
+
+### The id/column bugs — the schema was wrong, not just the queries
+
+`packages/shared/src/contracts/collections.ts` had already written these down from the contract side.
+Checked against the baseline schema and the legacy handlers, the damage is larger than "an id mismatch":
+**the collections feature cannot have worked at all since the Postgres cutover.**
+
+1. **`collections.id` is an integer serial; every handler writes a TEXT id** (`col_<ts>_<rand>`).
+   `POST /api/collections` fails on Postgres with *invalid input syntax for type integer*, so no
+   collection can be created — and therefore none of the other seven routes can be reached either.
+2. **`collections.settings` does not exist.** Both the create and the update handler write it.
+3. **`collection_cards.condition` / `language` / `is_for_trade` do not exist.** All three are read and
+   written by the card handlers.
+4. **`collection_cards.is_foil` does not exist** — the column is `foil`. Legacy's INSERT, UPDATE *and*
+   DELETE all name `is_foil`, so every card mutation would raise even with a valid text id.
+5. **The card upsert's `ON CONFLICT` target had no matching unique index**, so it could not have worked
+   even with the columns present.
+
+Migration 0005 converts `collections.id` to TEXT (and `collection_cards.collection_id` with it, in the
+same transaction, so the foreign key holds), adds the five missing columns, and creates the unique index
+the upsert needs. **The conversion preserves production rows**: an existing integer id becomes its own
+decimal string. A test in `packages/db` seeds legacy-shaped integer rows, applies 0005, and asserts the
+rows, the foreign key and its `ON DELETE CASCADE` all survive — the fresh-database path in the other
+test would not have caught a data-losing conversion.
+
+The unique index uses `LOWER(card_name)` and `COALESCE(scryfall_id, '')`: Postgres treats NULLs as
+distinct in a plain unique index, so a card with no printing id could otherwise be inserted twice.
+
+### Other legacy bugs fixed
+
+- **`total_value` double-counted.** The list query LEFT JOINs both `card_price_cache` and
+  `scryfall_cards` on card name; each fans out once per cached printing and the `SUM` multiplies
+  accordingly. A card with four printings counted four times. Both joins are now `LATERAL ... LIMIT 1`.
+- `sc.scryfall_id` was selected from `scryfall_cards`, which has no such column (it is `id`), and the
+  join used `sc.card_name` where the populated column is `name`.
+- `pc.colors` / `pc.oracle_text` were selected from `card_price_cache`, which has neither column.
+- Delete was three unsequenced statements; a failure between them orphaned a collection's cards. The
+  archive and the deletes now share one transaction.
+- `PUT /:id/cards` overwrote every column with whatever the client sent, so an omitted field was
+  silently reset — a PUT without `newQuantity` wrote NULL over the quantity. It now applies a partial
+  `changes` patch, and `quantity: 0` means remove.
+- A DELETE that matched no card reported success, hiding key mismatches from the UI. Now 404.
+
+### Deliberate differences
+
+- Cards are addressed by an explicit key object (`{ card_name, scryfall_id, foil, condition, language }`)
+  rather than loose top-level body fields, matching `CollectionCardKey` in the contracts.
+- Ownership is enforced on every route; another player's collection 404s rather than 500s.
+- **Not ported:** the wishlist auto-decrement on add. `wishlist_cards` is not in the baseline schema at
+  all, so it belongs with the wishlist slice — marked `TODO(wishlist-slice)`.

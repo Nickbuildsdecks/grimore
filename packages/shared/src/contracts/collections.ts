@@ -7,9 +7,10 @@ export const CardCondition = z.enum(["NM", "LP", "MP", "HP", "DMG"]);
 export type CardCondition = z.infer<typeof CardCondition>;
 
 /**
- * Mirrors `collections` columns. NOTE: baseline schema has `id integer` while the
- * legacy handler inserts text ids (`col_<ts>_<rand>`) and a `settings` JSON column
- * that the baseline lacks — `id` is typed loosely to accept both.
+ * Mirrors `collections` columns. Migration 0005 reconciled the schema with the code: `id` is now TEXT
+ * (the baseline had an integer serial while every handler wrote `col_<ts>_<rand>`), and the `settings`
+ * column exists. `id` stays a loose union because rows created before that migration carry the decimal
+ * string of their old integer id.
  */
 export const Collection = z.object({
   id: z.union([Id, z.number().int()]).transform(String),
@@ -47,7 +48,7 @@ export const CollectionCard = z.object({
   scryfall_id: z.string().nullable().default(null),
   foil: IntBool.default(false),
   purchase_price: z.coerce.number().default(0),
-  /** Not in baseline schema; legacy handler reads/writes them. */
+  /** Added by migration 0005; the baseline lacked them although the handlers read and wrote them. */
   condition: CardCondition.catch("NM"),
   language: z.string().max(5).default("EN"),
   is_for_trade: IntBool.default(false),
