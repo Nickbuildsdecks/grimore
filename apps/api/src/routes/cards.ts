@@ -37,15 +37,21 @@
 import { Router } from 'express';
 import type { Queryable } from '@grimore/db';
 import {
+  ArtVoteInput,
   Card,
   CardAutocompleteQuery,
+  CardDetailsBatchInput,
+  CardPrinting,
   CardSearchQuery,
+  CardSwipeInput,
   Color,
+  PrintingId,
   Rarity,
   type CardSearchQuery as CardSearchQueryType,
 } from '@grimore/shared';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
+import { requireAuth, sessionPlayerId } from '../lib/auth.js';
 
 /** The documented price floor when neither the price cache nor the card row has a price. */
 const PRICE_FLOOR = 0.15;
@@ -251,6 +257,182 @@ export function cardsRouter(ctx: AppContext): Router {
       res.json(toCard(row));
     }),
   );
+
+  // ── Details for many names at once ──────────────────────────────────────────────────────────────
+  r.post(
+    '/details-batch',
+    wrap(async (req, res) => {
+      const { names } = CardDetailsBatchInput.parse(req.body);
+      // One query for the whole batch. Legacy resolved names one at a time, so a 100-card decklist
+      // meant 100 round trips (and, on a miss, 100 Scryfall calls).
+      const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
+      const rows = await pool.query(
+        `SELECT DISTINCT ON (LOWER(sc.name)) ${CARD_SELECT}
+         ${CARD_FROM}
+         WHERE LOWER(sc.name) = ANY($1::text[]) AND ${EXCLUDE_NON_CARDS}
+         ORDER BY LOWER(sc.name), COALESCE(pc.price, sc.price, ${PRICE_FLOOR}) ASC, sc.id ASC`,
+        [unique.map((n) => n.toLowerCase())],
+      );
+      const found: Record<string, unknown> = {};
+      for (const row of rows.rows) found[String(row.name).toLowerCase()] = toCard(row);
+      // TODO(scryfall-fallback): legacy looked missing names up against Scryfall. They are reported
+      // rather than silently dropped, so a caller can tell "unknown card" from "no price".
+      const missing = unique.filter((n) => !found[n.toLowerCase()]);
+      res.json({ cards: unique.map((n) => found[n.toLowerCase()] ?? null), byName: found, missing });
+    }),
+  );
+
+  // ── Printings of one card ───────────────────────────────────────────────────────────────────────
+  r.get(
+    '/versions',
+    wrap(async (req, res) => {
+      const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+      if (!name) throw new ApiError(400, 'VALIDATION', 'A card name is required.');
+      const viewerId = req.session.playerId ?? null;
+      // Art vote tallies are joined in so the gallery does not need a second round trip per printing.
+      const rows = await pool.query(
+        `SELECT sc.id, sc.name, UPPER(COALESCE(sc.set_code, 'unk')) AS set, sc.set_name,
+                COALESCE(sc.collector_number, '') AS collector_number, sc.rarity, sc.image_uri,
+                COALESCE(pc.price, sc.price, ${PRICE_FLOOR}) AS price,
+                (SELECT COUNT(*) FROM card_art_votes v WHERE v.scryfall_id = sc.id AND v.vote = 1) AS likes,
+                (SELECT COUNT(*) FROM card_art_votes v WHERE v.scryfall_id = sc.id AND v.vote = -1) AS dislikes,
+                COALESCE((SELECT v.vote FROM card_art_votes v WHERE v.scryfall_id = sc.id AND v.player_id = $2::text), 0) AS "myVote",
+                (SELECT v.artist FROM card_art_votes v WHERE v.scryfall_id = sc.id AND v.artist IS NOT NULL LIMIT 1) AS artist
+         ${CARD_FROM}
+         WHERE LOWER(sc.name) = LOWER($1) AND ${EXCLUDE_NON_CARDS}
+         ORDER BY COALESCE(pc.price, sc.price, ${PRICE_FLOOR}) ASC, sc.id ASC`,
+        [name, viewerId],
+      );
+      // TODO(scryfall-fallback): only printings the nightly sync has imported are listed, and
+      // scryfall_cards has no `artist` column, so the illustrator is known only where an art vote
+      // recorded it. Restoring the Scryfall call fills both gaps.
+      res.json(
+        rows.rows.map((p) =>
+          CardPrinting.parse({
+            ...p,
+            rarity: typeof p.rarity === 'string' && RARITIES.has(p.rarity) ? p.rarity : null,
+            image_uri: imageUris(String(p.id), (p.image_uri as string | null) || null)?.normal ?? '',
+          }),
+        ),
+      );
+    }),
+  );
+
+  // ── Rulings ─────────────────────────────────────────────────────────────────────────────────────
+  r.get(
+    '/rulings',
+    wrap(async (req, res) => {
+      const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+      if (!name) throw new ApiError(400, 'VALIDATION', 'A card name is required.');
+      // There is no local rulings table to fall back to — rulings exist only on Scryfall. Saying so is
+      // better than returning an empty list the client would render as "this card has no rulings".
+      // TODO(scryfall-fallback): call /cards/:id/rulings once api.scryfall.com is reachable.
+      throw new ApiError(503, 'SCRYFALL_UNAVAILABLE', 'Card rulings need api.scryfall.com, which is not reachable.');
+    }),
+  );
+
+  // ── Taste: card swipes and art votes ────────────────────────────────────────────────────────────
+
+  /**
+   * A swipe is taste for the CARD; an art vote is taste for one PRINTING. Legacy kept them in separate
+   * tables and rejected cross-posting, which is worth preserving: they answer different questions
+   * ("would I play this?" vs "do I like this illustration?").
+   */
+  r.post(
+    '/swipes',
+    requireAuth,
+    wrap(async (req, res) => {
+      const input = CardSwipeInput.parse(req.body);
+      const playerId = sessionPlayerId(req);
+      const cardKey = input.cardName.toLowerCase();
+      const contextKey = input.context || 'explore';
+      if (input.vote === 0) {
+        await pool.query('DELETE FROM card_swipes WHERE player_id = $1 AND card_key = $2 AND context_key = $3', [
+          playerId, cardKey, contextKey,
+        ]);
+      } else {
+        await pool.query(
+          `INSERT INTO card_swipes (player_id, card_key, card_name, scryfall_id, context_key, vote)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (player_id, card_key, context_key) DO UPDATE SET
+             card_name = EXCLUDED.card_name,
+             scryfall_id = COALESCE(EXCLUDED.scryfall_id, card_swipes.scryfall_id),
+             vote = EXCLUDED.vote, updated_at = CURRENT_TIMESTAMP`,
+          [playerId, cardKey, input.cardName, input.scryfallId ?? null, contextKey, input.vote],
+        );
+      }
+      await recordPreference(playerId, {
+        eventType: input.vote === 1 ? 'swipe_like' : input.vote === -1 ? 'swipe_pass' : 'swipe_clear',
+        entityKey: input.cardName,
+        source: input.source ?? 'card_search_swipe',
+        signal: input.vote,
+        context: contextKey,
+      });
+      res.json({ success: true, vote: input.vote, context: contextKey });
+    }),
+  );
+
+  r.post(
+    '/versions/:scryfallId/vote',
+    requireAuth,
+    wrap(async (req, res) => {
+      const scryfallId = PrintingId.parse(req.params.scryfallId);
+      const input = ArtVoteInput.parse(req.body);
+      const playerId = sessionPlayerId(req);
+      // Reject rather than silently relabel: a stale client posting swipe traffic here is exactly the
+      // bug the split between the two tables exists to prevent.
+      if (input.source && input.source.endsWith('_swipe') && input.source !== 'art_swipe') {
+        throw new ApiError(400, 'WRONG_ENDPOINT', 'Card swipes are gameplay taste. Post them to /api/cards/swipes.');
+      }
+      if (input.vote === 0) {
+        await pool.query('DELETE FROM card_art_votes WHERE player_id = $1 AND scryfall_id = $2', [playerId, scryfallId]);
+      } else {
+        await pool.query(
+          `INSERT INTO card_art_votes (player_id, scryfall_id, card_name, artist, vote)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (player_id, scryfall_id) DO UPDATE SET
+             card_name = EXCLUDED.card_name,
+             artist = COALESCE(EXCLUDED.artist, card_art_votes.artist),
+             vote = EXCLUDED.vote, updated_at = CURRENT_TIMESTAMP`,
+          [playerId, scryfallId, input.cardName, input.artist ?? null, input.vote],
+        );
+      }
+      await recordPreference(playerId, {
+        eventType: input.vote === 1 ? 'art_like' : input.vote === -1 ? 'art_dislike' : 'art_clear',
+        entityKey: scryfallId,
+        entityType: 'printing',
+        source: input.source === 'art_swipe' ? 'art_swipe' : 'art_gallery',
+        signal: input.vote,
+      });
+      const tally = await pool.query(
+        `SELECT COUNT(*) FILTER (WHERE vote = 1)::int AS likes,
+                COUNT(*) FILTER (WHERE vote = -1)::int AS dislikes
+         FROM card_art_votes WHERE scryfall_id = $1`,
+        [scryfallId],
+      );
+      res.json({ success: true, vote: input.vote, ...tally.rows[0] });
+    }),
+  );
+
+  /**
+   * Appends to `preference_events`, the append-only taste log the recommender reads.
+   * Failures here never fail the vote: losing one analytics row matters less than losing the swipe.
+   */
+  async function recordPreference(
+    playerId: string,
+    e: { eventType: string; entityKey: string; entityType?: string; source: string; signal: number; context?: string },
+  ): Promise<void> {
+    try {
+      await pool.query(
+        `INSERT INTO preference_events (player_id, event_type, entity_type, entity_key, source, signal, context_json)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [playerId, e.eventType, e.entityType ?? 'card', e.entityKey, e.source, e.signal,
+         e.context ? JSON.stringify({ context: e.context }) : null],
+      );
+    } catch (err) {
+      ctx.log.warn({ err }, 'preference event not recorded');
+    }
+  }
 
   return r;
 }

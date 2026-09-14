@@ -229,3 +229,174 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('cards routes (requires DATABASE_UR
     expect((await request(app).get('/api/cards/search?q=Sol')).status).toBe(200);
   });
 });
+
+describe.skipIf(!DATABASE_URL || !REDIS_URL)('cards: batch, printings and taste (requires DATABASE_URL + REDIS_URL)', () => {
+  let ctx: AppContext;
+  let app: ReturnType<typeof createApp>;
+  const dbName = `grimore_cards2_test_${Date.now()}`;
+  let alice: ReturnType<typeof request.agent>;
+  let bob: ReturnType<typeof request.agent>;
+  let aliceId: string;
+  const SOL_CHEAP = '11111111-1111-4111-8111-111111111111';
+  const SOL_ALPHA = '22222222-2222-4222-8222-222222222222';
+
+  async function signup(username: string) {
+    const agent = request.agent(app);
+    expect((await agent.post('/api/auth/register').send({
+      username, password: 'correct-horse-battery', storeNickname: username, email: `${username}@example.com`,
+    })).status).toBe(201);
+    const login = await agent.post('/api/auth/login').send({ username, password: 'correct-horse-battery' });
+    return { agent, id: login.body.user.id as string };
+  }
+
+  beforeAll(async () => {
+    const admin = new pg.Pool({ connectionString: DATABASE_URL, max: 1 });
+    await admin.query(`CREATE DATABASE ${dbName}`);
+    await admin.end();
+    const u = new URL(DATABASE_URL!);
+    u.pathname = `/${dbName}`;
+    ctx = await createContext(parseEnv({
+      NODE_ENV: 'test', DATABASE_URL: u.toString(), REDIS_URL, SESSION_SECRET: 'test-secret', LOG_LEVEL: 'silent',
+    }));
+    await runMigrations(ctx.pool);
+    app = createApp(ctx);
+    await ctx.pool.query(
+      `INSERT INTO scryfall_cards (id, name, card_name, set_code, set_name, collector_number, rarity, price, type_line) VALUES
+        ($1,'Sol Ring','Sol Ring','c21','Commander 2021','263','uncommon',1.25,'Artifact'),
+        ($2,'Sol Ring','Sol Ring','lea','Limited Edition Alpha','270','uncommon',3500,'Artifact'),
+        ('33333333-3333-4333-8333-333333333333','Lightning Bolt','Lightning Bolt','lea','Limited Edition Alpha','161','common',2.5,'Instant'),
+        ('55555555-5555-4555-8555-555555555555','Goblin Token','Goblin Token','tm13','Tokens','1','common',0.05,'Token Creature — Goblin')`,
+      [SOL_CHEAP, SOL_ALPHA],
+    );
+    ({ agent: alice, id: aliceId } = await signup('alice_taste'));
+    ({ agent: bob } = await signup('bob_taste'));
+  });
+
+  afterAll(async () => {
+    await closeContext(ctx);
+    const admin = new pg.Pool({ connectionString: DATABASE_URL, max: 1 });
+    await admin.query(`DROP DATABASE ${dbName}`);
+    await admin.end();
+  });
+
+  it('resolves a batch of names in one call and names the misses', async () => {
+    const r = await request(app).post('/api/cards/details-batch').send({
+      names: ['Sol Ring', 'lightning bolt', 'Some Unreleased Card'],
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.cards).toHaveLength(3);
+    expect(r.body.byName['sol ring'].name).toBe('Sol Ring');
+    // Cheapest printing wins, and one entry per name despite two Sol Ring rows.
+    expect(r.body.byName['sol ring'].price).toBeCloseTo(1.25, 2);
+    expect(r.body.byName['lightning bolt'].name).toBe('Lightning Bolt');
+    // Misses are reported rather than silently dropped.
+    expect(r.body.missing).toEqual(['Some Unreleased Card']);
+    expect(r.body.cards[2]).toBeNull();
+  });
+
+  it('rejects an empty or oversized batch', async () => {
+    expect((await request(app).post('/api/cards/details-batch').send({ names: [] })).status).toBe(400);
+    const huge = Array.from({ length: 201 }, (_, i) => `Card ${i}`);
+    expect((await request(app).post('/api/cards/details-batch').send({ names: huge })).status).toBe(400);
+  });
+
+  it('lists printings cheapest first, excluding tokens', async () => {
+    const r = await request(app).get('/api/cards/versions?name=Sol Ring');
+    expect(r.status).toBe(200);
+    expect(r.body.map((p: { set: string }) => p.set)).toEqual(['C21', 'LEA']);
+    expect(r.body[0].set_name).toBe('Commander 2021');
+    expect(r.body[0].collector_number).toBe('263');
+    expect(r.body[0].image_uri).toContain('cards.scryfall.io');
+    expect((await request(app).get('/api/cards/versions?name=Goblin Token')).body).toEqual([]);
+    expect((await request(app).get('/api/cards/versions')).status).toBe(400);
+  });
+
+  it('says rulings need Scryfall rather than pretending a card has none', async () => {
+    const r = await request(app).get('/api/cards/rulings?name=Sol Ring');
+    expect(r.status).toBe(503);
+    expect(r.body.error.code).toBe('SCRYFALL_UNAVAILABLE');
+  });
+
+  it('records a card swipe and keeps it per brew context', async () => {
+    expect((await request(app).post('/api/cards/swipes').send({ cardName: 'Sol Ring', vote: 1 })).status).toBe(401);
+
+    expect((await alice.post('/api/cards/swipes').send({ cardName: 'Sol Ring', vote: 1, context: 'goblins' })).status).toBe(200);
+    expect((await alice.post('/api/cards/swipes').send({ cardName: 'Sol Ring', vote: -1, context: 'control' })).status).toBe(200);
+    const rows = await ctx.pool.query('SELECT context_key, vote FROM card_swipes WHERE player_id = $1 ORDER BY context_key', [aliceId]);
+    // A Goblins phase must not poison the queue you get while brewing control.
+    expect(rows.rows).toEqual([
+      { context_key: 'control', vote: -1 },
+      { context_key: 'goblins', vote: 1 },
+    ]);
+  });
+
+  it('re-swiping the same card in one context replaces the vote', async () => {
+    await alice.post('/api/cards/swipes').send({ cardName: 'SOL RING', vote: -1, context: 'goblins' });
+    const rows = await ctx.pool.query(`SELECT vote FROM card_swipes WHERE player_id = $1 AND context_key = 'goblins'`, [aliceId]);
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].vote).toBe(-1);
+  });
+
+  it('clears a swipe with vote 0, and rejects anything else', async () => {
+    await alice.post('/api/cards/swipes').send({ cardName: 'Sol Ring', vote: 0, context: 'goblins' });
+    const rows = await ctx.pool.query(`SELECT 1 FROM card_swipes WHERE player_id = $1 AND context_key = 'goblins'`, [aliceId]);
+    expect(rows.rowCount).toBe(0);
+    expect((await alice.post('/api/cards/swipes').send({ cardName: 'Sol Ring', vote: 7 })).status).toBe(400);
+    expect((await alice.post('/api/cards/swipes').send({ cardName: '', vote: 1 })).status).toBe(400);
+  });
+
+  it('logs swipes to the preference event stream', async () => {
+    const before = await ctx.pool.query('SELECT COUNT(*)::int AS n FROM preference_events WHERE player_id = $1', [aliceId]);
+    await alice.post('/api/cards/swipes').send({ cardName: 'Lightning Bolt', vote: 1, source: 'discover_swipe' });
+    const after = await ctx.pool.query(
+      `SELECT event_type, entity_key, source FROM preference_events WHERE player_id = $1 ORDER BY id DESC LIMIT 1`,
+      [aliceId],
+    );
+    expect(after.rows[0]).toMatchObject({ event_type: 'swipe_like', entity_key: 'Lightning Bolt', source: 'discover_swipe' });
+    expect(before.rows[0].n).toBeGreaterThanOrEqual(0);
+  });
+
+  it('votes on one printing\'s art and tallies it', async () => {
+    const r = await alice.post(`/api/cards/versions/${SOL_ALPHA}/vote`).send({ cardName: 'Sol Ring', vote: 1, artist: 'Mark Tedin' });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ likes: 1, dislikes: 0 });
+    await bob.post(`/api/cards/versions/${SOL_ALPHA}/vote`).send({ cardName: 'Sol Ring', vote: -1 });
+
+    const versions = await alice.get('/api/cards/versions?name=Sol Ring');
+    const alpha = versions.body.find((p: { id: string }) => p.id === SOL_ALPHA);
+    expect(alpha.likes).toBe(1);
+    expect(alpha.dislikes).toBe(1);
+    expect(alpha.myVote).toBe(1);
+    // scryfall_cards has no artist column, so the illustrator is known only where a vote recorded it.
+    expect(alpha.artist).toBe('Mark Tedin');
+    // An anonymous viewer has no vote of their own.
+    expect((await request(app).get('/api/cards/versions?name=Sol Ring')).body.find((p: { id: string }) => p.id === SOL_ALPHA).myVote).toBe(0);
+  });
+
+  it('keeps an artist name once recorded, even when a later vote omits it', async () => {
+    await alice.post(`/api/cards/versions/${SOL_ALPHA}/vote`).send({ cardName: 'Sol Ring', vote: -1 });
+    const rows = await ctx.pool.query('SELECT artist, vote FROM card_art_votes WHERE player_id = $1 AND scryfall_id = $2', [aliceId, SOL_ALPHA]);
+    expect(rows.rows[0].artist).toBe('Mark Tedin');
+    expect(rows.rows[0].vote).toBe(-1);
+  });
+
+  it('refuses swipe traffic posted to the art endpoint', async () => {
+    // The two tables answer different questions; a stale client must not silently mix them.
+    const r = await alice.post(`/api/cards/versions/${SOL_CHEAP}/vote`).send({
+      cardName: 'Sol Ring', vote: 1, source: 'card_search_swipe',
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.error.code).toBe('WRONG_ENDPOINT');
+  });
+
+  it('rejects a malformed printing id, and requires a session', async () => {
+    expect((await alice.post('/api/cards/versions/nope/vote').send({ cardName: 'Sol Ring', vote: 1 })).status).toBe(400);
+    expect((await request(app).post(`/api/cards/versions/${SOL_CHEAP}/vote`).send({ cardName: 'Sol Ring', vote: 1 })).status).toBe(401);
+  });
+
+  it('clears an art vote with vote 0', async () => {
+    await alice.post(`/api/cards/versions/${SOL_ALPHA}/vote`).send({ cardName: 'Sol Ring', vote: 0 });
+    const rows = await ctx.pool.query('SELECT 1 FROM card_art_votes WHERE player_id = $1 AND scryfall_id = $2', [aliceId, SOL_ALPHA]);
+    expect(rows.rowCount).toBe(0);
+  });
+});

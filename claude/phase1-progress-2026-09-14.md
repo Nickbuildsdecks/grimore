@@ -470,3 +470,45 @@ so feeding the shared price cache, the entire purpose of that route, never happe
 `register` / `import-account` (Moxfield, blocked), `:deckId/share` (Scryfall), `:deckId/autotag` and
 `:deckId/suggestions` (the auto-tagging engine in `directives/auto_tagging_engine.md`, its own piece of
 work). Four routes.
+
+---
+
+# Wave 4 — cards completion (`apps/api/src/routes/cards.ts`)
+
+`details-batch`, `versions`, `rulings`, `swipes` and art votes = 5 routes. No migration needed — these
+are the first tables the baseline schema gets *right*. 13 new tests; api suite 144 -> 157,
+workspace 257 -> 270. Port status: **79 of 126 legacy routes**.
+
+## A wave with no schema divergence
+
+`card_swipes`, `card_art_votes` and `preference_events` all exist with correct primary keys and CHECK
+constraints — `card_swipes` is even keyed `(player_id, card_key, context_key)`, matching the handler's
+`ON CONFLICT` exactly. Worth recording after five consecutive waves that each needed a migration.
+
+## What changed
+
+- **`details-batch` is one query, not N.** Legacy resolved names one at a time, so a 100-card decklist
+  meant 100 round trips (and, on a cache miss, 100 Scryfall calls). Misses are now *reported* rather
+  than silently dropped, so a caller can distinguish "unknown card" from "no price".
+- **`versions` joins its art-vote tallies** instead of making the gallery fetch per printing, and
+  returns the viewer's own vote in the same row.
+- **`rulings` returns 503, not an empty list.** There is no local rulings table to fall back to —
+  rulings exist only on Scryfall. An empty array would render as "this card has no rulings", which is
+  a different and wrong claim. `TODO(scryfall-fallback)`.
+- The swipe/art-vote split is preserved deliberately: a swipe is taste for the **card** ("would I play
+  this?"), an art vote is taste for one **printing** ("do I like this illustration?"). Posting swipe
+  traffic to the art endpoint is rejected rather than silently relabelled, which is the bug the split
+  exists to prevent.
+- Preference-event logging never fails a vote: losing one analytics row matters less than losing the
+  swipe that produced it.
+
+## Known gap
+
+`scryfall_cards` has **no `artist` column**, so `versions` can only report an illustrator where an art
+vote happened to record one. Filling that in needs either the Scryfall call or an added column plus a
+re-sync.
+
+## Not ported from the cards group
+
+`/api/cards/recommendations` — the recommender reads `preference_events` and `card_swipes` and is a
+engine in its own right, not a route port. It belongs with the auto-tagging work.
