@@ -52,9 +52,9 @@ describe.skipIf(!url)('database (requires DATABASE_URL)', () => {
     const tables = await pool.query(
       `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema='public' AND table_name <> 'v2_migrations'`,
     );
-    // 31 from the baseline, +1 for friend_requests (migration 0007). Migrations 0004-0006 alter
-    // existing tables rather than adding any.
-    expect(tables.rows[0].n).toBe(32);
+    // 31 from the baseline, +1 friend_requests (0007), +1 wishlist_cards (0008). Migrations 0004-0006
+    // alter existing tables rather than adding any.
+    expect(tables.rows[0].n).toBe(33);
   });
 
   it('withTransaction commits on success and rolls back on throw', async () => {

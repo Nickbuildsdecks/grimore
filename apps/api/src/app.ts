@@ -13,6 +13,7 @@ import { collectionsRouter } from './routes/collections.js';
 import { decksRouter } from './routes/decks.js';
 import { playersRouter } from './routes/players.js';
 import { friendsRouter, followsRouter, messagesRouter, notificationsRouter } from './routes/social.js';
+import { recoveryRouter, wishlistRouter } from './routes/wishlist.js';
 import { ApiError, errorHandler } from './lib/errors.js';
 
 export interface AppContext {
@@ -103,6 +104,8 @@ export function createApp(ctx: AppContext): Express {
   app.use('/api/friends', friendsRouter(ctx));
   app.use('/api/messages', messagesRouter(ctx));
   app.use('/api/notifications', notificationsRouter(ctx));
+  app.use('/api/wishlist', wishlistRouter(ctx));
+  app.use('/api/recovery', recoveryRouter(ctx));
 
   app.use((_req: Request, _res: Response, next: NextFunction) => next(new ApiError(404, 'NOT_FOUND', 'Route not found')));
   app.use(errorHandler(log));

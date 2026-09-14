@@ -86,33 +86,57 @@ remote-code-execution surface. Porting it would launder a security problem into 
 
 # Wave plan
 
-Ordered for efficiency: close the half-finished slices first, while their legacy context is already
-mapped and their TODOs are still open, then take the untouched pillars whole.
+Ordered for efficiency. **Revised 2026-09-14** after probing which external services and schema
+dependencies are actually available — the first ordering would have produced a lot of TODO-marked
+shells. What is reachable from the build environment:
 
-## Wave 1 — finish what is half-done  *(in progress)*
+| Dependency | State |
+| --- | --- |
+| `api.scryfall.com` | **blocked** (egress proxy denies CONNECT) |
+| `api.moxfield.com` | **blocked** (same) |
+| Gemini | **blocked** (403) |
+| Postgres / Redis | available locally |
 
-| Group | Routes | Why now |
-| --- | --- | --- |
-| Decks completion | 10 | reprice suite, Moxfield import, suggestions, autotag, share, discover variants. Moxfield import is the last `legacyUrl()` caller the web client needs for the Decks page — porting it closes that loop (D4). |
-| Wishlist | 3 | Closes `TODO(wishlist-slice)` left in the collections slice. `wishlist_cards` is not in the baseline schema at all, so it needs a migration. |
-| Cards completion | 6 | versions, rulings, recommendations, details-batch, swipes, art votes. Two need Scryfall → local-first per D5. |
+That rules a route group "cheap" only if it is local-data-only. It also surfaced a second blocker:
+**`active_roster` and `pods` are not in the baseline schema**, and `reprice-init` queries both for its
+tournament deck-lock check. So the reprice suite cannot be finished until the Events wave settles the
+tournament schema — which is why decks-completion moved after Events.
+
+## Wave 1 — wishlist + recycle bin (5 routes)  *(in progress)*
+
+`/api/wishlist` (3) and `/api/recovery` (2). Small, local-only, and each closes an open loop: wishlist
+clears `TODO(wishlist-slice)` from the collections slice, and recovery makes the recycle bin
+*reachable* — both the decks and collections slices already write to `deleted_items` and nothing has
+ever read it back. Needs a migration: `wishlist_cards` is not in the baseline schema.
 
 ## Wave 2 — Events (19 routes)
 
 seasons (7), roster (6), pairings (4), leaderboards (2). The largest untouched pillar and one of the
-five navigation destinations `DESIGN.md` names. `tournament_players`, `tournament_rounds`, `matches`
-and `match_reports` have never been exercised against Postgres — expect D1 divergences.
+five navigation destinations `DESIGN.md` names. Also the wave that must resolve `active_roster` /
+`pods` versus the baseline's `tournaments` / `tournament_players` / `tournament_rounds` / `matches`,
+which unblocks Wave 3.
 
-## Wave 3 — Play Realm (15 routes)
+## Wave 3 — decks completion (10 routes)
+
+reprice suite, Moxfield import, suggestions, autotag, share, discover variants. **Deliberately after
+Events**: `reprice-init`'s deck-lock needs the tournament tables, `reprice-finalize` and
+`reprice-card-cheapest` and `share` need Scryfall, and `register` / `import-account` need Moxfield.
+Port the persistence and the shape; mark each external call per D5.
+
+## Wave 4 — cards completion (6 routes)
+
+details-batch, recommendations, swipes and art votes are local. versions and rulings need Scryfall (D5).
+
+## Wave 5 — Play Realm (15 routes)
 
 sandbox (9), draft (6). Depends on `apps/realtime`. `/api/sandbox/ai-advisor` needs Gemini (D5).
 
-## Wave 4 — the long tail (~14 routes)
+## Wave 6 — the long tail (~14 routes)
 
-semantic search (2), artists (2), wishlist remainder, movers (1), preferences (1), admin (2),
-config (1), jobs (1), health (1), recovery (2). Excludes the two `dev/git-*` routes (D8).
+semantic search (2), artists (2), movers (1), preferences (1), admin (2), config (1), jobs (1),
+health (1). Excludes the two `dev/git-*` routes (D8).
 
-## Wave 5 — web cutover
+## Wave 7 — web cutover
 
 Move the remaining `apps/web` pages onto the typed client, deleting each `legacyUrl()` call as its
 route lands. Done when `legacyUrl()` has no callers (D4).
@@ -122,3 +146,4 @@ route lands. Done when `legacyUrl()` has no callers (D4).
 - The shared moderation utility (D7).
 - `scryfallService.js` writes a `scryfall_id` column to `scryfall_cards` that does not exist in the
   baseline schema, so the Postgres bulk card sync cannot ever have succeeded. Needs its own fix.
+- `reprice-card` uses `INSERT OR REPLACE`, which is SQLite-only syntax and raises on Postgres.

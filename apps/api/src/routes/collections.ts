@@ -32,8 +32,8 @@
  *    patch. Legacy's PUT overwrote every column with whatever the client sent, so omitting a field silently
  *    reset it (a missing `newQuantity` wrote NULL over the quantity).
  *  - Ownership is enforced on every route and mismatches 404 rather than 500.
- *  - Wishlist auto-decrement on add is NOT ported: `wishlist_cards` is not in the baseline schema at all.
- *    It belongs with the wishlist slice.
+ *  - Wishlist auto-decrement on add works now: `wishlist_cards` is created by migration 0008, so the
+ *    behaviour legacy intended (owning a card satisfies the wish for it) can finally run.
  *  - Error responses use the uniform `{ error: { code, message } }` envelope.
  */
 import { Router } from 'express';
@@ -76,6 +76,26 @@ const CARD_ENRICHMENT = `
     WHERE LOWER(s.name) = LOWER(cc.card_name)
     ORDER BY s.price ASC NULLS LAST LIMIT 1
   ) sc ON TRUE`;
+
+/**
+ * Adding a card you wished for reduces the wish by that many copies, and clears it at zero.
+ * Matches on name across printings: wanting a card and owning a different printing of it still
+ * counts as satisfied, which is how a player reads their own wishlist.
+ */
+async function decrementWishlist(db: PoolClient, playerId: string, cardName: string, quantity: number): Promise<void> {
+  // Delete first, then decrement what is left. The reverse order would drive the quantity to zero or
+  // below on a wish smaller than the acquisition, which `wishlist_cards.quantity CHECK (quantity > 0)`
+  // rejects — taking the whole collection-add transaction down with it.
+  await db.query(
+    'DELETE FROM wishlist_cards WHERE player_id = $1 AND LOWER(card_name) = LOWER($2) AND quantity <= $3',
+    [playerId, cardName, quantity],
+  );
+  await db.query(
+    `UPDATE wishlist_cards SET quantity = quantity - $3
+     WHERE player_id = $1 AND LOWER(card_name) = LOWER($2)`,
+    [playerId, cardName, quantity],
+  );
+}
 
 export function collectionsRouter(ctx: AppContext): Router {
   const { pool } = ctx;
@@ -252,6 +272,10 @@ export function collectionsRouter(ctx: AppContext): Router {
           `SELECT id, quantity FROM collection_cards WHERE ${keyClause(1)}`,
           keyParams(id, { ...input, scryfall_id: scryfallId }),
         );
+        // Owning a card satisfies the wish for it: legacy decremented the wishlist here, which it could
+        // never actually do because wishlist_cards did not exist. Same transaction as the insert, so a
+        // failure cannot consume the wish without adding the card.
+        await decrementWishlist(client, playerId, input.card_name, input.quantity);
         if (existing.rows[0]) {
           const upd = await client.query(
             `UPDATE collection_cards SET quantity = quantity + $1, is_for_trade = $2, purchase_price = $3
@@ -269,8 +293,6 @@ export function collectionsRouter(ctx: AppContext): Router {
         );
         return ins.rows[0];
       });
-      // TODO(wishlist-slice): legacy also decremented wishlist_cards here. That table is not in the
-      // baseline schema, so it belongs with the wishlist port rather than being invented now.
       res.status(201).json({ success: true, card: { ...row, quantity: Number(row.quantity) } });
     }),
   );

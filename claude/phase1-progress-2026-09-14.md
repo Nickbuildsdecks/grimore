@@ -304,3 +304,56 @@ Pointing it at `apps/api` changes two things, both consequences of the v2 contra
   into the my-decks query; say so and I will add it.
 - Sorting by "recently updated" now uses `updated_at` (maintained on every write, from migration 0002)
   rather than `last_checked`, which only moves when prices are refreshed.
+
+---
+
+# Wave 1 — wishlist + recycle bin (`apps/api/src/routes/wishlist.ts`)
+
+`/api/wishlist` (4 routes) and `/api/recovery` (3), plus migration `0008_wishlist.sql` and
+`packages/shared/src/contracts/wishlist.ts`. 14 new tests; api suite 92 -> 106, workspace 205 -> 219.
+Port status: **53 of 126 legacy routes**.
+
+## Why this first
+
+The wave order was revised before starting — see `claude/decisions-log.md`. Probing the environment
+showed `api.moxfield.com` is blocked like Scryfall, and that **`active_roster` and `pods` are not in
+the baseline schema** while `reprice-init` queries both for its tournament deck-lock. Decks-completion
+would therefore have been mostly TODO-marked shells, so it moved after Events. This wave is entirely
+local-data and closes two open loops.
+
+## Wishlist: the table does not exist
+
+All three wishlist routes query `wishlist_cards`, which the baseline schema never created — the fourth
+feature found this way, after collections, the player profile and social. Migration 0008 creates it.
+
+Other legacy bugs:
+
+- **`COLLATE NOCASE`** is SQLite-only and raises on Postgres. Every wishlist lookup used it.
+- `sc.scryfall_id` and the `sc.card_name` join target do not exist on `scryfall_cards` (they are `id`
+  and `name`); `pc.oracle_text` does not exist on `card_price_cache`. Identical to the collections bugs.
+- The `ON CONFLICT (player_id, card_name, scryfall_id)` target had no matching unique index — and would
+  not have collapsed NULL `scryfall_id` rows even with one.
+
+`TODO(wishlist-slice)` from the collections slice is now closed: adding a card to a collection
+decrements the wish for it, in the same transaction as the insert. **The `CHECK (quantity > 0)`
+constraint caught a bug in my first version of that decrement** — subtracting an acquisition larger
+than the wish drove the quantity negative and took the whole collection-add transaction down. The
+delete now runs before the update, so a wish smaller than the acquisition is cleared rather than
+driven below zero.
+
+## Recycle bin: nothing could ever read it
+
+The decks and collections slices both archive into `deleted_items`, and until now **nothing read it
+back** — a soft delete was indistinguishable from a hard one. Restoring is what makes those archives
+worth writing.
+
+- **Restore silently dropped data.** The deck restore wrote eight columns and, for cards, five — so a
+  restored deck came back **with no commander** (`is_commander` was dropped), no format, no tags, and
+  public regardless of what it had been. The collection restore named `is_foil` and `added_at`, neither
+  of which exists (`foil`, `created_at`). Restore now replays every archived column; a test asserts the
+  commander, format, tags and visibility all survive.
+- **Restore was not atomic.** Metadata, each card, and the `deleted_items` delete were separate
+  statements, so a failure part-way left a half-restored item and an archive that might or might not
+  still exist. One transaction now — a failed restore leaves the archive intact, which a test holds.
+- A restore whose target id already exists was a duplicate-key 500; it is a 409 now.
+- `DELETE /api/recovery/deleted-items/:id` is new: legacy had no way to empty the bin at all.
