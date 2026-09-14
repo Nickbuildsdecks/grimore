@@ -357,3 +357,74 @@ worth writing.
   still exist. One transaction now — a failed restore leaves the archive intact, which a test holds.
 - A restore whose target id already exists was a duplicate-key 500; it is a 409 now.
 - `DELETE /api/recovery/deleted-items/:id` is new: legacy had no way to empty the bin at all.
+
+---
+
+# Wave 2 — League / Events (`apps/api/src/routes/league.ts`)
+
+Seasons (4), roster (6), pairings (4) and leaderboards (2) = 16 routes, plus migration
+`0009_events.sql` and `packages/shared/src/contracts/league.ts`. 29 new tests; api suite 106 -> 131,
+workspace 219 -> 244. Port status: **69 of 126 legacy routes**.
+
+## Two tournament models, and the schema has the wrong one
+
+The baseline schema carries `tournaments` / `tournament_players` / `tournament_rounds` / `matches`,
+which **nothing in server.js references** — zero occurrences, verified by grep. The model the
+application actually uses, and the one CLAUDE.md documents as the "4P Pods & Swiss Leaderboards"
+engine, is `active_roster` / `pods` / `pod_results`, and the baseline creates **none of them**. So
+every Events route raises on Postgres. Migration 0009 creates the pods model; the unused
+`tournament_*` tables are left in place rather than dropped, since dropping tables is destructive and
+they may hold pre-cutover rows.
+
+## The security bug
+
+`POST /api/pairings/report/:podId` had **no authentication of any kind** — no session check, no pod
+membership check, no role check. Its only comment was "Can be submitted by players or admin". Anyone
+who could reach the server could post arbitrary results for any pod in any season, awarding themselves
+unlimited points and rewriting the standings. Reporting now requires a session, and the caller must
+either be seated at that pod or hold an organizer role. A test covers the anonymous case and the
+"seated at a different pod" case.
+
+## Other legacy bugs fixed
+
+- **`INSERT OR REPLACE` / `INSERT OR IGNORE`** are SQLite-only and raise on Postgres. Used in check-in,
+  season creation, season registration and the entire leaderboard rebuild.
+- **`seasons.budget_limit` / `banlist` / `max_rares` do not exist** in the baseline, so creating a
+  season and editing its rules both raise. 0009 adds them.
+- **`player_stats.total_matches` does not exist** — the column is `total_games`; only `deck_stats` has
+  `total_matches`. Legacy's rebuild wrote `total_matches` to both, so the player half of every
+  leaderboard raised. *(Caught by the test suite, not by reading.)*
+- **Standings could not be per-season.** `player_stats` was keyed on `player_id` alone and `deck_stats`
+  on `deck_id`, so a second season's numbers overwrote the first. 0009 replaces those primary keys with
+  partial unique indexes on `(player_id, season_id)`, keeping the untagged lifetime row that
+  pre-existing data occupies — no row is rewritten.
+- **Creating a season was not atomic.** `UPDATE seasons SET is_active = 0` then an INSERT, unsequenced:
+  a failure between them left the league with no active season at all. One transaction now, and 0009
+  adds a unique index so two active seasons cannot coexist even by accident.
+- **Pairing generation was not idempotent.** Re-running it for a round inserted a second full set of
+  pods, silently doubling the round. `(season_id, round_num, pod_label)` is unique now and the handler
+  returns 409.
+- **A pod could record an impossible result** — several winners, or a winner and a draw at once. The
+  contract rejects both, so the standings cannot be corrupted by a mis-submitted report.
+- **The collision-avoidance history was computed and never used.** The engine built a `playCounts` map
+  of who had played whom, then sorted purely on points and ignored it. Seating now actually minimises
+  repeat pairings.
+- Pairing notifications used a text id in an integer column and omitted the NOT NULL `type`, so every
+  one of them raised — the same bug the social slice found.
+- **`end-round` did nothing at all.** It returned success without touching anything. It now reports
+  unreported pods and can clear the roster.
+- Check-in accepted any deck id, including another player's deck and one that does not exist.
+- `GET /api/seasons/active` returned `undefined` when there was no active season, which serialises to
+  an empty body the client cannot read. It returns `null`.
+- `GET /api/pairings/round/:n` issued one seat query per pod (N+1); it is one query now.
+
+## Deliberate deviations
+
+- **Contract names.** `packages/shared` already exports `Pod` and `PodSeat` from `realtime/events.ts`
+  for multiplayer *lobbies*, a different concept from a league pod (a table at a round). The league
+  contracts are `LeaguePod` / `LeagueSeat` in `contracts/league.ts`.
+- **`POST /api/seasons/rules` no longer re-validates every deck in the database inline.** Legacy ran
+  `validateDeckLegality` over the whole `decks` table inside the request, on an admin click. That
+  belongs in a job, not a request handler. Deck legality is re-checked on save.
+- `podSizes` is exported and unit-tested independently of the database: for every turnout from 3 to 40
+  it must seat everyone at tables of 3-5.

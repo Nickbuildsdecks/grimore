@@ -154,10 +154,13 @@ export function decksRouter(ctx: AppContext): Router {
     const season = await db.query('SELECT id FROM seasons WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1');
     const seasonId = season.rows[0]?.id as string | undefined;
     if (!seasonId) return;
-    await db.query('INSERT INTO deck_stats (deck_id, season_id) VALUES ($1, $2) ON CONFLICT (deck_id) DO NOTHING', [
-      deckId,
-      seasonId,
-    ]);
+    // Migration 0009 replaced deck_stats' primary key with partial unique indexes so standings can be
+    // per-season, so the conflict target has to name the same partial index.
+    await db.query(
+      `INSERT INTO deck_stats (deck_id, season_id) VALUES ($1, $2)
+       ON CONFLICT (deck_id, season_id) WHERE season_id IS NOT NULL DO NOTHING`,
+      [deckId, seasonId],
+    );
   }
 
   async function insertCards(
