@@ -154,3 +154,50 @@ distinct in a plain unique index, so a card with no printing id could otherwise 
 - Ownership is enforced on every route; another player's collection 404s rather than 500s.
 - **Not ported:** the wishlist auto-decrement on add. `wishlist_cards` is not in the baseline schema at
   all, so it belongs with the wishlist slice — marked `TODO(wishlist-slice)`.
+
+## Checkpoint 4 — players slice (`apps/api/src/routes/players.ts`)
+
+`GET /api/players/:playerId/profile`, `POST /api/players/profile/update`,
+`POST /api/players/account/update`, plus migration `0006_player_profile_columns.sql` and a new
+`packages/shared/src/contracts/players.ts`. 17 new tests; api suite 51 -> 68.
+
+### Missing columns again — the profile endpoint raises on Postgres
+
+Same class of divergence as collections. The profile read selects `profile_theme`, `featured_deck_id`,
+`discord_handle` and `moxfield_username` from `players`, and joins `seasons` on `player_stats.season_id`.
+**None of those five columns exist in the baseline schema**, so `GET /api/players/:playerId/profile`
+raises, and the four writable ones are also written by the profile update handler. Migration 0006 adds
+them. `player_stats.season_id` is nullable and mirrors `deck_stats.season_id`: `player_stats` is keyed on
+`player_id` alone (lifetime totals), so the column records which season the row was last accumulated
+under rather than creating a per-season row.
+
+### Two security bugs
+
+1. **Account takeover from a stolen session.** Legacy required the current password only for a *password*
+   change. Changing the **username and email required nothing at all** — anyone with a hijacked session
+   cookie could move the account to their own email address and lock the owner out. The current password
+   is now required for any credential change, and a password change re-issues the session id.
+2. **Username case collision.** `players.username` carries a case-*sensitive* UNIQUE constraint, while
+   every lookup in the app uses `LOWER(username)`. Legacy's account update compared `username = ?`
+   exactly, so "Nick" could be created alongside "nick" and both would answer to the same login — with
+   whichever row the lookup happened to return. Usernames are now normalized to lowercase (as the
+   `Username` contract already did on register) and checked case-insensitively; 0006 adds the matching
+   unique index, guarded so an existing collision cannot block the migration.
+
+### Other legacy bugs fixed
+
+- **A featured private deck leaked.** The featured-deck lookup was a bare `SELECT d.*` by id with no
+  visibility check, so featuring a private deck published its contents to every profile visitor.
+- `featured_deck_id` had no foreign key: deleting a featured deck left a dangling pointer. 0006 adds
+  `ON DELETE SET NULL`, so the pointer clears and the deck delete still succeeds.
+- The stats query used an inner `JOIN seasons`, dropping a player's stats entirely when the row had no
+  season. Now `LEFT JOIN`.
+- Profile updates wrote every column unconditionally, so a client that omitted a field wiped it.
+- A taken username returned 400; it is a conflict, so 409.
+
+### Not ported
+
+Profanity filtering (`isProfane`) on nicknames, bios and handles — the decks slice made the same call.
+It should land once as a shared moderation utility rather than being reimplemented per slice; marked
+`TODO(moderation)` at each site. Also out of scope here: `/api/players/list` and `/api/players/:id/role`
+(admin), `/api/players/active-match` (tournaments), and `/api/players/:id/follow` (next chunk, social).

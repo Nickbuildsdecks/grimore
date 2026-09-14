@@ -11,6 +11,7 @@ import { authRouter } from './routes/auth.js';
 import { cardsRouter } from './routes/cards.js';
 import { collectionsRouter } from './routes/collections.js';
 import { decksRouter } from './routes/decks.js';
+import { playersRouter } from './routes/players.js';
 import { ApiError, errorHandler } from './lib/errors.js';
 
 export interface AppContext {
@@ -94,6 +95,7 @@ export function createApp(ctx: AppContext): Express {
   app.use('/api/decks', decksRouter(ctx));
   app.use('/api/cards', cardsRouter(ctx));
   app.use('/api/collections', collectionsRouter(ctx));
+  app.use('/api/players', playersRouter(ctx));
 
   app.use((_req: Request, _res: Response, next: NextFunction) => next(new ApiError(404, 'NOT_FOUND', 'Route not found')));
   app.use(errorHandler(log));
