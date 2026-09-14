@@ -15,7 +15,7 @@ interface PlayerState {
 type Orientation = "table" | "screen" | "around" | "custom"
 type Resource = "poison" | "energy" | "tax" | "damage"
 
-const ACCENTS = ["#ef4444", "#a855f7", "#eab308", "#38bdf8"]
+const ACCENTS = ["var(--g-mana-r)", "var(--g-accent)", "var(--g-gold-400)", "var(--g-status-info)"]
 const START = (life = 40): PlayerState => ({ life, poison: 0, energy: 0, tax: 0, commander: {} })
 
 function savedGame() {

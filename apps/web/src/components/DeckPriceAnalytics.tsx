@@ -52,7 +52,7 @@ export function DeckPriceAnalytics({ cards, onOptimizePrices }: DeckPriceAnalyti
   }
 
   return (
-    <div className="bg-[#0f101a] border border-violet-500/20 rounded-2xl p-5 space-y-5 shadow-xl">
+    <div className="bg-surface-1 border border-violet-500/20 rounded-2xl p-5 space-y-5 shadow-xl">
       {/* Total & Summary Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-violet-500/15">
         <div>
@@ -116,7 +116,7 @@ export function DeckPriceAnalytics({ cards, onOptimizePrices }: DeckPriceAnalyti
           {topExpensive.map((card) => (
             <div
               key={card.name}
-              className="bg-[#141624] border border-white/5 rounded-xl p-2.5 flex flex-col justify-between hover:border-violet-500/30 transition-all"
+              className="bg-surface-2 border border-white/5 rounded-xl p-2.5 flex flex-col justify-between hover:border-violet-500/30 transition-all"
             >
               <div className="text-xs font-medium text-white truncate" title={card.name}>
                 {card.name}

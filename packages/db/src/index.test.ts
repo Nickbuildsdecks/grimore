@@ -49,7 +49,7 @@ describe.skipIf(!url)('database (requires DATABASE_URL)', () => {
     const tables = await pool.query(
       `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema='public' AND table_name <> 'v2_migrations'`,
     );
-    expect(tables.rows[0].n).toBe(30);
+    expect(tables.rows[0].n).toBe(31);
   });
 
   it('withTransaction commits on success and rolls back on throw', async () => {

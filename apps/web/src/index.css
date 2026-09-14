@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* The Elevated Grimoire design system (packages/theme): --g-* tokens and the
+   Tailwind v4 @theme bridge. Existing Mythic Grimoire variables below remain
+   until the Phase 4 polish sweep migrates them onto tokens. */
+@import "@grimore/theme/tokens.css";
+@import "@grimore/theme/tailwind";
+
 @custom-variant dark (&:is(.dark *));
 
 /* ── The Mythic Grimoire ────────────────────────────────────────────────

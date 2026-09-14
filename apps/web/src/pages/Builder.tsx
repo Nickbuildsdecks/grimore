@@ -49,7 +49,7 @@ const TYPE_ORDER = [
   "Other",
 ]
 
-function primaryType(typeLine?: string, customTag?: string): string {
+function primaryType(typeLine?: string, customTag?: string | null): string {
   if (customTag && TYPE_ORDER.includes(customTag)) return customTag;
   if (!typeLine) return "Other";
   for (const t of TYPE_ORDER) {

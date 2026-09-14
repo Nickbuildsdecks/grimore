@@ -1,0 +1,259 @@
+/* ==========================================================================
+   The Elevated Grimoire - design tokens
+   --------------------------------------------------------------------------
+   Single source of truth for every raw value in the Grimore UI. All custom
+   properties are namespaced `--g-*`. This is the ONLY file in the workspace
+   permitted to contain raw hex colors (enforced by scripts/guards.js).
+
+   Sections:
+     1. Typography     (Fraunces display, Inter body, Google Fonts)
+     2. Palette        (obsidian neutrals, brand violet->magenta, WUBRG)
+     3. Semantic       (surface / text / border / accent / status)
+     4. Glass          (obsidian glassmorphism surfaces)
+     5. Radii + spacing
+     6. Elevation      (5-level shadow scale)
+     7. Motion         (durations, easings, entrance keyframes)
+   ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Inter:wght@300..800&display=swap");
+
+:root {
+  color-scheme: dark;
+
+  /* ---- 1. Typography ---------------------------------------------------- */
+  --g-font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, "Times New Roman", serif;
+  --g-font-body: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --g-font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --g-text-xs: 0.75rem;
+  --g-text-sm: 0.875rem;
+  --g-text-base: 1rem;
+  --g-text-lg: 1.125rem;
+  --g-text-xl: 1.25rem;
+  --g-text-2xl: 1.5rem;
+  --g-text-3xl: 1.875rem;
+  --g-text-4xl: 2.25rem;
+  --g-text-5xl: 3rem;
+  --g-text-6xl: 3.75rem;
+
+  --g-leading-tight: 1.15;
+  --g-leading-snug: 1.3;
+  --g-leading-normal: 1.5;
+  --g-leading-relaxed: 1.65;
+
+  --g-tracking-tight: -0.02em;
+  --g-tracking-normal: 0;
+  --g-tracking-wide: 0.04em;
+  --g-tracking-caps: 0.12em;
+
+  --g-weight-light: 300;
+  --g-weight-regular: 400;
+  --g-weight-medium: 500;
+  --g-weight-semibold: 600;
+  --g-weight-bold: 700;
+
+  /* ---- 2. Palette ------------------------------------------------------- */
+  /* Obsidian neutrals: near-black with a cold violet cast. */
+  --g-obsidian-950: #050508;
+  --g-obsidian-900: #0a0a12;
+  --g-obsidian-850: #0f0f1a;
+  --g-obsidian-800: #15152a;
+  --g-obsidian-700: #1f1f38;
+  --g-obsidian-600: #2a2a4a;
+  --g-obsidian-500: #3b3b5e;
+  --g-obsidian-400: #5a5a80;
+  --g-obsidian-300: #8b8bac;
+  --g-obsidian-200: #b9b9d1;
+  --g-obsidian-100: #e2e2ee;
+  --g-obsidian-50: #f5f5fb;
+
+  /* Brand: violet -> magenta. */
+  --g-violet-300: #c4a6ff;
+  --g-violet-400: #a78bfa;
+  --g-violet-500: #8b5cf6;
+  --g-violet-600: #7c3aed;
+  --g-violet-700: #6d28d9;
+  --g-magenta-300: #f9a8d4;
+  --g-magenta-400: #f472b6;
+  --g-magenta-500: #ec4899;
+  --g-magenta-600: #db2777;
+  --g-magenta-700: #be185d;
+
+  --g-brand-from: var(--g-violet-500);
+  --g-brand-to: var(--g-magenta-500);
+  --g-brand-gradient: linear-gradient(135deg, var(--g-brand-from) 0%, var(--g-brand-to) 100%);
+  --g-brand-gradient-soft: linear-gradient(135deg, rgb(139 92 246 / 0.35) 0%, rgb(236 72 153 / 0.35) 100%);
+  --g-brand-glow: 0 0 32px rgb(168 85 247 / 0.45), 0 0 64px rgb(236 72 153 / 0.2);
+
+  /* Supporting hues. */
+  --g-gold-400: #fbbf24;
+  --g-gold-500: #f59e0b;
+  --g-gold-600: #d97706;
+  --g-cyan-400: #22d3ee;
+  --g-cyan-500: #06b6d4;
+  --g-emerald-500: #10b981;
+  --g-rose-500: #ef4444;
+  --g-amber-500: #f59e0b;
+
+  /* WUBRG - Magic: The Gathering color identity. */
+  --g-mana-w: #f8f2d9;
+  --g-mana-w-deep: #d9cf9e;
+  --g-mana-u: #3b82f6;
+  --g-mana-u-deep: #1d4ed8;
+  --g-mana-b: #6b5b95;
+  --g-mana-b-deep: #2e2640;
+  --g-mana-r: #ef4444;
+  --g-mana-r-deep: #b91c1c;
+  --g-mana-g: #22c55e;
+  --g-mana-g-deep: #15803d;
+  --g-mana-c: #9ca3af;
+  --g-mana-c-deep: #4b5563;
+  --g-mana-multi: linear-gradient(135deg, var(--g-gold-400), var(--g-gold-600));
+
+  /* ---- 3. Semantic ------------------------------------------------------ */
+  --g-surface-base: var(--g-obsidian-950);
+  --g-surface-0: var(--g-obsidian-900);
+  --g-surface-1: var(--g-obsidian-850);
+  --g-surface-2: var(--g-obsidian-800);
+  --g-surface-3: var(--g-obsidian-700);
+  --g-surface-4: var(--g-obsidian-600);
+  --g-surface-inverse: var(--g-obsidian-50);
+
+  --g-text-primary: var(--g-obsidian-50);
+  --g-text-secondary: var(--g-obsidian-200);
+  --g-text-muted: var(--g-obsidian-300);
+  --g-text-faint: var(--g-obsidian-400);
+  --g-text-inverse: var(--g-obsidian-950);
+  --g-text-on-brand: var(--g-obsidian-50);
+
+  --g-border-subtle: rgb(255 255 255 / 0.06);
+  --g-border-default: rgb(255 255 255 / 0.12);
+  --g-border-strong: rgb(255 255 255 / 0.2);
+  --g-border-brand: rgb(168 85 247 / 0.45);
+  --g-border-focus: var(--g-violet-400);
+
+  --g-accent: var(--g-violet-500);
+  --g-accent-hover: var(--g-violet-400);
+  --g-accent-active: var(--g-violet-600);
+  --g-accent-secondary: var(--g-magenta-500);
+  --g-accent-tertiary: var(--g-gold-500);
+  --g-accent-info: var(--g-cyan-500);
+
+  --g-status-success: var(--g-emerald-500);
+  --g-status-warning: var(--g-amber-500);
+  --g-status-danger: var(--g-rose-500);
+  --g-status-info: var(--g-cyan-400);
+
+  --g-ring: rgb(168 85 247 / 0.65);
+  --g-ring-offset: var(--g-surface-base);
+
+  /* ---- 4. Glass --------------------------------------------------------- */
+  --g-glass-bg: rgb(15 15 26 / 0.62);
+  --g-glass-bg-strong: rgb(15 15 26 / 0.82);
+  --g-glass-bg-subtle: rgb(255 255 255 / 0.04);
+  --g-glass-border: rgb(255 255 255 / 0.1);
+  --g-glass-highlight: rgb(255 255 255 / 0.18);
+  --g-glass-blur: 18px;
+  --g-glass-blur-strong: 28px;
+  --g-glass-saturate: 140%;
+
+  /* ---- 5. Radii + spacing ----------------------------------------------- */
+  --g-radius-xs: 0.25rem;
+  --g-radius-sm: 0.5rem;
+  --g-radius-md: 0.75rem;
+  --g-radius-lg: 1rem;
+  --g-radius-xl: 1.5rem;
+  --g-radius-2xl: 2rem;
+  --g-radius-full: 9999px;
+
+  --g-space-0: 0;
+  --g-space-px: 1px;
+  --g-space-1: 0.25rem;
+  --g-space-2: 0.5rem;
+  --g-space-3: 0.75rem;
+  --g-space-4: 1rem;
+  --g-space-5: 1.25rem;
+  --g-space-6: 1.5rem;
+  --g-space-8: 2rem;
+  --g-space-10: 2.5rem;
+  --g-space-12: 3rem;
+  --g-space-16: 4rem;
+  --g-space-20: 5rem;
+  --g-space-24: 6rem;
+  --g-space-32: 8rem;
+
+  /* ---- 6. Elevation (5 levels) ----------------------------------------- */
+  --g-elevation-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.04);
+  --g-elevation-2: 0 2px 6px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --g-elevation-3: 0 8px 20px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.08);
+  --g-elevation-4: 0 16px 40px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.1);
+  --g-elevation-5: 0 28px 72px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(168 85 247 / 0.25), var(--g-brand-glow);
+
+  /* ---- 7. Motion -------------------------------------------------------- */
+  --g-duration-instant: 80ms;
+  --g-duration-fast: 150ms;
+  --g-duration-base: 240ms;
+  --g-duration-slow: 400ms;
+  --g-duration-slower: 700ms;
+
+  --g-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --g-ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --g-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --g-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --g-motion-rise: g-rise var(--g-duration-slow) var(--g-ease-enter) both;
+  --g-motion-fade: g-fade var(--g-duration-base) var(--g-ease-enter) both;
+  --g-motion-scale-in: g-scale-in var(--g-duration-base) var(--g-ease-spring) both;
+  --g-motion-shimmer: g-shimmer 2.4s linear infinite;
+}
+
+/* ---- Entrance / motion keyframes ---------------------------------------- */
+@keyframes g-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes g-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes g-scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes g-shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+@keyframes g-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(168 85 247 / 0); }
+  50% { box-shadow: var(--g-brand-glow); }
+}
+
+/* Motion guards: collapse every animation to a single frame for users who
+   have opted out of motion at the OS level. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --g-duration-instant: 0ms;
+    --g-duration-fast: 0ms;
+    --g-duration-base: 0ms;
+    --g-duration-slow: 0ms;
+    --g-duration-slower: 0ms;
+    --g-motion-rise: none;
+    --g-motion-fade: none;
+    --g-motion-scale-in: none;
+    --g-motion-shimmer: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

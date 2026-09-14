@@ -81,9 +81,9 @@ if (Test-Path "execution") {
 # Production data lives only on the VM (persisted via the ./data docker volume).
 
 # Copy pre-built React dist directory
-if (Test-Path "web\dist") {
-    New-Item -ItemType Directory -Path "gcp-export\web" -Force | Out-Null
-    Copy-Item "web\dist" -Destination "gcp-export\web\dist" -Recurse -Force
+if (Test-Path "apps\web\dist") {
+    New-Item -ItemType Directory -Path "gcp-export\apps\web" -Force | Out-Null
+    Copy-Item "apps\web\dist" -Destination "gcp-export\apps\web\dist" -Recurse -Force
 }
 
 # STEP 3: Compressing Export Zip

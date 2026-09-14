@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react"
    cyber-gold sparks. Ported from the legacy canvas renderer. */
 
 const RUNE_CHARS = ["ᚠ","ᚢ","ᚦ","ᚨ","ᚱ","ᚲ","ᚷ","ᚹ","ᚺ","ᚾ","ᛁ","ᛃ","ᛇ","ᛈ","ᛉ","ᛊ","ᛏ","ᛒ","ᛖ","ᛗ","ᛚ","ᛜ","ᛞ","ᛟ"]
-const MTG_SYMBOLS = ["⬡","⬢","◈","⧖","⊕","⊗","⊘","⊙","✦","✧","❋"]
+const MTG_SYMBOLS = ["⬡","⬢","◈","⧖","⊕","⊗","⊘","⊙","◇","◆","⁂"]
 
 interface Rune {
   x: number; y: number; char: string; size: number
@@ -50,7 +50,7 @@ export function AmbientCanvas({ className }: { className?: string }) {
       y: Math.random() * h,
       char: (Math.random() < 0.7 ? RUNE_CHARS : MTG_SYMBOLS)[
         Math.floor(Math.random() * (Math.random() < 0.7 ? RUNE_CHARS.length : MTG_SYMBOLS.length))
-      ] ?? "✦",
+      ] ?? "◇",
       size: Math.random() * 10 + 10,
       alpha: 0,
       maxAlpha: Math.random() * 0.3 + 0.3,

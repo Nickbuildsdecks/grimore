@@ -32,7 +32,7 @@ export function CommanderDrawer({ isOpen, onClose, onSelectCommander, currentCom
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-[#0c0d14] border-l border-violet-500/20 p-6 flex flex-col h-full shadow-2xl overflow-hidden">
+      <div className="w-full max-w-md bg-surface-0 border-l border-violet-500/20 p-6 flex flex-col h-full shadow-2xl overflow-hidden">
         {/* Drawer Header */}
         <div className="flex items-center justify-between pb-4 border-b border-violet-500/20">
           <div className="flex items-center gap-2">
@@ -51,7 +51,7 @@ export function CommanderDrawer({ isOpen, onClose, onSelectCommander, currentCom
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search legendary creatures & planeswalkers..."
-            className="pl-9 bg-[#141622] border-zinc-800 focus:border-violet-500 text-white placeholder:text-zinc-500"
+            className="pl-9 bg-surface-2 border-zinc-800 focus:border-violet-500 text-white placeholder:text-zinc-500"
             autoFocus
           />
         </div>
@@ -76,7 +76,7 @@ export function CommanderDrawer({ isOpen, onClose, onSelectCommander, currentCom
                   className={`group relative flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
                     isCurrent
                       ? "bg-amber-500/10 border-amber-500/40"
-                      : "bg-[#141622]/80 border-zinc-800/80 hover:border-violet-500/50 hover:bg-[#1a1c2d]"
+                      : "bg-surface-2/80 border-zinc-800/80 hover:border-violet-500/50 hover:bg-surface-3"
                   }`}
                 >
                   <img

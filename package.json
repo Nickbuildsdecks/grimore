@@ -7,7 +7,7 @@
     "start": "node --max-old-space-size=768 server.js",
     "dev": "node --max-old-space-size=768 server.js",
     "build": "npm run build:web",
-    "build:web": "npm --prefix web run build",
+    "build:web": "pnpm --filter @grimore/web build",
     "test:recommendations": "node --test test/recommendation-engine.test.js",
     "test:multiplayer": "node --test test/multiplayer-engine.test.js",
     "test:unit": "node --test test/recommendation-engine.test.js test/multiplayer-engine.test.js test/maintenance-scripts.test.js test/billing-gating.test.js",

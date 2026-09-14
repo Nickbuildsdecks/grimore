@@ -38,7 +38,7 @@ export function ArtistGalleryModal({ artistName, isOpen, onClose }: ArtistGaller
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
-      <div className="w-full max-w-4xl bg-[#0d0e17] border border-violet-500/20 rounded-2xl p-6 space-y-6 shadow-2xl">
+      <div className="w-full max-w-4xl bg-surface-1 border border-violet-500/20 rounded-2xl p-6 space-y-6 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-violet-500/20">
           <div className="flex items-center gap-3">
@@ -84,7 +84,7 @@ export function ArtistGalleryModal({ artistName, isOpen, onClose }: ArtistGaller
             cards.map((card) => (
               <div
                 key={card.scryfallId || card.name}
-                className="group relative bg-[#141624] border border-white/5 rounded-xl overflow-hidden hover:border-violet-500/40 transition-all cursor-pointer shadow-md"
+                className="group relative bg-surface-2 border border-white/5 rounded-xl overflow-hidden hover:border-violet-500/40 transition-all cursor-pointer shadow-md"
               >
                 <img
                   src={cardImage(card.scryfallId, "normal")}

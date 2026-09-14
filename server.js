@@ -148,7 +148,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 
 // Mount modern React SPA Suite under /react sub-route
-const reactDistPath = path.join(__dirname, 'web', 'dist');
+const reactDistPath = path.join(__dirname, 'apps', 'web', 'dist');
 const reactIndexPath = path.join(reactDistPath, 'index.html');
 
 if (fs.existsSync(reactIndexPath)) {
@@ -7652,7 +7652,7 @@ app.get('/api/search/semantic', async (req, res) => {
 
 // Serving Client SPA Router
 app.get('*', (req, res) => {
-  const reactIndexPath = path.join(__dirname, 'web', 'dist', 'index.html');
+  const reactIndexPath = path.join(__dirname, 'apps', 'web', 'dist', 'index.html');
   if (fs.existsSync(reactIndexPath)) {
     res.sendFile(reactIndexPath);
   } else {

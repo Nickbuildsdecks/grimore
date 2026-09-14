@@ -1,7 +1,7 @@
 # Dependency directories
 node_modules/
 jspm_packages/
-web/dist/
+apps/web/dist/
 
 # Local databases (SQLite)
 *.db

@@ -172,11 +172,11 @@ const QUICK = [
 ]
 
 const COLOR_OPTIONS = [
-  { value: "W", className: "bg-[#f5f0dc] text-black" },
-  { value: "U", className: "bg-[#3b82f6] text-white" },
-  { value: "B", className: "bg-[#3f3b45] text-white" },
-  { value: "R", className: "bg-[#dc4b3e] text-white" },
-  { value: "G", className: "bg-[#27905d] text-white" },
+  { value: "W", className: "bg-mana-w text-ink-inverse" },
+  { value: "U", className: "bg-mana-u text-ink" },
+  { value: "B", className: "bg-mana-b-deep text-ink" },
+  { value: "R", className: "bg-mana-r text-ink" },
+  { value: "G", className: "bg-mana-g-deep text-ink" },
 ]
 
 function safePage(value: string | null) {

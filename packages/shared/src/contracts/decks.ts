@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Id, IntBool, Pagination, Timestamp } from "./common.js";
+import { Id, IntBool, PAGE_SIZE_DEFAULT, Pagination, Timestamp } from "./common.js";
 import { Format, ImageUris } from "./cards.js";
 
 export const DECK_NAME_MAX = 100;
@@ -96,6 +96,13 @@ export const DeckSummary = z.object({
   card_count: z.coerce.number().int().default(0),
   creator_name: z.string().nullable().default(null),
   creator_avatar_url: z.string().nullable().default(null),
+  /** Added by migration 0002 (legacy rows get now() on backfill). */
+  created_at: Timestamp.optional(),
+  updated_at: Timestamp.optional(),
+  /** Legacy list-item alias (client reads `name`); the API fills it from deck_name. */
+  name: z.string().optional(),
+  has_liked: z.boolean().default(false),
+  clones_count: z.coerce.number().int().default(0),
 });
 export type DeckSummary = z.infer<typeof DeckSummary>;
 
@@ -104,8 +111,6 @@ export const Deck = DeckSummary.extend({
   cards: z.array(DeckCard).default([]),
   commander: z.object({ name: z.string(), scryfallId: z.string().nullable() }).nullable().default(null),
   stats: DeckStats.default({}),
-  has_liked: z.boolean().default(false),
-  clones_count: z.number().int().default(0),
 });
 export type Deck = z.infer<typeof Deck>;
 
@@ -121,8 +126,44 @@ export const DeckCardInput = z.object({
   custom_tag: z.string().trim().max(CUSTOM_TAG_MAX).nullable().optional(),
   manual_target_price: z.number().min(0).nullable().optional(),
   keep_cheapest: z.boolean().optional(),
+  /** Client-resolved cheapest printing price (legacy `price`); server-side repricing is a later phase. */
+  cheapest_card_price: z.number().min(0).max(100000).optional(),
 });
 export type DeckCardInput = z.infer<typeof DeckCardInput>;
+
+/** POST /api/decks/builder-save — create (no deckId) or fully replace (deckId) a deck and its cards. */
+export const BuilderSaveInput = z.object({
+  deckId: Id.optional(),
+  deck_name: z.string().trim().min(1).max(DECK_NAME_MAX),
+  format: Format.default(DECK_FORMAT_DEFAULT),
+  is_public: z.boolean().default(true),
+  keep_cheapest: z.boolean().default(false),
+  featured_card_name: z.string().trim().max(200).nullable().optional(),
+  custom_tags: z.array(z.string().trim().min(1).max(CUSTOM_TAG_MAX)).max(20).default([]),
+  cards: z.array(DeckCardInput).max(600).default([]),
+});
+export type BuilderSaveInput = z.infer<typeof BuilderSaveInput>;
+
+export const COMMENT_MAX = 1000;
+/** POST /api/decks/:deckId/comment (legacy body key `commentText`). */
+export const CommentInput = z.object({
+  commentText: z.string().trim().min(1).max(COMMENT_MAX),
+});
+export type CommentInput = z.infer<typeof CommentInput>;
+
+/** POST /api/decks/:deckId/tags — replaces the deck's custom_tags. */
+export const TagsInput = z.object({
+  tags: z.array(z.string().trim().min(1).max(CUSTOM_TAG_MAX)).max(20),
+});
+export type TagsInput = z.infer<typeof TagsInput>;
+
+/** POST /api/decks/:deckId/cards — legacy quick-add (increments quantity when the card is already in the deck). */
+export const AddDeckCardInput = z.object({
+  name: z.string().trim().min(1).max(200),
+  price: z.number().min(0).max(100000).optional(),
+  scryfallId: z.string().max(64).nullable().optional(),
+});
+export type AddDeckCardInput = z.infer<typeof AddDeckCardInput>;
 
 /** POST /api/decks (v2 replacement for legacy /api/decks/builder-save without deckId). */
 export const CreateDeckInput = z.object({
@@ -155,13 +196,16 @@ export const DeckListQuery = Pagination.extend({
 });
 export type DeckListQuery = z.infer<typeof DeckListQuery>;
 
-/** GET /api/decks/discover (public feed). */
-export const DiscoverQuery = Pagination.extend({
+export const DISCOVER_PAGE_MAX = 50;
+export const DiscoverSort = z.enum(["newest", "popular", "likes"]);
+export type DiscoverSort = z.infer<typeof DiscoverSort>;
+
+/** GET /api/decks (public discover feed). */
+export const DiscoverQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(DISCOVER_PAGE_MAX).default(PAGE_SIZE_DEFAULT),
+  sort: DiscoverSort.default("newest"),
   format: Format.optional(),
-  sort: z.enum(["recent", "popular", "price"]).default("recent"),
   q: z.string().trim().max(100).optional(),
-  tag: z.string().trim().max(CUSTOM_TAG_MAX).optional(),
-  commander: z.string().trim().max(200).optional(),
-  maxPrice: z.coerce.number().min(0).optional(),
 });
 export type DiscoverQuery = z.infer<typeof DiscoverQuery>;

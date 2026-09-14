@@ -37,7 +37,7 @@ export function RoundTimer({ initialMinutes = 50, onTimerEnd, isAdmin = false }:
   const isExpired = timeLeft === 0
 
   return (
-    <div className="flex items-center gap-3 bg-[#0f101a] border border-violet-500/20 px-4 py-2 rounded-2xl shadow-md">
+    <div className="flex items-center gap-3 bg-surface-1 border border-violet-500/20 px-4 py-2 rounded-2xl shadow-md">
       <Clock className={`w-4 h-4 ${isExpired ? "text-rose-500 animate-pulse" : isLow ? "text-amber-400 animate-pulse" : "text-violet-400"}`} />
       <span className={`font-mono text-lg font-bold tracking-wider ${isExpired ? "text-rose-400" : isLow ? "text-amber-300" : "text-white"}`}>
         {formatTime}
