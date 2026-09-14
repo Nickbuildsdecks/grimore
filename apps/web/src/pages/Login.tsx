@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/useAuth"
 import { AmbientCanvas } from "@/components/AmbientCanvas"
-import { api } from "@/lib/api"
+import { apiClient } from "@/lib/apiClient"
+import { errorMessage } from "@/lib/queries"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 export function Login() {
@@ -20,12 +21,12 @@ export function Login() {
     event.preventDefault()
     setBusy(true)
     try {
-      const response = await api.post<{ message?: string }>("/api/auth/forgot-password", { usernameOrEmail: recoveryId.trim() })
+      const response = await apiClient.auth.forgotPassword(recoveryId.trim())
       toast.success(response.message || "Recovery link requested")
       setForgotOpen(false)
       setRecoveryId("")
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not request recovery")
+      toast.error(errorMessage(error, "Could not request recovery"))
     } finally { setBusy(false) }
   }
 
@@ -37,11 +38,11 @@ export function Login() {
     if (password !== confirm) { toast.error("Passwords do not match"); return }
     setBusy(true)
     try {
-      await api.post("/api/auth/reset-password", { token: resetToken, newPassword: password })
+      await apiClient.auth.resetPassword(resetToken!, password)
       toast.success("Password reset. You can sign in now.")
       window.history.replaceState({}, "", "/")
       window.location.reload()
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not reset password") }
+    } catch (error) { toast.error(errorMessage(error, "Could not reset password")) }
     finally { setBusy(false) }
   }
 
@@ -65,7 +66,7 @@ export function Login() {
         await login(username, password)
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Something went wrong")
+      toast.error(errorMessage(err))
     } finally {
       setBusy(false)
     }

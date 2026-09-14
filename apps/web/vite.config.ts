@@ -15,11 +15,19 @@ export default defineConfig({
   server: {
     port: 5100,
     proxy: {
+      // /api is the v2 API (apps/api). Run it with PORT=4000 so it does not collide with server.js,
+      // which still owns port 3000.
       "/api": {
-        // The Express server listens on 3000 (server.js), not 5001. The old target made
-        // every API call in `npm run dev` fail with connection-refused.
-        target: "http://localhost:3000",
+        target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:4000",
         changeOrigin: true,
+      },
+      // Routes not yet ported out of server.js (Moxfield import, password reset, Google sign-in) are
+      // called through this prefix — see legacyUrl() in src/lib/apiClient.ts. The prefix is stripped so
+      // the legacy server still sees its own /api/... paths.
+      "/legacy-api": {
+        target: process.env.VITE_LEGACY_PROXY_TARGET ?? "http://localhost:3000",
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/legacy-api/, ""),
       },
     },
   },

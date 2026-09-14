@@ -1,75 +1,55 @@
-import { createContext, useContext, type ReactNode } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { api, type Player } from "@/lib/api"
-
-interface AuthStatus {
-  loggedIn: boolean
-  user?: Player
-}
+/**
+ * Session state, backed by `apps/api` through the typed client.
+ *
+ * The player shape is `MePlayer` from @grimore/shared — snake_case, matching the database columns and
+ * the API contract. The previous camelCase `Player` interface (storeNickname / isAdmin / avatarUrl) was
+ * hand-maintained and did not match what any server actually returns.
+ */
+import { createContext, useContext, useMemo, type ReactNode } from "react"
+import type { LoginInput, MePlayer, RegisterInput } from "@grimore/shared"
+import { useAuthStatus, useLogin, useLogout, useRegister } from "@/lib/queries"
 
 interface AuthContextValue {
-  user: Player | null
+  user: MePlayer | null
   isLoading: boolean
+  isAuthenticated: boolean
   login: (username: string, password: string) => Promise<void>
-  register: (fields: {
-    username: string
-    password: string
-    storeNickname: string
-    email: string
-  }) => Promise<void>
+  register: (fields: RegisterInput) => Promise<void>
   logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const qc = useQueryClient()
+  const status = useAuthStatus()
+  const loginMutation = useLogin()
+  const registerMutation = useRegister()
+  const logoutMutation = useLogout()
 
-  const status = useQuery({
-    queryKey: ["auth-status"],
-    queryFn: () => api.get<AuthStatus>("/api/auth/status"),
-    staleTime: 5 * 60 * 1000,
-    retry: 1,
-  })
+  const user = status.data?.loggedIn ? status.data.user : null
 
-  const loginMutation = useMutation({
-    mutationFn: (body: { username: string; password: string }) =>
-      api.post<{ success: boolean; user: Player }>("/api/auth/login", body),
-    onSuccess: () => qc.invalidateQueries(),
-  })
-
-  const registerMutation = useMutation({
-    mutationFn: (body: {
-      username: string
-      password: string
-      storeNickname: string
-      email: string
-    }) => api.post<{ success: boolean }>("/api/auth/register", body),
-  })
-
-  const logoutMutation = useMutation({
-    mutationFn: () => api.post("/api/auth/logout"),
-    onSuccess: () => qc.invalidateQueries(),
-  })
-
-  const value: AuthContextValue = {
-    user: status.data?.loggedIn && status.data.user ? status.data.user : null,
-    isLoading: status.isPending,
-    login: async (username, password) => {
-      await loginMutation.mutateAsync({ username, password })
-    },
-    register: async (fields) => {
-      await registerMutation.mutateAsync(fields)
-    },
-    logout: async () => {
-      await logoutMutation.mutateAsync()
-    },
-  }
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      isLoading: status.isPending,
+      isAuthenticated: Boolean(user),
+      login: async (username: string, password: string) => {
+        await loginMutation.mutateAsync({ username, password } as LoginInput)
+      },
+      register: async (fields: RegisterInput) => {
+        await registerMutation.mutateAsync(fields)
+      },
+      logout: async () => {
+        await logoutMutation.mutateAsync()
+      },
+    }),
+    [user, status.isPending, loginMutation, registerMutation, logoutMutation],
+  )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export function useAuth() {
+export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error("useAuth must be used within AuthProvider")
   return ctx

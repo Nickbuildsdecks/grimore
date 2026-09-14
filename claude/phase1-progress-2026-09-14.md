@@ -251,3 +251,56 @@ ids, the same mistake the decks slice found in `deck_comments`.
 - Notification text used `req.session.player.storeNickname`, which goes stale after a profile rename. It
   is read from the database row; a test renames a player mid-flight to hold this.
 - Feedback with no admin account in the database 500d; it now returns 503 with a clear message.
+
+## Checkpoint 6 — web data layer (`apps/web/src/lib/apiClient.ts`, `lib/queries.ts`)
+
+A typed client plus a TanStack Query layer, with Login and Decks moved onto them. 19 new tests
+(`apps/web` had none before; `pnpm test` was `echo "no tests yet"`). Workspace total 186 -> 205.
+
+### Types come from the contracts, not from hand-written duplicates
+
+`@grimore/shared` is now a dependency of `apps/web`, so request and response types are the same Zod
+contracts the API validates against. A route and its caller can no longer drift without a typecheck
+failure. The previous hand-maintained `Player` interface was **camelCase** (`storeNickname`, `isAdmin`,
+`avatarUrl`) while both servers return snake_case — it never matched anything. It is replaced by
+`MePlayer`; `AppShell` was updated to match.
+
+### The "[object Object]" bug
+
+`lib/api.ts` extracted errors with `String(data.error)`. The v2 envelope is
+`{ error: { code, message } }` — an **object** — so `String()` on it yields `"[object Object]"`. Every
+failure from `apps/api` reached the user as a toast reading "[object Object]". The new client reads
+`error.message`, keeps `code` and Zod `details` on the thrown `ApiError`, and still understands the
+legacy `{ error: "string" }` shape. `lib/api.ts` now delegates to it, so the pages not yet migrated get
+the fix too.
+
+### Two bases, because this is a strangler migration
+
+`apiUrl()` addresses `apps/api`; `legacyUrl()` addresses `server.js`. Routes not ported yet — Moxfield
+import, password reset, Google sign-in — are called through `legacyUrl()`, which makes each remaining
+migration task visible at its call site instead of silently 404ing. Both default to same-origin, which
+is how the deployed app runs behind one reverse proxy. In development the Vite proxy routes `/api` to
+`apps/api` (**run it with `PORT=4000`**; `server.js` still owns 3000) and `/legacy-api` to `server.js`.
+
+### Other decisions
+
+- Query keys live in one factory (`queryKeys`), so an invalidation cannot miss a cache entry by
+  spelling a key differently at the call site.
+- `shouldRetry` never retries a 4xx: the server has already answered, and retrying a 401 only delays
+  the login screen.
+- `useLogout` calls `queryClient.clear()`, not `invalidateQueries()` — the previous user's decks and
+  collections must not stay readable in the cache while refetches are in flight.
+- `useLogin` seeds the auth-status cache from the login response so the app does not flash a
+  logged-out shell.
+
+### Visible changes on the Decks page
+
+Pointing it at `apps/api` changes two things, both consequences of the v2 contract rather than choices:
+
+- `is_public` is a real boolean in `DeckSummary`, so `deck.is_public === 1` no longer matched. Fixed.
+- `GET /api/decks/my-decks` returns `likes_count` and `card_count`, **not** match stats — `total_wins`
+  does not exist on the v2 response. The "Most wins" sort became "Most liked", and the card footer
+  shows card count and likes. If you want win totals back on this page, `deck_stats` has to be joined
+  into the my-decks query; say so and I will add it.
+- Sorting by "recently updated" now uses `updated_at` (maintained on every write, from migration 0002)
+  rather than `last_checked`, which only moves when prices are refreshed.
