@@ -622,3 +622,52 @@ response still looked well-formed. `xJoE0d` is the default now, and a test holds
 | `auth/guest`, `auth/google`, `auth/forgot-password`, `auth/reset-password` | 4 | Need verified tokens / email delivery. |
 | Legacy duplicates and dead routes | ~2 | `/api/dev/git-*` — see D8, needs sign-off to delete. |
 | Assorted deck/collection variants already superseded | ~8 | Covered by the ported equivalents. |
+
+---
+
+# Wave 7 — league analytics + admin (`apps/api/src/routes/league.ts`)
+
+`seasons/:id/meta`, `seasons/:id/matrix`, `players/active-match`, `players/list`, `players/:id/role`
+= 5 routes. No migration. 11 new tests; api suite 181 -> 191, workspace 294 -> 304.
+Port status: **97 of 126 legacy routes**.
+
+## The last administrator could lock everyone out
+
+`POST /api/players/:playerId/role` had no guard against an admin demoting **themselves**, or against
+removing the **last remaining admin**. Either one permanently disables every administrative function
+in the app — season creation, pairings, roles, the roster — with no way back in short of a manual
+database edit. Both are refused now, with a test that walks the whole sequence: the sole admin cannot
+step down, promoting a second admin makes it allowed, and the new sole admin cannot step down either.
+
+## An invalid role silently demoted the player
+
+`PlayerRole` in the auth contract carries `.catch("player")`, which is correct when *reading* a row
+whose stored role might be unrecognised. Used as **input** validation it silently turns a typo into a
+demotion — `{ role: "amdin" }` would have quietly made the target a plain player and returned success.
+Input uses a strict enum now. *(Caught by the test, not by reading the code.)*
+
+## Other legacy bugs fixed
+
+- **`legalityRate` was a hard-coded price check.** The season meta counted a deck legal if it cost under
+  $100, ignoring the season's own budget limit, banlist, rarity and colour rules entirely. It now reads
+  `decks.is_legal`, the verdict the legality validator (Wave 3) already writes.
+- **An empty season was indistinguishable from a broken one.** Legacy divided by `decks.length || 1`,
+  so a season with no decks reported a 0.00 average and 0% legality — the same numbers as a season full
+  of illegal free decks. It returns `totalDecks: 0` now.
+- **`active-match` missed a player's own open pod.** It took `MAX(round_num)` across the season and then
+  looked for the caller in it, so a player who sat out the newest round was told they had no active
+  match while their own unreported pod from an earlier round was still open. It now finds the caller's
+  most recent pod, preferring an incomplete one.
+- **The archetype classifier was duplicated verbatim** in the meta and matrix handlers — two copies of
+  the same if/else chain, free to drift. One exported `classifyArchetype` in `@grimore/shared`, unit
+  tested on its own.
+- The matrix returned raw `wins`/`total` and left the division (and the divide-by-zero guard) to every
+  caller. It returns `winRate` too.
+
+## Not ported
+
+`/api/admin/sync-mtgjson` and its status route: both authorise by **hard-coded username**
+(`username.toLowerCase() !== 'nickbuildsdecks'`) rather than by role, and the status lives in
+`global.mtgjsonSyncStatus`, which is per-process and wrong behind more than one instance. The sync
+itself also downloads from mtgjson.com, which is not reachable here. Needs a role-based rewrite and a
+job runner — its own piece of work.

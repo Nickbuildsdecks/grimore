@@ -48,7 +48,10 @@ import { Router, type Request } from 'express';
 import type { PoolClient, Queryable } from '@grimore/db';
 import { withTransaction } from '@grimore/db';
 import {
+  ActiveMatch,
   AdminCheckInInput,
+  ARCHETYPES,
+  classifyArchetype,
   CheckInInput,
   CreateSeasonInput,
   DeckStanding,
@@ -61,7 +64,10 @@ import {
   ReportPodInput,
   RosterEntry,
   Season,
+  SeasonMeta,
+  SetRoleInput,
   UpdateSeasonRulesInput,
+  type Archetype,
 } from '@grimore/shared';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
@@ -647,6 +653,202 @@ export function leagueRouter(ctx: AppContext): Router {
         [seasonId],
       );
       res.json(rows.rows.map((s) => DeckStanding.parse(s)));
+    }),
+  );
+
+  // ── Season analytics ────────────────────────────────────────────────────────────────────────────
+  r.get(
+    '/seasons/:seasonId/meta',
+    wrap(async (req, res) => {
+      const seasonId = Id.parse(req.params.seasonId);
+      const rows = await pool.query(
+        `SELECT d.deck_name, COALESCE(d.cheapest_total_price, 0) AS price, COALESCE(d.is_legal, 1) AS is_legal
+         FROM deck_stats ds JOIN decks d ON d.id = ds.deck_id
+         WHERE ds.season_id = $1`,
+        [seasonId],
+      );
+      const decks = rows.rows;
+      if (decks.length === 0) {
+        // Legacy divided by `decks.length || 1`, reporting 0% legality and a 0.00 average for a season
+        // with no decks — indistinguishable from a season where every deck is illegal and free.
+        res.json(SeasonMeta.parse({ totalDecks: 0, averagePrice: 0, legalityRate: 0, breakdown: [] }));
+        return;
+      }
+      const counts = new Map<Archetype, number>();
+      let priceSum = 0;
+      let legal = 0;
+      for (const deck of decks) {
+        priceSum += Number(deck.price);
+        // Legacy hard-coded "legal means under $100", ignoring the season's own budget_limit, banlist,
+        // rarity and colour rules. `decks.is_legal` is the verdict the legality validator already wrote.
+        if (Number(deck.is_legal) === 1) legal++;
+        const archetype = classifyArchetype(deck.deck_name as string);
+        counts.set(archetype, (counts.get(archetype) ?? 0) + 1);
+      }
+      res.json(
+        SeasonMeta.parse({
+          totalDecks: decks.length,
+          averagePrice: Number((priceSum / decks.length).toFixed(2)),
+          legalityRate: Number(((legal / decks.length) * 100).toFixed(1)),
+          breakdown: [...counts.entries()]
+            .map(([name, count]) => ({ name, count, percentage: Number(((count / decks.length) * 100).toFixed(1)) }))
+            .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+        }),
+      );
+    }),
+  );
+
+  /** Archetype-versus-archetype win rates, built from completed pods. */
+  r.get(
+    '/seasons/:seasonId/matrix',
+    wrap(async (req, res) => {
+      const seasonId = Id.parse(req.params.seasonId);
+      const rows = await pool.query(
+        `SELECT pr.pod_id, pr.player_id, pr.placed_first, d.deck_name
+         FROM pod_results pr
+         JOIN pods po ON po.id = pr.pod_id
+         LEFT JOIN decks d ON d.id = pr.deck_id
+         WHERE po.season_id = $1 AND po.completed = 1`,
+        [seasonId],
+      );
+      const pods = new Map<string, { playerId: string; archetype: Archetype; won: boolean }[]>();
+      for (const row of rows.rows) {
+        const seat = {
+          playerId: row.player_id as string,
+          archetype: classifyArchetype(row.deck_name as string),
+          won: Number(row.placed_first) === 1,
+        };
+        const seats = pods.get(row.pod_id as string) ?? [];
+        seats.push(seat);
+        pods.set(row.pod_id as string, seats);
+      }
+
+      const matrix: Record<string, Record<string, { wins: number; total: number; winRate: number }>> = {};
+      for (const a of ARCHETYPES) {
+        matrix[a] = {};
+        for (const b of ARCHETYPES) matrix[a][b] = { wins: 0, total: 0, winRate: 0 };
+      }
+      // Each ordered pair of seats at a table is one matchup observation for the first seat.
+      for (const seats of pods.values()) {
+        for (const self of seats) {
+          for (const other of seats) {
+            if (self.playerId === other.playerId) continue;
+            const cell = matrix[self.archetype][other.archetype];
+            cell.total++;
+            if (self.won) cell.wins++;
+          }
+        }
+      }
+      // Legacy returned raw wins/total and left the division to the client, so every caller computed
+      // the rate (and the divide-by-zero guard) for itself.
+      for (const a of ARCHETYPES) {
+        for (const b of ARCHETYPES) {
+          const cell = matrix[a][b];
+          cell.winRate = cell.total === 0 ? 0 : Number(((cell.wins / cell.total) * 100).toFixed(1));
+        }
+      }
+      res.json({ archetypes: ARCHETYPES, matrix });
+    }),
+  );
+
+  // ── The caller's current pod ────────────────────────────────────────────────────────────────────
+  r.get(
+    '/players/active-match',
+    requireAuth,
+    wrap(async (req, res) => {
+      const playerId = sessionPlayerId(req);
+      const season = await activeSeason(pool);
+      if (!season) {
+        res.json(ActiveMatch.parse({ hasActiveMatch: false }));
+        return;
+      }
+      // The player's most recent pod this season. Legacy took MAX(round_num) across the season and then
+      // looked for the player in it, so a player who sat out the latest round saw "no active match"
+      // even while their own unreported pod from the previous round was still open.
+      const podQ = await pool.query(
+        `SELECT po.id, po.round_num, po.pod_label, po.completed
+         FROM pods po JOIN pod_results pr ON pr.pod_id = po.id
+         WHERE po.season_id = $1 AND pr.player_id = $2
+         ORDER BY po.completed ASC, po.round_num DESC
+         LIMIT 1`,
+        [season.id, playerId],
+      );
+      const pod = podQ.rows[0];
+      if (!pod) {
+        res.json(ActiveMatch.parse({ hasActiveMatch: false }));
+        return;
+      }
+      const seats = await pool.query(
+        `SELECT pr.pod_id, pr.player_id, pr.deck_id, pr.kills, pr.placed_first, pr.placed_draw,
+                pr.points_awarded, p.store_nickname, d.deck_name, COALESCE(d.is_legal, 1) AS is_legal
+         FROM pod_results pr
+         JOIN players p ON p.id = pr.player_id
+         LEFT JOIN decks d ON d.id = pr.deck_id
+         WHERE pr.pod_id = $1
+         ORDER BY p.store_nickname ASC`,
+        [pod.id],
+      );
+      res.json(
+        ActiveMatch.parse({
+          hasActiveMatch: true,
+          roundNum: pod.round_num,
+          podId: pod.id,
+          podLabel: pod.pod_label,
+          completed: pod.completed,
+          players: seats.rows,
+          scoring: {
+            pointsWin: season.points_win, pointsDraw: season.points_draw,
+            pointsKill: season.points_kill, pointsEntry: season.points_entry,
+          },
+        }),
+      );
+    }),
+  );
+
+  // ── Admin: roster of players and their roles ────────────────────────────────────────────────────
+  r.get(
+    '/players/list',
+    requireAuth,
+    wrap(async (req, res) => {
+      await requireRole(pool, sessionPlayerId(req), ['admin']);
+      const rows = await pool.query(
+        `SELECT id, store_nickname, username, role, is_admin, created_at
+         FROM players ORDER BY LOWER(store_nickname) ASC`,
+      );
+      res.json(rows.rows);
+    }),
+  );
+
+  r.post(
+    '/players/:playerId/role',
+    requireAuth,
+    wrap(async (req, res) => {
+      const callerId = sessionPlayerId(req);
+      await requireRole(pool, callerId, ['admin']);
+      const targetId = Id.parse(req.params.playerId);
+      const { role } = SetRoleInput.parse(req.body);
+
+      await withTransaction(pool, async (client: PoolClient) => {
+        const target = await client.query('SELECT role, is_admin FROM players WHERE id = $1 FOR UPDATE', [targetId]);
+        if (!target.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Player not found.');
+
+        // Two guards legacy had neither of. Demoting yourself, or demoting the last remaining admin,
+        // locks every administrative function in the app permanently — there is no other way back in.
+        const losingAdmin = Number(target.rows[0].is_admin) === 1 && role !== 'admin';
+        if (losingAdmin) {
+          if (targetId === callerId) {
+            throw new ApiError(409, 'LAST_ADMIN', 'You cannot remove your own administrator role.');
+          }
+          const admins = await client.query('SELECT COUNT(*)::int AS n FROM players WHERE is_admin = 1');
+          if ((admins.rows[0]?.n ?? 0) <= 1) {
+            throw new ApiError(409, 'LAST_ADMIN', 'This is the only administrator; promote someone else first.');
+          }
+        }
+        await client.query('UPDATE players SET role = $1, is_admin = $2 WHERE id = $3', [
+          role, role === 'admin' ? 1 : 0, targetId,
+        ]);
+      });
+      res.json({ success: true, playerId: targetId, role });
     }),
   );
 

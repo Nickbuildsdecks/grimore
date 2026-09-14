@@ -174,3 +174,69 @@ export const DeckStanding = z.object({
   win_rate: z.coerce.number().default(0),
 });
 export type DeckStanding = z.infer<typeof DeckStanding>;
+
+/**
+ * Archetypes are inferred from the deck's NAME, which is what the product has always done — there is
+ * no archetype column and no classifier. Kept as one exported function because the legacy meta and
+ * matrix handlers each carried their own identical copy of this chain, free to drift apart.
+ */
+export const ARCHETYPES = ["Control", "Aggro", "Combo", "Midrange", "Stax", "Tribal", "Other"] as const;
+export type Archetype = (typeof ARCHETYPES)[number];
+
+const ARCHETYPE_HINTS: [Archetype, string[]][] = [
+  ["Control", ["control"]],
+  ["Aggro", ["aggro", "burn", "stompy"]],
+  ["Combo", ["combo", "storm"]],
+  ["Midrange", ["midrange"]],
+  ["Stax", ["stax", "hatebears"]],
+  ["Tribal", ["tribal", "kindred", "elves", "dragons"]],
+];
+
+export function classifyArchetype(deckName: string | null | undefined): Archetype {
+  const name = (deckName ?? "").toLowerCase();
+  for (const [archetype, hints] of ARCHETYPE_HINTS) {
+    if (hints.some((h) => name.includes(h))) return archetype;
+  }
+  return "Other";
+}
+
+/** GET /api/seasons/:seasonId/meta */
+export const SeasonMeta = z.object({
+  totalDecks: z.coerce.number().int().default(0),
+  averagePrice: z.coerce.number().default(0),
+  legalityRate: z.coerce.number().default(0),
+  breakdown: z
+    .array(z.object({ name: z.string(), count: z.coerce.number().int(), percentage: z.coerce.number() }))
+    .default([]),
+});
+export type SeasonMeta = z.infer<typeof SeasonMeta>;
+
+/** GET /api/players/active-match */
+export const ActiveMatch = z.object({
+  hasActiveMatch: z.boolean(),
+  roundNum: z.coerce.number().int().nullable().default(null),
+  podId: Id.nullable().default(null),
+  podLabel: z.coerce.number().int().nullable().default(null),
+  completed: IntBool.default(false),
+  players: z.array(LeagueSeat).default([]),
+  scoring: z
+    .object({
+      pointsWin: z.coerce.number().int().default(0),
+      pointsDraw: z.coerce.number().int().default(0),
+      pointsKill: z.coerce.number().int().default(0),
+      pointsEntry: z.coerce.number().int().default(0),
+    })
+    .nullable()
+    .default(null),
+});
+export type ActiveMatch = z.infer<typeof ActiveMatch>;
+
+/**
+ * Strict on the way IN. `PlayerRole` carries `.catch("player")`, which is correct when reading a row
+ * whose stored role might be unrecognised — but as input validation it silently turns a typo into a
+ * demotion to "player". An unknown role must be rejected, not coerced.
+ */
+export const SetRoleInput = z.object({
+  role: z.enum(["player", "scorekeeper", "judge", "admin"]),
+});
+export type SetRoleInput = z.infer<typeof SetRoleInput>;

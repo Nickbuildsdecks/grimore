@@ -354,3 +354,199 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('league routes (requires DATABASE_U
     await admin.post('/api/seasons/rules').send({ checkin_enabled: true });
   });
 });
+
+describe('classifyArchetype', () => {
+  it('reads the archetype out of the deck name, defaulting to Other', async () => {
+    const { classifyArchetype } = await import('@grimore/shared');
+    expect(classifyArchetype('Azorius Control')).toBe('Control');
+    expect(classifyArchetype('goblin STOMPY')).toBe('Aggro');
+    expect(classifyArchetype('Storm Brew')).toBe('Combo');
+    expect(classifyArchetype('Elves!')).toBe('Tribal');
+    expect(classifyArchetype('Hatebears')).toBe('Stax');
+    expect(classifyArchetype('Krenko Goodstuff')).toBe('Other');
+    expect(classifyArchetype(null)).toBe('Other');
+  });
+});
+
+describe.skipIf(!DATABASE_URL || !REDIS_URL)('league analytics + admin (requires DATABASE_URL + REDIS_URL)', () => {
+  let ctx: AppContext;
+  let app: ReturnType<typeof createApp>;
+  const dbName = `grimore_analytics_test_${Date.now()}`;
+  let admin: ReturnType<typeof request.agent>;
+  let adminId: string;
+  let second: ReturnType<typeof request.agent>;
+  let secondId: string;
+  let player: ReturnType<typeof request.agent>;
+  let playerId: string;
+  let seasonId: string;
+
+  async function signup(username: string) {
+    const agent = request.agent(app);
+    expect((await agent.post('/api/auth/register').send({
+      username, password: PASSWORD, storeNickname: username, email: `${username}@example.com`,
+    })).status).toBe(201);
+    const login = await agent.post('/api/auth/login').send({ username, password: PASSWORD });
+    return { agent, id: login.body.user.id as string };
+  }
+
+  beforeAll(async () => {
+    const dbAdmin = new pg.Pool({ connectionString: DATABASE_URL, max: 1 });
+    await dbAdmin.query(`CREATE DATABASE ${dbName}`);
+    await dbAdmin.end();
+    const u = new URL(DATABASE_URL!);
+    u.pathname = `/${dbName}`;
+    ctx = await createContext(parseEnv({
+      NODE_ENV: 'test', DATABASE_URL: u.toString(), REDIS_URL, SESSION_SECRET: 'test-secret', LOG_LEVEL: 'silent',
+    }));
+    await runMigrations(ctx.pool);
+    app = createApp(ctx);
+
+    ({ agent: admin, id: adminId } = await signup('boss'));
+    ({ agent: second, id: secondId } = await signup('deputy'));
+    ({ agent: player, id: playerId } = await signup('regular'));
+    await ctx.pool.query(`UPDATE players SET is_admin = 1, role = 'admin' WHERE id = $1`, [adminId]);
+
+    seasonId = 'season_analytics';
+    await ctx.pool.query(
+      `INSERT INTO seasons (id, name, is_active, points_win, points_draw, points_entry, points_kill)
+       VALUES ($1, 'Analytics', 1, 5, 1, 1, 1)`,
+      [seasonId],
+    );
+    // Three decks with archetype-bearing names and different legality verdicts.
+    const decks: [string, string, string, number, number][] = [
+      ['d_ctrl', adminId, 'Azorius Control', 250, 1],
+      ['d_aggro', secondId, 'Goblin Aggro', 40, 1],
+      ['d_combo', playerId, 'Storm Combo', 900, 0],
+    ];
+    for (const [id, owner, name, price, legal] of decks) {
+      await ctx.pool.query(
+        `INSERT INTO decks (id, player_id, moxfield_url, deck_name, cheapest_total_price, is_public, is_legal)
+         VALUES ($1, $2, $3, $4, $5, 1, $6)`,
+        [id, owner, 'visual-' + id, name, price, legal],
+      );
+      await ctx.pool.query('INSERT INTO deck_stats (deck_id, season_id) VALUES ($1, $2)', [id, seasonId]);
+    }
+  });
+
+  afterAll(async () => {
+    await closeContext(ctx);
+    const dbAdmin = new pg.Pool({ connectionString: DATABASE_URL, max: 1 });
+    await dbAdmin.query(`DROP DATABASE ${dbName}`);
+    await dbAdmin.end();
+  });
+
+  it('reports the season meta from the stored legality verdict, not a hard-coded price', async () => {
+    const r = await request(app).get(`/api/seasons/${seasonId}/meta`);
+    expect(r.status).toBe(200);
+    expect(r.body.totalDecks).toBe(3);
+    // (250 + 40 + 900) / 3
+    expect(r.body.averagePrice).toBeCloseTo(396.67, 2);
+    // Legacy called a deck legal if it cost under $100, ignoring the season's banlist, rarity, colour
+    // and budget rules. Two of three decks carry is_legal = 1, including a $250 one.
+    expect(r.body.legalityRate).toBeCloseTo(66.7, 1);
+    expect(r.body.breakdown.map((b: { name: string }) => b.name).sort()).toEqual(['Aggro', 'Combo', 'Control']);
+    expect(r.body.breakdown[0].percentage).toBeCloseTo(33.3, 1);
+  });
+
+  it('distinguishes an empty season from one where everything is illegal', async () => {
+    const r = await request(app).get('/api/seasons/season_empty/meta');
+    expect(r.status).toBe(200);
+    // Legacy divided by `length || 1`, so an empty season reported 0% legality and a 0.00 average --
+    // the same numbers as a season full of illegal free decks.
+    expect(r.body).toMatchObject({ totalDecks: 0, averagePrice: 0, legalityRate: 0, breakdown: [] });
+  });
+
+  it('builds an archetype matchup matrix with win rates already computed', async () => {
+    await ctx.pool.query(
+      `INSERT INTO pods (id, season_id, round_num, pod_label, completed) VALUES ('pod_m', $1, 1, 1, 1)`,
+      [seasonId],
+    );
+    await ctx.pool.query(
+      `INSERT INTO pod_results (pod_id, player_id, deck_id, placed_first) VALUES
+        ('pod_m', $1, 'd_ctrl', 1), ('pod_m', $2, 'd_aggro', 0), ('pod_m', $3, 'd_combo', 0)`,
+      [adminId, secondId, playerId],
+    );
+    const r = await request(app).get(`/api/seasons/${seasonId}/matrix`);
+    expect(r.status).toBe(200);
+    expect(r.body.archetypes).toContain('Control');
+    // Control beat both others, so it is 100% against each of them.
+    expect(r.body.matrix.Control.Aggro).toMatchObject({ wins: 1, total: 1, winRate: 100 });
+    expect(r.body.matrix.Aggro.Control).toMatchObject({ wins: 0, total: 1, winRate: 0 });
+    // Legacy returned raw wins/total and left the division (and the divide-by-zero guard) to callers.
+    expect(r.body.matrix.Control.Stax).toMatchObject({ wins: 0, total: 0, winRate: 0 });
+  });
+
+  it('excludes unreported pods from the matrix', async () => {
+    await ctx.pool.query(
+      `INSERT INTO pods (id, season_id, round_num, pod_label, completed) VALUES ('pod_open', $1, 2, 1, 0)`,
+      [seasonId],
+    );
+    await ctx.pool.query(
+      `INSERT INTO pod_results (pod_id, player_id, deck_id, placed_first) VALUES
+        ('pod_open', $1, 'd_aggro', 1), ('pod_open', $2, 'd_combo', 0)`,
+      [secondId, playerId],
+    );
+    const r = await request(app).get(`/api/seasons/${seasonId}/matrix`);
+    // Still only the one completed pod's pairings.
+    expect(r.body.matrix.Aggro.Combo.total).toBe(1);
+  });
+
+  it('surfaces the caller\'s open pod even when a later round exists without them', async () => {
+    const r = await second.get('/api/players/active-match');
+    expect(r.status).toBe(200);
+    expect(r.body.hasActiveMatch).toBe(true);
+    // Legacy took MAX(round_num) and looked for the player in it, so a player who sat out the newest
+    // round saw "no active match" while their own unreported pod was still open.
+    expect(r.body.podId).toBe('pod_open');
+    expect(r.body.completed).toBe(false);
+    expect(r.body.players).toHaveLength(2);
+    expect(r.body.scoring.pointsWin).toBe(5);
+
+    // The admin only ever played the completed pod, so that is what they see.
+    const done = await admin.get('/api/players/active-match');
+    expect(done.body.podId).toBe('pod_m');
+    expect(done.body.completed).toBe(true);
+  });
+
+  it('reports no match for a player with no pods, and 401s anonymously', async () => {
+    const { agent } = await signup('bystander');
+    expect((await agent.get('/api/players/active-match')).body.hasActiveMatch).toBe(false);
+    expect((await request(app).get('/api/players/active-match')).status).toBe(401);
+  });
+
+  it('lists players for an admin only', async () => {
+    expect((await request(app).get('/api/players/list')).status).toBe(401);
+    expect((await player.get('/api/players/list')).status).toBe(403);
+    const r = await admin.get('/api/players/list');
+    expect(r.status).toBe(200);
+    expect(r.body.length).toBeGreaterThanOrEqual(4);
+    expect(r.body[0]).toHaveProperty('role');
+    // Password hashes must not appear in an admin listing.
+    expect(r.body[0]).not.toHaveProperty('password_hash');
+  });
+
+  it('changes a role, and refuses an invalid one', async () => {
+    expect((await admin.post(`/api/players/${playerId}/role`).send({ role: 'judge' })).status).toBe(200);
+    const row = await ctx.pool.query('SELECT role, is_admin FROM players WHERE id = $1', [playerId]);
+    expect(row.rows[0]).toMatchObject({ role: 'judge', is_admin: 0 });
+    expect((await admin.post(`/api/players/${playerId}/role`).send({ role: 'overlord' })).status).toBe(400);
+    expect((await admin.post('/api/players/p_ghost/role').send({ role: 'judge' })).status).toBe(404);
+    expect((await player.post(`/api/players/${adminId}/role`).send({ role: 'player' })).status).toBe(403);
+  });
+
+  it('REFUSES to remove the last administrator — legacy would lock everyone out permanently', async () => {
+    // Demoting yourself as the only admin leaves no way back into any administrative function.
+    const self = await admin.post(`/api/players/${adminId}/role`).send({ role: 'player' });
+    expect(self.status).toBe(409);
+    expect(self.body.error.code).toBe('LAST_ADMIN');
+
+    // With a second admin in place, stepping down is allowed.
+    expect((await admin.post(`/api/players/${secondId}/role`).send({ role: 'admin' })).status).toBe(200);
+    expect((await second.post(`/api/players/${adminId}/role`).send({ role: 'player' })).status).toBe(200);
+    // And now the remaining admin cannot demote themselves either.
+    const last = await second.post(`/api/players/${secondId}/role`).send({ role: 'player' });
+    expect(last.status).toBe(409);
+    const admins = await ctx.pool.query('SELECT COUNT(*)::int AS n FROM players WHERE is_admin = 1');
+    expect(admins.rows[0].n).toBe(1);
+  });
+});
