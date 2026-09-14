@@ -72,6 +72,22 @@ have been stored there and no data is at risk. Creating a second table would lea
 
 **Why:** four copies of a word list drift apart. One utility in `packages/shared`, one test suite.
 
+## D9 — A stacked PR does NOT retarget when its base merges
+
+**Decided:** when landing a stack of PRs, either merge the **top** PR (which contains the whole chain)
+into `main` after retargeting it, or retarget each PR to `main` before merging it. Never merge a
+stacked PR while its base still points at another feature branch.
+
+**Why:** GitHub retargets a stacked PR only when its base branch is **deleted**, not when the base is
+merged. On 2026-09-14 thirteen PRs in this stack were merged in order, each into its own base branch,
+so the work landed in the feature branches instead of `main` — `main` advanced by exactly one PR. No
+commits were lost (the top branch held the full chain and one merge recovered it), but the merge
+record is misleading: #4-#15 read as "merged" while their content reached `main` through #16.
+
+This session's credentials also **cannot delete branches** (HTTP 403), so the delete-to-retarget route
+is unavailable here. Retarget explicitly, and **verify `origin/main` actually moved after the first
+merge** rather than trusting the API's `"merged": true`.
+
 ## D8 — `/api/dev/git-commit` and `/api/dev/git-push` are not ported
 
 **Decided:** these two routes execute git operations from an HTTP endpoint. They will not be carried

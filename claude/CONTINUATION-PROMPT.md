@@ -38,7 +38,11 @@ THE CENTRAL FINDING, which every wave has confirmed so far:
 
 HOW TO WORK:
   - One PR per route group, stacked on the previous branch so each diff reviews alone. Base each PR
-    on the branch below it; GitHub retargets to main as they merge. Never squash the stack into one PR.
+    on the branch below it. NOTE (see D9): GitHub retargets a stacked PR only when its base branch is
+    DELETED, not when the base merges -- and this environment cannot delete branches (403). So when
+    landing a stack, either merge the TOP PR (it contains the whole chain) into main after retargeting
+    it, or retarget each PR to main before merging. Always verify origin/main actually moved after the
+    first merge; the API reports "merged": true even when the work went into a feature branch.
   - Every route group gets: a migration if the schema diverges, contracts in packages/shared, a route
     file in apps/api/src/routes/, and tests against LIVE Postgres + Redis (never mocks).
   - Follow the decks.ts conventions exactly: a header comment block listing legacy bugs fixed and
