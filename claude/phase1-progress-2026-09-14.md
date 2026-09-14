@@ -56,3 +56,45 @@ these hosts need allowlisting on the session egress proxy:
 
 Until then `cards/search` is built against the local `scryfall_cards` table, which is the same
 source the legacy search endpoint falls back to.
+
+## Checkpoint 2 — cards slice (`apps/api/src/routes/cards.ts`)
+
+`GET /api/cards/search`, `/api/cards/autocomplete`, `/api/cards/details`, plus migration
+`0004_card_search.sql`. 16 new tests; api suite 18 -> 34.
+
+Built against the local `scryfall_cards` table only — see the open item above for the allowlist. Every
+point where the Scryfall fallback would slot back in is marked `TODO(scryfall-fallback)` in the route
+file; the response shape is already Scryfall's, so adding it later is additive.
+
+### Legacy bugs the port fixes
+
+1. **Local search was dead code on Postgres.** Legacy selects `c.card_name` and `c.scryfall_id` from
+   `scryfall_cards`. The canonical Postgres columns are `name` and `id` — `card_name` is a nullable
+   mirror and `scryfall_id` does not exist on the table at all. The query therefore raised, the
+   catch-all swallowed it, and *every* search fell through to the Scryfall API. With Scryfall blocked
+   that path returns nothing, so card search is currently non-functional against Postgres.
+2. **Case-sensitive search.** `LIKE` is case-insensitive in SQLite, case-sensitive in Postgres. Now `ILIKE`.
+3. **`subtype` sort used SQLite `INSTR`/`SUBSTR`** — raises on Postgres. Now `split_part`.
+4. **Price join fanned out.** `LEFT JOIN card_price_cache ON card_name` duplicates a card once per
+   cached printing. Now `LEFT JOIN LATERAL ... LIMIT 1` (cheapest), matching the decks slice.
+5. **Pagination count was wrong.** A separate `COUNT(*)` ignored the join and filters. Now `COUNT(*) OVER ()`.
+6. **All errors swallowed** into an empty result set, making a broken query indistinguishable from a
+   genuine zero-result search. Real failures are 500s now.
+7. **Autocomplete's `DISTINCT`** was over the whole row, so a card printed in 12 sets could fill the
+   entire 10-row suggestion list. Now `DISTINCT ON (LOWER(name))`.
+
+### Notes
+
+- `try_jsonb()` (migration 0004) is the reason a single malformed JSON row cannot 500 a whole search.
+  `scryfall_cards.colors` / `legalities` / etc. are TEXT columns holding JSON, an inline `::jsonb` cast
+  aborts the entire query on one bad row, and Postgres may evaluate that cast before the WHERE clause
+  that would have excluded it. A test seeds a deliberately corrupted row to hold this behaviour.
+- The `pg_trgm` index is created inside an exception-handling `DO` block: `CREATE EXTENSION` needs
+  privileges the production app role may not have, and search must degrade to a sequential scan rather
+  than fail the migration.
+- **Not ported:** `applyFollowedArtistPreferences` / followed-artist re-ranking, `/api/cards/versions`,
+  `/api/cards/rulings`, `/api/cards/swipes`, `/api/cards/recommendations`, `/api/cards/details-batch`.
+  These are separate feature slices, not part of the search port.
+- **Separate latent bug, not fixed here:** `scryfallService.js` writes a `scryfall_id` column into
+  `scryfall_cards` on the Postgres branch (line ~157). That column does not exist in the baseline
+  schema, so the Postgres bulk sync cannot ever have succeeded. Worth its own fix.
