@@ -8,7 +8,15 @@ import pino from 'pino';
 import type { Env } from '@grimore/shared';
 import { createPool, ping, type Pool } from '@grimore/db';
 import { authRouter } from './routes/auth.js';
+import { cardsRouter } from './routes/cards.js';
+import { collectionsRouter } from './routes/collections.js';
 import { decksRouter } from './routes/decks.js';
+import { playersRouter } from './routes/players.js';
+import { friendsRouter, followsRouter, messagesRouter, notificationsRouter } from './routes/social.js';
+import { recoveryRouter, wishlistRouter } from './routes/wishlist.js';
+import { leagueRouter } from './routes/league.js';
+import { sandboxRouter } from './routes/sandbox.js';
+import { miscRouter } from './routes/misc.js';
 import { ApiError, errorHandler } from './lib/errors.js';
 
 export interface AppContext {
@@ -90,6 +98,22 @@ export function createApp(ctx: AppContext): Express {
 
   app.use('/api/auth', authRouter(ctx));
   app.use('/api/decks', decksRouter(ctx));
+  app.use('/api/cards', cardsRouter(ctx));
+  app.use('/api/collections', collectionsRouter(ctx));
+  // followsRouter owns /api/players/:id/follow and /following; playersRouter owns /profile. Distinct
+  // paths, so the order only decides which router is asked first.
+  app.use('/api/players', followsRouter(ctx));
+  app.use('/api/players', playersRouter(ctx));
+  app.use('/api/friends', friendsRouter(ctx));
+  app.use('/api/messages', messagesRouter(ctx));
+  app.use('/api/notifications', notificationsRouter(ctx));
+  app.use('/api/wishlist', wishlistRouter(ctx));
+  app.use('/api/recovery', recoveryRouter(ctx));
+  // The league slice owns four path prefixes, so it mounts at /api rather than being split into four
+  // routers that would each need the same season/role helpers.
+  app.use('/api', leagueRouter(ctx));
+  app.use('/api', sandboxRouter(ctx));
+  app.use('/api', miscRouter(ctx));
 
   app.use((_req: Request, _res: Response, next: NextFunction) => next(new ApiError(404, 'NOT_FOUND', 'Route not found')));
   app.use(errorHandler(log));

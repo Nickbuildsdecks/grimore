@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Eye, EyeOff, KeyRound, Save, ShieldCheck, UserRound } from "lucide-react"
 import { toast } from "sonner"
+import { players } from "@/lib/apiClient"
 import { api, type CardResult, type Deck } from "@/lib/api"
 import { useAuth } from "@/hooks/useAuth"
 import { Button } from "@/components/ui/button"
@@ -26,7 +27,7 @@ export function Profile() {
   const { user } = useAuth()
   const qc = useQueryClient()
   const [draft, setDraft] = useState<ProfileDraft>(EMPTY)
-  const [account, setAccount] = useState({ username: "", email: "", password: "", confirmPassword: "" })
+  const [account, setAccount] = useState({ username: "", email: "", password: "", confirmPassword: "", currentPassword: "" })
   const [showPassword, setShowPassword] = useState(false)
   const [commanderPickerOpen, setCommanderPickerOpen] = useState(false)
   const profile = useQuery({ queryKey: ["profile", user?.id], queryFn: () => api.get<ProfileData>(`/api/players/${user!.id}/profile`), enabled: !!user })
@@ -58,14 +59,22 @@ export function Profile() {
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not save profile"),
   })
   const saveAccount = useMutation({
-    mutationFn: () => api.post("/api/players/account/update", { newUsername: account.username.trim(), newEmail: account.email.trim(), newPassword: account.password }),
-    onSuccess: () => { toast.success("Account credentials updated"); setAccount((current) => ({ ...current, password: "", confirmPassword: "" })); void qc.invalidateQueries({ queryKey: ["auth-status"] }); void qc.invalidateQueries({ queryKey: ["profile"] }) },
+    // v2 requires the current password for ANY credential change, not just a password one: legacy let
+    // a hijacked session move the account to another email with no re-authentication at all.
+    mutationFn: () => players.updateAccount({
+      currentPassword: account.currentPassword,
+      newUsername: account.username.trim() || undefined,
+      newEmail: account.email.trim() || undefined,
+      newPassword: account.password || undefined,
+    }),
+    onSuccess: () => { toast.success("Account credentials updated"); setAccount((current) => ({ ...current, password: "", confirmPassword: "", currentPassword: "" })); void qc.invalidateQueries({ queryKey: ["auth-status"] }); void qc.invalidateQueries({ queryKey: ["profile"] }) },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not update account"),
   })
 
   function submitAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (account.password !== account.confirmPassword) { toast.error("Passwords do not match"); return }
+    if (!account.currentPassword) { toast.error("Enter your current password to save changes"); return }
     saveAccount.mutate()
   }
 
@@ -93,7 +102,7 @@ export function Profile() {
           </form>
         </TabsContent>
         <TabsContent value="account">
-          <form onSubmit={submitAccount} className="max-w-2xl space-y-6"><div><h2 className="text-lg font-semibold">Account credentials</h2><p className="mt-1 text-sm text-muted-foreground">Update your sign-in information. Leave the password blank to keep it unchanged.</p></div><div className="grid gap-5 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="username">Username</Label><Input id="username" value={account.username} onChange={(event) => setAccount({ ...account, username: event.target.value })} autoComplete="username" required /></div><div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={account.email} onChange={(event) => setAccount({ ...account, email: event.target.value })} autoComplete="email" required /></div><div className="space-y-1.5"><Label htmlFor="password">New password</Label><div className="relative"><Input id="password" type={showPassword ? "text" : "password"} value={account.password} onChange={(event) => setAccount({ ...account, password: event.target.value })} autoComplete="new-password" className="pr-12" /><Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</Button></div></div><div className="space-y-1.5"><Label htmlFor="confirm-password">Confirm new password</Label><Input id="confirm-password" type={showPassword ? "text" : "password"} value={account.confirmPassword} onChange={(event) => setAccount({ ...account, confirmPassword: event.target.value })} autoComplete="new-password" /></div></div><Button type="submit" disabled={saveAccount.isPending || !account.username.trim() || !account.email.trim()}>{saveAccount.isPending ? "Updating…" : "Update credentials"}</Button></form>
+          <form onSubmit={submitAccount} className="max-w-2xl space-y-6"><div><h2 className="text-lg font-semibold">Account credentials</h2><p className="mt-1 text-sm text-muted-foreground">Update your sign-in information. Your current password is required for any change. Leave the new password blank to keep it unchanged.</p></div><div className="max-w-md space-y-1.5"><Label htmlFor="current-password">Current password</Label><Input id="current-password" type="password" value={account.currentPassword} onChange={(event) => setAccount({ ...account, currentPassword: event.target.value })} autoComplete="current-password" required /></div><div className="grid gap-5 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="username">Username</Label><Input id="username" value={account.username} onChange={(event) => setAccount({ ...account, username: event.target.value })} autoComplete="username" required /></div><div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={account.email} onChange={(event) => setAccount({ ...account, email: event.target.value })} autoComplete="email" required /></div><div className="space-y-1.5"><Label htmlFor="password">New password</Label><div className="relative"><Input id="password" type={showPassword ? "text" : "password"} value={account.password} onChange={(event) => setAccount({ ...account, password: event.target.value })} autoComplete="new-password" className="pr-12" /><Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</Button></div></div><div className="space-y-1.5"><Label htmlFor="confirm-password">Confirm new password</Label><Input id="confirm-password" type={showPassword ? "text" : "password"} value={account.confirmPassword} onChange={(event) => setAccount({ ...account, confirmPassword: event.target.value })} autoComplete="new-password" /></div></div><Button type="submit" disabled={saveAccount.isPending || !account.username.trim() || !account.email.trim() || !account.currentPassword}>{saveAccount.isPending ? "Updating…" : "Update credentials"}</Button></form>
         </TabsContent>
       </Tabs>
     </div>

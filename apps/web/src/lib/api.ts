@@ -1,57 +1,24 @@
-const BASE = ""
+/**
+ * Legacy untyped helper, kept for the pages not yet moved onto `apiClient`.
+ *
+ * It now delegates to the typed client so every caller shares one error path: the previous
+ * implementation did `String(data.error)` on the v2 envelope's error OBJECT, which renders as
+ * "[object Object]" — the message users actually saw on any failure from apps/api.
+ *
+ * New code should import from `@/lib/apiClient` and `@/lib/queries` instead.
+ */
+import { apiUrl, cardImage as cardImageFn, http } from "./apiClient"
 
-export class ApiError extends Error {
-  status: number
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, {
-    credentials: "include",
-    headers: init?.body ? { "Content-Type": "application/json" } : undefined,
-    ...init,
-  })
-  const text = await res.text()
-  let data: unknown = null
-  try {
-    data = text ? JSON.parse(text) : null
-  } catch {
-    data = text
-  }
-  if (!res.ok) {
-    const msg =
-      data && typeof data === "object" && "error" in data
-        ? String((data as { error: unknown }).error)
-        : `Request failed (${res.status})`
-    throw new ApiError(res.status, msg)
-  }
-  return data as T
-}
+export { ApiError } from "./apiClient"
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : "{}" }),
-  put: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : "{}" }),
-  delete: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "DELETE", body: body ? JSON.stringify(body) : undefined }),
+  get: <T>(path: string) => http.get<T>(apiUrl(path)),
+  post: <T>(path: string, body?: unknown) => http.post<T>(apiUrl(path), body),
+  put: <T>(path: string, body?: unknown) => http.put<T>(apiUrl(path), body),
+  delete: <T>(path: string, body?: unknown) => http.delete<T>(apiUrl(path), body),
 }
 
 /* ── Domain types (matching the Express API) ─────────────────────────── */
-
-export interface Player {
-  id: string
-  username: string
-  storeNickname: string
-  isAdmin: boolean
-  role: string
-  avatarUrl: string
-  profileCommander: string
-}
 
 export interface Deck {
   id: string
@@ -125,7 +92,4 @@ export interface Collection {
   total_value: number
 }
 
-export function cardImage(scryfallId?: string | null, size: "normal" | "small" = "normal") {
-  if (!scryfallId) return ""
-  return `https://cards.scryfall.io/${size}/front/${scryfallId[0]}/${scryfallId[1]}/${scryfallId}.jpg`
-}
+export const cardImage = cardImageFn

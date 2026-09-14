@@ -124,3 +124,59 @@ export type CardSearchResponse = z.infer<typeof CardSearchResponse>;
 /** GET /api/cards/autocomplete?q= */
 export const CardAutocompleteQuery = z.object({ q: z.string().trim().min(1).max(100) });
 export type CardAutocompleteQuery = z.infer<typeof CardAutocompleteQuery>;
+
+/** POST /api/cards/details-batch — resolve many names at once. */
+export const CardDetailsBatchInput = z.object({
+  names: z.array(z.string().trim().min(1).max(200)).min(1).max(200),
+});
+export type CardDetailsBatchInput = z.infer<typeof CardDetailsBatchInput>;
+
+/** GET /api/cards/versions?name= — every known printing of one card. */
+export const CardPrinting = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  set: z.string().default("???"),
+  set_name: z.string().nullable().default(null),
+  collector_number: z.string().default(""),
+  rarity: Rarity.nullable().default(null),
+  price: z.coerce.number().default(0),
+  image_uri: z.string().default(""),
+  /** Populated only once art voting has seen this printing. */
+  artist: z.string().nullable().default(null),
+  likes: z.coerce.number().int().default(0),
+  dislikes: z.coerce.number().int().default(0),
+  myVote: z.coerce.number().int().min(-1).max(1).default(0),
+});
+export type CardPrinting = z.infer<typeof CardPrinting>;
+
+/** A swipe is taste for the CARD; an art vote is taste for one PRINTING. They are deliberately split. */
+export const SwipeVote = z.union([z.literal(-1), z.literal(0), z.literal(1)]);
+export type SwipeVote = z.infer<typeof SwipeVote>;
+
+export const SwipeSource = z.enum(["discover_swipe", "card_search_swipe"]).catch("card_search_swipe");
+export type SwipeSource = z.infer<typeof SwipeSource>;
+
+export const CardSwipeInput = z.object({
+  cardName: z.string().trim().min(1).max(250),
+  vote: z.coerce.number().pipe(SwipeVote),
+  scryfallId: z.string().max(64).nullable().optional(),
+  source: SwipeSource.optional(),
+  /** The deck being brewed when the swipe happened, so one archetype does not poison another's queue. */
+  context: z.string().trim().max(100).optional(),
+});
+export type CardSwipeInput = z.infer<typeof CardSwipeInput>;
+
+export const ArtVoteSource = z.enum(["art_swipe", "art_gallery"]).catch("art_gallery");
+export type ArtVoteSource = z.infer<typeof ArtVoteSource>;
+
+export const ArtVoteInput = z.object({
+  cardName: z.string().trim().min(1).max(250),
+  vote: z.coerce.number().pipe(SwipeVote),
+  artist: z.string().trim().max(200).nullable().optional(),
+  source: z.string().max(40).optional(),
+});
+export type ArtVoteInput = z.infer<typeof ArtVoteInput>;
+
+/** Scryfall printing ids are UUIDs; a few legacy rows are shorter, so the bound is loose. */
+export const PrintingId = z.string().regex(/^[a-zA-Z0-9-]{20,64}$/, "Invalid printing id");
+export type PrintingId = z.infer<typeof PrintingId>;

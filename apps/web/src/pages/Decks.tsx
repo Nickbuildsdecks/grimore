@@ -1,12 +1,14 @@
 import { useMemo, useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+
 import { ArrowRight, Compass, Download, MoreHorizontal, Plus, Search, Trash2 } from "lucide-react"
 import {
   ScryingEye,
 } from "@/icons"
 import { toast } from "sonner"
-import { api, cardImage, type Deck } from "@/lib/api"
+import type { DeckSummary } from "@grimore/shared"
+import { cardImage } from "@/lib/apiClient"
+import { errorMessage, useDeleteDeck, useImportMoxfieldDeck, useMyDecks } from "@/lib/queries"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -19,7 +21,7 @@ import { CardArtAtmosphere, CardArtFan } from "@/components/cards/CardArtShowcas
 import { useShowcaseCards } from "@/hooks/useShowcaseCards"
 import { PageHeader } from "@/components/PageHeader"
 
-function DeckCard({ deck, onDelete }: { deck: Deck; onDelete: (deck: Deck) => void }) {
+function DeckCard({ deck, onDelete }: { deck: DeckSummary; onDelete: (deck: DeckSummary) => void }) {
   const art = cardImage(deck.commander_scryfall_id || deck.featured_scryfall_id)
   return (
     <article className="group relative min-w-0 overflow-hidden rounded-xl border border-border bg-card/85 transition-colors hover:border-primary/45">
@@ -33,14 +35,15 @@ function DeckCard({ deck, onDelete }: { deck: Deck; onDelete: (deck: Deck) => vo
           <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-card to-transparent" />
           <div className="absolute bottom-2 left-3 right-3 flex items-end justify-between gap-2">
             <Badge variant="secondary" className="max-w-[70%] truncate bg-background/85 backdrop-blur-sm">{deck.commander_name || "Choose commander"}</Badge>
-            {deck.is_public === 1 && <Badge className="bg-accent text-accent-foreground">Public</Badge>}
+            {deck.is_public && <Badge className="bg-accent text-accent-foreground">Public</Badge>}
           </div>
         </div>
         <div className="px-4 py-3 pr-12">
           <h2 className="truncate text-base font-semibold">{deck.deck_name}</h2>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
             <span className="uppercase">{deck.format || "Commander"}</span>
-            {deck.total_wins != null && <><span>•</span><span>{deck.total_wins} wins</span></>}
+            <span>•</span><span>{deck.card_count} cards</span>
+            {deck.likes_count > 0 && <><span>•</span><span>{deck.likes_count} likes</span></>}
           </p>
         </div>
       </Link>
@@ -59,36 +62,51 @@ function DeckCard({ deck, onDelete }: { deck: Deck; onDelete: (deck: Deck) => vo
 
 export function Decks() {
   const navigate = useNavigate()
-  const qc = useQueryClient()
   const [importOpen, setImportOpen] = useState(false)
   const [moxfieldUrl, setMoxfieldUrl] = useState("")
   const [query, setQuery] = useState("")
   const [sort, setSort] = useState("updated")
-  const [deleteTarget, setDeleteTarget] = useState<Deck | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DeckSummary | null>(null)
 
-  const decks = useQuery({ queryKey: ["my-decks"], queryFn: () => api.get<Deck[]>("/api/decks/my-decks") })
+  const decks = useMyDecks()
   const showcase = useShowcaseCards({
     preferred: (decks.data ?? []).map((deck) => ({ name: deck.commander_name || deck.deck_name, scryfallId: deck.commander_scryfall_id })),
     fallbackQuery: "is:commander game:paper usd<25",
     limit: 8,
   })
   const list = useMemo(() => {
-    const filtered = (decks.data ?? []).filter((deck) => `${deck.deck_name} ${deck.commander_name ?? ""} ${deck.format ?? ""}`.toLowerCase().includes(query.toLowerCase()))
-    return filtered.sort((a, b) => sort === "name" ? a.deck_name.localeCompare(b.deck_name) : sort === "wins" ? Number(b.total_wins ?? 0) - Number(a.total_wins ?? 0) : String(b.last_checked ?? "").localeCompare(String(a.last_checked ?? "")))
+    const needle = query.trim().toLowerCase()
+    const filtered = (decks.data ?? []).filter((deck) => `${deck.deck_name} ${deck.commander_name ?? ""} ${deck.format ?? ""}`.toLowerCase().includes(needle))
+    // `updated_at` comes from migration 0002 and is maintained on every write; `last_checked` only moves
+    // when prices are refreshed, so it was never a real "recently updated" ordering.
+    const updatedAt = (deck: DeckSummary) => String(deck.updated_at ?? deck.last_checked ?? "")
+    return [...filtered].sort((a, b) =>
+      sort === "name" ? a.deck_name.localeCompare(b.deck_name)
+      : sort === "likes" ? b.likes_count - a.likes_count || a.deck_name.localeCompare(b.deck_name)
+      : updatedAt(b).localeCompare(updatedAt(a)))
   }, [decks.data, query, sort])
 
-  const importDeck = useMutation({
-    mutationFn: () => api.post<{ deckId: string }>("/api/decks/register", { moxfieldUrl: moxfieldUrl.trim() }),
-    onSuccess: (data) => { toast.success("Moxfield deck imported"); setImportOpen(false); setMoxfieldUrl(""); void qc.invalidateQueries({ queryKey: ["my-decks"] }); navigate(`/builder/${data.deckId}`) },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not import deck"),
-  })
-  const deleteDeck = useMutation({
-    mutationFn: (id: string) => api.delete(`/api/decks/${id}`),
-    onSuccess: () => { toast.success("Deck deleted"); setDeleteTarget(null); void qc.invalidateQueries({ queryKey: ["my-decks"] }) },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not delete deck"),
-  })
+  // Moxfield import is not ported to apps/api yet, so this one still reaches server.js (see apiClient).
+  const importDeck = useImportMoxfieldDeck()
+  const deleteDeck = useDeleteDeck()
 
-  function submitImport(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (moxfieldUrl.trim()) importDeck.mutate() }
+  function submitImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const url = moxfieldUrl.trim()
+    if (!url) return
+    importDeck.mutate(url, {
+      onSuccess: (data) => { toast.success("Moxfield deck imported"); setImportOpen(false); setMoxfieldUrl(""); navigate(`/builder/${data.deckId}`) },
+      onError: (error) => toast.error(errorMessage(error, "Could not import deck")),
+    })
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return
+    deleteDeck.mutate(deleteTarget.id, {
+      onSuccess: () => { toast.success("Deck deleted"); setDeleteTarget(null) },
+      onError: (error) => toast.error(errorMessage(error, "Could not delete deck")),
+    })
+  }
   const hasDecks = (decks.data?.length ?? 0) > 0
 
   return (
@@ -107,7 +125,7 @@ export function Decks() {
         <>
           <div className="ui-toolbar flex-col sm:flex-row">
             <div className="relative flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="pl-9" placeholder="Search decks or commanders" aria-label="Search your decks" /></div>
-            <Select value={sort} onValueChange={setSort}><SelectTrigger className="w-full sm:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="updated">Recently updated</SelectItem><SelectItem value="name">Deck name</SelectItem><SelectItem value="wins">Most wins</SelectItem></SelectContent></Select>
+            <Select value={sort} onValueChange={setSort}><SelectTrigger className="w-full sm:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="updated">Recently updated</SelectItem><SelectItem value="name">Deck name</SelectItem><SelectItem value="likes">Most liked</SelectItem></SelectContent></Select>
           </div>
           {list.length ? <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{list.map((deck) => <DeckCard key={deck.id} deck={deck} onDelete={setDeleteTarget} />)}</div> : <p className="py-16 text-center text-muted-foreground">No decks match “{query}”.</p>}
         </>
@@ -129,7 +147,7 @@ export function Decks() {
       )}
 
       <Dialog open={importOpen} onOpenChange={setImportOpen}><DialogContent><DialogHeader><DialogTitle>Import from Moxfield</DialogTitle><DialogDescription>Paste a public Moxfield deck URL. Grimore imports the commander, cards, prices, and settings.</DialogDescription></DialogHeader><form onSubmit={submitImport} className="space-y-4"><div className="space-y-1.5"><Label htmlFor="moxfield-url">Moxfield deck URL</Label><Input id="moxfield-url" type="url" value={moxfieldUrl} onChange={(event) => setMoxfieldUrl(event.target.value)} placeholder="https://www.moxfield.com/decks/…" required /></div><Button type="submit" className="w-full" disabled={!moxfieldUrl.trim() || importDeck.isPending}>{importDeck.isPending ? "Importing…" : "Import deck"}</Button></form></DialogContent></Dialog>
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}><DialogContent><DialogHeader><DialogTitle>Delete {deleteTarget?.deck_name}?</DialogTitle><DialogDescription>This permanently removes the deck and its saved card list.</DialogDescription></DialogHeader><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button><Button variant="destructive" disabled={deleteDeck.isPending} onClick={() => deleteTarget && deleteDeck.mutate(deleteTarget.id)}>{deleteDeck.isPending ? "Deleting…" : "Delete deck"}</Button></div></DialogContent></Dialog>
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}><DialogContent><DialogHeader><DialogTitle>Delete {deleteTarget?.deck_name}?</DialogTitle><DialogDescription>This permanently removes the deck and its saved card list.</DialogDescription></DialogHeader><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button><Button variant="destructive" disabled={deleteDeck.isPending} onClick={confirmDelete}>{deleteDeck.isPending ? "Deleting…" : "Delete deck"}</Button></div></DialogContent></Dialog>
     </div>
   )
 }

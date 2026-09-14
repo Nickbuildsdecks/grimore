@@ -17,7 +17,7 @@ import {
   SpellSearch,
   Spellbook,
 } from "@/icons"
-import { api } from "@/lib/api"
+import { social } from "@/lib/apiClient"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/hooks/useAuth"
 import { AmbientCanvas } from "@/components/AmbientCanvas"
@@ -43,27 +43,19 @@ const NAV = [
 
 const MOBILE_NAV = NAV.filter((item) => ["/discover", "/decks", "/search", "/life"].includes(item.to))
 
-interface Notification {
-  id: string
-  title?: string
-  message?: string
-  type?: string
-  read_status?: number
-  created_at?: string
-}
-
 function NotificationsButton({ compact = false }: { compact?: boolean }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const notifications = useQuery({
     queryKey: ["notifications"],
-    queryFn: () => api.get<Notification[]>("/api/notifications"),
+    queryFn: () => social.notifications({ limit: 20 }),
   })
   const markRead = useMutation({
-    mutationFn: (id: string) => api.post("/api/notifications/read", { id }),
+    // notifications.id is the schema's integer serial, not a text id.
+    mutationFn: (id: number) => social.markNotificationRead({ id }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["notifications"] }),
   })
-  const unread = (notifications.data ?? []).filter((item) => item.read_status !== 1).length
+  const unread = notifications.data?.unreadCount ?? 0
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -96,7 +88,7 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
             </div>
           ) : notifications.isError ? (
             <p className="rounded-xl bg-destructive/10 p-4 text-sm text-destructive">Notifications could not be loaded.</p>
-          ) : (notifications.data ?? []).length === 0 ? (
+          ) : (notifications.data?.items.length ?? 0) === 0 ? (
             <div className="py-16 text-center">
               <Bell className="mx-auto size-8 text-muted-foreground" />
               <p className="mt-3 font-semibold">You’re all caught up</p>
@@ -104,18 +96,18 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
             </div>
           ) : (
             <ul className="space-y-1">
-              {(notifications.data ?? []).map((item) => (
+              {(notifications.data?.items ?? []).map((item) => (
                 <li key={item.id}>
                   <button
                     type="button"
                     className={cn(
                       "w-full rounded-xl px-4 py-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      item.read_status !== 1 && "bg-primary/8"
+                      !item.is_read && "bg-primary/8"
                     )}
-                    onClick={() => item.read_status !== 1 && markRead.mutate(item.id)}
+                    onClick={() => !item.is_read && markRead.mutate(item.id)}
                   >
                     <span className="flex items-start gap-3">
-                      <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", item.read_status !== 1 ? "bg-primary" : "bg-muted-foreground/30")} />
+                      <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", !item.is_read ? "bg-primary" : "bg-muted-foreground/30")} />
                       <span className="min-w-0">
                         <strong className="block text-sm">{item.title || item.type || "Grimore update"}</strong>
                         {item.message && <span className="mt-0.5 block text-sm text-muted-foreground">{item.message}</span>}
@@ -167,8 +159,8 @@ function MobileMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open
         <div className="border-t border-border p-3">
           <SheetClose asChild>
             <NavLink to="/profile" className="flex min-h-12 items-center gap-3 rounded-xl px-3 font-medium hover:bg-accent/60">
-              {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="size-8 rounded-full object-cover" /> : <UserRound className="size-5" />}
-              <span className="min-w-0 flex-1 truncate">{user?.storeNickname || user?.username || "Profile & settings"}</span>
+              {user?.avatar_url ? <img src={user.avatar_url} alt="" className="size-8 rounded-full object-cover" /> : <UserRound className="size-5" />}
+              <span className="min-w-0 flex-1 truncate">{user?.store_nickname || user?.username || "Profile & settings"}</span>
             </NavLink>
           </SheetClose>
           <button type="button" onClick={() => void logout()} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
@@ -234,8 +226,8 @@ export function AppShell() {
           <div className="app-sidebar-footer space-y-0.5 border-t border-sidebar-border px-2 pt-2">
             <NotificationsButton compact={collapsed} />
             <NavLink to="/profile" aria-label={collapsed ? "Profile and settings" : undefined} className={({ isActive }) => cn("app-sidebar-link flex min-h-10 items-center gap-3 rounded-[10px] px-3 text-[0.9rem] font-medium text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground", collapsed && "min-h-11 justify-center px-0", isActive && "is-active bg-primary/10 text-foreground")}>
-              {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="size-8 shrink-0 rounded-full object-cover" /> : <UserRound className="size-5 shrink-0" />}
-              {!collapsed && <span className="min-w-0 flex-1 truncate">{user?.storeNickname || user?.username || "Profile"}</span>}
+              {user?.avatar_url ? <img src={user.avatar_url} alt="" className="size-8 shrink-0 rounded-full object-cover" /> : <UserRound className="size-5 shrink-0" />}
+              {!collapsed && <span className="min-w-0 flex-1 truncate">{user?.store_nickname || user?.username || "Profile"}</span>}
             </NavLink>
             <button type="button" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} className={cn("app-sidebar-link flex min-h-10 w-full items-center gap-3 rounded-[10px] px-3 text-[0.9rem] font-medium text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground", collapsed && "min-h-11 justify-center px-0")}>
               {collapsed ? <ChevronRight className="size-5 shrink-0" /> : <ChevronLeft className="size-5 shrink-0" />}
