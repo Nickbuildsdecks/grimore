@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { ApiError, apiClient, apiUrl, buyLink, cardImage, http, legacyUrl } from "./apiClient"
+import {
+  ApiError, apiClient, apiUrl, buyLink, cardImage, cards, collections, http, league, legacyUrl, players, social,
+} from "./apiClient"
 
 /** Minimal fetch stub: records the call and replies with the given status/body. */
 function stubFetch(status: number, body: unknown, opts: { text?: string } = {}) {
@@ -138,5 +140,56 @@ describe("link builders", () => {
     const link = buyLink("Sol Ring")
     expect(link.startsWith("https://partner.tcgplayer.com/xJoE0d?u=")).toBe(true)
     expect(decodeURIComponent(link.split("?u=")[1])).toContain("q=Sol%20Ring")
+  })
+})
+
+describe("the ported surface", () => {
+  it("reads the discover feed from GET /api/decks, not the legacy /api/decks/discover", async () => {
+    const calls = stubFetch(200, { items: [], meta: {} })
+    await apiClient.decks.discover({ sort: "popular" })
+    // Legacy had a separate /api/decks/discover returning a bare array; v2 paginates from /api/decks.
+    expect(calls[0].url).toBe(apiUrl("/api/decks?sort=popular"))
+    expect(calls[0].url).not.toContain("/discover")
+  })
+
+  it("asks for notifications with a limit and reads the counted envelope", async () => {
+    const calls = stubFetch(200, { items: [], unreadCount: 3 })
+    const r = await social.notifications({ limit: 20 })
+    expect(calls[0].url).toBe(apiUrl("/api/notifications?limit=20"))
+    // v2 answers { items, unreadCount }; legacy returned a bare array and the client counted unread
+    // itself, using a `read_status` column that does not exist on Postgres.
+    expect(r.unreadCount).toBe(3)
+  })
+
+  it("marks one notification read by its integer id", async () => {
+    const calls = stubFetch(200, { success: true, updated: 1 })
+    await social.markNotificationRead({ id: 42 })
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ id: 42 })
+  })
+
+  it("sends the current password on every credential change", async () => {
+    const calls = stubFetch(200, { success: true })
+    await players.updateAccount({ currentPassword: "hunter2", newEmail: "new@example.com" })
+    const body = JSON.parse(String(calls[0].init?.body))
+    // v2 requires it for ANY change: legacy let a hijacked session move the account to another email
+    // with no re-authentication at all.
+    expect(body.currentPassword).toBe("hunter2")
+    expect(body.newEmail).toBe("new@example.com")
+  })
+
+  it("addresses a collection card by an explicit key object", async () => {
+    const calls = stubFetch(200, { success: true, removed: false })
+    await collections.updateCard("col_1", { card_name: "Sol Ring", foil: false }, { quantity: 3 })
+    const body = JSON.parse(String(calls[0].init?.body))
+    // Legacy sent loose top-level fields and overwrote every column, so an omitted field was reset.
+    expect(body).toEqual({ key: { card_name: "Sol Ring", foil: false }, changes: { quantity: 3 } })
+  })
+
+  it("routes league and card reads at apps/api", async () => {
+    const calls = stubFetch(200, [])
+    await league.standings("season_1")
+    await cards.versions("Sol Ring")
+    expect(calls[0].url).toBe(apiUrl("/api/leaderboards/season?seasonId=season_1"))
+    expect(calls[1].url).toBe(apiUrl("/api/cards/versions?name=Sol+Ring"))
   })
 })

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CalendarDays, CheckCircle2, LogOut, Swords, Users } from "lucide-react"
 import { PrizeChalice } from "@/icons"
 import { toast } from "sonner"
+import { league, players } from "@/lib/apiClient"
 import { api, type Deck, type Season } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -16,8 +17,6 @@ import { useAuth } from "@/hooks/useAuth"
 
 interface LeaderboardRow { player_id?: string; store_nickname?: string; total_points?: number; total_wins?: number; total_kills?: number; total_matches?: number }
 interface RosterStatus { checkedIn: boolean; deckId: string | null }
-interface MatchPlayer { player_id: string; store_nickname: string; deck_name?: string; kills?: number; placed_first?: number }
-interface ActiveMatch { hasActiveMatch: boolean; roundNum?: number; completed?: boolean; podId?: string; podLabel?: number; players?: MatchPlayer[] }
 
 export function Events() {
   const qc = useQueryClient()
@@ -27,13 +26,13 @@ export function Events() {
   const leaderboard = useQuery({ queryKey: ["season-leaderboard"], queryFn: () => api.get<LeaderboardRow[]>("/api/leaderboards/season"), enabled: !!season.data })
   const roster = useQuery({ queryKey: ["roster-status"], queryFn: () => api.get<RosterStatus>("/api/roster/status") })
   const decks = useQuery({ queryKey: ["my-decks"], queryFn: () => api.get<Deck[]>("/api/decks/my-decks") })
-  const match = useQuery({ queryKey: ["active-match"], queryFn: () => api.get<ActiveMatch>("/api/players/active-match"), enabled: !!season.data, refetchInterval: 30000 })
+  const match = useQuery({ queryKey: ["active-match"], queryFn: () => players.activeMatch(), enabled: !!season.data, refetchInterval: 30000 })
 
   useEffect(() => { if (roster.data?.deckId) setSelectedDeck(roster.data.deckId) }, [roster.data])
 
   const join = useMutation({ mutationFn: (seasonId: string) => api.post(`/api/seasons/${seasonId}/register`), onSuccess: () => { toast.success("Registered for the season"); void qc.invalidateQueries({ queryKey: ["season-leaderboard"] }) }, onError: (error) => toast.error(error instanceof Error ? error.message : "Could not register") })
   const checkIn = useMutation({ mutationFn: () => api.post("/api/roster/checkin", { deckId: selectedDeck }), onSuccess: () => { toast.success("Checked in and ready for pairings"); void qc.invalidateQueries({ queryKey: ["roster-status"] }) }, onError: (error) => toast.error(error instanceof Error ? error.message : "Could not check in") })
-  const checkOut = useMutation({ mutationFn: () => api.post("/api/roster/checkout"), onSuccess: () => { toast.success("Checked out"); setSelectedDeck(""); void qc.invalidateQueries({ queryKey: ["roster-status"] }) }, onError: (error) => toast.error(error instanceof Error ? error.message : "Could not check out") })
+  const checkOut = useMutation({ mutationFn: () => league.checkOut(), onSuccess: () => { toast.success("Checked out"); setSelectedDeck(""); void qc.invalidateQueries({ queryKey: ["roster-status"] }) }, onError: (error) => toast.error(error instanceof Error ? error.message : "Could not check out") })
 
   const s = season.data
   const name = s?.name ?? s?.season_name ?? "Commander League"

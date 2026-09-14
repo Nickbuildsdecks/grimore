@@ -7,25 +7,13 @@ import {
   Spellbook,
 } from "@/icons"
 import { toast } from "sonner"
+import { apiClient } from "@/lib/apiClient"
+import { queryKeys } from "@/lib/queries"
 import { api, cardImage } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SwipeStack } from "@/components/cards/SwipeStack"
 import { useShowcaseCards, showcaseImage, type ShowcaseCard } from "@/hooks/useShowcaseCards"
-
-interface DiscoverDeck {
-  id: string
-  deckName: string
-  creatorName: string
-  price?: number
-  likes: number
-  clones: number
-  hasLiked: boolean
-  commanderName: string
-  commanderScryfallId: string | null
-  tags: string[]
-  customTags: string[]
-}
 
 type FeedMode = "cards" | "decks"
 
@@ -39,7 +27,13 @@ export function Discover() {
   const [mode, setMode] = useState<FeedMode>("cards")
   const [sort, setSort] = useState<"recent" | "trending">("trending")
 
-  const decks = useQuery({ queryKey: ["discover", sort], queryFn: () => api.get<DiscoverDeck[]>(`/api/decks/discover?sort=${sort}`) })
+  // v2 serves the discover feed from GET /api/decks with real pagination; legacy had a separate
+  // /api/decks/discover that returned a bare array.
+  const decks = useQuery({
+    queryKey: queryKeys.decks.discover({ sort: sort as "newest" | "popular" | "likes" }),
+    queryFn: () => apiClient.decks.discover({ sort: sort as "newest" | "popular" | "likes", limit: 60 }),
+    select: (page) => page.items,
+  })
   const followedArtists = useQuery({ queryKey: ["followed-artists"], queryFn: () => api.get<{ name: string }[]>("/api/artists/followed") })
   const followedArtist = followedArtists.data?.[0]?.name
   const showcase = useShowcaseCards({ fallbackQuery: followedArtist ? `artist:"${followedArtist.replaceAll('"', "")}" game:paper` : "is:commander game:paper", limit: 24 })
@@ -110,13 +104,13 @@ export function Discover() {
           items={communityDecks}
           getKey={(deck) => deck.id}
           ariaLabel="Community deck discovery stack"
-          onAccept={(deck) => { if (!deck.hasLiked) likeDeck.mutate(deck.id) }}
+          onAccept={(deck) => { if (!deck.has_liked) likeDeck.mutate(deck.id) }}
           onReject={() => undefined}
           onInspect={(deck) => navigate(`/discover/${deck.id}`)}
           acceptLabel="Like this deck"
           rejectLabel="Pass on this deck"
           inspectLabel="Inspect deck details"
-          renderItem={(deck) => <div className="discovery-deck-face">{deck.commanderScryfallId ? <img src={artCrop(deck.commanderScryfallId)} alt="" draggable={false} /> : <img src="/logo.svg?v=mythic" alt="" className="discovery-deck-placeholder" />}<div className="discovery-deck-shade" /><div className="discovery-deck-meta"><span>{deck.commanderName || "Commander deck"}</span><h2>{deck.deckName}</h2><p>by {deck.creatorName}</p><dl><div><dt>Likes</dt><dd>{deck.likes}</dd></div><div><dt>Copies</dt><dd>{deck.clones}</dd></div>{typeof deck.price === "number" && <div><dt>Value</dt><dd>${deck.price.toFixed(0)}</dd></div>}</dl><Button variant="secondary" onClick={(event) => { event.stopPropagation(); cloneDeck.mutate(deck.id) }} disabled={cloneDeck.isPending}><Copy /> Copy deck</Button></div></div>}
+          renderItem={(deck) => <div className="discovery-deck-face">{deck.commander_scryfall_id ? <img src={artCrop(deck.commander_scryfall_id)} alt="" draggable={false} /> : <img src="/logo.svg?v=mythic" alt="" className="discovery-deck-placeholder" />}<div className="discovery-deck-shade" /><div className="discovery-deck-meta"><span>{deck.commander_name || "Commander deck"}</span><h2>{deck.deck_name}</h2><p>by {deck.creator_name}</p><dl><div><dt>Likes</dt><dd>{deck.likes_count}</dd></div><div><dt>Copies</dt><dd>{deck.clones_count}</dd></div>{typeof deck.cheapest_total_price === "number" && <div><dt>Value</dt><dd>${deck.cheapest_total_price.toFixed(0)}</dd></div>}</dl><Button variant="secondary" onClick={(event) => { event.stopPropagation(); cloneDeck.mutate(deck.id) }} disabled={cloneDeck.isPending}><Copy /> Copy deck</Button></div></div>}
         />
       ) : (
         <div className="swipe-stack-complete discovery-decks-empty"><Spellbook /><h2>No community decks are in the stack yet.</h2><p>Publish the first list, then it becomes swipeable for everyone.</p><Button asChild><Link to="/builder/new">Build the first deck</Link></Button></div>

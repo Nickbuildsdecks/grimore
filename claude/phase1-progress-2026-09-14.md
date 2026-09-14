@@ -671,3 +671,52 @@ Input uses a strict enum now. *(Caught by the test, not by reading the code.)*
 `global.mtgjsonSyncStatus`, which is per-process and wrong behind more than one instance. The sync
 itself also downloads from mtgjson.com, which is not reachable here. Needs a role-based rewrite and a
 job runner — its own piece of work.
+
+---
+
+# Wave 8 — web cutover (`apps/web`)
+
+The typed client extended to cover **every ported route**, and the remaining pages moved onto it.
+6 new tests; web suite 19 -> 25, workspace 304 -> 310. No API changes.
+
+## What the typecheck caught
+
+Pointing `apps/web` at the contracts turned three silent drifts into compile errors:
+
+1. **`Discover` read camelCase fields that do not exist.** `deck.deckName`, `creatorName`,
+   `commanderScryfallId`, `commanderName`, `hasLiked`, `likes`, `clones`, `price` — the legacy
+   `/api/decks/discover` returned a camelCase shape, while the database, both servers and the
+   `DeckSummary` contract are snake_case. Every one of those would have rendered `undefined`.
+2. **`AppShell` counted unread notifications with `item.read_status !== 1`.** That column does not
+   exist on Postgres (it is `is_read`), so the badge counted every notification as unread. v2 returns
+   `unreadCount` from the server, so the client no longer counts at all.
+3. **`Discover` called `/api/decks/discover`**, which v2 does not serve — the discover feed is
+   `GET /api/decks` with `{ items, meta }` pagination.
+
+None of these would have failed a build before the contracts were shared; they would have shipped and
+rendered blanks.
+
+## The security change reaches the UI
+
+`POST /api/players/account/update` now requires the current password for **any** credential change
+(Wave 4 / PR #6). The Profile account form has a "Current password" field, required, leading the
+form — and the submit button stays disabled without it. That is the visible half of closing the
+account-takeover path.
+
+## Client surface
+
+`apiClient` now exposes typed groups for cards, decks, collections, players, social, wishlist,
+recovery, league and misc — every route ported across waves 1-7, with response types taken from
+`@grimore/shared` rather than hand-written per page.
+
+## `legacyUrl()` callers: 3 remaining
+
+Per D4, `legacyUrl()` having no callers is the definition of done for the port. What is left:
+
+| Call | Blocked on |
+| --- | --- |
+| `/api/auth/forgot-password` | email delivery |
+| `/api/auth/reset-password` | email delivery |
+| `/api/decks/register` (Moxfield import) | `api.moxfield.com` unreachable |
+
+All three are on the open-questions list rather than being work anyone can just do.
