@@ -43,6 +43,7 @@ import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
 import { isAdmin, requireAuth, sessionPlayerId } from '../lib/auth.js';
 import { validateDeckLegality } from '../lib/legality.js';
+import { tagDeck } from '@grimore/auto-tagger';
 
 interface DeckRow {
   id: string;
@@ -534,6 +535,65 @@ export function decksRouter(ctx: AppContext): Router {
         throw err;
       }
       res.json({ success: true });
+    }),
+  );
+
+  // ── Auto-tagging ────────────────────────────────────────────────────────────────────────────────
+  /**
+   * Re-tags every card in a deck by what it DOES, per directives/auto_tagging_engine.md.
+   *
+   * The rules live in @grimore/auto-tagger as pure functions, so they are unit-tested directly
+   * (26 cases covering the directive's exclusions) rather than only reachable through this route
+   * against a live deck, which is how the legacy 166-line inline implementation worked.
+   *
+   * Legacy also fetched Scryfall's Tagger per card at roughly 1.5s each -- one to two minutes for a
+   * Commander deck -- and then discarded the result, because its categoriser ignored the tags
+   * argument entirely. Nothing here leaves the database.
+   */
+  r.post(
+    '/:deckId/autotag',
+    requireAuth,
+    wrap(async (req, res) => {
+      const deckId = Id.parse(req.params.deckId);
+      const playerId = sessionPlayerId(req);
+      const result = await withTransaction(pool, async (client) => {
+        await loadOwnedDeck(client, deckId, playerId, true);
+        const cards = await client.query(
+          `SELECT dc.id, dc.card_name,
+                  COALESCE(dc.type_line, sc.type_line) AS type_line,
+                  COALESCE(sc.oracle_text, '') AS oracle_text
+           FROM deck_cards dc
+           LEFT JOIN LATERAL (
+             SELECT s.type_line, s.oracle_text FROM scryfall_cards s
+             WHERE LOWER(s.name) = LOWER(dc.card_name)
+             ORDER BY s.price ASC NULLS LAST LIMIT 1
+           ) sc ON TRUE
+           WHERE dc.deck_id = $1
+           ORDER BY dc.id`,
+          [deckId],
+        );
+        if (cards.rowCount === 0) return { count: 0, tagged: [] as { name: string; tags: string[] }[] };
+
+        const tagged = tagDeck(
+          cards.rows.map((c) => ({
+            name: String(c.card_name),
+            typeLine: c.type_line as string | null,
+            oracleText: c.oracle_text as string | null,
+          })),
+        );
+        // One UPDATE ... FROM (VALUES ...) instead of a statement per card: legacy issued one UPDATE
+        // per card, keyed on card_name, which also rewrote every duplicate printing of that name.
+        const values = cards.rows.map((row, i) => `($${i * 2 + 1}::int, $${i * 2 + 2}::text)`).join(', ');
+        const params = cards.rows.flatMap((row, i) => [row.id, JSON.stringify(tagged[i].tags)]);
+        await client.query(
+          `UPDATE deck_cards dc SET custom_tag = v.tag
+           FROM (VALUES ${values}) AS v(id, tag)
+           WHERE dc.id = v.id`,
+          params,
+        );
+        return { count: tagged.length, tagged };
+      });
+      res.json({ success: true, count: result.count, cards: result.tagged });
     }),
   );
 

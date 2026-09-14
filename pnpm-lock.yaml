@@ -56,6 +56,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@grimore/auto-tagger':
+        specifier: workspace:*
+        version: link:../../packages/auto-tagger
       '@grimore/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -224,6 +227,15 @@ importers:
       vite:
         specifier: ^8.1.1
         version: 8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.4)(jiti@2.7.0)(lightningcss@1.33.0)
+
+  packages/auto-tagger:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@24.13.4)(jiti@2.7.0)(lightningcss@1.33.0)

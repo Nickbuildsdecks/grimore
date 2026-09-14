@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@grimore/auto-tagger": "workspace:*",
     "@grimore/db": "workspace:*",
     "@grimore/shared": "workspace:*",
     "bcryptjs": "^2.4.3",

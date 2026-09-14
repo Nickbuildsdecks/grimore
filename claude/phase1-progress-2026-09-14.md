@@ -720,3 +720,58 @@ Per D4, `legacyUrl()` having no callers is the definition of done for the port. 
 | `/api/decks/register` (Moxfield import) | `api.moxfield.com` unreachable |
 
 All three are on the open-questions list rather than being work anyone can just do.
+
+---
+
+# Wave 9 — auto-tagging engine (`packages/auto-tagger`)
+
+A new package implementing `directives/auto_tagging_engine.md` as pure functions, plus the
+`POST /api/decks/:deckId/autotag` route on top of it. 26 package tests + 5 route tests; workspace
+310 -> 341. Port status: **98 of 126 legacy routes**.
+
+## Why a package rather than another route file
+
+Legacy's `categorizeCardByTags` is 166 lines inline in `server.js`, reachable only through an HTTP
+route against a live deck — so none of the directive's rules had ever been tested. As pure functions
+over `{ name, typeLine, oracleText }` the whole rule set is directly testable, and the 26 cases now
+assert each exclusion the directive states:
+
+- fetch lands are `Lands` only — never `Utility Lands`, and never `Tutors` despite their
+  "search your library" text;
+- basics are never `Ramp`;
+- a board wipe is never `Single Target Removal`;
+- reanimation is never `Blink & ETB`;
+- a self-protecting threat (Koma, Carnage Tyrant) is a `Wincon`, never team `Protection`;
+- `Unique` survives only when nothing else matched;
+- a combo tags its pieces only when **every** piece is in the deck.
+
+`Counters & Triggers` and `Artifact Engine` are deliberately absent — CLAUDE.md removed them, and the
+directive's mention of them predates that.
+
+## Two rules the tests caught
+
+Both were brittle substring matching in my first pass:
+
+- Stax missed `"each player can't cast"` because the needle list only had `"players can't"`.
+- Card Advantage missed `"draws cards"` because the list had `"draw cards"`.
+
+Both are patterns now rather than fixed substrings — oracle text varies the same effect across person
+and number, and a needle list silently misses half the variants.
+
+## Legacy bugs fixed in the route
+
+- **A per-card Scryfall Tagger fetch that was then discarded.** Legacy fetched Scryfall's Tagger at
+  roughly 1.5s per card — one to two minutes for a Commander deck — and passed the result into a
+  categoriser that ignores its `tags` argument entirely. Nothing here leaves the database.
+- **Tagging one deck rewrote every deck's copy of the card.** The UPDATE was keyed on `card_name`
+  alone, so re-tagging deck A overwrote the hand-written tags on the same card in deck B. It is keyed
+  on the row id now, in one `UPDATE ... FROM (VALUES ...)` rather than a statement per card. A test
+  holds this.
+- No ownership check beyond the initial deck lookup, and no transaction.
+
+## `suggestions` is not portable
+
+`GET /api/decks/:deckId/suggestions` reads EDHREC (`json.edhrec.com`), which is blocked here alongside
+Scryfall and Moxfield. It also has a latent bug worth fixing whenever it is ported: **`playerId` is
+never defined in the handler's scope**, so the cache-hit path throws `ReferenceError` — meaning the
+6-hour suggestion cache has never successfully served a request.
