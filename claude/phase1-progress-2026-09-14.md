@@ -573,3 +573,52 @@ legacy `public/sandbox.html` working after cutover; or (b) declare them supersed
 onto sockets. Question raised with Nick.
 
 `/api/sandbox/ai-advisor` also stays un-ported: it needs Gemini, which is blocked (D5).
+
+---
+
+# Wave 6 — long tail (`apps/api/src/routes/misc.ts`)
+
+Followed illustrators (2), preference events (1), semantic search (1), price movers (1) and the
+affiliate config (1) = 6 routes, plus migration `0011_price_movers.sql`. 10 new tests; api suite
+171 -> 181, workspace 284 -> 294. Port status: **92 of 126 legacy routes**.
+
+## The affiliate id was wrong
+
+`/api/config/affiliates` fell back to `'grimore'` when `TCGPLAYER_AFFILIATE_ID` was unset. CLAUDE.md
+requires every purchase link to carry **`xJoE0d`**, so an unset environment variable silently broke
+affiliate attribution across the whole product — and nothing would have surfaced it, because the
+response still looked well-formed. `xJoE0d` is the default now, and a test holds it.
+
+## Other legacy bugs fixed
+
+- **`price_movers` does not exist** in the baseline, so `/api/movers` raises. 0011 creates it. Nothing
+  populates it yet: it is a materialised view of recent price change and needs a scheduled job that
+  diffs `card_price_cache` against the previous run — marked `TODO(price-mover-job)`. Deliberately not
+  computed per request, which is why legacy read a table rather than running a query.
+- **Semantic search was a demo.** It carried hard-coded branches matching literal phrases — one of them
+  tests for "green" together with "smothering tithe" — before falling through to a generic keyword AND.
+  The special cases are gone in favour of a real keyword search across name, type line and oracle text,
+  **ranked by where the match landed**: a name hit scores 4, a type hit 2, a rules-text hit 1. That
+  ranking is what makes a natural-language query feel like it understood the question, and it is what
+  the hard-coded branches were faking.
+- Legacy registered `/api/search/semantic` **twice**; Express takes the first, so the second was dead
+  code — the same duplication found in the draft routes.
+- The artist-follow printing cache now validates that the image URL is on Scryfall's CDN at the schema
+  level, so a follow cannot be used to store an arbitrary URL. Legacy checked this inline and only on
+  one of the two paths.
+
+## Remaining after this wave (34 routes)
+
+| Group | Routes | Why not yet |
+| --- | --- | --- |
+| Sandbox rooms | 4 | Duplicates `apps/realtime`; product decision pending (see Wave 5). |
+| Moxfield import (`register`, `import-account`) | 2 | `api.moxfield.com` blocked. |
+| `decks/:id/share`, `cards/recommendations` | 2 | Scryfall blocked / recommender engine. |
+| `decks/:id/autotag`, `decks/:id/suggestions` | 2 | Auto-tagging engine (`directives/auto_tagging_engine.md`). |
+| `sandbox/ai-advisor` | 1 | Gemini blocked. |
+| Admin (`players/list`, `players/:id/role`, `admin/sync-mtgjson` x2) | 4 | Admin surface; wants its own auth review. |
+| `seasons/:id/meta`, `seasons/:id/matrix`, `players/active-match` | 3 | League analytics. |
+| `jobs/:jobId`, `health` | 2 | `/healthz` and `/readyz` already exist in `apps/api`. |
+| `auth/guest`, `auth/google`, `auth/forgot-password`, `auth/reset-password` | 4 | Need verified tokens / email delivery. |
+| Legacy duplicates and dead routes | ~2 | `/api/dev/git-*` — see D8, needs sign-off to delete. |
+| Assorted deck/collection variants already superseded | ~8 | Covered by the ported equivalents. |
