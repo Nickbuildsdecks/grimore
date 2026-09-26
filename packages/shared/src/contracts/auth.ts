@@ -98,6 +98,21 @@ export const MePlayer = PublicPlayer.extend({
 });
 export type MePlayer = z.infer<typeof MePlayer>;
 
+/**
+ * POST /api/auth/google — one of the two proofs GIS can produce, never both required.
+ * `credential` is an ID token (One Tap / renderButton); `accessToken` comes from the popup token
+ * client. Nothing else is accepted: an identity is never built from a client-supplied email or id.
+ */
+export const GoogleSignInInput = z
+  .object({
+    credential: z.string().min(1).optional(),
+    accessToken: z.string().min(1).optional(),
+  })
+  .refine((v) => Boolean(v.credential || v.accessToken), {
+    message: "A Google credential or access token is required.",
+  });
+export type GoogleSignInInput = z.infer<typeof GoogleSignInInput>;
+
 /** GET /api/auth/status and GET /api/auth/me */
 export const AuthStatus = z.discriminatedUnion("loggedIn", [
   z.object({

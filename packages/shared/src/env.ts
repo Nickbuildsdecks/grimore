@@ -41,6 +41,13 @@ export const envSchema = z
     REDIS_URL: z.string().url(),
     SESSION_SECRET: z.string().min(1),
     SOCKET_ALLOWED_ORIGINS: commaList,
+    // Google sign-in. With no GOOGLE_CLIENT_ID the route is served but refuses every credential,
+    // because a token cannot be checked against an audience that was never configured.
+    GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+    // Verified Google addresses that resolve to the `p_admin` account, exact match only. Legacy
+    // hard-coded two personal addresses as the default; committing an identity-to-admin grant to
+    // source is not something to carry forward, so this is configuration-only and empty by default.
+    ADMIN_GOOGLE_EMAILS: commaList,
     STRIPE_SECRET_KEY: z.string().min(1).optional(),
     STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
     STRIPE_PRICE_ID: z.string().min(1).optional(),

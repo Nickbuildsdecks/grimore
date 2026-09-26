@@ -923,3 +923,64 @@ for real users. Moving that client onto the Socket.IO path is its own piece of w
 - The sandbox room-code exposure is live until Play Realm moves to `apps/realtime`. Widening the
   code space in `server.js` is a cheap, client-compatible stopgap if that shouldn't wait.
 - **Still unanswered:** sign-off to delete `/api/dev/git-commit` and `/api/dev/git-push` (D8).
+
+## Checkpoint — Google sign-in ported (`POST /api/auth/google`)
+
+Nick confirmed Google is already configured on his side, so this ports the route rather than
+standing up the integration. `apps/api/src/lib/googleIdentity.ts` holds verification;
+`routes/auth.ts` holds account resolution. Port status: **99 of 126 legacy routes.**
+
+### The split, and why the tests look asymmetric
+
+Verification is a call out to Google and no test can mint a token Google will sign for a real
+client id, so it sits behind a `GoogleVerifier` interface that tests replace. Account resolution is
+ordinary database work and runs against live Postgres like every other slice.
+
+The half that cannot be faked is still tested for real: `googleIdentity.test.ts` drives the actual
+verifier against Google's live endpoints (both are reachable from here, unlike Scryfall) and
+asserts every rejection path, including a **syntactically valid, self-signed JWT** carrying claims
+we would otherwise accept. A verifier that wrongly accepts is an account takeover; one that wrongly
+rejects is a failed login. The rejection half is the half that matters.
+
+### Three things tightened relative to legacy
+
+1. **An absent `email_verified` no longer passes.** Legacy rejected only an explicit `false`:
+   `if (payload.email_verified === false || payload.email_verified === 'false')`. Since the route
+   falls back to matching an existing player **by email address**, an unverified Google address
+   equal to a registered user's email would have handed over that account — and `tokeninfo` does
+   not always return the field. Verification is affirmative now: present and true, or no identity.
+2. **A missing client id closes the door instead of opening it.** Legacy's audience checks read
+   `!googleClientId || info.aud === googleClientId`, so a deploy that forgot `GOOGLE_CLIENT_ID`
+   accepted tokens minted for *any* Google application. With no client id every credential is now
+   refused.
+3. **Username collisions retry.** Legacy appended four random digits and let a collision surface as
+   a 500. Five attempts, then a clean 503.
+
+Also: `/api/auth/status` now returns the configured `googleClientId` (it was hard-coded `''`), and
+the admin allow list is exact-match on the full address — a test signs in as
+`owner@example.com.evil.test` and asserts it does *not* resolve to `p_admin`.
+
+### `ADMIN_GOOGLE_EMAILS` is configuration-only now
+
+Legacy hard-codes two personal addresses as the default value of `ADMIN_GOOGLE_EMAILS`. A
+committed identity-to-admin grant is not something to carry into the new service, so the v2 env
+schema defaults it to **empty**.
+
+**This is a behaviour change.** Until `ADMIN_GOOGLE_EMAILS` is set on the VM, a Google sign-in from
+an owner address on `apps/api` creates an ordinary new account rather than resolving to `p_admin`.
+It matters only once auth traffic is cut over to `apps/api`; legacy is unaffected.
+
+### Not done here
+
+Wiring a Google button into `apps/web`. The React app has no Google UI at all — only a
+`googleClientId: ""` placeholder in `queries.ts` — so that is a separate piece of UI work, not part
+of a route port. The legacy frontend keeps using the legacy route, as with every other port.
+
+**Tests:** 14 route-level + 5 live-Google = 19. Workspace 410 -> 429.
+
+### For Nick
+
+- Set `ADMIN_GOOGLE_EMAILS` on the VM (comma-separated, exact addresses) before `apps/api` serves
+  auth, or owner sign-ins will not resolve to `p_admin`.
+- `GOOGLE_CLIENT_ID` must be present in the `apps/api` environment too — it is read from the v2 env
+  schema now, not `process.env` directly.
