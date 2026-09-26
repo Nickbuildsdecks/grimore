@@ -65,18 +65,6 @@
           <svg viewBox="0 0 24 24"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
           <span>Arena</span>
         </button>
-        <button class="nav-btn" id="nav-btn-changes" aria-label="Command Center" title="Grimore Local Command Center" style="display: none;" onclick="window.location.href='/changes'">
-          <svg viewBox="0 0 24 24" style="fill:#8b5cf6;"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-          <span>Command Center</span>
-        </button>
-        <script>
-          if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            document.addEventListener('DOMContentLoaded', () => {
-              const cBtn = document.getElementById('nav-btn-changes');
-              if (cBtn) cBtn.style.display = 'flex';
-            });
-          }
-        </script>
         <button class="nav-btn" id="nav-btn-drafts" aria-label="Draft Simulator" title="Draft Simulator" onclick="showSection('drafts')">
           <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/></svg>
           <span>Draft Pods</span>
