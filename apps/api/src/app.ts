@@ -29,7 +29,6 @@ export interface AppContext {
 declare module 'express-session' {
   interface SessionData {
     playerId?: string;
-    isGuest?: boolean;
   }
 }
 

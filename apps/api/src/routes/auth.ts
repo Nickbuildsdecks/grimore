@@ -30,17 +30,17 @@ export function authRouter(ctx: AppContext): Router {
 
   const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false });
 
-  async function loadMe(playerId: string, isGuest = false) {
+  async function loadMe(playerId: string) {
     const q = await pool.query(`SELECT ${PLAYER_COLUMNS} FROM players WHERE id = $1`, [playerId]);
     const row = q.rows[0];
     if (!row) return null;
-    return MePlayer.parse({ ...row, is_guest: isGuest });
+    return MePlayer.parse(row);
   }
 
   async function status(req: Request): Promise<AuthStatus> {
     const id = req.session.playerId;
     if (!id) return { loggedIn: false, googleClientId: '' };
-    const user = await loadMe(id, req.session.isGuest ?? false);
+    const user = await loadMe(id);
     if (!user) {
       req.session.destroy(() => {});
       return { loggedIn: false, googleClientId: '' };
@@ -80,8 +80,7 @@ export function authRouter(ctx: AppContext): Router {
       if (!row || !valid) throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid username or password.');
       await regenerate(req);
       req.session.playerId = row.id;
-      req.session.isGuest = false;
-      const user = MePlayer.parse({ ...row, is_guest: false });
+      const user = MePlayer.parse(row);
       res.json({ success: true, user });
     }),
   );
