@@ -984,3 +984,47 @@ of a route port. The legacy frontend keeps using the legacy route, as with every
   auth, or owner sign-ins will not resolve to `p_admin`.
 - `GOOGLE_CLIENT_ID` must be present in the `apps/api` environment too — it is read from the v2 env
   schema now, not `process.env` directly.
+
+## Checkpoint — dev git routes deleted (D13)
+
+Nick signed off. Removed from `server.js`: `/api/dev/git-status`, `/api/dev/git-stage`,
+`/api/dev/git-commit`, `/api/dev/git-push`, the `/changes` route, `localDevOnlyGuard`, the
+static-file guard for `/changes.*`, and the `child_process` import. Removed from
+`public/index.html`: the hidden Command Center nav button and the script that revealed it on
+localhost. `server.js` 7821 -> 7630 lines.
+
+I had asked for sign-off on two routes; there were **four**, all part of the same cluster.
+
+### The risk framing was wrong, and it was mine
+
+These were called a remote-code-execution surface across several sessions. Reading the code
+properly:
+
+- `app.use('/api/dev', localDevOnlyGuard)` is registered *before* the routes.
+- The guard's first condition is `NODE_ENV === 'production'`, and `docker-compose.yml` sets
+  `NODE_ENV=production` — so every `/api/dev` request on the VM already returned 404, whatever its
+  origin or `Host` header.
+- `public/changes.html`, the dashboard they served, **is not in the repository at all**. Nothing
+  called them.
+
+Dead developer tooling, not a live exposure. Worth deleting — a production server should not carry
+handlers that shell out to `git push`, and dead code that reads as dangerous costs reviewer
+attention every time — but not the urgent thing it was presented as. Recorded as D13.
+
+### Verified by booting, not by reading
+
+A deletion this structural deserves more than `node --check`. The server was started and probed:
+
+- `POST /api/dev/git-push` -> `Cannot POST /api/dev/git-push` (Express's own 404). Gone.
+- `GET /api/dev/git-status` -> the SPA's `index.html`, which is how every unmatched GET in this app
+  already behaves. Gone; the catch-all is pre-existing.
+- `/health` -> `{"status":"ok"}`. The app still boots with the middleware removed.
+
+### Noticed while booting, not fixed here
+
+Startup logs a `JSON.parse` stack from `scryfallService.js:23` — the bulk sync reaching Scryfall,
+which is blocked from this environment. It does not stop the server and is unrelated to this
+change, but `fetchJson` parsing a non-JSON error body without a guard is its own small bug.
+
+**Tests:** unchanged at 429 — this deletes code with no test coverage and adds none, since what
+replaced it is Express's default 404.

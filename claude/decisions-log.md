@@ -228,3 +228,28 @@ survives a change of ownership. Configuration is where it belongs.
 Google sign-in from an owner address creates an ordinary account instead of resolving to `p_admin`.
 This only bites once auth traffic is cut over to `apps/api`; legacy is unaffected.
 
+## D13 — The dev git routes are deleted, and D8's risk framing was overstated
+
+**Decided:** `/api/dev/git-status`, `/api/dev/git-stage`, `/api/dev/git-commit` and
+`/api/dev/git-push` are deleted, together with the scaffolding that existed only for them: the
+`/changes` route, `localDevOnlyGuard`, the static-file guard for `/changes.*`, the
+`child_process` import, and the hidden Command Center nav button in `public/index.html`.
+
+**Correction to D8.** These were described across several sessions as a remote-code-execution
+surface needing urgent sign-off. That was wrong, and the record should say so:
+
+- Both `/changes` and `/api/dev` sat behind `localDevOnlyGuard`, registered *before* the routes.
+- The guard's first condition is `NODE_ENV === 'production'`, and `docker-compose.yml` sets
+  `NODE_ENV=production`. Every `/api/dev` request on the VM returned 404 regardless of origin.
+- `public/changes.html` — the dashboard these routes served — **is not in the repository**, so
+  nothing called them from anywhere.
+
+The honest description is dead developer tooling, not a live exposure. Deleting it is still
+worthwhile (a production server should not carry handlers that shell out to `git push`, guarded or
+not, and dead code that looks dangerous costs reviewer attention every time it is read), but it was
+never urgent, and it should not have been pressed as though it were.
+
+**Verified by booting the server**, not by reading: `POST /api/dev/git-push` now returns Express's
+own `Cannot POST /api/dev/git-push`. The `GET` variants return the SPA's `index.html`, which is how
+every unmatched GET in this app already behaves.
+
