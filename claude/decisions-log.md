@@ -173,3 +173,45 @@ route lands. Done when `legacyUrl()` has no callers (D4).
 - `scryfallService.js` writes a `scryfall_id` column to `scryfall_cards` that does not exist in the
   baseline schema, so the Postgres bulk card sync cannot ever have succeeded. Needs its own fix.
 - `reprice-card` uses `INSERT OR REPLACE`, which is SQLite-only syntax and raises on Postgres.
+
+## D10 — Guest mode is removed, not ported
+
+**Decided:** `POST /api/auth/guest` is deleted rather than ported, along with its unreferenced
+frontend caller and the always-false `is_guest` / `req.session.isGuest` plumbing in `apps/api`.
+Migration `0012` disables login on the legacy shared account without deleting the row.
+
+**Why:** legacy's guest mode is one SHARED player with the hard-coded password `guestpass123`.
+Every guest is the same person — one guest's decks and collection are every guest's — and because
+the row is an ordinary player, that password answers the normal login form. The guest route was
+never needed to reach it. Porting the design faithfully would carry both problems into the new
+service; porting it *unfaithfully* (per-visitor ephemeral accounts) is a new feature, not a port.
+
+`handleGuestLogin` in `public/app.js` had **no callers** — no button in any HTML reached it — so
+removal is not a user-visible change.
+
+Confirmed by test rather than by reading: `guest-retirement.test.ts` signs in as the seeded account
+through `/api/auth/login` *before* applying 0012, so the exposure is demonstrated, then asserts the
+same credentials are refused afterwards.
+
+## D11 — Sandbox rooms stay in legacy, unported
+
+**Decided:** the four `/api/sandbox/{create-room,join-room,sync-state,room/:code}` routes are not
+ported to `apps/api` and not deleted from `server.js`.
+
+**Why not ported:** they are an HTTP-polling multiplayer built on a process-local `sandboxRooms`
+object, and they have no authentication of any kind. Room codes are `GRIM-` plus four digits — 9000
+possibilities, enumerable in seconds — and `sync-state` accepts any slot id, so guessing a code
+lets anyone rewrite any player's life total and battlefield. The object is never pruned, so it also
+leaks memory, and being in-process it cannot survive a restart or a second worker.
+`apps/realtime` already does this properly: Redis-backed `PodStore`, per-seat tokens
+(`randomBytes(16)`), word-based codes with a far larger space, a reconnect grace window and rate
+limiting. Carrying the legacy shape into the new service would bless an unauthenticated API.
+
+**Why not deleted:** `public/app.js` actively calls all four, so deleting them breaks Play Realm's
+multiplayer for real users today.
+
+**Therefore:** moving Play Realm onto the `apps/realtime` Socket.IO path is its own piece of work —
+a client rewrite against a different state model, not a route port — and the legacy routes stay
+until that lands. The exposure above is live in the meantime; widening the code space in
+`server.js` is a cheap, client-compatible mitigation if it should not wait.
+

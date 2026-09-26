@@ -866,3 +866,60 @@ SELECT count(*), max(last_updated) FROM scryfall_cards;
 
 If that timestamp is the cutover date, prices and oracle text have been frozen ever since, and the
 first successful sync after this fix will be a large one.
+
+## Checkpoint — guest mode removed (D10), sandbox rooms declared out of scope (D11)
+
+### Guest mode
+
+Nick's call: delete it. Removed in four places plus a migration.
+
+| Surface | What went |
+| --- | --- |
+| `server.js` | `POST /api/auth/guest`, 34 lines |
+| `public/app.js` | `window.handleGuestLogin`, 15 lines — **no callers in any HTML** |
+| `apps/api` | `req.session.isGuest` (only ever assigned `false`) and the `loadMe` parameter behind it |
+| `packages/shared` | `MePlayer.is_guest`, which was always `false` and unread by `apps/web` |
+| `packages/db` | new migration `0012_retire_guest_account.sql` |
+
+**Deleting the route does not close the hole.** Legacy's guest is a single SHARED player whose
+password is the literal `guestpass123`, stored as an ordinary bcrypt hash — so it answers the
+normal login form and the guest route was never needed to reach it. Two consequences worth stating
+plainly: every guest was the same person, sharing one identity's decks and collection; and anyone
+who knows that string is signed in as a real player.
+
+Migration 0012 overwrites the hash with a value that is not a bcrypt digest. `bcryptjs.compare()`
+returns false for a malformed hash rather than throwing (verified), and both login paths go through
+`compare()`. The row is **not deleted** — it may own decks, collection rows and league history that
+a cascade would take with it. The `WHERE` matches the exact `username`/`email` pair legacy wrote, so
+a genuine player who registered the username "guest" is untouched. Reversible: set a real hash.
+
+On Postgres the original INSERT omitted `id` (`TEXT NOT NULL`, no default) and always failed, so a
+row exists today only if the SQLite cutover dump carried one. The migration is correct either way.
+
+**Tests:** `apps/api/src/guest-retirement.test.ts`, 6 tests. The first one signs in as the seeded
+account through `/api/auth/login` *before* 0012 runs — the exposure is demonstrated, not asserted
+from reading — and it passed, so if that row is on the VM the credentials work there now. The rest
+cover refusal after the migration, row preservation, the real-account guard, idempotency, and the
+route being gone.
+
+### Sandbox rooms
+
+Nick left this to me. **Not ported, not deleted** — full reasoning in D11.
+
+Not ported because the four routes have no authentication at all, keep rooms in a process-local
+object that leaks and cannot survive a restart, and issue `GRIM-`+4-digit codes — 9000 of them.
+Guess a code and `sync-state` lets you rewrite any player's life total and battlefield.
+`apps/realtime` already solves this with a Redis-backed `PodStore`, per-seat tokens and a much
+larger code space.
+
+Not deleted because `public/app.js` calls all four, so removing them breaks Play Realm multiplayer
+for real users. Moving that client onto the Socket.IO path is its own piece of work.
+
+### For Nick
+
+- **If a `guest` row exists on the VM, `guestpass123` logs into it right now.** Migration 0012 fixes
+  that on deploy. To check first:
+  `SELECT id, username, email FROM players WHERE username = 'guest';`
+- The sandbox room-code exposure is live until Play Realm moves to `apps/realtime`. Widening the
+  code space in `server.js` is a cheap, client-compatible stopgap if that shouldn't wait.
+- **Still unanswered:** sign-off to delete `/api/dev/git-commit` and `/api/dev/git-push` (D8).

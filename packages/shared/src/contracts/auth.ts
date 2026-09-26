@@ -95,7 +95,6 @@ export type PublicPlayer = z.infer<typeof PublicPlayer>;
 export const MePlayer = PublicPlayer.extend({
   email: z.string().nullable().default(null),
   premium_until: Timestamp.nullable().default(null),
-  is_guest: z.boolean().default(false),
 });
 export type MePlayer = z.infer<typeof MePlayer>;
 

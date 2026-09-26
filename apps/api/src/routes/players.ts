@@ -211,7 +211,6 @@ export function playersRouter(ctx: AppContext): Router {
           req.session.regenerate((err) => (err ? reject(err) : resolve())),
         );
         req.session.playerId = playerId;
-        req.session.isGuest = false;
       }
       res.json({ success: true });
     }),
