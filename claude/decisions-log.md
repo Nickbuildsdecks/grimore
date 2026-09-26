@@ -215,3 +215,16 @@ a client rewrite against a different state model, not a route port — and the l
 until that lands. The exposure above is live in the meantime; widening the code space in
 `server.js` is a cheap, client-compatible mitigation if it should not wait.
 
+## D12 — The Google admin allow list is configuration, not source
+
+**Decided:** `ADMIN_GOOGLE_EMAILS` defaults to **empty** in the v2 env schema. Legacy defaults it to
+two hard-coded personal addresses in `server.js`.
+
+**Why:** a committed identity-to-admin grant is a standing privilege written into source, readable
+by anyone with repository access and carried into every fork, branch and backup. It also silently
+survives a change of ownership. Configuration is where it belongs.
+
+**Consequence, stated plainly:** until `ADMIN_GOOGLE_EMAILS` is set in the `apps/api` environment, a
+Google sign-in from an owner address creates an ordinary account instead of resolving to `p_admin`.
+This only bites once auth traffic is cut over to `apps/api`; legacy is unaffected.
+

@@ -8,6 +8,7 @@ import pino from 'pino';
 import type { Env } from '@grimore/shared';
 import { createPool, ping, type Pool } from '@grimore/db';
 import { authRouter } from './routes/auth.js';
+import type { GoogleVerifier } from './lib/googleIdentity.js';
 import { cardsRouter } from './routes/cards.js';
 import { collectionsRouter } from './routes/collections.js';
 import { decksRouter } from './routes/decks.js';
@@ -45,7 +46,12 @@ export async function closeContext(ctx: AppContext): Promise<void> {
   await Promise.allSettled([ctx.pool.end(), ctx.redis.quit()]);
 }
 
-export function createApp(ctx: AppContext): Express {
+/** Test seams. Production passes nothing and every dependency is built from `ctx.env`. */
+export interface AppOverrides {
+  googleVerifier?: GoogleVerifier;
+}
+
+export function createApp(ctx: AppContext, overrides: AppOverrides = {}): Express {
   const { env, pool, redis, log } = ctx;
   const app = express();
 
@@ -95,7 +101,7 @@ export function createApp(ctx: AppContext): Express {
     }),
   );
 
-  app.use('/api/auth', authRouter(ctx));
+  app.use('/api/auth', authRouter(ctx, overrides.googleVerifier));
   app.use('/api/decks', decksRouter(ctx));
   app.use('/api/cards', cardsRouter(ctx));
   app.use('/api/collections', collectionsRouter(ctx));
