@@ -369,4 +369,10 @@ function attach(io) {
 // `_pods` and `_rateState` are test hooks: both are module-level state that survives between
 // tests, and socket ids restart at s1 in every harness, so a suite that does not clear them has
 // one test's rate-limiter budget leak into the next.
-module.exports = { attach, FORMATS, _pods: pods, _rateState: rateState };
+// `_pods`, `_rateState` and `_socketToPod` are test hooks. All three are module-level state that
+// survives between tests, and socket ids restart at s1 in every harness, so a suite that does not
+// clear them has one test's state leak into the next. `_rateState` was added after a real flake
+// where the rate-limiter budget leaked; `_socketToPod` is the same hazard and is exported for the
+// same reason — a stale socketId -> code entry points at a pod that `_pods.clear()` already
+// removed, and `findPodBySocket` then returns null.
+module.exports = { attach, FORMATS, _pods: pods, _rateState: rateState, _socketToPod: socketToPod };
