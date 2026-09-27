@@ -29,6 +29,34 @@ const https = require('https');
 const net = require('net');
 const tls = require('tls');
 const db = require('./db');
+
+// SQLite's `INSERT OR IGNORE` is not valid Postgres -- it is a syntax error at "OR". The portable
+// spelling is `ON CONFLICT DO NOTHING`, left untargeted so it catches whichever constraint the row
+// violates rather than naming an index whose name differs between the two schemas.
+//
+// Both statements were raw SQLite at six call sites, every one a stats-initialisation write. The
+// registration site sits inside that route's try/catch, so on Postgres with any active season the
+// player row was inserted and the request then returned 500 -- leaving an account that exists,
+// has a usable password, and has no stats row, while telling the user registration failed.
+const SQL_INIT_PLAYER_STATS = db.isPostgres
+  ? 'INSERT INTO player_stats (player_id, season_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
+  : 'INSERT OR IGNORE INTO player_stats (player_id, season_id) VALUES (?, ?)';
+// `notifications` diverged between the two schemas. SQLite has `id TEXT PRIMARY KEY` and the app
+// generates 'notif_...'; Postgres has `id SERIAL PRIMARY KEY` plus a NOT NULL `type` column that
+// nothing supplies. All eight call sites wrote the SQLite shape, so on Postgres every notification
+// insert failed with `invalid input syntax for type integer: "notif_..."`. The welcome notification
+// sits inside the registration route's try/catch, so it also turned a completed signup into a 500.
+//
+// The call sites keep their existing `[id, playerId, title, message]` shape; the id is dropped on
+// Postgres, where the sequence assigns it.
+const SQL_INSERT_NOTIFICATION = db.isPostgres
+  ? "INSERT INTO notifications (player_id, type, title, message) VALUES (?, 'general', ?, ?)"
+  : 'INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)';
+const notificationParams = (params) => (db.isPostgres ? params.slice(1) : params);
+
+const SQL_INIT_DECK_STATS = db.isPostgres
+  ? 'INSERT INTO deck_stats (deck_id, season_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
+  : 'INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)';
 const mtgjsonService = require('./mtgjsonService');
 const {
   createPreferenceProfile,
@@ -1407,21 +1435,20 @@ app.post('/api/auth/register', async (req, res) => {
     // Initialize stats for active seasons
     const seasons = await db.query("SELECT id FROM seasons WHERE is_active = 1");
     for (let season of seasons) {
-      await db.run("INSERT OR IGNORE INTO player_stats (player_id, season_id) VALUES (?, ?)", [id, season.id]);
+      await db.run(SQL_INIT_PLAYER_STATS, [id, season.id]);
     }
 
 
     // Send welcome notification to the new user
     const welcomeId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
-      "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [
+      SQL_INSERT_NOTIFICATION,
+      notificationParams([
         welcomeId,
         id,
         'Welcome to Grimore!',
         `Welcome ${storeNickname}! This program is in early development. I will be adding new features and fixing bugs frequently. If you have any input regarding new features, changes to current features, or bugs, please message me through the Feedback button in the lower-left corner of your screen.`
-      ]
-    );
+      ]));
 
     res.json({ success: true, message: "Registration successful! You can now log in." });
 
@@ -1715,7 +1742,7 @@ app.post('/api/seasons', async (req, res) => {
 
     const players = await db.query("SELECT id FROM players");
     for (let p of players) {
-      await db.run("INSERT OR IGNORE INTO player_stats (player_id, season_id) VALUES (?, ?)", [p.id, id]);
+      await db.run(SQL_INIT_PLAYER_STATS, [p.id, id]);
     }
 
     res.json({ success: true, seasonId: id });
@@ -1729,7 +1756,7 @@ app.post('/api/seasons/:seasonId/register', async (req, res) => {
   const { seasonId } = req.params;
   const playerId = req.session.player.id;
   try {
-    await db.run("INSERT OR IGNORE INTO player_stats (player_id, season_id) VALUES (?, ?)", [playerId, seasonId]);
+    await db.run(SQL_INIT_PLAYER_STATS, [playerId, seasonId]);
     res.json({ success: true });
   } catch (e) {
     console.error(e); res.status(500).json({ error: "Internal server error." });
@@ -2425,7 +2452,7 @@ app.post('/api/decks/register', async (req, res) => {
     const activeSeason = await db.get("SELECT id FROM seasons WHERE is_active = 1");
     if (activeSeason) {
       await db.run(
-        "INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)",
+        SQL_INIT_DECK_STATS,
         [deckId, activeSeason.id]
       );
     }
@@ -2636,7 +2663,7 @@ app.post('/api/moxfield/import-account', async (req, res) => {
         // Initialize stats
         if (activeSeason) {
           await db.run(
-            "INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)",
+            SQL_INIT_DECK_STATS,
             [deckId, activeSeason.id]
           );
         }
@@ -3722,9 +3749,8 @@ app.post('/api/players/:playerId/follow', async (req, res) => {
       const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
       const nickname = req.session.player.storeNickname || "A user";
       await db.run(
-        "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-        [notifId, playerId, "New Follower", `${nickname} started following you!`]
-      );
+        SQL_INSERT_NOTIFICATION,
+        notificationParams([notifId, playerId, "New Follower", `${nickname} started following you!`]));
       
       res.json({ success: true, following: true });
     }
@@ -3994,7 +4020,7 @@ app.post('/api/decks/:deckId/clone', async (req, res) => {
     const activeSeason = await db.get("SELECT id FROM seasons WHERE is_active = 1");
     if (activeSeason) {
       await db.run(
-        "INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)",
+        SQL_INIT_DECK_STATS,
         [newDeckId, activeSeason.id]
       );
     }
@@ -4039,9 +4065,8 @@ app.post('/api/decks/:deckId/share', async (req, res) => {
     // Notification
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
-      "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, recipient.id, `Shared Deck from ${sender ? sender.store_nickname : 'Friend'}`, `Shared their deck "${deck.deck_name}" with you.`]
-    );
+      SQL_INSERT_NOTIFICATION,
+      notificationParams([notifId, recipient.id, `Shared Deck from ${sender ? sender.store_nickname : 'Friend'}`, `Shared their deck "${deck.deck_name}" with you.`]));
 
     res.json({ success: true });
   } catch (e) {
@@ -4692,9 +4717,8 @@ app.post('/api/pairings/generate', async (req, res) => {
         
         const nId = 'n_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         await db.run(
-          "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-          [nId, player.player_id, "Round Pairings Posted", `Round ${roundNum} is paired! You are at Table ${pod.label}.`]
-        );
+          SQL_INSERT_NOTIFICATION,
+          notificationParams([nId, player.player_id, "Round Pairings Posted", `Round ${roundNum} is paired! You are at Table ${pod.label}.`]));
       }
     }
 
@@ -5276,9 +5300,8 @@ app.post('/api/messages/send', async (req, res) => {
     // Also drop a notification into recipient's bell
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
-      "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, recipient.id, `Message from ${req.session.player.storeNickname}`, `"${subject || '(no subject)'}": ${body.trim().substring(0, 120)}${body.trim().length > 120 ? '…' : ''}`]
-    );
+      SQL_INSERT_NOTIFICATION,
+      notificationParams([notifId, recipient.id, `Message from ${req.session.player.storeNickname}`, `"${subject || '(no subject)'}": ${body.trim().substring(0, 120)}${body.trim().length > 120 ? '…' : ''}`]));
     res.json({ success: true, messageId: msgId });
   } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
@@ -5300,9 +5323,8 @@ app.post('/api/messages/feedback', async (req, res) => {
     // Notify admin
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
-      "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, admin.id, `Feedback from ${req.session.player.storeNickname}`, body.trim().substring(0, 180)]
-    );
+      SQL_INSERT_NOTIFICATION,
+      notificationParams([notifId, admin.id, `Feedback from ${req.session.player.storeNickname}`, body.trim().substring(0, 180)]));
     res.json({ success: true });
   } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
@@ -5388,10 +5410,9 @@ app.post('/api/friends/request/:playerId', async (req, res) => {
     // Notify recipient
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
-      "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, other, `Friend Request from ${req.session.player.storeNickname}`,
-       `${req.session.player.storeNickname} wants to be your friend. Check your Friends tab to accept.`]
-    );
+      SQL_INSERT_NOTIFICATION,
+      notificationParams([notifId, other, `Friend Request from ${req.session.player.storeNickname}`,
+       `${req.session.player.storeNickname} wants to be your friend. Check your Friends tab to accept.`]));
     res.json({ success: true, requestId: id });
   } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
@@ -5406,10 +5427,9 @@ app.post('/api/friends/accept/:requestId', async (req, res) => {
     // Notify sender
     const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     await db.run(
-      "INSERT INTO notifications (id, player_id, title, message) VALUES (?, ?, ?, ?)",
-      [notifId, fr.sender_id, `${req.session.player.storeNickname} accepted your friend request!`,
-       `You are now friends with ${req.session.player.storeNickname}. You can message them directly from your friends list.`]
-    );
+      SQL_INSERT_NOTIFICATION,
+      notificationParams([notifId, fr.sender_id, `${req.session.player.storeNickname} accepted your friend request!`,
+       `You are now friends with ${req.session.player.storeNickname}. You can message them directly from your friends list.`]));
     res.json({ success: true });
   } catch (e) { console.error(e); res.status(500).json({ error: "Internal server error." }); }
 });
@@ -6624,11 +6644,10 @@ app.post('/api/decks/builder-save', async (req, res) => {
       const activeSeason = await db.get("SELECT id FROM seasons WHERE is_active = 1");
       if (activeSeason) {
         try {
-          if (isPostgres) {
-            await db.run("INSERT INTO deck_stats (deck_id, season_id) VALUES (?, ?) ON CONFLICT DO NOTHING", [targetDeckId, activeSeason.id]);
-          } else {
-            await db.run("INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)", [targetDeckId, activeSeason.id]);
-          }
+          // Was `if (isPostgres)` -- a bare identifier that is not declared anywhere in this
+          // file (every other site reads `db.isPostgres`), so this threw ReferenceError and the
+          // catch below swallowed it. The stats row was never written on either dialect.
+          await db.run(SQL_INIT_DECK_STATS, [targetDeckId, activeSeason.id]);
         } catch (err) {
           // Ignore duplicate stats entry if already exists
         }
