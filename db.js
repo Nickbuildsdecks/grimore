@@ -542,6 +542,19 @@ async function initDb() {
       `ALTER TABLE decks ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0`,
       `ALTER TABLE deck_stats ADD COLUMN IF NOT EXISTS total_matches INTEGER DEFAULT 0`,
       `ALTER TABLE deck_stats ADD COLUMN IF NOT EXISTS season_id TEXT`,
+      // player_stats never got the same treatment deck_stats has two lines up, so on Postgres it
+      // has neither column while server.js writes both. Registration inserts
+      // (player_id, season_id) for every active season, so with any season active the insert failed
+      // and the route returned 500 -- after the players row had already been written, leaving an
+      // account that exists and can log in but has no stats and never got its welcome notification.
+      //
+      // These are additive and IF NOT EXISTS, exactly like the deck_stats pair. They stop the 500.
+      // They do NOT complete per-season standings on Postgres: the primary key here is player_id
+      // alone, so one row per player rather than one per player per season. The composite
+      // uniqueness that needs is what v2 migration 0009 introduces, and that has never run against
+      // production.
+      `ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS season_id TEXT`,
+      `ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_matches INTEGER DEFAULT 0`,
       `ALTER TABLE scryfall_cards ADD COLUMN IF NOT EXISTS card_name TEXT`,
       // Premium billing (additive; flag-dark — unused until PREMIUM_GATING=on). See billing.js.
       `ALTER TABLE players ADD COLUMN IF NOT EXISTS premium_status TEXT DEFAULT 'free'`,

@@ -85,6 +85,49 @@ function checkApiDockerfileCopiesEveryManifest() {
 }
 checkApiDockerfileCopiesEveryManifest();
 
+/**
+ * `INSERT OR IGNORE` and `INSERT OR REPLACE` are SQLite-only. On Postgres they are a syntax error
+ * at "OR", so any occurrence in server.js that is not inside a `db.isPostgres` branch is a route
+ * that cannot work in production.
+ *
+ * Several are fixed; the rest need a unique constraint the production schema does not have, which
+ * is a schema decision rather than a mechanical rewrite. This is a ratchet, not a clean bill of
+ * health: the remaining ones are counted, and the count may only go down. Lower KNOWN_SQLITE_ONLY
+ * as they are fixed. It exists so no NEW one is added silently.
+ */
+const KNOWN_SQLITE_ONLY = 9;
+function checkNoNewSqliteOnlyInserts() {
+  let src;
+  try {
+    src = readFileSync('server.js', 'utf8');
+  } catch {
+    return; // not in a checkout that has the legacy server
+  }
+  const lines = src.split('\n');
+  const unguarded = [];
+  lines.forEach((line, i) => {
+    if (!/INSERT OR (IGNORE|REPLACE)/.test(line)) return;
+    if (line.trim().startsWith('//')) return;
+    // A dialect-safe site is a ternary, so its SQLite branch is the line beginning `:` and its
+    // Postgres branch the one beginning `?`. Matching on that rather than on a nearby mention of
+    // `db.isPostgres` matters: a proximity window silently treats any literal that happens to sit a
+    // few lines under an unrelated `db.isPostgres` as guarded, which is a false negative in a check
+    // whose entire job is to notice new ones.
+    const head = line.trim()[0];
+    if (head === ':' || head === '?') return;
+    unguarded.push(`${i + 1}: ${line.trim().slice(0, 90)}`);
+  });
+  if (unguarded.length > KNOWN_SQLITE_ONLY) {
+    console.error(
+      `[guards] ${unguarded.length} unguarded SQLite-only INSERTs in server.js, expected at most ` +
+        `${KNOWN_SQLITE_ONLY}. These are a syntax error on Postgres. New ones:`,
+    );
+    for (const u of unguarded) console.error(`[guards]   server.js:${u}`);
+    bad++;
+  }
+}
+checkNoNewSqliteOnlyInserts();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);
