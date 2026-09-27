@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTION_MAX_BYTES,
+  ApiErrorCode,
+  isApiErrorCode,
   AddCollectionCardInput,
   ApiError,
   CAS_LUA,
@@ -204,9 +206,11 @@ describe("cards / collections / common", () => {
   });
 
   it("ApiError shape round-trips", () => {
-    const e = apiError("not_found", "Deck not found");
-    expect(ApiError.parse(e)).toEqual({ error: { code: "not_found", message: "Deck not found" } });
+    const e = apiError("NOT_FOUND", "Deck not found");
+    expect(ApiError.parse(e)).toEqual({ error: { code: "NOT_FOUND", message: "Deck not found" } });
     expect(ApiError.safeParse({ error: { code: "nope", message: "x" } }).success).toBe(false);
+    // The lowercase spelling was the old enum's; it is not a code any more.
+    expect(ApiError.safeParse({ error: { code: "not_found", message: "x" } }).success).toBe(false);
   });
 });
 
@@ -280,5 +284,33 @@ describe("redis helpers", () => {
     const args = casEvalArgs({ key: "k", expectedVersion: 2, newStateJson: "{}", newVersion: 3, ttlSeconds: 10, create: true });
     expect(args).toEqual([1, "k", "2", "{}", "3", "10", "create"]);
     expect(casEvalArgs({ key: "k", expectedVersion: 0, newStateJson: "{}", newVersion: 1 })[6]).toBe("");
+  });
+
+  describe("ApiErrorCode", () => {
+    it("is the set apps/api actually emits, not the old snake_case enum", () => {
+      // The nine-value enum this replaced (bad_request, validation_error, ...) was never emitted by
+      // anything. If one of those reappears, the contract has drifted back.
+      for (const dead of ["bad_request", "validation_error", "not_found", "internal"]) {
+        expect(isApiErrorCode(dead)).toBe(false);
+      }
+      for (const real of ["VALIDATION", "NOT_FOUND", "INTERNAL", "PROFANITY", "LAST_ADMIN"]) {
+        expect(isApiErrorCode(real)).toBe(true);
+      }
+    });
+
+    it("narrows rather than trusts — a client cannot assume the wire holds the union", () => {
+      expect(isApiErrorCode("NOT_A_REAL_CODE")).toBe(false);
+      expect(isApiErrorCode(undefined)).toBe(false);
+      expect(isApiErrorCode(null)).toBe(false);
+      expect(isApiErrorCode(42)).toBe(false);
+      expect(isApiErrorCode({ code: "NOT_FOUND" })).toBe(false);
+      // Case matters: the codes are uppercase.
+      expect(isApiErrorCode("not_found")).toBe(false);
+    });
+
+    it("has no duplicates", () => {
+      const codes = ApiErrorCode.options;
+      expect(new Set(codes).size).toBe(codes.length);
+    });
   });
 });

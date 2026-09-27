@@ -1,11 +1,13 @@
 import type { Request, Response, NextFunction } from 'express';
 import type pino from 'pino';
 import { ZodError } from 'zod';
+import type { ApiErrorCode } from '@grimore/shared';
 
 export class ApiError extends Error {
   constructor(
     public status: number,
-    public code: string,
+    /** Typed to the shared union, so a mistyped code fails the build instead of reaching a client. */
+    public code: ApiErrorCode,
     message: string,
     public details?: unknown,
   ) {
@@ -13,12 +15,12 @@ export class ApiError extends Error {
   }
 }
 
-/** Uniform error envelope: { error: { code, message, details? } } (matches @grimore/shared ApiError). */
+/** Uniform error envelope: { error: { code, message, details? } } — the @grimore/shared ApiError shape. */
 export function errorHandler(log: pino.Logger) {
   return (err: unknown, _req: Request, res: Response, _next: NextFunction): void => {
     if (err instanceof ZodError) {
       res.status(400).json({
-        error: { code: 'VALIDATION', message: 'Invalid request', details: err.flatten().fieldErrors },
+        error: { code: 'VALIDATION' satisfies ApiErrorCode, message: 'Invalid request', details: err.flatten().fieldErrors },
       });
       return;
     }
@@ -27,7 +29,7 @@ export function errorHandler(log: pino.Logger) {
       return;
     }
     log.error({ err }, 'unhandled error');
-    res.status(500).json({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    res.status(500).json({ error: { code: 'INTERNAL' satisfies ApiErrorCode, message: 'Internal server error' } });
   };
 }
 
