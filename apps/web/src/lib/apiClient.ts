@@ -7,7 +7,7 @@
  * ## Two bases, because this is a strangler migration
  *
  * `apiUrl()` addresses `apps/api`; `legacyUrl()` addresses the original `server.js`. Routes that have
- * not been ported yet (Moxfield import, password reset, Google sign-in) still have to reach the legacy
+ * not been ported yet (Moxfield import, password reset) still have to reach the legacy
  * server, and marking those call sites explicitly is what keeps the remaining work visible. Both default
  * to the empty string, i.e. same-origin, which is how the deployed app runs behind one reverse proxy.
  *
@@ -16,8 +16,10 @@
  *   VITE_LEGACY_API_URL=http://localhost:3000  (server.js)
  * or rely on the Vite dev proxy, which already routes /api to apps/api and /legacy-api to server.js.
  */
+import { isApiErrorCode } from "@grimore/shared"
 import type {
   ActiveMatch,
+  ApiErrorCode,
   ArtVoteInput,
   AuthStatus,
   Card,
@@ -61,14 +63,25 @@ export const legacyUrl = (path: string): string => (LEGACY_BASE ? LEGACY_BASE + 
  * failure from apps/api surfaced to the user as a toast reading "[object Object]". The legacy server's
  * shape is `{ error: "some string" }`, and both are handled here.
  */
+/**
+ * Codes this client invents; they never come off the wire.
+ *  - LEGACY  — the legacy server's `{ error: "some string" }` shape, which carries no code.
+ *  - UNKNOWN — a body we could not read a code out of, including one from a server we do not control.
+ *  - NETWORK — the request never became an HTTP response at all.
+ */
+export type ClientErrorCode = "LEGACY" | "UNKNOWN" | "NETWORK"
+
+/** Anything `error.code` can be: a code apps/api documents, or one of the three above. */
+export type ErrorCode = ApiErrorCode | ClientErrorCode
+
 export class ApiError extends Error {
   // Declared as fields rather than constructor parameter properties: tsconfig sets
   // `erasableSyntaxOnly`, so the parameter-property shorthand is not available here.
   readonly status: number
-  readonly code: string
+  readonly code: ErrorCode
   readonly details?: unknown
 
-  constructor(status: number, code: string, message: string, details?: unknown) {
+  constructor(status: number, code: ErrorCode, message: string, details?: unknown) {
     super(message)
     this.name = "ApiError"
     this.status = status
@@ -87,8 +100,10 @@ function errorFrom(status: number, data: unknown): ApiError {
     const err = (data as { error: unknown }).error
     if (typeof err === "string") return new ApiError(status, "LEGACY", err)
     if (err && typeof err === "object") {
-      const { code, message, details } = err as { code?: string; message?: string; details?: unknown }
-      return new ApiError(status, code ?? "UNKNOWN", message ?? `Request failed (${status})`, details)
+      const { code, message, details } = err as { code?: unknown; message?: string; details?: unknown }
+      // Narrowed rather than cast: a response body is whatever the other end sent, so a code we do
+      // not recognise becomes UNKNOWN instead of silently typing as one of ours.
+      return new ApiError(status, isApiErrorCode(code) ? code : "UNKNOWN", message ?? `Request failed (${status})`, details)
     }
   }
   return new ApiError(status, "UNKNOWN", `Request failed (${status})`)

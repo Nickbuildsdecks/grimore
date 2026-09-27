@@ -68,6 +68,34 @@ describe("error envelopes", () => {
     expect(err.message).toBe("Request failed (500)")
   })
 
+  it("keeps a code it recognises", async () => {
+    stubFetch(409, { error: { code: "USERNAME_TAKEN", message: "Username is already taken." } })
+    const err = await failing(() => http.post("/api/players/account/update", {}))
+    expect(err.code).toBe("USERNAME_TAKEN")
+  })
+
+  it("downgrades a code it does not recognise to UNKNOWN", async () => {
+    // The body is whatever the other end sent. Casting would let an unrecognised string type as one
+    // of ours and slip past an exhaustive check downstream.
+    stubFetch(400, { error: { code: "SOMETHING_NEW", message: "From a newer server." } })
+    const err = await failing(() => http.get("/api/whatever"))
+    expect(err.code).toBe("UNKNOWN")
+    // The message still reaches the user even though the code did not survive.
+    expect(err.message).toBe("From a newer server.")
+  })
+
+  it("downgrades a non-string code rather than trusting it", async () => {
+    stubFetch(400, { error: { code: { nested: "NOT_FOUND" }, message: "Odd body." } })
+    const err = await failing(() => http.get("/api/whatever"))
+    expect(err.code).toBe("UNKNOWN")
+  })
+
+  it("does not accept the retired lowercase spellings", async () => {
+    stubFetch(404, { error: { code: "not_found", message: "Gone." } })
+    const err = await failing(() => http.get("/api/whatever"))
+    expect(err.code).toBe("UNKNOWN")
+  })
+
   it("reports a network failure as status 0, not as an HTTP error", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch") }))
     const err = await failing(() => http.get("/api/auth/status"))

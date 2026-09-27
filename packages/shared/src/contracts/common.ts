@@ -39,18 +39,66 @@ export const Paginated = <T extends z.ZodTypeAny>(item: T) =>
   z.object({ items: z.array(item), meta: PageMeta });
 export type Paginated<T> = { items: T[]; meta: PageMeta };
 
+/**
+ * Every error code `apps/api` can emit, and the only ones it may.
+ *
+ * This replaces a nine-value snake_case enum (`bad_request`, `validation_error`, ...) that nothing
+ * ever imported. `apps/api` had always emitted its own uppercase codes with `ApiError.code` typed
+ * as a bare `string`, and `apps/web` had its own error class taking a loose string, so the two ends
+ * agreed with each other and neither agreed with the contract. Nothing broke at runtime — but a
+ * typo in a route (`'VALIDATON'`) compiled cleanly and reached the client, and no reader could tell
+ * from the contract which codes were real.
+ *
+ * Typed as a union, adding a code is a deliberate edit here and a typo is a compile error.
+ *
+ * Codes are part of the public API: clients branch on them. Rename one only as a breaking change.
+ */
 export const ApiErrorCode = z.enum([
-  "bad_request",
-  "validation_error",
-  "unauthorized",
-  "forbidden",
-  "not_found",
-  "conflict",
-  "rate_limited",
-  "premium_required",
-  "internal",
+  // Generic, roughly HTTP-shaped.
+  "VALIDATION",
+  "UNAUTHENTICATED",
+  "INVALID_CREDENTIALS",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "CONFLICT",
+  "UNAVAILABLE",
+  "INTERNAL",
+
+  // Account and moderation.
+  "USERNAME_TAKEN",
+  "EMAIL_TAKEN",
+  "PROFANITY",
+
+  // Decks and collections.
+  "DECK_LOCKED",
+  "CORRUPT_ARCHIVE",
+  "WRONG_ENDPOINT",
+
+  // League and events.
+  "NO_ACTIVE_SEASON",
+  "LAST_ADMIN",
+  "ROUND_EXISTS",
+  "CHECKIN_CLOSED",
+  "ALREADY_REPORTED",
+  "TOO_FEW_PLAYERS",
+
+  // Draft and sandbox.
+  "DRAFT_COMPLETE",
+  "EMPTY_CARD_POOL",
+
+  // Upstream services this app depends on.
+  "SCRYFALL_UNAVAILABLE",
+  "MOXFIELD_UNAVAILABLE",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
+
+/**
+ * Narrow an arbitrary wire value to a known code. A response body is whatever the other end sent,
+ * so a client cannot assume the union holds — use this at the boundary rather than casting, or an
+ * unrecognised code silently types as one of ours.
+ */
+export const isApiErrorCode = (value: unknown): value is ApiErrorCode =>
+  ApiErrorCode.safeParse(value).success;
 
 export const ApiError = z.object({
   error: z.object({
