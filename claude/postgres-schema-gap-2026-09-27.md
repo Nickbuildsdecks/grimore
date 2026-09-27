@@ -1,6 +1,7 @@
-# Nine tables the legacy server uses that do not exist on Postgres
+# What the legacy server writes that Postgres does not have
 
-Run it yourself against the VM (read-only, one `SELECT` against `pg_tables`):
+Run it yourself against the VM (read-only: one `SELECT` against `pg_tables`, one against
+`information_schema.columns`):
 
 ```bash
 node scripts/audit-postgres-schema-gap.js "$POSTGRES_URL"
@@ -47,6 +48,42 @@ Note this does **not** mean the features work the moment the tables exist — `s
 SQLite-only syntax at nine sites (see the ratchet in `scripts/guards.js`), and `active_roster` and
 the standings updates are among them. Creating the table removes the "relation does not exist"
 error; the `INSERT OR REPLACE` above it is the next one.
+
+## A table can exist and still be the wrong shape
+
+`db.js` builds a different table for each dialect under the same name, and `server.js` writes the
+SQLite spelling. The table check never sees this: the table is there, the INSERT still fails with
+`column "..." does not exist`.
+
+Twelve such columns today, across seven tables. Most are closed by the migrations; **five are not,
+and they are not schema problems at all — they are `server.js` writing the wrong column name**:
+
+| Table | `server.js` writes | Postgres has |
+| --- | --- | --- |
+| `follows` | `followed_id` | `following_id` |
+| `collection_cards` | `is_foil` | `foil` |
+| `collection_cards` | `added_at` | (nothing — `created_at` defaults) |
+| `card_price_cache` | `last_updated` | `cached_at` |
+| `scryfall_cards` | `scryfall_id` | `id` |
+
+So following a player and adding a card to a collection both fail on Postgres, and would keep
+failing after a migration cutover. Each is a one-line dialect-aware fix in `server.js`, and none
+needs a schema change — but each wants its route exercised end to end afterwards, the way
+registration was in #29, rather than being changed on inspection.
+
+## The three-way comparison
+
+Same audit, three databases:
+
+| | tables missing | columns missing |
+| --- | --- | --- |
+| **Today** — baseline + `initDb` | 9 | 12 across 7 tables |
+| Migrations only (not a real state) | 2 | 6 across 5 |
+| **After a cutover** — baseline + `initDb` + migrations | **2** | **5 across 4** |
+
+The middle row is included because it is the tempting one to quote and it is misleading: a database
+with migrations but no `initDb` is not a state that exists, and reading it as "after the cutover"
+overstates one gap that `initDb` closes.
 
 ## `direct_messages` and `password_resets`
 
