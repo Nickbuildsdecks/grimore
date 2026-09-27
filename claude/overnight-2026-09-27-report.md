@@ -25,7 +25,7 @@ insert in the app fails because `notifications.id` is `SERIAL` on Postgres and T
 Proven by booting `server.js` against a Postgres database built from the baseline schema, not by
 reading. Before: 500, one orphaned row, no stats. After: 200, login 200, all three rows present.
 
-### 2. Nine tables the app uses do not exist on Postgres (#30)
+### 2. Nine tables and twelve columns the app writes do not exist on Postgres (#30, #32)
 
 Not degraded — `relation "..." does not exist`. League check-in, pods, results and standings,
 wishlist, friend requests, deleted-item recovery, the Movers & Shakers ticker, direct messaging,
@@ -48,12 +48,25 @@ broken features in the live app — which is a much stronger reason to do the de
 Caveat worth keeping: creating the table is the *first* error, not the only one. `server.js` still
 writes SQLite-only syntax at nine sites, `active_roster` and the standings updates among them.
 
+**And a table can exist while still being the wrong shape.** `db.js` builds a different table per
+dialect under the same name, so `follows` has `following_id` on Postgres where the app writes
+`followed_id`, and `collection_cards` has `foil` where the app writes `is_foil`. Following a player
+and adding a card to a collection both fail, and **five of these column mismatches survive even a
+full migration cutover** — they are not schema problems, `server.js` simply writes the wrong name.
+
+Where it all lands:
+
+| | tables missing | columns missing |
+| --- | --- | --- |
+| **Today** — baseline + `initDb` | 9 | 12 across 7 tables |
+| **After a cutover** — baseline + `initDb` + migrations | 2 | 5 across 4 tables |
+
 Audit it yourself against the VM, read-only:
 `node scripts/audit-postgres-schema-gap.js "$POSTGRES_URL"`
 
 ## Everything that landed
 
-`main` at `2ec5571`. Seven PRs, all merged, CI green on each.
+`main` at `8e8ef98`. Nine PRs, all merged, CI green on each.
 
 | PR | What | Tests |
 | --- | --- | --- |
@@ -63,7 +76,9 @@ Audit it yourself against the VM, read-only:
 | #27 | Legacy flake identified; next occurrence self-diagnosing | — |
 | #28 | This report | — |
 | #29 | Registration fixed on Postgres, three bugs deep | — |
-| #30 | Schema-gap audit | — |
+| #30 | Schema-gap audit (tables) | — |
+| #31 | Report brought up to date | — |
+| #32 | Schema-gap audit extended to columns | — |
 
 Also worth knowing from #25: the suggestion cache has never served a request — a temporal-dead-zone
 read of `playerId` meant every cache *hit* threw. And four routes were registered twice, the
@@ -105,6 +120,9 @@ dangerous than no check, because it is trusted.
 - **Schemas for `direct_messages` and `password_resets`.** Inventing one by reading INSERT
   statements is guesswork, and password reset wants real decisions about token lifetime, single use
   and cleanup.
+- **The five surviving column mismatches.** Each is a one-line dialect-aware change, but each wants
+  its route exercised end to end the way registration was in #29. Changing five write paths on
+  inspection alone is how this divergence accumulated in the first place.
 - **The sandbox room-code exposure (D11).** Unchanged; needs a decision, not a command.
 
 ## Where to pick up
