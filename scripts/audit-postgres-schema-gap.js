@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Which tables does the legacy server read or write that do not exist on Postgres?
+ * Which tables and columns does the legacy server write that do not exist on Postgres?
  *
  * Legacy's two schemas have diverged: `db.js` builds one table set for SQLite and a different one
  * for Postgres, and `server.js` writes assuming SQLite. A missing table is not a dialect quirk --
@@ -85,6 +85,34 @@ function definitionSites(table) {
   return sites;
 }
 
+/**
+ * Columns the server writes, per table, taken from INSERT column lists.
+ *
+ * `INSERT INTO <table> (<cols>)` is distinctive enough to match directly -- it needs none of the
+ * literal-extraction that made the table check unreliable, because the table name and parenthesised
+ * list only occur together in real SQL.
+ *
+ * INSERTs specifically, rather than every reference: a SELECT of a missing column fails too, but an
+ * INSERT is where the two schemas were written apart, and it names the columns explicitly.
+ */
+function insertedColumns(file) {
+  const re = /INSERT\s+(?:OR\s+(?:IGNORE|REPLACE)\s+)?INTO\s+([a-z_][a-z0-9_]*)\s*\(([^)]*)\)/gi;
+  const source = readFileSync(join(ROOT, file), 'utf8');
+  const out = new Map();
+  let m;
+  while ((m = re.exec(source))) {
+    const table = m[1].toLowerCase();
+    const cols = m[2]
+      .split(',')
+      .map((c) => c.trim().toLowerCase())
+      .filter((c) => /^[a-z_][a-z0-9_]*$/.test(c));
+    if (!cols.length) continue;
+    if (!out.has(table)) out.set(table, new Set());
+    for (const c of cols) out.get(table).add(c);
+  }
+  return out;
+}
+
 async function main() {
   const url = process.argv[2] || process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (!url) {
@@ -96,8 +124,16 @@ async function main() {
   const { rows } = await client.query(
     "SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
   );
+  const { rows: colRows } = await client.query(
+    "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'",
+  );
   await client.end();
   const present = new Set(rows.map((r) => r.tablename));
+  const columns = new Map();
+  for (const r of colRows) {
+    if (!columns.has(r.table_name)) columns.set(r.table_name, new Set());
+    columns.get(r.table_name).add(r.column_name);
+  }
 
   const refs = referencedTables('server.js');
   const missing = [...refs].filter(([t]) => !present.has(t)).sort();
@@ -132,6 +168,32 @@ async function main() {
     console.log('');
   }
   console.log(`${missing.length} table(s) referenced but absent. Each is a dead feature on this database.`);
+  reportColumns(columns, present);
+}
+
+/**
+ * A table can exist and still be the wrong shape. `db.js` builds a different table for each dialect
+ * under the same name -- `follows` has `following_id` on Postgres and `followed_id` on SQLite,
+ * `collection_cards` has `foil` against `is_foil` -- and server.js writes the SQLite spelling. The
+ * INSERT fails with `column "..." does not exist`, which a table-level check never sees.
+ */
+function reportColumns(columns, present) {
+  const gaps = [];
+  for (const [table, cols] of insertedColumns('server.js')) {
+    if (!present.has(table)) continue; // the table check already covers this
+    const have = columns.get(table) ?? new Set();
+    const missing = [...cols].filter((c) => !have.has(c)).sort();
+    if (missing.length) gaps.push([table, missing]);
+  }
+  if (!gaps.length) {
+    console.log('\nEvery column server.js inserts exists on the tables that are present.');
+    return;
+  }
+  console.log('\nCOLUMNS server.js inserts that do not exist (the table is there, the shape is not):');
+  for (const [table, missing] of gaps.sort()) {
+    console.log(`  ${table.padEnd(20)} ${missing.join(', ')}`);
+  }
+  console.log(`\n${gaps.reduce((n, [, m]) => n + m.length, 0)} column(s) missing across ${gaps.length} table(s).`);
 }
 
 main().catch((err) => {
