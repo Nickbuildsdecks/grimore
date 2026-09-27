@@ -10,12 +10,14 @@ wrong-in-waiting.
 
 ## What landed
 
+All four merged; `main` at `f0c9c68`.
+
 | PR | What | Tests |
 | --- | --- | --- |
 | #24 | Error-code contract made real and typed | 429 → 436 |
 | #25 | Three legacy bugs with live user impact | legacy 35 → 38 |
 | #26 | `apps/api` buildable and deployable, behind a compose profile | unchanged |
-| #27 | Legacy flake identified; next occurrence self-diagnosing | unchanged — **open, CI running as this was written** |
+| #27 | Legacy flake identified; next occurrence self-diagnosing | unchanged |
 
 ## The three findings that matter
 
