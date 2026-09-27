@@ -10,7 +10,7 @@
     "build:web": "pnpm --filter @grimore/web build",
     "test:recommendations": "node --test test/recommendation-engine.test.js",
     "test:multiplayer": "node --test test/multiplayer-engine.test.js",
-    "test:unit": "node --test test/recommendation-engine.test.js test/multiplayer-engine.test.js test/maintenance-scripts.test.js test/billing-gating.test.js",
+    "test:unit": "node --test test/recommendation-engine.test.js test/multiplayer-engine.test.js test/maintenance-scripts.test.js test/billing-gating.test.js test/scryfall-service.test.js",
     "preflight": "node scripts/preflight.js",
     "v2:build": "turbo run build --filter=./packages/* --filter=./apps/*",
     "v2:typecheck": "turbo run typecheck --filter=./packages/* --filter=./apps/*",

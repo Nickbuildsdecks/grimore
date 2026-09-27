@@ -8,6 +8,15 @@ const db = require('./db');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Helper to make HTTPS requests with User-Agent
+/**
+ * GET a JSON document.
+ *
+ * The status code used to be ignored, so an error response -- Scryfall's own JSON error, a proxy's
+ * HTML page, a 429 -- was handed straight to JSON.parse. When it was not valid JSON the caller got
+ * a bare `SyntaxError: Unexpected token '<'` with no URL and no status, which is what the startup
+ * log showed on 2026-09-26 and says nothing about what actually went wrong. Both failure modes now
+ * name the URL and the status.
+ */
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     https.get(url, {
@@ -19,11 +28,19 @@ function fetchJson(url) {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
+        const status = res.statusCode || 0;
+        if (status < 200 || status >= 300) {
+          // Keep a slice of the body: Scryfall returns a JSON error with a useful `details` field,
+          // and even an HTML error page tells you whether a proxy answered instead of the origin.
+          return reject(new Error(`GET ${url} failed with HTTP ${status}: ${data.slice(0, 200)}`));
+        }
         try {
           resolve(JSON.parse(data));
-        } catch(e) { reject(e); }
+        } catch (e) {
+          reject(new Error(`GET ${url} returned HTTP ${status} with a body that is not JSON: ${e.message}`));
+        }
       });
-    }).on('error', reject);
+    }).on('error', (err) => reject(new Error(`GET ${url} failed: ${err.message}`)));
   });
 }
 
@@ -322,5 +339,7 @@ module.exports = {
   setupDailySync,
   // Exported for the schema test in apps/api — see the comment on CARD_UPSERT_PG.
   CARD_UPSERT_PG,
-  CARD_UPSERT_SQLITE
+  CARD_UPSERT_SQLITE,
+  // Exported so its failure paths can be exercised; they are the whole point of the function.
+  fetchJson
 };

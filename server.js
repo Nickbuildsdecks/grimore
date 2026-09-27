@@ -4089,6 +4089,11 @@ const suggestionsMemoryCache = new Map();
 app.get('/api/decks/:deckId/suggestions', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
   const { deckId } = req.params;
+  // Declared here rather than beside its first use further down: the cache-hit path below reads
+  // playerId, and with the declaration after that branch every cached request landed in the
+  // temporal dead zone and threw "Cannot access 'playerId' before initialization". The 6-hour
+  // suggestion cache therefore 500'd on every hit it ever scored.
+  const playerId = req.session.player.id;
 
   try {
     // Find commander cards for the deck
@@ -4266,7 +4271,6 @@ app.get('/api/decks/:deckId/suggestions', async (req, res) => {
     }
 
     // Intersect suggestions with user's collections to find owned recommendations
-    const playerId = req.session.player.id;
     const ownedCardsRows = await db.query(
       `SELECT DISTINCT cc.card_name 
        FROM collection_cards cc
@@ -7457,82 +7461,6 @@ if (isPrimaryInstance) {
   setInterval(checkDailyResetCron, 30000);
   console.log("[Cluster] Primary instance registered background cron tasks.");
 }
-
-// ── SYSTEM 1: DRAFT PODS BACKEND ROUTES ───────────────────────────────────
-
-app.post('/api/draft/create', async (req, res) => {
-  try {
-    const draftId = 'draft_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-    const scryfallNameCol = db.isPostgres ? "name" : "card_name";
-    const scryfallIdCol = db.isPostgres ? "id" : "scryfall_id";
-    const poolRows = await db.query(`SELECT ${scryfallIdCol} AS scryfall_id, ${scryfallNameCol} AS name, cmc, rarity, price FROM scryfall_cards LIMIT 120`);
-    
-    // Generate 3 packs of 15 cards for 8 seats (Total 360 cards)
-    const session = {
-      id: draftId,
-      status: 'active',
-      packNumber: 1,
-      pickNumber: 1,
-      currentPack: (poolRows.slice(0, 15)).map(r => ({ scryfallId: r.scryfall_id, name: r.name, cmc: r.cmc, rarity: r.rarity, price: r.price })),
-      draftedPool: []
-    };
-
-    activeDraftSessions.set(draftId, session);
-    res.json({ success: true, draftId, session });
-  } catch (err) {
-    console.error("Draft creation error:", err);
-    res.status(500).json({ error: "Failed to create draft session" });
-  }
-});
-
-app.get('/api/draft/:id', (req, res) => {
-  const session = activeDraftSessions.get(req.params.id);
-  if (!session) return res.status(404).json({ error: "Draft session not found" });
-  res.json({ success: true, session });
-});
-
-app.post('/api/draft/:id/pick', (req, res) => {
-  const session = activeDraftSessions.get(req.params.id);
-  if (!session) return res.status(404).json({ error: "Draft session not found" });
-
-  const { cardIndex } = req.body;
-  if (cardIndex !== undefined && session.currentPack[cardIndex]) {
-    const pickedCard = session.currentPack.splice(cardIndex, 1)[0];
-    session.draftedPool.push(pickedCard);
-    session.pickNumber++;
-
-    if (session.currentPack.length === 0) {
-      session.packNumber++;
-      session.pickNumber = 1;
-      if (session.packNumber > 3) {
-        session.status = 'completed';
-      }
-    }
-  }
-
-  res.json({ success: true, ...session });
-});
-
-// ── SYSTEM 3: NATURAL LANGUAGE SEMANTIC CARD SEARCH ─────────────────────────
-app.get('/api/search/semantic', async (req, res) => {
-  try {
-    const q = (req.query.q || '').toLowerCase();
-    const scryfallNameCol = db.isPostgres ? "name" : "card_name";
-    const scryfallIdCol = db.isPostgres ? "id" : "scryfall_id";
-    
-    let sqlWhere = "1=1";
-    if (q.includes("free counter")) sqlWhere = "LOWER(oracle_text) LIKE '%without paying%' AND LOWER(type_line) LIKE '%instant%'";
-    else if (q.includes("tithe") || q.includes("tax")) sqlWhere = "LOWER(oracle_text) LIKE '%whenever an opponent%'";
-    else if (q.includes("ramp")) sqlWhere = "LOWER(oracle_text) LIKE '%add %' OR LOWER(oracle_text) LIKE '%search your library for a land%'";
-    else if (q.includes("draw")) sqlWhere = "LOWER(oracle_text) LIKE '%draw %card%'";
-
-    const rows = await db.query(`SELECT ${scryfallIdCol} AS scryfall_id, ${scryfallNameCol} AS name, type_line, oracle_text, price FROM scryfall_cards WHERE ${sqlWhere} LIMIT 20`);
-    res.json({ success: true, results: rows });
-  } catch (err) {
-    console.error("Semantic search error:", err);
-    res.status(500).json({ error: "Semantic search failed" });
-  }
-});
 
 // ── MULTIPLAYER PLAYTEST SANDBOX ROOM API ────────────────────────────────────
 const sandboxRooms = {};
