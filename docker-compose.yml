@@ -35,6 +35,50 @@ services:
       redis:
         condition: service_healthy
 
+  # The v2 API. NOT started by `docker compose up -d` -- it is behind a profile, so bringing it up
+  # is always explicit:
+  #
+  #     docker compose --profile v2 up -d api
+  #
+  # Two reasons it is gated rather than default:
+  #
+  #  1. Starting it runs migrations 0002-0012 against whatever DATABASE_URL it is given. None of
+  #     them have ever run on the VM, and 0012 rewrites a password hash. Against production that is
+  #     a one-way door and wants a backup taken first.
+  #  2. `deploy-gcp.ps1` does not ship `apps/api`, `packages/` or the pnpm lockfile, so the build
+  #     context on the VM is currently incomplete. Enabling this profile needs that change too.
+  #
+  # Nothing routes to it: the Caddyfile is untouched, so it is reachable only from inside the
+  # compose network until someone deliberately points traffic at it.
+  #
+  # See claude/v2-deploy-notes.md for the cutover sequence.
+  api:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: grimore-api
+    restart: always
+    expose:
+      - "3000"
+    env_file:
+      - .env
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      # apps/api reads DATABASE_URL; the legacy app reads POSTGRES_URL. Same database, different
+      # variable names, so both can run side by side during the migration.
+      - DATABASE_URL=postgres://grimore_user:${POSTGRES_PASSWORD:-grimore_password_99}@postgres:5432/grimore_db
+      - REDIS_URL=redis://redis:6379
+      - SESSION_SECRET=${SESSION_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - ADMIN_GOOGLE_EMAILS=${ADMIN_GOOGLE_EMAILS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: grimore-postgres
