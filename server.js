@@ -7248,8 +7248,15 @@ app.get('/api/auth/me', (req, res) => {
 // Affiliate monetization config
 app.get('/api/config/affiliates', (req, res) => {
   res.json({
-    tcgplayerAffiliateId: process.env.TCGPLAYER_AFFILIATE_ID || 'grimore',
-    cardKingdomAffiliateId: process.env.CARDKINGDOM_AFFILIATE_ID || 'grimore'
+    // Defaulted to 'grimore', which is not a real affiliate id, so an unset TCGPLAYER_AFFILIATE_ID
+    // silently broke attribution on every purchase link -- and it is unset on the VM today. CLAUDE.md
+    // requires every purchase link to carry xJoE0d, which is also what every hard-coded link in
+    // public/ already uses, so the documented id is the default here as it is in apps/api.
+    tcgplayerAffiliateId: process.env.TCGPLAYER_AFFILIATE_ID || 'xJoE0d',
+    // No Card Kingdom affiliate id exists, so there is nothing to fall back to. 'grimore' produced a
+    // link that looked attributed and was not; null lets the client leave the link unattributed
+    // honestly, which is what apps/api returns.
+    cardKingdomAffiliateId: process.env.CARDKINGDOM_AFFILIATE_ID || null
   });
 });
 

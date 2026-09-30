@@ -1141,3 +1141,24 @@ test('signing out everywhere ends other sessions and the calling one', { skip },
   // Including the caller: someone who suspects a compromise may be on the compromised device.
   assert.equal((await p.client('/api/auth/me')).body.loggedIn, false, 'the calling session must end too');
 });
+
+// ---------------------------------------------------------------------------------------------
+// Affiliate attribution. Not a write path, but this is the only harness that boots server.js, and
+// the rule it enforces is a product requirement rather than a schema one: CLAUDE.md says every
+// purchase link must carry xJoE0d. The route defaulted to 'grimore', which is not a real affiliate
+// id, so an unset TCGPLAYER_AFFILIATE_ID silently earned nothing on every buy link in the app --
+// and it is unset on the VM. The harness sets no affiliate env vars, so this exercises the default.
+// ---------------------------------------------------------------------------------------------
+
+test('the affiliate config serves the documented id with no env var set', { skip }, async () => {
+  const res = await makeClient()('/api/config/affiliates');
+  assert.equal(res.status, 200);
+  assert.equal(
+    res.body.tcgplayerAffiliateId,
+    'xJoE0d',
+    'an unset TCGPLAYER_AFFILIATE_ID must still attribute purchase links',
+  );
+  // There is no Card Kingdom affiliate id to fall back to. 'grimore' produced a link that looked
+  // attributed and was not; null lets the client leave it unattributed honestly.
+  assert.equal(res.body.cardKingdomAffiliateId, null);
+});

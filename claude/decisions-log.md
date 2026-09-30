@@ -474,3 +474,23 @@ not a refactor, so it is flagged rather than guessed at. The rest of the score-r
 Postgres migration 0009. Nothing in `db.js` or `server.js` creates it for SQLite, so the whole league
 engine has never existed on the local dev dialect, and this ladder can only be exercised on Postgres.
 `test/postgres-write-paths.test.js` does that, against the dialect production actually runs.
+
+## D22 — The affiliate id default, which was quietly earning nothing
+
+**Decided:** default `TCGPLAYER_AFFILIATE_ID` to `xJoE0d` in legacy, as `apps/api` already does, and
+return `null` rather than `'grimore'` for Card Kingdom.
+
+`/api/config/affiliates` fell back to `'grimore'`. That is not a real affiliate id, so with
+`TCGPLAYER_AFFILIATE_ID` unset — which it is on the VM — every purchase link the client built from this
+route was unattributed while looking attributed. CLAUDE.md requires `xJoE0d` on all of them, and every
+hard-coded link in `public/` already uses it; only the configurable path was wrong. `apps/api` fixed this
+during the port and recorded why; legacy is what serves traffic, so it needed the same default.
+
+Card Kingdom gets `null` instead of a fabricated id, because there is no Card Kingdom affiliate id to
+fall back to and a fake one is worse than none — the client can leave the link unattributed honestly.
+Nothing in `public/` or `apps/web` reads that field today, so this changes no rendered link.
+
+Tested in `test/postgres-write-paths.test.js`, which is the only harness that boots `server.js` and sets
+no affiliate environment variables, so the assertion exercises the default rather than a fixture. This
+removes `TCGPLAYER_AFFILIATE_ID=xJoE0d` from the list of things Nick has to set on the VM: setting it is
+now an override rather than a requirement.
