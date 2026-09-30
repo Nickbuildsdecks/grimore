@@ -177,3 +177,19 @@ export const ForgotPasswordResponse = z.object({
   devResetLink: z.string().optional(),
 });
 export type ForgotPasswordResponse = z.infer<typeof ForgotPasswordResponse>;
+
+/**
+ * The forgot-password response, identical whether or not the account exists.
+ *
+ * A constant rather than the same string written in two branches: "both paths return the same message"
+ * is exactly the kind of sameness that drifts the first time someone edits one of them, and the drift
+ * is an account-enumeration oracle.
+ */
+export const FORGOT_PASSWORD_MESSAGE =
+  "If an account matches that, we have sent a recovery link. Check your email, including spam.";
+
+/** POST /api/auth/verify-email/confirm */
+export const VerifyEmailInput = z.object({
+  token: z.string().min(1).max(256),
+});
+export type VerifyEmailInput = z.infer<typeof VerifyEmailInput>;

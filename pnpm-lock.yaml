@@ -62,6 +62,9 @@ importers:
       '@grimore/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@grimore/mailer':
+        specifier: workspace:*
+        version: link:../../packages/mailer
       '@grimore/shared':
         specifier: workspace:*
         version: link:../../packages/shared

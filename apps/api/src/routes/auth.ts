@@ -19,6 +19,7 @@ import { withTransaction } from '@grimore/db';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
 import { stampSessionEpoch } from '../lib/sessionEpoch.js';
+import { auditAccountEvent } from '../lib/accountEvents.js';
 import { createGoogleVerifier, type GoogleIdentity, type GoogleVerifier } from '../lib/googleIdentity.js';
 
 const PLAYER_COLUMNS = `id, username, store_nickname, avatar_url, profile_commander, profile_bio, is_admin,
@@ -30,7 +31,7 @@ function newPlayerId(): string {
 }
 
 export function authRouter(ctx: AppContext, googleVerifier?: GoogleVerifier): Router {
-  const { pool, env } = ctx;
+  const { pool, env, log } = ctx;
   const r = Router();
   // Injected by tests. No test can mint a token Google will sign for a real client id, so the
   // account-resolution logic below is exercised with a stand-in verifier while the real one's
@@ -88,13 +89,19 @@ export function authRouter(ctx: AppContext, googleVerifier?: GoogleVerifier): Ro
       const row = q.rows[0];
       // Constant-ish time: always run a compare so username enumeration via timing is harder.
       const valid = row ? await bcrypt.compare(input.password, row.password_hash) : await bcrypt.compare(input.password, DUMMY_HASH);
-      if (!row || !valid) throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid username or password.');
+      if (!row || !valid) {
+        // Audited before throwing. A failed attempt against a username that does not exist is exactly
+        // the event worth keeping, which is why account_events.player_id is nullable.
+        auditAccountEvent(pool, log, req, 'login.failure', { playerId: row?.id ?? null, identifier: input.username });
+        throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid username or password.');
+      }
       await regenerate(req);
       req.session.playerId = row.id;
       // Stamped so the epoch guard can tell this session from one issued before a later credential
       // change. An unstamped session is treated as invalid, so forgetting this here would silently log
       // everyone straight back out.
       stampSessionEpoch(req);
+      auditAccountEvent(pool, log, req, 'login.success', { playerId: row.id, identifier: input.username });
       const user = MePlayer.parse(row);
       res.json({ success: true, user });
     }),
@@ -195,6 +202,7 @@ export function authRouter(ctx: AppContext, googleVerifier?: GoogleVerifier): Ro
       await regenerate(req);
       req.session.playerId = player.id;
       stampSessionEpoch(req);
+      auditAccountEvent(pool, log, req, 'login.success', { playerId: player.id, identifier: identity.email });
       res.json({ success: true, user: MePlayer.parse(player) });
     }),
   );
