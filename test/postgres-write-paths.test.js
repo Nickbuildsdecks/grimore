@@ -894,3 +894,98 @@ test('a session epoch check does not sign out unrelated accounts', { skip }, asy
     'an unrelated account must keep its session',
   );
 });
+
+test('the two candidate link paths serve different documents, and only one can handle a token', { skip }, async () => {
+  // Why the link is `/?resetToken=` and not `/reset-password?token=`.
+  //
+  // Both return 200, which is what made this easy to get wrong: every unmatched GET falls through to a
+  // SPA shell. The difference is WHICH document comes back. `/` serves the legacy page, which loads
+  // `app.js` -- the script that reads the token out of the query string. `/reset-password` serves the
+  // React shell, whose BrowserRouter has basename="/react" and so matches nothing at that path: the page
+  // loads and does nothing at all.
+  //
+  // Asserted on the served HTML rather than on the route table, because the route table is what made it
+  // look fine.
+  const p = await newPlayer('w');
+
+  const landing = await p.client('/?resetToken=probe');
+  assert.equal(landing.status, 200, 'the reset landing page must be served');
+  assert.equal(typeof landing.body, 'string', 'expected an HTML document');
+  assert.match(landing.body, /app\.js/, 'the legacy page must load app.js, which reads the token');
+
+  const wrongPath = await p.client('/reset-password?token=probe');
+  assert.equal(wrongPath.status, 200, 'it 200s, which is exactly why this was easy to miss');
+  assert.equal(typeof wrongPath.body, 'string');
+  assert.doesNotMatch(
+    wrongPath.body,
+    /app\.js/,
+    'this path serves the React shell, which cannot handle a recovery token at this basename',
+  );
+});
+
+test('email verification works end to end on the legacy server', { skip }, async () => {
+  const p = await newPlayer('x');
+  const requested = await p.client('/api/auth/verify-email/request', { method: 'POST', body: {} });
+  assert.equal(requested.status, 200, `verify request: ${JSON.stringify(requested.body)}`);
+
+  const pending = await appClient.query(
+    'SELECT id, email, token_hash FROM email_verifications WHERE player_id = $1',
+    [p.id],
+  );
+  assert.equal(pending.rows.length, 1, 'one pending verification');
+  assert.match(pending.rows[0].token_hash, /^[0-9a-f]{64}$/, 'stored as a hash, not as issued');
+
+  const token = require('node:crypto').randomBytes(32).toString('base64url');
+  await appClient.query('UPDATE email_verifications SET token_hash = $1 WHERE id = $2', [
+    hashResetToken(token),
+    pending.rows[0].id,
+  ]);
+
+  const before = await appClient.query('SELECT email_verified_at FROM players WHERE id = $1', [p.id]);
+  assert.equal(before.rows[0].email_verified_at, null);
+
+  const confirmed = await p.client('/api/auth/verify-email/confirm', { method: 'POST', body: { token } });
+  assert.equal(confirmed.status, 200, `confirm: ${JSON.stringify(confirmed.body)}`);
+  const after = await appClient.query('SELECT email_verified_at FROM players WHERE id = $1', [p.id]);
+  assert.ok(after.rows[0].email_verified_at, 'the address must be marked verified');
+
+  // Single use.
+  const replay = await p.client('/api/auth/verify-email/confirm', { method: 'POST', body: { token } });
+  assert.equal(replay.status, 400, 'a consumed verification token must not be redeemable');
+});
+
+test('a verification token does not verify an address changed since it was issued', { skip }, async () => {
+  const p = await newPlayer('y');
+  await p.client('/api/auth/verify-email/request', { method: 'POST', body: {} });
+  const row = await appClient.query('SELECT id FROM email_verifications WHERE player_id = $1', [p.id]);
+  const token = require('node:crypto').randomBytes(32).toString('base64url');
+  await appClient.query('UPDATE email_verifications SET token_hash = $1 WHERE id = $2', [
+    hashResetToken(token),
+    row.rows[0].id,
+  ]);
+
+  await appClient.query('UPDATE players SET email = $1 WHERE id = $2', [`moved_${p.username}@example.test`, p.id]);
+
+  const res = await p.client('/api/auth/verify-email/confirm', { method: 'POST', body: { token } });
+  assert.equal(res.status, 400, 'the token proves the old address, and nothing about the new one');
+  const after = await appClient.query('SELECT email_verified_at FROM players WHERE id = $1', [p.id]);
+  assert.equal(after.rows[0].email_verified_at, null);
+});
+
+test('signing out everywhere ends other sessions and the calling one', { skip }, async () => {
+  const p = await newPlayer('z');
+  const elsewhere = makeClient();
+  const signedIn = await elsewhere('/api/auth/login', {
+    method: 'POST',
+    body: { username: p.username, password: 'Sufficiently-Long-Pass-9' },
+  });
+  assert.equal(signedIn.status, 200);
+  assert.equal((await elsewhere('/api/auth/me')).body.loggedIn, true);
+
+  const out = await p.client('/api/auth/sign-out-everywhere', { method: 'POST', body: {} });
+  assert.equal(out.status, 200, `sign-out-everywhere: ${JSON.stringify(out.body)}`);
+
+  assert.equal((await elsewhere('/api/auth/me')).body.loggedIn, false, 'the other session must end');
+  // Including the caller: someone who suspects a compromise may be on the compromised device.
+  assert.equal((await p.client('/api/auth/me')).body.loggedIn, false, 'the calling session must end too');
+});

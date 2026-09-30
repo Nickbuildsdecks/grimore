@@ -109,7 +109,10 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('account recovery (requires DATABAS
   /** The token out of the most recent message. The plaintext exists only here and in the email. */
   function tokenFromMail(): string {
     const body = mail.last()?.text ?? '';
-    const m = body.match(/token=([A-Za-z0-9_\-%]+)/);
+    // Matches `resetToken=` and `verifyToken=` as well as a bare `token=`. The parameter name is part of
+    // the link's contract with the front end -- `public/app.js` reads `resetToken`, and React's Login
+    // reads it too -- so this regex tracks whichever the route mints rather than pinning one spelling.
+    const m = body.match(/[?&](?:reset|verify)?[Tt]oken=([A-Za-z0-9_\-%]+)/);
     expect(m, `no token in mail body: ${body}`).toBeTruthy();
     return decodeURIComponent(m![1]);
   }

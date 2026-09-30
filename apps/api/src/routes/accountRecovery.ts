@@ -136,7 +136,10 @@ export function accountRecoveryRouter(ctx: AppContext, mailer: Transport): Route
         [player.id, issued.tokenHash, req.ip ?? null, issued.expiresAt],
       );
 
-      const link = `${baseUrl()}/reset-password?token=${encodeURIComponent(issued.token)}`;
+      // `/?resetToken=` is the only shape either front end handles: `public/app.js` reads that parameter
+      // at `/`, and the React app's BrowserRouter has `basename="/react"`, so a bare `/reset-password`
+      // serves the React shell and matches nothing in it. Checked against a running server.
+      const link = `${baseUrl()}/?resetToken=${encodeURIComponent(issued.token)}`;
       // Awaited, and not caught: if the mail cannot go, the caller must be told the request failed
       // rather than be left waiting for something that is not coming. The fail-closed transport is what
       // makes an unconfigured deployment surface that instead of pretending.
@@ -265,7 +268,7 @@ export function accountRecoveryRouter(ctx: AppContext, mailer: Transport): Route
         // token issued for the previous one.
         [playerId, player.email, issued.tokenHash, issued.expiresAt],
       );
-      const link = `${baseUrl()}/verify-email?token=${encodeURIComponent(issued.token)}`;
+      const link = `${baseUrl()}/?verifyToken=${encodeURIComponent(issued.token)}`;
       await mailer.send({
         to: player.email,
         subject: 'Confirm your Grimore email address',

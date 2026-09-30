@@ -279,3 +279,34 @@ database until migration 0014 runs. It warns once, loudly, and passes the reques
 failing every authenticated request would take the app down on a database that is otherwise fine. Any
 other error fails closed — passing those through would make the whole check bypassable by anything that
 can break the query.
+
+## A second correction: the recovery link pointed at a page that could not handle it
+
+Worth recording separately, because the server logic was entirely correct and the flow was still dead.
+
+The link was built as `/reset-password?token=...`. Both front ends return 200 for that path — every
+unmatched GET falls through to a SPA shell — which is exactly why it looked fine. But:
+
+- `public/app.js` reads `resetToken` (or `token`) from the query string, and it is served at **`/`**.
+- `/reset-password` serves the **React** shell instead, whose `BrowserRouter` has `basename="/react"`, so
+  it matches nothing at that path. The page loads and does nothing at all.
+
+Found by requesting both paths against a running server and comparing the documents that came back, not
+by reading the route table — the route table is what made it look correct. Both apps now mint
+`/?resetToken=`, and a test asserts the served HTML: `/` carries `app.js`, `/reset-password` does not.
+React's `Login` also accepts `token` alongside `resetToken`, matching what `app.js` already tolerated,
+because a recovery link gets pasted, forwarded and hand-edited.
+
+The general shape of the mistake: correct server behaviour, a plausible URL, a 200 response, and a flow
+that cannot complete. Nothing on the server side would ever have surfaced it.
+
+## Email verification is now complete on both apps
+
+Legacy had no verification flow at all, and `apps/api`'s was API-complete but unreachable: the confirm
+endpoint is a POST with a JSON body, so a link in an email cannot invoke it — something has to make the
+call. `public/app.js` now does, from a `?verifyToken=` link, and strips the token out of the address bar
+on both outcomes so it does not linger in history, the title bar, or the `Referer` of every subsequent
+request from the page.
+
+Legacy also gained `verify-email/request`, `verify-email/confirm` and `sign-out-everywhere`, against the
+same tables and with the same token discipline as `apps/api`.

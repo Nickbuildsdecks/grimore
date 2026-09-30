@@ -5476,7 +5476,15 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       [player.id, issued.tokenHash, req.ip || null, issued.expiresAt.toISOString()]
     );
 
-    const link = `${base}/reset-password?token=${encodeURIComponent(issued.token)}`;
+    // `/?resetToken=` and not `/reset-password?token=`, because that is the only shape either front end
+    // actually handles.
+    //
+    // `public/app.js` reads `resetToken` (or `token`) from the query string on load, and it is served at
+    // `/`. An unmatched path like `/reset-password` falls through to the React shell instead, whose
+    // BrowserRouter has `basename="/react"` and so matches nothing there -- the page loads and does
+    // nothing at all. Verified by requesting both paths against a running server, not by reading the
+    // route table.
+    const link = `${base}/?resetToken=${encodeURIComponent(issued.token)}`;
     // Awaited and not caught: if the mail cannot go, the caller must be told the request failed rather
     // than be left waiting for a link that is not coming.
     await mailer.send({
@@ -5550,6 +5558,114 @@ app.post('/api/auth/reset-password', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error('[recovery] reset-password failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
+  }
+});
+
+/**
+ * Email verification.
+ *
+ * Legacy accepted any syntactically valid address at registration and never checked it, so password
+ * recovery delivered to an address nobody had proven they control. `apps/api` got this flow first; these
+ * are the same two endpoints against the same table, because legacy is what production serves.
+ */
+app.post('/api/auth/verify-email/request', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  try {
+    const base = recoveryBaseUrl();
+    if (!base) {
+      console.error('[accounts] APP_BASE_URL is not set; refusing to build a verification link from the request Host.');
+      return res.status(503).json({ error: "Email verification is not configured on this server." });
+    }
+    const player = await db.get(
+      "SELECT username, email, email_verified_at FROM players WHERE id = ?",
+      [playerId]
+    );
+    if (!player || !player.email) {
+      return res.status(400).json({ error: "Your account has no email address to verify." });
+    }
+    if (player.email_verified_at) {
+      return res.json({ success: true, alreadyVerified: true });
+    }
+
+    const issued = accountTokens.issueToken('emailVerification');
+    // The address is captured now, so changing it later cannot be retroactively verified by a token
+    // issued for the previous one.
+    await db.run(
+      "INSERT INTO email_verifications (player_id, email, token_hash, expires_at) VALUES (?, ?, ?, ?)",
+      [playerId, player.email, issued.tokenHash, issued.expiresAt.toISOString()]
+    );
+    const link = `${base}/?verifyToken=${encodeURIComponent(issued.token)}`;
+    await mailer.send({
+      to: player.email,
+      subject: 'Confirm your Grimore email address',
+      text:
+        `Confirm this address for your Grimore account (${player.username}) by opening this link within ` +
+        `24 hours:\n\n${link}\n`
+    });
+    await recordAccountEvent(req, 'email.verification.sent', { playerId });
+
+    const response = { success: true };
+    const dev = devResetLink(link);
+    if (dev) response.devVerifyLink = dev;
+    res.json(response);
+  } catch (e) {
+    console.error('[accounts] verify-email/request failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
+  }
+});
+
+app.post('/api/auth/verify-email/confirm', async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
+  try {
+    const tokenHash = accountTokens.hashToken(String(token));
+    const record = await db.get(
+      "SELECT id, player_id, email, expires_at, consumed_at FROM email_verifications WHERE token_hash = ?",
+      [tokenHash]
+    );
+    const rejection = accountTokens.checkToken(
+      record ? { expiresAt: record.expires_at, consumedAt: record.consumed_at } : null
+    );
+    if (rejection) return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
+
+    // Only marks the address the token was issued for. If the account's address has changed since, this
+    // token proves control of the old one and nothing about the new one.
+    const updated = await db.run(
+      "UPDATE players SET email_verified_at = CURRENT_TIMESTAMP WHERE id = ? AND LOWER(email) = LOWER(?) AND email_verified_at IS NULL",
+      [record.player_id, record.email]
+    );
+    // Consumed either way, so a token whose address no longer matches cannot be replayed later if the
+    // account happens to change back.
+    await db.run("UPDATE email_verifications SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?", [record.id]);
+    if (!updated || !updated.changes) {
+      return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
+    }
+    await recordAccountEvent(req, 'email.verified', { playerId: record.player_id });
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[accounts] verify-email/confirm failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
+  }
+});
+
+/**
+ * Sign out of every device.
+ *
+ * Moves the account's session mark forward, which the epoch guard enforces on every authenticated
+ * request. Includes the calling session on purpose: "everywhere" that spared the device asking would be a
+ * lie, and somebody who suspects a compromise may well be on the compromised device.
+ */
+app.post('/api/auth/sign-out-everywhere', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  try {
+    await db.run("UPDATE players SET sessions_valid_from = CURRENT_TIMESTAMP WHERE id = ?", [playerId]);
+    await recordAccountEvent(req, 'sessions.revoked', { playerId });
+    req.session.regenerate(() => res.json({ success: true }));
+  } catch (e) {
+    console.error('[accounts] sign-out-everywhere failed:', e.message);
     res.status(500).json({ error: "Internal server error." });
   }
 });
