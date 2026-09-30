@@ -379,3 +379,33 @@ organiser mid-test seeded a zeroed `player_stats` row for the active season, so 
 rows" was counting registration. The organiser is created before the season opens now. Worth noting that
 the thing that tripped my test is the season-two collision recorded above — the untargeted
 `ON CONFLICT DO NOTHING` — showing up from a third direction.
+
+## Sixth pass: the affiliate id, found while confirming what is left for Nick
+
+`TCGPLAYER_AFFILIATE_ID=xJoE0d` was on the list of things Nick had to set on the VM. Checking why turned
+it into a code fix instead: `/api/config/affiliates` in legacy defaulted to `'grimore'`, which is not a
+real affiliate id, so with the variable unset — as it is — every purchase link built from that route
+looked attributed and earned nothing. CLAUDE.md requires `xJoE0d` on all of them, every hard-coded link
+in `public/` already carries it, and `apps/api` had already made it the default during the port. Only the
+configurable path in the app actually serving traffic was wrong.
+
+Card Kingdom now returns `null` instead of `'grimore'`: there is no Card Kingdom affiliate id to fall
+back to, and a fabricated one is worse than none. Nothing reads that field, so no rendered link changes.
+
+Tested where it can be tested — `test/postgres-write-paths.test.js` is the only harness that boots
+`server.js`, and it sets no affiliate environment variables, so the assertion exercises the default
+rather than a fixture. One item off Nick's VM list: setting the variable is an override now, not a
+requirement.
+
+## Still open, and what kind of thing each is
+
+**Nick's, VM-side, unchanged:** `SMTP_URL` + `MAIL_FROM` + `APP_BASE_URL` (recovery mail fails closed
+until they are set, by design); the staging rehearsal; then `pg_dump` followed by
+`docker compose --profile v2 up -d api`, both run by hand with eyes on the output.
+
+**A product decision, not a refactor:** the dashboard's "Report Your Pod Result" form. It is a live,
+rendered affordance that has never worked, and it cannot be made to work without deciding what one
+player's self-report does to the other seats — the route marks the pod `completed`, so a one-seat report
+closes the pod with everyone else on zero. The two honest options are per-seat confirmation before a pod
+locks, or replacing the form with the full-pod report that already exists in `renderHubPairings`. Until
+then it answers a clear 400 instead of a 500.
