@@ -701,8 +701,9 @@ test('a score report refuses anyone not seated at the pod or running the event',
   ]);
   assert.equal(twice.status, 400, `the same player named twice: ${JSON.stringify(twice.body)}`);
 
-  // The dashboard's self-report form posts a bare { kills, placedFirst, placedDraw } with no results
-  // array at all, which used to reach `for (let r of results)` on undefined and answer 500.
+  // A body with no results array at all used to reach `for (let r of results)` on undefined and answer
+  // 500. The one client that sent that shape -- the dashboard's unreachable self-report form -- is gone,
+  // but the route must answer a request, not raise on it.
   const shapeless = await a.client(`/api/pairings/report/${podId}`, {
     method: 'POST',
     body: { kills: 1, placedFirst: 1, placedDraw: 0 },

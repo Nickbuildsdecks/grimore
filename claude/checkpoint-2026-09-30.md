@@ -346,11 +346,8 @@ season's points and rebuilt the *new* season's leaderboard. Fixed, with a test t
 and corrects the pod.
 
 `handleSelfReport` in `public/app.js` posts `{ kills, placedFirst, placedDraw }` with no `results` array,
-so the dashboard's self-report button has always answered 500. It answers a clean 400 now, and I did not
-make it work: the route marks the pod `completed`, so a one-seat report would close the pod with every
-other player on zero. What a self-report should do to the other seats is a league rules decision, and
-guessing at it would have been the kind of quiet scope widening this project keeps paying for. Flagged
-in `claude/decisions-log.md` (D21) for Nick.
+which the report route could never have accepted. See the fifth correction below: I called this a live
+broken button, and it was not one.
 
 ### A coverage limit worth stating plainly
 
@@ -403,9 +400,33 @@ requirement.
 until they are set, by design); the staging rehearsal; then `pg_dump` followed by
 `docker compose --profile v2 up -d api`, both run by hand with eyes on the output.
 
-**A product decision, not a refactor:** the dashboard's "Report Your Pod Result" form. It is a live,
-rendered affordance that has never worked, and it cannot be made to work without deciding what one
-player's self-report does to the other seats — the route marks the pod `completed`, so a one-seat report
-closes the pod with everyone else on zero. The two honest options are per-seat confirmation before a pod
-locks, or replacing the form with the full-pod report that already exists in `renderHubPairings`. Until
-then it answers a clear 400 instead of a 500.
+**Closed, not open:** the dashboard's "Report Your Pod Result" form. I listed this as a product decision;
+it was not one, because the form was unreachable. See the fifth correction below. The dead code is
+removed and `renderHubPairings`' full-pod form is the single reporting path.
+
+## A fifth time I was wrong: I put a product question to Nick about code nobody could reach
+
+I told Nick the dashboard's "Report Your Pod Result" form was a live, rendered affordance that had always
+answered 500, asked him how a single player's self-report should behave, and offered three options. He
+picked one. Then I went to implement it and checked what actually rendered the form.
+
+Nothing did. `loadActiveMatch()` is never called — the only occurrence of the name in the codebase is its
+own definition. None of the five elements it writes to (`dashboard-active-match-panel`,
+`active-match-round`, `active-match-table`, `active-match-status-badge`, `active-match-details`) exists in
+any page in `public/`, so `if (!panel) return;` fired every time and the panel never rendered. The Report
+button was never on screen; no player has ever clicked it or seen its error.
+
+Two things were wrong, and the second is the one that matters. The factual claim was wrong. But I also
+built a **product question** on top of an unverified claim and spent Nick's attention on it — the exact
+thing "only ask when a decision is genuinely mine" exists to prevent. The question I should have asked was
+none, because the answer was "delete the dead code", and I could have established that with the grep I
+eventually ran. Asking is not automatically the safe option; asking about something I have not checked
+costs someone else's time and dresses a guess up as a choice.
+
+Nick's answer still decided the shape of the fix — one reporting form, the full-pod one — so the outcome
+is the deletion rather than a second copy of that form in a dashboard panel nobody asked for. The
+endpoint stays: the React SPA reads `/api/players/active-match` in `apps/web/src/pages/Events.tsx`.
+
+The check that would have caught it, and which I now run before describing any UI as live: grep the
+element ids, and grep for a caller of the function. A route having a handler proves nothing about whether
+a user can reach it.

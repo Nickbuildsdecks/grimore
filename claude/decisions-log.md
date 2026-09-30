@@ -461,14 +461,26 @@ So correcting a pod after the season closed answered 404 ("Pod or active season 
 correcting one while a *different* season was open paid out the new season's points and rebuilt the new
 season's leaderboard. It reads `seasons WHERE id = pod.season_id` now, as `apps/api` always did.
 
-**One bug found in passing and NOT fixed, because it needs a product decision.** `handleSelfReport` in
-`public/app.js` posts `{ kills, placedFirst, placedDraw }` with **no `results` array at all**. That
-reached `for (let r of results)` on `undefined` and answered 500, so the dashboard's self-report button
-has never once worked. It now answers a clean 400 instead of a 500. Making it work means deciding what a
-single player's self-report should do to the other seats — the route marks the pod `completed`, so a
-one-seat report would close the pod with everyone else on zero. That is a rules decision for the league,
-not a refactor, so it is flagged rather than guessed at. The rest of the score-reporting UI
-(`renderHubPairings`' full-pod form) posts the correct shape and is unaffected.
+**One thing found in passing, and a correction to what I first said about it.** `handleSelfReport` in
+`public/app.js` posts `{ kills, placedFirst, placedDraw }` with **no `results` array at all**, which the
+report route could never have accepted. I reported this to Nick as a live button that had always answered
+500, put the product question to him, and he chose replacing it with the full-pod form. Then I checked
+what actually rendered it, and **the whole path was unreachable**: `loadActiveMatch()` is never called
+from anywhere, and none of the five elements it writes to — `dashboard-active-match-panel`,
+`active-match-round`, `active-match-table`, `active-match-status-badge`, `active-match-details` — exist in
+any page in `public/`. The panel never rendered, so the Report button was never on screen and nobody ever
+clicked it. My description of it as a live broken affordance was wrong, and so was the product question I
+built on it: there was no user-facing behaviour to decide about.
+
+That makes the chosen outcome a deletion rather than a rewrite. Both functions are removed, with a comment
+where they were recording what they did and why they could not work. Score reporting goes through
+`renderHubPairings` / `renderScoreForm`, which submits a result for every seat — the shape the route
+requires, and now the only reporting path in the product, which is what "replace it with the full-pod
+form" amounts to when the other form was never reachable. Building a second copy of that form into a
+dashboard panel nobody asked for would have been adding a feature, not fixing one.
+
+`GET /api/players/active-match` is **kept**: the React SPA reads it in `apps/web/src/pages/Events.tsx` to
+display the pod. Only the dead legacy client code went.
 
 **Coverage note.** The pods model — `pods`, `pod_results`, `active_roster` — is created **only** by
 Postgres migration 0009. Nothing in `db.js` or `server.js` creates it for SQLite, so the whole league
