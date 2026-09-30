@@ -253,3 +253,164 @@ never urgent, and it should not have been pressed as though it were.
 own `Cannot POST /api/dev/git-push`. The `GET` variants return the SPA's `index.html`, which is how
 every unmatched GET in this app already behaves.
 
+
+## D14 — Legacy routes get a CI job on the dialect they actually ship on
+
+**Decided:** a new `legacy-postgres` job in `.github/workflows/ci.yml` boots `server.js` against a
+real Postgres 16 service and drives its write paths over HTTP
+(`test/postgres-write-paths.test.js`, `npm run test:postgres`).
+
+**Why this and not more unit tests.** Every legacy test to date runs on SQLite. Production runs on
+Postgres, and `db.js` builds a *different* table under the same name per dialect. That is not a gap
+mocks can close: the whole class of bug — `column "followed_id" does not exist` — only exists when a
+real Postgres is asked to execute the statement. Three routes were dead in production while CI was
+green.
+
+The suite asserts rows, not status codes. A 200 proved nothing in #29 either: registration returned
+500 *after* writing the player row, and an add-to-collection returned 500 after writing the card.
+
+**The suite fails on CI rather than skipping.** It skips cleanly when `POSTGRES_TEST_URL` is unset so
+a developer without Postgres is unaffected, but when `CI` is set a missing URL throws. Seven skips
+reported as a pass is precisely the failure mode the overnight session recorded twice: a check that
+passes when it should fail is more dangerous than no check, because it is trusted.
+
+## D15 — Two of the five column mismatches stay deferred, and the reason is a schema decision
+
+**Decided:** `card_price_cache.last_updated` and `scryfall_cards.scryfall_id` are left as they are.
+
+Both sit inside `INSERT OR REPLACE` statements, which need a unique constraint Postgres does not
+have — `card_price_cache` is keyed by a surrogate `id` with only a non-unique `lower(card_name)`
+index, where SQLite makes `card_name` the primary key.
+
+**The application-code alternative was considered and rejected.** UPDATE, then INSERT if nothing
+matched, works without a constraint, but two concurrent callers can both insert, and
+`card_price_cache` is read through a JOIN — so a duplicate row duplicates rows in card lists. Trading
+a loud failure for a quiet wrong answer is the wrong trade.
+
+The real fix is a unique index plus a dedupe of whatever is already on the VM. Both tables are
+regenerable caches, which makes it low-risk, but it is still a migration against live data and
+belongs with the cutover in `claude/v2-deploy-notes.md`, not smuggled into a column-rename change.
+
+## D16 — Four of the nine SQLite-only writes are fixed; D-era claim that all nine were blocked was wrong
+
+**Decided:** the `active_roster` check-in (both call sites) and the `player_stats` / `deck_stats`
+standings rebuilds are converted to `ON CONFLICT` upserts. `KNOWN_SQLITE_ONLY` drops from 9 to 5.
+
+**Correcting the record.** The overnight report deferred all nine with a single reason — "each needs a
+unique constraint the production schema does not have." That was asserted, not checked, and it is
+wrong for four of them: `active_roster` has a primary key on `player_id`, and migration `0009` gives
+`player_stats` and `deck_stats` partial unique indexes. The constraints were there.
+
+Two things were verified against a live Postgres before writing the statements, because either would
+have produced a confidently broken fix:
+
+- A partial unique index is only inferred when the statement restates its predicate. `ON CONFLICT
+  (player_id, season_id) WHERE season_id IS NOT NULL` resolves; without the `WHERE` the same statement
+  is rejected. Both rebuilds always pass a non-null season id.
+- `INSERT OR REPLACE` deletes and reinserts, so unnamed columns reset to defaults; `DO UPDATE` does
+  not. `active_roster.checked_in_at` is the only column affected, and it is set explicitly so a
+  re-check-in refreshes it as it did on SQLite.
+
+**Scope note.** This makes the statements correct, not the feature reachable: `db.js` creates
+`active_roster`, `pods` and `pod_results` in neither dialect, so the league is dead on any database
+`initDb` built until migration `0009` runs.
+
+## D17 — `/api/pairings/report/:podId` is left unauthenticated, deliberately and under protest
+
+**Decided:** not changed in this pass, and recorded here so it is not read past again.
+
+The route mutates `pod_results`, marks the pod completed and rebuilds every standings row for the
+season. There is no `req.session.player` check. The comment directly above it reads "Can be submitted
+by players or admin", so a session was plainly intended, and every sibling route in the file has one.
+
+Not fixed here because adding the check is an authorization change, not a dialect fix, and whether any
+client calls it without a session has to be established rather than assumed — a wrong guess silently
+breaks score reporting at an event. It wants one look at the front-end callers and then a one-line
+guard.
+
+## D18 — `card_price_cache` gets a unique key; `scryfall_cards` needed none. D15 is superseded
+
+**Decided:** migration `0013` deduplicates `card_price_cache` and adds `UNIQUE (LOWER(card_name))`.
+The four remaining cache writes become real upserts, and `KNOWN_SQLITE_ONLY` drops from 5 to 1.
+
+**D15 said** these two tables both needed a new unique constraint, and that an application-level
+upsert was the wrong trade. Investigating rather than restating that turned up two corrections:
+
+- **`scryfall_cards` needed no index at all.** On Postgres the Scryfall UUID *is* the primary key, and
+  `scryfallService.js`'s own bulk upsert already targets it. The legacy statement is now the same
+  shape as that one — same key, same "refresh everything but the key" conflict clause — so the two
+  writers cannot disagree about what a row means.
+- **`apps/api/src/routes/decks.ts` had already shipped the application-level upsert** that D15
+  rejected, as a select-then-update-or-insert, because no constraint existed. It is a real upsert now,
+  which closes the race D15 correctly identified but could not avoid at the time.
+
+**Why `LOWER(card_name)` is the right key**, checked rather than assumed. The table carries
+`scryfall_id`, `set_code` and `collector_number`, which read like a per-printing cache. Nothing has
+ever written a meaningful set code or collector number into it, and
+`execution/migrate_sqlite_to_postgres.js` drops their NOT NULL constraints, so the migrated rows hold
+NULL. Every reader joins on `LOWER(pc.card_name)` alone, and the SQLite table it came from keys on
+`card_name` outright. Per-printing prices live in `scryfall_cards`, where two printings genuinely
+differ by UUID — `apps/api/src/collections.test.ts` seeds exactly that. The `card_price_cache`
+duplicates in that same fixture have nothing distinguishing them at all: they are the pathological
+state, not a design.
+
+**Two v2 fixtures had to change**, and neither lost its guard. `cards.test.ts` and
+`collections.test.ts` both seed duplicate cache rows on purpose, to hold the readers to not fanning
+out. Rather than delete a regression guard because the schema now usually prevents the condition, each
+fixture drops the index for its own scope and recreates it deliberately — the index is new, and a
+restore from a pre-0013 backup or a replica lagging the migration reintroduces duplicates silently.
+
+**Order matters inside the migration.** The dedupe runs before the index creation, in the single
+transaction the migrator wraps it in: the index cannot be built while duplicates exist, and a
+half-applied state would leave the upsert with no target. Newest row wins, by
+`cached_at DESC NULLS LAST, id DESC`. Verified on a table seeded with duplicates on purpose, including
+mixed casing and a NULL `cached_at`: 6 rows to 3, the right survivor each time, idempotent on re-run.
+
+## D19 — A mis-cased reprice was poisoning the shared price cache
+
+**Found by** test 11 failing for a reason I had not predicted, which is the argument for driving routes
+rather than reading them.
+
+`/api/decks/reprice-card` looked its card up with an exact `card_name = ?` match. A caller whose casing
+differed from the stored row found nothing, fell through to the `0.10` default, and then wrote that 10c
+into `card_price_cache` — which is **shared**, so one mis-cased reprice priced that card at 10c for
+every user and every deck until something overwrote it.
+
+Now `LOWER(card_name) = LOWER(?)`, matching the wishlist fix in the same pass. Same class as the
+`COLLATE NOCASE` removal; this one had the wider blast radius because the row it corrupts is global.
+
+## D20 — The account system, and the decision to duplicate two modules on purpose
+
+**Decided:** bring the account surface to the standard described in
+`claude/account-system-design.md`, in both apps, and accept a duplicated CommonJS copy of the token
+discipline and the password policy to do it.
+
+Eleven findings, all closed in code. The ones worth repeating here because they were exploitable rather
+than merely untidy:
+
+- Reset tokens were stored **as issued**, so any read of that table — a backup, a replica, a dump — was
+  a live credential for every pending reset.
+- Reset rows keyed on **username**, which this app lets people change. A reset issued before a rename
+  and redeemed after matched nobody, or, if someone had taken the freed username, set an
+  attacker-chosen password on a **different person's account**.
+- The whole recovery link was written to **stdout on every request**, so it reached every aggregated log
+  and its entire retention window.
+- `devResetLink` was attached whenever `NODE_ENV !== 'production'`, so one missing environment variable
+  turned forgot-password into an **unauthenticated account-takeover API**.
+- Legacy login wrote the identity onto whatever session the client arrived with — **session fixation**.
+- A password change ended no other session, and `apps/api` carried a comment claiming it did.
+
+**On the duplication.** `server.js` is CommonJS in a plain npm install and cannot resolve the ESM
+workspace packages. The options were a bundler step, a dual build, `require()` of ESM, or two copies.
+Two copies won on the condition that they are held together by a test rather than by care:
+`test/account-tokens-parity.test.js` compares hashes, lifetimes, redeemability at the exact expiry
+boundary, rejection messages and every password verdict, and was verified to fail when a lifetime and
+then a hash algorithm were deliberately changed. Duplicated security logic plus a parity test is a
+known-good arrangement; duplicated logic plus good intentions is what produced the schema divergence
+this migration keeps uncovering.
+
+**The fail-closed mailer is the other decision worth defending.** With no provider configured, every
+send throws. A no-op would have been friendlier and wrong: "we have sent you a recovery link" must not
+be returned when nothing was sent, and that exact false success is how the broken flow stayed unnoticed.
+The cost is that recovery mail does not deliver in production until `SMTP_URL` is set, and that cost is
+visible rather than hidden.

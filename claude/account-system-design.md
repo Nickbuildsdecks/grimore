@@ -1,0 +1,312 @@
+# Account system — what is there, what is wrong, and what to build
+
+Nick asked for the account side to be "fully fleshed out and improved" to industry standard. This is
+the design. It is written against **NIST SP 800-63B** (Digital Identity Guidelines, memorized-secret
+and out-of-band requirements) and the **OWASP ASVS** chapter on authentication plus the OWASP *Forgot
+Password* cheat sheet, and every finding below is something in this repository, not a generic checklist
+item.
+
+## What exists today
+
+| Surface | Legacy `server.js` | `apps/api` |
+| --- | --- | --- |
+| register | yes | yes |
+| login | yes | yes, with session regeneration |
+| logout | yes | yes |
+| Google sign-in | yes | yes, hardened (#21) |
+| password change | yes (`PUT /api/players/me`) | yes |
+| forgot / reset password | **routes exist, table does not** | not ported, "needs email delivery" |
+| email verification | none | none |
+| email delivery | a `console.log` labelled `[SMTP SIMULATOR]` | none |
+| audit trail | none | none |
+
+## Findings
+
+Ordered by what an attacker gets. Each is a specific line, not a category.
+
+### F1 — Forgot-password returns 500 on every database, on both dialects
+
+`password_resets` is created by `db.js` in neither branch and by no migration. The route's
+`INSERT OR REPLACE` throws into its own catch, so the whole flow is dead. Nobody can recover an
+account today. This is also the last of the nine SQLite-only statements.
+
+### F2 — Reset tokens are stored in plaintext
+
+`INSERT ... (username, token, expires_at)` stores the token as issued. Anyone who can read the table —
+a backup, a replica, a SQL-injection read, a `pg_dump` in a bucket — holds a **live credential** for
+every pending reset. OWASP requires storing only a hash.
+
+### F3 — Reset tokens are written to the server log
+
+`console.log` of the full recovery link, unconditionally, in production. Logs are aggregated, shipped
+and retained; this puts a working account-takeover link in all of them.
+
+### F4 — The reset is keyed on `username`, which this app lets users change
+
+The row stores `player.username`, and redemption runs
+`UPDATE players SET password_hash = ? WHERE LOWER(username) = LOWER(?)`. `PUT /api/players/me` changes
+usernames. So a reset issued before a rename and redeemed after it either matches nobody, or — if
+someone else has since taken the freed username — **sets the attacker-chosen password on a different
+person's account**. It must key on the immutable `players.id`.
+
+### F5 — `devResetLink` is returned whenever `NODE_ENV` is not exactly `production`
+
+```js
+if (process.env.NODE_ENV !== 'production') { response.devResetLink = resetLink; }
+```
+
+The safe default is the wrong way round. An unset `NODE_ENV` — a bare `node server.js`, a container
+missing one line of config — turns forgot-password into an unauthenticated account-takeover API for
+any account whose username or email you can guess. A dev convenience must be opt-in by its own
+explicit flag, never inferred from the absence of a production marker.
+
+### F6 — Resetting a password does not end the attacker's session
+
+Nothing touches existing sessions. The canonical reason a user resets a password is that someone else
+is in their account; after the reset, that someone is still in it. ASVS requires terminating all other
+active sessions.
+
+`apps/api` carries a comment asserting the opposite:
+
+> *"A password change invalidates other sessions by rotating this one's id; a session stolen before the
+> change no longer resolves."*
+
+`req.session.regenerate()` destroys and reissues **the caller's own** session. A stolen session is a
+different key in Redis and is untouched. The claim is false, and a false security claim in a comment is
+worse than no comment, because the next reader stops looking.
+
+### F7 — Legacy login does not regenerate the session id
+
+`req.session.player = {...}` on the existing session. That is textbook session fixation: an attacker
+who can plant a session cookie holds an authenticated session the moment the victim logs in.
+`apps/api` already does this correctly; legacy does not.
+
+### F8 — No per-account throttling
+
+The only limiter is 20 requests per 15 minutes per IP on `/api/auth`. Nothing limits attempts *per
+account*, so a distributed attempt against one account is unthrottled, and nothing stops mail-bombing
+one address with reset requests.
+
+### F9 — The password policy is length-only
+
+`passwordPolicyError` checks `length >= 8` and nothing else. NIST 800-63B **requires** comparing a
+prospective secret against a blocklist of commonly-used, expected or compromised values, and requires
+accepting long passphrases. Neither happens.
+
+### F10 — Email addresses are never verified
+
+Registration accepts any syntactically valid address. Password recovery then delivers to an address
+nobody has proven they control, and a typo'd or hostile address is indistinguishable from a real one.
+
+### F11 — No audit trail
+
+No record of logins, failures, resets, or credential changes. After an incident there is nothing to
+read.
+
+## The design
+
+### Tokens
+
+One discipline, used by both password reset and email verification.
+
+- **32 random bytes** from `crypto.randomBytes`, base64url — 256 bits. No prefix that leaks the kind.
+- **Stored as SHA-256 hex, never raw.** Lookup is by hash, so the plaintext exists only in the email.
+  SHA-256 rather than bcrypt deliberately: the token is full-entropy random, so there is nothing to
+  brute-force, and an unsalted deterministic hash is what lets the lookup be a single indexed read
+  instead of a table scan. bcrypt here buys nothing and costs a scan.
+- **30 minute expiry** for reset, 24 hours for email verification. OWASP asks for as short as
+  practical; 30 minutes is long enough to find the mail and short enough to matter.
+- **Single use**, recorded as `consumed_at` rather than a `DELETE`, so the audit trail survives.
+- **Redeeming one invalidates every other outstanding token for that account**, so a leaked earlier
+  mail is dead.
+- **Keyed on `player_id`**, never username (F4).
+- Expired and consumed rows are deleted past a retention window by a cleanup the migration schedules
+  nothing for — it runs in the same boot chain as the other startup tasks.
+
+### Session epoch, not session rotation
+
+Fixing F6 properly means ending sessions the current request has no handle on. Scanning Redis for a
+player's sessions is fragile and store-specific. The standard answer is an epoch:
+
+- `players.sessions_valid_from` (timestamptz), bumped on password change, on reset redemption, and on
+  explicit "sign out everywhere".
+- The session carries the epoch it was issued under. Any request whose session epoch predates
+  `sessions_valid_from` is rejected and the session destroyed.
+
+This works identically in both apps, needs no store introspection, and is O(1) on a column already
+being read.
+
+### Email delivery
+
+There is no mailer, and that is the one place this design needs a decision from Nick — which provider.
+So the transport is an interface with the provider behind it:
+
+- `packages/mailer` exporting `Transport` with one `send(message)` method.
+- `smtp` transport used when `SMTP_URL` is set — works with any provider that speaks SMTP, which is all
+  of them, so no lock-in and nothing to choose today.
+- `console` transport **only** when `MAIL_TRANSPORT=console` is set explicitly, and it logs the
+  recipient and subject but **never the token or link** (F3).
+- Default with neither set: **fail closed**. Refuse to send and return a clear error. A silent no-op
+  would make "reset your password" appear to work while sending nothing, which is how F1 survived.
+
+### Password policy
+
+- Minimum 8 retained (NIST's floor, and raising it would not improve existing accounts), maximum 128 so
+  a long passphrase is accepted but bcrypt's 72-byte truncation is never reached silently.
+- **Blocklist** of common and compromised values, plus rejection of passwords containing the username
+  or the local part of the email — the NIST-mandated part that is entirely missing.
+- No composition rules, no forced rotation: both are explicitly discouraged by 800-63B.
+
+### Enumeration resistance
+
+The response for an unknown account must be identical, and so must the work done. Today the unknown
+path returns immediately while the known path does a DB write and a mail send, which is a measurable
+timing oracle. The known and unknown paths do the same shape of work.
+
+### Audit
+
+`account_events` — event type, player id (nullable, for a failed login against an unknown user), IP,
+user agent, timestamp. Written for registration, login success and failure, logout, password change,
+reset requested, reset redeemed, email verification sent and confirmed, and sign-out-everywhere.
+
+## Scope
+
+**In this pass**, in order of what an attacker gets:
+
+1. Schema: `password_resets`, `email_verifications`, `account_events`, `players.sessions_valid_from`,
+   `players.email_verified_at`.
+2. `packages/mailer` with the fail-closed default.
+3. The token module, with its own tests.
+4. Password policy with the blocklist.
+5. `apps/api`: forgot-password, reset-password, email verification, sign-out-everywhere, session epoch
+   enforcement, and correcting the false comment in `players.ts`.
+6. Legacy `server.js`: the same tables and the same hashed-token semantics, session regeneration on
+   login (F7), and the `devResetLink` default inverted (F5). Legacy is what users hit today.
+7. Audit events.
+8. Tests against live Postgres for every path, including the negative ones — expired, consumed,
+   unknown, and a token issued before a username change.
+
+**Needs Nick's decision, and blocks nothing until it is made:** which SMTP provider, and the From
+address. Everything above works with the `console` transport in development and fails closed in
+production until `SMTP_URL` is set, which is the honest behaviour rather than a fake success.
+
+**Deliberately not in this pass:** TOTP/WebAuthn second factor. It is the right next step once recovery
+is trustworthy, but it is a larger piece with its own enrolment, recovery-code and device-loss flows,
+and bolting it onto a reset flow that does not work yet would be the wrong order.
+
+---
+
+# Status
+
+## Done
+
+| Finding | Where | Proven by |
+| --- | --- | --- |
+| F1 recovery never worked | both apps | 22 apps/api tests, 6 legacy-on-Postgres tests |
+| F2 plaintext tokens | both | asserted the stored value is not the token |
+| F3 tokens in logs | both | console transport withholds the body, asserted |
+| F4 keyed on a mutable username | both | a reset issued before a rename still redeems |
+| F5 `devResetLink` on an unset `NODE_ENV` | both | needs `EXPOSE_DEV_RESET_LINK=1` as well |
+| F6 sessions survived a reset | enforced in BOTH apps | two sessions, one reset, the other dies |
+| F7 legacy login did not rotate the session id | legacy | the id changes, and the test fails without the fix |
+| F8 no per-account throttling | both | the sixth request is suppressed and indistinguishable |
+| F9 length-only password policy | both | 15 policy tests plus a cross-implementation parity test |
+| F10 email never verified | apps/api | verification flow, including the address-changed case |
+| F11 no audit trail | both | events asserted present, and no secret in the table |
+
+`KNOWN_SQLITE_ONLY` is **0**: `password_resets` was the last of the nine, and closing it closed the
+ratchet.
+
+## The two implementations, and why that is not a mistake
+
+`server.js` is CommonJS in a plain npm install; `@grimore/shared` is ESM in the pnpm workspace and is
+not resolvable from it. So the token discipline and the password policy each exist twice —
+`accountTokens.js` and `passwordPolicy.js` beside `server.js`, and the TypeScript originals in
+`packages/shared`.
+
+Duplicated security logic is how the divergence this whole migration keeps uncovering began, so the
+duplication is held down by `test/account-tokens-parity.test.js`: it runs both implementations over the
+same inputs and fails if they disagree about a hash, a lifetime, a redeemability decision including the
+exact expiry boundary, a rejection message, or any password verdict. Verified to catch drift by
+injecting a changed lifetime and a changed hash algorithm and watching it fail. It runs in the v2 CI
+job, which is the one that builds the TypeScript side; in the legacy job it skips.
+
+## What still needs a decision, and what it blocks
+
+**An SMTP provider and a From address.** Until `SMTP_URL` is set, every send throws. That is
+deliberate — the alternative is telling someone a recovery link is on its way when nothing was sent —
+but it does mean **recovery mail does not deliver in production until a provider is configured**. Set
+`SMTP_URL` and `MAIL_FROM`, and for `apps/api` that is all; `server.js` additionally needs an SMTP
+client installed, and says so in its own error rather than failing quietly.
+
+**`APP_BASE_URL`.** Both apps refuse to build a link without it, rather than trusting the request's
+Host header. Needs to be set to the real origin.
+
+## What is deliberately still not done
+
+**The tables do not exist on production until migration 0014 runs.** This makes the code correct; the
+cutover in `claude/v2-deploy-notes.md` is what makes the feature exist. Legacy's recovery routes will
+keep failing until then — with an honest 500 and a logged reason rather than silently, but failing.
+
+**A second factor (TOTP or WebAuthn).** The right next step now that recovery is trustworthy, and
+deliberately after it: enrolment, recovery codes and device-loss handling are their own piece, and
+bolting them onto a reset flow that did not work would have been the wrong order.
+
+**Breached-password checking over the network.** The offline blocklist is the floor and says so. Have I
+Been Pwned's range API is the usual answer and leaks nothing, but it is a network call inside what is
+currently a pure validator, and it needs a decision about what to do when the service is unreachable —
+fail open and accept a known-breached password, or fail closed and refuse to let anyone set one.
+
+**`direct_messages`.** Still defined nowhere. Not part of the account surface, and listed here only so
+it is not mistaken for something this pass covered.
+
+## A correction to this document's own first draft
+
+The legacy half of F6 was written up as done before it was. `server.js` moved
+`players.sessions_valid_from` forward on a reset and on a password change, and two comments claimed the
+column was read at login — but nothing read it anywhere, so the write did nothing and a session held by
+somebody else survived the reset untouched.
+
+That is the identical mistake this document criticises `apps/api/src/routes/players.ts` for: a comment
+asserting a security property that the code does not provide. Caught by going back to check the claim
+rather than trusting it, and fixed by mounting an epoch guard in `server.js` straight after the session
+middleware — so both apps now enforce the column on every authenticated request. Two tests cover it: a
+reset signs out a session held elsewhere, and it does not touch an unrelated account. The first fails
+when the guard is removed.
+
+The guard tolerates exactly one failure: `sessions_valid_from` not existing, which is the state of every
+database until migration 0014 runs. It warns once, loudly, and passes the request through, because
+failing every authenticated request would take the app down on a database that is otherwise fine. Any
+other error fails closed — passing those through would make the whole check bypassable by anything that
+can break the query.
+
+## A second correction: the recovery link pointed at a page that could not handle it
+
+Worth recording separately, because the server logic was entirely correct and the flow was still dead.
+
+The link was built as `/reset-password?token=...`. Both front ends return 200 for that path — every
+unmatched GET falls through to a SPA shell — which is exactly why it looked fine. But:
+
+- `public/app.js` reads `resetToken` (or `token`) from the query string, and it is served at **`/`**.
+- `/reset-password` serves the **React** shell instead, whose `BrowserRouter` has `basename="/react"`, so
+  it matches nothing at that path. The page loads and does nothing at all.
+
+Found by requesting both paths against a running server and comparing the documents that came back, not
+by reading the route table — the route table is what made it look correct. Both apps now mint
+`/?resetToken=`, and a test asserts the served HTML: `/` carries `app.js`, `/reset-password` does not.
+React's `Login` also accepts `token` alongside `resetToken`, matching what `app.js` already tolerated,
+because a recovery link gets pasted, forwarded and hand-edited.
+
+The general shape of the mistake: correct server behaviour, a plausible URL, a 200 response, and a flow
+that cannot complete. Nothing on the server side would ever have surfaced it.
+
+## Email verification is now complete on both apps
+
+Legacy had no verification flow at all, and `apps/api`'s was API-complete but unreachable: the confirm
+endpoint is a POST with a JSON body, so a link in an email cannot invoke it — something has to make the
+call. `public/app.js` now does, from a `?verifyToken=` link, and strips the token out of the address bar
+on both outcomes so it does not linger in history, the title bar, or the `Referer` of every subsequent
+request from the page.
+
+Legacy also gained `verify-email/request`, `verify-email/confirm` and `sign-out-everywhere`, against the
+same tables and with the same token discipline as `apps/api`.

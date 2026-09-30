@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Id, IntBool, Timestamp } from "./common.js";
+import { passwordPolicyError } from "../passwordPolicy.js";
 
 export const USERNAME_MIN = 3;
 export const USERNAME_MAX = 24;
@@ -17,8 +18,42 @@ export const Username = z
   .transform((s) => s.toLowerCase());
 export type Username = z.infer<typeof Username>;
 
-export const Password = z.string().min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters long.`).max(PASSWORD_MAX);
+/**
+ * A password, checked against the full policy rather than only its length.
+ *
+ * `passwordPolicyError` carries the NIST-required blocklist that a bare `.min(8)` does not, so
+ * `password` and `12345678` used to be accepted here. The context-sensitive rules -- must not contain
+ * the username or the email local part -- need fields this one does not see, so they are applied by the
+ * object-level refinements below, where those fields exist.
+ */
+export const Password = z
+  .string()
+  .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters long.`)
+  .max(PASSWORD_MAX)
+  .superRefine((value, ctx) => {
+    const err = passwordPolicyError(value);
+    if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+  });
 export type Password = z.infer<typeof Password>;
+
+/**
+ * Applies the rules that need to see the username and email alongside the password.
+ *
+ * Attached to whichever object contract carries them, so a caller cannot reach a password setter that
+ * skips them.
+ */
+export function refinePasswordAgainstIdentity<T extends { password?: string; newPassword?: string; username?: string; email?: string; newEmail?: string; newUsername?: string }>(
+  value: T,
+  ctx: z.RefinementCtx,
+): void {
+  const password = value.password ?? value.newPassword;
+  if (!password) return;
+  const err = passwordPolicyError(password, {
+    username: value.username ?? value.newUsername,
+    email: value.email ?? value.newEmail,
+  });
+  if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [value.password ? 'password' : 'newPassword'], message: err });
+}
 
 export const StoreNickname = z.string().trim().min(1).max(40);
 
@@ -29,12 +64,14 @@ export const PlayerRole = z.enum(["player", "scorekeeper", "judge", "admin"]).ca
 export type PlayerRole = z.infer<typeof PlayerRole>;
 
 /** POST /api/auth/register — legacy body: { username, password, storeNickname, email } */
-export const RegisterInput = z.object({
-  username: Username,
-  password: Password,
-  storeNickname: StoreNickname,
-  email: z.string().trim().email().max(254),
-});
+export const RegisterInput = z
+  .object({
+    username: Username,
+    password: Password,
+    storeNickname: StoreNickname,
+    email: z.string().trim().email().max(254),
+  })
+  .superRefine(refinePasswordAgainstIdentity);
 export type RegisterInput = z.infer<typeof RegisterInput>;
 
 /** POST /api/auth/login */
@@ -140,3 +177,19 @@ export const ForgotPasswordResponse = z.object({
   devResetLink: z.string().optional(),
 });
 export type ForgotPasswordResponse = z.infer<typeof ForgotPasswordResponse>;
+
+/**
+ * The forgot-password response, identical whether or not the account exists.
+ *
+ * A constant rather than the same string written in two branches: "both paths return the same message"
+ * is exactly the kind of sameness that drifts the first time someone edits one of them, and the drift
+ * is an account-enumeration oracle.
+ */
+export const FORGOT_PASSWORD_MESSAGE =
+  "If an account matches that, we have sent a recovery link. Check your email, including spam.";
+
+/** POST /api/auth/verify-email/confirm */
+export const VerifyEmailInput = z.object({
+  token: z.string().min(1).max(256),
+});
+export type VerifyEmailInput = z.infer<typeof VerifyEmailInput>;

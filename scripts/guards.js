@@ -95,7 +95,7 @@ checkApiDockerfileCopiesEveryManifest();
  * health: the remaining ones are counted, and the count may only go down. Lower KNOWN_SQLITE_ONLY
  * as they are fixed. It exists so no NEW one is added silently.
  */
-const KNOWN_SQLITE_ONLY = 9;
+const KNOWN_SQLITE_ONLY = 0;
 function checkNoNewSqliteOnlyInserts() {
   let src;
   try {

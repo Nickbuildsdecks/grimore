@@ -95,12 +95,24 @@ function definitionSites(table) {
  * INSERTs specifically, rather than every reference: a SELECT of a missing column fails too, but an
  * INSERT is where the two schemas were written apart, and it names the columns explicitly.
  */
+/** Is the match at `index` on a line that opens the SQLite branch of a `db.isPostgres` ternary? */
+function sqliteBranchOfTernary(source, index) {
+  const lineStart = source.lastIndexOf('\n', index) + 1;
+  return source.slice(lineStart, index).trimStart().startsWith(':');
+}
+
 function insertedColumns(file) {
   const re = /INSERT\s+(?:OR\s+(?:IGNORE|REPLACE)\s+)?INTO\s+([a-z_][a-z0-9_]*)\s*\(([^)]*)\)/gi;
   const source = readFileSync(join(ROOT, file), 'utf8');
   const out = new Map();
   let m;
   while ((m = re.exec(source))) {
+    // A dialect-aware statement is written as a ternary on `db.isPostgres`, so its SQLite branch
+    // begins the line with `:`. That branch never runs on Postgres, and counting its column names as
+    // things the app writes here reports a *fixed* mismatch as still broken -- which is how this
+    // audit would start arguing for changes that reintroduce the bug. Same test the ratchet in
+    // scripts/guards.js uses, for the same reason: a proximity window is not good enough.
+    if (sqliteBranchOfTernary(source, m.index)) continue;
     const table = m[1].toLowerCase();
     const cols = m[2]
       .split(',')

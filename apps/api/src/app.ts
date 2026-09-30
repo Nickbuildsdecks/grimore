@@ -8,6 +8,9 @@ import pino from 'pino';
 import type { Env } from '@grimore/shared';
 import { createPool, ping, type Pool } from '@grimore/db';
 import { authRouter } from './routes/auth.js';
+import { enforceSessionEpoch } from './lib/sessionEpoch.js';
+import { accountRecoveryRouter } from './routes/accountRecovery.js';
+import { selectTransport, type Transport } from '@grimore/mailer';
 import type { GoogleVerifier } from './lib/googleIdentity.js';
 import { cardsRouter } from './routes/cards.js';
 import { collectionsRouter } from './routes/collections.js';
@@ -30,6 +33,12 @@ export interface AppContext {
 declare module 'express-session' {
   interface SessionData {
     playerId?: string;
+    /**
+     * When this session was issued, as epoch milliseconds. Compared against
+     * `players.sessions_valid_from` on every authenticated request so a credential change can end
+     * sessions this process holds no handle on. See lib/sessionEpoch.ts.
+     */
+    epoch?: number;
   }
 }
 
@@ -49,6 +58,11 @@ export async function closeContext(ctx: AppContext): Promise<void> {
 /** Test seams. Production passes nothing and every dependency is built from `ctx.env`. */
 export interface AppOverrides {
   googleVerifier?: GoogleVerifier;
+  /**
+   * Injected by tests, which need to read the body of a message to get at the token. Production picks a
+   * transport from configuration; there is no code path where a test's transport reaches a real inbox.
+   */
+  mailer?: Transport;
 }
 
 export function createApp(ctx: AppContext, overrides: AppOverrides = {}): Express {
@@ -101,7 +115,20 @@ export function createApp(ctx: AppContext, overrides: AppOverrides = {}): Expres
     }),
   );
 
+  // After the session middleware and before every route: a session issued before its player's
+  // `sessions_valid_from` is destroyed here, wherever it is and whoever holds it. This is what makes a
+  // password change or a reset actually sign out a stolen session.
+  app.use(enforceSessionEpoch(ctx.pool));
+
+  // Mail transport. Chosen from configuration, and with neither SMTP_URL nor MAIL_TRANSPORT set it
+  // fails closed on every send rather than no-op'ing — a send that did not happen must not be reported
+  // as one that did. Tests inject a capturing transport.
+  const mailer: Transport =
+    overrides.mailer ??
+    selectTransport({ smtpUrl: env.SMTP_URL, mailTransport: env.MAIL_TRANSPORT, from: env.MAIL_FROM });
+
   app.use('/api/auth', authRouter(ctx, overrides.googleVerifier));
+  app.use('/api/auth', accountRecoveryRouter(ctx, mailer));
   app.use('/api/decks', decksRouter(ctx));
   app.use('/api/cards', cardsRouter(ctx));
   app.use('/api/collections', collectionsRouter(ctx));

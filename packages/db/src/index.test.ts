@@ -53,9 +53,10 @@ describe.skipIf(!url)('database (requires DATABASE_URL)', () => {
       `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema='public' AND table_name <> 'v2_migrations'`,
     );
     // 31 from the baseline, +1 friend_requests (0007), +1 wishlist_cards (0008), +3 active_roster /
-    // pods / pod_results (0009), +1 price_movers (0011). Migrations 0004-0006 and 0010 alter existing
+    // pods / pod_results (0009), +1 price_movers (0011), +3 password_resets / email_verifications /
+    // account_events (0014). Migrations 0004-0006, 0010, 0012 and 0013 alter or backfill existing
     // tables rather than adding any.
-    expect(tables.rows[0].n).toBe(37);
+    expect(tables.rows[0].n).toBe(40);
   });
 
   it('withTransaction commits on success and rolls back on throw', async () => {

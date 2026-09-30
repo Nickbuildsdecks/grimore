@@ -50,6 +50,15 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('collections routes (requires DATAB
         ('aaaaaaaa-0000-4000-8000-000000000002','Sol Ring','Sol Ring', 3500,'Artifact','{T}: Add {C}{C}.',1),
         ('bbbbbbbb-0000-4000-8000-000000000001','Lightning Bolt','Lightning Bolt', 2.5,'Instant','3 damage.',1)`,
     );
+    // The two Lightning Bolt cache rows are pure duplicates -- nothing distinguishes them, unlike the
+    // Sol Ring printings above, which differ by UUID in `scryfall_cards` where per-printing prices
+    // belong. Migration 0013 makes that state unreachable (UNIQUE on LOWER(card_name)) after
+    // deduplicating whatever is already there. The LATERAL price lookup is robust to it regardless,
+    // and must stay that way: the index is new, and a restore from a pre-0013 backup or a replica
+    // lagging the migration reintroduces duplicates silently. So the fixture drops the index for its
+    // own scope to recreate the condition on purpose, rather than deleting a regression guard because
+    // the schema now usually prevents it.
+    await ctx.pool.query('DROP INDEX IF EXISTS idx_card_price_cache_name_unique');
     await ctx.pool.query(
       `INSERT INTO card_price_cache (card_name, price, type_line) VALUES
         ('Lightning Bolt', 1.75, 'Instant'), ('Lightning Bolt', 9.99, 'Instant')`,

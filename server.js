@@ -57,6 +57,143 @@ const notificationParams = (params) => (db.isPostgres ? params.slice(1) : params
 const SQL_INIT_DECK_STATS = db.isPostgres
   ? 'INSERT INTO deck_stats (deck_id, season_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
   : 'INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)';
+
+// Three tables exist under the same name in both schemas with *different column names*, which
+// `db.js`'s placeholder translation cannot help with -- it rewrites `?` to `$n` and appends
+// RETURNING, it does not rename columns. Each of these failed with `column "..." does not exist` on
+// Postgres, so the feature was dead there while passing every SQLite test.
+//
+// `follows`: the person being followed is `following_id` on Postgres, `followed_id` on SQLite. All
+// four call sites -- the existence check, the unfollow delete, the insert and the read-back -- used
+// the SQLite name, so following someone, unfollowing, and even asking "am I following them?"
+// returned 500 on Postgres.
+const FOLLOWED_COLUMN = db.isPostgres ? 'following_id' : 'followed_id';
+
+// `scryfall_cards`: keyed by `id` on Postgres (the Scryfall UUID is the primary key), while SQLite
+// keys by `card_name` and carries the UUID in a `scryfall_id` column. Reads that select the UUID
+// have to pick the right name.
+const SCRYFALL_ID_COLUMN = db.isPostgres ? 'id' : 'scryfall_id';
+
+// `collection_cards`: the foil flag is `foil` on Postgres and `is_foil` on SQLite, and the
+// uniqueness that makes the add-a-card route an upsert is a plain column tuple on SQLite but an
+// *expression* index on Postgres -- `(collection_id, lower(card_name), COALESCE(scryfall_id, ''),
+// foil, condition, language)`. A Postgres ON CONFLICT target must restate those expressions exactly
+// or the statement is rejected outright, so this cannot be a column rename alone.
+const SQL_UPSERT_COLLECTION_CARD = db.isPostgres
+  ? `INSERT INTO collection_cards (collection_id, card_name, scryfall_id, quantity, foil, is_for_trade, condition, language, purchase_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (collection_id, lower(card_name), COALESCE(scryfall_id, ''), foil, condition, language)
+     DO UPDATE SET quantity = collection_cards.quantity + EXCLUDED.quantity`
+  : `INSERT INTO collection_cards (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(collection_id, card_name, scryfall_id, is_foil, condition, language)
+     DO UPDATE SET quantity = quantity + EXCLUDED.quantity`;
+
+// The recovery restore path writes an archived row back. The archive was made with `SELECT *`, so a
+// payload written under one dialect carries that dialect's column names -- and a collection deleted
+// on SQLite may well be restored after a Postgres cutover. Hence both spellings are read on the way
+// in, and only the local one is written on the way out.
+const SQL_RESTORE_COLLECTION_CARD = db.isPostgres
+  ? `INSERT INTO collection_cards
+     (collection_id, card_name, scryfall_id, quantity, foil, is_for_trade, condition, language, purchase_price, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  : `INSERT INTO collection_cards
+     (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price, added_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+// The league writes below are `INSERT OR REPLACE`, which is SQLite-only -- a syntax error at "OR" on
+// Postgres, so checking in and every standings rebuild failed there.
+//
+// The overnight audit recorded all nine remaining `INSERT OR REPLACE` sites as needing "a unique
+// constraint the production schema does not have". That is true of the price-cache and Scryfall ones;
+// it is NOT true of these four, and the constraints were checked rather than assumed:
+//
+//   active_roster   PRIMARY KEY (player_id)
+//   player_stats    UNIQUE (player_id, season_id) WHERE season_id IS NOT NULL   -- migration 0009
+//   deck_stats      UNIQUE (deck_id, season_id)   WHERE season_id IS NOT NULL   -- migration 0009
+//
+// Note the semantic difference these carry. SQLite's REPLACE *deletes and reinserts*, so columns the
+// statement does not name revert to their defaults; `ON CONFLICT DO UPDATE` leaves them alone. Only
+// `active_roster.checked_in_at` is affected, and re-checking in should refresh it, so it is set
+// explicitly -- matching SQLite rather than quietly diverging.
+const SQL_ROSTER_CHECKIN = db.isPostgres
+  ? `INSERT INTO active_roster (player_id, deck_id, checked_in) VALUES (?, ?, 1)
+     ON CONFLICT (player_id)
+     DO UPDATE SET deck_id = EXCLUDED.deck_id, checked_in = EXCLUDED.checked_in,
+                   checked_in_at = CURRENT_TIMESTAMP`
+  : 'INSERT OR REPLACE INTO active_roster (player_id, deck_id, checked_in) VALUES (?, ?, 1)';
+
+// The two stats rebuilds always pass a non-null season id, so they always fall inside the
+// `WHERE season_id IS NOT NULL` half of 0009's split. Postgres will only infer a *partial* unique
+// index if the statement restates its predicate: without the `WHERE` clause the same statement is
+// rejected with "there is no unique or exclusion constraint matching the ON CONFLICT
+// specification", so the predicate is load-bearing, not decoration.
+const SQL_REBUILD_PLAYER_STATS = db.isPostgres
+  ? `INSERT INTO player_stats (player_id, season_id, total_points, total_kills, total_wins, total_matches)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (player_id, season_id) WHERE season_id IS NOT NULL
+     DO UPDATE SET total_points = EXCLUDED.total_points, total_kills = EXCLUDED.total_kills,
+                   total_wins = EXCLUDED.total_wins, total_matches = EXCLUDED.total_matches`
+  : `INSERT OR REPLACE INTO player_stats (player_id, season_id, total_points, total_kills, total_wins, total_matches)
+     VALUES (?, ?, ?, ?, ?, ?)`;
+// The two cache tables, the last of the SQLite-only writes bar `password_resets`.
+//
+// `card_price_cache` had no unique key on Postgres at all, which is why `INSERT OR REPLACE` had
+// nothing to upsert against. Migration 0013 deduplicates it and adds `UNIQUE (LOWER(card_name))` --
+// the expression every reader already joins on. Note the conflict target has to restate the
+// expression, not name the column.
+const SQL_CACHE_CARD_PRICE = db.isPostgres
+  ? `INSERT INTO card_price_cache (card_name, price, cached_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT (LOWER(card_name))
+     DO UPDATE SET price = EXCLUDED.price, cached_at = CURRENT_TIMESTAMP`
+  : 'INSERT OR REPLACE INTO card_price_cache (card_name, price, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)';
+
+// `scryfall_cards` needed no new index: on Postgres the Scryfall UUID *is* the primary key, which is
+// the target `scryfallService.js`'s own bulk upsert already uses. This statement is deliberately the
+// same shape as that one -- same key, same "refresh everything but the key" conflict clause -- so the
+// two writers cannot disagree about what a row means.
+//
+// The column lists differ by more than a name. Postgres requires `id` and `name`, which the SQLite
+// table does not have at all, and carries the display name in BOTH `name` and `card_name`. So the
+// parameters are reordered rather than reused, below.
+const SQL_CACHE_SCRYFALL_CARD = db.isPostgres
+  ? `INSERT INTO scryfall_cards
+       (id, name, card_name, price, type_line, oracle_text, mana_cost, cmc, colors, rarity, last_updated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name, card_name = EXCLUDED.card_name, price = EXCLUDED.price,
+       type_line = EXCLUDED.type_line, oracle_text = EXCLUDED.oracle_text,
+       mana_cost = EXCLUDED.mana_cost, cmc = EXCLUDED.cmc, colors = EXCLUDED.colors,
+       rarity = EXCLUDED.rarity, last_updated = CURRENT_TIMESTAMP`
+  : `INSERT OR REPLACE INTO scryfall_cards
+       (card_name, price, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, rarity, last_updated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`;
+
+/**
+ * Call sites keep the SQLite parameter order -- [name, price, scryfallId, typeLine, oracleText,
+ * manaCost, cmc, colors, rarity] -- and this reshapes it for Postgres, where `id` leads and the name
+ * is written twice.
+ *
+ * Returns null when there is no Scryfall UUID. On SQLite that was harmless: `card_name` is the key
+ * and `scryfall_id` is nullable. On Postgres `id` is the primary key and NOT NULL, so a nameless-UUID
+ * row cannot exist -- the write has to be skipped rather than attempted, or it raises inside a caller
+ * whose catch would hide it.
+ */
+function scryfallCacheParams(p) {
+  if (!db.isPostgres) return p;
+  const [name, price, scryfallId, typeLine, oracleText, manaCost, cmc, colors, rarity] = p;
+  if (!scryfallId) return null;
+  return [scryfallId, name, name, price, typeLine, oracleText, manaCost, cmc, colors, rarity];
+}
+
+const SQL_REBUILD_DECK_STATS = db.isPostgres
+  ? `INSERT INTO deck_stats (deck_id, season_id, total_points, total_kills, total_wins, total_matches)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (deck_id, season_id) WHERE season_id IS NOT NULL
+     DO UPDATE SET total_points = EXCLUDED.total_points, total_kills = EXCLUDED.total_kills,
+                   total_wins = EXCLUDED.total_wins, total_matches = EXCLUDED.total_matches`
+  : `INSERT OR REPLACE INTO deck_stats (deck_id, season_id, total_points, total_kills, total_wins, total_matches)
+     VALUES (?, ?, ?, ?, ?, ?)`;
 const mtgjsonService = require('./mtgjsonService');
 const {
   createPreferenceProfile,
@@ -119,12 +256,10 @@ function isProfane(text) {
 }
 
 // Minimum password policy. Returns an error string if the password is too weak, else null.
-function passwordPolicyError(password) {
-  if (!password || typeof password !== 'string' || password.length < 8) {
-    return "Password must be at least 8 characters long.";
-  }
-  return null;
-}
+// Was `length >= 8` and nothing else, so `password` and `12345678` were both accepted. The real policy
+// carries the blocklist NIST SP 800-63B requires, and deliberately no composition rules, which it
+// discourages. Shared in behaviour with apps/api and held to it by test/account-tokens-parity.test.js.
+const { passwordPolicyError } = require('./passwordPolicy');
 
 // Baseline security headers (defense-in-depth; Caddy also sets these for the domain, but
 // this also covers the direct-IP path). Kept conservative so nothing legitimate breaks.
@@ -342,15 +477,71 @@ app.use(session({
   }
 }));
 
+/**
+ * Session epoch enforcement.
+ *
+ * A password change or a reset moves `players.sessions_valid_from` forward. Without something that reads
+ * it, that write does nothing: `req.session.regenerate()` only ever touches the session in hand, so a
+ * session someone ELSE holds survives the victim's password change fully authenticated. That is the one
+ * property a password reset exists to provide.
+ *
+ * Each session records the epoch it was issued under, and any request whose session predates the mark is
+ * signed out, wherever it is and whoever holds it. Mounted here, straight after the session middleware
+ * and before every route, so no route can be reached with a stale session.
+ *
+ * A session with no epoch at all predates this code. Those are refused rather than trusted: the
+ * population is every session open at deploy time, the cost is one re-login, and trusting them would be
+ * an indefinite bypass for exactly the sessions nobody can account for.
+ *
+ * Regenerate and not `destroy()`: express-session sets `req.session` to null after a destroy, and the
+ * handlers here read `req.session.player` unguarded, so destroying would turn a stale-session request
+ * into a 500 instead of an honest "not logged in".
+ */
+app.use(async (req, res, next) => {
+  const player = req.session && req.session.player;
+  if (!player || !player.id) return next();
+  try {
+    const row = await db.get("SELECT sessions_valid_from FROM players WHERE id = ?", [player.id]);
+    // No such player: the account was deleted under a live session.
+    const validFrom = row ? new Date(row.sessions_valid_from).getTime() : null;
+    const epoch = req.session.epoch;
+    if (!row || typeof epoch !== 'number' || (Number.isFinite(validFrom) && epoch < validFrom)) {
+      return req.session.regenerate(() => next());
+    }
+    next();
+  } catch (e) {
+    // `sessions_valid_from` arrives with migration 0014. Before it has run the column does not exist, and
+    // failing every authenticated request would take the whole app down on a database that is otherwise
+    // fine -- so this one specific absence is tolerated and logged loudly. Any OTHER failure fails closed,
+    // because passing the request through would make the check bypassable by anything that breaks it.
+    if (/sessions_valid_from/.test(e.message) && /does not exist|no such column/i.test(e.message)) {
+      if (!app.locals.warnedMissingEpochColumn) {
+        app.locals.warnedMissingEpochColumn = true;
+        console.warn(
+          '[accounts] players.sessions_valid_from is missing, so a password change cannot sign out other ' +
+            'sessions. Run migration 0014.'
+        );
+      }
+      return next();
+    }
+    next(e);
+  }
+});
+
 const scryfallService = require('./scryfallService');
+// Token discipline and mail transport, shared in behaviour with apps/api and held to it by
+// test/account-tokens-parity.test.js. See the header of accountTokens.js for why there are two copies.
+const accountTokens = require('./accountTokens');
+const { createMailer } = require('./mailer');
+const mailer = createMailer();
 
 async function sanitizeDeckCardsScryfallIds() {
   try {
     const rows = await db.query(
-      `SELECT dc.deck_id, dc.card_name, dc.scryfall_id, sc.scryfall_id as real_scryfall_id
+      `SELECT dc.deck_id, dc.card_name, dc.scryfall_id, sc.${SCRYFALL_ID_COLUMN} as real_scryfall_id
        FROM deck_cards dc
        JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(sc.card_name)
-       WHERE dc.scryfall_id IS NOT NULL AND dc.scryfall_id != sc.scryfall_id`
+       WHERE dc.scryfall_id IS NOT NULL AND dc.scryfall_id != sc.${SCRYFALL_ID_COLUMN}`
     );
     for (const r of rows) {
       if (r.real_scryfall_id) {
@@ -371,6 +562,11 @@ db.initDb().then(async () => {
   await scryfallService.downloadAndImportScryfallBulk();
   scryfallService.setupDailySync();
   await sanitizeDeckCardsScryfallIds();
+  // The last line of the boot chain. "Database initialized successfully" above is logged before the
+  // bulk sync and the sanitizer run, so it does not mean the server has finished starting -- this
+  // does. Anything that needs to know the startup tasks are done (an operator reading logs, a test
+  // asserting the sanitizer ran) should key off this.
+  console.log("Startup tasks complete.");
 }).catch(err => {
   console.error("Database initialization failed:", err);
 });
@@ -1409,7 +1605,8 @@ app.post('/api/auth/register', async (req, res) => {
   if (!emailRegex.test(email)) {
     return res.status(400).json({ error: "Invalid email format." });
   }
-  const pwErr = passwordPolicyError(password);
+  // With the username and email, so the policy can also refuse a password that contains either.
+  const pwErr = passwordPolicyError(password, { username, email });
   if (pwErr) {
     return res.status(400).json({ error: pwErr });
   }
@@ -1479,6 +1676,13 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: "Invalid username or password." });
     }
 
+    // Regenerate before writing the identity in. Without this the session keeps whatever id the client
+    // arrived with, so an attacker who can plant a session cookie -- via a subdomain, an XSS, or simply
+    // by handing someone a link carrying one -- holds an authenticated session the moment the victim
+    // logs in. That is session fixation, and apps/api has always done this while legacy never did.
+    await new Promise((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve()))
+    );
     req.session.player = {
       id: player.id,
       username: player.username,
@@ -1488,6 +1692,10 @@ app.post('/api/auth/login', async (req, res) => {
       avatarUrl: player.avatar_url || '',
       profileCommander: player.profile_commander || ''
     };
+    // Stamped so the guard above can tell this session from one issued before a later credential change.
+    // An unstamped session is refused, so omitting this would log everyone straight back out.
+    req.session.epoch = Date.now();
+    await recordAccountEvent(req, 'login.success', { playerId: player.id, identifier: cleanUser });
     res.json({ success: true, user: req.session.player });
   } catch (e) {
     console.error(e); res.status(500).json({ error: "Internal server error." });
@@ -1653,6 +1861,8 @@ app.post('/api/auth/google', async (req, res) => {
       avatarUrl: player.avatar_url || picture || '',
       profileCommander: player.profile_commander || ''
     };
+    req.session.epoch = Date.now();
+    await recordAccountEvent(req, 'login.success', { playerId: player.id, identifier: email || null });
 
     res.json({ success: true, user: req.session.player });
   } catch (e) {
@@ -1957,12 +2167,10 @@ async function resolveCardDetailsBatch(cardNames) {
                 }
               }
               
-              await db.run(
-                `INSERT OR REPLACE INTO scryfall_cards 
-                 (card_name, price, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, rarity, last_updated) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              const cacheParams = scryfallCacheParams(
                 [name, minPrice, scryfallId, type_line, oracle_text, mana_cost, cmc, JSON.stringify(colors), rarity]
               );
+              if (cacheParams) await db.run(SQL_CACHE_SCRYFALL_CARD, cacheParams);
               
               chunk.forEach(reqName => {
                 const isExactMatch = reqName.toLowerCase() === name.toLowerCase();
@@ -2064,12 +2272,10 @@ async function resolveCardDetailsBatch(cardNames) {
           }
 
           // Cache it locally
-          await db.run(
-            `INSERT OR REPLACE INTO scryfall_cards 
-             (card_name, price, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, rarity, last_updated) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          const cacheParams = scryfallCacheParams(
             [name, minPrice, scryfallId, type_line, oracle_text, mana_cost, cmc, JSON.stringify(colors), rarity]
           );
+          if (cacheParams) await db.run(SQL_CACHE_SCRYFALL_CARD, cacheParams);
 
           results[reqName] = {
             name, // official name
@@ -2877,15 +3083,20 @@ app.post('/api/decks/reprice-card', async (req, res) => {
     const ownedDeck = await db.get("SELECT id FROM decks WHERE id = ? AND player_id = ?", [deckId, playerId]);
     if (!ownedDeck) return res.status(404).json({ error: "Deck not found." });
 
-    // Retrieve the price directly from what was initialized from Moxfield
-    const current = await db.get("SELECT cheapest_card_price FROM deck_cards WHERE deck_id = ? AND card_name = ?", [deckId, cardName]);
+    // Retrieve the price directly from what was initialized from Moxfield.
+    //
+    // LOWER() on both sides: this was an exact `card_name = ?` match, so a caller whose casing
+    // differed from the stored row found nothing, fell through to the 0.10 default, and then wrote
+    // that 10c into `card_price_cache` -- which is shared, so one mis-cased reprice priced the card
+    // at 10c for every user and every deck until something overwrote it.
+    const current = await db.get(
+      "SELECT cheapest_card_price FROM deck_cards WHERE deck_id = ? AND LOWER(card_name) = LOWER(?)",
+      [deckId, cardName]
+    );
     const price = current ? current.cheapest_card_price : 0.10;
     
     // Save to card cache so other views and tickers are fed
-    await db.run(
-      "INSERT OR REPLACE INTO card_price_cache (card_name, price, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
-      [cardName, price]
-    );
+    await db.run(SQL_CACHE_CARD_PRICE, [cardName, price]);
 
     res.json({ success: true, cardName, price });
   } catch (e) {
@@ -3739,12 +3950,12 @@ app.post('/api/players/:playerId/follow', async (req, res) => {
   const followerId = req.session.player.id;
   if (playerId === followerId) return res.status(400).json({ error: "You cannot follow yourself." });
   try {
-    const existing = await db.get("SELECT 1 FROM follows WHERE follower_id = ? AND followed_id = ?", [followerId, playerId]);
+    const existing = await db.get(`SELECT 1 FROM follows WHERE follower_id = ? AND ${FOLLOWED_COLUMN} = ?`, [followerId, playerId]);
     if (existing) {
-      await db.run("DELETE FROM follows WHERE follower_id = ? AND followed_id = ?", [followerId, playerId]);
+      await db.run(`DELETE FROM follows WHERE follower_id = ? AND ${FOLLOWED_COLUMN} = ?`, [followerId, playerId]);
       res.json({ success: true, following: false });
     } else {
-      await db.run("INSERT INTO follows (follower_id, followed_id) VALUES (?, ?)", [followerId, playerId]);
+      await db.run(`INSERT INTO follows (follower_id, ${FOLLOWED_COLUMN}) VALUES (?, ?)`, [followerId, playerId]);
       
       const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
       const nickname = req.session.player.storeNickname || "A user";
@@ -3764,7 +3975,7 @@ app.get('/api/players/:playerId/following', async (req, res) => {
   const followerId = req.session.player ? req.session.player.id : null;
   if (!followerId) return res.json({ following: false });
   try {
-    const row = await db.get("SELECT 1 FROM follows WHERE follower_id = ? AND followed_id = ?", [followerId, playerId]);
+    const row = await db.get(`SELECT 1 FROM follows WHERE follower_id = ? AND ${FOLLOWED_COLUMN} = ?`, [followerId, playerId]);
     res.json({ following: !!row });
   } catch (e) {
     console.error(e); res.status(500).json({ error: "Internal server error." });
@@ -4510,10 +4721,7 @@ app.post('/api/roster/checkin', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
   const { deckId } = req.body;
   try {
-    await db.run(
-      "INSERT OR REPLACE INTO active_roster (player_id, deck_id, checked_in) VALUES (?, ?, 1)",
-      [req.session.player.id, deckId]
-    );
+    await db.run(SQL_ROSTER_CHECKIN, [req.session.player.id, deckId]);
     res.json({ success: true });
   } catch (e) {
     console.error(e); res.status(500).json({ error: "Internal server error." });
@@ -4559,10 +4767,7 @@ app.post('/api/roster/admin-checkin', async (req, res) => {
   if (!req.session.player || !req.session.player.isAdmin) return res.status(403).json({ error: "Forbidden" });
   const { playerId, deckId } = req.body;
   try {
-    await db.run(
-      "INSERT OR REPLACE INTO active_roster (player_id, deck_id, checked_in) VALUES (?, ?, 1)",
-      [playerId, deckId]
-    );
+    await db.run(SQL_ROSTER_CHECKIN, [playerId, deckId]);
     res.json({ success: true });
   } catch (e) {
     console.error(e); res.status(500).json({ error: "Internal server error." });
@@ -4833,10 +5038,7 @@ async function updateLeaderboardStats(seasonId) {
   `, [seasonId]);
 
   for (let s of playerStats) {
-    await db.run(`
-      INSERT OR REPLACE INTO player_stats (player_id, season_id, total_points, total_kills, total_wins, total_matches)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [s.player_id, seasonId, s.pts, s.k, s.w, s.matches]);
+    await db.run(SQL_REBUILD_PLAYER_STATS, [s.player_id, seasonId, s.pts, s.k, s.w, s.matches]);
   }
 
   // Aggregate deck results
@@ -4849,10 +5051,7 @@ async function updateLeaderboardStats(seasonId) {
   `, [seasonId]);
 
   for (let s of deckStats) {
-    await db.run(`
-      INSERT OR REPLACE INTO deck_stats (deck_id, season_id, total_points, total_kills, total_wins, total_matches)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [s.deck_id, seasonId, s.pts, s.k, s.w, s.matches]);
+    await db.run(SQL_REBUILD_DECK_STATS, [s.deck_id, seasonId, s.pts, s.k, s.w, s.matches]);
   }
 }
 
@@ -5081,11 +5280,22 @@ app.post('/api/players/account/update', async (req, res) => {
     // Changing a password requires re-authentication with the current password, and the
     // new password must meet the policy.
     if (newPassword && newPassword.trim()) {
-      const pwErr = passwordPolicyError(newPassword);
+      // The username and email being SET in this same request, falling back to the ones on the session,
+      // so a new password cannot contain either the old identity or the new one.
+      const pwErr = passwordPolicyError(newPassword, {
+        username: newUsername || req.session.player.username,
+        email: newEmail || req.session.player.email,
+      });
       if (pwErr) return res.status(400).json({ error: pwErr });
       const me = await db.get("SELECT password_hash FROM players WHERE id = ?", [playerId]);
       const ok = me && currentPassword && await bcrypt.compare(currentPassword, me.password_hash);
       if (!ok) return res.status(403).json({ error: "Current password is incorrect." });
+      // Ends every other session on the account, enforced by the epoch guard on every authenticated
+      // request. The caller's own session is re-stamped below so changing your own password does not sign
+      // you out of the device you did it from.
+      await db.run("UPDATE players SET sessions_valid_from = CURRENT_TIMESTAMP WHERE id = ?", [playerId])
+        .catch((e) => console.warn('[accounts] could not revoke sessions:', e.message));
+      await recordAccountEvent(req, 'password.changed', { playerId });
     }
 
     if (newUsername && newUsername.trim()) {
@@ -5132,84 +5342,333 @@ app.post('/api/players/account/update', async (req, res) => {
 });
 
 // Forgot Password Recovery Endpoint
+/**
+ * Password recovery.
+ *
+ * What this replaces, and why each piece changed (claude/account-system-design.md, F1-F5):
+ *
+ *  - The table it wrote to is created by neither dialect of `db.js` and by no migration before 0014, so
+ *    every request raised into the catch below and returned 500. Nobody has ever been able to recover an
+ *    account. **It still needs migration 0014 to have run** -- this makes the code correct, the cutover
+ *    is what makes the feature exist.
+ *  - The token was stored as issued, so any read of that table was a live credential for every pending
+ *    reset. Now a SHA-256; the plaintext exists only in the email.
+ *  - The row keyed on `username`, and redemption ran `WHERE lower(username) = lower(?)`. This app lets
+ *    people change their username, so a reset issued before a rename and redeemed after it matched
+ *    either nobody or -- if someone had taken the freed username -- a different person's account. Now
+ *    `player_id`.
+ *  - The whole recovery link went to stdout on every request. Now the mail transport carries it, and the
+ *    console transport deliberately withholds the body.
+ *  - `devResetLink` was attached whenever NODE_ENV was not exactly "production", so a single missing
+ *    variable turned this into an unauthenticated account-takeover API. It now needs a non-production
+ *    environment AND its own explicit flag.
+ */
+/**
+ * A bcrypt hash of a throwaway value, compared against when no account matched.
+ *
+ * The unknown-account path has to cost what the known one costs. Returning immediately is a timing
+ * oracle: "instant" means no such account, and a few tens of milliseconds means there is one.
+ */
+const RECOVERY_DUMMY_HASH = bcrypt.hashSync('grimore-recovery-dummy', 10);
+
+/**
+ * Writes an account audit row. Never throws, and never carries a secret.
+ *
+ * Awaited by its callers here rather than fired and forgotten, because legacy has no structured logger
+ * to catch a rejection into -- but the catch is inside, so a failed audit write cannot turn a login into
+ * a 500, and cannot turn a FAILED login into one either. The second matters more: it would tell an
+ * attacker their guess was wrong in a distinguishable way.
+ *
+ * `identifier` is the username or email as supplied. Never a password, never a token, never a token
+ * hash -- a hash here would make the audit table a source of redeemable credentials.
+ */
+async function recordAccountEvent(req, event, details = {}) {
+  try {
+    await db.run(
+      "INSERT INTO account_events (event, player_id, identifier, ip, user_agent) VALUES (?, ?, ?, ?, ?)",
+      [
+        event,
+        details.playerId || null,
+        details.identifier ? String(details.identifier).slice(0, 254) : null,
+        (req.ip || '').slice(0, 64) || null,
+        (req.get('user-agent') || '').slice(0, 400) || null,
+      ]
+    );
+  } catch (e) {
+    // account_events arrives with migration 0014, so this is expected to fail until the cutover.
+    console.warn('[audit] could not record %s: %s', event, e.message);
+  }
+}
+
+const FORGOT_PASSWORD_MESSAGE =
+  "If an account matches that, we have sent a recovery link. Check your email, including spam.";
+const RESET_REQUESTS_PER_ACCOUNT = 5;
+const RESET_WINDOW_MS = 60 * 60 * 1000;
+
+/** Outside production, and only when explicitly asked for. Two conditions, not one. */
+function devResetLink(link) {
+  if (process.env.NODE_ENV === 'production') return undefined;
+  if (process.env.EXPOSE_DEV_RESET_LINK !== '1') return undefined;
+  return link;
+}
+
+/**
+ * The origin recovery links are built against.
+ *
+ * From configuration, never from `req.get('host')`. The Host header is supplied by whoever makes the
+ * request, so building the link from it lets an attacker turn a recovery mail into a link that delivers
+ * the token to them -- and the victim's own click is what hands it over.
+ */
+function recoveryBaseUrl() {
+  const configured = process.env.APP_BASE_URL;
+  if (!configured) return null;
+  return configured.replace(/\/+$/, '');
+}
+
 app.post('/api/auth/forgot-password', async (req, res) => {
   const { usernameOrEmail } = req.body;
-  if (!usernameOrEmail || !usernameOrEmail.trim()) {
+  if (!usernameOrEmail || !String(usernameOrEmail).trim()) {
     return res.status(400).json({ error: "Username or email is required." });
   }
+  const identifier = String(usernameOrEmail).trim();
 
   try {
+    const base = recoveryBaseUrl();
+    if (!base) {
+      console.error('[recovery] APP_BASE_URL is not set; refusing to build a link from the request Host.');
+      return res.status(503).json({ error: "Password recovery is not configured on this server." });
+    }
+
+    // Counted on the identifier as supplied, before resolving it, so the throttle cannot itself
+    // distinguish an account that exists from one that does not.
+    // The cutoff is computed here rather than in SQL: db.js rewrites `?` to `$n` positionally, so a
+    // literal `$2` in the text would collide with its numbering. Passing a timestamp also keeps the
+    // statement identical on both dialects.
+    const throttleSince = new Date(Date.now() - RESET_WINDOW_MS).toISOString();
+    const throttle = await db.get(
+      `SELECT count(*) AS n FROM account_events
+        WHERE event = 'password.reset.requested' AND LOWER(identifier) = LOWER(?) AND created_at > ?`,
+      [identifier, throttleSince]
+    ).catch(() => null);
+    const recent = throttle ? Number(throttle.n) : 0;
+
     const player = await db.get(
-      "SELECT username, email FROM players WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
-      [usernameOrEmail.trim(), usernameOrEmail.trim()]
+      "SELECT id, username, email FROM players WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
+      [identifier, identifier]
     );
 
-    if (!player) {
-      return res.json({ success: true, message: "If this account exists, a recovery link has been generated." });
+    await recordAccountEvent(req, 'password.reset.requested', { playerId: player ? player.id : null, identifier });
+
+    // Everything below returns the same body. An account that does not exist, one with no address, and a
+    // throttled one are indistinguishable from a successful send.
+    if (!player || !player.email || recent >= RESET_REQUESTS_PER_ACCOUNT) {
+      if (player && recent >= RESET_REQUESTS_PER_ACCOUNT) {
+        await recordAccountEvent(req, 'password.reset.rejected', { playerId: player.id, identifier });
+      }
+      // Match the work the real path does, so the response time carries no signal.
+      await bcrypt.compare('grimore-recovery-dummy', RECOVERY_DUMMY_HASH);
+      return res.json({ success: true, message: FORGOT_PASSWORD_MESSAGE });
     }
 
-    // Cryptographically-strong, unguessable token (was Math.random()).
-    const token = 'tok_' + require('crypto').randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 3600000).toISOString();
+    const issued = accountTokens.issueToken('passwordReset');
+    await db.run(
+      "INSERT INTO password_resets (player_id, token_hash, requested_ip, expires_at) VALUES (?, ?, ?, ?)",
+      [player.id, issued.tokenHash, req.ip || null, issued.expiresAt.toISOString()]
+    );
 
-    await db.run("INSERT OR REPLACE INTO password_resets (username, token, expires_at) VALUES (?, ?, ?)", [player.username, token, expiresAt]);
+    // `/?resetToken=` and not `/reset-password?token=`, because that is the only shape either front end
+    // actually handles.
+    //
+    // `public/app.js` reads `resetToken` (or `token`) from the query string on load, and it is served at
+    // `/`. An unmatched path like `/reset-password` falls through to the React shell instead, whose
+    // BrowserRouter has `basename="/react"` and so matches nothing there -- the page loads and does
+    // nothing at all. Verified by requesting both paths against a running server, not by reading the
+    // route table.
+    const link = `${base}/?resetToken=${encodeURIComponent(issued.token)}`;
+    // Awaited and not caught: if the mail cannot go, the caller must be told the request failed rather
+    // than be left waiting for a link that is not coming.
+    await mailer.send({
+      to: player.email,
+      subject: 'Reset your Grimore password',
+      text:
+        `Someone asked to reset the password for your Grimore account (${player.username}).\n\n` +
+        `Open this link within 30 minutes to choose a new one:\n\n${link}\n\n` +
+        `If that was not you, you can ignore this email - nothing has changed, and the link expires on ` +
+        `its own.\n`
+    });
 
-    const forwardedProto = req.get('x-forwarded-proto');
-    const protocol = forwardedProto ? forwardedProto.split(',')[0].trim() : req.protocol;
-    const resetLink = `${protocol}://${req.get('host')}/?resetToken=${encodeURIComponent(token)}`;
-    console.log("\n=======================================================");
-    console.log(`[SMTP SIMULATOR] Password recovery email dispatched to player: ${player.username}`);
-    console.log(`[SMTP SIMULATOR] Recovery Link: ${resetLink}`);
-    console.log("=======================================================\n");
-
-    // SECURITY: never return the reset token/link in the HTTP response in
-    // production — the token must only reach the user via the email channel.
-    // The dev link is exposed solely outside production to ease local testing.
-    const response = {
-      success: true,
-      message: "If this account exists, a recovery link has been generated."
-    };
-    if (process.env.NODE_ENV !== 'production') {
-      response.devResetLink = resetLink;
-    }
+    const response = { success: true, message: FORGOT_PASSWORD_MESSAGE };
+    const dev = devResetLink(link);
+    if (dev) response.devResetLink = dev;
     res.json(response);
   } catch (e) {
-    console.error(e); res.status(500).json({ error: "Internal server error." });
+    console.error('[recovery] forgot-password failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
   }
 });
 
 // Reset Password Endpoint
 app.post('/api/auth/reset-password', async (req, res) => {
   const { token, newPassword } = req.body;
-  if (!token) return res.status(400).json({ error: "Reset token is missing or invalid." });
-  if (!newPassword || !newPassword.trim()) {
-    return res.status(400).json({ error: "Password cannot be empty." });
-  }
+  if (!token) return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
   const resetPwErr = passwordPolicyError(newPassword);
   if (resetPwErr) return res.status(400).json({ error: resetPwErr });
 
   try {
-    const record = await db.get("SELECT * FROM password_resets WHERE token = ?", [token]);
-    if (!record) {
-      return res.status(400).json({ error: "Invalid or expired recovery link." });
+    const tokenHash = accountTokens.hashToken(String(token));
+    const record = await db.get(
+      `SELECT pr.id, pr.player_id, pr.expires_at, pr.consumed_at, p.username, p.email
+         FROM password_resets pr JOIN players p ON p.id = pr.player_id
+        WHERE pr.token_hash = ?`,
+      [tokenHash]
+    );
+
+    const rejection = accountTokens.checkToken(
+      record ? { expiresAt: record.expires_at, consumedAt: record.consumed_at } : null
+    );
+    if (rejection) {
+      await recordAccountEvent(req, 'password.reset.rejected');
+      // One message for unknown, expired and already-used alike: distinguishing them tells a holder
+      // whether a candidate was ever real, and whether the account still exists.
+      return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
     }
 
-    if (new Date(record.expires_at) < new Date()) {
-      await db.run("DELETE FROM password_resets WHERE token = ?", [token]);
-      return res.status(400).json({ error: "Recovery link has expired. Please request a new one." });
-    }
+    // The identity-aware half of the policy, now that the account is known. It cannot run earlier:
+    // resolving an account from a token before the token is verified would be the oracle this avoids.
+    const identityErr = passwordPolicyError(newPassword, { username: record.username, email: record.email });
+    if (identityErr) return res.status(400).json({ error: identityErr });
 
-    const salt = await bcrypt.genSalt(10);
-    const hash = await bcrypt.hash(newPassword, salt);
-    await db.run("UPDATE players SET password_hash = ? WHERE LOWER(username) = LOWER(?)", [hash, record.username]);
-    await db.run("DELETE FROM password_resets WHERE token = ?", [token]);
+    const hash = await bcrypt.hash(newPassword, 10);
+    await db.run("UPDATE players SET password_hash = ? WHERE id = ?", [hash, record.player_id]);
+    await db.run("UPDATE password_resets SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?", [record.id]);
+    // Every other outstanding token for this account dies too, so an older recovery mail still sitting
+    // in an inbox is worthless.
+    await db.run(
+      "UPDATE password_resets SET consumed_at = CURRENT_TIMESTAMP WHERE player_id = ? AND consumed_at IS NULL AND id != ?",
+      [record.player_id, record.id]
+    );
+    // Ends every session on the account. The reason someone resets a password is that another person is
+    // in their account; leaving those sessions alive defeats the entire exercise. Both apps enforce this
+    // column on every authenticated request -- see the epoch guard mounted after the session middleware.
+    await db.run("UPDATE players SET sessions_valid_from = CURRENT_TIMESTAMP WHERE id = ?", [record.player_id]);
+    await recordAccountEvent(req, 'password.reset.redeemed', { playerId: record.player_id });
 
+    // Deliberately not signed in. Holding the link proves control of the inbox, which is enough to set a
+    // password and then be asked for it.
     res.json({ success: true });
   } catch (e) {
-    console.error(e); res.status(500).json({ error: "Internal server error." });
+    console.error('[recovery] reset-password failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
   }
 });
 
+/**
+ * Email verification.
+ *
+ * Legacy accepted any syntactically valid address at registration and never checked it, so password
+ * recovery delivered to an address nobody had proven they control. `apps/api` got this flow first; these
+ * are the same two endpoints against the same table, because legacy is what production serves.
+ */
+app.post('/api/auth/verify-email/request', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  try {
+    const base = recoveryBaseUrl();
+    if (!base) {
+      console.error('[accounts] APP_BASE_URL is not set; refusing to build a verification link from the request Host.');
+      return res.status(503).json({ error: "Email verification is not configured on this server." });
+    }
+    const player = await db.get(
+      "SELECT username, email, email_verified_at FROM players WHERE id = ?",
+      [playerId]
+    );
+    if (!player || !player.email) {
+      return res.status(400).json({ error: "Your account has no email address to verify." });
+    }
+    if (player.email_verified_at) {
+      return res.json({ success: true, alreadyVerified: true });
+    }
+
+    const issued = accountTokens.issueToken('emailVerification');
+    // The address is captured now, so changing it later cannot be retroactively verified by a token
+    // issued for the previous one.
+    await db.run(
+      "INSERT INTO email_verifications (player_id, email, token_hash, expires_at) VALUES (?, ?, ?, ?)",
+      [playerId, player.email, issued.tokenHash, issued.expiresAt.toISOString()]
+    );
+    const link = `${base}/?verifyToken=${encodeURIComponent(issued.token)}`;
+    await mailer.send({
+      to: player.email,
+      subject: 'Confirm your Grimore email address',
+      text:
+        `Confirm this address for your Grimore account (${player.username}) by opening this link within ` +
+        `24 hours:\n\n${link}\n`
+    });
+    await recordAccountEvent(req, 'email.verification.sent', { playerId });
+
+    const response = { success: true };
+    const dev = devResetLink(link);
+    if (dev) response.devVerifyLink = dev;
+    res.json(response);
+  } catch (e) {
+    console.error('[accounts] verify-email/request failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
+  }
+});
+
+app.post('/api/auth/verify-email/confirm', async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
+  try {
+    const tokenHash = accountTokens.hashToken(String(token));
+    const record = await db.get(
+      "SELECT id, player_id, email, expires_at, consumed_at FROM email_verifications WHERE token_hash = ?",
+      [tokenHash]
+    );
+    const rejection = accountTokens.checkToken(
+      record ? { expiresAt: record.expires_at, consumedAt: record.consumed_at } : null
+    );
+    if (rejection) return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
+
+    // Only marks the address the token was issued for. If the account's address has changed since, this
+    // token proves control of the old one and nothing about the new one.
+    const updated = await db.run(
+      "UPDATE players SET email_verified_at = CURRENT_TIMESTAMP WHERE id = ? AND LOWER(email) = LOWER(?) AND email_verified_at IS NULL",
+      [record.player_id, record.email]
+    );
+    // Consumed either way, so a token whose address no longer matches cannot be replayed later if the
+    // account happens to change back.
+    await db.run("UPDATE email_verifications SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?", [record.id]);
+    if (!updated || !updated.changes) {
+      return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
+    }
+    await recordAccountEvent(req, 'email.verified', { playerId: record.player_id });
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[accounts] verify-email/confirm failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
+  }
+});
+
+/**
+ * Sign out of every device.
+ *
+ * Moves the account's session mark forward, which the epoch guard enforces on every authenticated
+ * request. Includes the calling session on purpose: "everywhere" that spared the device asking would be a
+ * lie, and somebody who suspects a compromise may well be on the compromised device.
+ */
+app.post('/api/auth/sign-out-everywhere', async (req, res) => {
+  if (!req.session.player) return res.status(401).json({ error: "Please log in first." });
+  const playerId = req.session.player.id;
+  try {
+    await db.run("UPDATE players SET sessions_valid_from = CURRENT_TIMESTAMP WHERE id = ?", [playerId]);
+    await recordAccountEvent(req, 'sessions.revoked', { playerId });
+    req.session.regenerate(() => res.json({ success: true }));
+  } catch (e) {
+    console.error('[accounts] sign-out-everywhere failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
+  }
+});
 
 app.get('/api/notifications', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
@@ -5870,13 +6329,22 @@ app.get('/api/cards/versions', async (req, res) => {
     if (prints.length > 0) {
       const cheapest = prints[0];
       try {
+        await db.run(SQL_CACHE_CARD_PRICE, [cheapest.name, cheapest.price]);
+        // On Postgres the Scryfall UUID *is* the primary key, so it cannot be back-filled from a
+        // card name the way the SQLite column can -- that would rewrite the row's identity. Only
+        // the price is updated there; previously the whole statement threw `column "scryfall_id"
+        // does not exist` and the catch below turned that into a warning.
+        //
+        // The `INSERT OR REPLACE` above this used to throw first and the shared catch swallowed
+        // both, so neither ran. It is an upsert now (migration 0013), so this line is reachable and
+        // the gallery's price caching works on Postgres.
         await db.run(
-          "INSERT OR REPLACE INTO card_price_cache (card_name, price, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
-          [cheapest.name, cheapest.price]
-        );
-        await db.run(
-          "UPDATE scryfall_cards SET price = ?, scryfall_id = ? WHERE LOWER(card_name) = ?",
-          [cheapest.price, cheapest.id, cheapest.name.toLowerCase()]
+          db.isPostgres
+            ? "UPDATE scryfall_cards SET price = ? WHERE LOWER(card_name) = ?"
+            : "UPDATE scryfall_cards SET price = ?, scryfall_id = ? WHERE LOWER(card_name) = ?",
+          db.isPostgres
+            ? [cheapest.price, cheapest.name.toLowerCase()]
+            : [cheapest.price, cheapest.id, cheapest.name.toLowerCase()]
         );
       } catch (dbErr) {
         console.warn(`Failed to cache cheapest price for ${cheapest.name}:`, dbErr.message);
@@ -7015,36 +7483,46 @@ app.post('/api/collections/:id/cards', async (req, res) => {
     // Check if card matches database scryfall_cards or price cache to fetch scryfallId
     let resolvedScryfallId = scryfallId || null;
     if (!resolvedScryfallId) {
-      const match = await db.get("SELECT scryfall_id FROM scryfall_cards WHERE LOWER(card_name) = LOWER(?)", [cardName]);
+      const match = await db.get(
+        `SELECT ${SCRYFALL_ID_COLUMN} AS scryfall_id FROM scryfall_cards WHERE LOWER(card_name) = LOWER(?)`,
+        [cardName]
+      );
       if (match) resolvedScryfallId = match.scryfall_id;
     }
 
-    await db.run(
-      `INSERT INTO collection_cards (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(collection_id, card_name, scryfall_id, is_foil, condition, language) 
-       DO UPDATE SET quantity = quantity + EXCLUDED.quantity`,
-      [id, cardName, resolvedScryfallId, qty, foil, trade, cond, lang, price]
-    );
+    await db.run(SQL_UPSERT_COLLECTION_CARD, [id, cardName, resolvedScryfallId, qty, foil, trade, cond, lang, price]);
 
-    // Auto-remove or decrement from wishlist if it exists
-    const wishlistCard = await db.get(
-      "SELECT * FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
-      [playerId, cardName]
-    );
-    if (wishlistCard) {
-      const newWishQty = wishlistCard.quantity - qty;
-      if (newWishQty <= 0) {
-        await db.run(
-          "DELETE FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
-          [playerId, cardName]
-        );
-      } else {
-        await db.run(
-          "UPDATE wishlist_cards SET quantity = ? WHERE player_id = ? AND card_name = ? COLLATE NOCASE",
-          [newWishQty, playerId, cardName]
-        );
+    // Auto-remove or decrement from wishlist if it exists.
+    //
+    // Scoped try/catch because this is a side effect and the card is already in the collection by
+    // now: a failure here must not report the add as failed. It did, and because the statement above
+    // is an upsert, a user retrying after that 500 silently doubled their quantity. It failed on
+    // every add against any database without `wishlist_cards` -- which is SQLite always (initDb
+    // never creates it) and Postgres until migration 0008 runs.
+    try {
+      const wishlistCard = await db.get(
+        "SELECT * FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
+        [playerId, cardName]
+      );
+      if (wishlistCard) {
+        const newWishQty = wishlistCard.quantity - qty;
+        if (newWishQty <= 0) {
+          await db.run(
+            "DELETE FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
+            [playerId, cardName]
+          );
+        } else {
+          // `COLLATE NOCASE` is SQLite-only -- a syntax error on Postgres, so decrementing (as
+          // opposed to clearing) a wishlist row failed there even once the table existed. LOWER()
+          // on both sides works in both dialects and matches the DELETE above.
+          await db.run(
+            "UPDATE wishlist_cards SET quantity = ? WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
+            [newWishQty, playerId, cardName]
+          );
+        }
       }
+    } catch (wishlistErr) {
+      console.warn(`Wishlist sync skipped for ${cardName}:`, wishlistErr.message);
     }
 
     res.json({ success: true });
@@ -7224,12 +7702,13 @@ app.post('/api/recovery/restore/:id', async (req, res) => {
       );
       // Insert cards
       for (let c of cards) {
-        await db.run(
-          `INSERT INTO collection_cards 
-           (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price, added_at) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [c.collection_id, c.card_name, c.scryfall_id, c.quantity, c.is_foil, c.is_for_trade, c.condition, c.language, c.purchase_price, c.added_at]
-        );
+        // `??` and not `||`: a non-foil card archives as 0, which `||` would discard.
+        const archivedFoil = c.foil ?? c.is_foil ?? 0;
+        const archivedAt = c.created_at ?? c.added_at ?? null;
+        await db.run(SQL_RESTORE_COLLECTION_CARD, [
+          c.collection_id, c.card_name, c.scryfall_id, c.quantity, archivedFoil,
+          c.is_for_trade, c.condition, c.language, c.purchase_price, archivedAt
+        ]);
       }
     } else if (row.item_type === 'deck') {
       const { deck, cards } = payload;

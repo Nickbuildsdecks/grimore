@@ -118,6 +118,14 @@ const CARD_UPSERT_SQLITE = `
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`;
 
 async function downloadAndImportScryfallBulk(force = false) {
+  // Opt-in escape hatch for test environments. The oracle-cards dump is hundreds of megabytes and
+  // this runs on every boot, so a CI job that boots the server would download it on every run --
+  // and the boot tasks that follow this call would not start until it finished. Off unless the
+  // variable is explicitly set, so no deployment can lose its card data by default.
+  if (process.env.SKIP_SCRYFALL_BULK_SYNC === '1') {
+    console.log('Scryfall bulk sync skipped (SKIP_SCRYFALL_BULK_SYNC=1).');
+    return;
+  }
   // Check if we already have cards and don't need a force reload
   if (!force) {
     const existing = await db.get("SELECT count(*) as count FROM scryfall_cards");

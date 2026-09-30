@@ -15,7 +15,10 @@ export function Login() {
   const [busy, setBusy] = useState(false)
   const [forgotOpen, setForgotOpen] = useState(false)
   const [recoveryId, setRecoveryId] = useState("")
-  const resetToken = new URLSearchParams(window.location.search).get("resetToken")
+  // Both names, matching what `public/app.js` accepts. A recovery link is pasted, forwarded and
+  // hand-edited; refusing one of the two spellings costs a locked-out account for no benefit.
+  const params = new URLSearchParams(window.location.search)
+  const resetToken = params.get("resetToken") ?? params.get("token")
 
   async function submitRecovery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

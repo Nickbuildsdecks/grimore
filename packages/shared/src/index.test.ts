@@ -100,12 +100,24 @@ describe("auth contracts", () => {
     expect(Username.safeParse("nick g").success).toBe(false);
   });
 
-  it("enforces password min 8 on register but not login", () => {
+  it("applies the full password policy on register, not only a length check", () => {
     const base = { username: "nick", storeNickname: "Nick", email: "nick@example.com" };
     expect(RegisterInput.safeParse({ ...base, password: "1234567" }).success).toBe(false);
-    expect(RegisterInput.safeParse({ ...base, password: "12345678" }).success).toBe(true);
-    expect(RegisterInput.safeParse({ ...base, password: "12345678", email: "nope" }).success).toBe(false);
+    // This used to be asserted as ACCEPTABLE, which is exactly the weakness the policy now closes:
+    // `12345678` clears `min(8)` and is on the top of every breach corpus.
+    expect(RegisterInput.safeParse({ ...base, password: "12345678" }).success).toBe(false);
+    expect(RegisterInput.safeParse({ ...base, password: "password" }).success).toBe(false);
+    expect(RegisterInput.safeParse({ ...base, password: "quiet-library-morning" }).success).toBe(true);
+    // Contextual rules need the sibling fields, so they live on the object rather than the field.
+    expect(RegisterInput.safeParse({ ...base, password: "nick-is-my-password" }).success).toBe(false);
+    expect(RegisterInput.safeParse({ ...base, password: "quiet-library-morning", email: "nope" }).success).toBe(false);
+  });
+
+  it("does not apply the policy to login, so an existing weak password can still sign in", () => {
+    // Policy is enforced when a secret is SET. Applying it at login would lock out every account that
+    // predates it, which punishes the user for the old policy's failure.
     expect(LoginInput.safeParse({ username: "nick", password: "x" }).success).toBe(true);
+    expect(LoginInput.safeParse({ username: "nick", password: "12345678" }).success).toBe(true);
   });
 
   it("normalizes a legacy players row into PublicPlayer", () => {

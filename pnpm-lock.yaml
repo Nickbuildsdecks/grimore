@@ -62,6 +62,9 @@ importers:
       '@grimore/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@grimore/mailer':
+        specifier: workspace:*
+        version: link:../../packages/mailer
       '@grimore/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -261,6 +264,15 @@ importers:
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.2)(jiti@2.7.0)(lightningcss@1.33.0)
+
+  packages/mailer:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.4)(jiti@2.7.0)(lightningcss@1.33.0)
 
   packages/rules-engine:
     devDependencies:

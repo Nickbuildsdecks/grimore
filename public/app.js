@@ -102,7 +102,49 @@
         window.openResetPasswordModal(resetToken);
       }, 500);
     }
+
+    // Email verification. The confirm endpoint is a POST with a JSON body, so a link in an email cannot
+    // reach it on its own -- something has to make the call, and without this the verification API worked
+    // while no user could ever complete the flow.
+    const verifyToken = urlParams.get('verifyToken');
+    if (verifyToken) {
+      confirmEmailVerification(verifyToken);
+    }
   });
+
+  /**
+   * Confirms an email address from a link, then clears the token out of the URL.
+   *
+   * The token is stripped from the address bar on both outcomes. It is single-use so a leftover copy is
+   * not redeemable, but it would otherwise sit in the browser's history, in the page title bar, and in the
+   * Referer of every subsequent request from this page.
+   */
+  async function confirmEmailVerification(token) {
+    let message;
+    try {
+      const res = await fetch('/api/auth/verify-email/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      const body = await res.json().catch(() => ({}));
+      // The server deliberately gives one message for unknown, expired and already-used, so it is shown
+      // as received rather than being re-interpreted here into something more specific than the truth.
+      message = res.ok
+        ? 'Your email address is confirmed.'
+        : (body.error && (body.error.message || body.error)) || 'That link is invalid or has expired.';
+    } catch (e) {
+      message = 'Could not reach the server to confirm your email. Please try the link again.';
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('verifyToken');
+    window.history.replaceState({}, '', url.toString());
+    if (typeof window.showToast === 'function') {
+      window.showToast(message);
+    } else {
+      alert(message);
+    }
+  }
 
   // HTML5 History popstate router listener
   window.addEventListener('popstate', (event) => {

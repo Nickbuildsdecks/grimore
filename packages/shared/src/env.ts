@@ -53,6 +53,17 @@ export const envSchema = z
     STRIPE_PRICE_ID: z.string().min(1).optional(),
     PREMIUM_GATING: z.enum(["on", "off"]).default("off"),
     FREE_DECK_LIMIT: intFromString(10, 0),
+    // Mail. No provider is configured for this project, and the transport is chosen from these three
+    // (see @grimore/mailer): SMTP_URL delivers, MAIL_TRANSPORT=console prints without the body, and
+    // neither set fails closed. Deliberately not defaulted to a no-op -- reporting a send that did not
+    // happen is how the broken recovery flow went unnoticed.
+    SMTP_URL: z.string().min(1).optional(),
+    MAIL_FROM: z.string().min(1).optional(),
+    MAIL_TRANSPORT: z.enum(["console"]).optional(),
+    // The origin recovery and verification links are built against. Taken from configuration rather
+    // than from the request's Host header, which an attacker controls: a poisoned Host turns a reset
+    // mail into a link that sends the token to them.
+    APP_BASE_URL: z.string().url().optional(),
     SENTRY_DSN: z.string().url().optional(),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   })

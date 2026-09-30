@@ -705,17 +705,17 @@ export function decksRouter(ctx: AppContext): Router {
         const value = Number(q.rows[0].cheapest_card_price ?? 0.15);
         // Legacy used SQLite's INSERT OR REPLACE, which raises on Postgres — so feeding the shared
         // price cache, the whole point of this route, never happened.
-        const existing = await client.query(
-          'SELECT id FROM card_price_cache WHERE LOWER(card_name) = LOWER($1) ORDER BY id LIMIT 1',
-          [input.cardName],
+        //
+        // This was a select-then-update-or-insert, because the table had no unique key to upsert
+        // against. Migration 0013 deduplicates it and adds UNIQUE (LOWER(card_name)), so it is a real
+        // upsert now: two concurrent repricers of the same card can no longer both insert and leave a
+        // duplicate behind for the readers to fan out on.
+        await client.query(
+          `INSERT INTO card_price_cache (card_name, price, cached_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+           ON CONFLICT (LOWER(card_name))
+           DO UPDATE SET price = EXCLUDED.price, cached_at = CURRENT_TIMESTAMP`,
+          [input.cardName, value],
         );
-        if (existing.rowCount) {
-          await client.query('UPDATE card_price_cache SET price = $1, cached_at = CURRENT_TIMESTAMP WHERE id = $2', [
-            value, existing.rows[0].id,
-          ]);
-        } else {
-          await client.query('INSERT INTO card_price_cache (card_name, price) VALUES ($1, $2)', [input.cardName, value]);
-        }
         return value;
       });
       res.json({ success: true, cardName: input.cardName, price });
