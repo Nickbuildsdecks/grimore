@@ -17,7 +17,9 @@
  * membership check, no role check. Its only comment was "Can be submitted by players or admin". Anyone
  * who could reach the server could post arbitrary results for any pod in any season, awarding
  * themselves unlimited points and rewriting the standings. Reporting now requires a session, and the
- * caller must either be seated at that pod or hold an organizer role.
+ * caller must either be seated at that pod or hold an organizer role. A reported pod is closed to the
+ * players who sat at it, but an organizer may still report it again to correct a mis-entered score --
+ * nothing else in either codebase can reopen a pod, so a blanket refusal would make a typo permanent.
  *
  * ## Other legacy bugs fixed
  *
@@ -76,14 +78,24 @@ import { requireAuth, sessionPlayerId } from '../lib/auth.js';
 
 type OrganizerRole = 'admin' | 'judge' | 'scorekeeper';
 
-/** Legacy `hasRole`, but read from the database so a revoked role takes effect immediately. */
-async function requireRole(db: Queryable, playerId: string, roles: OrganizerRole[]): Promise<void> {
+const ORGANIZER_ROLES: OrganizerRole[] = ['admin', 'judge', 'scorekeeper'];
+
+/** The caller's role, read from the database so a revoked one takes effect immediately rather than at
+ * their next sign-in. Legacy's `hasRole` read a snapshot taken at login. */
+async function effectiveRole(db: Queryable, playerId: string): Promise<string> {
   const q = await db.query('SELECT role, is_admin FROM players WHERE id = $1', [playerId]);
   const row = q.rows[0];
   if (!row) throw new ApiError(401, 'UNAUTHENTICATED', 'Not logged in.');
   // is_admin is the legacy flag; role is the newer column. Either satisfies an admin requirement.
-  const effective = Number(row.is_admin) === 1 ? 'admin' : ((row.role as string) || 'player');
-  if (!roles.includes(effective as OrganizerRole)) {
+  return Number(row.is_admin) === 1 ? 'admin' : ((row.role as string) || 'player');
+}
+
+async function hasAnyRole(db: Queryable, playerId: string, roles: OrganizerRole[]): Promise<boolean> {
+  return roles.includes((await effectiveRole(db, playerId)) as OrganizerRole);
+}
+
+async function requireRole(db: Queryable, playerId: string, roles: OrganizerRole[]): Promise<void> {
+  if (!(await hasAnyRole(db, playerId, roles))) {
     throw new ApiError(403, 'FORBIDDEN', `This action requires one of: ${roles.join(', ')}.`);
   }
 }
@@ -518,9 +530,10 @@ export function leagueRouter(ctx: AppContext): Router {
         const seatsQ = await client.query('SELECT player_id FROM pod_results WHERE pod_id = $1', [podId]);
         const seated = new Set(seatsQ.rows.map((s) => s.player_id as string));
 
+        const isOrganizer = await hasAnyRole(client, callerId, ORGANIZER_ROLES);
         // Either you played at this table, or you are running the event.
-        if (!seated.has(callerId)) {
-          await requireRole(client, callerId, ['admin', 'judge', 'scorekeeper']);
+        if (!seated.has(callerId) && !isOrganizer) {
+          throw new ApiError(403, 'FORBIDDEN', `This action requires one of: ${ORGANIZER_ROLES.join(', ')}.`);
         }
         // A report may only name players who are actually at this table.
         for (const row of input.results) {
@@ -528,8 +541,23 @@ export function leagueRouter(ctx: AppContext): Router {
             throw new ApiError(400, 'VALIDATION', 'A result was submitted for a player who is not in this pod.');
           }
         }
-        if (Number(pod.completed) === 1) {
-          throw new ApiError(409, 'ALREADY_REPORTED', 'This pod has already been reported.');
+        // ...and it must cover the whole table, exactly once each. Without this, one player could
+        // report only themselves as the winner, which completes the pod and leaves everyone else on
+        // zero -- and since a reported pod is closed to the players, the rest of the table could not
+        // correct it.
+        const named = new Set(input.results.map((row) => row.player_id));
+        if (named.size !== input.results.length) {
+          throw new ApiError(400, 'VALIDATION', 'A report named the same player twice.');
+        }
+        if (named.size !== seated.size) {
+          throw new ApiError(400, 'VALIDATION', 'A report must give a result for every player seated at the pod.');
+        }
+        // Players are locked out of re-reporting, so a mis-entered score cannot be quietly rewritten by
+        // whoever lost. Organizers can still correct one: there is no other way to fix a typo, and
+        // refusing outright would leave a wrong score in the standings for the rest of the season.
+        // rebuildStandings recomputes from the pods, so a correction settles the board correctly.
+        if (Number(pod.completed) === 1 && !isOrganizer) {
+          throw new ApiError(409, 'ALREADY_REPORTED', 'This pod has already been reported. Ask an organizer to correct the score.');
         }
 
         const seasonQ = await client.query(`SELECT ${SEASON_COLUMNS} FROM seasons WHERE id = $1`, [pod.season_id]);

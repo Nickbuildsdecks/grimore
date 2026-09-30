@@ -312,3 +312,70 @@ running concurrently produce a duplicate-key error on `pg_class_relname_nsp_inde
 DROP achieves nothing because the index comes straight back. Removed, with the reasoning recorded in the
 migration: taking it away properly means removing it from `db.js` first, which is a legacy change and not
 a migration's business.
+
+## Fifth pass: the score-report route
+
+Handed to me with "optimization is up to you", so I established the facts before choosing, and two of
+them decided it.
+
+**Fact one: `apps/api` had already solved the authorization half.** Its league slice requires a session
+and seated-or-organizer, and validates that every result names a player at the table. There was nothing
+to design — legacy just needed the same rule, and legacy is what is serving traffic. Ported verbatim,
+plus reading roles from the database rather than the login-time session snapshot so a revoked role locks
+someone out at once.
+
+**Fact two: neither app can reopen a reported pod.** `pods.completed` is only ever set to `1`, in both.
+That is what made the re-report question real rather than stylistic: `apps/api`'s blanket 409 makes a
+mis-entered score permanent for the rest of the season, and legacy's unlimited overwrite lets whoever
+lost rewrite the result. So the 409 now applies to the players who sat at the pod and not to organizers,
+in both apps. The standings are rebuilt from the pods rather than accumulated, so a correction settles
+the board — the new test in each suite moves a win between players and checks the loser's total falls.
+
+**And a hole I opened and then closed.** Reading my own diff adversarially: scoping the 409 to the
+players is only safe if a report has to cover the whole table. Otherwise one player reports *only
+themselves* as the winner, the pod completes with everyone else on zero, and the rest of the table can no
+longer correct it — I would have shipped a rule exploitable by exactly the person it constrains.
+`apps/api` had the same hole under its blanket 409, where the first reporter won permanently. Both apps
+now require a result for every seat, named once each, which is what both reporting forms already send.
+
+### Two things found while reading the handler
+
+The route scored `seasons WHERE is_active = 1` instead of the pod's own season. Correcting a pod after
+its season closed answered 404; correcting one while a different season was open paid out the *new*
+season's points and rebuilt the *new* season's leaderboard. Fixed, with a test that closes the season
+and corrects the pod.
+
+`handleSelfReport` in `public/app.js` posts `{ kills, placedFirst, placedDraw }` with no `results` array,
+so the dashboard's self-report button has always answered 500. It answers a clean 400 now, and I did not
+make it work: the route marks the pod `completed`, so a one-seat report would close the pod with every
+other player on zero. What a self-report should do to the other seats is a league rules decision, and
+guessing at it would have been the kind of quiet scope widening this project keeps paying for. Flagged
+in `claude/decisions-log.md` (D21) for Nick.
+
+### A coverage limit worth stating plainly
+
+The pods model — `pods`, `pod_results`, `active_roster` — is created **only** by Postgres migration 0009.
+Nothing in `db.js` or `server.js` creates it for SQLite. The entire league engine has therefore never
+existed on the local dev dialect, so "test it locally first" cannot mean SQLite for this feature; the
+Postgres write-path suite is the only place this ladder can be exercised, and that is the dialect
+production runs. I did still boot legacy on SQLite to prove the server starts with the new route and that
+the session check precedes any query.
+
+### Verified before pushing, this time against a tree CI can reproduce
+
+| Suite | Result |
+| --- | --- |
+| `pnpm --filter @grimore/api test` | 264 passed, 18 files (league 36, up from 35) |
+| `npm run test:postgres` | 25 passed (was 24; one new authorization test, 11 assertions) |
+| `npm run test:unit` | 40 passed |
+| `npm run v2:typecheck` | 15/15 |
+| `npm run v2:build` | 9/9 |
+| `npm run v2:guards` | OK |
+| `npm run preflight` | OK, 0 hard failures |
+| legacy boot on SQLite | starts; 401 before any query |
+
+The first run of the Postgres suite failed, and it was my test rather than the code: registering the
+organiser mid-test seeded a zeroed `player_stats` row for the active season, so "a re-report must not add
+rows" was counting registration. The organiser is created before the season opens now. Worth noting that
+the thing that tripped my test is the season-two collision recorded above — the untargeted
+`ON CONFLICT DO NOTHING` — showing up from a third direction.

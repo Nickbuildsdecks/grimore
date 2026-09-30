@@ -4969,45 +4969,121 @@ app.get('/api/pairings/round/:roundNum', async (req, res) => {
   }
 });
 
+// Score report for one Commander pod.
+//
+// This route had NO authentication of any kind -- no session check, no pod membership check, no role
+// check. Its only comment was "Can be submitted by players or admin". Anyone who could reach the
+// server could post arbitrary results for any pod in any season, award themselves unlimited points
+// and rewrite the standings. The rule below is the one apps/api's league slice enforces: you must be
+// signed in, and either seated at that pod or running the event.
+const ORGANIZER_ROLES = ['admin', 'judge', 'scorekeeper'];
+
 app.post('/api/pairings/report/:podId', async (req, res) => {
-  // Can be submitted by players or admin
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
   const { podId } = req.params;
-  const { results } = req.body; // Array of { player_id, kills, placed_first, placed_draw }
-  
+  const { results } = req.body || {}; // Array of { player_id, kills, placed_first, placed_draw }
+
+  if (!Array.isArray(results) || results.length === 0) {
+    return res.status(400).json({ error: "A report must list a result for each player in the pod." });
+  }
+
   try {
-    const season = await db.get("SELECT * FROM seasons WHERE is_active = 1");
     const pod = await db.get("SELECT * FROM pods WHERE id = ?", [podId]);
-    if (!pod || !season) return res.status(404).json({ error: "Pod or active season not found." });
+    if (!pod) return res.status(404).json({ error: "Pod not found." });
+
+    // Score the pod's OWN season. This read was `WHERE is_active = 1`, so reporting a pod belonging to
+    // a closed season paid out the current season's points and rebuilt the current season's board.
+    const season = await db.get("SELECT * FROM seasons WHERE id = ?", [pod.season_id]);
+    if (!season) return res.status(404).json({ error: "The season for this pod no longer exists." });
+
+    // Roles are read from the database rather than the session snapshot, so revoking one takes effect
+    // immediately instead of lasting until that organizer next signs in.
+    const caller = await db.get("SELECT id, role, is_admin FROM players WHERE id = ?", [req.session.player.id]);
+    if (!caller) return res.status(401).json({ error: "Not logged in." });
+    const isOrganizer = Number(caller.is_admin) === 1 || ORGANIZER_ROLES.includes(caller.role || 'player');
+
+    const seatRows = await db.query("SELECT player_id FROM pod_results WHERE pod_id = ?", [podId]);
+    const seated = new Set(seatRows.map(s => String(s.player_id)));
+
+    // Either you played at this table, or you are running the event.
+    if (!seated.has(String(caller.id)) && !isOrganizer) {
+      return res.status(403).json({ error: "Only a player seated at this pod, or an organizer, may report it." });
+    }
+
+    // A report may only name players who are actually at this table, and it may not describe an
+    // impossible game -- two winners, or one player who both won and drew.
+    let winners = 0;
+    let draws = 0;
+    const scored = [];
+    for (const r of results) {
+      if (!r || !seated.has(String(r.player_id))) {
+        return res.status(400).json({ error: "A result was submitted for a player who is not in this pod." });
+      }
+      const kills = Number(r.kills);
+      if (!Number.isInteger(kills) || kills < 0 || kills > 99) {
+        return res.status(400).json({ error: "Kills must be a whole number between 0 and 99." });
+      }
+      // The browser sends 1/0; apps/api's contract sends booleans. Accept either.
+      const placedFirst = r.placed_first === 1 || r.placed_first === true;
+      const placedDraw = r.placed_draw === 1 || r.placed_draw === true;
+      if (placedFirst && placedDraw) {
+        return res.status(400).json({ error: "A player cannot both win and draw." });
+      }
+      if (placedFirst) winners++;
+      if (placedDraw) draws++;
+      scored.push({ playerId: String(r.player_id), kills, placedFirst, placedDraw });
+    }
+    if (winners > 1) return res.status(400).json({ error: "A pod can only have one winner." });
+    if (winners > 0 && draws > 0) {
+      return res.status(400).json({ error: "A pod cannot have both a winner and a draw." });
+    }
+
+    // A report must cover the whole table, exactly once each. Without this, one player could report
+    // only themselves as the winner, which completes the pod and leaves everyone else on zero -- and
+    // since a reported pod is closed to the players, the rest of the table could not correct it.
+    const named = new Set(scored.map(r => r.playerId));
+    if (named.size !== scored.length) {
+      return res.status(400).json({ error: "A report named the same player twice." });
+    }
+    if (named.size !== seated.size) {
+      return res.status(400).json({ error: "A report must give a result for every player seated at the pod." });
+    }
+
+    // Players are locked out of re-reporting, so a mis-entered score cannot be quietly rewritten by
+    // whoever lost. Organizers can still correct one: neither codebase has any other way to fix a
+    // typo, and refusing outright would leave a wrong score in the standings for the whole season.
+    if (Number(pod.completed) === 1 && !isOrganizer) {
+      return res.status(409).json({ error: "This pod has already been reported. Ask an organizer to correct the score." });
+    }
 
     // Save individual results & calculate points
-    for (let r of results) {
-      let points = 0;
-      if (r.placed_first === 1) {
-        points += season.points_win;
-      } else if (r.placed_draw === 1) {
-        points += season.points_draw;
+    for (const r of scored) {
+      let points = Number(season.points_entry);
+      if (r.placedFirst) {
+        points += Number(season.points_win);
+      } else if (r.placedDraw) {
+        points += Number(season.points_draw);
       }
-      points += season.points_entry;
-      points += (r.kills * season.points_kill);
+      points += r.kills * Number(season.points_kill);
 
       await db.run(
-        `UPDATE pod_results 
-         SET kills = ?, placed_first = ?, placed_draw = ?, points_awarded = ? 
+        `UPDATE pod_results
+         SET kills = ?, placed_first = ?, placed_draw = ?, points_awarded = ?
          WHERE pod_id = ? AND player_id = ?`,
-        [r.kills, r.placed_first, r.placed_draw, points, podId, r.player_id]
+        [r.kills, r.placedFirst ? 1 : 0, r.placedDraw ? 1 : 0, points, podId, r.playerId]
       );
     }
 
     // Mark pod as completed
     await db.run("UPDATE pods SET completed = 1 WHERE id = ?", [podId]);
 
-    // Recalculate all season leaderboards and statistics
-    await updateLeaderboardStats(season.id);
+    // Recalculate that season's leaderboards and statistics
+    await updateLeaderboardStats(pod.season_id);
 
     res.json({ success: true });
   } catch (e) {
     console.error("Report score error:", e);
-    console.error(e); res.status(500).json({ error: "Internal server error." });
+    res.status(500).json({ error: "Internal server error." });
   }
 });
 

@@ -414,3 +414,63 @@ send throws. A no-op would have been friendlier and wrong: "we have sent you a r
 be returned when nothing was sent, and that exact false success is how the broken flow stayed unnoticed.
 The cost is that recovery mail does not deliver in production until `SMTP_URL` is set, and that cost is
 visible rather than hidden.
+
+## D21 — Who may report a pod score, and who may correct one
+
+**Decided:** port `apps/api`'s authorization rule to legacy verbatim, and scope the already-reported
+refusal to non-organizers in **both** apps.
+
+`POST /api/pairings/report/:podId` in `server.js` had **no authentication of any kind** — no session
+check, no pod membership check, no role check, no validation that the players named were at the table.
+Its only comment was "Can be submitted by players or admin". Anyone who could reach the server could
+post arbitrary results for any pod in any season, award themselves unlimited points and rewrite the
+standings. `apps/api` fixed this when the league slice was ported; legacy is what is actually serving
+traffic, so the fix had to land there too. The rule, identical in both now:
+
+- signed in, or 401;
+- seated at that pod **or** holding `admin` / `judge` / `scorekeeper`, or 403;
+- every result must name a player seated at that pod, or 400;
+- the report must cover the whole table, exactly once each, or 400;
+- no impossible game — two winners, or one player who both won and drew, or 400.
+
+**The completeness rule came out of reviewing my own change.** Scoping the 409 to the players closes one
+hole and opens another if a report may be partial: one player could report *only themselves* as the
+winner, which completes the pod, leaves the rest of the table on zero, and — because the pod is now
+closed to the players — cannot be corrected by anyone but an organizer. `apps/api` had that hole too,
+under its blanket 409, where the first reporter simply won permanently. Both apps now require a result
+for every seat, named once each, which is what both reporting forms already submit.
+
+**The re-report question, which was genuinely open.** `apps/api` refused every second report with a
+blanket 409; legacy allowed unlimited overwriting by anyone. Neither is right, and the reason is a fact
+about both codebases: `pods.completed` is only ever set to `1` — **nothing, in either app, can reopen a
+reported pod**. So a blanket 409 makes a mis-entered score permanent for the rest of the season, fixable
+only by someone with a `psql` prompt. The 409 is therefore scoped to the players who sat at the pod
+(so whoever lost cannot quietly rewrite the result) while an organizer can still correct a typo. The
+standings are rebuilt from the pods rather than accumulated, so a correction settles the board instead
+of adding to it — proved by the new test in both suites, which moves a win from one player to another
+and checks the loser's total drops.
+
+**Roles are read from the database, not the session.** Legacy's `hasRole` reads a snapshot taken at
+login, so revoking an organizer's role left them holding it until they next signed in. The report route
+now reads `role` and `is_admin` per request, matching `apps/api`. `hasRole` itself was left alone: the
+other five call sites are admin-only routes and widening them is a separate decision.
+
+**One bug found in passing and fixed, because it is in the same handler.** The route read
+`SELECT * FROM seasons WHERE is_active = 1` and scored against *that*, not against the pod's own season.
+So correcting a pod after the season closed answered 404 ("Pod or active season not found"), and
+correcting one while a *different* season was open paid out the new season's points and rebuilt the new
+season's leaderboard. It reads `seasons WHERE id = pod.season_id` now, as `apps/api` always did.
+
+**One bug found in passing and NOT fixed, because it needs a product decision.** `handleSelfReport` in
+`public/app.js` posts `{ kills, placedFirst, placedDraw }` with **no `results` array at all**. That
+reached `for (let r of results)` on `undefined` and answered 500, so the dashboard's self-report button
+has never once worked. It now answers a clean 400 instead of a 500. Making it work means deciding what a
+single player's self-report should do to the other seats — the route marks the pod `completed`, so a
+one-seat report would close the pod with everyone else on zero. That is a rules decision for the league,
+not a refactor, so it is flagged rather than guessed at. The rest of the score-reporting UI
+(`renderHubPairings`' full-pod form) posts the correct shape and is unaffected.
+
+**Coverage note.** The pods model — `pods`, `pod_results`, `active_roster` — is created **only** by
+Postgres migration 0009. Nothing in `db.js` or `server.js` creates it for SQLite, so the whole league
+engine has never existed on the local dev dialect, and this ladder can only be exercised on Postgres.
+`test/postgres-write-paths.test.js` does that, against the dialect production actually runs.

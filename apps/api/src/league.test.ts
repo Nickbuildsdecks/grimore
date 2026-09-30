@@ -261,6 +261,16 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('league routes (requires DATABASE_U
       { player_id: ids[1], kills: 0 },
       { player_id: 'p_stranger', kills: 0 },
     ])).status).toBe(400);
+    // A report that does not cover the whole table. Without this, one player could report only
+    // themselves as the winner -- which completes the pod, leaves everyone else on zero, and, because
+    // a reported pod is closed to the players, cannot then be corrected by the rest of the table.
+    expect((await send([{ player_id: ids[0], kills: 2, placed_first: true }])).status).toBe(400);
+    // The same player named twice, which would otherwise pass a bare length check.
+    expect((await send([
+      { player_id: ids[0], kills: 0, placed_first: true },
+      { player_id: ids[0], kills: 0 },
+      { player_id: ids[1], kills: 0 },
+    ])).status).toBe(400);
   });
 
   it('scores a pod and rebuilds the standings', async () => {
@@ -303,6 +313,33 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('league routes (requires DATABASE_U
     // The standings are untouched by the rejected report.
     const board = await request(app).get('/api/leaderboards/season');
     expect(board.body.find((s: { player_id: string }) => s.player_id === ids[0]).total_points).toBe(10);
+  });
+
+  it('an organizer may correct a pod that has already been reported', async () => {
+    // `completed` is only ever set to 1, in both codebases, so nothing can reopen a pod. A blanket
+    // refusal would leave a mis-entered score in the standings for the rest of the season; the 409
+    // above is therefore scoped to the players, and an organizer can still fix a typo. The standings
+    // are rebuilt from the pods, so the correction settles the board rather than adding to it.
+    const seats = await ctx.pool.query('SELECT player_id FROM pod_results WHERE pod_id = $1 ORDER BY player_id', [podIds[0]]);
+    const ids = seats.rows.map((s) => s.player_id as string);
+    const fixed = await admin.post(`/api/pairings/report/${podIds[0]}`).send({
+      results: [
+        { player_id: ids[0], kills: 1, placed_first: false },
+        { player_id: ids[1], kills: 2, placed_first: true },
+        { player_id: ids[2], kills: 0, placed_first: false },
+      ],
+    });
+    expect(fixed.status).toBe(200);
+
+    // The win moves rather than accumulating: entry 1 + win 5 + 2 kills * 2 = 10 for the new winner,
+    // entry 1 + 1 kill * 2 = 3 for the player who was credited with it before.
+    const board = await request(app).get('/api/leaderboards/season');
+    const wrongly = board.body.find((s: { player_id: string }) => s.player_id === ids[0]);
+    expect(wrongly.total_points).toBe(3);
+    expect(wrongly.total_wins).toBe(0);
+    const rightly = board.body.find((s: { player_id: string }) => s.player_id === ids[1]);
+    expect(rightly.total_points).toBe(10);
+    expect(rightly.total_wins).toBe(1);
   });
 
   it('an organizer may report a pod they did not play in', async () => {
