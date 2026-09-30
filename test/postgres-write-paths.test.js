@@ -835,3 +835,62 @@ test('logging in issues a new session id', { skip }, async () => {
   assert.equal(again.status, 200);
   assert.notEqual(p.sessionId(), before, 'the session id must change when an identity is established');
 });
+
+test('a password reset signs out a session held elsewhere', { skip }, async () => {
+  // The property a reset exists to provide: the reason someone resets a password is that another person
+  // is in their account. Legacy wrote `sessions_valid_from` but nothing read it, so the write did nothing
+  // -- and a comment in the reset route claimed otherwise, which is worse than no comment.
+  const p = await newPlayer('t');
+
+  // A second, independent session on the same account. This is what a stolen cookie is.
+  const elsewhere = makeClient();
+  const signedIn = await elsewhere('/api/auth/login', {
+    method: 'POST',
+    body: { username: p.username, password: 'Sufficiently-Long-Pass-9' },
+  });
+  assert.equal(signedIn.status, 200, `second session login: ${JSON.stringify(signedIn.body)}`);
+  assert.equal((await elsewhere('/api/auth/me')).body.loggedIn, true, 'the second session starts authenticated');
+
+  await p.client('/api/auth/forgot-password', { method: 'POST', body: { usernameOrEmail: p.username } });
+  const token = require('node:crypto').randomBytes(32).toString('base64url');
+  await appClient.query('UPDATE password_resets SET token_hash = $1 WHERE player_id = $2 AND consumed_at IS NULL', [
+    hashResetToken(token),
+    p.id,
+  ]);
+  const reset = await makeClient()('/api/auth/reset-password', {
+    method: 'POST',
+    body: { token, newPassword: 'quiet-library-midnight-7' },
+  });
+  assert.equal(reset.status, 200, `reset: ${JSON.stringify(reset.body)}`);
+
+  // 200 with loggedIn false, not a 500: the guard regenerates rather than destroying, because
+  // express-session nulls req.session on destroy and the handlers read it unguarded.
+  const after = await elsewhere('/api/auth/me');
+  assert.equal(after.status, 200);
+  assert.equal(after.body.loggedIn, false, 'the other session must be signed out by the reset');
+});
+
+test('a session epoch check does not sign out unrelated accounts', { skip }, async () => {
+  const victim = await newPlayer('u');
+  const bystander = await newPlayer('v');
+  assert.equal((await bystander.client('/api/auth/me')).body.loggedIn, true);
+
+  await victim.client('/api/auth/forgot-password', { method: 'POST', body: { usernameOrEmail: victim.username } });
+  const token = require('node:crypto').randomBytes(32).toString('base64url');
+  await appClient.query('UPDATE password_resets SET token_hash = $1 WHERE player_id = $2 AND consumed_at IS NULL', [
+    hashResetToken(token),
+    victim.id,
+  ]);
+  await makeClient()('/api/auth/reset-password', {
+    method: 'POST',
+    body: { token, newPassword: 'quiet-library-noon-3' },
+  });
+
+  // The mark is per player. An implementation that bumped a global epoch would sign out the whole site on
+  // every password change.
+  assert.equal(
+    (await bystander.client('/api/auth/me')).body.loggedIn,
+    true,
+    'an unrelated account must keep its session',
+  );
+});

@@ -207,7 +207,7 @@ and bolting it onto a reset flow that does not work yet would be the wrong order
 | F3 tokens in logs | both | console transport withholds the body, asserted |
 | F4 keyed on a mutable username | both | a reset issued before a rename still redeems |
 | F5 `devResetLink` on an unset `NODE_ENV` | both | needs `EXPOSE_DEV_RESET_LINK=1` as well |
-| F6 sessions survived a reset | apps/api enforced, legacy stamped | two sessions, one reset, the other dies |
+| F6 sessions survived a reset | enforced in BOTH apps | two sessions, one reset, the other dies |
 | F7 legacy login did not rotate the session id | legacy | the id changes, and the test fails without the fix |
 | F8 no per-account throttling | both | the sixth request is suppressed and indistinguishable |
 | F9 length-only password policy | both | 15 policy tests plus a cross-implementation parity test |
@@ -259,3 +259,23 @@ fail open and accept a known-breached password, or fail closed and refuse to let
 
 **`direct_messages`.** Still defined nowhere. Not part of the account surface, and listed here only so
 it is not mistaken for something this pass covered.
+
+## A correction to this document's own first draft
+
+The legacy half of F6 was written up as done before it was. `server.js` moved
+`players.sessions_valid_from` forward on a reset and on a password change, and two comments claimed the
+column was read at login — but nothing read it anywhere, so the write did nothing and a session held by
+somebody else survived the reset untouched.
+
+That is the identical mistake this document criticises `apps/api/src/routes/players.ts` for: a comment
+asserting a security property that the code does not provide. Caught by going back to check the claim
+rather than trusting it, and fixed by mounting an epoch guard in `server.js` straight after the session
+middleware — so both apps now enforce the column on every authenticated request. Two tests cover it: a
+reset signs out a session held elsewhere, and it does not touch an unrelated account. The first fails
+when the guard is removed.
+
+The guard tolerates exactly one failure: `sessions_valid_from` not existing, which is the state of every
+database until migration 0014 runs. It warns once, loudly, and passes the request through, because
+failing every authenticated request would take the app down on a database that is otherwise fine. Any
+other error fails closed — passing those through would make the whole check bypassable by anything that
+can break the query.

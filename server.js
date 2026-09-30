@@ -477,6 +477,57 @@ app.use(session({
   }
 }));
 
+/**
+ * Session epoch enforcement.
+ *
+ * A password change or a reset moves `players.sessions_valid_from` forward. Without something that reads
+ * it, that write does nothing: `req.session.regenerate()` only ever touches the session in hand, so a
+ * session someone ELSE holds survives the victim's password change fully authenticated. That is the one
+ * property a password reset exists to provide.
+ *
+ * Each session records the epoch it was issued under, and any request whose session predates the mark is
+ * signed out, wherever it is and whoever holds it. Mounted here, straight after the session middleware
+ * and before every route, so no route can be reached with a stale session.
+ *
+ * A session with no epoch at all predates this code. Those are refused rather than trusted: the
+ * population is every session open at deploy time, the cost is one re-login, and trusting them would be
+ * an indefinite bypass for exactly the sessions nobody can account for.
+ *
+ * Regenerate and not `destroy()`: express-session sets `req.session` to null after a destroy, and the
+ * handlers here read `req.session.player` unguarded, so destroying would turn a stale-session request
+ * into a 500 instead of an honest "not logged in".
+ */
+app.use(async (req, res, next) => {
+  const player = req.session && req.session.player;
+  if (!player || !player.id) return next();
+  try {
+    const row = await db.get("SELECT sessions_valid_from FROM players WHERE id = ?", [player.id]);
+    // No such player: the account was deleted under a live session.
+    const validFrom = row ? new Date(row.sessions_valid_from).getTime() : null;
+    const epoch = req.session.epoch;
+    if (!row || typeof epoch !== 'number' || (Number.isFinite(validFrom) && epoch < validFrom)) {
+      return req.session.regenerate(() => next());
+    }
+    next();
+  } catch (e) {
+    // `sessions_valid_from` arrives with migration 0014. Before it has run the column does not exist, and
+    // failing every authenticated request would take the whole app down on a database that is otherwise
+    // fine -- so this one specific absence is tolerated and logged loudly. Any OTHER failure fails closed,
+    // because passing the request through would make the check bypassable by anything that breaks it.
+    if (/sessions_valid_from/.test(e.message) && /does not exist|no such column/i.test(e.message)) {
+      if (!app.locals.warnedMissingEpochColumn) {
+        app.locals.warnedMissingEpochColumn = true;
+        console.warn(
+          '[accounts] players.sessions_valid_from is missing, so a password change cannot sign out other ' +
+            'sessions. Run migration 0014.'
+        );
+      }
+      return next();
+    }
+    next(e);
+  }
+});
+
 const scryfallService = require('./scryfallService');
 // Token discipline and mail transport, shared in behaviour with apps/api and held to it by
 // test/account-tokens-parity.test.js. See the header of accountTokens.js for why there are two copies.
@@ -1641,6 +1692,10 @@ app.post('/api/auth/login', async (req, res) => {
       avatarUrl: player.avatar_url || '',
       profileCommander: player.profile_commander || ''
     };
+    // Stamped so the guard above can tell this session from one issued before a later credential change.
+    // An unstamped session is refused, so omitting this would log everyone straight back out.
+    req.session.epoch = Date.now();
+    await recordAccountEvent(req, 'login.success', { playerId: player.id, identifier: cleanUser });
     res.json({ success: true, user: req.session.player });
   } catch (e) {
     console.error(e); res.status(500).json({ error: "Internal server error." });
@@ -1806,6 +1861,8 @@ app.post('/api/auth/google', async (req, res) => {
       avatarUrl: player.avatar_url || picture || '',
       profileCommander: player.profile_commander || ''
     };
+    req.session.epoch = Date.now();
+    await recordAccountEvent(req, 'login.success', { playerId: player.id, identifier: email || null });
 
     res.json({ success: true, user: req.session.player });
   } catch (e) {
@@ -5233,8 +5290,9 @@ app.post('/api/players/account/update', async (req, res) => {
       const me = await db.get("SELECT password_hash FROM players WHERE id = ?", [playerId]);
       const ok = me && currentPassword && await bcrypt.compare(currentPassword, me.password_hash);
       if (!ok) return res.status(403).json({ error: "Current password is incorrect." });
-      // Ends every other session on the account. apps/api enforces this column on every request; legacy
-      // checks it at login.
+      // Ends every other session on the account, enforced by the epoch guard on every authenticated
+      // request. The caller's own session is re-stamped below so changing your own password does not sign
+      // you out of the device you did it from.
       await db.run("UPDATE players SET sessions_valid_from = CURRENT_TIMESTAMP WHERE id = ?", [playerId])
         .catch((e) => console.warn('[accounts] could not revoke sessions:', e.message));
       await recordAccountEvent(req, 'password.changed', { playerId });
@@ -5482,8 +5540,8 @@ app.post('/api/auth/reset-password', async (req, res) => {
       [record.player_id, record.id]
     );
     // Ends every session on the account. The reason someone resets a password is that another person is
-    // in their account; leaving those sessions alive defeats the entire exercise. apps/api enforces this
-    // column on every request; legacy reads it at login (below).
+    // in their account; leaving those sessions alive defeats the entire exercise. Both apps enforce this
+    // column on every authenticated request -- see the epoch guard mounted after the session middleware.
     await db.run("UPDATE players SET sessions_valid_from = CURRENT_TIMESTAMP WHERE id = ?", [record.player_id]);
     await recordAccountEvent(req, 'password.reset.redeemed', { playerId: record.player_id });
 
