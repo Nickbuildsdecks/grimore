@@ -69,6 +69,24 @@ export function accountRecoveryRouter(ctx: AppContext, mailer: Transport): Route
    * anyone who can reach the server — turns a recovery mail into a link that delivers the token to the
    * attacker, and the victim's own click is what hands it over.
    */
+  /**
+   * Refuse the whole route when it cannot possibly work, before touching any account.
+   *
+   * Order matters. Discovering a missing transport at the send means the account has already been
+   * resolved, so a known account errors while an unknown one returns the cheerful 200 — an enumeration
+   * oracle that stays open for as long as mail is misconfigured. Checked here, every caller gets the same
+   * answer. Found by running the built image with no SMTP_URL, which is the state a first cutover is in.
+   */
+  function requireDeliverable(): void {
+    if (!mailer.configured) {
+      throw new ApiError(
+        503,
+        'UNAVAILABLE',
+        'Password recovery is not configured on this server. No email can be sent.',
+      );
+    }
+  }
+
   function baseUrl(): string {
     if (!env.APP_BASE_URL) {
       throw new ApiError(
@@ -94,6 +112,7 @@ export function accountRecoveryRouter(ctx: AppContext, mailer: Transport): Route
     '/forgot-password',
     recoveryLimiter,
     wrap(async (req, res) => {
+      requireDeliverable();
       const input = ForgotPasswordInput.parse(req.body);
       const identifier = input.usernameOrEmail;
 
@@ -249,6 +268,7 @@ export function accountRecoveryRouter(ctx: AppContext, mailer: Transport): Route
     requireAuth,
     recoveryLimiter,
     wrap(async (req, res) => {
+      requireDeliverable();
       const playerId = sessionPlayerId(req);
       const q = await pool.query<{ email: string | null; email_verified_at: Date | null; username: string }>(
         'SELECT email, email_verified_at, username FROM players WHERE id = $1',

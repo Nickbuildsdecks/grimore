@@ -414,3 +414,95 @@ send throws. A no-op would have been friendlier and wrong: "we have sent you a r
 be returned when nothing was sent, and that exact false success is how the broken flow stayed unnoticed.
 The cost is that recovery mail does not deliver in production until `SMTP_URL` is set, and that cost is
 visible rather than hidden.
+
+## D21 — Who may report a pod score, and who may correct one
+
+**Decided:** port `apps/api`'s authorization rule to legacy verbatim, and scope the already-reported
+refusal to non-organizers in **both** apps.
+
+`POST /api/pairings/report/:podId` in `server.js` had **no authentication of any kind** — no session
+check, no pod membership check, no role check, no validation that the players named were at the table.
+Its only comment was "Can be submitted by players or admin". Anyone who could reach the server could
+post arbitrary results for any pod in any season, award themselves unlimited points and rewrite the
+standings. `apps/api` fixed this when the league slice was ported; legacy is what is actually serving
+traffic, so the fix had to land there too. The rule, identical in both now:
+
+- signed in, or 401;
+- seated at that pod **or** holding `admin` / `judge` / `scorekeeper`, or 403;
+- every result must name a player seated at that pod, or 400;
+- the report must cover the whole table, exactly once each, or 400;
+- no impossible game — two winners, or one player who both won and drew, or 400.
+
+**The completeness rule came out of reviewing my own change.** Scoping the 409 to the players closes one
+hole and opens another if a report may be partial: one player could report *only themselves* as the
+winner, which completes the pod, leaves the rest of the table on zero, and — because the pod is now
+closed to the players — cannot be corrected by anyone but an organizer. `apps/api` had that hole too,
+under its blanket 409, where the first reporter simply won permanently. Both apps now require a result
+for every seat, named once each, which is what both reporting forms already submit.
+
+**The re-report question, which was genuinely open.** `apps/api` refused every second report with a
+blanket 409; legacy allowed unlimited overwriting by anyone. Neither is right, and the reason is a fact
+about both codebases: `pods.completed` is only ever set to `1` — **nothing, in either app, can reopen a
+reported pod**. So a blanket 409 makes a mis-entered score permanent for the rest of the season, fixable
+only by someone with a `psql` prompt. The 409 is therefore scoped to the players who sat at the pod
+(so whoever lost cannot quietly rewrite the result) while an organizer can still correct a typo. The
+standings are rebuilt from the pods rather than accumulated, so a correction settles the board instead
+of adding to it — proved by the new test in both suites, which moves a win from one player to another
+and checks the loser's total drops.
+
+**Roles are read from the database, not the session.** Legacy's `hasRole` reads a snapshot taken at
+login, so revoking an organizer's role left them holding it until they next signed in. The report route
+now reads `role` and `is_admin` per request, matching `apps/api`. `hasRole` itself was left alone: the
+other five call sites are admin-only routes and widening them is a separate decision.
+
+**One bug found in passing and fixed, because it is in the same handler.** The route read
+`SELECT * FROM seasons WHERE is_active = 1` and scored against *that*, not against the pod's own season.
+So correcting a pod after the season closed answered 404 ("Pod or active season not found"), and
+correcting one while a *different* season was open paid out the new season's points and rebuilt the new
+season's leaderboard. It reads `seasons WHERE id = pod.season_id` now, as `apps/api` always did.
+
+**One thing found in passing, and a correction to what I first said about it.** `handleSelfReport` in
+`public/app.js` posts `{ kills, placedFirst, placedDraw }` with **no `results` array at all**, which the
+report route could never have accepted. I reported this to Nick as a live button that had always answered
+500, put the product question to him, and he chose replacing it with the full-pod form. Then I checked
+what actually rendered it, and **the whole path was unreachable**: `loadActiveMatch()` is never called
+from anywhere, and none of the five elements it writes to — `dashboard-active-match-panel`,
+`active-match-round`, `active-match-table`, `active-match-status-badge`, `active-match-details` — exist in
+any page in `public/`. The panel never rendered, so the Report button was never on screen and nobody ever
+clicked it. My description of it as a live broken affordance was wrong, and so was the product question I
+built on it: there was no user-facing behaviour to decide about.
+
+That makes the chosen outcome a deletion rather than a rewrite. Both functions are removed, with a comment
+where they were recording what they did and why they could not work. Score reporting goes through
+`renderHubPairings` / `renderScoreForm`, which submits a result for every seat — the shape the route
+requires, and now the only reporting path in the product, which is what "replace it with the full-pod
+form" amounts to when the other form was never reachable. Building a second copy of that form into a
+dashboard panel nobody asked for would have been adding a feature, not fixing one.
+
+`GET /api/players/active-match` is **kept**: the React SPA reads it in `apps/web/src/pages/Events.tsx` to
+display the pod. Only the dead legacy client code went.
+
+**Coverage note.** The pods model — `pods`, `pod_results`, `active_roster` — is created **only** by
+Postgres migration 0009. Nothing in `db.js` or `server.js` creates it for SQLite, so the whole league
+engine has never existed on the local dev dialect, and this ladder can only be exercised on Postgres.
+`test/postgres-write-paths.test.js` does that, against the dialect production actually runs.
+
+## D22 — The affiliate id default, which was quietly earning nothing
+
+**Decided:** default `TCGPLAYER_AFFILIATE_ID` to `xJoE0d` in legacy, as `apps/api` already does, and
+return `null` rather than `'grimore'` for Card Kingdom.
+
+`/api/config/affiliates` fell back to `'grimore'`. That is not a real affiliate id, so with
+`TCGPLAYER_AFFILIATE_ID` unset — which it is on the VM — every purchase link the client built from this
+route was unattributed while looking attributed. CLAUDE.md requires `xJoE0d` on all of them, and every
+hard-coded link in `public/` already uses it; only the configurable path was wrong. `apps/api` fixed this
+during the port and recorded why; legacy is what serves traffic, so it needed the same default.
+
+Card Kingdom gets `null` instead of a fabricated id, because there is no Card Kingdom affiliate id to
+fall back to and a fake one is worse than none — the client can leave the link unattributed honestly.
+Nothing in `public/` or `apps/web` reads that field today, so this changes no rendered link.
+
+Tested in `test/postgres-write-paths.test.js`, which is the only harness that boots `server.js` and sets
+no affiliate environment variables, so the assertion exercises the default rather than a fixture. This
+removes `TCGPLAYER_AFFILIATE_ID=xJoE0d` from the list of things Nick has to set on the VM: setting it is
+now an override rather than a requirement.

@@ -122,6 +122,34 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('account recovery (requires DATABAS
     return anon(ip).post('/api/auth/forgot-password').send({ usernameOrEmail: identifier });
   }
 
+  describe('when no mail transport is configured', () => {
+    it('refuses identically for a known and an unknown account', async () => {
+      // The whole point of checking up front. Before this, the unknown account got a cheerful 200 while
+      // the known one errored at the send — which tells an unauthenticated caller the account exists, for
+      // as long as mail is misconfigured. Found by running the built image with no SMTP_URL, which is the
+      // state a first cutover is in.
+      const unconfigured = createApp(ctx, {});
+      const real = await account();
+
+      const known = await request(unconfigured)
+        .post('/api/auth/forgot-password')
+        .set('X-Forwarded-For', nextIp())
+        .send({ usernameOrEmail: real.username });
+      const unknown = await request(unconfigured)
+        .post('/api/auth/forgot-password')
+        .set('X-Forwarded-For', nextIp())
+        .send({ usernameOrEmail: 'no_such_account_here' });
+
+      expect(known.status).toBe(503);
+      expect(unknown.status).toBe(503);
+      expect(known.body).toEqual(unknown.body);
+      expect(known.body.error.code).toBe('UNAVAILABLE');
+      // And nothing was written, so a later configured request is not racing a half-made token.
+      const rows = await ctx.pool.query('SELECT 1 FROM password_resets WHERE player_id = $1', [real.id]);
+      expect(rows.rowCount).toBe(0);
+    });
+  });
+
   describe('requesting a reset', () => {
     it('sends a link and stores only a hash of the token', async () => {
       const a = await account();
