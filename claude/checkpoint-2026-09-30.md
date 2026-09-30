@@ -147,6 +147,43 @@ admin", so a session was clearly intended. Left alone deliberately: adding one i
 change, and whether the client relies on calling it unauthenticated has to be established first
 rather than guessed. Flagged here because it is the kind of thing that gets read past.
 
+## Third pass: the cache writes, and one unique index
+
+Nick approved the migration route for the remaining statements. Investigating before writing it
+changed the answer in two ways worth stating, because both correct what I had told him:
+
+- **`scryfall_cards` needed no index.** Its Postgres primary key *is* the Scryfall UUID, and
+  `scryfallService.js`'s bulk upsert already targets it. The legacy statement is now the same shape as
+  that one, so the two writers cannot disagree about what a row means.
+- **`apps/api/src/routes/decks.ts` had already shipped the application-level upsert I said I had
+  rejected as racy** — a select-then-update-or-insert, because no constraint existed. It is a real
+  upsert now, which closes that race rather than leaving the two codebases disagreeing.
+
+So one migration, `0013`: deduplicate `card_price_cache`, then add `UNIQUE (LOWER(card_name))` — in
+that order, in the one transaction the migrator wraps it in, because the index cannot be built while
+duplicates exist and a half-applied state leaves the upsert with no target. Newest row wins. Verified
+against a table seeded with duplicates on purpose, mixed casing and a NULL `cached_at` included: 6
+rows to 3, the right survivor each time, idempotent on re-run.
+
+`LOWER(card_name)` is the key because the table is per-name in practice, not per-printing: nothing has
+ever written a meaningful set code or collector number into it, the SQLite→Postgres migration script
+drops those NOT NULL constraints, and every reader joins on `LOWER(pc.card_name)` alone. Per-printing
+prices live in `scryfall_cards`, where printings differ by UUID.
+
+**Ratchet 5 → 1.** The one survivor is `password_resets`, whose table is defined nowhere in either
+dialect — the account work, not a dialect fix.
+
+Two v2 fixtures seed duplicate cache rows on purpose, to hold the readers to not fanning out. Neither
+lost its guard: each drops the index for its own scope and recreates the condition deliberately, since
+the index is new and a pre-0013 backup restore would reintroduce duplicates silently.
+
+### A mis-cased reprice was poisoning the shared cache
+
+Test 11 failed for a reason I had not predicted. `/api/decks/reprice-card` matched its card with an
+exact `card_name = ?`, so a caller whose casing differed found nothing, fell back to the `0.10`
+default, and wrote that 10c into `card_price_cache` — which is shared, so one mis-cased reprice priced
+that card at 10c for every user and every deck. Now `LOWER()` on both sides. Recorded as D19.
+
 ## Where the numbers land now
 
 `node scripts/audit-postgres-schema-gap.js "$POSTGRES_URL"`
@@ -165,14 +202,15 @@ Postgres 16 and Redis 7 running locally, nothing mocked.
 
 | Suite | Result |
 | --- | --- |
-| `npm run test:postgres` (new) | 9 passed |
+| `npm run test:postgres` (new) | 12 passed |
 | `npm run test:unit` (legacy, SQLite) | 38 passed |
 | v2 — `packages/*` + `apps/*` | 436 passed, 0 skipped |
 | `node scripts/guards.js` | OK |
 | `npm run preflight` | OK (1 pre-existing emoji warning) |
 | SQLite route smoke, same sequence | no regression; add-card now 200, was 500 |
 | SQLite league branches, run directly | one row per re-check-in, two seasons coexist, re-report overwrites |
-| `KNOWN_SQLITE_ONLY` ratchet | 9 → 5, and still rejects an injected tenth |
+| `KNOWN_SQLITE_ONLY` ratchet | 9 → 1, and still rejects an injected new one |
+| Migration 0013 dedupe | 6 duplicate rows → 3, newest survivor, idempotent |
 
 Nothing in this session touched the VM, production data, or `deploy-gcp.ps1`. The five items in
 `claude/vm-runbook-2026-09-26.md` are all still waiting.

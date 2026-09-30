@@ -327,3 +327,54 @@ Not fixed here because adding the check is an authorization change, not a dialec
 client calls it without a session has to be established rather than assumed — a wrong guess silently
 breaks score reporting at an event. It wants one look at the front-end callers and then a one-line
 guard.
+
+## D18 — `card_price_cache` gets a unique key; `scryfall_cards` needed none. D15 is superseded
+
+**Decided:** migration `0013` deduplicates `card_price_cache` and adds `UNIQUE (LOWER(card_name))`.
+The four remaining cache writes become real upserts, and `KNOWN_SQLITE_ONLY` drops from 5 to 1.
+
+**D15 said** these two tables both needed a new unique constraint, and that an application-level
+upsert was the wrong trade. Investigating rather than restating that turned up two corrections:
+
+- **`scryfall_cards` needed no index at all.** On Postgres the Scryfall UUID *is* the primary key, and
+  `scryfallService.js`'s own bulk upsert already targets it. The legacy statement is now the same
+  shape as that one — same key, same "refresh everything but the key" conflict clause — so the two
+  writers cannot disagree about what a row means.
+- **`apps/api/src/routes/decks.ts` had already shipped the application-level upsert** that D15
+  rejected, as a select-then-update-or-insert, because no constraint existed. It is a real upsert now,
+  which closes the race D15 correctly identified but could not avoid at the time.
+
+**Why `LOWER(card_name)` is the right key**, checked rather than assumed. The table carries
+`scryfall_id`, `set_code` and `collector_number`, which read like a per-printing cache. Nothing has
+ever written a meaningful set code or collector number into it, and
+`execution/migrate_sqlite_to_postgres.js` drops their NOT NULL constraints, so the migrated rows hold
+NULL. Every reader joins on `LOWER(pc.card_name)` alone, and the SQLite table it came from keys on
+`card_name` outright. Per-printing prices live in `scryfall_cards`, where two printings genuinely
+differ by UUID — `apps/api/src/collections.test.ts` seeds exactly that. The `card_price_cache`
+duplicates in that same fixture have nothing distinguishing them at all: they are the pathological
+state, not a design.
+
+**Two v2 fixtures had to change**, and neither lost its guard. `cards.test.ts` and
+`collections.test.ts` both seed duplicate cache rows on purpose, to hold the readers to not fanning
+out. Rather than delete a regression guard because the schema now usually prevents the condition, each
+fixture drops the index for its own scope and recreates it deliberately — the index is new, and a
+restore from a pre-0013 backup or a replica lagging the migration reintroduces duplicates silently.
+
+**Order matters inside the migration.** The dedupe runs before the index creation, in the single
+transaction the migrator wraps it in: the index cannot be built while duplicates exist, and a
+half-applied state would leave the upsert with no target. Newest row wins, by
+`cached_at DESC NULLS LAST, id DESC`. Verified on a table seeded with duplicates on purpose, including
+mixed casing and a NULL `cached_at`: 6 rows to 3, the right survivor each time, idempotent on re-run.
+
+## D19 — A mis-cased reprice was poisoning the shared price cache
+
+**Found by** test 11 failing for a reason I had not predicted, which is the argument for driving routes
+rather than reading them.
+
+`/api/decks/reprice-card` looked its card up with an exact `card_name = ?` match. A caller whose casing
+differed from the stored row found nothing, fell through to the `0.10` default, and then wrote that 10c
+into `card_price_cache` — which is **shared**, so one mis-cased reprice priced that card at 10c for
+every user and every deck until something overwrote it.
+
+Now `LOWER(card_name) = LOWER(?)`, matching the wishlist fix in the same pass. Same class as the
+`COLLATE NOCASE` removal; this one had the wider blast radius because the row it corrupts is global.

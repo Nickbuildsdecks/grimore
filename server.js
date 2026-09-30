@@ -136,6 +136,56 @@ const SQL_REBUILD_PLAYER_STATS = db.isPostgres
                    total_wins = EXCLUDED.total_wins, total_matches = EXCLUDED.total_matches`
   : `INSERT OR REPLACE INTO player_stats (player_id, season_id, total_points, total_kills, total_wins, total_matches)
      VALUES (?, ?, ?, ?, ?, ?)`;
+// The two cache tables, the last of the SQLite-only writes bar `password_resets`.
+//
+// `card_price_cache` had no unique key on Postgres at all, which is why `INSERT OR REPLACE` had
+// nothing to upsert against. Migration 0013 deduplicates it and adds `UNIQUE (LOWER(card_name))` --
+// the expression every reader already joins on. Note the conflict target has to restate the
+// expression, not name the column.
+const SQL_CACHE_CARD_PRICE = db.isPostgres
+  ? `INSERT INTO card_price_cache (card_name, price, cached_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT (LOWER(card_name))
+     DO UPDATE SET price = EXCLUDED.price, cached_at = CURRENT_TIMESTAMP`
+  : 'INSERT OR REPLACE INTO card_price_cache (card_name, price, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)';
+
+// `scryfall_cards` needed no new index: on Postgres the Scryfall UUID *is* the primary key, which is
+// the target `scryfallService.js`'s own bulk upsert already uses. This statement is deliberately the
+// same shape as that one -- same key, same "refresh everything but the key" conflict clause -- so the
+// two writers cannot disagree about what a row means.
+//
+// The column lists differ by more than a name. Postgres requires `id` and `name`, which the SQLite
+// table does not have at all, and carries the display name in BOTH `name` and `card_name`. So the
+// parameters are reordered rather than reused, below.
+const SQL_CACHE_SCRYFALL_CARD = db.isPostgres
+  ? `INSERT INTO scryfall_cards
+       (id, name, card_name, price, type_line, oracle_text, mana_cost, cmc, colors, rarity, last_updated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name, card_name = EXCLUDED.card_name, price = EXCLUDED.price,
+       type_line = EXCLUDED.type_line, oracle_text = EXCLUDED.oracle_text,
+       mana_cost = EXCLUDED.mana_cost, cmc = EXCLUDED.cmc, colors = EXCLUDED.colors,
+       rarity = EXCLUDED.rarity, last_updated = CURRENT_TIMESTAMP`
+  : `INSERT OR REPLACE INTO scryfall_cards
+       (card_name, price, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, rarity, last_updated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`;
+
+/**
+ * Call sites keep the SQLite parameter order -- [name, price, scryfallId, typeLine, oracleText,
+ * manaCost, cmc, colors, rarity] -- and this reshapes it for Postgres, where `id` leads and the name
+ * is written twice.
+ *
+ * Returns null when there is no Scryfall UUID. On SQLite that was harmless: `card_name` is the key
+ * and `scryfall_id` is nullable. On Postgres `id` is the primary key and NOT NULL, so a nameless-UUID
+ * row cannot exist -- the write has to be skipped rather than attempted, or it raises inside a caller
+ * whose catch would hide it.
+ */
+function scryfallCacheParams(p) {
+  if (!db.isPostgres) return p;
+  const [name, price, scryfallId, typeLine, oracleText, manaCost, cmc, colors, rarity] = p;
+  if (!scryfallId) return null;
+  return [scryfallId, name, name, price, typeLine, oracleText, manaCost, cmc, colors, rarity];
+}
+
 const SQL_REBUILD_DECK_STATS = db.isPostgres
   ? `INSERT INTO deck_stats (deck_id, season_id, total_points, total_kills, total_wins, total_matches)
      VALUES (?, ?, ?, ?, ?, ?)
@@ -2049,12 +2099,10 @@ async function resolveCardDetailsBatch(cardNames) {
                 }
               }
               
-              await db.run(
-                `INSERT OR REPLACE INTO scryfall_cards 
-                 (card_name, price, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, rarity, last_updated) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              const cacheParams = scryfallCacheParams(
                 [name, minPrice, scryfallId, type_line, oracle_text, mana_cost, cmc, JSON.stringify(colors), rarity]
               );
+              if (cacheParams) await db.run(SQL_CACHE_SCRYFALL_CARD, cacheParams);
               
               chunk.forEach(reqName => {
                 const isExactMatch = reqName.toLowerCase() === name.toLowerCase();
@@ -2156,12 +2204,10 @@ async function resolveCardDetailsBatch(cardNames) {
           }
 
           // Cache it locally
-          await db.run(
-            `INSERT OR REPLACE INTO scryfall_cards 
-             (card_name, price, scryfall_id, type_line, oracle_text, mana_cost, cmc, colors, rarity, last_updated) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          const cacheParams = scryfallCacheParams(
             [name, minPrice, scryfallId, type_line, oracle_text, mana_cost, cmc, JSON.stringify(colors), rarity]
           );
+          if (cacheParams) await db.run(SQL_CACHE_SCRYFALL_CARD, cacheParams);
 
           results[reqName] = {
             name, // official name
@@ -2969,15 +3015,20 @@ app.post('/api/decks/reprice-card', async (req, res) => {
     const ownedDeck = await db.get("SELECT id FROM decks WHERE id = ? AND player_id = ?", [deckId, playerId]);
     if (!ownedDeck) return res.status(404).json({ error: "Deck not found." });
 
-    // Retrieve the price directly from what was initialized from Moxfield
-    const current = await db.get("SELECT cheapest_card_price FROM deck_cards WHERE deck_id = ? AND card_name = ?", [deckId, cardName]);
+    // Retrieve the price directly from what was initialized from Moxfield.
+    //
+    // LOWER() on both sides: this was an exact `card_name = ?` match, so a caller whose casing
+    // differed from the stored row found nothing, fell through to the 0.10 default, and then wrote
+    // that 10c into `card_price_cache` -- which is shared, so one mis-cased reprice priced the card
+    // at 10c for every user and every deck until something overwrote it.
+    const current = await db.get(
+      "SELECT cheapest_card_price FROM deck_cards WHERE deck_id = ? AND LOWER(card_name) = LOWER(?)",
+      [deckId, cardName]
+    );
     const price = current ? current.cheapest_card_price : 0.10;
     
     // Save to card cache so other views and tickers are fed
-    await db.run(
-      "INSERT OR REPLACE INTO card_price_cache (card_name, price, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
-      [cardName, price]
-    );
+    await db.run(SQL_CACHE_CARD_PRICE, [cardName, price]);
 
     res.json({ success: true, cardName, price });
   } catch (e) {
@@ -5950,19 +6001,15 @@ app.get('/api/cards/versions', async (req, res) => {
     if (prints.length > 0) {
       const cheapest = prints[0];
       try {
-        await db.run(
-          "INSERT OR REPLACE INTO card_price_cache (card_name, price, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
-          [cheapest.name, cheapest.price]
-        );
+        await db.run(SQL_CACHE_CARD_PRICE, [cheapest.name, cheapest.price]);
         // On Postgres the Scryfall UUID *is* the primary key, so it cannot be back-filled from a
         // card name the way the SQLite column can -- that would rewrite the row's identity. Only
         // the price is updated there; previously the whole statement threw `column "scryfall_id"
         // does not exist` and the catch below turned that into a warning.
         //
-        // This does not make the gallery's price caching work on Postgres yet: the `INSERT OR
-        // REPLACE` immediately above is still SQLite-only, it throws first, and the catch swallows
-        // both. Fixing that one needs a unique constraint on card_price_cache that the Postgres
-        // schema does not have -- see claude/postgres-schema-gap-2026-09-27.md.
+        // The `INSERT OR REPLACE` above this used to throw first and the shared catch swallowed
+        // both, so neither ran. It is an upsert now (migration 0013), so this line is reachable and
+        // the gallery's price caching works on Postgres.
         await db.run(
           db.isPostgres
             ? "UPDATE scryfall_cards SET price = ? WHERE LOWER(card_name) = ?"

@@ -574,3 +574,86 @@ test('reporting a pod score rebuilds player and deck standings', { skip }, async
     'the corrected score must overwrite the old one',
   );
 });
+
+// ---------------------------------------------------------------------------------------------
+// The price cache. `INSERT OR REPLACE` with nothing to upsert against on Postgres, so this write
+// has never landed there. Migration 0013 deduplicates the table and adds UNIQUE (LOWER(card_name)),
+// the expression every reader already joins on.
+// ---------------------------------------------------------------------------------------------
+
+test('repricing a card feeds the shared price cache', { skip }, async () => {
+  const p = await newPlayer('m');
+  const deckId = await seedDeck(p.id, 'Reprice Deck');
+  await appClient.query(
+    'INSERT INTO deck_cards (deck_id, card_name, quantity, cheapest_card_price) VALUES ($1, $2, 1, $3)',
+    [deckId, 'Cultivate', 0.42],
+  );
+
+  const res = await p.client('/api/decks/reprice-card', {
+    method: 'POST',
+    body: { deckId, cardName: 'Cultivate' },
+  });
+  assert.equal(res.status, 200, `reprice returned ${res.status}: ${JSON.stringify(res.body)}`);
+
+  const { rows } = await appClient.query(
+    'SELECT card_name, price, cached_at FROM card_price_cache WHERE LOWER(card_name) = LOWER($1)',
+    ['Cultivate'],
+  );
+  assert.equal(rows.length, 1, `expected one cache row: ${JSON.stringify(rows)}`);
+  assert.ok(Number(rows[0].price) > 0, 'a price must actually be cached');
+  assert.ok(rows[0].cached_at, 'cached_at is the Postgres column; last_updated does not exist here');
+});
+
+test('repricing the same card again updates the cache row in place', { skip }, async () => {
+  const p = await newPlayer('n');
+  const deckId = await seedDeck(p.id, 'Reprice Twice Deck');
+  await appClient.query(
+    'INSERT INTO deck_cards (deck_id, card_name, quantity, cheapest_card_price) VALUES ($1, $2, 1, $3)',
+    [deckId, 'Rampant Growth', 1.11],
+  );
+  await p.client('/api/decks/reprice-card', {
+    method: 'POST',
+    body: { deckId, cardName: 'Rampant Growth' },
+  });
+
+  // Case differs on purpose, and it exercises two things at once. The cache's conflict target is
+  // LOWER(card_name), so this must collide with the row above rather than insert a second one -- a
+  // duplicate is what makes the readers' LEFT JOIN fan out. And the route's own deck_cards lookup
+  // used to be an exact `card_name = ?` match, so a mis-cased call found nothing, fell back to the
+  // 0.10 default, and wrote that into the shared cache for every user.
+  await appClient.query('UPDATE deck_cards SET cheapest_card_price = 2.22 WHERE deck_id = $1', [deckId]);
+  const res = await p.client('/api/decks/reprice-card', {
+    method: 'POST',
+    body: { deckId, cardName: 'rampant growth' },
+  });
+  assert.equal(res.status, 200, `second reprice: ${JSON.stringify(res.body)}`);
+
+  const { rows } = await appClient.query(
+    'SELECT price FROM card_price_cache WHERE LOWER(card_name) = LOWER($1)',
+    ['Rampant Growth'],
+  );
+  assert.equal(rows.length, 1, 'the second reprice must not create a second cache row');
+  assert.equal(Number(rows[0].price), 2.22, 'the newer price must overwrite');
+});
+
+test('migration 0013 leaves card_price_cache with a usable upsert target', { skip }, async () => {
+  // The migration's own job, asserted against the schema the server is actually running on: a
+  // statement whose conflict target is the expression index resolves. Before 0013 this raised
+  // "there is no unique or exclusion constraint matching the ON CONFLICT specification".
+  await appClient.query(
+    `INSERT INTO card_price_cache (card_name, price, cached_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT (LOWER(card_name)) DO UPDATE SET price = EXCLUDED.price`,
+    ['Migration Probe Card', 1.23],
+  );
+  await appClient.query(
+    `INSERT INTO card_price_cache (card_name, price, cached_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT (LOWER(card_name)) DO UPDATE SET price = EXCLUDED.price`,
+    ['MIGRATION PROBE CARD', 4.56],
+  );
+  const { rows } = await appClient.query(
+    'SELECT price FROM card_price_cache WHERE LOWER(card_name) = $1',
+    ['migration probe card'],
+  );
+  assert.equal(rows.length, 1, 'the unique index must be case-insensitive');
+  assert.equal(Number(rows[0].price), 4.56);
+});

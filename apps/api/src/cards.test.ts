@@ -82,7 +82,13 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('cards routes (requires DATABASE_UR
          c.cmc, c.oracle_text, c.colors, c.color_identity, c.legalities, c.image_uri],
       );
     }
-    // Two cache rows for one name: a plain LEFT JOIN here is what made legacy fan out its result rows.
+    // Two cache rows for one name is what made legacy fan out its result rows on a plain LEFT JOIN.
+    // Migration 0013 makes that state unreachable going forward (UNIQUE on LOWER(card_name)), but the
+    // query still has to be robust to it: the index is new, and a restore from a pre-0013 backup or a
+    // replica lagging the migration reintroduces duplicates without warning. So the fixture drops the
+    // index for its own scope to recreate the condition deliberately, rather than deleting a
+    // regression guard because the schema now usually prevents it.
+    await ctx.pool.query('DROP INDEX IF EXISTS idx_card_price_cache_name_unique');
     await ctx.pool.query(
       `INSERT INTO card_price_cache (card_name, price) VALUES ('Lightning Bolt', 1.75), ('Lightning Bolt', 9.99)`,
     );
