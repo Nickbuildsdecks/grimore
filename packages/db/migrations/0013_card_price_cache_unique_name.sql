@@ -33,8 +33,16 @@ DELETE FROM card_price_cache
  );
 
 -- Matches the expression every reader joins on, so it serves those lookups as well as constraining
--- writes. Replaces the non-unique index of the same shape created by `db.js`/0002, which this makes
--- redundant.
+-- writes.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_card_price_cache_name_unique
   ON card_price_cache (LOWER(card_name));
-DROP INDEX IF EXISTS idx_card_price_cache_lower_card_name;
+
+-- The non-unique index of the same shape (`idx_card_price_cache_lower_card_name`, created by `db.js`'s
+-- initDb and by 0002) is now redundant, and this deliberately does NOT drop it.
+--
+-- `initDb` runs on every legacy boot and recreates it, so a DROP here buys nothing and loses a race:
+-- with the two running concurrently, Postgres reports a duplicate-key violation on
+-- pg_class_relname_nsp_index -- visible in the CI logs for this migration's first run. The cost of
+-- leaving it is one redundant index on a cache table; the cost of dropping it is a confusing error on
+-- every deploy. Removing it properly means removing it from `db.js` first, which is a legacy change and
+-- does not belong in a migration.

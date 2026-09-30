@@ -23,7 +23,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
-const { readFileSync, readdirSync } = require('node:fs');
+const { readFileSync, readdirSync, existsSync } = require('node:fs');
 const { join } = require('node:path');
 const net = require('node:net');
 
@@ -895,17 +895,21 @@ test('a session epoch check does not sign out unrelated accounts', { skip }, asy
   );
 });
 
-test('the two candidate link paths serve different documents, and only one can handle a token', { skip }, async () => {
+test('the recovery link targets the path that always handles a token', { skip }, async () => {
   // Why the link is `/?resetToken=` and not `/reset-password?token=`.
   //
-  // Both return 200, which is what made this easy to get wrong: every unmatched GET falls through to a
-  // SPA shell. The difference is WHICH document comes back. `/` serves the legacy page, which loads
-  // `app.js` -- the script that reads the token out of the query string. `/reset-password` serves the
-  // React shell, whose BrowserRouter has basename="/react" and so matches nothing at that path: the page
-  // loads and does nothing at all.
+  // `/` always serves the legacy page, which loads `app.js` -- the script that reads the token out of the
+  // query string. That is the invariant, and it is what this asserts.
   //
-  // Asserted on the served HTML rather than on the route table, because the route table is what made it
-  // look fine.
+  // `/reset-password` matches no route, so what it serves depends on whether `apps/web` has been built:
+  // with a build present the catch-all returns the React shell, whose BrowserRouter has
+  // basename="/react" and therefore matches nothing at that path; without one it falls back to the
+  // legacy page. Either way the link must not depend on it, and the first version of this test asserted
+  // the built-tree behaviour unconditionally -- which passed locally, where I had built apps/web, and
+  // failed in CI, where the legacy-postgres job installs with npm and never runs the web build.
+  //
+  // So the negative half runs only when the build it describes is actually present. A path whose served
+  // document varies with an unrelated build step is exactly the wrong thing to put in an email.
   const p = await newPlayer('w');
 
   const landing = await p.client('/?resetToken=probe');
@@ -913,14 +917,16 @@ test('the two candidate link paths serve different documents, and only one can h
   assert.equal(typeof landing.body, 'string', 'expected an HTML document');
   assert.match(landing.body, /app\.js/, 'the legacy page must load app.js, which reads the token');
 
+  const webBuilt = existsSync(join(ROOT, 'apps', 'web', 'dist', 'index.html'));
   const wrongPath = await p.client('/reset-password?token=probe');
-  assert.equal(wrongPath.status, 200, 'it 200s, which is exactly why this was easy to miss');
-  assert.equal(typeof wrongPath.body, 'string');
-  assert.doesNotMatch(
-    wrongPath.body,
-    /app\.js/,
-    'this path serves the React shell, which cannot handle a recovery token at this basename',
-  );
+  assert.equal(wrongPath.status, 200, 'it 200s either way, which is why this was easy to miss');
+  if (webBuilt) {
+    assert.doesNotMatch(
+      wrongPath.body,
+      /app\.js/,
+      'with apps/web built, this path serves the React shell, which cannot handle a token at that basename',
+    );
+  }
 });
 
 test('email verification works end to end on the legacy server', { skip }, async () => {

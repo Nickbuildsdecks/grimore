@@ -286,3 +286,29 @@ Deferred with reasons: TOTP/WebAuthn, breached-password checking over the networ
 | Postgres column gap, post-cutover | 5 | **2** |
 
 Nothing in this session touched the VM, production data, or `deploy-gcp.ps1`.
+
+## A fourth time I was wrong: a test that passed only on my machine
+
+`legacy-postgres` went red on the link-fix commit, and the cause was my test, not the code.
+
+Test 21 asserted that `/reset-password` serves the React shell and therefore cannot handle a token. That
+is true only when `apps/web` has been built. It had been, locally — I built it minutes earlier — so the
+test passed. The `legacy-postgres` CI job installs with npm and never runs the web build, so the
+catch-all fell back to the legacy page, which *does* load `app.js`, and the negative assertion failed.
+
+The test is now the right shape, and the right shape is a stronger claim than the original: **`/` always
+serves the page that handles the token** — that is the invariant — while what `/reset-password` serves
+*varies with an unrelated build step*, which is itself the reason a link in an email must not depend on
+it. The negative half now runs only when the build it describes is present. Verified by hiding
+`apps/web/dist` and re-running, which is the condition CI was in.
+
+The lesson is narrower than "run the tests": I did run them, and they passed. It is that a test asserting
+what a *path* serves is asserting something about the build, and my local build state was not CI's. The
+only way to have caught it before pushing was to reproduce CI's tree, which is what I do now.
+
+While reading those logs I also found a harmless but noisy race of my own making: migration 0013 dropped
+`idx_card_price_cache_lower_card_name`, which `db.js`'s `initDb` recreates on every legacy boot. The two
+running concurrently produce a duplicate-key error on `pg_class_relname_nsp_index` in the logs, and the
+DROP achieves nothing because the index comes straight back. Removed, with the reasoning recorded in the
+migration: taking it away properly means removing it from `db.js` first, which is a legacy change and not
+a migration's business.
