@@ -77,6 +77,76 @@ injected into a Postgres branch is still reported.
   holds duplicates fails — leaving the `ON CONFLICT` target pointing at nothing, which is worse.
   SQLite is the local dev store only.
 
+## Second pass: the league and standings writes
+
+The overnight report said of the nine remaining `INSERT OR REPLACE` statements that "each needs a
+unique constraint the production schema does not have". **That is true of five, not nine.** The
+constraints were checked this time rather than assumed:
+
+```
+active_roster   PRIMARY KEY (player_id)
+player_stats    UNIQUE (player_id, season_id) WHERE season_id IS NOT NULL   -- migration 0009
+deck_stats      UNIQUE (deck_id, season_id)   WHERE season_id IS NOT NULL   -- migration 0009
+```
+
+So four were fixable with no schema change, and the ratchet drops from 9 to 5. Two things had to be
+established against a real Postgres first, not read off the docs:
+
+- **Postgres will infer a *partial* unique index, but only if the statement restates its predicate.**
+  `ON CONFLICT (player_id, season_id) WHERE season_id IS NOT NULL` works; the identical statement
+  without the `WHERE` is rejected with "there is no unique or exclusion constraint matching the ON
+  CONFLICT specification". The predicate is load-bearing, not decoration. Both rebuilds always pass a
+  non-null season id, so they always land in that half of the split.
+- **`INSERT OR REPLACE` and `ON CONFLICT DO UPDATE` are not the same statement.** SQLite's REPLACE
+  deletes and reinserts, so unnamed columns revert to their defaults; `DO UPDATE` leaves them alone.
+  Only `active_roster.checked_in_at` is affected here, and refreshing it on a re-check-in is the
+  right behaviour anyway, so it is set explicitly rather than allowed to diverge quietly.
+
+Two more suite checks cover it — check-in replacing in place, and a pod score rebuilding both
+standings tables, then being re-reported to prove the upsert updates rather than duplicating. Both
+fail with **only** the four league statements reverted and the rest of the fixes left in, so they
+guard exactly what they claim to.
+
+The SQLite branches were exercised too, though not through the routes: `db.js` creates
+`active_roster`, `pods` and `pod_results` in **neither** dialect. The whole league feature — check-in,
+pairings, pods, standings — is dead on any database `initDb` built, on both dialects, until migration
+0009 runs. So the statements were run directly against tables shaped the way 0009 defines them: one
+row after a re-check-in, the newer deck winning, two seasons coexisting, a re-report overwriting.
+
+### A live bug found on the way, and a correction to #29
+
+On production Postgres today `player_stats` is `PRIMARY KEY (player_id)` — **season is not in the
+key**. The untargeted `ON CONFLICT DO NOTHING` that #29 introduced therefore does nothing at all for a
+player's second season:
+
+```
+INSERT INTO player_stats (player_id, season_id) VALUES ('pq1','sq1') ON CONFLICT DO NOTHING;  -- INSERT 0 1
+INSERT INTO player_stats (player_id, season_id) VALUES ('pq1','sq2') ON CONFLICT DO NOTHING;  -- INSERT 0 0
+-> one row, season sq1 only
+```
+
+A returning player appears in season one's standings and is simply absent from season two's. Silently
+— no error, no 500. #29 was still an improvement (before it, registration 500'd and left an orphaned
+account), but its PR body did not say this and should have.
+
+**This one cannot be fixed in code.** Today's primary key physically cannot hold two seasons for one
+player; an application-level check-then-insert would hit the same key. Migration 0009 replaces it with
+the two partial unique indexes. That makes it a third thing the never-run migrations fix in the app
+serving users right now, alongside the seven dead tables — the cutover in `claude/v2-deploy-notes.md`
+is worth more again, not less.
+
+The same comparison on SQLite, for contrast: its `player_stats` is `PRIMARY KEY (player_id,
+season_id)`, so two seasons coexist there. Verified. The dialects disagree about the shape of the
+league itself.
+
+### Noticed, not changed: `/api/pairings/report/:podId` has no auth check
+
+It mutates `pod_results`, marks the pod complete and rebuilds every standings row in the season, and
+there is no `req.session.player` check — the comment above it says "Can be submitted by players or
+admin", so a session was clearly intended. Left alone deliberately: adding one is an authorization
+change, and whether the client relies on calling it unauthenticated has to be established first
+rather than guessed. Flagged here because it is the kind of thing that gets read past.
+
 ## Where the numbers land now
 
 `node scripts/audit-postgres-schema-gap.js "$POSTGRES_URL"`
@@ -95,12 +165,14 @@ Postgres 16 and Redis 7 running locally, nothing mocked.
 
 | Suite | Result |
 | --- | --- |
-| `npm run test:postgres` (new) | 7 passed |
+| `npm run test:postgres` (new) | 9 passed |
 | `npm run test:unit` (legacy, SQLite) | 38 passed |
 | v2 — `packages/*` + `apps/*` | 436 passed, 0 skipped |
 | `node scripts/guards.js` | OK |
 | `npm run preflight` | OK (1 pre-existing emoji warning) |
 | SQLite route smoke, same sequence | no regression; add-card now 200, was 500 |
+| SQLite league branches, run directly | one row per re-check-in, two seasons coexist, re-report overwrites |
+| `KNOWN_SQLITE_ONLY` ratchet | 9 → 5, and still rejects an injected tenth |
 
 Nothing in this session touched the VM, production data, or `deploy-gcp.ps1`. The five items in
 `claude/vm-runbook-2026-09-26.md` are all still waiting.

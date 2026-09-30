@@ -100,6 +100,50 @@ const SQL_RESTORE_COLLECTION_CARD = db.isPostgres
   : `INSERT INTO collection_cards
      (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price, added_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+// The league writes below are `INSERT OR REPLACE`, which is SQLite-only -- a syntax error at "OR" on
+// Postgres, so checking in and every standings rebuild failed there.
+//
+// The overnight audit recorded all nine remaining `INSERT OR REPLACE` sites as needing "a unique
+// constraint the production schema does not have". That is true of the price-cache and Scryfall ones;
+// it is NOT true of these four, and the constraints were checked rather than assumed:
+//
+//   active_roster   PRIMARY KEY (player_id)
+//   player_stats    UNIQUE (player_id, season_id) WHERE season_id IS NOT NULL   -- migration 0009
+//   deck_stats      UNIQUE (deck_id, season_id)   WHERE season_id IS NOT NULL   -- migration 0009
+//
+// Note the semantic difference these carry. SQLite's REPLACE *deletes and reinserts*, so columns the
+// statement does not name revert to their defaults; `ON CONFLICT DO UPDATE` leaves them alone. Only
+// `active_roster.checked_in_at` is affected, and re-checking in should refresh it, so it is set
+// explicitly -- matching SQLite rather than quietly diverging.
+const SQL_ROSTER_CHECKIN = db.isPostgres
+  ? `INSERT INTO active_roster (player_id, deck_id, checked_in) VALUES (?, ?, 1)
+     ON CONFLICT (player_id)
+     DO UPDATE SET deck_id = EXCLUDED.deck_id, checked_in = EXCLUDED.checked_in,
+                   checked_in_at = CURRENT_TIMESTAMP`
+  : 'INSERT OR REPLACE INTO active_roster (player_id, deck_id, checked_in) VALUES (?, ?, 1)';
+
+// The two stats rebuilds always pass a non-null season id, so they always fall inside the
+// `WHERE season_id IS NOT NULL` half of 0009's split. Postgres will only infer a *partial* unique
+// index if the statement restates its predicate: without the `WHERE` clause the same statement is
+// rejected with "there is no unique or exclusion constraint matching the ON CONFLICT
+// specification", so the predicate is load-bearing, not decoration.
+const SQL_REBUILD_PLAYER_STATS = db.isPostgres
+  ? `INSERT INTO player_stats (player_id, season_id, total_points, total_kills, total_wins, total_matches)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (player_id, season_id) WHERE season_id IS NOT NULL
+     DO UPDATE SET total_points = EXCLUDED.total_points, total_kills = EXCLUDED.total_kills,
+                   total_wins = EXCLUDED.total_wins, total_matches = EXCLUDED.total_matches`
+  : `INSERT OR REPLACE INTO player_stats (player_id, season_id, total_points, total_kills, total_wins, total_matches)
+     VALUES (?, ?, ?, ?, ?, ?)`;
+const SQL_REBUILD_DECK_STATS = db.isPostgres
+  ? `INSERT INTO deck_stats (deck_id, season_id, total_points, total_kills, total_wins, total_matches)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (deck_id, season_id) WHERE season_id IS NOT NULL
+     DO UPDATE SET total_points = EXCLUDED.total_points, total_kills = EXCLUDED.total_kills,
+                   total_wins = EXCLUDED.total_wins, total_matches = EXCLUDED.total_matches`
+  : `INSERT OR REPLACE INTO deck_stats (deck_id, season_id, total_points, total_kills, total_wins, total_matches)
+     VALUES (?, ?, ?, ?, ?, ?)`;
 const mtgjsonService = require('./mtgjsonService');
 const {
   createPreferenceProfile,
@@ -4558,10 +4602,7 @@ app.post('/api/roster/checkin', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
   const { deckId } = req.body;
   try {
-    await db.run(
-      "INSERT OR REPLACE INTO active_roster (player_id, deck_id, checked_in) VALUES (?, ?, 1)",
-      [req.session.player.id, deckId]
-    );
+    await db.run(SQL_ROSTER_CHECKIN, [req.session.player.id, deckId]);
     res.json({ success: true });
   } catch (e) {
     console.error(e); res.status(500).json({ error: "Internal server error." });
@@ -4607,10 +4648,7 @@ app.post('/api/roster/admin-checkin', async (req, res) => {
   if (!req.session.player || !req.session.player.isAdmin) return res.status(403).json({ error: "Forbidden" });
   const { playerId, deckId } = req.body;
   try {
-    await db.run(
-      "INSERT OR REPLACE INTO active_roster (player_id, deck_id, checked_in) VALUES (?, ?, 1)",
-      [playerId, deckId]
-    );
+    await db.run(SQL_ROSTER_CHECKIN, [playerId, deckId]);
     res.json({ success: true });
   } catch (e) {
     console.error(e); res.status(500).json({ error: "Internal server error." });
@@ -4881,10 +4919,7 @@ async function updateLeaderboardStats(seasonId) {
   `, [seasonId]);
 
   for (let s of playerStats) {
-    await db.run(`
-      INSERT OR REPLACE INTO player_stats (player_id, season_id, total_points, total_kills, total_wins, total_matches)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [s.player_id, seasonId, s.pts, s.k, s.w, s.matches]);
+    await db.run(SQL_REBUILD_PLAYER_STATS, [s.player_id, seasonId, s.pts, s.k, s.w, s.matches]);
   }
 
   // Aggregate deck results
@@ -4897,10 +4932,7 @@ async function updateLeaderboardStats(seasonId) {
   `, [seasonId]);
 
   for (let s of deckStats) {
-    await db.run(`
-      INSERT OR REPLACE INTO deck_stats (deck_id, season_id, total_points, total_kills, total_wins, total_matches)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [s.deck_id, seasonId, s.pts, s.k, s.w, s.matches]);
+    await db.run(SQL_REBUILD_DECK_STATS, [s.deck_id, seasonId, s.pts, s.k, s.w, s.matches]);
   }
 }
 

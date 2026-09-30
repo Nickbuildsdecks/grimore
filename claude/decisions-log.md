@@ -290,3 +290,40 @@ a loud failure for a quiet wrong answer is the wrong trade.
 The real fix is a unique index plus a dedupe of whatever is already on the VM. Both tables are
 regenerable caches, which makes it low-risk, but it is still a migration against live data and
 belongs with the cutover in `claude/v2-deploy-notes.md`, not smuggled into a column-rename change.
+
+## D16 — Four of the nine SQLite-only writes are fixed; D-era claim that all nine were blocked was wrong
+
+**Decided:** the `active_roster` check-in (both call sites) and the `player_stats` / `deck_stats`
+standings rebuilds are converted to `ON CONFLICT` upserts. `KNOWN_SQLITE_ONLY` drops from 9 to 5.
+
+**Correcting the record.** The overnight report deferred all nine with a single reason — "each needs a
+unique constraint the production schema does not have." That was asserted, not checked, and it is
+wrong for four of them: `active_roster` has a primary key on `player_id`, and migration `0009` gives
+`player_stats` and `deck_stats` partial unique indexes. The constraints were there.
+
+Two things were verified against a live Postgres before writing the statements, because either would
+have produced a confidently broken fix:
+
+- A partial unique index is only inferred when the statement restates its predicate. `ON CONFLICT
+  (player_id, season_id) WHERE season_id IS NOT NULL` resolves; without the `WHERE` the same statement
+  is rejected. Both rebuilds always pass a non-null season id.
+- `INSERT OR REPLACE` deletes and reinserts, so unnamed columns reset to defaults; `DO UPDATE` does
+  not. `active_roster.checked_in_at` is the only column affected, and it is set explicitly so a
+  re-check-in refreshes it as it did on SQLite.
+
+**Scope note.** This makes the statements correct, not the feature reachable: `db.js` creates
+`active_roster`, `pods` and `pod_results` in neither dialect, so the league is dead on any database
+`initDb` built until migration `0009` runs.
+
+## D17 — `/api/pairings/report/:podId` is left unauthenticated, deliberately and under protest
+
+**Decided:** not changed in this pass, and recorded here so it is not read past again.
+
+The route mutates `pod_results`, marks the pod completed and rebuilds every standings row for the
+season. There is no `req.session.player` check. The comment directly above it reads "Can be submitted
+by players or admin", so a session was plainly intended, and every sibling route in the file has one.
+
+Not fixed here because adding the check is an authorization change, not a dialect fix, and whether any
+client calls it without a session has to be established rather than assumed — a wrong guess silently
+breaks score reporting at an event. It wants one look at the front-end callers and then a one-line
+guard.

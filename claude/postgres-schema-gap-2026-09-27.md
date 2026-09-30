@@ -44,10 +44,11 @@ The v2 migrations are usually described as groundwork for `apps/api`. They are a
 fix for seven broken features in the app that is actually serving users. That reframes the
 deployment work in `claude/v2-deploy-notes.md`: it is not only about shipping the new API.
 
-Note this does **not** mean the features work the moment the tables exist — `server.js` still writes
-SQLite-only syntax at nine sites (see the ratchet in `scripts/guards.js`), and `active_roster` and
-the standings updates are among them. Creating the table removes the "relation does not exist"
-error; the `INSERT OR REPLACE` above it is the next one.
+Note this does **not** mean the features work the moment the tables exist — `server.js` also writes
+SQLite-only syntax. That count is now **five**, down from nine: `active_roster` and the two standings
+rebuilds have been fixed, because the constraints they needed turned out to exist after all (see
+below). Creating the table removes the "relation does not exist" error; for the five that remain, the
+`INSERT OR REPLACE` above it is the next one.
 
 ## A table can exist and still be the wrong shape
 
@@ -188,3 +189,63 @@ unmodified `server.js`, where both adds *also* returned 500. Not fixed here: it 
 expression index on SQLite, and creating one on a developer database that already holds duplicates
 fails, which would leave the `ON CONFLICT` target pointing at an index that does not exist — a worse
 failure than the one it replaces. SQLite is the local dev store only, so this affects no user.
+
+## The nine SQLite-only statements are five, and the earlier count was wrong about why
+
+The overnight report deferred all nine with one reason: "each needs a unique constraint the
+production schema does not have". That holds for five. It does not hold for four, and the difference
+is that the constraints were checked this time instead of assumed:
+
+| Statement | Constraint it can target | Where that comes from |
+| --- | --- | --- |
+| `active_roster` check-in (×2) | `PRIMARY KEY (player_id)` | migration `0009` |
+| `player_stats` rebuild | `UNIQUE (player_id, season_id) WHERE season_id IS NOT NULL` | migration `0009` |
+| `deck_stats` rebuild | `UNIQUE (deck_id, season_id) WHERE season_id IS NOT NULL` | migration `0009` |
+
+Two facts had to be established against a live database before writing them:
+
+**Postgres infers a partial unique index only if the statement restates the predicate.**
+`ON CONFLICT (player_id, season_id) WHERE season_id IS NOT NULL` resolves; the same statement without
+the `WHERE` is rejected outright. Both rebuilds always pass a non-null season id, so they always fall
+in that half of 0009's split.
+
+**`INSERT OR REPLACE` is not `ON CONFLICT DO UPDATE`.** SQLite's REPLACE deletes and reinserts, so
+columns the statement does not name revert to their defaults; `DO UPDATE` leaves them untouched. The
+only column affected here is `active_roster.checked_in_at`, and a re-check-in should refresh it, so it
+is set explicitly rather than left to diverge.
+
+The five that remain are genuinely blocked on a schema decision: two `scryfall_cards` writes, two
+`card_price_cache` writes (both per D15), and `password_resets`, whose table is defined nowhere at all.
+
+## The league feature is dead on both dialects, not just Postgres
+
+Worth separating from the dialect story, because it is worse than it looks. `db.js` creates
+`active_roster`, `pods` and `pod_results` in **neither** branch — SQLite's or Postgres's. Only
+migration `0009` creates them. So check-in, pairings, pods and standings are dead on any database
+`initDb` built, on either dialect, and fixing the statements does not change that. They become
+correct; they do not become reachable. Migration 0009 is what makes the feature exist.
+
+## Season two's standings are silently missing today
+
+Separate from the syntax problem and more damaging, because nothing fails.
+
+On production Postgres today, `player_stats` is `PRIMARY KEY (player_id)`. Season is a column, not
+part of the key. The untargeted `ON CONFLICT DO NOTHING` introduced in #29 therefore matches on
+`player_id` alone and skips the row:
+
+```
+INSERT INTO player_stats (player_id, season_id) VALUES ('pq1','sq1') ON CONFLICT DO NOTHING;  -- INSERT 0 1
+INSERT INTO player_stats (player_id, season_id) VALUES ('pq1','sq2') ON CONFLICT DO NOTHING;  -- INSERT 0 0
+```
+
+A player who played in season one gets no stats row for season two, so they are absent from its
+standings. No error, no 500, nothing in the log.
+
+#29 was still the right change — before it, registration returned 500 and left an orphaned account —
+but its PR body did not mention this consequence, and this is the correction.
+
+**It cannot be fixed in `server.js`.** The key physically cannot hold two seasons for one player, so a
+check-then-insert would hit the same violation. Migration `0009` replaces the key with the two partial
+unique indexes, and that is the only fix. SQLite, for contrast, already has
+`PRIMARY KEY (player_id, season_id)` and keeps both rows — the two dialects disagree about the shape
+of the league itself.

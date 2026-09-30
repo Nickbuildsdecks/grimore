@@ -74,11 +74,30 @@ function freePort() {
 }
 
 /**
+ * Every client gets its own apparent source address.
+ *
+ * `/api/auth` is rate-limited to 20 attempts per client per 15 minutes, and the server runs with
+ * `trust proxy 1` so the bucket is keyed on X-Forwarded-For -- which is how it works in production
+ * behind Caddy. Sending a distinct value per client uses that same path rather than working around
+ * it, and it means adding a test cannot silently push the suite over a shared ceiling and start
+ * failing with 429s that look nothing like the bug under test.
+ *
+ * If a change ever removes `trust proxy`, every client collapses into one bucket and this suite
+ * starts reporting 429 from `newPlayer` -- that is the symptom to recognise, not a flake.
+ */
+let clientSeq = 0;
+function nextForwardedFor() {
+  clientSeq += 1;
+  return `10.77.${Math.floor(clientSeq / 250)}.${(clientSeq % 250) + 1}`;
+}
+
+/**
  * Minimal cookie-jar HTTP client. The session cookie is the whole point -- every route under test
  * is behind `req.session.player`, so a client that drops Set-Cookie tests only the 401 path.
  */
 function makeClient() {
   const jar = new Map();
+  const forwardedFor = nextForwardedFor();
   return function request(path, options = {}) {
     return new Promise((resolve, reject) => {
       const cookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
@@ -91,6 +110,7 @@ function makeClient() {
           headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
+            'X-Forwarded-For': forwardedFor,
             ...(cookie ? { Cookie: cookie } : {}),
           },
         },
@@ -250,6 +270,50 @@ async function newPlayer(tag) {
   return { client, username, id: row.rows[0].id };
 }
 
+/**
+ * A deck row, inserted directly. The deck-creation route imports from Moxfield over the network,
+ * which a test must not depend on; the league routes only need a deck to point at.
+ */
+async function seedDeck(playerId, name) {
+  const id = `deck_${Math.random().toString(36).slice(2, 10)}`;
+  await appClient.query(
+    'INSERT INTO decks (id, player_id, deck_name, moxfield_url) VALUES ($1, $2, $3, $4)',
+    [id, playerId, name, `https://example.test/${id}`],
+  );
+  return id;
+}
+
+/**
+ * An active season with one completed-pending pod and a pod_results row per entrant.
+ *
+ * Seeded with SQL rather than driven through /api/pairings/generate, which needs an organiser
+ * session and at least three checked-in players. The statements under test are the two standings
+ * rebuilds, and this is the state they run against.
+ *
+ * Only one season may be active at a time as far as the routes are concerned -- they all read
+ * `WHERE is_active = 1` and take the first row -- so any earlier season is stood down first.
+ */
+async function seedPod(entrants) {
+  const seasonId = `season_${Math.random().toString(36).slice(2, 10)}`;
+  await appClient.query('UPDATE seasons SET is_active = 0 WHERE is_active = 1');
+  await appClient.query('INSERT INTO seasons (id, name, is_active) VALUES ($1, $2, 1)', [
+    seasonId,
+    `Write-path season ${seasonId}`,
+  ]);
+  const podId = `pod_${Math.random().toString(36).slice(2, 10)}`;
+  await appClient.query(
+    'INSERT INTO pods (id, season_id, round_num, pod_label) VALUES ($1, $2, 1, 1)',
+    [podId, seasonId],
+  );
+  for (const e of entrants) {
+    await appClient.query(
+      'INSERT INTO pod_results (pod_id, player_id, deck_id) VALUES ($1, $2, $3)',
+      [podId, e.playerId, e.deckId],
+    );
+  }
+  return { seasonId, podId };
+}
+
 test('following a player writes a follows row on Postgres', { skip }, async () => {
   const a = await newPlayer('a');
   const b = await newPlayer('b');
@@ -400,5 +464,113 @@ test('the boot-time deck_cards sanitizer runs without error on Postgres', { skip
     log,
     /\[DB Sanitize\] Error/,
     'the sanitizer failed at boot; see the [DB Sanitize] line',
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// League: check-in and the standings rebuild.
+//
+// These are `INSERT OR REPLACE`, SQLite-only, a syntax error at "OR" on Postgres. The constraints
+// they now target are real ones -- active_roster's primary key, and the partial unique indexes
+// migration 0009 creates -- which is why they could be fixed without a schema change. The suite has
+// to prove the ON CONFLICT targets resolve, because a wrong one is rejected outright.
+// ---------------------------------------------------------------------------------------------
+
+test('checking in writes one active_roster row, and re-checking in replaces it', { skip }, async () => {
+  const p = await newPlayer('j');
+  const deck = await seedDeck(p.id, 'Roster Deck');
+
+  let res = await p.client('/api/roster/checkin', { method: 'POST', body: { deckId: deck } });
+  assert.equal(res.status, 200, `check-in returned ${res.status}: ${JSON.stringify(res.body)}`);
+
+  let rows = await appClient.query(
+    'SELECT deck_id, checked_in FROM active_roster WHERE player_id = $1',
+    [p.id],
+  );
+  assert.equal(rows.rows.length, 1);
+  assert.equal(rows.rows[0].deck_id, deck);
+  assert.equal(Number(rows.rows[0].checked_in), 1);
+
+  // SQLite's REPLACE deletes and reinserts; ON CONFLICT DO UPDATE has to leave one row too.
+  const other = await seedDeck(p.id, 'Second Roster Deck');
+  res = await p.client('/api/roster/checkin', { method: 'POST', body: { deckId: other } });
+  assert.equal(res.status, 200, `second check-in: ${JSON.stringify(res.body)}`);
+
+  rows = await appClient.query('SELECT deck_id FROM active_roster WHERE player_id = $1', [p.id]);
+  assert.equal(rows.rows.length, 1, 'a second check-in must replace, not duplicate');
+  assert.equal(rows.rows[0].deck_id, other, 'the newer deck must win');
+
+  const status = await p.client('/api/roster/status');
+  assert.equal(status.body.checkedIn, true);
+  assert.equal(status.body.deckId, other);
+});
+
+test('reporting a pod score rebuilds player and deck standings', { skip }, async () => {
+  const a = await newPlayer('k');
+  const b = await newPlayer('l');
+  const deckA = await seedDeck(a.id, 'Standings Deck A');
+  const deckB = await seedDeck(b.id, 'Standings Deck B');
+  const { seasonId, podId } = await seedPod([
+    { playerId: a.id, deckId: deckA },
+    { playerId: b.id, deckId: deckB },
+  ]);
+
+  const res = await a.client(`/api/pairings/report/${podId}`, {
+    method: 'POST',
+    body: {
+      results: [
+        { player_id: a.id, kills: 2, placed_first: 1, placed_draw: 0 },
+        { player_id: b.id, kills: 0, placed_first: 0, placed_draw: 0 },
+      ],
+    },
+  });
+  assert.equal(res.status, 200, `report returned ${res.status}: ${JSON.stringify(res.body)}`);
+
+  // The rebuild is an upsert against a PARTIAL unique index. A target that does not restate the
+  // index predicate is rejected outright, so reaching these rows at all is the assertion.
+  const players = await appClient.query(
+    'SELECT player_id, total_points, total_wins, total_kills, total_matches FROM player_stats WHERE season_id = $1 ORDER BY total_points DESC',
+    [seasonId],
+  );
+  assert.equal(players.rows.length, 2, `expected both players: ${JSON.stringify(players.rows)}`);
+  const winner = players.rows[0];
+  assert.equal(winner.player_id, a.id, 'the pod winner leads on points');
+  assert.equal(Number(winner.total_wins), 1);
+  assert.equal(Number(winner.total_kills), 2);
+  assert.equal(Number(winner.total_matches), 1);
+  assert.ok(Number(winner.total_points) > Number(players.rows[1].total_points));
+
+  const decks = await appClient.query(
+    'SELECT deck_id, total_wins FROM deck_stats WHERE season_id = $1',
+    [seasonId],
+  );
+  assert.equal(decks.rows.length, 2, `expected both decks: ${JSON.stringify(decks.rows)}`);
+  assert.equal(
+    Number(decks.rows.find((r) => r.deck_id === deckA).total_wins),
+    1,
+    'the winning deck records the win',
+  );
+
+  // Reporting again must update in place, not raise a duplicate-key error and not double the row
+  // count -- the whole point of an upsert over a bare INSERT.
+  const again = await a.client(`/api/pairings/report/${podId}`, {
+    method: 'POST',
+    body: {
+      results: [
+        { player_id: a.id, kills: 5, placed_first: 1, placed_draw: 0 },
+        { player_id: b.id, kills: 0, placed_first: 0, placed_draw: 0 },
+      ],
+    },
+  });
+  assert.equal(again.status, 200, `second report: ${JSON.stringify(again.body)}`);
+  const after = await appClient.query(
+    'SELECT player_id, total_kills FROM player_stats WHERE season_id = $1',
+    [seasonId],
+  );
+  assert.equal(after.rows.length, 2, 'a re-report must not add rows');
+  assert.equal(
+    Number(after.rows.find((r) => r.player_id === a.id).total_kills),
+    5,
+    'the corrected score must overwrite the old one',
   );
 });
