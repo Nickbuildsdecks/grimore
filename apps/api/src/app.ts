@@ -8,6 +8,7 @@ import pino from 'pino';
 import type { Env } from '@grimore/shared';
 import { createPool, ping, type Pool } from '@grimore/db';
 import { authRouter } from './routes/auth.js';
+import { enforceSessionEpoch } from './lib/sessionEpoch.js';
 import type { GoogleVerifier } from './lib/googleIdentity.js';
 import { cardsRouter } from './routes/cards.js';
 import { collectionsRouter } from './routes/collections.js';
@@ -30,6 +31,12 @@ export interface AppContext {
 declare module 'express-session' {
   interface SessionData {
     playerId?: string;
+    /**
+     * When this session was issued, as epoch milliseconds. Compared against
+     * `players.sessions_valid_from` on every authenticated request so a credential change can end
+     * sessions this process holds no handle on. See lib/sessionEpoch.ts.
+     */
+    epoch?: number;
   }
 }
 
@@ -100,6 +107,11 @@ export function createApp(ctx: AppContext, overrides: AppOverrides = {}): Expres
       },
     }),
   );
+
+  // After the session middleware and before every route: a session issued before its player's
+  // `sessions_valid_from` is destroyed here, wherever it is and whoever holds it. This is what makes a
+  // password change or a reset actually sign out a stolen session.
+  app.use(enforceSessionEpoch(ctx.pool));
 
   app.use('/api/auth', authRouter(ctx, overrides.googleVerifier));
   app.use('/api/decks', decksRouter(ctx));

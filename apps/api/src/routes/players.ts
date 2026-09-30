@@ -48,6 +48,7 @@ import {
 } from '@grimore/shared';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
+import { invalidateSessions, stampSessionEpoch } from '../lib/sessionEpoch.js';
 import { rejectProfanity } from '../lib/moderation.js';
 import { requireAuth, sessionPlayerId } from '../lib/auth.js';
 
@@ -204,13 +205,25 @@ export function playersRouter(ctx: AppContext): Router {
         }
       });
 
-      // A password change invalidates other sessions by rotating this one's id; a session stolen before
-      // the change no longer resolves. Legacy left every existing session valid.
+      // A credential change ends every other session on the account.
+      //
+      // This used to rotate the caller's own session id and claim that invalidated the others. It did
+      // not: `regenerate()` touches only the session in hand, and a session someone else holds is a
+      // different key in the store. A stolen session survived the victim's password change fully
+      // authenticated — the one thing a password change exists to stop. Proven in
+      // session-epoch.test.ts, which failed against that comment.
+      //
+      // `invalidateSessions` moves `players.sessions_valid_from` to now, which the epoch guard enforces
+      // against every session on every request. Rotating the caller's own id as well is still worth
+      // doing (it is free defence against fixation), and re-stamping afterwards is what keeps the
+      // person who just changed their own password signed in.
       if (input.newPassword) {
+        const validFrom = await invalidateSessions(pool, playerId);
         await new Promise<void>((resolve, reject) =>
           req.session.regenerate((err) => (err ? reject(err) : resolve())),
         );
         req.session.playerId = playerId;
+        stampSessionEpoch(req, new Date(validFrom.getTime()));
       }
       res.json({ success: true });
     }),

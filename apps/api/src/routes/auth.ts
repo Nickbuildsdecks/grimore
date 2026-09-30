@@ -18,6 +18,7 @@ import { RegisterInput, LoginInput, GoogleSignInInput, MePlayer, type AuthStatus
 import { withTransaction } from '@grimore/db';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
+import { stampSessionEpoch } from '../lib/sessionEpoch.js';
 import { createGoogleVerifier, type GoogleIdentity, type GoogleVerifier } from '../lib/googleIdentity.js';
 
 const PLAYER_COLUMNS = `id, username, store_nickname, avatar_url, profile_commander, profile_bio, is_admin,
@@ -90,6 +91,10 @@ export function authRouter(ctx: AppContext, googleVerifier?: GoogleVerifier): Ro
       if (!row || !valid) throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid username or password.');
       await regenerate(req);
       req.session.playerId = row.id;
+      // Stamped so the epoch guard can tell this session from one issued before a later credential
+      // change. An unstamped session is treated as invalid, so forgetting this here would silently log
+      // everyone straight back out.
+      stampSessionEpoch(req);
       const user = MePlayer.parse(row);
       res.json({ success: true, user });
     }),
@@ -189,6 +194,7 @@ export function authRouter(ctx: AppContext, googleVerifier?: GoogleVerifier): Ro
 
       await regenerate(req);
       req.session.playerId = player.id;
+      stampSessionEpoch(req);
       res.json({ success: true, user: MePlayer.parse(player) });
     }),
   );

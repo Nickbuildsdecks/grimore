@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Password, PlayerRole, PremiumStatus, StoreNickname, Username } from "./auth.js";
+import { refinePasswordAgainstIdentity } from "./auth.js";
 import { Id, IntBool, Timestamp } from "./common.js";
 
 export const PROFILE_BIO_MAX = 500;
@@ -100,7 +101,10 @@ export const AccountUpdateInput = z
   })
   .refine((v) => Boolean(v.newUsername || v.newPassword || v.newEmail), {
     message: "At least one of newUsername, newPassword or newEmail must be provided",
-  });
+  })
+  // A new password must not contain the username or email being set in the same request, not just the
+  // ones already on the account.
+  .superRefine(refinePasswordAgainstIdentity);
 export type AccountUpdateInput = z.infer<typeof AccountUpdateInput>;
 
 export const PlayerProfileResponse = z.object({
