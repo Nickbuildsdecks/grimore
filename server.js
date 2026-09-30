@@ -57,6 +57,49 @@ const notificationParams = (params) => (db.isPostgres ? params.slice(1) : params
 const SQL_INIT_DECK_STATS = db.isPostgres
   ? 'INSERT INTO deck_stats (deck_id, season_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
   : 'INSERT OR IGNORE INTO deck_stats (deck_id, season_id) VALUES (?, ?)';
+
+// Three tables exist under the same name in both schemas with *different column names*, which
+// `db.js`'s placeholder translation cannot help with -- it rewrites `?` to `$n` and appends
+// RETURNING, it does not rename columns. Each of these failed with `column "..." does not exist` on
+// Postgres, so the feature was dead there while passing every SQLite test.
+//
+// `follows`: the person being followed is `following_id` on Postgres, `followed_id` on SQLite. All
+// four call sites -- the existence check, the unfollow delete, the insert and the read-back -- used
+// the SQLite name, so following someone, unfollowing, and even asking "am I following them?"
+// returned 500 on Postgres.
+const FOLLOWED_COLUMN = db.isPostgres ? 'following_id' : 'followed_id';
+
+// `scryfall_cards`: keyed by `id` on Postgres (the Scryfall UUID is the primary key), while SQLite
+// keys by `card_name` and carries the UUID in a `scryfall_id` column. Reads that select the UUID
+// have to pick the right name.
+const SCRYFALL_ID_COLUMN = db.isPostgres ? 'id' : 'scryfall_id';
+
+// `collection_cards`: the foil flag is `foil` on Postgres and `is_foil` on SQLite, and the
+// uniqueness that makes the add-a-card route an upsert is a plain column tuple on SQLite but an
+// *expression* index on Postgres -- `(collection_id, lower(card_name), COALESCE(scryfall_id, ''),
+// foil, condition, language)`. A Postgres ON CONFLICT target must restate those expressions exactly
+// or the statement is rejected outright, so this cannot be a column rename alone.
+const SQL_UPSERT_COLLECTION_CARD = db.isPostgres
+  ? `INSERT INTO collection_cards (collection_id, card_name, scryfall_id, quantity, foil, is_for_trade, condition, language, purchase_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (collection_id, lower(card_name), COALESCE(scryfall_id, ''), foil, condition, language)
+     DO UPDATE SET quantity = collection_cards.quantity + EXCLUDED.quantity`
+  : `INSERT INTO collection_cards (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(collection_id, card_name, scryfall_id, is_foil, condition, language)
+     DO UPDATE SET quantity = quantity + EXCLUDED.quantity`;
+
+// The recovery restore path writes an archived row back. The archive was made with `SELECT *`, so a
+// payload written under one dialect carries that dialect's column names -- and a collection deleted
+// on SQLite may well be restored after a Postgres cutover. Hence both spellings are read on the way
+// in, and only the local one is written on the way out.
+const SQL_RESTORE_COLLECTION_CARD = db.isPostgres
+  ? `INSERT INTO collection_cards
+     (collection_id, card_name, scryfall_id, quantity, foil, is_for_trade, condition, language, purchase_price, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  : `INSERT INTO collection_cards
+     (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price, added_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 const mtgjsonService = require('./mtgjsonService');
 const {
   createPreferenceProfile,
@@ -347,10 +390,10 @@ const scryfallService = require('./scryfallService');
 async function sanitizeDeckCardsScryfallIds() {
   try {
     const rows = await db.query(
-      `SELECT dc.deck_id, dc.card_name, dc.scryfall_id, sc.scryfall_id as real_scryfall_id
+      `SELECT dc.deck_id, dc.card_name, dc.scryfall_id, sc.${SCRYFALL_ID_COLUMN} as real_scryfall_id
        FROM deck_cards dc
        JOIN scryfall_cards sc ON LOWER(dc.card_name) = LOWER(sc.card_name)
-       WHERE dc.scryfall_id IS NOT NULL AND dc.scryfall_id != sc.scryfall_id`
+       WHERE dc.scryfall_id IS NOT NULL AND dc.scryfall_id != sc.${SCRYFALL_ID_COLUMN}`
     );
     for (const r of rows) {
       if (r.real_scryfall_id) {
@@ -371,6 +414,11 @@ db.initDb().then(async () => {
   await scryfallService.downloadAndImportScryfallBulk();
   scryfallService.setupDailySync();
   await sanitizeDeckCardsScryfallIds();
+  // The last line of the boot chain. "Database initialized successfully" above is logged before the
+  // bulk sync and the sanitizer run, so it does not mean the server has finished starting -- this
+  // does. Anything that needs to know the startup tasks are done (an operator reading logs, a test
+  // asserting the sanitizer ran) should key off this.
+  console.log("Startup tasks complete.");
 }).catch(err => {
   console.error("Database initialization failed:", err);
 });
@@ -3739,12 +3787,12 @@ app.post('/api/players/:playerId/follow', async (req, res) => {
   const followerId = req.session.player.id;
   if (playerId === followerId) return res.status(400).json({ error: "You cannot follow yourself." });
   try {
-    const existing = await db.get("SELECT 1 FROM follows WHERE follower_id = ? AND followed_id = ?", [followerId, playerId]);
+    const existing = await db.get(`SELECT 1 FROM follows WHERE follower_id = ? AND ${FOLLOWED_COLUMN} = ?`, [followerId, playerId]);
     if (existing) {
-      await db.run("DELETE FROM follows WHERE follower_id = ? AND followed_id = ?", [followerId, playerId]);
+      await db.run(`DELETE FROM follows WHERE follower_id = ? AND ${FOLLOWED_COLUMN} = ?`, [followerId, playerId]);
       res.json({ success: true, following: false });
     } else {
-      await db.run("INSERT INTO follows (follower_id, followed_id) VALUES (?, ?)", [followerId, playerId]);
+      await db.run(`INSERT INTO follows (follower_id, ${FOLLOWED_COLUMN}) VALUES (?, ?)`, [followerId, playerId]);
       
       const notifId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
       const nickname = req.session.player.storeNickname || "A user";
@@ -3764,7 +3812,7 @@ app.get('/api/players/:playerId/following', async (req, res) => {
   const followerId = req.session.player ? req.session.player.id : null;
   if (!followerId) return res.json({ following: false });
   try {
-    const row = await db.get("SELECT 1 FROM follows WHERE follower_id = ? AND followed_id = ?", [followerId, playerId]);
+    const row = await db.get(`SELECT 1 FROM follows WHERE follower_id = ? AND ${FOLLOWED_COLUMN} = ?`, [followerId, playerId]);
     res.json({ following: !!row });
   } catch (e) {
     console.error(e); res.status(500).json({ error: "Internal server error." });
@@ -5874,9 +5922,22 @@ app.get('/api/cards/versions', async (req, res) => {
           "INSERT OR REPLACE INTO card_price_cache (card_name, price, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
           [cheapest.name, cheapest.price]
         );
+        // On Postgres the Scryfall UUID *is* the primary key, so it cannot be back-filled from a
+        // card name the way the SQLite column can -- that would rewrite the row's identity. Only
+        // the price is updated there; previously the whole statement threw `column "scryfall_id"
+        // does not exist` and the catch below turned that into a warning.
+        //
+        // This does not make the gallery's price caching work on Postgres yet: the `INSERT OR
+        // REPLACE` immediately above is still SQLite-only, it throws first, and the catch swallows
+        // both. Fixing that one needs a unique constraint on card_price_cache that the Postgres
+        // schema does not have -- see claude/postgres-schema-gap-2026-09-27.md.
         await db.run(
-          "UPDATE scryfall_cards SET price = ?, scryfall_id = ? WHERE LOWER(card_name) = ?",
-          [cheapest.price, cheapest.id, cheapest.name.toLowerCase()]
+          db.isPostgres
+            ? "UPDATE scryfall_cards SET price = ? WHERE LOWER(card_name) = ?"
+            : "UPDATE scryfall_cards SET price = ?, scryfall_id = ? WHERE LOWER(card_name) = ?",
+          db.isPostgres
+            ? [cheapest.price, cheapest.name.toLowerCase()]
+            : [cheapest.price, cheapest.id, cheapest.name.toLowerCase()]
         );
       } catch (dbErr) {
         console.warn(`Failed to cache cheapest price for ${cheapest.name}:`, dbErr.message);
@@ -7015,36 +7076,46 @@ app.post('/api/collections/:id/cards', async (req, res) => {
     // Check if card matches database scryfall_cards or price cache to fetch scryfallId
     let resolvedScryfallId = scryfallId || null;
     if (!resolvedScryfallId) {
-      const match = await db.get("SELECT scryfall_id FROM scryfall_cards WHERE LOWER(card_name) = LOWER(?)", [cardName]);
+      const match = await db.get(
+        `SELECT ${SCRYFALL_ID_COLUMN} AS scryfall_id FROM scryfall_cards WHERE LOWER(card_name) = LOWER(?)`,
+        [cardName]
+      );
       if (match) resolvedScryfallId = match.scryfall_id;
     }
 
-    await db.run(
-      `INSERT INTO collection_cards (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(collection_id, card_name, scryfall_id, is_foil, condition, language) 
-       DO UPDATE SET quantity = quantity + EXCLUDED.quantity`,
-      [id, cardName, resolvedScryfallId, qty, foil, trade, cond, lang, price]
-    );
+    await db.run(SQL_UPSERT_COLLECTION_CARD, [id, cardName, resolvedScryfallId, qty, foil, trade, cond, lang, price]);
 
-    // Auto-remove or decrement from wishlist if it exists
-    const wishlistCard = await db.get(
-      "SELECT * FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
-      [playerId, cardName]
-    );
-    if (wishlistCard) {
-      const newWishQty = wishlistCard.quantity - qty;
-      if (newWishQty <= 0) {
-        await db.run(
-          "DELETE FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
-          [playerId, cardName]
-        );
-      } else {
-        await db.run(
-          "UPDATE wishlist_cards SET quantity = ? WHERE player_id = ? AND card_name = ? COLLATE NOCASE",
-          [newWishQty, playerId, cardName]
-        );
+    // Auto-remove or decrement from wishlist if it exists.
+    //
+    // Scoped try/catch because this is a side effect and the card is already in the collection by
+    // now: a failure here must not report the add as failed. It did, and because the statement above
+    // is an upsert, a user retrying after that 500 silently doubled their quantity. It failed on
+    // every add against any database without `wishlist_cards` -- which is SQLite always (initDb
+    // never creates it) and Postgres until migration 0008 runs.
+    try {
+      const wishlistCard = await db.get(
+        "SELECT * FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
+        [playerId, cardName]
+      );
+      if (wishlistCard) {
+        const newWishQty = wishlistCard.quantity - qty;
+        if (newWishQty <= 0) {
+          await db.run(
+            "DELETE FROM wishlist_cards WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
+            [playerId, cardName]
+          );
+        } else {
+          // `COLLATE NOCASE` is SQLite-only -- a syntax error on Postgres, so decrementing (as
+          // opposed to clearing) a wishlist row failed there even once the table existed. LOWER()
+          // on both sides works in both dialects and matches the DELETE above.
+          await db.run(
+            "UPDATE wishlist_cards SET quantity = ? WHERE player_id = ? AND LOWER(card_name) = LOWER(?)",
+            [newWishQty, playerId, cardName]
+          );
+        }
       }
+    } catch (wishlistErr) {
+      console.warn(`Wishlist sync skipped for ${cardName}:`, wishlistErr.message);
     }
 
     res.json({ success: true });
@@ -7224,12 +7295,13 @@ app.post('/api/recovery/restore/:id', async (req, res) => {
       );
       // Insert cards
       for (let c of cards) {
-        await db.run(
-          `INSERT INTO collection_cards 
-           (collection_id, card_name, scryfall_id, quantity, is_foil, is_for_trade, condition, language, purchase_price, added_at) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [c.collection_id, c.card_name, c.scryfall_id, c.quantity, c.is_foil, c.is_for_trade, c.condition, c.language, c.purchase_price, c.added_at]
-        );
+        // `??` and not `||`: a non-foil card archives as 0, which `||` would discard.
+        const archivedFoil = c.foil ?? c.is_foil ?? 0;
+        const archivedAt = c.created_at ?? c.added_at ?? null;
+        await db.run(SQL_RESTORE_COLLECTION_CARD, [
+          c.collection_id, c.card_name, c.scryfall_id, c.quantity, archivedFoil,
+          c.is_for_trade, c.condition, c.language, c.purchase_price, archivedAt
+        ]);
       }
     } else if (row.item_type === 'deck') {
       const { deck, cards } = payload;

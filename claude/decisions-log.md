@@ -253,3 +253,40 @@ never urgent, and it should not have been pressed as though it were.
 own `Cannot POST /api/dev/git-push`. The `GET` variants return the SPA's `index.html`, which is how
 every unmatched GET in this app already behaves.
 
+
+## D14 — Legacy routes get a CI job on the dialect they actually ship on
+
+**Decided:** a new `legacy-postgres` job in `.github/workflows/ci.yml` boots `server.js` against a
+real Postgres 16 service and drives its write paths over HTTP
+(`test/postgres-write-paths.test.js`, `npm run test:postgres`).
+
+**Why this and not more unit tests.** Every legacy test to date runs on SQLite. Production runs on
+Postgres, and `db.js` builds a *different* table under the same name per dialect. That is not a gap
+mocks can close: the whole class of bug — `column "followed_id" does not exist` — only exists when a
+real Postgres is asked to execute the statement. Three routes were dead in production while CI was
+green.
+
+The suite asserts rows, not status codes. A 200 proved nothing in #29 either: registration returned
+500 *after* writing the player row, and an add-to-collection returned 500 after writing the card.
+
+**The suite fails on CI rather than skipping.** It skips cleanly when `POSTGRES_TEST_URL` is unset so
+a developer without Postgres is unaffected, but when `CI` is set a missing URL throws. Seven skips
+reported as a pass is precisely the failure mode the overnight session recorded twice: a check that
+passes when it should fail is more dangerous than no check, because it is trusted.
+
+## D15 — Two of the five column mismatches stay deferred, and the reason is a schema decision
+
+**Decided:** `card_price_cache.last_updated` and `scryfall_cards.scryfall_id` are left as they are.
+
+Both sit inside `INSERT OR REPLACE` statements, which need a unique constraint Postgres does not
+have — `card_price_cache` is keyed by a surrogate `id` with only a non-unique `lower(card_name)`
+index, where SQLite makes `card_name` the primary key.
+
+**The application-code alternative was considered and rejected.** UPDATE, then INSERT if nothing
+matched, works without a constraint, but two concurrent callers can both insert, and
+`card_price_cache` is read through a JOIN — so a duplicate row duplicates rows in card lists. Trading
+a loud failure for a quiet wrong answer is the wrong trade.
+
+The real fix is a unique index plus a dedupe of whatever is already on the VM. Both tables are
+regenerable caches, which makes it low-risk, but it is still a migration against live data and
+belongs with the cutover in `claude/v2-deploy-notes.md`, not smuggled into a column-rename change.

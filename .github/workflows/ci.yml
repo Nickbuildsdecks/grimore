@@ -12,6 +12,29 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run preflight
       - run: npm run test:unit
+  # The legacy job above runs server.js on SQLite. Production runs it on Postgres, and db.js builds a
+  # *different* table under the same name for each dialect -- so a route can be green there and 500
+  # for every real user. This job is the only place the legacy server is exercised on the dialect it
+  # actually ships on. See claude/postgres-schema-gap-2026-09-27.md.
+  legacy-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: grimore_dev }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/grimore_dev
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 22 }
+      # Not --ignore-scripts, unlike the legacy job: db.js requires better-sqlite3 unconditionally
+      # at load time, and its native binding is fetched by an install script.
+      - run: npm ci
+      - run: npm run test:postgres
+
   v2:
     runs-on: ubuntu-latest
     services:
