@@ -214,3 +214,75 @@ Postgres 16 and Redis 7 running locally, nothing mocked.
 
 Nothing in this session touched the VM, production data, or `deploy-gcp.ps1`. The five items in
 `claude/vm-runbook-2026-09-26.md` are all still waiting.
+
+---
+
+# Fourth pass: the account system
+
+Nick asked for the account side to be brought to industry standard: "figure out what the industry
+standard is and make the full system with all necessary parts." The design, the eleven findings and the
+standards they are measured against are in `claude/account-system-design.md`; this is the summary.
+
+**Password recovery had never worked**, and the code around it was worse than merely broken: the token
+was stored as issued, the whole link was written to stdout on every request, the row keyed on a username
+this app lets people change, and `devResetLink` was exposed by the absence of one environment variable
+rather than the presence of a flag.
+
+**Built:** migration 0014, a shared token discipline, `@grimore/mailer` that fails closed, session-epoch
+enforcement in both apps, a real password policy, an audit trail, per-account throttling, and the
+recovery and verification flows end to end including the front-end wiring.
+
+`KNOWN_SQLITE_ONLY` reached **0** on the way, because `password_resets` was the last of the nine.
+
+## Three times I was wrong, and how each was caught
+
+Recording these together because the pattern is the point: none of them were caught by reading.
+
+1. **I told Nick `scryfall_cards` needed a unique index, and that the application-level upsert was too
+   racy to use.** Investigating before writing the migration showed the Postgres primary key already
+   *is* the Scryfall UUID, and that `apps/api/routes/decks.ts` had already shipped the very upsert I had
+   dismissed. Caught by checking the repository instead of my own earlier claim.
+
+2. **I wrote a comment saying legacy read `sessions_valid_from`. Nothing read it anywhere.** So the
+   password reset signed nobody out, and the comment asserted a security property the code did not
+   provide — the identical mistake this work criticises `players.ts` for, committed in the act of fixing
+   it. Caught by going back to verify my own comment.
+
+3. **The recovery link pointed at a page that could not handle it.** `/reset-password?token=` returns
+   200 from both front ends, because every unmatched GET falls through to a SPA shell. But `app.js`
+   reads the token at `/`, and that path serves the React shell whose router has `basename="/react"`.
+   Correct server logic, plausible URL, 200 response, dead flow. Caught by requesting both paths against
+   a running server and comparing the documents.
+
+The common thread: each looked right in the source and was wrong in the running system. The first was
+caught by distrusting a claim I had made; the second by re-reading my own comment as though someone else
+had written it; the third only by making the request.
+
+## Two guards that earned their keep on my own work
+
+- The **Dockerfile manifest guard** (written in the first pass today) caught that I had not added
+  `packages/mailer/package.json` to the image — which would have failed the build on
+  `--frozen-lockfile`.
+- The **`apps/api` recovery suite** caught the link-shape change immediately, because its helper scraped
+  `/token=/` and `resetToken=` does not match it. A test noticing a contract change is the whole point.
+
+## Where the account work stops
+
+Three config decisions are Nick's, and the first gates the flow: an SMTP provider plus `MAIL_FROM`, and
+`APP_BASE_URL`. Until `SMTP_URL` is set, sends throw — deliberately, because the alternative is
+reporting a send that did not happen, which is exactly how the broken flow stayed invisible.
+
+Deferred with reasons: TOTP/WebAuthn, breached-password checking over the network, and the unauthenticated
+`/api/pairings/report/:podId` (D17).
+
+## Totals across the whole day
+
+| Suite | Start of day | Now |
+| --- | --- | --- |
+| v2 (`packages/*` + `apps/*`) | 436 | **501** |
+| legacy unit | 38 | **40** |
+| Postgres write paths | 0 (suite did not exist) | **24** |
+| `KNOWN_SQLITE_ONLY` ratchet | 9 | **0** |
+| Postgres column gap, post-cutover | 5 | **2** |
+
+Nothing in this session touched the VM, production data, or `deploy-gcp.ps1`.
