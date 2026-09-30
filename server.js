@@ -5438,6 +5438,13 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       console.error('[recovery] APP_BASE_URL is not set; refusing to build a link from the request Host.');
       return res.status(503).json({ error: "Password recovery is not configured on this server." });
     }
+    // Checked before the account is resolved, for the same reason as the check above: failing at the
+    // send instead would answer differently for a known account than an unknown one, which is an
+    // enumeration oracle open for as long as mail is misconfigured.
+    if (!mailer.configured) {
+      console.error('[recovery] no mail transport configured (%s); set SMTP_URL.', mailer.name);
+      return res.status(503).json({ error: "Password recovery is not configured on this server." });
+    }
 
     // Counted on the identifier as supplied, before resolving it, so the throttle cannot itself
     // distinguish an account that exists from one that does not.
@@ -5576,6 +5583,10 @@ app.post('/api/auth/verify-email/request', async (req, res) => {
     const base = recoveryBaseUrl();
     if (!base) {
       console.error('[accounts] APP_BASE_URL is not set; refusing to build a verification link from the request Host.');
+      return res.status(503).json({ error: "Email verification is not configured on this server." });
+    }
+    if (!mailer.configured) {
+      console.error('[accounts] no mail transport configured (%s); set SMTP_URL.', mailer.name);
       return res.status(503).json({ error: "Email verification is not configured on this server." });
     }
     const player = await db.get(

@@ -42,7 +42,7 @@ services:
   #
   # Two reasons it is gated rather than default:
   #
-  #  1. Starting it runs migrations 0002-0012 against whatever DATABASE_URL it is given. None of
+  #  1. Starting it runs migrations 0002-0014 against whatever DATABASE_URL it is given. None of
   #     them have ever run on the VM, and 0012 rewrites a password hash. Against production that is
   #     a one-way door and wants a backup taken first.
   #  2. `deploy-gcp.ps1` does not ship `apps/api`, `packages/` or the pnpm lockfile, so the build
