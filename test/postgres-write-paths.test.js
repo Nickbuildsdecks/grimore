@@ -98,7 +98,7 @@ function nextForwardedFor() {
 function makeClient() {
   const jar = new Map();
   const forwardedFor = nextForwardedFor();
-  return function request(path, options = {}) {
+  const request = function request(path, options = {}) {
     return new Promise((resolve, reject) => {
       const cookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
       const req = http.request(
@@ -138,6 +138,10 @@ function makeClient() {
       req.end();
     });
   };
+  // The session cookie's current value, so a test can see whether logging in rotated it. Named rather
+  // than reaching into the jar, because which cookie carries the session is the harness's business.
+  request.sessionId = () => jar.get('grimore.sid') ?? jar.get('connect.sid') ?? null;
+  return request;
 }
 
 /**
@@ -188,6 +192,13 @@ test.before(async () => {
       // Without this the boot chain downloads the whole oracle-cards dump before the tasks after it
       // run, which both wastes CI minutes and makes the sanitizer assertion below race the download.
       SKIP_SCRYFALL_BULK_SYNC: '1',
+      // Recovery mail: the console transport logs that a message went and withholds the body, so a send
+      // succeeds without a provider and without putting a token in the log. The default transport throws,
+      // which is correct for production and would fail these tests for the wrong reason.
+      MAIL_TRANSPORT: 'console',
+      // Link origins come from configuration, never the request Host header, so the routes refuse to
+      // run without this.
+      APP_BASE_URL: 'https://grimore.test',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -267,7 +278,7 @@ async function newPlayer(tag) {
     username.toLowerCase(),
   ]);
   assert.equal(row.rows.length, 1, `register ${tag} wrote no players row`);
-  return { client, username, id: row.rows[0].id };
+  return { client, username, id: row.rows[0].id, sessionId: () => client.sessionId() };
 }
 
 /**
@@ -656,4 +667,171 @@ test('migration 0013 leaves card_price_cache with a usable upsert target', { ski
   );
   assert.equal(rows.length, 1, 'the unique index must be case-insensitive');
   assert.equal(Number(rows[0].price), 4.56);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Password recovery on the legacy server.
+//
+// These routes have existed all along and have never worked: `password_resets` was created by no
+// migration and by neither dialect of `db.js`, so every request raised into its own catch. The table
+// arrives with migration 0014, which this suite applies, so this is the first time the flow runs.
+//
+// MAIL_TRANSPORT=console is set for the spawned server, so a send is a log line rather than a throw.
+// The token is read from the database, not from a response or a log -- which is the point: the response
+// does not carry it, and the console transport deliberately withholds the body.
+// ---------------------------------------------------------------------------------------------
+
+/** The plaintext token for a pending reset cannot be recovered, so mint the hash the same way. */
+function hashResetToken(token) {
+  return require('node:crypto').createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
+test('requesting a reset stores a hashed, player-keyed token', { skip }, async () => {
+  const p = await newPlayer('o');
+  const res = await p.client('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { usernameOrEmail: p.username },
+  });
+  assert.equal(res.status, 200, `forgot-password returned ${res.status}: ${JSON.stringify(res.body)}`);
+
+  const { rows } = await appClient.query(
+    'SELECT player_id, token_hash, consumed_at, expires_at FROM password_resets WHERE player_id = $1',
+    [p.id],
+  );
+  assert.equal(rows.length, 1, 'exactly one pending reset');
+  // Keyed on the immutable id. The legacy row stored the username, which this app lets people change.
+  assert.equal(rows[0].player_id, p.id);
+  // Stored as a hash. The legacy row held the token as issued, so reading the table was enough to take
+  // over any account with a reset pending.
+  assert.match(rows[0].token_hash, /^[0-9a-f]{64}$/);
+  assert.equal(rows[0].consumed_at, null);
+  assert.ok(rows[0].expires_at > new Date(), 'not already expired');
+
+  // And the response carries nothing redeemable. Legacy attached the whole link whenever NODE_ENV was
+  // not exactly "production", which this server is not.
+  assert.doesNotMatch(JSON.stringify(res.body), /token=/);
+  assert.equal(res.body.devResetLink, undefined);
+});
+
+test('the reset response is identical for an account that does not exist', { skip }, async () => {
+  const p = await newPlayer('p');
+  const known = await p.client('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { usernameOrEmail: p.username },
+  });
+  const unknown = await p.client('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { usernameOrEmail: 'definitely_no_such_account' },
+  });
+  assert.equal(unknown.status, known.status);
+  assert.deepEqual(unknown.body, known.body);
+});
+
+test('redeeming a reset sets the password and consumes the token', { skip }, async () => {
+  const p = await newPlayer('q');
+  await p.client('/api/auth/forgot-password', { method: 'POST', body: { usernameOrEmail: p.username } });
+
+  // The plaintext never leaves the mail, so mint a token and install its hash directly. This is testing
+  // redemption, not delivery.
+  const token = require('node:crypto').randomBytes(32).toString('base64url');
+  await appClient.query('UPDATE password_resets SET token_hash = $1 WHERE player_id = $2', [
+    hashResetToken(token),
+    p.id,
+  ]);
+
+  const newPassword = 'quiet-library-morning-88';
+  const res = await p.client('/api/auth/reset-password', {
+    method: 'POST',
+    body: { token, newPassword },
+  });
+  assert.equal(res.status, 200, `reset returned ${res.status}: ${JSON.stringify(res.body)}`);
+
+  const { rows } = await appClient.query('SELECT consumed_at FROM password_resets WHERE player_id = $1', [p.id]);
+  assert.ok(rows[0].consumed_at, 'the token must be marked consumed, not deleted');
+
+  // The new password works and the old one does not.
+  const fresh = makeClient();
+  const good = await fresh('/api/auth/login', {
+    method: 'POST',
+    body: { username: p.username, password: newPassword },
+  });
+  assert.equal(good.status, 200, `login with the new password: ${JSON.stringify(good.body)}`);
+  const old = await makeClient()('/api/auth/login', {
+    method: 'POST',
+    body: { username: p.username, password: 'Sufficiently-Long-Pass-9' },
+  });
+  assert.notEqual(old.status, 200, 'the old password must stop working');
+
+  // A second use is refused.
+  const again = await p.client('/api/auth/reset-password', {
+    method: 'POST',
+    body: { token, newPassword: 'another-good-passphrase-1' },
+  });
+  assert.equal(again.status, 400, 'a consumed token must not be redeemable');
+});
+
+test('a reset survives a username change between issue and redemption', { skip }, async () => {
+  // The legacy row keyed on username and redeemed with `WHERE lower(username) = lower(?)`, so a rename
+  // in between matched nobody -- or, if someone took the freed username, a different account entirely.
+  const p = await newPlayer('r');
+  await p.client('/api/auth/forgot-password', { method: 'POST', body: { usernameOrEmail: p.username } });
+  const token = require('node:crypto').randomBytes(32).toString('base64url');
+  await appClient.query('UPDATE password_resets SET token_hash = $1 WHERE player_id = $2', [
+    hashResetToken(token),
+    p.id,
+  ]);
+
+  const renamed = `${p.username}x`.slice(0, 20);
+  await appClient.query('UPDATE players SET username = $1 WHERE id = $2', [renamed, p.id]);
+
+  const newPassword = 'quiet-library-evening-91';
+  const res = await p.client('/api/auth/reset-password', { method: 'POST', body: { token, newPassword } });
+  assert.equal(res.status, 200, `reset after rename: ${JSON.stringify(res.body)}`);
+  const login = await makeClient()('/api/auth/login', {
+    method: 'POST',
+    body: { username: renamed, password: newPassword },
+  });
+  assert.equal(login.status, 200, 'the renamed account must be able to sign in');
+});
+
+test('the password policy is enforced on register and on reset', { skip }, async () => {
+  // Legacy's policy was `length >= 8` and nothing else.
+  const client = makeClient();
+  const weak = await client('/api/auth/register', {
+    method: 'POST',
+    body: {
+      username: `pol_${Math.random().toString(36).slice(2, 8)}`,
+      password: 'password',
+      storeNickname: 'Policy',
+      email: `pol_${Math.random().toString(36).slice(2, 8)}@example.test`,
+    },
+  });
+  assert.equal(weak.status, 400, 'a blocklisted password must be refused on register');
+  assert.match(weak.body.error, /commonly used/i);
+
+  const sequential = await makeClient()('/api/auth/register', {
+    method: 'POST',
+    body: {
+      username: `pol2_${Math.random().toString(36).slice(2, 8)}`,
+      password: '12345678',
+      storeNickname: 'Policy',
+      email: `pol2_${Math.random().toString(36).slice(2, 8)}@example.test`,
+    },
+  });
+  assert.equal(sequential.status, 400, '12345678 cleared the old length-only policy');
+});
+
+test('logging in issues a new session id', { skip }, async () => {
+  // Legacy wrote the identity onto whatever session the client arrived with, which is session fixation:
+  // an attacker who can plant a session cookie holds an authenticated session once the victim logs in.
+  const p = await newPlayer('s');
+  const before = p.sessionId();
+  assert.ok(before, 'a session cookie should exist after logging in');
+
+  const again = await p.client('/api/auth/login', {
+    method: 'POST',
+    body: { username: p.username, password: 'Sufficiently-Long-Pass-9' },
+  });
+  assert.equal(again.status, 200);
+  assert.notEqual(p.sessionId(), before, 'the session id must change when an identity is established');
 });

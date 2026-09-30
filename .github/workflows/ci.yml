@@ -62,4 +62,9 @@ jobs:
       - run: pnpm -r --filter './packages/*' run build
       - run: pnpm -r --filter './packages/*' --filter './apps/*' run typecheck
       - run: pnpm -r --filter './packages/*' --filter './apps/*' run test
+      # The legacy job runs this too, but skips it: the parity check needs packages/shared built, which
+      # only this job does. It is the guard that the duplicated CommonJS copies of the token discipline
+      # and the password policy have not drifted from the TypeScript originals, so it must actually run
+      # somewhere.
+      - run: node --test test/account-tokens-parity.test.js
       - run: pnpm --filter @grimore/web build

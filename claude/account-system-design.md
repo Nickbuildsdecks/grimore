@@ -193,3 +193,69 @@ production until `SMTP_URL` is set, which is the honest behaviour rather than a 
 **Deliberately not in this pass:** TOTP/WebAuthn second factor. It is the right next step once recovery
 is trustworthy, but it is a larger piece with its own enrolment, recovery-code and device-loss flows,
 and bolting it onto a reset flow that does not work yet would be the wrong order.
+
+---
+
+# Status
+
+## Done
+
+| Finding | Where | Proven by |
+| --- | --- | --- |
+| F1 recovery never worked | both apps | 22 apps/api tests, 6 legacy-on-Postgres tests |
+| F2 plaintext tokens | both | asserted the stored value is not the token |
+| F3 tokens in logs | both | console transport withholds the body, asserted |
+| F4 keyed on a mutable username | both | a reset issued before a rename still redeems |
+| F5 `devResetLink` on an unset `NODE_ENV` | both | needs `EXPOSE_DEV_RESET_LINK=1` as well |
+| F6 sessions survived a reset | apps/api enforced, legacy stamped | two sessions, one reset, the other dies |
+| F7 legacy login did not rotate the session id | legacy | the id changes, and the test fails without the fix |
+| F8 no per-account throttling | both | the sixth request is suppressed and indistinguishable |
+| F9 length-only password policy | both | 15 policy tests plus a cross-implementation parity test |
+| F10 email never verified | apps/api | verification flow, including the address-changed case |
+| F11 no audit trail | both | events asserted present, and no secret in the table |
+
+`KNOWN_SQLITE_ONLY` is **0**: `password_resets` was the last of the nine, and closing it closed the
+ratchet.
+
+## The two implementations, and why that is not a mistake
+
+`server.js` is CommonJS in a plain npm install; `@grimore/shared` is ESM in the pnpm workspace and is
+not resolvable from it. So the token discipline and the password policy each exist twice —
+`accountTokens.js` and `passwordPolicy.js` beside `server.js`, and the TypeScript originals in
+`packages/shared`.
+
+Duplicated security logic is how the divergence this whole migration keeps uncovering began, so the
+duplication is held down by `test/account-tokens-parity.test.js`: it runs both implementations over the
+same inputs and fails if they disagree about a hash, a lifetime, a redeemability decision including the
+exact expiry boundary, a rejection message, or any password verdict. Verified to catch drift by
+injecting a changed lifetime and a changed hash algorithm and watching it fail. It runs in the v2 CI
+job, which is the one that builds the TypeScript side; in the legacy job it skips.
+
+## What still needs a decision, and what it blocks
+
+**An SMTP provider and a From address.** Until `SMTP_URL` is set, every send throws. That is
+deliberate — the alternative is telling someone a recovery link is on its way when nothing was sent —
+but it does mean **recovery mail does not deliver in production until a provider is configured**. Set
+`SMTP_URL` and `MAIL_FROM`, and for `apps/api` that is all; `server.js` additionally needs an SMTP
+client installed, and says so in its own error rather than failing quietly.
+
+**`APP_BASE_URL`.** Both apps refuse to build a link without it, rather than trusting the request's
+Host header. Needs to be set to the real origin.
+
+## What is deliberately still not done
+
+**The tables do not exist on production until migration 0014 runs.** This makes the code correct; the
+cutover in `claude/v2-deploy-notes.md` is what makes the feature exist. Legacy's recovery routes will
+keep failing until then — with an honest 500 and a logged reason rather than silently, but failing.
+
+**A second factor (TOTP or WebAuthn).** The right next step now that recovery is trustworthy, and
+deliberately after it: enrolment, recovery codes and device-loss handling are their own piece, and
+bolting them onto a reset flow that did not work would have been the wrong order.
+
+**Breached-password checking over the network.** The offline blocklist is the floor and says so. Have I
+Been Pwned's range API is the usual answer and leaks nothing, but it is a network call inside what is
+currently a pure validator, and it needs a decision about what to do when the service is unreachable —
+fail open and accept a known-breached password, or fail closed and refuse to let anyone set one.
+
+**`direct_messages`.** Still defined nowhere. Not part of the account surface, and listed here only so
+it is not mistaken for something this pass covered.

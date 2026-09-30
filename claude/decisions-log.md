@@ -378,3 +378,39 @@ every user and every deck until something overwrote it.
 
 Now `LOWER(card_name) = LOWER(?)`, matching the wishlist fix in the same pass. Same class as the
 `COLLATE NOCASE` removal; this one had the wider blast radius because the row it corrupts is global.
+
+## D20 — The account system, and the decision to duplicate two modules on purpose
+
+**Decided:** bring the account surface to the standard described in
+`claude/account-system-design.md`, in both apps, and accept a duplicated CommonJS copy of the token
+discipline and the password policy to do it.
+
+Eleven findings, all closed in code. The ones worth repeating here because they were exploitable rather
+than merely untidy:
+
+- Reset tokens were stored **as issued**, so any read of that table — a backup, a replica, a dump — was
+  a live credential for every pending reset.
+- Reset rows keyed on **username**, which this app lets people change. A reset issued before a rename
+  and redeemed after matched nobody, or, if someone had taken the freed username, set an
+  attacker-chosen password on a **different person's account**.
+- The whole recovery link was written to **stdout on every request**, so it reached every aggregated log
+  and its entire retention window.
+- `devResetLink` was attached whenever `NODE_ENV !== 'production'`, so one missing environment variable
+  turned forgot-password into an **unauthenticated account-takeover API**.
+- Legacy login wrote the identity onto whatever session the client arrived with — **session fixation**.
+- A password change ended no other session, and `apps/api` carried a comment claiming it did.
+
+**On the duplication.** `server.js` is CommonJS in a plain npm install and cannot resolve the ESM
+workspace packages. The options were a bundler step, a dual build, `require()` of ESM, or two copies.
+Two copies won on the condition that they are held together by a test rather than by care:
+`test/account-tokens-parity.test.js` compares hashes, lifetimes, redeemability at the exact expiry
+boundary, rejection messages and every password verdict, and was verified to fail when a lifetime and
+then a hash algorithm were deliberately changed. Duplicated security logic plus a parity test is a
+known-good arrangement; duplicated logic plus good intentions is what produced the schema divergence
+this migration keeps uncovering.
+
+**The fail-closed mailer is the other decision worth defending.** With no provider configured, every
+send throws. A no-op would have been friendlier and wrong: "we have sent you a recovery link" must not
+be returned when nothing was sent, and that exact false success is how the broken flow stayed unnoticed.
+The cost is that recovery mail does not deliver in production until `SMTP_URL` is set, and that cost is
+visible rather than hidden.

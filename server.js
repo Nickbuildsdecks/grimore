@@ -256,12 +256,10 @@ function isProfane(text) {
 }
 
 // Minimum password policy. Returns an error string if the password is too weak, else null.
-function passwordPolicyError(password) {
-  if (!password || typeof password !== 'string' || password.length < 8) {
-    return "Password must be at least 8 characters long.";
-  }
-  return null;
-}
+// Was `length >= 8` and nothing else, so `password` and `12345678` were both accepted. The real policy
+// carries the blocklist NIST SP 800-63B requires, and deliberately no composition rules, which it
+// discourages. Shared in behaviour with apps/api and held to it by test/account-tokens-parity.test.js.
+const { passwordPolicyError } = require('./passwordPolicy');
 
 // Baseline security headers (defense-in-depth; Caddy also sets these for the domain, but
 // this also covers the direct-IP path). Kept conservative so nothing legitimate breaks.
@@ -480,6 +478,11 @@ app.use(session({
 }));
 
 const scryfallService = require('./scryfallService');
+// Token discipline and mail transport, shared in behaviour with apps/api and held to it by
+// test/account-tokens-parity.test.js. See the header of accountTokens.js for why there are two copies.
+const accountTokens = require('./accountTokens');
+const { createMailer } = require('./mailer');
+const mailer = createMailer();
 
 async function sanitizeDeckCardsScryfallIds() {
   try {
@@ -1551,7 +1554,8 @@ app.post('/api/auth/register', async (req, res) => {
   if (!emailRegex.test(email)) {
     return res.status(400).json({ error: "Invalid email format." });
   }
-  const pwErr = passwordPolicyError(password);
+  // With the username and email, so the policy can also refuse a password that contains either.
+  const pwErr = passwordPolicyError(password, { username, email });
   if (pwErr) {
     return res.status(400).json({ error: pwErr });
   }
@@ -1621,6 +1625,13 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: "Invalid username or password." });
     }
 
+    // Regenerate before writing the identity in. Without this the session keeps whatever id the client
+    // arrived with, so an attacker who can plant a session cookie -- via a subdomain, an XSS, or simply
+    // by handing someone a link carrying one -- holds an authenticated session the moment the victim
+    // logs in. That is session fixation, and apps/api has always done this while legacy never did.
+    await new Promise((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve()))
+    );
     req.session.player = {
       id: player.id,
       username: player.username,
@@ -5212,11 +5223,21 @@ app.post('/api/players/account/update', async (req, res) => {
     // Changing a password requires re-authentication with the current password, and the
     // new password must meet the policy.
     if (newPassword && newPassword.trim()) {
-      const pwErr = passwordPolicyError(newPassword);
+      // The username and email being SET in this same request, falling back to the ones on the session,
+      // so a new password cannot contain either the old identity or the new one.
+      const pwErr = passwordPolicyError(newPassword, {
+        username: newUsername || req.session.player.username,
+        email: newEmail || req.session.player.email,
+      });
       if (pwErr) return res.status(400).json({ error: pwErr });
       const me = await db.get("SELECT password_hash FROM players WHERE id = ?", [playerId]);
       const ok = me && currentPassword && await bcrypt.compare(currentPassword, me.password_hash);
       if (!ok) return res.status(403).json({ error: "Current password is incorrect." });
+      // Ends every other session on the account. apps/api enforces this column on every request; legacy
+      // checks it at login.
+      await db.run("UPDATE players SET sessions_valid_from = CURRENT_TIMESTAMP WHERE id = ?", [playerId])
+        .catch((e) => console.warn('[accounts] could not revoke sessions:', e.message));
+      await recordAccountEvent(req, 'password.changed', { playerId });
     }
 
     if (newUsername && newUsername.trim()) {
@@ -5263,84 +5284,217 @@ app.post('/api/players/account/update', async (req, res) => {
 });
 
 // Forgot Password Recovery Endpoint
+/**
+ * Password recovery.
+ *
+ * What this replaces, and why each piece changed (claude/account-system-design.md, F1-F5):
+ *
+ *  - The table it wrote to is created by neither dialect of `db.js` and by no migration before 0014, so
+ *    every request raised into the catch below and returned 500. Nobody has ever been able to recover an
+ *    account. **It still needs migration 0014 to have run** -- this makes the code correct, the cutover
+ *    is what makes the feature exist.
+ *  - The token was stored as issued, so any read of that table was a live credential for every pending
+ *    reset. Now a SHA-256; the plaintext exists only in the email.
+ *  - The row keyed on `username`, and redemption ran `WHERE lower(username) = lower(?)`. This app lets
+ *    people change their username, so a reset issued before a rename and redeemed after it matched
+ *    either nobody or -- if someone had taken the freed username -- a different person's account. Now
+ *    `player_id`.
+ *  - The whole recovery link went to stdout on every request. Now the mail transport carries it, and the
+ *    console transport deliberately withholds the body.
+ *  - `devResetLink` was attached whenever NODE_ENV was not exactly "production", so a single missing
+ *    variable turned this into an unauthenticated account-takeover API. It now needs a non-production
+ *    environment AND its own explicit flag.
+ */
+/**
+ * A bcrypt hash of a throwaway value, compared against when no account matched.
+ *
+ * The unknown-account path has to cost what the known one costs. Returning immediately is a timing
+ * oracle: "instant" means no such account, and a few tens of milliseconds means there is one.
+ */
+const RECOVERY_DUMMY_HASH = bcrypt.hashSync('grimore-recovery-dummy', 10);
+
+/**
+ * Writes an account audit row. Never throws, and never carries a secret.
+ *
+ * Awaited by its callers here rather than fired and forgotten, because legacy has no structured logger
+ * to catch a rejection into -- but the catch is inside, so a failed audit write cannot turn a login into
+ * a 500, and cannot turn a FAILED login into one either. The second matters more: it would tell an
+ * attacker their guess was wrong in a distinguishable way.
+ *
+ * `identifier` is the username or email as supplied. Never a password, never a token, never a token
+ * hash -- a hash here would make the audit table a source of redeemable credentials.
+ */
+async function recordAccountEvent(req, event, details = {}) {
+  try {
+    await db.run(
+      "INSERT INTO account_events (event, player_id, identifier, ip, user_agent) VALUES (?, ?, ?, ?, ?)",
+      [
+        event,
+        details.playerId || null,
+        details.identifier ? String(details.identifier).slice(0, 254) : null,
+        (req.ip || '').slice(0, 64) || null,
+        (req.get('user-agent') || '').slice(0, 400) || null,
+      ]
+    );
+  } catch (e) {
+    // account_events arrives with migration 0014, so this is expected to fail until the cutover.
+    console.warn('[audit] could not record %s: %s', event, e.message);
+  }
+}
+
+const FORGOT_PASSWORD_MESSAGE =
+  "If an account matches that, we have sent a recovery link. Check your email, including spam.";
+const RESET_REQUESTS_PER_ACCOUNT = 5;
+const RESET_WINDOW_MS = 60 * 60 * 1000;
+
+/** Outside production, and only when explicitly asked for. Two conditions, not one. */
+function devResetLink(link) {
+  if (process.env.NODE_ENV === 'production') return undefined;
+  if (process.env.EXPOSE_DEV_RESET_LINK !== '1') return undefined;
+  return link;
+}
+
+/**
+ * The origin recovery links are built against.
+ *
+ * From configuration, never from `req.get('host')`. The Host header is supplied by whoever makes the
+ * request, so building the link from it lets an attacker turn a recovery mail into a link that delivers
+ * the token to them -- and the victim's own click is what hands it over.
+ */
+function recoveryBaseUrl() {
+  const configured = process.env.APP_BASE_URL;
+  if (!configured) return null;
+  return configured.replace(/\/+$/, '');
+}
+
 app.post('/api/auth/forgot-password', async (req, res) => {
   const { usernameOrEmail } = req.body;
-  if (!usernameOrEmail || !usernameOrEmail.trim()) {
+  if (!usernameOrEmail || !String(usernameOrEmail).trim()) {
     return res.status(400).json({ error: "Username or email is required." });
   }
+  const identifier = String(usernameOrEmail).trim();
 
   try {
+    const base = recoveryBaseUrl();
+    if (!base) {
+      console.error('[recovery] APP_BASE_URL is not set; refusing to build a link from the request Host.');
+      return res.status(503).json({ error: "Password recovery is not configured on this server." });
+    }
+
+    // Counted on the identifier as supplied, before resolving it, so the throttle cannot itself
+    // distinguish an account that exists from one that does not.
+    // The cutoff is computed here rather than in SQL: db.js rewrites `?` to `$n` positionally, so a
+    // literal `$2` in the text would collide with its numbering. Passing a timestamp also keeps the
+    // statement identical on both dialects.
+    const throttleSince = new Date(Date.now() - RESET_WINDOW_MS).toISOString();
+    const throttle = await db.get(
+      `SELECT count(*) AS n FROM account_events
+        WHERE event = 'password.reset.requested' AND LOWER(identifier) = LOWER(?) AND created_at > ?`,
+      [identifier, throttleSince]
+    ).catch(() => null);
+    const recent = throttle ? Number(throttle.n) : 0;
+
     const player = await db.get(
-      "SELECT username, email FROM players WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
-      [usernameOrEmail.trim(), usernameOrEmail.trim()]
+      "SELECT id, username, email FROM players WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
+      [identifier, identifier]
     );
 
-    if (!player) {
-      return res.json({ success: true, message: "If this account exists, a recovery link has been generated." });
+    await recordAccountEvent(req, 'password.reset.requested', { playerId: player ? player.id : null, identifier });
+
+    // Everything below returns the same body. An account that does not exist, one with no address, and a
+    // throttled one are indistinguishable from a successful send.
+    if (!player || !player.email || recent >= RESET_REQUESTS_PER_ACCOUNT) {
+      if (player && recent >= RESET_REQUESTS_PER_ACCOUNT) {
+        await recordAccountEvent(req, 'password.reset.rejected', { playerId: player.id, identifier });
+      }
+      // Match the work the real path does, so the response time carries no signal.
+      await bcrypt.compare('grimore-recovery-dummy', RECOVERY_DUMMY_HASH);
+      return res.json({ success: true, message: FORGOT_PASSWORD_MESSAGE });
     }
 
-    // Cryptographically-strong, unguessable token (was Math.random()).
-    const token = 'tok_' + require('crypto').randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 3600000).toISOString();
+    const issued = accountTokens.issueToken('passwordReset');
+    await db.run(
+      "INSERT INTO password_resets (player_id, token_hash, requested_ip, expires_at) VALUES (?, ?, ?, ?)",
+      [player.id, issued.tokenHash, req.ip || null, issued.expiresAt.toISOString()]
+    );
 
-    await db.run("INSERT OR REPLACE INTO password_resets (username, token, expires_at) VALUES (?, ?, ?)", [player.username, token, expiresAt]);
+    const link = `${base}/reset-password?token=${encodeURIComponent(issued.token)}`;
+    // Awaited and not caught: if the mail cannot go, the caller must be told the request failed rather
+    // than be left waiting for a link that is not coming.
+    await mailer.send({
+      to: player.email,
+      subject: 'Reset your Grimore password',
+      text:
+        `Someone asked to reset the password for your Grimore account (${player.username}).\n\n` +
+        `Open this link within 30 minutes to choose a new one:\n\n${link}\n\n` +
+        `If that was not you, you can ignore this email - nothing has changed, and the link expires on ` +
+        `its own.\n`
+    });
 
-    const forwardedProto = req.get('x-forwarded-proto');
-    const protocol = forwardedProto ? forwardedProto.split(',')[0].trim() : req.protocol;
-    const resetLink = `${protocol}://${req.get('host')}/?resetToken=${encodeURIComponent(token)}`;
-    console.log("\n=======================================================");
-    console.log(`[SMTP SIMULATOR] Password recovery email dispatched to player: ${player.username}`);
-    console.log(`[SMTP SIMULATOR] Recovery Link: ${resetLink}`);
-    console.log("=======================================================\n");
-
-    // SECURITY: never return the reset token/link in the HTTP response in
-    // production — the token must only reach the user via the email channel.
-    // The dev link is exposed solely outside production to ease local testing.
-    const response = {
-      success: true,
-      message: "If this account exists, a recovery link has been generated."
-    };
-    if (process.env.NODE_ENV !== 'production') {
-      response.devResetLink = resetLink;
-    }
+    const response = { success: true, message: FORGOT_PASSWORD_MESSAGE };
+    const dev = devResetLink(link);
+    if (dev) response.devResetLink = dev;
     res.json(response);
   } catch (e) {
-    console.error(e); res.status(500).json({ error: "Internal server error." });
+    console.error('[recovery] forgot-password failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
   }
 });
 
 // Reset Password Endpoint
 app.post('/api/auth/reset-password', async (req, res) => {
   const { token, newPassword } = req.body;
-  if (!token) return res.status(400).json({ error: "Reset token is missing or invalid." });
-  if (!newPassword || !newPassword.trim()) {
-    return res.status(400).json({ error: "Password cannot be empty." });
-  }
+  if (!token) return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
   const resetPwErr = passwordPolicyError(newPassword);
   if (resetPwErr) return res.status(400).json({ error: resetPwErr });
 
   try {
-    const record = await db.get("SELECT * FROM password_resets WHERE token = ?", [token]);
-    if (!record) {
-      return res.status(400).json({ error: "Invalid or expired recovery link." });
+    const tokenHash = accountTokens.hashToken(String(token));
+    const record = await db.get(
+      `SELECT pr.id, pr.player_id, pr.expires_at, pr.consumed_at, p.username, p.email
+         FROM password_resets pr JOIN players p ON p.id = pr.player_id
+        WHERE pr.token_hash = ?`,
+      [tokenHash]
+    );
+
+    const rejection = accountTokens.checkToken(
+      record ? { expiresAt: record.expires_at, consumedAt: record.consumed_at } : null
+    );
+    if (rejection) {
+      await recordAccountEvent(req, 'password.reset.rejected');
+      // One message for unknown, expired and already-used alike: distinguishing them tells a holder
+      // whether a candidate was ever real, and whether the account still exists.
+      return res.status(400).json({ error: accountTokens.TOKEN_REJECTION_MESSAGE });
     }
 
-    if (new Date(record.expires_at) < new Date()) {
-      await db.run("DELETE FROM password_resets WHERE token = ?", [token]);
-      return res.status(400).json({ error: "Recovery link has expired. Please request a new one." });
-    }
+    // The identity-aware half of the policy, now that the account is known. It cannot run earlier:
+    // resolving an account from a token before the token is verified would be the oracle this avoids.
+    const identityErr = passwordPolicyError(newPassword, { username: record.username, email: record.email });
+    if (identityErr) return res.status(400).json({ error: identityErr });
 
-    const salt = await bcrypt.genSalt(10);
-    const hash = await bcrypt.hash(newPassword, salt);
-    await db.run("UPDATE players SET password_hash = ? WHERE LOWER(username) = LOWER(?)", [hash, record.username]);
-    await db.run("DELETE FROM password_resets WHERE token = ?", [token]);
+    const hash = await bcrypt.hash(newPassword, 10);
+    await db.run("UPDATE players SET password_hash = ? WHERE id = ?", [hash, record.player_id]);
+    await db.run("UPDATE password_resets SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?", [record.id]);
+    // Every other outstanding token for this account dies too, so an older recovery mail still sitting
+    // in an inbox is worthless.
+    await db.run(
+      "UPDATE password_resets SET consumed_at = CURRENT_TIMESTAMP WHERE player_id = ? AND consumed_at IS NULL AND id != ?",
+      [record.player_id, record.id]
+    );
+    // Ends every session on the account. The reason someone resets a password is that another person is
+    // in their account; leaving those sessions alive defeats the entire exercise. apps/api enforces this
+    // column on every request; legacy reads it at login (below).
+    await db.run("UPDATE players SET sessions_valid_from = CURRENT_TIMESTAMP WHERE id = ?", [record.player_id]);
+    await recordAccountEvent(req, 'password.reset.redeemed', { playerId: record.player_id });
 
+    // Deliberately not signed in. Holding the link proves control of the inbox, which is enough to set a
+    // password and then be asked for it.
     res.json({ success: true });
   } catch (e) {
-    console.error(e); res.status(500).json({ error: "Internal server error." });
+    console.error('[recovery] reset-password failed:', e.message);
+    res.status(500).json({ error: "Internal server error." });
   }
 });
-
 
 app.get('/api/notifications', async (req, res) => {
   if (!req.session.player) return res.status(401).json({ error: "Not logged in." });

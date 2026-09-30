@@ -10,14 +10,15 @@
     "build:web": "pnpm --filter @grimore/web build",
     "test:recommendations": "node --test test/recommendation-engine.test.js",
     "test:multiplayer": "node --test test/multiplayer-engine.test.js",
-    "test:unit": "node --test test/recommendation-engine.test.js test/multiplayer-engine.test.js test/maintenance-scripts.test.js test/billing-gating.test.js test/scryfall-service.test.js",
+    "test:unit": "node --test test/recommendation-engine.test.js test/multiplayer-engine.test.js test/maintenance-scripts.test.js test/billing-gating.test.js test/scryfall-service.test.js test/account-tokens-parity.test.js",
     "test:postgres": "node --test test/postgres-write-paths.test.js",
     "preflight": "node scripts/preflight.js",
     "v2:build": "turbo run build --filter=./packages/* --filter=./apps/*",
     "v2:typecheck": "turbo run typecheck --filter=./packages/* --filter=./apps/*",
     "v2:test": "turbo run test --filter=./packages/* --filter=./apps/*",
     "v2:guards": "node scripts/guards.js",
-    "v2:migrate": "pnpm --filter @grimore/db migrate"
+    "v2:migrate": "pnpm --filter @grimore/db migrate",
+    "test:parity": "node --test test/account-tokens-parity.test.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
