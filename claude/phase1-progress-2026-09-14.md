@@ -1435,7 +1435,7 @@ login gate so a friend needs no account and the only dependency is Redis.
   winner and a Commander game ending on 21 commander damage with the loser still on 40 life.
 - `apps/realtime` 20 tests, including two socket clients playing a full game against live Redis,
   with redaction checked against **every** payload either client received, not one convenient moment.
-- `scripts/e2e-table.mjs`: two real Chromium contexts, a whole game through the actual UI, 42/42 —
+- `scripts/e2e-table.mjs`: two real Chromium contexts, a whole game through the actual UI, 46/46 —
   and run against the stack started the way the documentation tells Nick to start it, not a
   hand-assembled one. Includes reloading one player mid-game, because "your phone locked and you
   lost the game" is the failure that would matter most on the night.

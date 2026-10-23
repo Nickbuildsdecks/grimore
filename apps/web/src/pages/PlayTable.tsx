@@ -15,8 +15,8 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  ArrowDownToLine, ArrowUpToLine, Dices, Hand, Layers, Link2, LogOut, Minus, Plus,
-  RotateCcw, Search, Shuffle, Skull, Sparkles, SquareStack, Swords, Undo2,
+  ArrowDownToLine, ArrowUpToLine, Dices, Hand, Layers, Link2, LogOut, MessageSquare, Minus, Plus,
+  RotateCcw, Search, Send, Shuffle, Skull, Sparkles, SquareStack, Swords, Undo2,
 } from "lucide-react"
 import { COMMON_TOKENS, STARTER_DECKS, type GameView, type SeatView, type VisibleCard, type ZoneId } from "@grimore/rules-engine"
 import { CardFace } from "@/components/table/CardFace"
@@ -454,6 +454,14 @@ function Board({ table }: { table: UseTable }) {
   const [attachFrom, setAttachFrom] = useState<VisibleCard | null>(null)
   const [showLog, setShowLog] = useState(false)
   const [showTokens, setShowTokens] = useState(false)
+  const [showChat, setShowChat] = useState(false)
+  const [draft, setDraft] = useState("")
+  // Unread count, so a message that arrives while the panel is closed is not missed.
+  const [seenChat, setSeenChat] = useState(0)
+  useEffect(() => {
+    if (showChat) setSeenChat(table.chat.length)
+  }, [showChat, table.chat.length])
+  const unread = table.chat.length - seenChat
 
   const act = useCallback((action: TableAction) => void table.send(action), [table])
 
@@ -499,7 +507,21 @@ function Board({ table }: { table: UseTable }) {
             {table.connection}
           </span>
         ) : null}
-        <Button size="sm" variant="ghost" className="ml-auto h-7" data-testid="toggle-log" onClick={() => setShowLog((v) => !v)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto h-7"
+          data-testid="toggle-chat"
+          onClick={() => setShowChat((v) => !v)}
+        >
+          <MessageSquare className="size-3.5" /> Chat
+          {unread > 0 ? (
+            <span data-testid="chat-unread" className="ml-1 rounded-full bg-[var(--g-gold-400)] px-1.5 text-[10px] font-bold text-black">
+              {unread}
+            </span>
+          ) : null}
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7" data-testid="toggle-log" onClick={() => setShowLog((v) => !v)}>
           <Layers className="size-3.5" /> Log
         </Button>
       </div>
@@ -675,6 +697,50 @@ function Board({ table }: { table: UseTable }) {
               ))}
               <Button variant="ghost" onClick={() => setShowTokens(false)}>Cancel</Button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showChat ? (
+        <div data-testid="chat-panel" className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setShowChat(false)}>
+          <div className="flex w-full max-w-sm flex-col border-l border-white/15 bg-[var(--g-surface-2)]" onClick={(e) => e.stopPropagation()}>
+            <h2 className="border-b border-white/10 p-4 text-sm font-semibold text-[var(--g-text-high)]">
+              Table talk
+            </h2>
+            <div data-testid="chat-messages" className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
+              {table.chat.length === 0 ? (
+                <p className="text-xs text-[var(--g-text-muted)]">
+                  Nothing said yet. This is for the things the table cannot decide for you — whether
+                  you are responding, what a trigger did, taking something back.
+                </p>
+              ) : (
+                table.chat.map((line) => (
+                  <p key={line.id} className="text-xs text-[var(--g-text-high)]">
+                    <span className="font-semibold text-[var(--g-gold-400)]">{line.name}</span>{" "}
+                    {line.text}
+                  </p>
+                ))
+              )}
+            </div>
+            <form
+              className="flex gap-1.5 border-t border-white/10 p-3"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void table.say(draft)
+                setDraft("")
+              }}
+            >
+              <Input
+                data-testid="chat-input"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Say something"
+                maxLength={400}
+              />
+              <Button type="submit" size="icon" data-testid="chat-send" aria-label="Send">
+                <Send className="size-4" />
+              </Button>
+            </form>
           </div>
         </div>
       ) : null}

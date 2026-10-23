@@ -314,6 +314,32 @@ async function main() {
     await tid(friend, 'life-up-1').click();
     await shot(friend, 'after-reload');
 
+    // ── Table talk ──────────────────────────────────────────────────────────────────────────────
+    // A tabletop cannot decide "do you respond?" for you, so the two players have to be able to say
+    // things to each other. Checked across the two browsers, including the unread badge for a
+    // message that lands while the panel is shut.
+    await tid(nick, 'toggle-chat').click();
+    await waitFor(nick, 'chat-panel');
+    await tid(nick, 'chat-input').fill('holding priority, do you respond?');
+    await tid(nick, 'chat-send').click();
+    await expectEventually(nick, 'a message you send appears in your own chat', async () =>
+      (await tid(nick, 'chat-messages').textContent())?.includes('do you respond'));
+    await expectEventually(friend, 'the other player is told a message arrived', async () =>
+      (await friend.locator('[data-testid="chat-unread"]').count()) === 1);
+    await tid(friend, 'toggle-chat').click();
+    await waitFor(friend, 'chat-panel');
+    await expectEventually(friend, 'and reads it, attributed to who said it', async () => {
+      const text = (await tid(friend, 'chat-messages').textContent()) ?? '';
+      return text.includes('do you respond') && text.includes('Nick');
+    });
+    await expectEventually(friend, 'the unread badge clears once it is read', async () =>
+      (await friend.locator('[data-testid="chat-unread"]').count()) === 0);
+    await shot(friend, 'chat');
+    await tid(friend, 'chat-panel').click({ position: { x: 5, y: 5 } });
+    await friend.waitForSelector('[data-testid="chat-panel"]', { state: 'detached', timeout: 5000 });
+    await tid(nick, 'chat-panel').click({ position: { x: 5, y: 5 } });
+    await nick.waitForSelector('[data-testid="chat-panel"]', { state: 'detached', timeout: 5000 });
+
     // Search the deck, which is the only time a player may look at their own library.
     await tid(friend, 'search').click();
     await expectEventually(friend, 'searching opens your own library to you', async () =>

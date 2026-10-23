@@ -18,7 +18,9 @@ per-card automation can be layered on later without redoing any of this.
 
 What it *does* do is the bookkeeping that is tedious and easy to get wrong: shuffling, drawing,
 untapping, counters, tokens, commander damage, the turn counter, and a complete log you can scroll
-back through when you disagree about what happened.
+back through when you disagree about what happened. There is a chat panel too, for the things a
+tabletop cannot decide for you — whether you are responding, what a trigger did, taking something
+back.
 
 **Nobody can see your hand.** That is enforced on the server, not in the browser — the identity of a
 card in your opponent's hand is never sent to your machine at all. Same for both libraries,
@@ -119,9 +121,9 @@ node scripts/e2e-table.mjs      # two real browsers play a whole game; screensho
 
 Needs the stack running and Playwright available (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`).
 It plays a complete game through the real UI — lobby, decks, opening hands, card movement across
-every zone, tokens, auras, searching, turns, a winner — and checks that neither browser ever
+every zone, tokens, auras, searching, turns, chat, a winner — and checks that neither browser ever
 receives the other's hand. It also reloads one player mid-game to prove a refresh rejoins the same
-seat rather than losing the game. 42 checks.
+seat rather than losing the game. 46 checks.
 
 The layers under it have their own suites: `packages/rules-engine` (78 tests, including a full game
 and a Commander game ending on 21 commander damage) and `apps/realtime` (20 tests, including two
