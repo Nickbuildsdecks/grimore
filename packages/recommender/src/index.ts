@@ -54,6 +54,7 @@ export {
   parseRecommendationCursor,
   scoreRecommendations,
   stableNoise,
+  type DeckLegalityScope,
   type RecommendationCursor,
   type RecommendedCard,
   type ScoreInput,

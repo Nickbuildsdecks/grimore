@@ -7,6 +7,7 @@ export * from "./contracts/auth.js";
 export * from "./contracts/cards.js";
 export * from "./contracts/recommendations.js";
 export * from "./contracts/decks.js";
+export * from "./contracts/deckSuggestions.js";
 export * from "./contracts/collections.js";
 export * from "./contracts/players.js";
 export * from "./contracts/social.js";

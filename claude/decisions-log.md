@@ -543,3 +543,49 @@ pool this falls back from does server-side — one more reason to close `TODO(sc
 **Not decided here:** whether the feed should be personalised for anonymous callers at all. It stays
 public, as legacy had it, because the discovery feed is the product's front door and a 401 there is a
 worse answer than a popularity-led page. An anonymous caller runs no signal queries.
+
+## D24 — `suggestions` is portable after all, and it gets one classifier rather than a second copy
+
+**Supersedes a claim of mine.** The "`suggestions` is not portable" note in
+`claude/phase1-progress-2026-09-14.md` was wrong on its central point. It reasoned that because
+`GET /api/decks/:deckId/suggestions` reads `json.edhrec.com`, and that host is denied by the egress
+proxy, the route could not be ported. But that is the same situation `cards.ts` is in with
+api.scryfall.com, and the same answer applies: build the local-first path, mark the remote fetch
+`TODO(edhrec)`, and report which pool answered in the response. The route is ported.
+
+What the earlier note missed is worse than what it got wrong. **The route could not execute at all
+on Postgres** — its first query reads `scryfall_cards.scryfall_id`, a column that table has never
+had — so the question was never "can EDHREC be reached", it was "has this page ever worked here". It
+has not. Proven by running the legacy SQL verbatim against a migrated database. The latent
+`playerId` temporal-dead-zone bug that note did name has since been fixed in `server.js`, and its own
+comment there records it; it is not a live defect any more.
+
+**Decided: the local pool is the commander's colour identity, format-legal, popularity-ordered, and
+excludes the deck's own cards.** Legacy's local fallback was `SELECT card_name FROM scryfall_cards
+LIMIT 60` — sixty arbitrary rows, unrelated to the commander, the colours or the format. Keeping
+that shape would be porting a placeholder. The pool filters on colour identity and the format's ban
+list in SQL (so the row limit applies to cards that qualify) and again through
+`candidateFitsDeck`, the predicate the recommender slice already pins with tests. `candidateFitsDeck`
+took a whole `DeckFingerprint`; it reads only `format` and `colors`, so its parameter is now that
+structural subset (`DeckLegalityScope`) and a route with no profile to fingerprint can call it.
+
+**Decided: no in-process cache.** Legacy memoised per commander slug for six hours in a module-level
+`Map`. Two API instances hold different maps, so the same deck gets different suggestions depending
+on which answers — the objection D23 raised against the recommendation pool's cache, and it applies
+here unchanged. The pool query is bounded and index-ordered.
+
+**Decided: the functional buckets come from `@grimore/auto-tagger`.** Legacy ran a second
+classifier, `categorizeCardByTags`, 166 lines of rules that overlap the ported engine's almost
+entirely. Carrying it across would put two implementations of `directives/auto_tagging_engine.md` in
+v2 and guarantee they drift. The cost is real and is recorded rather than hidden: the ported engine
+does not implement five of legacy's secondary archetypes — **Tokens & Swarm, Equipment & Auras,
+Enchantments, Spellslinger, Landfall** — so those headers do not appear on the suggestions page.
+Adding them belongs in `@grimore/auto-tagger` with the autotag route's own 26 tests in front of it,
+because `tagDeck` returns *every* matching category and writes the result to `deck_cards.custom_tag`;
+appending categories changes stored tags for already-tagged decks. That is its own change, not a
+rider on a route port.
+
+**Decided: ownership, not just a session.** Legacy required a login and then read whatever `deckId`
+it was given, so any signed-in caller could learn the commander of anyone's private deck. The only
+entry point is `public/app.js` sending the owner to `/suggestions.html?deckId=<their own deck>`, so
+enforcing ownership breaks no caller.

@@ -771,6 +771,11 @@ and number, and a needle list silently misses half the variants.
 
 ## `suggestions` is not portable
 
+> **Superseded — see the deck-suggestions checkpoint at the end of this file and D24.** The
+> conclusion below is wrong: EDHREC being blocked is the same situation `cards.ts` is in with
+> Scryfall, and the answer is a local-first pool plus `TODO(edhrec)`. The route is ported. It also
+> missed the bigger problem — the handler could not execute on Postgres at all.
+
 `GET /api/decks/:deckId/suggestions` reads EDHREC (`json.edhrec.com`), which is blocked here alongside
 Scryfall and Moxfield. It also has a latent bug worth fixing whenever it is ported: **`playerId` is
 never defined in the handler's scope**, so the cache-hit path throws `ReferenceError` — meaning the
@@ -1116,3 +1121,104 @@ reconstructs the Scryfall CDN URL when `scryfall_cards.image_uri` is empty rathe
   have populated that table on Postgres (recorded as a cross-cutting item since 2026-09-14, still open).
   The pool is only as good as that table.
 - Nothing here touches legacy `server.js`. The legacy engine and its tests are unchanged.
+
+## Checkpoint — deck suggestions ported (`GET /api/decks/:deckId/suggestions`)
+
+The commander-led suggestions page. Data layer in `apps/api/src/lib/deckSuggestions.ts`, route in
+`routes/decks.ts`, contracts in `packages/shared/src/contracts/deckSuggestions.ts`, 19 new tests
+against live Postgres. api suite 278 -> 297; workspace 532 -> 551. Port status: **101 of 126 legacy
+routes.** This was the last unported route that runs purely on local data — everything left is
+externally blocked, deliberately out of scope (D11, D13), or the static page handlers.
+
+### It answered 500 to every request, and the page blamed the user
+
+`GET /api/decks/:deckId/suggestions` opens by selecting `sc.scryfall_id` from `scryfall_cards`. That
+table's key is `id`; it has no `scryfall_id` column and never has. Postgres raises
+`column sc.scryfall_id does not exist`, the handler's catch-all turns it into
+`{error:"Internal server error."}`, and `public/suggestions.js` renders `data.error` into a panel
+whose subtitle reads *"Suggestions are based on the commander cards registered inside your deck
+builder. Make sure to tag your commander!"* So every user with a correctly tagged commander was told
+to go and tag their commander, on every deck, every time.
+
+Proven rather than inferred: the five legacy queries were run verbatim against a freshly migrated
+database. Two raise (the commander lookup and the candidate lookup — the same column in both), three
+succeed. With the first one dead, nothing downstream ever ran.
+
+Fourth feature in a row found dead on Postgres for a column-name reason, and the second to be found
+dead *while looking like it worked* — a 500 behind a reassuring message is harder to notice than a
+blank page.
+
+### The local fallback pool was not a suggestion engine
+
+When EDHREC was unreachable, legacy fell back to `SELECT card_name FROM scryfall_cards LIMIT 60`:
+sixty arbitrary rows, unordered, with no relation to the commander, its colour identity, or the
+deck's format. Porting that shape would have been porting a placeholder. The pool here is
+popularity-ordered (`edhrec_rank`), inside the commander's colour identity, legal in the deck's
+format, and deduplicated to one row per card name.
+
+### Three more defects in the same handler
+
+- **Colour identity and the ban list were never checked.** EDHREC's pages are commander-scoped, so
+  while EDHREC answered this did not show. Against any local pool it means a deck can be offered
+  cards it cannot legally run. Both are enforced in SQL *and* through `candidateFitsDeck` — the
+  predicate the recommender slice pins with tests. The ban-list test here is the JSON-**text** case
+  again: `scryfall_cards.legalities` is TEXT, which is exactly what defeated the check in the
+  recommendation engine.
+- **Cards the deck already runs were sent and then thrown away.** `public/suggestions.js` filters
+  them out in `processCards` *and* in the sidebar counts, so every such card the server sent was a
+  wasted slot out of a fixed-size list — a well-built deck could empty whole categories while the
+  server reported them full. (Its `${qtyInTarget} in Deck` badge is dead code for the same reason:
+  the filter above it has already removed every card that would show it.) The exclusion is in the
+  query now, ahead of the limit.
+- **One pool entry per printing.** Joining `scryfall_cards` by name fans out — no unique index, and
+  Cultivate alone has dozens of rows — so a heavily reprinted card could occupy the pool many times
+  over. `DISTINCT ON (LOWER(name))` keeps the cheapest printing, which is also the price the deck
+  builder would pay. A test inserts three printings and asserts one entry at the lowest price.
+
+### Deliberate deviations
+
+Recorded in full as **D24**; in short:
+
+- **No in-process cache.** Legacy memoised per commander slug for six hours in a module-level `Map`.
+  Two API instances hold different maps, so the same deck gets different suggestions depending on
+  which one answers — D23's objection to the recommendation cache, unchanged.
+- **One classifier.** The functional buckets come from `@grimore/auto-tagger`, not from legacy's
+  second 166-line copy of the same rules. `candidateFitsDeck`'s parameter was widened to the
+  structural subset it actually reads (`DeckLegalityScope`) so a route with no profile can use it.
+- **Ownership enforced.** Legacy required a session and then read any `deckId`, leaking the commander
+  of a private deck to any signed-in caller. The page's only entry point is the owner's own builder.
+- **`NO_COMMANDER` is its own error code**, so the client can tell "tag a commander" apart from a
+  genuine failure instead of pattern-matching a message.
+- The category slugs and their display order are legacy's, because `public/suggestions.js` keys its
+  selected-category state on `tag`.
+
+### A gap this creates, stated plainly
+
+The ported auto-tagger does not implement five of legacy's secondary archetypes — **Tokens & Swarm,
+Equipment & Auras, Enchantments, Spellslinger, Landfall** — so those headers no longer appear. 18
+working categories where there were previously 23 broken ones is still a gain, but it is a gap.
+Closing it belongs in `@grimore/auto-tagger` behind the autotag route's own 26 tests, because
+`tagDeck` returns every matching category and writes it to `deck_cards.custom_tag`: appending
+categories changes stored tags on already-tagged decks. See D24.
+
+### Not done here
+
+- `TODO(edhrec)`: the commander's actual EDHREC lists. json.edhrec.com is denied by the egress proxy
+  (verified: `CONNECT tunnel failed, response 403`). `suggestionSource` is in the contract already,
+  so slotting the EDHREC page in ahead of the local pool later changes no client.
+- **The legacy `public/*.js` frontend reads `data.error` as a string** in ~40 places, including this
+  page. Against legacy `server.js` that is correct; the moment `/api` is routed to `apps/api` those
+  render "[object Object]" — the same bug already fixed for `apps/web` in `lib/api.ts`. This is one
+  systemic Wave 7 change across the vanilla client, not something to patch one route at a time.
+- `public/suggestions.js` carries two emoji in UI (`⚠️` in the error panel, `💎 Owned` on the owned
+  badge), against CLAUDE.md's no-emoji rule. Legacy `public/` is untouched by every slice so far and
+  by this one; noted for the Wave 7 cutover, which replaces that page anyway.
+
+### For Nick
+
+- **The suggestions page should work for the first time** once this deploys with `apps/api` serving.
+  Like the discovery feed, how good it is depends entirely on `scryfall_cards` being populated, and
+  the Postgres card sync has still never written a row — the cross-cutting item open since
+  2026-09-14. An empty card table gives an empty suggestions page rather than an error, which is the
+  right failure, but it is still empty.
+- Nothing here touches legacy `server.js` or `public/`. The legacy route and page are unchanged.

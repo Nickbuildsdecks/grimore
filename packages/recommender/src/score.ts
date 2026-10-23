@@ -86,9 +86,19 @@ function legalitiesOf(candidate: CardLike): Record<string, string> {
   return {};
 }
 
+/**
+ * All `candidateFitsDeck` reads of a deck. A `DeckFingerprint` satisfies it structurally, so the
+ * scorer passes one unchanged; a caller that knows only a deck's format and colour identity — the
+ * deck-suggestions route, which has no profile to fingerprint — can pass that much on its own.
+ */
+export interface DeckLegalityScope {
+  format: string;
+  colors: string[];
+}
+
 export function candidateFitsDeck(
   candidate: CardFeatures,
-  deck: DeckFingerprint | null | undefined,
+  deck: DeckLegalityScope | null | undefined,
   rawCandidate: CardLike = {},
 ): boolean {
   if (!deck) return true;
