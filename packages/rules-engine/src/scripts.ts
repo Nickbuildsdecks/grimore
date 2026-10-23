@@ -14,9 +14,9 @@
 import { characteristicsOf, hasSubtype } from './characteristics.js';
 import type { CardDef } from './cards.js';
 import {
-  addCounters, cardTargets, counterSpell, createToken, dealDamage, destroy, discardAtRandom, draw,
-  exileCard, firstCardTarget, firstPlayerTarget, gainControl, gainLife, loseLife, mill, opponentsOf,
-  pump, pumpTeam, tap, type EffectContext,
+  addCounters, bounceToHand, cardTargets, counterSpell, createToken, dealDamage, destroy,
+  discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget, gainControl, gainLife,
+  loseLife, mill, opponentsOf, pump, pumpTeam, tap, type EffectContext,
 } from './effects.js';
 import type { CardScript, TargetSpec } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -148,6 +148,38 @@ const ACT_OF_TREASON: CardScript = {
       }],
     };
   },
+};
+
+const FLAMETONGUE_KAVU: CardScript = {
+  name: 'Flametongue Kavu',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      // There is always a legal target — itself — which is the card's famous drawback rather than
+      // an oversight: played with no other creature out, it kills itself.
+      targets: [TARGET_CREATURE],
+      description: 'deals 4 damage to target creature',
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : dealDamage(c.state, { kind: 'card', id }, 4, { controller: c.controller });
+      },
+    },
+  ],
+};
+
+const MAN_O_WAR: CardScript = {
+  name: "Man-o'-War",
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      targets: [TARGET_CREATURE],
+      description: "return target creature to its owner's hand",
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : bounceToHand(c.state, id);
+      },
+    },
+  ],
 };
 
 const KRENKO: CardScript = {
@@ -361,11 +393,11 @@ const ALL: readonly CardScript[] = [
   basicLand('Island', 'U'),
   basicLand('Swamp', 'B'),
   MONASTERY_SWIFTSPEAR, RAGING_GOBLIN, FIREBRAND_ARCHER, SHIVAN_DRAGON,
-  LIGHTNING_BOLT, SHOCK, LAVA_SPIKE, FLAME_SLASH, ACT_OF_TREASON, KRENKO,
+  LIGHTNING_BOLT, SHOCK, LAVA_SPIKE, FLAME_SLASH, ACT_OF_TREASON, KRENKO, FLAMETONGUE_KAVU,
   LLANOWAR_ELVES, AJANIS_PRIDEMATE, SERRA_ANGEL, GIANT_GROWTH, PACIFISM,
   SWORDS_TO_PLOWSHARES, HARMONIZE, OVERRUN, SIGARDA,
   COUNTERSPELL, NEGATE, DOOM_BLADE, DIVINATION, SIGN_IN_BLOOD, TOME_SCOUR,
-  RAVENOUS_RATS, CHILD_OF_NIGHT, WIND_DRAKE, VAMPIRE_NIGHTHAWK, AIR_ELEMENTAL, TALRAND,
+  RAVENOUS_RATS, CHILD_OF_NIGHT, WIND_DRAKE, VAMPIRE_NIGHTHAWK, AIR_ELEMENTAL, TALRAND, MAN_O_WAR,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

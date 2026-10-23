@@ -148,12 +148,16 @@ export function arena(setup: Setup = {}): GameState {
 /** Passes priority round the table until something happens: the stack resolves or the step ends. */
 export function passBoth(s: GameState): GameState {
   const step = s.step;
-  const depth = s.stackOrder.length;
+  // The *contents*, not the depth: a spell resolving into its own triggered ability leaves the
+  // stack exactly as deep as it was, and a helper that compared depths would keep passing into a
+  // trigger that is waiting to be aimed.
+  const top = s.stackOrder.join(',');
   let next = s;
   for (let i = 0; i < 8; i++) {
     if (next.priority === null) return next;
     next = apply(next, { type: 'auto:pass', by: next.priority });
-    if (next.step !== step || next.stackOrder.length !== depth) return next;
+    if (next.pendingChoice !== null) return next;
+    if (next.step !== step || next.stackOrder.join(',') !== top) return next;
   }
   throw new Error(`passing did not change anything (step ${step})`);
 }

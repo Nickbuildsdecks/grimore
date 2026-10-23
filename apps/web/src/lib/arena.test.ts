@@ -193,6 +193,53 @@ describe("settling an opening hand", () => {
   })
 })
 
+describe("aiming a triggered ability", () => {
+  const specs = [{ kind: "creature" as const, description: "target creature" }]
+  const candidates = [[card("bear"), card("giant")]]
+
+  it("asks before anything else, even without priority", () => {
+    const auto = automation({
+      awaiting: { kind: "choose", seats: [0] },
+      you: {
+        ...automation()!.you!, hasPriority: false, canPass: false,
+        mustChoose: { description: "deals 4 damage to target creature", specs, candidates },
+      },
+    })
+    const move = primaryMove(view({ automation: auto }))
+    expect(move?.label).toBe("Aim deals 4 damage to target creature")
+    expect(move?.event?.kind).toBe("startChoosing")
+  })
+
+  it("sends the ability once its last target is picked", () => {
+    const mode = arenaReducer(IDLE, {
+      kind: "startChoosing", specs, candidates, description: "deals 4 damage to target creature",
+    }).mode
+    expect(mode.kind).toBe("choosing")
+    const result = arenaReducer(mode, { kind: "pickTarget", target: card("bear") })
+    expect(result.action).toEqual({ type: "auto:choose", targets: [card("bear")] })
+  })
+
+  it("un-picks a target chosen twice, like any other targeting", () => {
+    const two = [{ kind: "creature" as const, description: "target creature", count: 2 }]
+    let mode: ArenaMode = arenaReducer(IDLE, {
+      kind: "startChoosing", specs: two, candidates, description: "two targets",
+    }).mode
+    mode = arenaReducer(mode, { kind: "pickTarget", target: card("bear") }).mode
+    const after = arenaReducer(mode, { kind: "pickTarget", target: card("bear") })
+    expect(after.action).toBeNull()
+    expect((after.mode as { chosen: unknown[] }).chosen).toEqual([])
+  })
+
+  it("will not confirm an ability that is still missing a target", () => {
+    // A trigger only went on the stack because legal targets existed, so sending it half-aimed
+    // would be sending something the engine refuses.
+    const mode = arenaReducer(IDLE, {
+      kind: "startChoosing", specs, candidates, description: "deals 4 damage",
+    }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toBeNull()
+  })
+})
+
 describe("declaring attackers", () => {
   it("toggles creatures in and out, then sends them all at one defender", () => {
     let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
@@ -294,7 +341,7 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
     you: {
       seat: 0, step: "precombat-main", hasPriority: true, isActivePlayer: true, canPass: true,
       passLabel: "Pass", plays: [], attackers: [], blockers: [], mustDiscard: 0, mustDeclare: null,
-      mustSettleHand: false, bottomOwed: 0,
+      mustSettleHand: false, bottomOwed: 0, mustChoose: null,
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     },
     ...over,

@@ -100,7 +100,7 @@ export interface AutomationView {
   readonly combat: CombatState;
   /** Who the engine is waiting on, and for what. */
   readonly awaiting: {
-    readonly kind: 'attackers' | 'blockers' | 'discard' | 'mulligan';
+    readonly kind: 'attackers' | 'blockers' | 'discard' | 'mulligan' | 'choose';
     readonly seats: readonly SeatIndex[];
   } | null;
   /** This seat's own legal moves, or null for a spectator. */
@@ -234,6 +234,7 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
   const awaiting: AutomationView['awaiting'] =
     // Opening hands come before anything else, including priority.
     deciding.length > 0 ? { kind: 'mulligan', seats: deciding }
+    : state.pendingChoice !== null ? { kind: 'choose', seats: [state.pendingChoice.seat] }
     : pending !== null ? { kind: 'discard', seats: [pending.seat] }
     : owed !== null ? { kind: owed.kind, seats: owed.seats }
     : null;

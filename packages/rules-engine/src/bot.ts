@@ -170,6 +170,25 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
   }
   const actions: LegalActions = legalActions(state, seat);
 
+  // A trigger waiting for its targets blocks everything else, so it is answered first.
+  const choice = actions.mustChoose;
+  if (choice !== null) {
+    const foes = foesOf(state, seat);
+    const chosen: Target[] = [];
+    const used = new Set<string>();
+    for (let i = 0; i < choice.specs.length; i++) {
+      const want = Math.max(1, choice.specs[i]!.count ?? 1);
+      const ranked = [...(choice.candidates[i] ?? [])]
+        .filter((t) => !used.has(t.kind === 'card' ? `c${t.id}` : `p${t.seat}`))
+        .sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
+      for (const pick of ranked.slice(0, want)) {
+        used.add(pick.kind === 'card' ? `c${pick.id}` : `p${pick.seat}`);
+        chosen.push(pick);
+      }
+    }
+    return { type: 'auto:choose', by: seat, targets: chosen };
+  }
+
   if (actions.mustDiscard > 0) {
     // Pitch the most expensive thing, which is the card least likely to be castable.
     const worst = handByCost(state, seat)[0];
@@ -260,6 +279,8 @@ export function seatsToAct(state: GameState): SeatIndex[] {
   if (!state.automated || state.finished) return [];
   // Opening hands come before anything else, including priority.
   if (state.openingHands) return stillDeciding(state);
+  // So does a trigger waiting for its targets.
+  if (state.pendingChoice !== null) return [state.pendingChoice.seat];
   if (state.pendingDiscard !== null) return [state.pendingDiscard.seat];
   const owed = pendingDeclaration(state);
   if (owed !== null) return [...owed.seats];

@@ -38,7 +38,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  IDLE, arenaReducer, candidatesAt, cardBadges, playsForCard, splitBattlefield,
+  IDLE, arenaReducer, candidatesAt, cardBadges, choiceCandidatesAt, playsForCard, splitBattlefield,
   type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
@@ -740,6 +740,7 @@ function Board({ table }: { table: UseTable }) {
       (mode.kind === "attackers" && awaitingKind !== "attackers") ||
       (mode.kind === "blockers" && awaitingKind !== "blockers") ||
       (mode.kind === "bottoming" && awaitingKind !== "mulligan") ||
+      (mode.kind === "choosing" && awaitingKind !== "choose") ||
       (mode.kind === "targeting" && view !== null && playsForCard(view, mode.play.card).length === 0)
     if (!stale) return
     arenaRef.current = IDLE
@@ -775,23 +776,26 @@ function Board({ table }: { table: UseTable }) {
     ? new Set<string>()
     : (blockableBy.get(holdingBlocker) ?? new Set<string>())
 
-  /** Cards that are a legal choice for the pick the player is on, while targeting. */
-  const targetableCards = new Set<string>(
+  /**
+   * The legal choices for the pick the player is on.
+   *
+   * Aiming a spell and aiming a triggered ability are the same gesture with the same rules, so
+   * they light the board the same way — the only difference is which action gets sent.
+   */
+  const nowChoosing =
     arenaMode.kind === "targeting"
       ? candidatesAt(arenaMode.play, arenaMode.chosen.length, arenaMode.chosen)
-          .filter((t) => t.kind === "card")
-          .map((t) => (t as { id: string }).id)
-      : [],
+      : arenaMode.kind === "choosing"
+        ? choiceCandidatesAt(arenaMode.specs, arenaMode.candidates, arenaMode.chosen)
+        : []
+  const targetableCards = new Set<string>(
+    nowChoosing.filter((t) => t.kind === "card").map((t) => (t as { id: string }).id),
   )
   const targetableSeats = new Set<number>(
-    arenaMode.kind === "targeting"
-      ? candidatesAt(arenaMode.play, arenaMode.chosen.length, arenaMode.chosen)
-          .filter((t) => t.kind === "player")
-          .map((t) => (t as { seat: number }).seat)
-      : [],
+    nowChoosing.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat),
   )
   const chosenIds = new Set<string>(
-    arenaMode.kind === "targeting"
+    arenaMode.kind === "targeting" || arenaMode.kind === "choosing"
       ? arenaMode.chosen.filter((t) => t.kind === "card").map((t) => (t as { id: string }).id)
       : arenaMode.kind === "attackers"
         ? arenaMode.chosen
@@ -819,6 +823,12 @@ function Board({ table }: { table: UseTable }) {
     }
 
     const mode = arenaRef.current
+    if (mode.kind === "choosing") {
+      if (targetableCards.has(card.id) || chosenIds.has(card.id)) {
+        dispatchArena({ kind: "pickTarget", target: { kind: "card", id: card.id } })
+      }
+      return
+    }
     if (mode.kind === "bottoming") {
       // Tapping a card in hand picks it to go back; tapping it again changes your mind.
       if (card.zone === "hand" && card.zoneSeat === seat) dispatchArena({ kind: "toggleBottom", card: card.id })

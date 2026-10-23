@@ -160,6 +160,23 @@ export interface AutomationState {
    * settled. Nobody holds priority and no step has started.
    */
   readonly openingHands: boolean;
+  /**
+   * A triggered ability on the stack that still needs its targets chosen.
+   *
+   * Targets for a trigger are chosen as it is put on the stack (CR 603.3d), by its controller —
+   * which is a decision, and the engine will not make it. Nothing else happens until it is
+   * answered: no priority, no resolution, no step change. The same shape as `pendingDiscard`, for
+   * the same reason.
+   */
+  readonly pendingChoice: {
+    readonly seat: SeatIndex;
+    /** The stack object the targets belong to. */
+    readonly stackId: string;
+    /** What is being asked for, in words. */
+    readonly description: string;
+    /** How many targets are still to choose, in order. */
+    readonly remaining: number;
+  } | null;
 }
 
 // ── Automated actions ────────────────────────────────────────────────────────────────────────────
@@ -189,6 +206,10 @@ export interface AutoBlockAction {
   readonly blocks: readonly { readonly blocker: string; readonly attacker: string }[];
 }
 export interface AutoDiscardAction { readonly type: 'auto:discard'; readonly by: SeatIndex; readonly card: string }
+/** Answers a triggered ability's request for targets. */
+export interface AutoChooseAction {
+  readonly type: 'auto:choose'; readonly by: SeatIndex; readonly targets: readonly Target[];
+}
 /** Settles on an opening hand, putting back one card for each mulligan taken. */
 export interface AutoKeepAction {
   readonly type: 'auto:keep'; readonly by: SeatIndex;
@@ -199,11 +220,11 @@ export interface AutoKeepAction {
 export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoDiscardAction | AutoStopsAction
-  | AutoKeepAction;
+  | AutoKeepAction | AutoChooseAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
-  'auto:block', 'auto:discard', 'auto:stops', 'auto:keep',
+  'auto:block', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

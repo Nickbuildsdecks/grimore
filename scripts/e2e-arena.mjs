@@ -131,6 +131,7 @@ async function expectEventually(page, label, predicate, timeout = 12000) {
 /** Whether this page is the one the engine is waiting on. */
 async function isMyMove(page) {
   if (await has(page, 'mulligan-prompt')) return true;
+  if (await has(page, 'choose-prompt')) return true;
   if (await has(page, 'bottom-prompt')) return true;
   if (await has(page, 'target-prompt')) return true;
   if (await has(page, 'attack-prompt')) return true;
@@ -176,6 +177,22 @@ async function makeMove(page, seat, { aggression = 0.6 } = {}) {
     }
     await tid(page, 'primary-move').click();
     return 'kept the opening hand';
+  }
+
+  // A triggered ability waiting to be aimed blocks everything, so it is answered first. The board
+  // lights its legal targets the same way a spell's does.
+  if (await has(page, 'choose-prompt')) {
+    const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
+    if ((await lit.count()) > 0) {
+      await lit.first().click();
+      return 'aimed a trigger';
+    }
+    const seatButtons = page.locator('[data-testid^="target-seat-"]');
+    if ((await seatButtons.count()) > 0) {
+      await seatButtons.first().click();
+      return 'aimed a trigger at a player';
+    }
+    return null;
   }
 
   // A declaration in progress is finished first — it is blocking everything else.

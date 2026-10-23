@@ -70,6 +70,16 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         </div>
       ) : null}
 
+      {mode.kind === "choosing" ? (
+        <div data-testid="choose-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-[var(--g-text-high)]">{mode.description}</span>
+          <span className="text-[var(--g-text-muted)]">choose a target</span>
+          <span className="ml-auto text-[10px] uppercase tracking-wide text-[var(--g-text-muted)]">
+            the ability is already on the stack
+          </span>
+        </div>
+      ) : null}
+
       {mode.kind === "attackers" ? (
         <div data-testid="attack-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold text-[var(--g-text-high)]">

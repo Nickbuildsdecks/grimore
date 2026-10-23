@@ -68,6 +68,15 @@ export interface LegalActions {
   readonly mustSettleHand: boolean;
   readonly bottomOwed: number;
   /**
+   * A triggered ability of this seat's that is waiting for its targets, with the candidates for
+   * each. Null when there is nothing to choose.
+   */
+  readonly mustChoose: {
+    readonly description: string;
+    readonly specs: readonly TargetSpec[];
+    readonly candidates: readonly (readonly Target[])[];
+  } | null;
+  /**
    * A declaration this seat owes before play continues. Separate from `hasPriority` because
    * declaring attackers or blockers is a turn-based action, so the seat that owes one holds no
    * priority — a UI keyed on priority alone would show the defender nothing to do.
@@ -199,15 +208,34 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   const mustSettleHand = state.automated && state.openingHands && !state.kept.includes(seat)
     && state.seats[seat]?.eliminated === false;
 
+  const choice = state.pendingChoice;
+  let mustChoose: LegalActions['mustChoose'] = null;
+  if (choice !== null && choice.seat === seat) {
+    const object = state.stackObjects[choice.stackId];
+    const script = object === undefined ? undefined : scriptFor(state.cardDefs[object.cardKey]?.name);
+    const specs = (object?.abilityIndex === undefined
+      ? []
+      : object.kind === 'activated'
+        ? script?.abilities?.[object.abilityIndex]?.targets
+        : script?.triggers?.[object.abilityIndex]?.targets) ?? [];
+    mustChoose = {
+      description: choice.description,
+      specs,
+      candidates: specs.map((spec) => legalTargets(state, spec, seat)),
+    };
+  }
+
   const empty: LegalActions = {
     seat, step: state.step, hasPriority, isActivePlayer: state.activeSeat === seat,
     canPass: false, passLabel: '', plays: [], attackers: [], blockers: [],
-    mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat),
+    mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat), mustChoose,
     pool: poolOf(state, seat), potential,
   };
   if (!state.automated || state.finished) return empty;
   // Opening hands come before anything else, including priority.
   if (state.openingHands) return mustSettleHand ? { ...empty, passLabel: 'Keep' } : empty;
+  // So does a trigger waiting for its targets: nothing else can happen until it has them.
+  if (choice !== null) return mustChoose === null ? empty : { ...empty, passLabel: 'Choose a target' };
   if (mustDiscard > 0) return { ...empty, passLabel: `Discard ${mustDiscard}` };
   // A declaration comes before priority, so it is offered to the seat that owes it even though
   // nobody holds priority while it is outstanding.

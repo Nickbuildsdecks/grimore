@@ -41,7 +41,7 @@ import { scriptFor } from './scripts.js';
 import type { AbilityDef, CardScript, TargetSpec, TriggerEvent } from './scriptTypes.js';
 import { checkTargets, hasAnyLegalTargets, legalTargets, stillHasLegalTarget } from './targeting.js';
 import {
-  EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS,
+  EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
   type StackObject, type Step, type Target,
 } from './turnTypes.js';
 
@@ -341,10 +341,54 @@ function raise(
     for (let i = 0; i < script.triggers.length; i++) {
       const trigger = script.triggers[i]!;
       if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor)) continue;
-      next = pushAbility(next, id, inst.zoneSeat, i, [], 'triggered', trigger.description);
+      const specs = trigger.targets ?? [];
+      if (specs.length === 0) {
+        next = pushAbility(next, id, inst.zoneSeat, i, [], 'triggered', trigger.description);
+        continue;
+      }
+      // A trigger that needs targets and has none legal is never put on the stack (CR 603.3c).
+      if (!hasAnyLegalTargets(next, specs, inst.zoneSeat)) continue;
+      const auto = obviousTargets(next, specs, inst.zoneSeat);
+      next = pushAbility(next, id, inst.zoneSeat, i, auto ?? [], 'triggered', trigger.description);
+      if (auto !== null) continue;
+      // Otherwise the controller chooses, and nothing happens until they do.
+      const stackId = next.stackOrder[next.stackOrder.length - 1]!;
+      next = {
+        ...next,
+        pendingChoice: {
+          seat: inst.zoneSeat,
+          stackId,
+          description: trigger.description,
+          remaining: specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0),
+        },
+      };
     }
   }
   return next;
+}
+
+/**
+ * The targets for a trigger when there is nothing to decide, or null when there is.
+ *
+ * A choice between one thing is not a choice: an ability that must target a creature when only one
+ * creature exists has its target fixed by the rules, and stopping to ask would be a prompt with a
+ * single button. Anything else goes to the controller — including "up to one" with a candidate,
+ * because taking it or not is a real decision.
+ */
+function obviousTargets(
+  state: GameState, specs: readonly TargetSpec[], controller: SeatIndex,
+): Target[] | null {
+  const chosen: Target[] = [];
+  for (const spec of specs) {
+    const want = Math.max(1, spec.count ?? 1);
+    if (spec.optional) return null;
+    const available = legalTargets(state, spec, controller).filter(
+      (t) => !chosen.some((c) => targetKey(c) === targetKey(t)),
+    );
+    if (available.length !== want) return null;
+    chosen.push(...available);
+  }
+  return chosen;
 }
 
 function pushAbility(

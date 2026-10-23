@@ -74,7 +74,7 @@ async function readNumber(page, testId) {
 
 /** Whether the table is asking this player for anything. */
 async function myMove(page) {
-  for (const id of ['mulligan-prompt', 'bottom-prompt', 'target-prompt', 'attack-prompt', 'block-prompt', 'discard-prompt', 'primary-move']) {
+  for (const id of ['mulligan-prompt', 'bottom-prompt', 'choose-prompt', 'target-prompt', 'attack-prompt', 'block-prompt', 'discard-prompt', 'primary-move']) {
     if (await has(page, id)) return true;
   }
   return false;
@@ -98,6 +98,20 @@ async function takeTurn(page) {
   if (await has(page, 'mulligan-prompt')) {
     await tid(page, 'primary-move').click();
     return 'kept the opening hand';
+  }
+  if (await has(page, 'choose-prompt')) {
+    // A triggered ability waiting to be aimed. Its legal targets light up like a spell's.
+    const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
+    if ((await lit.count()) > 0) {
+      await lit.first().click();
+      return 'aimed a trigger';
+    }
+    const seatButton = page.locator('[data-testid^="target-seat-"]');
+    if ((await seatButton.count()) > 0) {
+      await seatButton.first().click();
+      return 'aimed a trigger at a player';
+    }
+    return 'nothing to aim at';
   }
   if (await has(page, 'target-prompt')) {
     const onStack = page.locator('[data-testid^="target-stack-"]');

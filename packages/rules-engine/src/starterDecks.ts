@@ -131,6 +131,17 @@ const ACT_OF_TREASON: CardDef = {
   colors: ['R'],
 };
 
+const FLAMETONGUE_KAVU: CardDef = {
+  name: 'Flametongue Kavu',
+  typeLine: 'Creature — Kavu',
+  manaCost: '{3}{R}',
+  cmc: 4,
+  power: '4',
+  toughness: '2',
+  oracleText: 'When Flametongue Kavu enters the battlefield, it deals 4 damage to target creature.',
+  colors: ['R'],
+};
+
 const KRENKO_MOB_BOSS: CardDef = {
   name: 'Krenko, Mob Boss',
   typeLine: 'Legendary Creature — Goblin Warrior',
@@ -358,6 +369,17 @@ const VAMPIRE_NIGHTHAWK: CardDef = {
   colors: ['B'],
 };
 
+const MAN_O_WAR: CardDef = {
+  name: "Man-o'-War",
+  typeLine: 'Creature — Jellyfish',
+  manaCost: '{2}{U}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: "When Man-o'-War enters the battlefield, return target creature to its owner's hand.",
+  colors: ['U'],
+};
+
 const AIR_ELEMENTAL: CardDef = {
   name: 'Air Elemental',
   typeLine: 'Creature — Elemental',
@@ -392,7 +414,8 @@ export const EMBER_RUSH: DeckSpec = {
     { card: MONASTERY_SWIFTSPEAR, count: 4 },
     { card: RAGING_GOBLIN, count: 4 },
     { card: FIREBRAND_ARCHER, count: 4 },
-    { card: HILL_GIANT, count: 4 },
+    { card: HILL_GIANT, count: 2 },
+    { card: FLAMETONGUE_KAVU, count: 2 },
     { card: SHIVAN_DRAGON, count: 4 },
     { card: LIGHTNING_BOLT, count: 4 },
     { card: SHOCK, count: 4 },
@@ -439,7 +462,8 @@ export const TIDAL_MIND: DeckSpec = {
     { card: TOME_SCOUR, count: 2 },
     { card: RAVENOUS_RATS, count: 4 },
     { card: CHILD_OF_NIGHT, count: 3 },
-    { card: WIND_DRAKE, count: 3 },
+    { card: WIND_DRAKE, count: 1 },
+    { card: MAN_O_WAR, count: 2 },
     { card: VAMPIRE_NIGHTHAWK, count: 4 },
     { card: AIR_ELEMENTAL, count: 3 },
   ],

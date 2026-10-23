@@ -23,6 +23,8 @@ import type { TableAction } from "@/lib/table"
 export type ArenaMode =
   | { kind: "idle" }
   | { kind: "bottoming"; chosen: string[] }
+  /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
+  | { kind: "choosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string; chosen: Target[] }
   | { kind: "targeting"; play: LegalPlay; chosen: Target[] }
   | { kind: "attackers"; chosen: string[]; defender: SeatIndex }
   | { kind: "blockers"; chosen: Block[]; holding: string | null }
@@ -35,6 +37,7 @@ export interface Block {
 export type ArenaEvent =
   | { kind: "cancel" }
   | { kind: "startBottoming" }
+  | { kind: "startChoosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string }
   | { kind: "toggleBottom"; card: string }
   | { kind: "choosePlay"; play: LegalPlay }
   | { kind: "pickTarget"; target: Target }
@@ -91,6 +94,24 @@ export function candidatesAt(play: LegalPlay, index: number, chosen: readonly Ta
 
 export const targetKey = (t: Target): string => (t.kind === "card" ? `card:${t.id}` : `player:${t.seat}`)
 
+/** `candidatesAt`, for a triggered ability's specs rather than a play's. */
+export function choiceCandidatesAt(
+  specs: readonly LegalPlay["targetSpecs"][number][],
+  candidates: readonly (readonly Target[])[],
+  chosen: readonly Target[],
+): readonly Target[] {
+  let seen = 0
+  for (let i = 0; i < specs.length; i++) {
+    const want = Math.max(1, specs[i]!.count ?? 1)
+    if (chosen.length < seen + want) {
+      const taken = new Set(chosen.map(targetKey))
+      return (candidates[i] ?? []).filter((t) => !taken.has(targetKey(t)))
+    }
+    seen += want
+  }
+  return []
+}
+
 /** The action a completed play turns into. */
 function playAction(play: LegalPlay, targets: readonly Target[]): TableAction {
   const withTargets = targets.length > 0 ? { targets: [...targets] } : {}
@@ -116,7 +137,26 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       return { mode: { kind: "targeting", play, chosen: [] }, action: null }
     }
 
+    case "startChoosing":
+      return {
+        mode: {
+          kind: "choosing", specs: event.specs, candidates: event.candidates,
+          description: event.description, chosen: [],
+        },
+        action: null,
+      }
+
     case "pickTarget": {
+      if (mode.kind === "choosing") {
+        const key = targetKey(event.target)
+        if (mode.chosen.some((t) => targetKey(t) === key)) {
+          return { mode: { ...mode, chosen: mode.chosen.filter((t) => targetKey(t) !== key) }, action: null }
+        }
+        const chosen = [...mode.chosen, event.target]
+        const wanted = mode.specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0)
+        if (chosen.length >= wanted) return { mode: IDLE, action: { type: "auto:choose", targets: chosen } }
+        return { mode: { ...mode, chosen }, action: null }
+      }
       if (mode.kind !== "targeting") return { mode, action: null }
       // Picking something already chosen un-picks it, which is how a misclick is undone.
       const key = targetKey(event.target)
@@ -156,6 +196,13 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       }
       if (mode.kind === "bottoming") {
         return { mode: IDLE, action: { type: "auto:keep", bottom: [...mode.chosen] } }
+      }
+      if (mode.kind === "choosing") {
+        // A trigger's targets are never optional: it was only put on the stack because legal ones
+        // existed, so confirming early would send an ability the engine refuses.
+        const wanted = mode.specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0)
+        if (mode.chosen.length < wanted) return { mode, action: null }
+        return { mode: IDLE, action: { type: "auto:choose", targets: [...mode.chosen] } }
       }
       return { mode, action: null }
     }
@@ -309,6 +356,19 @@ export function primaryMove(view: GameView): { label: string; event: ArenaEvent 
   const auto = view.automation
   const you = auto?.you
   if (!auto || !you || view.finished) return null
+  // A trigger waiting for its targets blocks everything else.
+  if (you.mustChoose !== null) {
+    return {
+      label: `Aim ${you.mustChoose.description}`,
+      event: {
+        kind: "startChoosing",
+        specs: you.mustChoose.specs,
+        candidates: you.mustChoose.candidates,
+        description: you.mustChoose.description,
+      },
+      action: null,
+    }
+  }
   // Opening hands come before anything else, including priority.
   if (you.mustSettleHand) {
     return you.bottomOwed === 0

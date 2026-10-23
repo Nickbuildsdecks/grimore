@@ -200,6 +200,9 @@ function activate(
 
 function pass(state: GameState, action: { by: SeatIndex }): Outcome {
   requireAutomated(state);
+  if (state.pendingChoice !== null) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${state.pendingChoice.description} needs a target first`);
+  }
   const owed = pendingDeclaration(state);
   if (owed !== null) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${owed.kind} must be declared before anyone passes`);
@@ -419,6 +422,49 @@ function beginFirstTurn(state: GameState): GameState {
   return settle(next, state);
 }
 
+// ── Choosing a trigger's targets ─────────────────────────────────────────────────────────────────
+
+/** The specs a stack object's ability wants targets for. */
+function specsForObject(state: GameState, object: StackObject): readonly TargetSpec[] {
+  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
+  if (object.abilityIndex === undefined) return [];
+  return (object.kind === 'activated'
+    ? script?.abilities?.[object.abilityIndex]?.targets
+    : script?.triggers?.[object.abilityIndex]?.targets) ?? [];
+}
+
+/**
+ * Answers a triggered ability's request for targets.
+ *
+ * Checked with the same `checkTargets` a spell goes through, so a trigger cannot be pointed at
+ * something a spell could not be — and once it is answered, play carries on from exactly where it
+ * stopped, with the active player holding priority.
+ */
+function chooseTargets(state: GameState, action: { by: SeatIndex; targets: readonly Target[] }): Outcome {
+  requireAutomated(state);
+  const pending = state.pendingChoice;
+  if (pending === null) throw new EngineError('RULE_NOT_APPLICABLE', 'nothing is waiting for a choice');
+  if (pending.seat !== action.by) throw new EngineError('FORBIDDEN', 'it is not your choice to make');
+  const object = state.stackObjects[pending.stackId];
+  if (object === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'that ability is no longer on the stack');
+
+  const specs = specsForObject(state, object);
+  const check = checkTargets(state, specs, action.targets, action.by);
+  if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
+
+  let next: GameState = {
+    ...state,
+    stackObjects: { ...state.stackObjects, [object.id]: { ...object, targets: [...action.targets] } },
+    pendingChoice: null,
+  };
+  next = resetPriority(settle(next, state));
+  return {
+    state: next,
+    message: `${seatName(state, action.by)} aims ${object.description}`,
+    data: { ability: object.id, targets: action.targets.length },
+  };
+}
+
 // ── Starting ─────────────────────────────────────────────────────────────────────────────────────
 
 function setStops(state: GameState, action: { by: SeatIndex; autoPass: boolean }): Outcome {
@@ -490,7 +536,7 @@ function autoPass(state: GameState): { state: GameState; passes: number } {
   let passes = 0;
   for (let guard = 0; guard < 64; guard++) {
     if (next.finished || !next.automated || !next.autoPass || next.openingHands) break;
-    if (next.pendingDiscard !== null) break;
+    if (next.pendingDiscard !== null || next.pendingChoice !== null) break;
     if (pendingDeclaration(next) !== null) break;
     const seat = next.priority;
     if (seat === null) break;
@@ -517,6 +563,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:discard': return discard(state, action);
     case 'auto:stops': return setStops(state, action);
     case 'auto:keep': return keepHand(state, action);
+    case 'auto:choose': return chooseTargets(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);

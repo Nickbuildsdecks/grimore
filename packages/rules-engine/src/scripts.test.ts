@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STARTER_DECKS, characteristicsOf, scriptFor, scriptedCardNames,
+  STARTER_DECKS, characteristicsOf, legalActions, scriptFor, scriptedCardNames,
 } from './index.js';
 import {
   advanceTo, apply, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
@@ -630,6 +630,98 @@ describe('blue-black control', () => {
     expect(namesIn(s, 0, 'graveyard')).toContain('Shivan Dragon');
     expect(namesIn(s, 1, 'graveyard')).toContain('Vampire Nighthawk');
     expect(life(s, 1)).toBe(12);
+  });
+});
+
+describe('triggers that need a target', () => {
+  it('Flametongue Kavu stops and asks, then deals 4', () => {
+    let s = arena({
+      hands: { 0: ['Flametongue Kavu'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Centaur Courser'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flametongue Kavu') });
+    s = passBoth(s); // it resolves onto the battlefield and the trigger goes on the stack
+
+    // Two creatures are now on the board, so which one it hits is a real decision and the engine
+    // will not make it. Nothing else can happen until it is answered.
+    expect(s.pendingChoice).not.toBeNull();
+    expect(s.pendingChoice!.seat).toBe(0);
+    expect(legalActions(s, 0).mustChoose!.description).toContain('4 damage');
+    expect(refusal(s, { type: 'auto:pass', by: 0 })).toContain('needs a target');
+
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: courser }] });
+    expect(s.pendingChoice).toBeNull();
+    s = passBoth(s); // the trigger resolves
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+  });
+
+  it('Flametongue Kavu kills itself when it is the only creature, without asking', () => {
+    // A choice between one thing is not a choice, so the engine takes it — and the famous
+    // drawback of the card is that the only thing it can point at is itself.
+    let s = arena({
+      hands: { 0: ['Flametongue Kavu'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flametongue Kavu') });
+    s = passBoth(s);
+    expect(s.pendingChoice).toBeNull();
+    s = passBoth(s);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Flametongue Kavu');
+  });
+
+  it("Man-o'-War bounces the creature it is aimed at", () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      hands: { 1: ["Man-o'-War"] },
+      battlefield: { 1: ['Island', 'Island', 'Island'], 0: ['Hill Giant'] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', "Man-o'-War") });
+    s = passBoth(s);
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = apply(s, { type: 'auto:choose', by: 1, targets: [{ kind: 'card', id: giant }] });
+    s = passBoth(s);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Hill Giant');
+    expect(namesIn(s, 0, 'hand')).toContain('Hill Giant');
+  });
+
+  it('refuses a choice from the wrong seat, or one that is not legal', () => {
+    let s = arena({
+      hands: { 0: ['Flametongue Kavu'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Centaur Courser'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flametongue Kavu') });
+    s = passBoth(s);
+    expect(refusal(s, { type: 'auto:choose', by: 1, targets: [] })).toContain('not your choice');
+    expect(refusal(s, { type: 'auto:choose', by: 0, targets: [] })).toMatch(/target/i);
+    expect(refusal(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] }))
+      .toMatch(/target/i);
+  });
+
+  it('never puts a trigger on the stack that has nothing legal to point at', () => {
+    // A hexproof creature an opponent cannot target is the same as no creature at all, as far as
+    // their trigger is concerned (CR 603.3c).
+    let s = arena({
+      hands: { 0: ['Flametongue Kavu'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Sigarda, Host of Herons'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flametongue Kavu') });
+    s = passBoth(s);
+    // Only itself is targetable, so it is chosen without asking — and the Kavu dies.
+    expect(s.pendingChoice).toBeNull();
+    s = passBoth(s);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Flametongue Kavu');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Sigarda, Host of Herons');
   });
 });
 
