@@ -134,7 +134,10 @@ function playAction(play: LegalPlay, targets: readonly Target[], sacrifice?: str
   const withTargets = targets.length > 0 ? { targets: [...targets] } : {}
   const withSacrifice = sacrifice === undefined ? {} : { sacrifice }
   if (play.kind === "land") return { type: "auto:playLand", card: play.card }
-  if (play.kind === "cast") return { type: "auto:cast", card: play.card, ...withTargets }
+  // A modal spell's modes were chosen by choosing *this* play: the engine offers one play per
+  // legal combination, so picking a mode and picking a spell are the same gesture.
+  const withModes = play.modes === undefined ? {} : { modes: [...play.modes] }
+  if (play.kind === "cast") return { type: "auto:cast", card: play.card, ...withModes, ...withTargets }
   return {
     type: "auto:activate", card: play.card, abilityIndex: play.abilityIndex ?? 0,
     ...withTargets, ...withSacrifice,

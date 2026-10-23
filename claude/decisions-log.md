@@ -919,3 +919,36 @@ together: **45.8KB to 25.3KB**, and a search is no longer the peak at all.
 ways, both asserted over a whole game across the wire: a card a seat may not identify must carry no
 definition key, and the shared table must contain nothing that no visible card asked for — a
 definition shipped because a *hidden* card wanted it would be readable by whoever got the payload.
+
+## D32 — Modal spells are a cast-time choice, which is why they needed no new engine
+
+D30 left modal spells as the one common shape still unscriptable, and said the reason was that the
+mode decides what the spell targets while targets are chosen before resolution. That framing was
+right about the constraint and wrong about the difficulty.
+
+**Decided: modes are announced as the spell is cast (CR 601.2b), before its targets (CR 601.2c).**
+They are not a mid-resolution decision at all. Scripting them as one would have been actively wrong
+rather than merely approximate: a player could counter a Charm without knowing which half of it was
+coming, which is a different and much better card.
+
+**Decided: `legalActions` offers one play per legal combination of modes.** Which means the table
+needed no new interface — offering several plays for one card is a shape it already had for a
+permanent with several abilities — and a combination whose targets cannot be filled is simply not
+offered. "Destroy target creature; or draw two cards" offers only the draw against an empty board,
+and the exile-power-5 mode of a Charm appears the moment a creature grows into it. The alternative,
+a mode picker in front of the targeting flow, would have been a second state machine to get wrong.
+
+**Decided: "choose one", "choose one or both" and "choose two" are one mechanism.** `min` and `max`
+on the modal block, and the combinations are the subsets of that size, shortest first. For the
+cards here that is at most three plays on screen.
+
+**Decided: each mode reads its own slice of the targets.** They arrive as one flat list in the
+order the specs were offered, so a mode taking the wrong slice would return the right *kind* of
+card and the wrong card — the kind of bug that looks like it works. Asserted directly, on a
+graveyard holding two creatures and two lands.
+
+**Still not decided, and now the honest boundary:** replacement effects (regenerate), copy effects
+and characteristic-setting effects. These are the shapes `effects.ts` has no vocabulary for, and
+they are why Golgari Charm is not in a deck while Selesnya Charm is — one of its three modes
+regenerates, and a modal card with one unscriptable mode is an unscriptable card. D28's rule holds:
+left alone and resolved by hand rather than approximated.

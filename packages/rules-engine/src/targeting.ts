@@ -14,6 +14,20 @@ import { targetKey, type Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 /**
+ * The graveyard-pointing kinds, and the printed type each one requires. `null` means any card.
+ *
+ * One table rather than one branch per kind, because they differ only in that word: a card in a
+ * graveyard is read from its printed type line in every case, since nothing continuous applies to
+ * it. An entry here is what makes `graveyard-land` a kind rather than a filter every script that
+ * wanted one would have to write again.
+ */
+const GRAVEYARD_KINDS: Readonly<Record<string, string | null | undefined>> = {
+  'graveyard-creature': 'creature',
+  'graveyard-land': 'land',
+  'graveyard-card': null,
+};
+
+/**
  * Whether one candidate satisfies one spec, for a spell controlled by `controller`.
  *
  * Hexproof and shroud are checked here rather than in each script: they are properties of the
@@ -42,10 +56,14 @@ export function isLegalTarget(
     return spec.filter ? spec.filter(state, candidate, controller) : true;
   }
 
-  if (spec.kind === 'graveyard-creature') {
+  const wantedInGraveyard = GRAVEYARD_KINDS[spec.kind];
+  if (wantedInGraveyard !== undefined) {
     if (inst.zone !== 'graveyard') return false;
     // A card in a graveyard has no continuous effects on it, so its printed type is what it is.
-    if (!hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'creature')) return false;
+    if (wantedInGraveyard !== null
+      && !hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), wantedInGraveyard)) {
+      return false;
+    }
     return spec.filter ? spec.filter(state, candidate, controller) : true;
   }
 
@@ -75,7 +93,7 @@ export function legalTargets(state: GameState, spec: TargetSpec, controller: Sea
     }
     return out;
   }
-  if (spec.kind === 'graveyard-creature') {
+  if (GRAVEYARD_KINDS[spec.kind] !== undefined) {
     for (const seat of state.seats) {
       for (const id of listAt(state, zoneKey(seat.index, 'graveyard'))) {
         const candidate: Target = { kind: 'card', id };

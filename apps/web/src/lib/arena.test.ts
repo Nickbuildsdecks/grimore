@@ -284,6 +284,64 @@ describe("aiming a triggered ability", () => {
   })
 })
 
+describe("modal spells", () => {
+  it("sends the modes with the cast, because choosing a play is choosing a mode", () => {
+    // The engine offers one play per legal combination, so the table needs no new interface: the
+    // mode travels on the play the player tapped.
+    const charm = play({
+      name: "Selesnya Charm", manaCost: "{G}{W}", modes: [0],
+      description: "Cast Selesnya Charm — Target creature gets +2/+2 and gains trample",
+      targetSpecs: [{ kind: "creature", description: "target creature" }],
+      candidates: [[card("bear")]],
+    })
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: charm })
+    expect(mode.action).toBeNull()
+    const sent = arenaReducer(mode.mode, { kind: "pickTarget", target: card("bear") })
+    expect(sent.action).toEqual({
+      type: "auto:cast", card: "c1", modes: [0], targets: [card("bear")],
+    })
+  })
+
+  it("sends a mode that needs no target straight away", () => {
+    const token = play({
+      name: "Selesnya Charm", modes: [2], description: "Cast Selesnya Charm — Create a Knight",
+      targetSpecs: [], candidates: [],
+    })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: token }).action).toEqual({
+      type: "auto:cast", card: "c1", modes: [2],
+    })
+  })
+
+  it("sends both modes of a 'choose one or both' with a target each, in order", () => {
+    const both = play({
+      name: "Grim Discovery", modes: [0, 1],
+      description: "Cast Grim Discovery — return a creature; and return a land",
+      targetSpecs: [
+        { kind: "graveyard-creature", description: "target creature card in your graveyard" },
+        { kind: "graveyard-land", description: "target land card in your graveyard" },
+      ],
+      candidates: [[card("body")], [card("land")]],
+    })
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: both }).mode
+    mode = arenaReducer(mode, { kind: "pickTarget", target: card("body") }).mode
+    const sent = arenaReducer(mode, { kind: "pickTarget", target: card("land") })
+    // In the order the specs were offered, which is the order each mode reads its own target in.
+    expect(sent.action).toEqual({
+      type: "auto:cast", card: "c1", modes: [0, 1], targets: [card("body"), card("land")],
+    })
+  })
+
+  it("leaves a non-modal play alone", () => {
+    const bolt = play()
+    const sent = arenaReducer(
+      arenaReducer(IDLE, { kind: "choosePlay", play: bolt }).mode,
+      { kind: "pickTarget", target: player(1) },
+    )
+    expect(sent.action).toEqual({ type: "auto:cast", card: "c1", targets: [player(1)] })
+    expect(sent.action).not.toHaveProperty("modes")
+  })
+})
+
 describe("answering a question a card asked while resolving", () => {
   const ask = (over: Partial<Decision> = {}): Decision => ({
     prompt: "Discard two cards", from: "hand", candidates: ["h1", "h2", "h3"], min: 2, max: 2, ...over,

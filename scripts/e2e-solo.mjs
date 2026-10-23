@@ -200,15 +200,22 @@ async function takeTurn(page) {
   if (/^Pass$/.test(label) || /^Resolve/.test(label)) {
     const hand = page.locator('[data-testid="zone-hand-0"] [data-testid^="card-"]');
     const count = await hand.count();
-    for (let i = 0; i < count; i++) {
+    // Random order, not left to right. Left to right takes the leftmost playable card every time,
+    // which is nearly always a land or the cheapest creature, so anything further along in hand
+    // can sit there for a whole game and never be cast.
+    for (const i of [...Array(count).keys()].sort(() => Math.random() - 0.5)) {
       const card = hand.nth(i);
       if (!/playable/i.test((await card.textContent()) ?? '')) continue;
       await card.click();
       await waitFor(page, 'play-sheet', 5000);
       const options = page.locator('[data-testid^="play-"]:not([data-testid="play-sheet"]):not([data-testid="play-sheet-close"])');
-      if ((await options.count()) > 0) {
-        const name = ((await options.first().textContent()) ?? '').trim().slice(0, 40);
-        await options.first().click();
+      const choices = await options.count();
+      if (choices > 0) {
+        // And a random one of the plays it offers: a modal spell is one play per mode, so always
+        // taking the top option would only ever exercise mode one.
+        const pick = options.nth(Math.floor(Math.random() * choices));
+        const name = ((await pick.textContent()) ?? '').trim().replace(/\s+/g, ' ').slice(0, 60);
+        await pick.click();
         return `played ${name}`;
       }
       await tid(page, 'play-sheet-close').click();

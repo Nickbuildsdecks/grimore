@@ -246,6 +246,15 @@ const PACIFISM: CardDef = {
   colors: ['W'],
 };
 
+const SELESNYA_CHARM: CardDef = {
+  name: 'Selesnya Charm',
+  typeLine: 'Instant',
+  manaCost: '{G}{W}',
+  cmc: 2,
+  oracleText: 'Choose one —\n• Target creature gets +2/+2 and gains trample until end of turn.\n• Exile target creature with power 5 or greater.\n• Create a 2/2 white Knight creature token with vigilance.',
+  colors: ['G', 'W'],
+};
+
 const SWORDS_TO_PLOWSHARES: CardDef = {
   name: 'Swords to Plowshares',
   typeLine: 'Instant',
@@ -359,6 +368,15 @@ const TOME_SCOUR: CardDef = {
   cmc: 1,
   oracleText: "Target player mills five cards.",
   colors: ['U'],
+};
+
+const SOUL_MANIPULATION: CardDef = {
+  name: 'Soul Manipulation',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}{B}',
+  cmc: 3,
+  oracleText: 'Choose one or both —\n• Counter target creature spell.\n• Return target creature card from your graveyard to your hand.',
+  colors: ['U', 'B'],
 };
 
 const RAVENOUS_RATS: CardDef = {
@@ -502,6 +520,15 @@ const WALL_OF_BLOSSOMS: CardDef = {
   colors: ['G'],
 };
 
+const GRIM_DISCOVERY: CardDef = {
+  name: 'Grim Discovery',
+  typeLine: 'Sorcery',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  oracleText: 'Choose one or both —\n• Return target creature card from your graveyard to your hand.\n• Return target land card from your graveyard to your hand.',
+  colors: ['B'],
+};
+
 const LOTLETH_GIANT: CardDef = {
   name: 'Lotleth Giant',
   typeLine: 'Creature — Zombie Giant',
@@ -585,9 +612,10 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: AJANIS_PRIDEMATE, count: 4 },
     { card: SERRA_ANGEL, count: 4 },
     { card: GIANT_GROWTH, count: 3 },
-    { card: PACIFISM, count: 3 },
-    { card: SWORDS_TO_PLOWSHARES, count: 4 },
-    { card: HARMONIZE, count: 4 },
+    { card: SELESNYA_CHARM, count: 3 },
+    { card: PACIFISM, count: 2 },
+    { card: SWORDS_TO_PLOWSHARES, count: 3 },
+    { card: HARMONIZE, count: 3 },
     { card: OVERRUN, count: 2 },
   ],
 };
@@ -604,15 +632,16 @@ export const TIDAL_MIND: DeckSpec = {
     { card: NEGATE, count: 2 },
     { card: DOOM_BLADE, count: 4 },
     { card: DIVINATION, count: 3 },
-    { card: SIGN_IN_BLOOD, count: 3 },
+    { card: SIGN_IN_BLOOD, count: 2 },
     { card: TOME_SCOUR, count: 1 },
     { card: MIND_ROT, count: 3 },
     { card: DIABOLIC_TUTOR, count: 2 },
-    { card: RAVENOUS_RATS, count: 4 },
+    { card: SOUL_MANIPULATION, count: 3 },
+    { card: RAVENOUS_RATS, count: 3 },
     { card: CHILD_OF_NIGHT, count: 2 },
     { card: WIND_DRAKE, count: 1 },
     { card: MAN_O_WAR, count: 2 },
-    { card: VAMPIRE_NIGHTHAWK, count: 4 },
+    { card: VAMPIRE_NIGHTHAWK, count: 3 },
     { card: AIR_ELEMENTAL, count: 2 },
   ],
 };
@@ -627,15 +656,16 @@ export const ROT_HARVEST: DeckSpec = {
     { card: SWAMP, count: 12 },
     { card: LLANOWAR_ELVES, count: 4 },
     { card: THORNWEALD_ARCHER, count: 2 },
-    { card: WALL_OF_BLOSSOMS, count: 4 },
+    { card: WALL_OF_BLOSSOMS, count: 3 },
     { card: FLESHBAG_MARAUDER, count: 4 },
     { card: CENTAUR_COURSER, count: 1 },
     { card: BLOODTHRONE_VAMPIRE, count: 3 },
     { card: VAMPIRE_ARISTOCRAT, count: 3 },
     { card: GRAVEDIGGER, count: 4 },
-    { card: RAISE_DEAD, count: 3 },
+    { card: RAISE_DEAD, count: 2 },
+    { card: GRIM_DISCOVERY, count: 3 },
     { card: ZOMBIFY, count: 3 },
-    { card: DOOM_BLADE, count: 4 },
+    { card: DOOM_BLADE, count: 3 },
     { card: LOTLETH_GIANT, count: 2 },
   ],
 };

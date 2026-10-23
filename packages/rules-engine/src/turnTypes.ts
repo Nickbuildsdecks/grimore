@@ -82,6 +82,12 @@ export interface StackObject {
   readonly abilityIndex?: number;
   readonly targets: readonly Target[];
   readonly x?: number;
+  /**
+   * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
+   * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
+   * lives on the stack object rather than anywhere private.
+   */
+  readonly modes?: readonly number[];
   /** What to show in the stack, written when the object was put there. */
   readonly description: string;
 }
@@ -235,6 +241,8 @@ export interface AutoPlayLandAction { readonly type: 'auto:playLand'; readonly b
 export interface AutoCastAction {
   readonly type: 'auto:cast'; readonly by: SeatIndex; readonly card: string;
   readonly targets?: readonly Target[]; readonly x?: number;
+  /** For a modal spell: which modes, as indices into its script's `modal.modes`. */
+  readonly modes?: readonly number[];
 }
 export interface AutoActivateAction {
   readonly type: 'auto:activate'; readonly by: SeatIndex; readonly card: string;

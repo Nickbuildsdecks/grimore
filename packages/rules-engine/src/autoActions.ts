@@ -15,8 +15,9 @@ import { characteristicsOf } from './characteristics.js';
 import {
   advanceStep, aliveSeats, atSorcerySpeed, bottomOwed, canAttack, canBlock, checkTargets,
   endTurnCleanup, legalAttackers, legalBlockers, menaceSatisfied, payFrom, pendingDeclaration,
-  answerDecision, prevAlive, pushAbility, raise, resetPriority, resolveTop, sacrificeOptions,
-  scriptOf, settle, stackTop, stateBasedActions, stillDeciding, tapAttackers,
+  answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
+  resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop, stateBasedActions,
+  stillDeciding, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
 } from './automation.js';
 import { addToPool, poolOf } from './effects.js';
@@ -72,7 +73,26 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (cost.unsupported !== undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has a mana cost the engine cannot pay yet`);
   }
-  const specs = spellTargets(script);
+  // A modal spell's modes are announced as it is cast (CR 601.2b), before its targets, and the
+  // modes decide what it may point at — so they are validated first and the target specs come
+  // from them. A combination the card does not offer is refused rather than trimmed.
+  const combinations = modeCombinations(script);
+  let modes: readonly number[] | undefined;
+  if (combinations.length > 0) {
+    const asked = [...(action.modes ?? [])].sort((a, b) => a - b);
+    const legal = combinations.some((c) => c.length === asked.length && c.every((i, n) => i === asked[n]));
+    if (!legal) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        action.modes === undefined
+          ? `choose a mode for ${characteristics.name}`
+          : 'that is not a combination of modes this spell offers');
+    }
+    modes = asked;
+  } else if (action.modes !== undefined && action.modes.length > 0) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no modes to choose`);
+  }
+
+  const specs = modes === undefined ? spellTargets(script) : modeTargetSpecs(modesOf(script, modes));
   const chosen = action.targets ?? [];
   const check = checkTargets(state, specs, chosen, action.by);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
@@ -81,11 +101,17 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   let next = paid.state;
   // The card physically moves to the stack, and an object describes how it was cast.
   next = relocate(next, requireInstance(next, inst.id), 'stack', action.by, 'bottom');
+  // The modes are named in the stack description, because both players can see what was chosen
+  // and the one deciding whether to respond needs to know which half of the Charm is coming.
+  const modeText = modes === undefined
+    ? ''
+    : ` — ${modesOf(script, modes).map((m) => m.description).join('; and ')}`;
   const object: StackObject = {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
     cardKey: inst.defKey, targets: [...chosen],
     ...(action.x === undefined ? {} : { x: action.x }),
-    description: characteristics.name,
+    ...(modes === undefined ? {} : { modes: [...modes] }),
+    description: `${characteristics.name}${modeText}`,
   };
   next = {
     ...next,

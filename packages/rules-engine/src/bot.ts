@@ -24,11 +24,19 @@ import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
 const HOST: ActionContext = { isHost: true };
 
-/** How a bot values a play. Higher is chosen first. */
+/**
+ * How a bot values a play. Higher is chosen first.
+ *
+ * A modal spell arrives as one play per combination of modes, all at the same mana cost, so the
+ * tie-break is how many modes it takes: more of the card is more of the card. It has no idea what
+ * any mode *does*, which is the same shallowness as everywhere else here — what matters is that
+ * every option it picks from came from the engine, so "choose one or both" never takes a mode
+ * whose target it cannot fill.
+ */
 const playValue = (play: LegalPlay): number => {
   if (play.kind === 'land') return 1000; // always make your land drop
   if (play.isManaAbility) return -1000; // mana is tapped on demand, not for its own sake
-  return costValue(parseManaCost(play.manaCost));
+  return costValue(parseManaCost(play.manaCost)) + (play.modes?.length ?? 0) / 10;
 };
 
 /**
@@ -267,6 +275,7 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
     if (play.kind === 'cast') {
       return {
         type: 'auto:cast', by: seat, card: play.card,
+        ...(play.modes === undefined ? {} : { modes: [...play.modes] }),
         ...(targets.length > 0 ? { targets } : {}),
       };
     }

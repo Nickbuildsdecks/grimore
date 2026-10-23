@@ -14,7 +14,8 @@ import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { characteristicsOf } from './characteristics.js';
 import {
-  atSorcerySpeed, bottomOwed, pendingDeclaration, sacrificeOptions, stackTop,
+  atSorcerySpeed, bottomOwed, modeCombinations, modeTargetSpecs, modesOf, pendingDeclaration,
+  sacrificeOptions, stackTop,
 } from './automation.js';
 import { legalAttackers, legalBlockers, canBlock } from './combat.js';
 import { poolOf } from './effects.js';
@@ -33,6 +34,13 @@ export interface LegalPlay {
   readonly description: string;
   readonly manaCost: string;
   readonly abilityIndex?: number;
+  /**
+   * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
+   *
+   * One play per legal combination, which is why the table needed no new interface for modal
+   * spells — it already offers several plays for one card when a permanent has several abilities.
+   */
+  readonly modes?: readonly number[];
   /** What must be chosen, in order. Empty when the play needs no targets. */
   readonly targetSpecs: readonly TargetSpec[];
   /** Legal candidates for each spec, in the same order. */
@@ -172,6 +180,26 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
     const cost = parseManaCost(def?.manaCost);
     if (cost.unsupported !== undefined) continue;
     if (!canPay(potential, cost)) continue;
+
+    // A modal spell is offered once per legal combination of modes, and a combination whose
+    // targets cannot be filled is not offered at all — so "destroy target creature; or draw two
+    // cards" offers only the draw when the board is empty.
+    const combinations = modeCombinations(script);
+    if (combinations.length > 0) {
+      for (const modes of combinations) {
+        const chosen = modesOf(script, modes);
+        const specs = modeTargetSpecs(chosen);
+        const { ok, candidates } = playableTargets(state, specs, seat);
+        if (!ok) continue;
+        out.push({
+          kind: 'cast', card: id, name: ch.name,
+          description: `Cast ${ch.name} — ${chosen.map((m) => m.description).join('; and ')}`,
+          manaCost: def?.manaCost ?? '', modes, targetSpecs: specs, candidates,
+          isManaAbility: false, sacrificeOptions: [],
+        });
+      }
+      continue;
+    }
 
     const specs = specsFor(script);
     const { ok, candidates } = playableTargets(state, specs, seat);

@@ -314,26 +314,67 @@ async function makeMove(page, seat, { aggression = 0.6 } = {}) {
 }
 
 /**
- * Taps a card in hand the table says is playable and takes the first play it offers.
+ * Records what a prompt on screen proves the engine can do.
+ *
+ * Shared by both play loops on purpose. It used to live only in the first one, and most of a game
+ * is played in the *finishing* loop — so a modal spell cast after the first loop stopped was never
+ * seen, and three whole arena runs reported "no modal spell was castable" while three Charms sat in
+ * the deck. An observation that watches only the first half of a game is worse than none, because
+ * it reads as a fact about the whole game.
+ */
+async function notePrompts(seen, page, seat) {
+  if (await has(page, 'decide-prompt')) {
+    seen.decided = true;
+    if (await has(page, `zone-library-${seat}`)) {
+      if (!seen.searched) await shot(page, 'searching-a-library');
+      seen.searched = true;
+    }
+  }
+}
+
+/** Records what the move just made proves. `did` is whatever `makeMove` reported. */
+async function noteMove(seen, page, did) {
+  if (did === null) return;
+  // A modal spell's play is labelled "Cast X — <the mode>", the only play label with an em dash.
+  if (/chose a play: Cast .+ — /.test(did)) {
+    if (!seen.modal) await shot(page, 'casting-a-mode');
+    seen.modal = true;
+  }
+}
+
+/**
+ * Taps a card in hand the table says is playable and takes one of the plays it offers.
  *
  * "Playable" is the table's own badge, which comes from `legalActions` — so this never tries a
  * card the engine would refuse, and a spell that cannot be cast right now (a sorcery in response,
  * something unaffordable) simply does not carry the badge.
+ *
+ * The card is chosen at random from the playable ones rather than left to right. Left to right
+ * means the leftmost playable card every single time, which is almost always a land or the
+ * cheapest creature — so a card further along in hand could sit there for a whole game and never
+ * be cast. That is not a theoretical worry: it is why two full arena runs cast no modal spell at
+ * all while three copies of a Charm sat in the deck.
  */
 async function tryToPlayFromHand(page, seat) {
   const playable = page.locator(`[data-testid="zone-hand-${seat}"] [data-testid^="card-"]`);
   const count = await playable.count();
-  for (let i = 0; i < count; i++) {
+  const order = [...Array(count).keys()].sort(() => Math.random() - 0.5);
+  for (const i of order) {
     const card = playable.nth(i);
     const badges = (await card.textContent()) ?? '';
     if (!/playable/i.test(badges)) continue;
     await card.click();
     await waitFor(page, 'play-sheet', 5000);
     const options = page.locator('[data-testid^="play-"]:not([data-testid="play-sheet"]):not([data-testid="play-sheet-close"])');
-    if ((await options.count()) > 0) {
-      const name = (await options.first().textContent()) ?? '';
-      await options.first().click();
-      return `chose a play: ${name.trim().slice(0, 40)}`;
+    const choices = await options.count();
+    if (choices > 0) {
+      // Not always the first. A modal spell is one play per mode and a permanent can have several
+      // abilities, so a driver that always took the top option would only ever exercise mode one
+      // — and would look identical to a table that could not offer the others.
+      const pick = options.nth(Math.floor(Math.random() * choices));
+      const name = (await pick.textContent()) ?? '';
+      await pick.click();
+      return `chose a play: ${name.trim().replace(/\s+/g, ' ').slice(0, 70)}`;
     }
     await tid(page, 'play-sheet-close').click();
     return null;
@@ -487,7 +528,7 @@ async function main() {
     const seen = {
       land: false, mana: false, stack: false, attackers: false, blockers: false,
       lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
-      decided: false, searched: false,
+      decided: false, searched: false, modal: false,
     };
     const startLifeNick = await readNumber(nick, 'life-0');
     const startLifeFriend = await readNumber(friend, 'life-1');
@@ -522,14 +563,7 @@ async function main() {
       // takes to answer.
       if (await has(actor.page, 'attack-prompt')) seen.attackers = true;
       if (await has(actor.page, 'block-prompt')) seen.blockers = true;
-      // Looked for before the move is made, because answering it is what clears it.
-      if (await has(actor.page, 'decide-prompt')) {
-        seen.decided = true;
-        if (await has(actor.page, `zone-library-${actor.seat}`)) {
-          if (!seen.searched) await shot(actor.page, 'searching-a-library');
-          seen.searched = true;
-        }
-      }
+      await notePrompts(seen, actor.page, actor.seat);
       if (await has(actor.page, 'primary-move')) {
         const label = await text(actor.page, 'primary-move');
         if (/declare attackers/i.test(label)) seen.attackers = true;
@@ -569,6 +603,7 @@ async function main() {
         await shot(actor.page, 'countering-a-spell');
       }
       if (did !== null && /counter/i.test(did)) seen.countered = true;
+      await noteMove(seen, actor.page, did);
       if (!seen.mana) {
         // Either floating mana, or the dimmed "what you could still make" display. With the engine
         // tapping for a spell's cost the pool is usually spent in the same action it was filled,
@@ -688,7 +723,10 @@ async function main() {
           continue;
         }
         idle = 0;
+        await notePrompts(seen, actor.page, actor.seat);
         const did = await makeMove(actor.page, actor.seat, { aggression: 0.85 });
+        await noteMove(seen, actor.page, did);
+        if (did !== null && i % 20 === 0) console.log(`      finishing ${i}: ${did}`);
         if (did === null) {
           // The table is asking for something this script cannot answer, which is worth saying
           // out loud rather than letting it look like a slow game.
@@ -702,6 +740,18 @@ async function main() {
     }
     check('the game reaches a winner through the real UI', finished,
       finished ? '' : `stopped at ${await text(nick, 'step-label')} turn ${await readNumber(nick, 'turn')}`);
+
+    // Reported here rather than mid-game, because most of a game is played in the loop above: a
+    // modal spell cast on turn fifteen was being announced as "never castable" by a check that had
+    // already run. Whether one is drawn and affordable at all is the shuffle's business, so it is
+    // asserted when the game produced one and reported when it did not; `scripts.test.ts` owns the
+    // deterministic version, on a board built to need it.
+    if (seen.modal) {
+      check('a modal spell offers its modes as plays and one can be cast', true);
+    } else {
+      console.log('      (no modal spell came up in this game — scripts.test.ts covers that path '
+        + 'on a fixed board)');
+    }
     if (finished) {
       const over = await text(nick, 'game-over');
       check('and both players are told who won', /wins/.test(over), over.slice(0, 80));

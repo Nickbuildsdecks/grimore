@@ -23,11 +23,15 @@ import type { DecisionZone, Step, Target } from './turnTypes.js';
 /** What a spell or ability needs pointed at it before it can be put on the stack. */
 export interface TargetSpec {
   /**
-   * What may be pointed at. `graveyard-creature` is a creature *card* in a graveyard rather than a
-   * creature on the battlefield — a different object in a different zone, which is why it is its
-   * own kind rather than a filter on `creature`.
+   * What may be pointed at. The `graveyard-*` kinds point at a *card* in a graveyard rather than a
+   * permanent on the battlefield — a different object in a different zone, which is why they are
+   * their own kinds rather than a filter on `creature`. A card in a graveyard has no continuous
+   * effects applied to it, so its **printed** type is what it is; `graveyard-card` takes any card
+   * and leaves the rest to `filter`.
    */
-  readonly kind: 'creature' | 'permanent' | 'player' | 'any' | 'spell' | 'graveyard-creature';
+  readonly kind:
+    | 'creature' | 'permanent' | 'player' | 'any' | 'spell'
+    | 'graveyard-creature' | 'graveyard-land' | 'graveyard-card';
   /** Shown to the player choosing, e.g. "target creature an opponent controls". */
   readonly description: string;
   /** How many of this spec. Defaults to 1. */
@@ -152,13 +156,49 @@ export interface AuraDef {
   readonly effect: PumpOptions;
 }
 
+/** One mode of a modal spell: what it says, what it points at, and what it does. */
+export interface ModeDef {
+  /** The mode as printed, e.g. "Exile target creature with power 5 or greater". */
+  readonly description: string;
+  readonly targets?: readonly TargetSpec[];
+  /** Questions asked while this mode resolves. See `DecisionSpec`. */
+  readonly decisions?: readonly DecisionSpec[];
+  readonly effect: EffectFn;
+}
+
+/**
+ * "Choose one —", and the handful of shapes around it.
+ *
+ * Modes are chosen **as the spell is cast** (CR 601.2b), before its targets (CR 601.2c) — not
+ * while it resolves. That is the whole reason this is not a `DecisionSpec`: which mode you take
+ * decides what the spell is allowed to point at, and an opponent gets to see both before they
+ * respond. Scripting a mode as a mid-resolution decision would let a player counter a Charm
+ * without knowing what it was going to do, which is a different and much better card.
+ *
+ * Because the choice travels with the cast, no new engine phase was needed and the table needed no
+ * new interface: `legalActions` offers **one play per legal combination of modes**, which is a
+ * shape it already had for a permanent with several abilities. A combination whose targets cannot
+ * be filled is not offered at all, so "Choose one — destroy target creature; or draw two cards"
+ * offers only the draw when there is no creature on the board.
+ *
+ * `min` and `max` default to 1, which is "choose one". `max: 2` over two modes is "choose one or
+ * both"; `min: 2, max: 2` over four is "choose two". Both are clamped to the number of modes.
+ */
+export interface ModalDef {
+  readonly modes: readonly ModeDef[];
+  readonly min?: number;
+  readonly max?: number;
+}
+
 export interface CardScript {
   /** Matched case-insensitively against the card's printed name. */
   readonly name: string;
   /** Keywords the card has, overriding what would be read from its oracle text. */
   readonly keywords?: readonly Keyword[];
-  /** What the spell targets when cast. */
+  /** What the spell targets when cast. For a modal spell the targets live on each mode. */
   readonly targets?: readonly TargetSpec[];
+  /** "Choose one —". See `ModalDef`. */
+  readonly modal?: ModalDef;
   /**
    * Questions asked while the spell resolves, answered before `onResolve` runs. See `DecisionSpec`.
    */

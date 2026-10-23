@@ -39,8 +39,9 @@ import {
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
 import { scriptFor } from './scripts.js';
 import type {
-  AbilityCost, AbilityDef, CardScript, DecisionSpec, TargetSpec, TriggerEvent,
+  AbilityCost, AbilityDef, CardScript, DecisionSpec, ModeDef, TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
+import { targetCount } from './scriptTypes.js';
 import { checkTargets, hasAnyLegalTargets, legalTargets, stillHasLegalTarget } from './targeting.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
@@ -608,6 +609,66 @@ function payFrom(
   return { state: setPool(next, seat, result.pool as ManaPool), tapped };
 }
 
+// ── Modal spells ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Every legal combination of modes for a modal script, in printed order.
+ *
+ * "Choose one" of three is three combinations; "choose one or both" of two is three; "choose two"
+ * of four is six. Each comes back as sorted indices, because the modes of a modal spell apply in
+ * the order they are printed whatever order the player picked them in (CR 601.2b).
+ */
+export function modeCombinations(script: CardScript | undefined): number[][] {
+  const modal = script?.modal;
+  if (modal === undefined || modal.modes.length === 0) return [];
+  const total = modal.modes.length;
+  const max = Math.min(modal.max ?? 1, total);
+  const min = Math.min(Math.max(modal.min ?? 1, 1), max);
+  const out: number[][] = [];
+  const walk = (start: number, picked: number[]): void => {
+    if (picked.length >= min) out.push([...picked]);
+    if (picked.length >= max) return;
+    for (let i = start; i < total; i++) walk(i + 1, [...picked, i]);
+  };
+  walk(0, []);
+  // Shortest first, so "choose one or both" offers the simple answers before the compound one.
+  return out.sort((a, b) => a.length - b.length || a[0]! - b[0]!);
+}
+
+/** The modes a stack object was cast with, or an empty list for anything not modal. */
+export function modesOf(script: CardScript | undefined, modes: readonly number[] | undefined): ModeDef[] {
+  if (script?.modal === undefined) return [];
+  return (modes ?? []).map((i) => script.modal!.modes[i]).filter((m): m is ModeDef => m !== undefined);
+}
+
+/** The target specs a chosen set of modes wants, concatenated in printed order. */
+export const modeTargetSpecs = (modes: readonly ModeDef[]): TargetSpec[] =>
+  modes.flatMap((mode) => [...(mode.targets ?? [])]);
+
+/**
+ * Runs each chosen mode in printed order, handing each the targets that belong to it.
+ *
+ * Targets arrive as one flat list, in the order the specs were offered, so each mode takes the
+ * next however-many. Getting this wrong would aim the second mode with the first mode's target.
+ */
+function runModes(
+  state: GameState, modes: readonly ModeDef[], ctx: EffectContext,
+): GameState {
+  let next = state;
+  let at = 0;
+  let decided = 0;
+  for (const mode of modes) {
+    const wanted = (mode.targets ?? []).reduce((n, spec) => n + targetCount(spec), 0);
+    const mine = ctx.targets.slice(at, at + wanted);
+    at += wanted;
+    const asks = (mode.decisions ?? []).length;
+    const answers = ctx.decisions.slice(decided, decided + asks);
+    decided += asks;
+    next = mode.effect({ ...ctx, state: next, targets: mine, decisions: answers });
+  }
+  return next;
+}
+
 // ── Decisions made while something resolves ──────────────────────────────────────────────────────
 
 /**
@@ -618,11 +679,13 @@ function payFrom(
  */
 function decisionSpecsFor(state: GameState, object: StackObject): readonly DecisionSpec[] {
   const script = scriptFor(state.cardDefs[object.cardKey]?.name);
-  if (object.kind === 'spell') return script?.decisions ?? [];
-  return abilityOrTrigger(script, object)?.decisions ?? [];
+  if (object.kind !== 'spell') return abilityOrTrigger(script, object)?.decisions ?? [];
+  const modes = modesOf(script, object.modes);
+  if (modes.length > 0) return modes.flatMap((mode) => [...(mode.decisions ?? [])]);
+  return script?.decisions ?? [];
 }
 
-/** The half of a card that runs before its questions are asked. */
+/** The half of a card that runs before its questions are asked. Spell-level only. */
 function beforeDecisionsFor(state: GameState, object: StackObject): EffectFn | undefined {
   const script = scriptFor(state.cardDefs[object.cardKey]?.name);
   if (object.kind === 'spell') return script?.beforeDecisions;
@@ -791,12 +854,13 @@ function popStack(state: GameState, id: string): GameState {
 }
 
 /** The target specs a stack object was pointed with, for the fizzle check. */
-function targetSpecsFor(
+export function targetSpecsFor(
   state: GameState, script: CardScript | undefined, object: StackObject,
 ): readonly TargetSpec[] {
-  return object.kind === 'spell'
-    ? script?.targets ?? (script?.aura ? [script.aura.target] : [])
-    : abilityOrTrigger(script, object)?.targets ?? [];
+  if (object.kind !== 'spell') return abilityOrTrigger(script, object)?.targets ?? [];
+  const modes = modesOf(script, object.modes);
+  if (modes.length > 0) return modeTargetSpecs(modes);
+  return script?.targets ?? (script?.aura ? [script.aura.target] : []);
 }
 
 /**
@@ -857,7 +921,10 @@ function completeResolution(
     const inst = next.instances[object.id];
     const def = next.cardDefs[object.cardKey];
     const isPermanent = inst !== undefined && isPermanentCard(def);
-    if (script?.onResolve) next = script.onResolve({ ...ctx, state: next });
+    const modes = modesOf(script, object.modes);
+    // A modal spell's effect is its chosen modes, in printed order; everything else has one.
+    if (modes.length > 0) next = runModes(next, modes, { ...ctx, state: next });
+    else if (script?.onResolve) next = script.onResolve({ ...ctx, state: next });
     if (isPermanent && inst !== undefined) {
       next = relocate(next, requireInstance(next, inst.id), 'battlefield', object.controller, 'bottom');
       if (script?.aura) {

@@ -42,7 +42,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 50 scripted cards |
+| `scripts.ts` | All 53 scripted cards |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -138,7 +138,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**328 tests in the rules engine, 91 in the web app, 914 across the workspace.**
+**337 tests in the rules engine, 95 in the web app, 927 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -181,10 +181,11 @@ nothing else — `viewFor` is unchanged, the client unpacks once in `lib/table.t
 
 ## What is deliberately not done
 
-- **Modal spells** ("choose one"). The near miss, now that mid-resolution decisions exist: the mode
-  *is* a decision, but the mode decides what the spell **targets**, and targets are chosen before a
-  spell is on the stack. Resolving that means a two-stage cast, which is a bigger change than it
-  looks. Such a card is left unscripted and resolved by hand rather than approximated.
+- **Replacement effects** (regenerate, "if it would die instead exile it"), **copy effects** and
+  **characteristic-setting effects**. These are the shapes `effects.ts` has no vocabulary for, and
+  the reason Golgari Charm is not scripted while Selesnya Charm is: one of its three modes
+  regenerates, and a modal card with one unscriptable mode is an unscriptable card. A card like
+  that is left alone and resolved by hand rather than approximated.
 - **True layer interaction** (CR 613). What is here is a fixed order — printed, then effects, then
   counters — which is right for every effect the card pool produces. Characteristic-setting and copy
   effects need the real thing.
@@ -201,7 +202,7 @@ nothing else — `viewFor` is unchanged, the client unpacks once in `lib/table.t
 
 ## Added after the first checkpoint
 
-Eight things, in the order they mattered.
+Nine things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -296,13 +297,47 @@ the ones it has not drawn yet, so the draw has to happen before the question can
 Izoni's second ability is scripted now too — it was printed in prose with "Move by hand" underneath
 it two commits ago, for want of a sacrifice cost.
 
+**Modal spells, which turned out not to need a new phase at all.** "Choose one —" looked like the
+hardest thing left, and the reason it was not is a rules detail: modes are announced **as the spell
+is cast** (CR 601.2b), *before* its targets (CR 601.2c) — not while it resolves. So it is not a
+mid-resolution decision, and scripting it as one would have been actively wrong: a player could
+counter a Charm without knowing which half of it was coming.
+
+Because the choice travels with the cast, `legalActions` just offers **one play per legal
+combination of modes** — a shape it already had for a permanent with several abilities — and the
+table needed no new interface whatsoever. A combination whose targets cannot be filled is not
+offered, so "destroy target creature; or draw two cards" offers only the draw against an empty
+board, and a Charm's exile-power-5 mode appears the moment a creature grows into it and disappears
+when it shrinks. `min`/`max` on the modal block covers "choose one", "choose one or both" and
+"choose two" with the same subset enumeration.
+
+Three cards, each exercising a different part. Selesnya Charm is a plain choose-one with all three
+modes supported. Soul Manipulation and Grim Discovery are "choose one or both", which offers three
+plays: each half, and the pair. The one thing that could have been silently wrong is which target
+belongs to which mode — they arrive as one flat list — so a mode taking the wrong slice would
+return the right *kind* of card and the wrong card, and that is asserted directly on a graveyard
+holding two creatures and two lands.
+
+Two smaller things fell out. `graveyard-land` and `graveyard-card` joined `graveyard-creature` as
+target kinds, from one table keyed on the printed type, because a card in a graveyard is read from
+its type line in every case. And the play sheet now wraps instead of truncating: three Charm modes
+are three plays on the same card that differ only at the end of the sentence, and they had been
+sharing one `data-testid` as well, which breaks React and every selector that reads it.
+
 ## Next
 
-1. Modal spells. The last common shape that cannot be scripted, and the reason is specific: the
-   mode decides what the spell targets, and targets are chosen before it is on the stack.
-2. More scripts. The vocabulary in `effects.ts` covers far more than the 45 cards currently using
-   it; adding a card is a few declarative lines.
-3. Loading a real Grimore deck into an automated table. `deck:load` already resolves any deck handed
-   to it; the gap is that unscripted cards are common in a real list, which the "move by hand"
-   escape hatch covers but has not been played against at volume.
-4. A stronger opponent. The current one plays a real game but does not plan one.
+1. More scripts. The vocabulary in `effects.ts` covers far more than the 53 cards currently using
+   it, and the three ways a card can ask a player something — targets, a cost, a mid-resolution
+   decision — are all in place now. Adding a card is a few declarative lines.
+2. A four-player Commander pod, played end to end. The engine and the server both support up to
+   four seats, and nobody has sat at one: declarations are per defender and a seat can only block
+   what attacks it, but that is an assertion rather than a game anybody has played.
+3. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
+   `deck:load` already resolves any deck handed to it, but a real list needs card data — type
+   lines, mana costs, oracle text — and the `cards` table has never been populated while this
+   environment cannot reach Scryfall. A deck of bare names has no type line, so the engine cannot
+   tell a land from a spell and Arena mode would be unusable; the tabletop would be fine. Worth
+   building where the data exists, not here.
+4. A stronger opponent. The current one plays a real game but does not plan one. It now answers
+   mid-resolution questions in the direction that helps it and prefers taking more of a modal
+   spell, which is judgement rather than search — a search needs a position evaluator.

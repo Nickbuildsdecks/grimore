@@ -168,6 +168,38 @@ describe('a whole automated game', () => {
     expect(sacrifices).toBeGreaterThan(0);
   });
 
+  it('casts modal spells, and does not always take the same mode', () => {
+    // A modal card could sit in a deck and never be cast while every other test in this file
+    // passed, and a bot that always took mode one would look identical to a bot that could not
+    // see the others. So: the modes get cast, and not always the same one.
+    //
+    // Watched as the game runs rather than read off `state.log`, which is a 200-entry window on a
+    // game of several hundred actions.
+    const taken = new Set<string>();
+    let casts = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      let s = table(seed * 613, (seed % 2) as SeatIndex, ['verdant-guard', 'rot-harvest']);
+      for (let i = 0; i < 6000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const before = s.stateVersion;
+        s = stepOnce(s, seat);
+        if (s.stateVersion === before) break;
+        for (const object of Object.values(s.stackObjects)) {
+          if (object.modes === undefined) continue;
+          const name = s.cardDefs[object.cardKey]?.name ?? '?';
+          if (!taken.has(`${name}:${object.modes.join(',')}`)) casts += 1;
+          taken.add(`${name}:${object.modes.join(',')}`);
+        }
+      }
+      expect(s.finished).toBe(true);
+    }
+    expect(casts).toBeGreaterThan(0);
+    // More than one distinct combination over twelve games, which is the claim that a bot taking
+    // mode one every time would fail.
+    expect(taken.size).toBeGreaterThan(1);
+  });
+
   it('answers the questions cards ask mid-resolution, and answers them the right way round', () => {
     // Every one of these cards could sit in a deck and never be drawn, cast or answered while
     // every other test in this file passed, so the behaviour is asserted from real games: the
@@ -251,29 +283,34 @@ describe('a whole automated game', () => {
     // is measured separately because it used to be the peak and no longer is.
     let worst = 0;
     let searching = 0;
-    let s = table(4242, 0, ['tidal-mind', 'tidal-mind']);
-    for (let i = 0; i < 4000 && !s.finished; i++) {
-      const seat = seatToAct(s);
-      if (seat === null) break;
-      const before = s.stateVersion;
-      s = stepOnce(s, seat);
-      if (s.stateVersion === before) break;
-      // Every action, not a sample. The peak is one action wide: a library search inlines that
-      // seat's whole library — sixty card definitions the view normally never carries — and the
-      // very next action shuffles and closes it. Sampling every twenty-fifth action would miss
-      // the only moment the payload is anywhere near the cap.
-      for (const viewer of [0, 1] as SeatIndex[]) {
-        const view = viewFor(s, viewer);
-        const packed = packView(view);
-        // Packing has to be invisible: the client unpacks it and must hold the identical view.
-        // Asserted here rather than only in a unit test, across every state of a whole game.
-        expect(unpackView(packed)).toEqual(view);
-        const size = JSON.stringify(packed).length;
-        worst = Math.max(worst, size);
-        if (s.seats[viewer]!.searching) searching = Math.max(searching, size);
+    // Several shuffles rather than one lucky seed: whether a tutor is drawn and castable is the
+    // shuffle's business, and a single seed stops opening a library the moment a deck list is
+    // edited. It stops as soon as it has seen one, so the usual cost is a single game.
+    for (let seed = 0; seed < 8 && searching === 0; seed++) {
+      let s = table(4242 + seed * 101, 0, ['tidal-mind', 'tidal-mind']);
+      for (let i = 0; i < 4000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const before = s.stateVersion;
+        s = stepOnce(s, seat);
+        if (s.stateVersion === before) break;
+        // Every action, not a sample. The peak is one action wide: a library search opens that
+        // seat's whole library — sixty cards the view normally never carries — and the very next
+        // action shuffles and closes it. Sampling every twenty-fifth action would miss the only
+        // moment the payload is anywhere near the cap.
+        for (const viewer of [0, 1] as SeatIndex[]) {
+          const view = viewFor(s, viewer);
+          const packed = packView(view);
+          // Packing has to be invisible: the client unpacks it and must hold the identical view.
+          // Asserted here rather than only in a unit test, across every state of a whole game.
+          expect(unpackView(packed)).toEqual(view);
+          const size = JSON.stringify(packed).length;
+          worst = Math.max(worst, size);
+          if (s.seats[viewer]!.searching) searching = Math.max(searching, size);
+        }
       }
+      expect(s.finished).toBe(true);
     }
-    expect(s.finished).toBe(true);
     expect(worst).toBeGreaterThan(0);
     expect(worst).toBeLessThan(64 * 1024);
     // Measured, not assumed: without this the claim above is about a game in which no library was

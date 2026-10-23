@@ -71,20 +71,31 @@ export function PlaySheet({ card, plays, mustDiscard, onPlay, onDiscard, manual,
             <h3 className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--g-text-muted)]">
               <Sparkles className="size-3" /> You can
             </h3>
-            {plays.map((play, index) => (
-              <Button
-                key={`${play.kind}-${play.abilityIndex ?? index}`}
-                data-testid={`play-${play.kind}-${play.abilityIndex ?? 0}`}
-                className="justify-start"
-                onClick={() => onPlay(play)}
-              >
-                <span className="truncate">{play.description}</span>
-                {play.manaCost ? <span className="ml-auto font-mono text-xs opacity-80">{play.manaCost}</span> : null}
-                {targetsWanted(play) > 0 ? (
-                  <span className="ml-1 text-[10px] uppercase opacity-70">needs a target</span>
-                ) : null}
-              </Button>
-            ))}
+            {plays.map((play, index) => {
+              // A modal spell arrives as one play per combination of modes, all of them a `cast`
+              // of the same card with no ability index — so the mode has to be part of the key or
+              // three Charm modes share one id, which breaks React and every selector that reads
+              // it. `index` alone would be stable enough but says nothing; the modes say which.
+              const slug = play.modes === undefined
+                ? String(play.abilityIndex ?? 0)
+                : `mode-${play.modes.join('-')}`
+              return (
+                <Button
+                  key={`${play.kind}-${slug}-${index}`}
+                  data-testid={`play-${play.kind}-${slug}`}
+                  // Wrapping rather than truncating: a mode's description is what tells two
+                  // otherwise identical plays apart, and the part that differs is at the end.
+                  className="h-auto min-h-9 justify-start whitespace-normal py-1.5 text-left"
+                  onClick={() => onPlay(play)}
+                >
+                  <span>{play.description}</span>
+                  {play.manaCost ? <span className="ml-auto font-mono text-xs opacity-80">{play.manaCost}</span> : null}
+                  {targetsWanted(play) > 0 ? (
+                    <span className="ml-1 text-[10px] uppercase opacity-70">needs a target</span>
+                  ) : null}
+                </Button>
+              )
+            })}
           </div>
         ) : (
           <p data-testid="no-plays" className="text-xs text-[var(--g-text-muted)]">

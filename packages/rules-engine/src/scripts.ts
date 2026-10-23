@@ -465,6 +465,11 @@ const BLOODTHRONE_VAMPIRE: CardScript = {
   ],
 };
 
+export const KNIGHT_TOKEN: CardDef = {
+  name: 'Knight', typeLine: 'Token Creature — Knight', manaCost: '', cmc: 0,
+  power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
+};
+
 export const INSECT_TOKEN: CardDef = {
   name: 'Insect', typeLine: 'Token Creature — Insect', manaCost: '', cmc: 0,
   power: '1', toughness: '1', oracleText: '', colors: ['B', 'G'],
@@ -492,6 +497,113 @@ const IZONI: CardScript = {
       effect: (c) => draw(gainLife(c.state, c.controller, 1), c.controller, 1),
     },
   ],
+};
+
+// ── Modal spells: "Choose one —" ─────────────────────────────────────────────────────────────────
+
+const SELESNYA_CHARM: CardScript = {
+  name: 'Selesnya Charm',
+  modal: {
+    modes: [
+      {
+        description: 'Target creature gets +2/+2 and gains trample until end of turn',
+        targets: [TARGET_CREATURE],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null
+            ? c.state
+            : pump(c.state, [id], c.source, c.controller, { power: 2, toughness: 2, keywords: ['trample'] });
+        },
+      },
+      {
+        description: 'Exile target creature with power 5 or greater',
+        targets: [{
+          kind: 'creature', description: 'target creature with power 5 or greater',
+          // Current power, not printed: a 2/2 pumped past five is a legal target and a 6/6 shrunk
+          // below it is not, which is the whole reason characteristics are computed on demand.
+          filter: (state, candidate) => candidate.kind === 'card'
+            && (state.instances[candidate.id] !== undefined)
+            && characteristicsOf(state, state.instances[candidate.id]!).power >= 5,
+        }],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : exileCard(c.state, id);
+        },
+      },
+      {
+        description: 'Create a 2/2 white Knight creature token with vigilance',
+        effect: (c) => createToken(c.state, c.controller, KNIGHT_TOKEN, 1),
+      },
+    ],
+  },
+};
+
+/**
+ * "Choose one or both", which is a modal spell with a range rather than a count.
+ *
+ * Both halves are worth having separately — countering a creature spell, and buying a creature
+ * back — and the card lets you take both when you can pay for both targets. `legalActions` offers
+ * three plays: each half alone, and the pair.
+ */
+const SOUL_MANIPULATION: CardScript = {
+  name: 'Soul Manipulation',
+  modal: {
+    min: 1,
+    max: 2,
+    modes: [
+      {
+        description: 'Counter target creature spell',
+        targets: [{
+          kind: 'spell', description: 'target creature spell',
+          filter: (state, candidate) => candidate.kind === 'card'
+            && state.instances[candidate.id] !== undefined
+            && characteristicsOf(state, state.instances[candidate.id]!).isCreature,
+        }],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : counterSpell(c.state, id);
+        },
+      },
+      {
+        description: 'Return target creature card from your graveyard to your hand',
+        targets: [yourGraveyardCreature],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : bounceToHand(c.state, id);
+        },
+      },
+    ],
+  },
+};
+
+const GRIM_DISCOVERY: CardScript = {
+  name: 'Grim Discovery',
+  modal: {
+    min: 1,
+    max: 2,
+    modes: [
+      {
+        description: 'Return target creature card from your graveyard to your hand',
+        targets: [yourGraveyardCreature],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : bounceToHand(c.state, id);
+        },
+      },
+      {
+        description: 'Return target land card from your graveyard to your hand',
+        targets: [{
+          kind: 'graveyard-land', description: 'target land card in your graveyard',
+          filter: (state, candidate, controller) =>
+            candidate.kind === 'card' && state.instances[candidate.id]?.zoneSeat === controller,
+        }],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : bounceToHand(c.state, id);
+        },
+      },
+    ],
+  },
 };
 
 // ── Cards that stop and ask while they resolve ───────────────────────────────────────────────────
@@ -634,6 +746,7 @@ const ALL: readonly CardScript[] = [
   GRAVEDIGGER, RAISE_DEAD, ZOMBIFY, THORNWEALD_ARCHER, WALL_OF_BLOSSOMS, LOTLETH_GIANT, IZONI,
   VAMPIRE_ARISTOCRAT, BLOODTHRONE_VAMPIRE,
   RAMPANT_GROWTH, DIABOLIC_TUTOR, MIND_ROT, FAITHLESS_LOOTING, FLESHBAG_MARAUDER,
+  SELESNYA_CHARM, SOUL_MANIPULATION, GRIM_DISCOVERY,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

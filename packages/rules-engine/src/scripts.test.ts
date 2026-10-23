@@ -16,7 +16,7 @@ import {
 } from './index.js';
 import {
   advanceTo, apply, arena, choices, countOf, decide, find, ids, life, namesIn, nextTurn,
-  passBoth, refusal,
+  passBoth, refusal, stackNames,
 } from './testkit.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
@@ -906,6 +906,173 @@ describe('the graveyard, which is a place cards come back from', () => {
     s = apply(s, { type: 'card:move', by: 1, card: izoni, toZone: 'battlefield' });
     expect(s.stackOrder).toEqual([]);
     expect(countOf(s, 1, 'battlefield', 'Insect')).toBe(0);
+  });
+});
+
+describe('modal spells, chosen as the spell is cast', () => {
+  /** A seat in its main phase with its lands tapped, from any deck. */
+  const set = (
+    seat: SeatIndex, deck: string, hand: readonly string[], lands: readonly string[],
+    extra: readonly string[] = [], turn = 2,
+  ): GameState => {
+    let s = arena({
+      decks: { [seat]: deck }, hands: { [seat]: hand },
+      battlefield: { [seat]: [...lands, ...extra] }, turn, firstSeat: seat,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, seat, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (!/^(Mountain|Forest|Plains|Island|Swamp)$/.test(name)) continue;
+      s = apply(s, { type: 'auto:activate', by: seat, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  const castable = (s: GameState, seat: SeatIndex, name: string) =>
+    legalActions(s, seat).plays.filter((p) => p.name === name);
+
+  it('offers one play per mode, and only the modes whose targets can be filled', () => {
+    // Nothing on the board but lands: the Knight is the only mode that can be taken, because the
+    // other two need a creature to point at. A table that offered all three would be offering two
+    // plays the engine refuses.
+    let s = set(1, 'verdant-guard', ['Selesnya Charm'], ['Forest', 'Plains']);
+    let offers = castable(s, 1, 'Selesnya Charm');
+    expect(offers).toHaveLength(1);
+    expect(offers[0]!.description).toContain('Knight');
+    expect(offers[0]!.modes).toEqual([2]);
+
+    // With a 3/3 out, the pump mode becomes legal too — but not the exile, which needs power 5.
+    s = set(1, 'verdant-guard', ['Selesnya Charm'], ['Forest', 'Plains'], ['Centaur Courser']);
+    offers = castable(s, 1, 'Selesnya Charm');
+    expect(offers.map((p) => p.modes)).toEqual([[0], [2]]);
+  });
+
+  it('resolves the mode that was chosen, and nothing else', () => {
+    let s = set(1, 'verdant-guard', ['Selesnya Charm'], ['Forest', 'Plains'], ['Centaur Courser']);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Selesnya Charm'),
+      modes: [0], targets: [{ kind: 'card', id: courser }],
+    }));
+    expect([power(s, courser), toughness(s, courser)]).toEqual([5, 5]);
+    expect(characteristicsOf(s, s.instances[courser]!).keywords.has('trample')).toBe(true);
+    // And the other two modes did not happen.
+    expect(countOf(s, 1, 'battlefield', 'Knight')).toBe(0);
+    expect(namesIn(s, 1, 'exile')).toEqual([]);
+  });
+
+  it('exiles only a creature that is big enough *now*, not as printed', () => {
+    // A 3/3 pumped past five is a legal target and a printed 5/5 is one either way. Computed
+    // power is the whole reason characteristics are not stored.
+    let s = set(1, 'verdant-guard', ['Selesnya Charm', 'Giant Growth'], ['Forest', 'Plains', 'Forest'], ['Centaur Courser']);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    expect(castable(s, 1, 'Selesnya Charm').map((p) => p.modes)).toEqual([[0], [2]]);
+
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: courser }],
+    }));
+    expect(power(s, courser)).toBe(6);
+    // Now the exile mode is on offer, because the creature grew into it.
+    expect(castable(s, 1, 'Selesnya Charm').map((p) => p.modes)).toEqual([[0], [1], [2]]);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Selesnya Charm'),
+      modes: [1], targets: [{ kind: 'card', id: courser }],
+    }));
+    expect(namesIn(s, 1, 'exile')).toContain('Centaur Courser');
+  });
+
+  it('refuses a mode the card does not offer, and refuses no mode at all', () => {
+    const s = set(1, 'verdant-guard', ['Selesnya Charm'], ['Forest', 'Plains']);
+    const charm = find(s, 1, 'hand', 'Selesnya Charm');
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: charm })).toContain('choose a mode');
+    // Two modes, from a card that says "choose one".
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: charm, modes: [0, 2] })).toContain('not a combination');
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: charm, modes: [9] })).toBeTruthy();
+    // And a mode on a spell that has none.
+    const s2 = set(0, 'ember-rush', ['Shock'], ['Mountain']);
+    expect(refusal(s2, {
+      type: 'auto:cast', by: 0, card: find(s2, 0, 'hand', 'Shock'),
+      modes: [0], targets: [{ kind: 'player', seat: 1 }],
+    })).toContain('no modes');
+  });
+
+  it('"choose one or both" offers each half and the pair, and does both when both are taken', () => {
+    let s = set(1, 'rot-harvest', ['Grim Discovery'], ['Swamp', 'Forest']);
+    // Nothing in the graveyard: the card is not castable at all, because both its modes need a
+    // target and neither has one.
+    expect(castable(s, 1, 'Grim Discovery')).toHaveLength(0);
+
+    // A creature in the graveyard makes the first half legal, and only that half.
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Centaur Courser'), toZone: 'graveyard' });
+    expect(castable(s, 1, 'Grim Discovery').map((p) => p.modes)).toEqual([[0]]);
+
+    // A land as well, and now all three combinations are on offer.
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Swamp'), toZone: 'graveyard' });
+    expect(castable(s, 1, 'Grim Discovery').map((p) => p.modes)).toEqual([[0], [1], [0, 1]]);
+
+    const body = find(s, 1, 'graveyard', 'Centaur Courser');
+    const land = find(s, 1, 'graveyard', 'Swamp');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Grim Discovery'),
+      modes: [0, 1], targets: [{ kind: 'card', id: body }, { kind: 'card', id: land }],
+    }));
+    // Both came back, each to the hand, each from its own mode's target, and neither is still
+    // in the graveyard. (The hand also holds whatever the draw step dealt, which is not the claim.)
+    expect(namesIn(s, 1, 'hand')).toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'hand')).toContain('Swamp');
+    expect(namesIn(s, 1, 'graveyard')).toEqual(['Grim Discovery']);
+  });
+
+  it('hands each mode its own target rather than the first mode\'s', () => {
+    // The bug this guards against is silent: targets arrive as one flat list, so a mode that took
+    // the wrong slice would return the right *kind* of card and the wrong card.
+    let s = set(1, 'rot-harvest', ['Grim Discovery'], ['Swamp', 'Forest']);
+    for (const name of ['Centaur Courser', 'Thornweald Archer', 'Swamp', 'Forest']) {
+      s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', name), toZone: 'graveyard' });
+    }
+    const archer = find(s, 1, 'graveyard', 'Thornweald Archer');
+    const forest = find(s, 1, 'graveyard', 'Forest');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Grim Discovery'),
+      modes: [0, 1], targets: [{ kind: 'card', id: archer }, { kind: 'card', id: forest }],
+    }));
+    expect(namesIn(s, 1, 'hand')).toContain('Thornweald Archer');
+    expect(namesIn(s, 1, 'hand')).toContain('Forest');
+    // The other two are still where they were: a mode reading the wrong slice would have taken
+    // the Courser or the Swamp instead, and both are the right *kind* of card for the other mode.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Swamp');
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Thornweald Archer');
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Forest');
+  });
+
+  it('Soul Manipulation counters a creature spell, and the stack says which mode is coming', () => {
+    let s = arena({
+      decks: { 0: 'tidal-mind' },
+      hands: { 0: ['Soul Manipulation'], 1: ['Centaur Courser'] },
+      battlefield: { 0: ['Island', 'Swamp', 'Island'], 1: ['Forest', 'Forest', 'Forest'] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    // Seat 1's turn, so seat 1 casts and then passes; seat 0's lands are untapped and the engine
+    // taps for the response itself, which is how holding up mana for a counterspell works.
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Centaur Courser') });
+    const spell = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 1 });
+
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Soul Manipulation'),
+      modes: [0], targets: [{ kind: 'card', id: spell }],
+    });
+    // Public from the moment it is cast: the player deciding whether to respond has to know which
+    // half of the card is coming, so the mode is in the stack description both tables read.
+    expect(stackNames(s).at(-1)).toContain('Counter target creature spell');
+
+    s = passBoth(s);
+    s = passBoth(s);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Centaur Courser');
   });
 });
 
