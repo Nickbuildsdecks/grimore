@@ -517,6 +517,48 @@ describe('a complete two-player game', () => {
     expect(s.seats[1]!.life).toBe(40);
   });
 
+  it('deals a four-seat Commander pod without the card layer tripping over the extra seats', () => {
+    // Only two-player tables have actually been played, and the lobby is built for that, but the
+    // format allows four. If a third person joins, the deal must not quietly break.
+    const four = createGame({
+      id: 'pod-of-four',
+      format: 'pod',
+      players: [
+        { playerId: 'p1', name: 'Nick' },
+        { playerId: 'p2', name: 'Friend' },
+        { playerId: 'p3', name: 'Third' },
+        { playerId: 'p4', name: 'Fourth' },
+      ],
+      seed: 7,
+    });
+    let s = applyMany(four, [
+      { type: 'deck:load', by: 0, seat: 0, deckId: 'ember-rush' },
+      { type: 'deck:load', by: 1, seat: 1, deckId: 'verdant-guard' },
+      { type: 'deck:load', by: 2, seat: 2, deckId: 'ember-rush' },
+      { type: 'deck:load', by: 3, seat: 3, deckId: 'verdant-guard' },
+      { type: 'game:start', by: 0 },
+    ]);
+    for (const seat of [0, 1, 2, 3] as const) {
+      expect(count(s, seat, 'hand')).toBe(7);
+      expect(count(s, seat, 'library')).toBe(53);
+      expect(count(s, seat, 'command')).toBe(1);
+      expect(s.seats[seat]!.life).toBe(40);
+      // Each seat sees its own grip and nobody else's, with three opponents rather than one.
+      const view = viewFor(s, seat);
+      for (const other of [0, 1, 2, 3].filter((i) => i !== seat)) {
+        for (const id of ids(s, other, 'hand')) expect(view.cards[id]!.card).toBeUndefined();
+      }
+    }
+    // The turn passes round all four, and an eliminated seat is skipped.
+    expect(s.activeSeat).toBe(0);
+    s = applyAction(s, { type: 'turn:pass', by: 0 });
+    expect(s.activeSeat).toBe(1);
+    s = applyAction(s, { type: 'concede', by: 2 });
+    s = applyAction(s, { type: 'turn:pass', by: 1 });
+    expect(s.activeSeat).toBe(3);
+    expect(s.finished).toBe(false);
+  });
+
   it('defines a key for a card the same way whoever asks', () => {
     expect(defKeyFor({ name: ' Lightning Bolt ', typeLine: '', manaCost: '', cmc: 1, oracleText: '', colors: [] }))
       .toBe('lightning bolt');
