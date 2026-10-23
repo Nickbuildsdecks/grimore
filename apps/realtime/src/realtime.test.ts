@@ -118,6 +118,61 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     return { a, b, code, aToken: created.seatToken!, bToken: joined.seatToken!, state };
   }
 
+  // The allow list is the one piece of configuration that silently stops a browser connecting, so
+  // both of its states are pinned: unset means any origin, set means only those.
+  it('accepts a browser on any origin when no allow list is configured', async () => {
+    const s = connect(url, {
+      transports: ['websocket'],
+      forceNew: true,
+      reconnection: false,
+      auth: { name: 'Browser' },
+      extraHeaders: { Origin: 'http://some-other-host:1234' },
+    });
+    clients.push(s);
+    await waitFor(s, 'connect');
+    expect(s.connected).toBe(true);
+  });
+
+  // The other direction, which is the one that matters for security: a configured allow list has to
+  // actually refuse everything else. Needs its own server because the allow list is fixed at start.
+  it('refuses a browser from an origin outside a configured allow list', async () => {
+    const guarded = await createRealtime({
+      redisUrl: REDIS_URL!,
+      allowedOrigins: ['https://grimore.gg'],
+      log: pino({ level: 'silent' }),
+      store: { keyPrefix: `test-origin:${Date.now().toString(36)}:${process.pid}` },
+    });
+    await new Promise<void>((resolve) => guarded.httpServer.listen(0, '127.0.0.1', resolve));
+    const { port } = guarded.httpServer.address() as AddressInfo;
+    const guardedUrl = `http://127.0.0.1:${port}`;
+
+    const attempt = (origin: string): Promise<string> =>
+      new Promise((resolve) => {
+        const s = connect(guardedUrl, {
+          transports: ['websocket'],
+          forceNew: true,
+          reconnection: false,
+          auth: { name: 'Browser' },
+          extraHeaders: { Origin: origin },
+        });
+        const finish = (outcome: string) => {
+          s.close();
+          resolve(outcome);
+        };
+        s.on('connect', () => finish('connected'));
+        s.on('connect_error', () => finish('refused'));
+        setTimeout(() => finish('timeout'), 4000);
+      });
+
+    try {
+      expect(await attempt('https://evil.example')).toBe('refused');
+      expect(await attempt('https://grimore.gg')).toBe('connected');
+    } finally {
+      await guarded.store.flushPrefix();
+      await guarded.close();
+    }
+  });
+
   it('serves /healthz', async () => {
     const res = await fetch(`${url}/healthz`);
     expect(res.status).toBe(200);
@@ -233,7 +288,16 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     expect(rejoined.seat).toBe(1);
     expect(rejoined.playerId).toBe(state.pod.seats[1]!.playerId);
     const back = await bobBack;
-    expect(back.state).toEqual(state.state); // game untouched by the reconnect
+    // The game is untouched by the reconnect. Asserted field by field rather than by comparing the
+    // two payloads: each socket now receives the state as *its own seat* may see it, so Bob's view
+    // and Alice's view of the same game are legitimately different objects (different `seat`, and
+    // each one's own hand). Comparing them for equality only ever passed because every client used
+    // to be sent the identical raw game state, hands and library order included.
+    const before = state.state as { stateVersion: number; turn: number; seats: { life: number }[] };
+    const after = back.state as { stateVersion: number; turn: number; seats: { life: number }[] };
+    expect(after.stateVersion).toBe(before.stateVersion);
+    expect(after.turn).toBe(before.turn);
+    expect(after.seats.map((s) => s.life)).toEqual(before.seats.map((s) => s.life));
 
     // The reclaimed seat can act.
     const acted = waitFor<PodStateEvent>(a, 'pod:state', (s) => s.stateVersion > back.stateVersion);
@@ -272,4 +336,240 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     okAck(await emitAck(b, 'pod:leave', {}));
     expect(await rt.store.get(code)).toBeNull();
   });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  // A whole game of Magic, over sockets, with two clients.
+  //
+  // The engine's own suite proves the rules; this proves the thing players actually touch: that two
+  // separate connections can run a game from shuffled decks to a winner, and that neither of them
+  // is ever sent the other's hand. The second half of that is the part a client cannot be trusted
+  // to do for itself, so it is asserted against every state payload the socket received, not just
+  // the final one.
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+
+  interface View {
+    seat: number | null;
+    turn: number;
+    started: boolean;
+    finished: boolean;
+    winnerSeat: number | null;
+    seats: {
+      life: number;
+      handCount: number;
+      libraryCount: number;
+      battlefieldCount: number;
+      graveyardCount: number;
+      deckId: string | null;
+    }[];
+    cards: Record<string, { id: string; zone: string; zoneSeat: number; tapped: boolean; card?: { name: string } }>;
+    zones: Record<string, string[]>;
+  }
+  const viewOf = (e: PodStateEvent): View => e.state as unknown as View;
+
+  describe('a whole game over the wire', () => {
+    it('two clients play from shuffled decks to a winner, and never see each other\u2019s hand', async () => {
+      const nick = await client('Nick');
+      const friend = await client('Friend');
+
+      // Every state payload each socket is ever sent, so redaction can be checked over the whole
+      // game rather than at one convenient moment.
+      const nickSaw: PodStateEvent[] = [];
+      const friendSaw: PodStateEvent[] = [];
+      nick.on('pod:state', (e: PodStateEvent) => nickSaw.push(e));
+      friend.on('pod:state', (e: PodStateEvent) => friendSaw.push(e));
+
+      const created = okAck(await emitAck(nick, 'pod:create', { name: 'Kitchen Table', format: 'modern', visibility: 'private' }));
+      const code = created.code!;
+      const bothSeated = waitFor<PodStateEvent>(nick, 'pod:state', (s) => s.pod.seats.length === 2);
+      okAck(await emitAck(friend, 'pod:join', { code, name: 'Friend' }));
+      await bothSeated;
+
+      // Ready up deals the table: the game exists but has not started, which is the window the
+      // lobby uses to pick decks.
+      okAck(await emitAck(nick, 'pod:ready', { ready: true }));
+      const tableDealt = waitFor<PodStateEvent>(nick, 'pod:state', (s) => s.state !== null);
+      const dealt = okAck(await emitAck(friend, 'pod:ready', { ready: true }));
+      let version = dealt.stateVersion!;
+      // The ack returns before the broadcast lands, so the deal has to be waited for rather than
+      // assumed: reading the last captured payload here would read the one from before the deal.
+      await tableDealt;
+      expect(viewOf(nickSaw.at(-1)!).started).toBe(false);
+
+      /**
+       * Waits until a socket's captured payloads satisfy a predicate.
+       *
+       * The acting socket's own broadcast is awaited by `act`, but the *other* socket's copy
+       * arrives independently. Reading its last payload straight after an action is a race that
+       * only shows up when the machine is busy, so anything asserted about the non-acting side
+       * waits for it instead.
+       */
+      const until = async (saw: PodStateEvent[], pred: (v: View) => boolean, ms = 5000): Promise<View> => {
+        const deadline = Date.now() + ms;
+        for (;;) {
+          const last = saw.at(-1);
+          const view = last === undefined ? null : viewOf(last);
+          if (view !== null && pred(view)) return view;
+          if (Date.now() > deadline) throw new Error('timed out waiting for the other client to catch up');
+          await new Promise((r) => setTimeout(r, 25));
+        }
+      };
+
+      /**
+       * Sends one action and returns the view the acting socket then holds.
+       *
+       * Keyed on the version rather than on how many payloads have arrived, because the ack and the
+       * broadcast are separate events and either can land first.
+       */
+      const act = async (socket: Client, action: Record<string, unknown>): Promise<View> => {
+        const saw = socket === nick ? nickSaw : friendSaw;
+        const res = okAck(await emitAck(socket, 'pod:action', { action, expectedVersion: version }));
+        version = res.stateVersion!;
+        if (!saw.some((e) => e.stateVersion >= version)) {
+          await waitFor<PodStateEvent>(socket, 'pod:state', (s) => s.stateVersion >= version);
+        }
+        return viewOf(saw.at(-1)!);
+      };
+
+      await act(nick, { type: 'deck:load', seat: 0, deckId: 'ember-rush' });
+      let v = await act(friend, { type: 'deck:load', seat: 1, deckId: 'verdant-guard' });
+      expect(v.seats[0]!.deckId).toBe('ember-rush');
+      expect(v.seats[1]!.deckId).toBe('verdant-guard');
+      expect(v.seats[0]!.libraryCount).toBe(61);
+
+      v = await act(nick, { type: 'game:start', firstSeat: 0 });
+      expect(v.started).toBe(true);
+      expect(v.seats[0]!.handCount).toBe(7);
+      expect(v.seats[1]!.handCount).toBe(7);
+
+      // ── Redaction, at the moment both hands exist ──────────────────────────────────────────────
+      // Nick sent game:start, so Friend's copy arrives on its own schedule: waited for, not assumed.
+      const nickView = viewOf(nickSaw.at(-1)!);
+      const friendView = await until(friendSaw, (view) => view.started);
+      expect(nickView.seat).toBe(0);
+      expect(friendView.seat).toBe(1);
+
+      const handOf = (view: View, seat: number): string[] => view.zones[`${seat}:hand`] ?? [];
+      // Nick knows his own seven and none of Friend's.
+      expect(handOf(nickView, 0)).toHaveLength(7);
+      for (const id of handOf(nickView, 0)) expect(nickView.cards[id]!.card).toBeDefined();
+      for (const id of handOf(nickView, 1)) expect(nickView.cards[id]!.card).toBeUndefined();
+      // And the reverse, from the other connection.
+      for (const id of handOf(friendView, 1)) expect(friendView.cards[id]!.card).toBeDefined();
+      for (const id of handOf(friendView, 0)) expect(friendView.cards[id]!.card).toBeUndefined();
+      // Neither library's order is on the wire at all, including one's own.
+      expect(nickView.zones['0:library']).toBeUndefined();
+      expect(nickView.zones['1:library']).toBeUndefined();
+      expect(nickView.seats[0]!.libraryCount).toBe(54);
+
+      // Friend mulligans and bottoms one.
+      v = await act(friend, { type: 'mulligan', seat: 1 });
+      expect(v.seats[1]!.handCount).toBe(7);
+      const toBottom = handOf(v, 1)[0]!;
+      v = await act(friend, { type: 'card:move', card: toBottom, toZone: 'library', position: 'bottom' });
+      expect(v.seats[1]!.handCount).toBe(6);
+
+      // ── Four turns each ───────────────────────────────────────────────────────────────────────
+      for (let turn = 0; turn < 8; turn++) {
+        const seat = turn % 2;
+        const socket = seat === 0 ? nick : friend;
+        await act(socket, { type: 'turn:untapAll', seat });
+        if (turn > 0) await act(socket, { type: 'zone:draw', seat, count: 1 });
+        const mine = viewOf((seat === 0 ? nickSaw : friendSaw).at(-1)!);
+        const card = handOf(mine, seat)[0];
+        if (card !== undefined) {
+          await act(socket, { type: 'card:move', card, toZone: 'battlefield' });
+          await act(socket, { type: 'card:tap', card, tapped: true });
+        }
+        v = await act(socket, { type: 'turn:pass' });
+      }
+      expect(v.turn).toBeGreaterThan(1);
+      expect(v.seats[0]!.battlefieldCount).toBeGreaterThan(0);
+      expect(v.seats[1]!.battlefieldCount).toBeGreaterThan(0);
+
+      // A creature trades; a token squad arrives; combat is recorded as life.
+      const board = Object.values(viewOf(nickSaw.at(-1)!).cards).filter((c) => c.zone === 'battlefield' && c.zoneSeat === 0);
+      expect(board.length).toBeGreaterThan(0);
+      v = await act(nick, { type: 'card:move', card: board[0]!.id, toZone: 'graveyard' });
+      expect(v.seats[0]!.graveyardCount).toBe(1);
+      v = await act(nick, {
+        type: 'token:create',
+        seat: 0,
+        count: 3,
+        card: { name: 'Goblin', typeLine: 'Token Creature \u2014 Goblin', manaCost: '', cmc: 0, power: '1', toughness: '1', oracleText: '', colors: ['R'] },
+      });
+      expect(v.seats[0]!.battlefieldCount).toBeGreaterThanOrEqual(3);
+
+      v = await act(nick, { type: 'life:adjust', seat: 0, delta: -4 });
+      expect(v.seats[0]!.life).toBe(16);
+      v = await act(friend, { type: 'life:adjust', seat: 1, delta: -20 });
+
+      // ── The game ends, both clients agree, and it refuses further play ────────────────────────
+      expect(v.finished).toBe(true);
+      expect(v.winnerSeat).toBe(0);
+      const nickFinal = await until(nickSaw, (view) => view.finished);
+      expect(nickFinal.winnerSeat).toBe(0);
+
+      const dead = await emitAck(nick, 'pod:action', { action: { type: 'zone:draw', seat: 0, count: 1 }, expectedVersion: version });
+      expect(dead).toMatchObject({ ok: false, error: { code: 'illegal_action' } });
+
+      // ── Redaction held for the entire game, not just at the checkpoint above ──────────────────
+      // Every card Friend ever held in hand, by id, from Friend's own payloads.
+      // Lobby payloads carry no game yet, so a null state here is correct and not a gap in cover.
+      const friendHandIds = new Set<string>();
+      for (const e of friendSaw) {
+        const fv = viewOf(e);
+        if (fv === null) continue;
+        for (const id of fv.zones['1:hand'] ?? []) friendHandIds.add(id);
+      }
+      expect(friendHandIds.size).toBeGreaterThan(7);
+      // Nick was never told what any of them were while they were in that hand.
+      let checked = 0;
+      for (const e of nickSaw) {
+        const nv = viewOf(e);
+        if (nv === null) continue;
+        for (const id of nv.zones['1:hand'] ?? []) {
+          expect(nv.cards[id]!.card).toBeUndefined();
+          checked++;
+        }
+        // Nor was any library ever shipped to him.
+        expect(nv.zones['0:library']).toBeUndefined();
+        expect(nv.zones['1:library']).toBeUndefined();
+      }
+      expect(checked).toBeGreaterThan(20);
+    }, 30_000);
+
+    it('refuses to let one client act for the other seat', async () => {
+      // Deliberately the client that is *not* the host: the host may act for any seat by design, so
+      // it is the wrong client to test the permission with. `b` joined, so `a` holds the table.
+      const { b, state } = await seatedPair();
+      // The server stamps `by` from the socket's own seat, so a forged `by` cannot take effect: the
+      // action is attributed to the sender and the engine then refuses it.
+      const res = await emitAck(b, 'pod:action', {
+        action: { type: 'life:adjust', by: 0, seat: 0, delta: -5 },
+        expectedVersion: state.stateVersion,
+      });
+      expect(res).toMatchObject({ ok: false, error: { code: 'illegal_action' } });
+      expect(!res.ok && res.error.message).toMatch(/may not modify/);
+    });
+
+    it('lets the host act for any seat, which is how a table fixes a misclick', async () => {
+      const { a, state } = await seatedPair();
+      okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'life:adjust', seat: 1, delta: -3 },
+        expectedVersion: state.stateVersion,
+      }));
+    });
+
+    it('reports a stale expectedVersion as a conflict without touching the game', async () => {
+      const { a, b, state } = await seatedPair();
+      const next = waitFor<PodStateEvent>(b, 'pod:state', (s) => s.stateVersion > state.stateVersion);
+      okAck(await emitAck(a, 'pod:action', { action: { type: 'life:adjust', seat: 0, delta: -1 }, expectedVersion: state.stateVersion }));
+      const after = await next;
+      const stale = await emitAck(b, 'pod:action', { action: { type: 'life:adjust', seat: 1, delta: -1 }, expectedVersion: state.stateVersion });
+      expect(stale).toMatchObject({ ok: false, error: { code: 'version_conflict' } });
+      // The losing client re-sends against the version it now holds and succeeds.
+      okAck(await emitAck(b, 'pod:action', { action: { type: 'life:adjust', seat: 1, delta: -1 }, expectedVersion: after.stateVersion }));
+    });
+  });
+
 });

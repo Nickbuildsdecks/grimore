@@ -33,7 +33,11 @@ const intFromString = (def: number, min = 0) =>
       return n;
     });
 
-export const envSchema = z
+/**
+ * Every key any service reads. Kept as a plain object (rather than going straight into the refined
+ * `envSchema`) so a service can `pick` the subset it actually uses — see `realtimeEnvSchema`.
+ */
+export const envBaseSchema = z
   .object({
     NODE_ENV: nodeEnv,
     PORT: intFromString(3000, 1),
@@ -67,17 +71,38 @@ export const envSchema = z
     SENTRY_DSN: z.string().url().optional(),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   })
-  .superRefine((cfg, ctx) => {
-    if (cfg.NODE_ENV === "production" && cfg.SESSION_SECRET.length < 32) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["SESSION_SECRET"],
-        message: "must be at least 32 characters in production",
-      });
-    }
-  });
+  ;
+
+export const envSchema = envBaseSchema.superRefine((cfg, ctx) => {
+  if (cfg.NODE_ENV === "production" && cfg.SESSION_SECRET.length < 32) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["SESSION_SECRET"],
+      message: "must be at least 32 characters in production",
+    });
+  }
+});
 
 export type Env = z.infer<typeof envSchema>;
+
+/**
+ * What `apps/realtime` actually needs: a port, Redis, the socket origin allow list and a log level.
+ *
+ * It had been calling `parseEnv()`, the whole-platform schema, so it refused to boot without
+ * `DATABASE_URL` and `SESSION_SECRET` — neither of which it ever reads. That is worse than
+ * inconvenient: a process that demands a database URL it never opens invites someone to put the
+ * production one into its environment, and it makes "the table will not start" look like a database
+ * problem when there is no database involved.
+ */
+export const realtimeEnvSchema = envBaseSchema.pick({
+  NODE_ENV: true,
+  PORT: true,
+  REDIS_URL: true,
+  SOCKET_ALLOWED_ORIGINS: true,
+  LOG_LEVEL: true,
+});
+
+export type RealtimeEnv = z.infer<typeof realtimeEnvSchema>;
 
 export class EnvError extends Error {
   constructor(
@@ -95,11 +120,24 @@ export class EnvError extends Error {
  * unset so `FOO=` in a .env file behaves like a missing key.
  */
 export function parseEnv(source: Record<string, string | undefined> = process.env): Env {
+  return parseWith(envSchema, source);
+}
+
+/** The narrow parse for `apps/realtime`. See `realtimeEnvSchema`. */
+export function parseRealtimeEnv(source: Record<string, string | undefined> = process.env): RealtimeEnv {
+  return parseWith(realtimeEnvSchema, source);
+}
+
+/** Shared parse-and-report, so every service reports a bad environment the same way. */
+function parseWith<T extends z.ZodTypeAny>(
+  schema: T,
+  source: Record<string, string | undefined>,
+): z.infer<T> {
   const cleaned: Record<string, string> = {};
   for (const [k, v] of Object.entries(source)) {
     if (v !== undefined && v !== "") cleaned[k] = v;
   }
-  const result = envSchema.safeParse(cleaned);
+  const result = schema.safeParse(cleaned);
   if (result.success) return result.data;
 
   const missing: string[] = [];

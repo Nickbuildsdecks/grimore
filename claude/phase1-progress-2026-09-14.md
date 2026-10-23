@@ -1363,3 +1363,90 @@ vacuous: both contracts have required fields with no defaults, so an omitted `pr
 route group, in the test file that already exists for it, would make every response contract
 enforced rather than aspirational. It is mechanical but it is 20 files, so it belongs in its own
 change rather than riding along here.
+
+## Checkpoint — Play Realm: two people can play a whole game of Magic (D27)
+
+Nick asked for a Play Realm two people can actually sit down at. This is that, and it is the D11
+work the sandbox-rooms decision deferred. Setup and troubleshooting: `claude/play-realm-setup.md`.
+
+**What exists now:** a shared digital tabletop at `/react/play`. Create a table, read the code out,
+your friend joins, you each pick a deck, and you play — shuffling, opening hands, mulligans, every
+zone, tokens, counters, auras, commander damage, turns, and a log of everything. Nobody can see
+anybody's hand.
+
+### What was already there, and what was missing
+
+`packages/rules-engine` turned out to be a well-built immutable reducer — seeded RNG, state-based
+actions, elimination, logging, version bumping — and `apps/realtime` a solid transport with
+Redis-backed pods, per-seat tokens, word-based codes, a reconnect grace window, rate limiting and
+optimistic concurrency. What neither had was **cards**: no zones, no instances, no draw or shuffle
+or move. It was a life tracker, not a game. So the work was a card layer on top of good foundations
+rather than a rewrite.
+
+- `packages/rules-engine`: `cards.ts`, `cardActions.ts`, `view.ts`, `starterDecks.ts`, and
+  `internal.ts` (the assertion and RNG helpers both halves of the reducer share, extracted so they
+  do not import each other in a cycle). 39 → 78 tests.
+- `apps/realtime`: per-seat redacted emission. 14 → 20 tests.
+- `apps/web`: `pages/PlayTable.tsx`, `components/table/CardFace.tsx`, `lib/table.ts`. 29 → 31 tests.
+- `scripts/play.mjs` (one command), `scripts/e2e-table.mjs` (37 checks in two real browsers).
+
+### Five defects found by building on it, all fixed
+
+- **The SPA was broken in Vite dev, entirely.** `packages/shared`'s barrel re-exported
+  `accountTokens.ts`, which imports `node:crypto`; Vite pre-bundles a workspace dependency eagerly,
+  so any value import from the barrel pulled a Node built-in into the browser graph and every page
+  died on load with *"does not provide an export named 'createHash'"*. The production build survived
+  it only because Rollup tree-shook the module away — so it was broken in the one mode a developer
+  actually uses, and nowhere else. It is a subpath export now (`@grimore/shared/account-tokens`),
+  server-only by construction.
+- **`apps/realtime` refused to boot without `DATABASE_URL`.** It called `parseEnv()`, the
+  whole-platform schema, and demanded a database URL and a session secret it never reads. Worse than
+  inconvenient: a process that demands a production database URL it never opens invites someone to
+  give it one. It has `parseRealtimeEnv()` now — port, Redis, origins, log level.
+- **With no `SOCKET_ALLOWED_ORIGINS`, no browser could connect at all.** `allowRequest` treats an
+  empty allow list as "any origin"; the `cors` option in the same object said `origin: false`, which
+  means the opposite. The two contradicted each other, so the *default* configuration answered every
+  cross-origin handshake with an opaque 403 while the allow-list logic was saying yes. Both
+  directions are now pinned by tests.
+- **Typing your name thrashed the connection.** The socket effect depended on the display name, so
+  every keystroke in the name field tore the socket down and opened a new one — and creating a table
+  immediately after typing raced a handshake that was already being abandoned, so it silently never
+  answered. One socket for the page's lifetime; the name lives in a ref.
+- **A burst of taps lost all but the first.** Each action carries the version it was composed
+  against, so firing several at once means the server refuses the rest — which is exactly what
+  tapping −1 five times quickly does. Actions are serialised now, so a burst applies in full and in
+  order, with retries kept for the other player's concurrent moves.
+
+Two smaller ones: the host's seat was named from the handshake rather than from what they typed
+(`pod:create` carries `playerName` now), and every zone was a flex item with default
+`min-width: auto`, so seven card backs forced a 430px row and pushed the whole table sideways on a
+phone.
+
+### Deliberate deviations, recorded as D27
+
+Tabletop not rules engine; the card layer inside the existing engine rather than a new package;
+hidden information enforced server-side per socket (including hiding your own library from you);
+definitions separate from instances so a view fits inside `STATE_MAX_BYTES`; the table outside the
+login gate so a friend needs no account and the only dependency is Redis.
+
+### Verified, not asserted
+
+- `packages/rules-engine` 78 tests, including a complete two-player game from shuffled decks to a
+  winner and a Commander game ending on 21 commander damage with the loser still on 40 life.
+- `apps/realtime` 20 tests, including two socket clients playing a full game against live Redis,
+  with redaction checked against **every** payload either client received, not one convenient moment.
+- `scripts/e2e-table.mjs`: two real Chromium contexts, a whole game through the actual UI, 37/37 —
+  and run against the stack started the way the documentation tells Nick to start it, not a
+  hand-assembled one.
+- Full workspace: 600 tests, run twice to catch the flakes (two were mine, both races where the test
+  read the *other* client's state without waiting for it; fixed rather than retried).
+
+### For Nick
+
+- `node scripts/play.mjs` and open the address it prints on both devices. Redis is the only thing
+  that has to be running first.
+- **The one thing I could not test is the `Caddyfile` change** — there is no Docker daemon here. A
+  bad Caddyfile stops Caddy starting, which takes the site down, so restart it while watching the
+  logs and revert that file if it complains. Everything else was run end to end.
+- The table needs no `apps/api` and no account, so a failing `/api/auth/status` in the console while
+  playing is expected rather than a symptom.

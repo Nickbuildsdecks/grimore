@@ -18,7 +18,7 @@ import {
   type PodErrorEvent,
   type ServerToClientEvents,
 } from '@grimore/shared';
-import { makePlayerId, PodError, type PodSnapshot, type PodStore } from './pod.js';
+import { makePlayerId, PodError, toSeatSnapshot, type PodSnapshot, type PodStore } from './pod.js';
 import { TokenBucket, type RateLimitOptions, DEFAULT_RATE_LIMIT } from './ratelimit.js';
 
 export type AckResult =
@@ -60,8 +60,21 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
   const graceTimers = new Set<NodeJS.Timeout>();
   const rateOpts = opts.rateLimit ?? DEFAULT_RATE_LIMIT;
 
-  const broadcast = (code: string, snapshot: PodSnapshot | null): void => {
-    if (snapshot) io.to(podRoom(code)).emit('pod:state', snapshot);
+  /**
+   * Sends every socket in the pod the state *as its own seat may see it*, never the raw game state.
+   *
+   * One payload per socket rather than one per room: `dealTable` compacts seat indices when the
+   * table is dealt, so a seat-numbered room joined at sit-down time can be the wrong room by the
+   * time the game starts. Resolving each socket's seat from the authoritative snapshot by playerId
+   * cannot go stale that way. A socket with no seat (a watcher) gets the spectator view.
+   */
+  const broadcast = async (code: string, snapshot: PodSnapshot | null): Promise<void> => {
+    if (!snapshot) return;
+    const sockets = await io.in(podRoom(code)).fetchSockets();
+    for (const member of sockets) {
+      const seat = snapshot.pod.seats.find((s) => s.playerId === member.data.playerId)?.seat ?? null;
+      member.emit('pod:state', toSeatSnapshot(snapshot, seat));
+    }
   };
 
   const fail = (socket: RealtimeSocket, ack: Ack | undefined, code: PodErrorEvent['code'], message: string): void => {
@@ -143,10 +156,13 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
 
     on('pod:create', async (input, ack) => {
       if (socket.data.podCode) throw new PodError('already_in_pod', 'leave your current pod first');
+      // The create payload may name the player; the handshake name is only a fallback for a client
+      // that does not send one.
+      if (input.playerName) socket.data.name = input.playerName;
       const result = await store.create(input, { playerId: socket.data.playerId, name: socket.data.name ?? 'Host' });
       seatSocket(result);
       ack?.({ ok: true, code: result.pod.code, seat: 0, seatToken: result.seatToken, playerId: result.playerId, stateVersion: result.stateVersion });
-      broadcast(result.pod.code, result);
+      await broadcast(result.pod.code, result);
       log.info({ code: result.pod.code, playerId: result.playerId }, 'pod created');
     });
 
@@ -158,7 +174,7 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       socket.data.name = input.name;
       seatSocket(result);
       ack?.({ ok: true, code: input.code, seat: result.seat, seatToken: result.seatToken, playerId: result.playerId, stateVersion: result.stateVersion });
-      broadcast(input.code, result);
+      await broadcast(input.code, result);
       log.info({ code: input.code, seat: result.seat, reclaimed: result.reclaimed }, 'player joined');
     });
 
@@ -169,7 +185,7 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       socket.data.seatToken = undefined;
       await socket.leave(podRoom(code));
       const snap = await store.leave(code, playerId);
-      broadcast(code, snap);
+      await broadcast(code, snap);
     };
 
     on('pod:leave', async (_input, ack) => {
@@ -181,14 +197,14 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       const { code, playerId } = requireSeat();
       const snap = await store.ready(code, playerId, input.ready);
       ack?.({ ok: true, stateVersion: snap.stateVersion });
-      broadcast(code, snap);
+      await broadcast(code, snap);
     });
 
     on('pod:action', async (input, ack) => {
       const { code, playerId } = requireSeat();
       const snap = await store.applyAction(code, playerId, input.action, input.expectedVersion);
       ack?.({ ok: true, stateVersion: snap.stateVersion });
-      broadcast(code, snap);
+      await broadcast(code, snap);
     });
 
     on('pod:chat', async (input, ack) => {
@@ -218,14 +234,14 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
         .markDisconnected(code, playerId)
         .then((res) => {
           if (!res) return;
-          broadcast(code, res.snapshot);
+          void broadcast(code, res.snapshot);
           const timer = setTimeout(() => {
             graceTimers.delete(timer);
             void store
               .reapDisconnected(code, playerId, res.at)
               .then((r) => {
                 if (r.changed) {
-                  broadcast(code, r.snapshot);
+                  void broadcast(code, r.snapshot);
                   log.info({ code, playerId }, 'seat reaped after grace window');
                 }
               })

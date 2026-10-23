@@ -21,6 +21,11 @@ export default defineConfig({
         target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:4000",
         changeOrigin: true,
       },
+      // No /socket.io entry on purpose. Proxying the Play Realm socket through here did not carry
+      // the WebSocket upgrade reliably (the upgrade was reset before reaching the target), so in
+      // development the browser addresses the table server directly via VITE_REALTIME_URL, which
+      // `scripts/play.mjs` sets for you. In production one reverse proxy serves both on one origin
+      // and that variable is not set at all — see the Caddyfile.
     },
   },
 })

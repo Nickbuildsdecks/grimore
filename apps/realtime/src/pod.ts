@@ -30,6 +30,8 @@ import {
 } from '@grimore/shared';
 import {
   applyAction as engineApply,
+  viewFor,
+  type GameView,
   createGame,
   EngineError,
   FORMATS,
@@ -139,6 +141,29 @@ export function toSnapshot(record: PodRecord, version: number): PodSnapshot {
     pod: { ...record.pod, seats: record.seats.map(publicSeat) },
     state: record.game,
     stateVersion: version,
+  };
+}
+
+/** A snapshot carrying one seat's redacted view instead of the whole game state. */
+export interface PodViewSnapshot {
+  pod: Pod;
+  state: GameView | null;
+  stateVersion: number;
+}
+
+/**
+ * Narrows a snapshot to what one seat may see. `seat` is null for a spectator.
+ *
+ * This is the only shape that may leave the server for a card game. `PodSnapshot.state` is the full
+ * `GameState`, which contains both hands and the order of both libraries — broadcasting it to the
+ * room would hand every player their opponent's grip, and no amount of client-side discipline fixes
+ * data the client already has. See the header of `packages/rules-engine/src/view.ts`.
+ */
+export function toSeatSnapshot(snapshot: PodSnapshot, seat: number | null): PodViewSnapshot {
+  return {
+    pod: snapshot.pod,
+    state: snapshot.state === null ? null : viewFor(snapshot.state, seat),
+    stateVersion: snapshot.stateVersion,
   };
 }
 

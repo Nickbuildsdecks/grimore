@@ -23,12 +23,10 @@ import {
   ResetPasswordInput,
   VerifyEmailInput,
   FORGOT_PASSWORD_MESSAGE,
-  issueToken,
-  hashToken,
-  checkToken,
-  TOKEN_REJECTION_MESSAGE,
   passwordPolicyError,
 } from '@grimore/shared';
+// Server-only: it imports node:crypto, so it is deliberately not in the barrel the browser reaches.
+import { issueToken, hashToken, checkToken, TOKEN_REJECTION_MESSAGE } from '@grimore/shared/account-tokens';
 import { withTransaction, type PoolClient } from '@grimore/db';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';

@@ -1,3 +1,4 @@
+import type { CardDef, CardInstance, ZoneId } from './cards.js';
 import type { FormatId } from './formats.js';
 
 /** Zero-based seat index at the table. */
@@ -19,6 +20,16 @@ export interface Seat {
   readonly eliminatedReason: EliminatedReason | null;
   /** Additional mana this seat pays to cast its commander (typically 0, 2, 4, ...). */
   readonly commanderTax: number;
+  /**
+   * True while this seat is searching its own library, which is the only time its own library
+   * contents appear in its view. Without this a player would permanently know their next draw.
+   * Shuffling clears it, which is also the rule at a real table.
+   */
+  readonly searching: boolean;
+  /** How many times this seat has mulliganed, so the London bottoming count is derivable. */
+  readonly mulligans: number;
+  /** Deck this seat loaded, for display. */
+  readonly deckId: string | null;
 }
 
 export interface LogEntry {
@@ -50,6 +61,15 @@ export interface GameState {
   /** Bounded (most recent MAX_LOG_ENTRIES) history. */
   readonly log: readonly LogEntry[];
   readonly rngSeed: number;
+
+  // ── Card layer ────────────────────────────────────────────────────────────────────────────────
+  /** Unique printed cards in play, keyed by `defKeyFor`. Instances point in here — see cards.ts. */
+  readonly cardDefs: Readonly<Record<string, CardDef>>;
+  readonly instances: Readonly<Record<string, CardInstance>>;
+  /** `"<seat>:<zone>"`, plus `"stack"` for the shared stack. Ordered; library index 0 is the top. */
+  readonly zones: Readonly<Record<string, readonly string[]>>;
+  /** Source of instance ids, so an id is never reused within a game. */
+  readonly instanceSeq: number;
 }
 
 export const MAX_LOG_ENTRIES = 200;
@@ -122,6 +142,92 @@ export interface GameResetAction extends BaseAction {
   readonly type: 'game:reset';
 }
 
+// ── Card actions ────────────────────────────────────────────────────────────────────────────────
+// Every one of these is a physical move, not a game rule: the engine never asks whether a play is
+// legal, only whether it is physically coherent (the card exists, the zone exists, the seat may
+// touch it). See the header of cards.ts for why.
+
+export interface DeckLoadAction extends BaseAction {
+  readonly type: 'deck:load';
+  readonly seat: SeatIndex;
+  /** Id of a built-in deck, or a key into `ActionContext.decks`. */
+  readonly deckId: string;
+}
+export interface ZoneDrawAction extends BaseAction {
+  readonly type: 'zone:draw';
+  readonly seat: SeatIndex;
+  readonly count: number;
+}
+export interface ZoneShuffleAction extends BaseAction {
+  readonly type: 'zone:shuffle';
+  readonly seat: SeatIndex;
+  readonly zone: ZoneId;
+}
+/** Opens this seat's own library to this seat only, until it shuffles. */
+export interface ZoneSearchAction extends BaseAction {
+  readonly type: 'zone:search';
+  readonly seat: SeatIndex;
+  readonly searching: boolean;
+}
+export interface CardMoveAction extends BaseAction {
+  readonly type: 'card:move';
+  readonly card: string;
+  readonly toZone: ZoneId;
+  /** Defaults to the card's owner, which is what sends a stolen creature home when it dies. */
+  readonly toSeat?: SeatIndex;
+  /** Only meaningful for an ordered zone; anything else appends. */
+  readonly position?: 'top' | 'bottom';
+}
+export interface CardTapAction extends BaseAction {
+  readonly type: 'card:tap';
+  readonly card: string;
+  /** Omitted toggles. */
+  readonly tapped?: boolean;
+}
+export interface CardFaceDownAction extends BaseAction {
+  readonly type: 'card:faceDown';
+  readonly card: string;
+  readonly faceDown?: boolean;
+}
+export interface CardRevealAction extends BaseAction {
+  readonly type: 'card:reveal';
+  readonly card: string;
+  readonly revealed?: boolean;
+}
+export interface CardCounterAction extends BaseAction {
+  readonly type: 'card:counter';
+  readonly card: string;
+  readonly key: string;
+  readonly delta: number;
+}
+export interface CardAttachAction extends BaseAction {
+  readonly type: 'card:attach';
+  readonly card: string;
+  /** null detaches. */
+  readonly to: string | null;
+}
+/** Stealing a permanent: physically a move to the new controller's battlefield, logged as control. */
+export interface CardControlAction extends BaseAction {
+  readonly type: 'card:control';
+  readonly card: string;
+  readonly toSeat: SeatIndex;
+}
+export interface TurnUntapAllAction extends BaseAction {
+  readonly type: 'turn:untapAll';
+  readonly seat: SeatIndex;
+}
+export interface TokenCreateAction extends BaseAction {
+  readonly type: 'token:create';
+  readonly seat: SeatIndex;
+  readonly card: CardDef;
+  readonly count?: number;
+}
+/** London mulligan: hand back, shuffle, draw a full grip. Bottoming is then ordinary card moves. */
+export interface MulliganAction extends BaseAction {
+  readonly type: 'mulligan';
+  readonly seat: SeatIndex;
+}
+
 export type Action =
   | LifeAdjustAction
   | PoisonAdjustAction
@@ -135,13 +241,68 @@ export type Action =
   | CoinFlipAction
   | ConcedeAction
   | GameStartAction
-  | GameResetAction;
+  | GameResetAction
+  | DeckLoadAction
+  | ZoneDrawAction
+  | ZoneShuffleAction
+  | ZoneSearchAction
+  | CardMoveAction
+  | CardTapAction
+  | CardFaceDownAction
+  | CardRevealAction
+  | CardCounterAction
+  | CardAttachAction
+  | CardControlAction
+  | TurnUntapAllAction
+  | TokenCreateAction
+  | MulliganAction;
 
 export type ActionType = Action['type'];
+
+/**
+ * The card half of the union. Having it named is what lets each reducer keep a real exhaustiveness
+ * check: `engine.ts` delegates anything it does not handle, and `cardActions.ts` narrows to this
+ * first, so adding an action to either half without handling it is a type error rather than a
+ * runtime surprise.
+ */
+export type CardAction =
+  | DeckLoadAction
+  | ZoneDrawAction
+  | ZoneShuffleAction
+  | ZoneSearchAction
+  | CardMoveAction
+  | CardTapAction
+  | CardFaceDownAction
+  | CardRevealAction
+  | CardCounterAction
+  | CardAttachAction
+  | CardControlAction
+  | TurnUntapAllAction
+  | TokenCreateAction
+  | MulliganAction;
+
+export const CARD_ACTION_TYPES: readonly CardAction['type'][] = Object.freeze([
+  'deck:load', 'zone:draw', 'zone:shuffle', 'zone:search', 'card:move', 'card:tap', 'card:faceDown',
+  'card:reveal', 'card:counter', 'card:attach', 'card:control', 'turn:untapAll', 'token:create',
+  'mulligan',
+]);
+
+export function isCardAction(action: Action): action is CardAction {
+  return (CARD_ACTION_TYPES as readonly string[]).includes(action.type);
+}
 
 export interface ActionContext {
   /** When true, the issuing seat may act on behalf of any seat (table host). */
   readonly isHost?: boolean;
+  /** Decks resolvable by `deck:load`, merged over the built-in ones. */
+  readonly decks?: Readonly<Record<string, import('./cards.js').DeckSpec>>;
+}
+
+/** What a reducer case returns: the new state plus what to write in the log. */
+export interface Outcome {
+  readonly state: GameState;
+  readonly message: string;
+  readonly data?: Record<string, unknown>;
 }
 
 export type EngineErrorCode =
@@ -156,7 +317,11 @@ export type EngineErrorCode =
   | 'NOT_ACTIVE_SEAT'
   | 'FORBIDDEN'
   | 'SEAT_ELIMINATED'
-  | 'RULE_NOT_APPLICABLE';
+  | 'RULE_NOT_APPLICABLE'
+  | 'INVALID_CARD'
+  | 'INVALID_ZONE'
+  | 'INVALID_DECK'
+  | 'EMPTY_LIBRARY';
 
 export class EngineError extends Error {
   readonly code: EngineErrorCode;
@@ -174,3 +339,6 @@ export interface CreateGameOptions {
   /** Integer seed. Defaults to a hash of the game id so creation is deterministic. */
   readonly seed?: number;
 }
+
+/** Re-exported so callers need one import for the whole engine surface. */
+export type { CardDef, CardInstance, ZoneId };

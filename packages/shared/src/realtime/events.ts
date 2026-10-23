@@ -60,7 +60,15 @@ export type Pod = z.infer<typeof Pod>;
 export const PodCreateInput = z.object({
   format: Format.default("commander"),
   visibility: PodVisibility.default("private"),
+  /** The table's name, not the player's. */
   name: z.string().trim().min(1).max(POD_NAME_MAX),
+  /**
+   * Who is sitting down. Optional for compatibility; without it the host's seat is named from the
+   * handshake, which is whatever the client knew when it opened the socket — so a player who typed
+   * a name and then made a table was seated under their previous one. `pod:join` has always carried
+   * the player's name; this is the same thing for the host.
+   */
+  playerName: PlayerName.optional(),
 });
 export type PodCreateInput = z.infer<typeof PodCreateInput>;
 

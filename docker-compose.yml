@@ -79,6 +79,31 @@ services:
       redis:
         condition: service_healthy
 
+  # The Play Realm table server. Behind the same `v2` profile as the API, so a plain
+  # `docker compose up -d` does not start it. Note what it does NOT have: no DATABASE_URL and no
+  # Postgres dependency — tables live entirely in Redis and a player is identified by the seat token
+  # this service issues, not by a Grimore account. Giving it a database URL it never opens would be
+  # handing a credential to a process with no use for one.
+  realtime:
+    profiles: ["v2"]
+    build:
+      context: .
+      dockerfile: apps/realtime/Dockerfile
+    container_name: grimore-realtime
+    restart: always
+    expose:
+      - "3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      # The origins a browser may open a table socket from. Leave unset to allow any origin; set it
+      # once DNS is in front of the VM so a page on another site cannot drive your table.
+      - SOCKET_ALLOWED_ORIGINS=${SOCKET_ALLOWED_ORIGINS:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: grimore-postgres

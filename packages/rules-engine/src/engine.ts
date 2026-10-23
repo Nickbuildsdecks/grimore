@@ -4,6 +4,29 @@ import {
   POISON_THRESHOLD,
   isFormatId,
 } from './formats.js';
+import { dealOpeningHands, reduceCardAction } from './cardActions.js';
+import {
+  assertCounterKey,
+  assertDelta,
+  assertHost,
+  assertInteger,
+  assertIntegerInRange,
+  assertMayActFor,
+  assertNotEliminated,
+  assertSeatIndex,
+  clampValue,
+  hashString,
+  MAX_COUNTER_KEY_LENGTH,
+  MAX_DICE_COUNT,
+  MAX_DICE_SIDES,
+  MIN_DICE_COUNT,
+  MIN_DICE_SIDES,
+  actionSeed,
+  deriveNextSeed,
+  mulberry32,
+  replaceSeat,
+  seatName,
+} from './internal.js';
 import {
   EngineError,
   MAX_LOG_ENTRIES,
@@ -13,115 +36,28 @@ import {
   type EliminatedReason,
   type GameState,
   type LogEntry,
+  type Outcome,
   type Seat,
   type SeatIndex,
 } from './types.js';
 
-// ---------------------------------------------------------------------------
-// Limits
-// ---------------------------------------------------------------------------
-
-export const MAX_DELTA = 999;
-export const MIN_DICE_SIDES = 2;
-export const MAX_DICE_SIDES = 1000;
-export const MIN_DICE_COUNT = 1;
-export const MAX_DICE_COUNT = 20;
-export const MAX_COUNTER_KEY_LENGTH = 32;
-/** Absolute bound on any tracked value so state can never overflow. */
-export const MAX_ABS_VALUE = 1_000_000;
-
-// ---------------------------------------------------------------------------
-// PRNG (mulberry32) — small, fast, deterministic.
-// ---------------------------------------------------------------------------
-
-/** Returns a function producing floats in [0, 1) from a 32-bit integer seed. */
-export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** FNV-1a 32-bit hash of a string, used to derive seeds from ids. */
-export function hashString(input: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-
-/**
- * The seed for the RNG used by a particular action is derived from the game's
- * seed and the version of the state the action is applied to, so any client
- * replaying the same action log obtains identical dice and coin results.
- */
-export function actionSeed(rngSeed: number, stateVersion: number): number {
-  const mixed = (rngSeed ^ Math.imul(stateVersion + 1, 0x9e3779b9)) >>> 0;
-  // Run one mulberry32 step so adjacent versions are decorrelated.
-  return Math.floor(mulberry32(mixed)() * 4294967296) >>> 0;
-}
-
-/** Derives the seed for the next game after a reset. */
-export function deriveNextSeed(rngSeed: number): number {
-  return Math.floor(mulberry32((rngSeed + 0x51ed270b) >>> 0)() * 4294967296) >>> 0;
-}
-
-// ---------------------------------------------------------------------------
-// Validation helpers
-// ---------------------------------------------------------------------------
-
-function assertInteger(value: unknown, label: string): asserts value is number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
-    throw new EngineError('INVALID_NUMBER', `${label} must be a finite integer`);
-  }
-}
-
-function assertIntegerInRange(value: unknown, min: number, max: number, label: string): asserts value is number {
-  assertInteger(value, label);
-  if (value < min || value > max) {
-    throw new EngineError('INVALID_NUMBER', `${label} must be between ${min} and ${max}`);
-  }
-}
-
-function assertDelta(value: unknown, label = 'delta'): asserts value is number {
-  assertIntegerInRange(value, -MAX_DELTA, MAX_DELTA, label);
-}
-
-function assertSeatIndex(state: GameState, value: unknown, label = 'seat'): asserts value is SeatIndex {
-  assertInteger(value, label);
-  if (value < 0 || value >= state.seats.length) {
-    throw new EngineError('INVALID_SEAT', `${label} ${value} does not exist at this table`);
-  }
-}
-
-function assertNotEliminated(state: GameState, seat: SeatIndex): void {
-  const s = state.seats[seat];
-  if (s !== undefined && s.eliminated) {
-    throw new EngineError('SEAT_ELIMINATED', `seat ${seat} has been eliminated`);
-  }
-}
-
-function assertMayActFor(action: Action, target: SeatIndex, ctx: ActionContext): void {
-  if (action.by === target || ctx.isHost === true) return;
-  throw new EngineError('FORBIDDEN', `seat ${action.by} may not modify seat ${target}`);
-}
-
-function assertHost(action: Action, ctx: ActionContext): void {
-  if (ctx.isHost === true) return;
-  throw new EngineError('FORBIDDEN', `${action.type} requires the table host`);
-}
-
-function clampValue(value: number): number {
-  if (value > MAX_ABS_VALUE) return MAX_ABS_VALUE;
-  if (value < -MAX_ABS_VALUE) return -MAX_ABS_VALUE;
-  return value;
-}
+// The limits, PRNG and assertion helpers moved to `internal.ts` so the card reducer can share them
+// without importing this module back (see that file's header). Re-exported here because they were
+// part of this module's public surface before the split.
+export {
+  MAX_ABS_VALUE,
+  MAX_COUNTER_KEY_LENGTH,
+  MAX_DELTA,
+  MAX_DICE_COUNT,
+  MAX_DICE_SIDES,
+  MIN_DICE_COUNT,
+  MIN_DICE_SIDES,
+  actionSeed,
+  deriveNextSeed,
+  hashString,
+  mulberry32,
+  shuffled,
+} from './internal.js';
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -139,6 +75,9 @@ function makeSeat(index: number, playerId: string, name: string, life: number): 
     eliminated: false,
     eliminatedReason: null,
     commanderTax: 0,
+    searching: false,
+    mulligans: 0,
+    deckId: null,
   };
 }
 
@@ -188,17 +127,16 @@ export function createGame(options: CreateGameOptions): GameState {
     stateVersion: 0,
     log: [],
     rngSeed: seed,
+    cardDefs: {},
+    instances: {},
+    zones: {},
+    instanceSeq: 0,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Internal state helpers (all return new objects)
 // ---------------------------------------------------------------------------
-
-function replaceSeat(state: GameState, index: SeatIndex, patch: Partial<Seat>): GameState {
-  const seats = state.seats.map((s) => (s.index === index ? { ...s, ...patch } : s));
-  return { ...state, seats };
-}
 
 function aliveSeats(state: GameState): Seat[] {
   return state.seats.filter((s) => !s.eliminated);
@@ -270,20 +208,9 @@ function appendLog(state: GameState, entry: Omit<LogEntry, 'version' | 'turn'>):
   return { ...state, log };
 }
 
-function seatName(state: GameState, index: SeatIndex): string {
-  const s = state.seats[index];
-  return s === undefined ? `seat ${index}` : s.name;
-}
-
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
-
-interface Outcome {
-  readonly state: GameState;
-  readonly message: string;
-  readonly data?: Record<string, unknown>;
-}
 
 function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
   switch (action.type) {
@@ -470,10 +397,16 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
       const first = action.firstSeat === undefined ? 0 : action.firstSeat;
       assertSeatIndex(state, first, 'firstSeat');
       assertNotEliminated(state, first);
+      const started: GameState = { ...state, started: true, turn: 1, activeSeat: first };
+      // Deal opening hands only to seats that loaded a deck. A table used purely as a life tracker
+      // has no libraries, so it starts exactly as it did before the card layer existed.
+      const dealt = dealOpeningHands(started);
       return {
-        state: { ...state, started: true, turn: 1, activeSeat: first },
-        message: `game started; ${seatName(state, first)} goes first`,
-        data: { firstSeat: first },
+        state: dealt.state,
+        message: dealt.dealt > 0
+          ? `game started; ${seatName(state, first)} goes first; ${dealt.dealt} opening hand(s) drawn`
+          : `game started; ${seatName(state, first)} goes first`,
+        data: { firstSeat: first, handsDealt: dealt.dealt },
       };
     }
 
@@ -491,14 +424,19 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         finished: false,
         winnerSeat: null,
         rngSeed: deriveNextSeed(state.rngSeed),
+        // Without clearing these, a reset would leave the previous game's board on the table.
+        cardDefs: {},
+        instances: {},
+        zones: {},
+        instanceSeq: 0,
       };
       return { state: fresh, message: 'game reset', data: { rngSeed: fresh.rngSeed } };
     }
 
-    default: {
-      const unknown: never = action;
-      throw new EngineError('INVALID_ACTION', `unknown action type: ${String((unknown as { type?: unknown }).type)}`);
-    }
+    // Card actions have their own reducer, which owns the exhaustiveness check for the rest of the
+    // union and throws INVALID_ACTION for a type that is in neither half.
+    default:
+      return reduceCardAction(state, action, ctx);
   }
 }
 

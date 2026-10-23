@@ -672,3 +672,60 @@ working configuration is the development one is not a seam, it is a hiding place
 `loadActiveMatch()` (never called), `asyncJobsMap` (never written), and the Scryfall Tagger fetch
 (result discarded). The check that finds all four is the same: ask what provides the thing this reads,
 and in which environment.
+
+## D27 — Play Realm becomes a shared tabletop, not a rules engine, and D11 is superseded
+
+**D11 said** the four legacy `/api/sandbox/{create-room,join-room,sync-state,room/:code}` routes stay
+unported because they are an unauthenticated HTTP-polling multiplayer on a process-local object, and
+that "moving Play Realm onto the `apps/realtime` Socket.IO path is its own piece of work". This is
+that work. The legacy routes are still not ported and still not deleted — `public/app.js` calls
+them — but there is now a path that does not involve them.
+
+**Decided: a shared digital tabletop.** The server owns the zones and both clients render what it
+sends; nothing in the system knows what a card does. A rules-enforcing engine has to be written card
+by card, so it works only for the cards someone has implemented — a few dozen out of roughly thirty
+thousand — and a real Commander deck would mostly not function. A tabletop works with every card
+ever printed on the first day. The action vocabulary is physical moves (`card:move`, `card:tap`,
+`card:counter`, `token:create`, …) chosen so per-card automation can be layered on top later without
+changing the state model. Nick picked this shape explicitly over an Arena-style engine.
+
+**Decided: the engine grows a card layer rather than a new package.** `packages/rules-engine` was
+already an immutable, seeded-RNG reducer with state-based actions, logging and version bumping —
+everything a card game needs except the cards. Zones and instances went in beside the existing
+tracker actions, with the shared assertion helpers extracted to `internal.ts` so both halves of the
+reducer use one set without importing each other in a cycle. A table with no decks loaded behaves
+exactly as it did before, which is what keeps the existing life-tracker tables working.
+
+**Decided: hidden information is enforced server-side, per socket.** `pod:state` broadcast one
+payload to the whole room. For a tracker that is fine; for a card game it hands every player their
+opponent's hand and the order of both libraries, and no amount of client-side discipline fixes data
+the client already holds. The socket layer now sends `viewFor(state, seat)` — a redaction where a
+card's identity is simply **absent** when that seat may not know it. Three consequences worth
+stating:
+
+1. **Your own library is hidden from you too**, except while you are searching it, which shuffling
+   ends. A player who could read their own library would know every draw for the rest of the game.
+2. **Definitions are separate from instances.** Two hundred cards each carrying name, type line and
+   oracle text is about 70KB, past the 64KB `STATE_MAX_BYTES` the realtime contract allows. A
+   redacted view inlines a definition only onto cards that seat can see, so the payload is a
+   fraction of the state and no dictionary has to be cached client-side.
+3. **Per socket, not per room.** `dealTable` compacts seat indices when the table is dealt, so a
+   seat-numbered room joined at sit-down can be the wrong room by the time the game starts;
+   resolving each socket's seat from the authoritative snapshot by playerId cannot go stale.
+
+**Decided: the table sits outside the login gate.** It identifies a player by the seat token
+`apps/realtime` issues and never looks at a Grimore session, so an account buys nothing — while
+requiring one means the person you send a code to has to register before they can play with you. It
+also keeps the table's only dependency Redis, rather than Postgres and the API as well, which is
+several fewer ways for a games night to fail.
+
+**Decided: two built-in decks, drawn as text.** Nick asked for built-in decks only. There is no card
+artwork available — the production card table has never been populated and this environment cannot
+reach Scryfall — so every card face is legible from its name, cost, type line, oracle text and
+power/toughness, and an image is used only if one is ever present. Loading a Grimore deck or a
+pasted list is a deck-source function away: `deck:load` already resolves any deck handed to it
+through `ActionContext.decks`.
+
+**Not decided here:** whether the legacy sandbox routes get deleted. They should, once
+`public/app.js` stops calling them, but that is a legacy-client change and D11's exposure note still
+stands until then.

@@ -39,16 +39,42 @@ for (const r of ['apps', 'packages']) {
   }
 }
 /**
- * `apps/api/Dockerfile` has to COPY every workspace member's package.json before
+ * Every app image has to COPY every workspace member's package.json before
  * `pnpm install --frozen-lockfile`, including the ones that image never builds — otherwise pnpm
  * judges the lockfile out of sync and the build fails.
  *
  * That is invisible until someone runs a Docker build, and nothing in CI does: a new package under
  * packages/ or apps/ would break the image with no signal until a deploy. This checks it statically
  * instead, so the failure lands on the PR that causes it.
+ *
+ * Checks every `apps/*\/Dockerfile` rather than only the API's: the trap is a property of building
+ * a pnpm workspace member in Docker, not of one image, and the realtime image hits it identically.
  */
-function checkApiDockerfileCopiesEveryManifest() {
-  const dockerfilePath = join('apps', 'api', 'Dockerfile');
+function checkAppDockerfilesCopyEveryManifest() {
+  let apps;
+  try {
+    apps = readdirSync('apps');
+  } catch {
+    return;
+  }
+  const dockerfiles = apps
+    .map((name) => join('apps', name, 'Dockerfile'))
+    .filter((file) => {
+      try {
+        return statSync(file).isFile();
+      } catch {
+        return false;
+      }
+    });
+  if (dockerfiles.length === 0) {
+    console.error('[guards] no app Dockerfile found under apps/*/Dockerfile');
+    bad++;
+    return;
+  }
+  for (const dockerfilePath of dockerfiles) checkOneDockerfile(dockerfilePath);
+}
+
+function checkOneDockerfile(dockerfilePath) {
   let dockerfile;
   try {
     dockerfile = readFileSync(dockerfilePath, 'utf8');
@@ -83,7 +109,7 @@ function checkApiDockerfileCopiesEveryManifest() {
     }
   }
 }
-checkApiDockerfileCopiesEveryManifest();
+checkAppDockerfilesCopyEveryManifest();
 
 /**
  * `INSERT OR IGNORE` and `INSERT OR REPLACE` are SQLite-only. On Postgres they are a syntax error
