@@ -314,6 +314,18 @@ async function main() {
     await tid(friend, 'life-up-1').click();
     await shot(friend, 'after-reload');
 
+    // The in-game help: neither player will have the setup guide open while playing.
+    await tid(nick, 'toggle-help').click();
+    await waitFor(nick, 'help-panel');
+    const helpText = (await tid(nick, 'help-panel').textContent()) ?? '';
+    check(
+      'the table explains its own idioms in-game',
+      /counter/i.test(helpText) && /Attach/i.test(helpText) && /undo/i.test(helpText),
+      helpText.slice(0, 100),
+    );
+    await tid(nick, 'help-close').click();
+    await nick.waitForSelector('[data-testid="help-panel"]', { state: 'detached', timeout: 5000 });
+
     // ── Table talk ──────────────────────────────────────────────────────────────────────────────
     // A tabletop cannot decide "do you respond?" for you, so the two players have to be able to say
     // things to each other. Checked across the two browsers, including the unread badge for a

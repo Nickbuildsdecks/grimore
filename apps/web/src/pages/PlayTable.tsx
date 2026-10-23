@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   ArrowDownToLine, ArrowUpToLine, Dices, Hand, Layers, Link2, LogOut, MessageSquare, Minus, Plus,
-  RotateCcw, Search, Send, Shuffle, Skull, Sparkles, SquareStack, Swords, Undo2,
+  HelpCircle, RotateCcw, Search, Send, Shuffle, Skull, Sparkles, SquareStack, Swords, Undo2,
 } from "lucide-react"
 import { COMMON_TOKENS, STARTER_DECKS, type GameView, type SeatView, type VisibleCard, type ZoneId } from "@grimore/rules-engine"
 import { CardFace } from "@/components/table/CardFace"
@@ -30,6 +30,23 @@ const FORMATS = [
   { id: "modern", label: "1v1 — 20 life", hint: "Two players, 60-card decks, no command zone." },
   { id: "commander", label: "Commander — 40 life", hint: "Command zone and 21 commander damage. Up to four seats." },
 ] as const
+
+/**
+ * The handful of actions that are idioms rather than buttons, because the table enforces no rules.
+ * Shown in the game rather than only in the docs: nobody has the setup guide open while playing,
+ * and "how do I counter this?" is exactly the question that stops a game dead.
+ */
+const HOW_TO: [string, string][] = [
+  ["Cast something", "Tap it in hand → Play to battlefield, or Cast (to the stack) to let them respond first."],
+  ["It resolves", "Tap it on the stack → Resolves onto the battlefield, or to the graveyard for an instant or sorcery."],
+  ["They counter it", "You move your own spell to the graveyard — nobody can reach across and move a card on your side."],
+  ["Mana", "Tap your lands. The table does not count mana; you pay it the way you do with cardboard."],
+  ["Attack", "Tap your attackers, say who they are attacking in chat, then settle it with the life buttons."],
+  ["A creature dies", "Tap it → Destroy (to graveyard)."],
+  ["Auras and equipment", "Tap it → Attach to…, then tap what it goes on. It detaches itself if that creature leaves."],
+  ["Search your deck", "Search deck opens it to you and nobody else. Shuffle closes it again."],
+  ["Take something back", "There is no undo — move the card back by hand. The log shows what actually happened."],
+]
 
 const zoneAt = (view: GameView, seat: number, zone: ZoneId): string[] => [...(view.zones[`${seat}:${zone}`] ?? [])]
 const stackOf = (view: GameView): string[] => [...(view.zones["stack"] ?? [])]
@@ -455,6 +472,7 @@ function Board({ table }: { table: UseTable }) {
   const [showLog, setShowLog] = useState(false)
   const [showTokens, setShowTokens] = useState(false)
   const [showChat, setShowChat] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [draft, setDraft] = useState("")
   // Unread count, so a message that arrives while the panel is closed is not missed.
   const [seenChat, setSeenChat] = useState(0)
@@ -523,6 +541,9 @@ function Board({ table }: { table: UseTable }) {
         </Button>
         <Button size="sm" variant="ghost" className="h-7" data-testid="toggle-log" onClick={() => setShowLog((v) => !v)}>
           <Layers className="size-3.5" /> Log
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7" data-testid="toggle-help" onClick={() => setShowHelp(true)} aria-label="How to play">
+          <HelpCircle className="size-3.5" />
         </Button>
       </div>
 
@@ -697,6 +718,29 @@ function Board({ table }: { table: UseTable }) {
               ))}
               <Button variant="ghost" onClick={() => setShowTokens(false)}>Cancel</Button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showHelp ? (
+        <div data-testid="help-panel" className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center" onClick={() => setShowHelp(false)}>
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-xl border border-white/15 bg-[var(--g-surface-2)] p-4 sm:rounded-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-sm font-semibold text-[var(--g-text-high)]">How this table works</h2>
+            <p className="mt-1 text-xs text-[var(--g-text-muted)]">
+              It keeps the board, the zones and the life totals honest, and leaves the rules to the two
+              of you — so it works with any card. Tap a card to see what you can do with it.
+            </p>
+            <dl className="mt-3 flex flex-col gap-2.5">
+              {HOW_TO.map(([title, body]) => (
+                <div key={title}>
+                  <dt className="text-xs font-semibold text-[var(--g-gold-400)]">{title}</dt>
+                  <dd className="text-xs text-[var(--g-text-muted)]">{body}</dd>
+                </div>
+              ))}
+            </dl>
+            <Button className="mt-4 w-full" variant="secondary" data-testid="help-close" onClick={() => setShowHelp(false)}>
+              Got it
+            </Button>
           </div>
         </div>
       ) : null}

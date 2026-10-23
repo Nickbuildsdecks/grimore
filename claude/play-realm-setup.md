@@ -64,6 +64,31 @@ PLAY_HOST=127.0.0.1    node scripts/play.mjs     # both players on this one mach
 REALTIME_PORT=4101 WEB_PORT=5101 node scripts/play.mjs
 ```
 
+### How to do the usual things
+
+The table never decides anything for you, so a few actions are idioms rather than buttons. Tap any
+card to see what you can do with it. The same list is in the game behind the **?** in the top bar,
+so neither of you needs this page open while playing.
+
+| At a real table | Here |
+| --- | --- |
+| Play a land, cast a creature | Tap the card in hand → **Play to battlefield** |
+| Cast a spell and let it sit while they respond | Tap it in hand → **Cast (to the stack)**. It sits in the shared stack row where you can both see it. |
+| It resolves | Tap it on the stack → **Resolves onto the battlefield**, or **Resolves and goes to the graveyard** for an instant or sorcery |
+| They counter it | **You** move your own spell to the graveyard, the same as you would reach over and do yourself. Nobody can move a card off your side of the table. |
+| Tap for mana | Tap the land → **Tap**. The table does not track mana; you pay it the way you do with cardboard. |
+| Attack | Tap your attackers, say who they are attacking (the chat panel is there for this), then settle damage with the life buttons |
+| A creature dies | Tap it → **Destroy (to graveyard)** |
+| Commander damage | The **cmd** button on the opponent's row adds one at a time. At 21 the table ends the game by itself. |
+| Put a counter on something | Tap it → **Add +1/+1** (or **Add loyalty** for a planeswalker) |
+| Equip or enchant | Tap the aura or equipment → **Attach to…**, then tap what it goes on. It shows **ATT** and detaches by itself if that creature leaves. |
+| Search your library | **Search deck** opens it to you and nobody else; **Shuffle** closes it again |
+| Make tokens | **Token** has the common ones. A token that leaves the battlefield disappears, as it should. |
+| Take something back | There is no undo. Move the card back by hand, and the log shows what actually happened. |
+
+The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
+anybody's turn, which is what makes instants and responses work at all.
+
 ### Two starter decks
 
 **Ember Rush** (mono-red aggro) and **Verdant Guard** (green-white midrange), 60 cards each plus a
@@ -123,7 +148,7 @@ Needs the stack running and Playwright available (`npm i -D playwright`, or `PLA
 It plays a complete game through the real UI — lobby, decks, opening hands, card movement across
 every zone, tokens, auras, searching, turns, chat, a winner — and checks that neither browser ever
 receives the other's hand. It also reloads one player mid-game to prove a refresh rejoins the same
-seat rather than losing the game. 46 checks.
+seat rather than losing the game. 47 checks.
 
 The layers under it have their own suites: `packages/rules-engine` (78 tests, including a full game
 and a Commander game ending on 21 commander damage) and `apps/realtime` (20 tests, including two
