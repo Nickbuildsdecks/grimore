@@ -1116,9 +1116,17 @@ reconstructs the Scryfall CDN URL when `scryfall_cards.image_uri` is empty rathe
 ### For Nick
 
 - **The discovery feed in the React app should work for the first time** once this deploys with
-  `apps/api` serving. Until the Postgres card sync is fixed it will be a thin feed: `scryfallService.js`
-  writes a `scryfall_id` column to `scryfall_cards` that does not exist, so the bulk sync cannot ever
-  have populated that table on Postgres (recorded as a cross-cutting item since 2026-09-14, still open).
+  `apps/api` serving. How good it is depends on `scryfall_cards` holding rows, and on Postgres it
+  never has: `scryfallService.js` used to write a `scryfall_id` column that table does not have, and
+  the import loop's catch swallowed the error.
+
+  **Correction, 2026-10-23:** I wrote that in the present tense and called it "still open". It is
+  not — the writer was fixed in `e4b8a2d` and that is on `main`, so the remedy is not a code change.
+  What is still true is that production's table is empty, and it fills only when the fixed code
+  actually boots on the VM: `downloadAndImportScryfallBulk()` runs at startup and skips when the
+  table already holds more than 1000 rows, so an empty table triggers a full import — unless
+  `SKIP_SCRYFALL_BULK_SYNC=1` is set in the VM's `.env`. Worth checking that variable and the boot
+  log after the next deploy rather than assuming the table filled itself.
   The pool is only as good as that table.
 - Nothing here touches legacy `server.js`. The legacy engine and its tests are unchanged.
 
@@ -1217,8 +1225,9 @@ categories changes stored tags on already-tagged decks. See D24.
 ### For Nick
 
 - **The suggestions page should work for the first time** once this deploys with `apps/api` serving.
-  Like the discovery feed, how good it is depends entirely on `scryfall_cards` being populated, and
-  the Postgres card sync has still never written a row — the cross-cutting item open since
-  2026-09-14. An empty card table gives an empty suggestions page rather than an error, which is the
-  right failure, but it is still empty.
+  Like the discovery feed, how good it is depends entirely on `scryfall_cards` holding rows, and on
+  Postgres that table has never been populated. The sync code that caused it is fixed and merged
+  (see the correction in the recommendations checkpoint above); what remains is confirming the import
+  actually runs on the VM. An empty card table gives an empty suggestions page rather than an error,
+  which is the right failure, but it is still empty.
 - Nothing here touches legacy `server.js` or `public/`. The legacy route and page are unchanged.
