@@ -76,7 +76,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const check = checkTargets(state, specs, chosen, action.by);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
-  let next = payFrom(state, action.by, def?.manaCost, action.x ?? 0);
+  const paid = payFrom(state, action.by, def?.manaCost, action.x ?? 0);
+  let next = paid.state;
   // The card physically moves to the stack, and an object describes how it was cast.
   next = relocate(next, requireInstance(next, inst.id), 'stack', action.by, 'bottom');
   const object: StackObject = {
@@ -96,8 +97,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
-    message: `${seatName(state, action.by)} casts ${characteristics.name}`,
-    data: { card: inst.id, name: characteristics.name },
+    // The lands tapped for it are named, because they turn sideways on screen and a player who
+    // did not tap them should be able to see why.
+    message: paid.tapped.length === 0
+      ? `${seatName(state, action.by)} casts ${characteristics.name}`
+      : `${seatName(state, action.by)} taps ${paid.tapped.length} for ${characteristics.name} and casts it`,
+    data: { card: inst.id, name: characteristics.name, tapped: [...paid.tapped] },
   };
 }
 
@@ -160,7 +165,8 @@ function activate(
   const check = checkTargets(state, specs, chosen, action.by);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
-  let next = payFrom(state, action.by, ability.cost.mana, 0);
+  const paid = payFrom(state, action.by, ability.cost.mana, 0);
+  let next = paid.state;
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
   if (ability.cost.sacrificeSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
 

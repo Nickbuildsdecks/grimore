@@ -20,6 +20,8 @@ import {
   poolToString,
   poolTotal,
   printedKeywords,
+  shortColors,
+  solveTap,
   withAdditionalGeneric,
   type ManaPool,
 } from './index.js';
@@ -127,6 +129,72 @@ describe('maxX', () => {
 
   it('is zero for a cost with no X at all', () => {
     expect(maxX(pool({ R: 9 }), parseManaCost('{R}'))).toBe(0);
+  });
+});
+
+describe('solveTap', () => {
+  const land = (key: string, type: 'W' | 'U' | 'B' | 'R' | 'G') => ({ key, produces: [type] as const });
+
+  it('taps nothing when the pool already covers the cost', () => {
+    expect(solveTap(pool({ R: 1 }), parseManaCost('{R}'), [land('m1', 'R')])).toEqual([]);
+  });
+
+  it('taps exactly one source for a one-mana spell', () => {
+    expect(solveTap(EMPTY_POOL, parseManaCost('{R}'), [land('m1', 'R'), land('m2', 'R')]))
+      .toEqual(['m1']);
+  });
+
+  it('taps as many as the generic part needs', () => {
+    const sources = [land('m1', 'R'), land('m2', 'R'), land('m3', 'R'), land('m4', 'R')];
+    expect(solveTap(EMPTY_POOL, parseManaCost('{3}{R}'), sources)).toHaveLength(4);
+  });
+
+  it('gives up rather than tapping lands that cannot make the colour', () => {
+    // Five Forests do not cast a white spell, and tapping them all first would be worse than
+    // refusing: the player loses their mana for nothing.
+    const forests = ['f1', 'f2', 'f3', 'f4', 'f5'].map((k) => land(k, 'G'));
+    expect(solveTap(EMPTY_POOL, parseManaCost('{3}{W}{W}'), forests)).toBeNull();
+  });
+
+  it('finds the only solution to a two-colour cost', () => {
+    const sources = [land('f1', 'G'), land('f2', 'G'), land('f3', 'G'), land('f4', 'G'), land('p1', 'W')];
+    const plan = solveTap(EMPTY_POOL, parseManaCost('{3}{G}{W}'), sources);
+    expect(plan).not.toBeNull();
+    expect(plan).toHaveLength(5);
+    expect(plan).toContain('p1');
+  });
+
+  it('saves a dual land for the colour only it can make', () => {
+    // The greedy choice is the least flexible source that makes a short colour, so the Plains pays
+    // for the {W} and the dual is left for the {U} nothing else can produce.
+    const sources = [
+      { key: 'plains', produces: ['W'] as const },
+      { key: 'dual', produces: ['U'] as const },
+      { key: 'island', produces: ['U'] as const },
+    ];
+    const plan = solveTap(EMPTY_POOL, parseManaCost('{W}{U}'), sources);
+    expect(plan).toHaveLength(2);
+    expect(plan).toContain('plains');
+  });
+
+  it('counts a source that makes two mana as two', () => {
+    const plan = solveTap(EMPTY_POOL, parseManaCost('{G}{G}'), [{ key: 'tree', produces: ['G', 'G'] }]);
+    expect(plan).toEqual(['tree']);
+  });
+
+  it('refuses a cost it cannot read rather than tapping hopefully', () => {
+    expect(solveTap(EMPTY_POOL, parseManaCost('{R/G}'), [land('m1', 'R')])).toBeNull();
+  });
+
+  it('pays for X out of the sources available', () => {
+    const sources = ['m1', 'm2', 'm3', 'm4'].map((k) => land(k, 'R'));
+    expect(solveTap(EMPTY_POOL, parseManaCost('{X}{R}'), sources, 3)).toHaveLength(4);
+    expect(solveTap(EMPTY_POOL, parseManaCost('{X}{R}'), sources, 9)).toBeNull();
+  });
+
+  it('reports which colours a pool is short of', () => {
+    expect(shortColors(pool({ R: 1 }), parseManaCost('{R}{R}{W}'))).toEqual(['W', 'R']);
+    expect(shortColors(pool({ R: 2, W: 1 }), parseManaCost('{R}{R}{W}'))).toEqual([]);
   });
 });
 

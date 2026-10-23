@@ -32,7 +32,10 @@ import {
 } from './combat.js';
 import { destroy, draw, poolOf, setPool, untapAll, type EffectContext, type EffectFn } from './effects.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
-import { EMPTY_POOL, parseManaCost, payCost, type ManaPool } from './mana.js';
+import {
+  EMPTY_POOL, addMana, canPay, parseManaCost, payCost, solveTap,
+  type ManaPool, type ManaType,
+} from './mana.js';
 import { replaceSeat, seatName } from './internal.js';
 import { scriptFor } from './scripts.js';
 import type { AbilityDef, CardScript, TargetSpec, TriggerEvent } from './scriptTypes.js';
@@ -430,11 +433,81 @@ function settle(state: GameState, before: GameState): GameState {
 
 // ── Casting, activating, resolving ───────────────────────────────────────────────────────────────
 
-function payFrom(state: GameState, seat: SeatIndex, costText: string | undefined, x: number): GameState {
+/**
+ * Permanents the engine may tap on a player's behalf to pay a cost.
+ *
+ * Only abilities that are free, need nothing but a tap, and add a fixed amount of mana. An ability
+ * that costs mana would need mana first; one offering a *choice* of colours cannot be described as
+ * a fixed `produces` and is left out rather than guessed at, so the worst case for such a card is
+ * that the player taps it by hand. A creature's mana ability is excluded while it is summoning
+ * sick, same as any other tap ability (CR 302.6).
+ */
+export function manaSources(
+  state: GameState, seat: SeatIndex,
+): { readonly key: string; readonly produces: readonly ManaType[]; readonly abilityIndex: number }[] {
+  const out: { key: string; produces: readonly ManaType[]; abilityIndex: number }[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.tapped) continue;
+    const script = scriptFor(state.cardDefs[inst.defKey]?.name);
+    const ch = characteristicsOf(state, inst);
+    const abilities = script?.abilities ?? [];
+    for (let i = 0; i < abilities.length; i++) {
+      const ability = abilities[i]!;
+      if (ability.produces === undefined || ability.produces.length === 0) continue;
+      if (ability.cost.mana !== undefined) continue;
+      if (!ability.cost.tap) continue;
+      if (ability.cost.sacrificeSelf) continue;
+      if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
+      // One source per permanent: tapping it is what pays, so a second ability on the same
+      // permanent is not a second source.
+      out.push({ key: id, produces: ability.produces as readonly ManaType[], abilityIndex: i });
+      break;
+    }
+  }
+  return out;
+}
+
+/** Taps the chosen permanents and puts their mana in the pool. */
+function tapSources(
+  state: GameState, seat: SeatIndex,
+  sources: readonly { key: string; produces: readonly ManaType[] }[], keys: readonly string[],
+): GameState {
+  let next = state;
+  for (const key of keys) {
+    const source = sources.find((s) => s.key === key);
+    if (source === undefined) continue;
+    next = withInstance(next, key, { tapped: true });
+    for (const type of source.produces) next = setPool(next, seat, addMana(poolOf(next, seat), type, 1));
+  }
+  return next;
+}
+
+/**
+ * Pays a cost, tapping for it when the pool is short.
+ *
+ * Floating mana is spent first, so a player who tapped particular lands on purpose gets what they
+ * intended; only the shortfall is tapped for. Auto-tapping is not a convenience — `legalActions`
+ * offers a spell when the player *could* make its mana, so without this the engine would refuse a
+ * play it had just offered.
+ */
+function payFrom(
+  state: GameState, seat: SeatIndex, costText: string | undefined, x: number,
+): { state: GameState; tapped: readonly string[] } {
   const cost = parseManaCost(costText);
-  const result = payCost(poolOf(state, seat), cost, x);
+  let next = state;
+  let tapped: readonly string[] = [];
+  if (!canPay(poolOf(next, seat), cost, x)) {
+    const sources = manaSources(next, seat);
+    const plan = solveTap(poolOf(next, seat), cost, sources, x);
+    if (plan !== null) {
+      next = tapSources(next, seat, sources, plan);
+      tapped = plan;
+    }
+  }
+  const result = payCost(poolOf(next, seat), cost, x);
   if (!result.paid) throw new EngineError('RULE_NOT_APPLICABLE', `cannot pay ${costText ?? '{0}'}: ${result.shortfall}`);
-  return setPool(state, seat, result.pool as ManaPool);
+  return { state: setPool(next, seat, result.pool as ManaPool), tapped };
 }
 
 /** Resolves the object on top of the stack. */

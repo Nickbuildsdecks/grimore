@@ -158,6 +158,80 @@ export function maxX(pool: ManaPool, cost: ManaCost): number {
   return x;
 }
 
+// ── Working out what to tap ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Something that can be tapped for mana, and exactly what it would add.
+ *
+ * `produces` is a multiset, not a choice: a source listing `['G','G']` adds two green when tapped,
+ * and one listing `['W','U']` adds one of each. A source that offers a *choice* of colours cannot
+ * be described here, which is deliberate — see `solveTap`.
+ */
+export interface ManaSource {
+  readonly key: string;
+  readonly produces: readonly ManaType[];
+}
+
+/** Colours a cost needs more of than the pool holds. */
+export function shortColors(pool: ManaPool, cost: ManaCost): ManaType[] {
+  return MANA_TYPES.filter((t) => cost.colors[t] > (pool[t] ?? 0));
+}
+
+/**
+ * Which sources to tap so that `cost` can be paid, or null when it cannot be.
+ *
+ * This is what makes an automated table playable. `legalActions` judges what a player can afford
+ * against the mana they *could* make, because nobody taps five lands and then decides what to
+ * cast — so the engine has to be able to make that mana itself when the spell is actually cast.
+ * Without it every spell would need the player to tap the right lands in the right order first,
+ * and a UI offering a spell the engine then refused for want of mana would be simply broken.
+ *
+ * Greedy, and exact for every source that produces a fixed amount: colours that are short are
+ * satisfied first, each from a source that makes one, and whatever is left over pays the generic
+ * part. It is not a general solver — a source offering a *choice* of colours (a filter land, a
+ * Treasure token) has no single `produces` and is left out of `sources` by the caller rather than
+ * guessed at, so the worst case is a spell the player taps for by hand.
+ */
+export function solveTap(
+  pool: ManaPool, cost: ManaCost, sources: readonly ManaSource[], xAmount = 0,
+): readonly string[] | null {
+  if (cost.unsupported !== undefined) return null;
+  let working = pool;
+  const chosen: string[] = [];
+  const left = [...sources];
+
+  for (let guard = 0; guard <= sources.length; guard++) {
+    if (canPay(working, cost, xAmount)) return chosen;
+    const short = shortColors(working, cost);
+    let index = -1;
+    if (short.length > 0) {
+      // A colour requirement can only be met by a source that makes that colour, so those come
+      // first — and the least flexible source that makes it, so a dual is saved for the colour
+      // only it can provide.
+      let best = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < left.length; i++) {
+        const source = left[i]!;
+        if (!source.produces.some((t) => short.includes(t))) continue;
+        if (source.produces.length < best) {
+          best = source.produces.length;
+          index = i;
+        }
+      }
+      // Nothing can make a colour that is still short: the cost is unpayable, whatever else is
+      // untapped. Stopping here rather than tapping on is what keeps lands from being wasted.
+      if (index < 0) return null;
+    } else {
+      // Only the generic part is left, which anything can pay.
+      index = left.length > 0 ? 0 : -1;
+      if (index < 0) return null;
+    }
+    const source = left.splice(index, 1)[0]!;
+    for (const type of source.produces) working = addMana(working, type, 1);
+    chosen.push(source.key);
+  }
+  return canPay(working, cost, xAmount) ? chosen : null;
+}
+
 /** The colours in a cost, for colour-identity and devotion style questions. */
 export function costColors(cost: ManaCost): Color[] {
   return COLORS.filter((c) => cost.colors[c] > 0);

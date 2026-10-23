@@ -243,9 +243,96 @@ describe('casting and the stack', () => {
     expect(countOf(s, 0, 'graveyard', 'Shock')).toBe(1);
   });
 
-  it('refuses a spell with no mana to pay for it', () => {
-    const s = advanceTo(arena({ hands: { 0: ['Shock'] }, battlefield: { 0: ['Mountain'] } }), 'precombat-main');
+  it('taps for a spell the player has not paid for yet', () => {
+    // `legalActions` offers a spell when the player *could* make its mana, so the engine has to be
+    // able to make it: without this it would refuse a play it had just offered.
+    let s = advanceTo(arena({ hands: { 0: ['Shock'] }, battlefield: { 0: ['Mountain'] } }), 'precombat-main');
+    const mountain = find(s, 0, 'battlefield', 'Mountain');
+    expect(s.instances[mountain]!.tapped).toBe(false);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'), targets: [{ kind: 'player', seat: 1 }] });
+    expect(s.instances[mountain]!.tapped).toBe(true);
+    expect(stackNames(s)).toEqual(['Shock']);
+    expect(s.log.at(-1)!.message).toContain('taps 1');
+  });
+
+  it('taps only as much as the spell needs', () => {
+    let s = advanceTo(arena({
+      hands: { 0: ['Shock'] }, battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'] },
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'), targets: [{ kind: 'player', seat: 1 }] });
+    const tapped = [...ids(s, 0, 'battlefield')].filter((id) => s.instances[id]!.tapped);
+    expect(tapped.length).toBe(1);
+  });
+
+  it('spends mana the player chose to float before tapping anything else', () => {
+    // A player who tapped particular lands on purpose gets what they intended.
+    let s = advanceTo(arena({
+      hands: { 0: ['Shock'] }, battlefield: { 0: ['Mountain', 'Mountain'] },
+    }), 'precombat-main');
+    const first = find(s, 0, 'battlefield', 'Mountain');
+    s = apply(s, { type: 'auto:activate', by: 0, card: first, abilityIndex: 0 });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'), targets: [{ kind: 'player', seat: 1 }] });
+    const tapped = [...ids(s, 0, 'battlefield')].filter((id) => s.instances[id]!.tapped);
+    expect(tapped).toEqual([first]);
+  });
+
+  it('refuses a spell when there is no mana and nothing left to tap', () => {
+    let s = advanceTo(arena({ hands: { 0: ['Shock'] }, battlefield: { 0: ['Mountain'] } }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(s); // the step ends, so the floating mana is gone and the land is still tapped
+    s = advanceTo(s, 'postcombat-main');
     expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'), targets: [{ kind: 'player', seat: 1 }] }))
+      .toContain('cannot pay');
+  });
+
+  it('refuses a spell whose colour nothing on the battlefield can make', () => {
+    // Four Mountains do not cast a white spell, however many there are.
+    const s = advanceTo(arena({
+      hands: { 1: ['Serra Angel'] }, battlefield: { 1: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest'] },
+      turn: 2, firstSeat: 1,
+    }), 'precombat-main');
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Serra Angel') }))
+      .toContain('cannot pay');
+    // And nothing was tapped in the attempt.
+    expect([...ids(s, 1, 'battlefield')].every((id) => !s.instances[id]!.tapped)).toBe(true);
+  });
+
+  it('picks the right lands for a two-colour cost', () => {
+    let s = advanceTo(arena({
+      hands: { 1: ['Sigarda, Host of Herons'] },
+      battlefield: { 1: ['Forest', 'Forest', 'Forest', 'Forest', 'Plains'] },
+      turn: 2, firstSeat: 1,
+    }), 'precombat-main');
+    // {3}{G}{W} from four Forests and one Plains has exactly one solution, and the Plains is in it.
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Sigarda, Host of Herons') });
+    expect(stackNames(s)).toEqual(['Sigarda, Host of Herons']);
+    expect(s.instances[find(s, 1, 'battlefield', 'Plains')]!.tapped).toBe(true);
+    expect([...ids(s, 1, 'battlefield')].filter((id) => s.instances[id]!.tapped).length).toBe(5);
+  });
+
+  it('taps for an activated ability’s cost too', () => {
+    let s = advanceTo(arena({
+      hands: { 0: ['Shivan Dragon'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'] },
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shivan Dragon') });
+    s = passBoth(s);
+    const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+    // Six Mountains paid for the Dragon; the seventh pays for firebreathing.
+    s = apply(s, { type: 'auto:activate', by: 0, card: dragon, abilityIndex: 0 });
+    expect(s.stackOrder.length).toBe(1);
+  });
+
+  it('does not tap a creature that only just arrived to pay for something (CR 302.6)', () => {
+    let s = advanceTo(arena({
+      hands: { 1: ['Llanowar Elves', 'Grizzly Bears'] }, battlefield: { 1: ['Forest', 'Forest'] },
+      turn: 2, firstSeat: 1,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Llanowar Elves') });
+    s = passBoth(s);
+    // One Forest paid for the Elves. {1}{G} for the Bears needs two more sources and there is only
+    // one Forest left, because a summoning-sick Elf is not one.
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Grizzly Bears') }))
       .toContain('cannot pay');
   });
 
@@ -531,6 +618,77 @@ describe('legalActions', () => {
 
 const nameFor = (s: Parameters<typeof legalActions>[0], id: string): string =>
   s.cardDefs[s.instances[id]!.defKey]!.name;
+
+describe('what the view carries', () => {
+  it('has no automation block on a manual table, which is how a client picks its interface', () => {
+    const s = arena();
+    expect(viewFor({ ...s, automated: false }, 0).automation).toBeNull();
+  });
+
+  it('carries the step, priority, stack and this seat’s own legal moves', () => {
+    let s = advanceTo(arena({ hands: { 0: ['Shock'] }, battlefield: { 0: ['Mountain'] } }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'), targets: [{ kind: 'player', seat: 1 }] });
+    const view = viewFor(s, 0);
+    const auto = view.automation!;
+    expect(auto.step).toBe('precombat-main');
+    expect(auto.stepLabel).toBe('Main phase 1');
+    expect(auto.priority).toBe(0);
+    expect(auto.stack.map((o) => o.description)).toEqual(['Shock']);
+    // A spell's stack object points at its card instance, so the client can draw the actual card.
+    expect(view.cards[auto.stack[0]!.card!]!.card!.name).toBe('Shock');
+    expect(auto.you!.seat).toBe(0);
+    expect(auto.you!.hasPriority).toBe(true);
+  });
+
+  it('gives each seat only its own legal moves', () => {
+    const s = advanceTo(arena({ hands: { 0: ['Shock'] }, battlefield: { 0: ['Mountain'] } }), 'precombat-main');
+    expect(viewFor(s, 0).automation!.you!.hasPriority).toBe(true);
+    expect(viewFor(s, 1).automation!.you!.hasPriority).toBe(false);
+    // A spectator gets the public state and nobody's moves.
+    expect(viewFor(s, null).automation!.you).toBeNull();
+  });
+
+  it('sends no power or toughness for a land, which would otherwise draw as a 0/0', () => {
+    const s = arena({ battlefield: { 0: ['Mountain'] } });
+    const land = viewFor(s, 0).cards[find(s, 0, 'battlefield', 'Mountain')]!;
+    expect(land.power).toBeUndefined();
+    expect(land.toughness).toBeUndefined();
+    expect(land.damage).toBeUndefined();
+  });
+
+  it('sends the computed power and toughness, not the printed ones', () => {
+    // A client reading power off the card would draw a 2/2 the engine knows is a 5/5.
+    let s = advanceTo(arena({
+      hands: { 1: ['Giant Growth'] }, battlefield: { 1: ['Forest', 'Grizzly Bears'] },
+      turn: 2, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Giant Growth'), targets: [{ kind: 'card', id: bear }] });
+    s = passBoth(s);
+    const card = viewFor(s, 0).cards[bear]!;
+    expect(card.card!.power).toBe('2');
+    expect([card.power, card.toughness]).toEqual([5, 5]);
+    expect(card.damage).toBe(0);
+  });
+
+  it('says who the engine is waiting on, and for what', () => {
+    let s = advanceTo(arena({ battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'] }, turn: 2, firstSeat: 0 }), 'declare-attackers');
+    expect(viewFor(s, 0).automation!.awaiting).toEqual({ kind: 'attackers', seats: [0] });
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Hill Giant'), defender: 1 }] });
+    s = passBoth(s);
+    expect(viewFor(s, 1).automation!.awaiting).toEqual({ kind: 'blockers', seats: [1] });
+    expect(viewFor(s, 1).automation!.you!.mustDeclare).toBe('blockers');
+  });
+
+  it('shows a card in hand only to the seat holding it, even with the engine running', () => {
+    const s = arena({ hands: { 0: ['Shock'], 1: ['Giant Growth'] } });
+    const theirs = ids(s, 1, 'hand')[0]!;
+    expect(viewFor(s, 0).cards[theirs]!.card).toBeUndefined();
+    expect(viewFor(s, 1).cards[theirs]!.card!.name).toBe('Giant Growth');
+  });
+});
 
 describe('redaction still holds with the engine running', () => {
   it('shows a seat the stack but not the opponent’s hand', () => {

@@ -7,10 +7,10 @@
  * there was no deadlock, no state where nobody could act, and no play the engine offered that it
  * then refused — and it does that over thousands of positions nobody wrote by hand.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from "vitest";
 import {
-  applyAction, botAction, canPay, createGame, legalActions, parseManaCost, playOut, poolOf,
-  seatToAct, viewFor, type Action, type GameState, type SeatIndex,
+  applyAction, botAction, createGame, legalActions, playOut, seatToAct, viewFor,
+  type Action, type GameState, type SeatIndex,
 } from './index.js';
 import { PLAYERS, HOST } from './testkit.js';
 
@@ -62,12 +62,6 @@ describe('a whole automated game', () => {
       if (seat === null) break;
       const action = botAction(s, seat);
       if (action === null) break;
-      // `auto:cast` and `auto:activate` need the mana floating first, which is the bot's job and
-      // not a claim about legality, so those are checked through the bot's own step function.
-      if (action.type === 'auto:cast' || action.type === 'auto:activate') {
-        s = stepWithMana(s, seat, action);
-        continue;
-      }
       try {
         s = applyAction(s, action, HOST);
       } catch (err) {
@@ -165,38 +159,8 @@ describe('what the engine tells a client', () => {
   });
 });
 
-/** One bot action, with its mana tapped first. Mirrors `botStep` without importing its internals. */
+/** One bot action. The engine taps for its own costs, so there is nothing to arrange first. */
 function stepOnce(s: GameState, seat: SeatIndex): GameState {
-  const action = botAction(s, seat);
-  if (action === null) return s;
-  if (action.type === 'auto:cast' || action.type === 'auto:activate') return stepWithMana(s, seat, action);
-  return applyAction(s, action, HOST);
-}
-
-/**
- * Taps the mana a play needs and then sends it, letting any refusal escape.
- *
- * Deliberately has no try/catch around the action itself: swallowing a refusal here would make the
- * "never offers a play it then refuses" test above pass by looking away.
- */
-function stepWithMana(s: GameState, seat: SeatIndex, action: Action): GameState {
-  const card = (action as { card?: string }).card;
-  const abilityIndex = (action as { abilityIndex?: number }).abilityIndex;
-  const play = legalActions(s, seat).plays.find(
-    (p) => p.card === card && (abilityIndex === undefined || p.abilityIndex === abilityIndex),
-  );
-  const cost = parseManaCost(play?.manaCost);
-  let next = s;
-  for (let guard = 0; guard < 24 && !canPay(poolOf(next, seat), cost); guard++) {
-    const source = legalActions(next, seat).plays.find((p) => p.isManaAbility);
-    if (source === undefined) break;
-    next = applyAction(next, {
-      type: 'auto:activate', by: seat, card: source.card, abilityIndex: source.abilityIndex ?? 0,
-    }, HOST);
-  }
-  // The mana could not be produced after all: pass instead of sending something that will bounce.
-  if (!canPay(poolOf(next, seat), cost)) {
-    return applyAction(next, { type: 'auto:pass', by: seat }, HOST);
-  }
-  return applyAction(next, action, HOST);
+  const action = botAction(s, seat)
+  return action === null ? s : applyAction(s, action, HOST)
 }

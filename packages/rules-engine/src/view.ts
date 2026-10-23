@@ -25,6 +25,12 @@
  */
 import { zoneKey, type CardDef, type CardInstance, type ZoneId } from './cards.js';
 import type { FormatId } from './formats.js';
+import { characteristicsOf, type Keyword } from './characteristics.js';
+import { legalActions, type LegalActions } from './legalActions.js';
+import { pendingDeclaration } from './automation.js';
+import { STEP_LABELS } from './turnTypes.js';
+import type { ManaPool } from './mana.js';
+import type { CombatState, StackObject, Step } from './turnTypes.js';
 import type { EliminatedReason, GameState, LogEntry, SeatIndex } from './types.js';
 
 /**
@@ -47,6 +53,53 @@ export interface VisibleCard {
   readonly isToken: boolean;
   readonly isCommander: boolean;
   readonly card?: CardDef;
+  /**
+   * Damage marked this turn, and what the permanent currently *is* — present only for a card the
+   * viewer may identify, and only on the battlefield.
+   *
+   * The engine computes power, toughness and keywords from printed values plus effects plus
+   * counters, so a client that read them off `card` would show a 2/2 Grizzly Bears that the engine
+   * knows is a 5/5. Sending the computed values is the only way the two agree.
+   */
+  readonly damage?: number;
+  readonly power?: number;
+  readonly toughness?: number;
+  readonly keywords?: readonly Keyword[];
+  readonly cantAttack?: boolean;
+  readonly cantBlock?: boolean;
+}
+
+/** One object waiting to resolve, as the table sees it. The stack is public. */
+export interface StackView {
+  readonly id: string;
+  readonly kind: StackObject['kind'];
+  readonly controller: SeatIndex;
+  readonly description: string;
+  /** The instance id for a spell, so the client can draw the card that is on the stack. */
+  readonly card: string | null;
+  readonly targets: StackObject['targets'];
+}
+
+/**
+ * The automated engine's state, as one seat sees it.
+ *
+ * Absent when the table is running as a manual tabletop, which is how a client knows which of the
+ * two interfaces to draw. Everything in here is public knowledge on a real table — whose turn it
+ * is, which step, what is on the stack, who is attacking whom — except `you`, which is this seat's
+ * own legal moves and is computed per seat for that reason.
+ */
+export interface AutomationView {
+  readonly step: Step;
+  readonly stepLabel: string;
+  readonly priority: SeatIndex | null;
+  readonly passed: readonly SeatIndex[];
+  readonly stack: readonly StackView[];
+  readonly pools: Readonly<Record<string, ManaPool>>;
+  readonly combat: CombatState;
+  /** Who the engine is waiting on, and for what. */
+  readonly awaiting: { readonly kind: 'attackers' | 'blockers' | 'discard'; readonly seats: readonly SeatIndex[] } | null;
+  /** This seat's own legal moves, or null for a spectator. */
+  readonly you: LegalActions | null;
 }
 
 export interface SeatView {
@@ -84,6 +137,8 @@ export interface GameView {
   readonly log: readonly LogEntry[];
   /** The seat this view was built for, or null for a spectator. */
   readonly seat: SeatIndex | null;
+  /** Present exactly when the rules engine is running the table. */
+  readonly automation: AutomationView | null;
   readonly seats: readonly SeatView[];
   /** Every card this seat may see or must be able to count, keyed by instance id. */
   readonly cards: Readonly<Record<string, VisibleCard>>;
@@ -136,7 +191,56 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
   };
   if (!canIdentify(state, inst, viewer)) return base;
   const card = state.cardDefs[inst.defKey];
-  return card === undefined ? base : { ...base, card };
+  if (card === undefined) return base;
+  const identified: VisibleCard = { ...base, card };
+  // Only a permanent on the battlefield has current characteristics at all.
+  if (inst.zone !== 'battlefield') return identified;
+  const ch = characteristicsOf(state, inst);
+  return {
+    ...identified,
+    // Power and toughness only for a creature. A land has neither, and sending the zeroes
+    // `characteristicsOf` computes for one makes the table draw every land as a 0/0.
+    ...(ch.isCreature ? { damage: inst.damage, power: ch.power, toughness: ch.toughness } : {}),
+    keywords: [...ch.keywords],
+    ...(ch.cantAttack ? { cantAttack: true } : {}),
+    ...(ch.cantBlock ? { cantBlock: true } : {}),
+  };
+}
+
+/** The engine's own state, or null for a table running as a manual tabletop. */
+function automationFor(state: GameState, viewer: SeatIndex | null): AutomationView | null {
+  if (!state.automated) return null;
+  const stack: StackView[] = state.stackOrder.map((id) => {
+    const object = state.stackObjects[id]!;
+    return {
+      id: object.id,
+      kind: object.kind,
+      controller: object.controller,
+      description: object.description,
+      // A spell's stack object id *is* its card instance; an ability has no card to show.
+      card: object.kind === 'spell' ? object.id : null,
+      targets: object.targets,
+    };
+  });
+
+  const pending = state.pendingDiscard;
+  const owed = pendingDeclaration(state);
+  const awaiting: AutomationView['awaiting'] =
+    pending !== null ? { kind: 'discard', seats: [pending.seat] }
+    : owed !== null ? { kind: owed.kind, seats: owed.seats }
+    : null;
+
+  return {
+    step: state.step,
+    stepLabel: STEP_LABELS[state.step],
+    priority: state.priority,
+    passed: state.passed,
+    stack,
+    pools: state.pools,
+    combat: state.combat,
+    awaiting,
+    you: viewer === null ? null : legalActions(state, viewer),
+  };
 }
 
 /**
@@ -205,6 +309,7 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     stateVersion: state.stateVersion,
     log: state.log.slice(-VIEW_LOG_ENTRIES),
     seat: viewer,
+    automation: automationFor(state, viewer),
     seats,
     cards,
     zones,

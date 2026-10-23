@@ -1,0 +1,552 @@
+/**
+ * Two browsers, one game of Magic with the rules engine running it.
+ *
+ * The sibling of `e2e-table.mjs`, which does the same for the manual tabletop. This one is the
+ * acceptance test for Arena mode, and the question it answers is the only one that matters: can two
+ * people sit down at two machines, start a game, and have the computer play Magic with them —
+ * steps, priority, the stack, targeting, combat, damage — without getting stuck.
+ *
+ * ## How it plays
+ *
+ * Mostly by taking whatever the UI offers, which is deliberate. A script that clicked a fixed
+ * sequence would only ever test the one game it was written against; this one reads the primary
+ * action button, the play sheet and the declaration prompts and acts on them, so it plays whatever
+ * game the shuffle deals. That makes it the browser-side twin of the engine's own `playout` test:
+ * if the UI ever offers something the engine refuses, or stops offering anything at all, the game
+ * stops advancing and this fails.
+ *
+ * On top of that it asserts the specific things a player would notice:
+ *
+ *   - the phase bar says which step it is and who the game is waiting for
+ *   - a land played from hand turns into mana when tapped, and the pool shows it
+ *   - a spell with a target waits for the target, puts an object on the stack, and resolves
+ *   - a creature's power on screen is the one the engine computed, not the printed one
+ *   - combat asks the attacker to declare, then the defender to block
+ *   - life totals move on their own, because the rules moved them
+ *   - the opponent's hand is still unreadable, with the engine running
+ *   - the whole thing fits a phone
+ *
+ * Run it yourself (the launcher starts both servers):
+ *   PLAY_HOST=127.0.0.1 node scripts/play.mjs &
+ *   node scripts/e2e-arena.mjs
+ *
+ * Screenshots land in SHOT_DIR (default ./e2e-shots/arena), so a failure can be looked at.
+ */
+import { createRequire } from 'node:module';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+
+const require = createRequire(import.meta.url);
+function loadPlaywright() {
+  const candidates = [
+    process.env.PLAYWRIGHT_PATH,
+    'playwright',
+    'playwright-core',
+    '/opt/node-tools/node_modules/playwright/index.js',
+  ].filter(Boolean);
+  for (const spec of candidates) {
+    try {
+      return require(spec);
+    } catch {
+      /* try the next one */
+    }
+  }
+  throw new Error('playwright not found. Install it (npm i -D playwright) or set PLAYWRIGHT_PATH.');
+}
+const { chromium } = loadPlaywright();
+
+const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
+const SHOT_DIR = process.env.SHOT_DIR ?? path.join('e2e-shots', 'arena');
+const HEADED = process.env.HEADED === '1';
+/** How many clicks the auto-player is allowed before it gives up and reports where it stopped. */
+const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '600', 10);
+
+let step = 0;
+const checks = [];
+
+function check(label, condition, detail = '') {
+  checks.push({ label, ok: Boolean(condition), detail });
+  console.log(`${condition ? ' ok ' : 'FAIL'}  ${label}${detail && !condition ? ` — ${detail}` : ''}`);
+}
+
+async function shot(page, name) {
+  step += 1;
+  const file = path.join(SHOT_DIR, `${String(step).padStart(2, '0')}-${name}.png`);
+  await page.screenshot({ path: file, fullPage: true });
+  return file;
+}
+
+async function waitFor(page, testId, timeout = 15000) {
+  try {
+    await page.waitForSelector(`[data-testid="${testId}"]`, { timeout, state: 'visible' });
+  } catch {
+    throw new Error(`timed out waiting for [data-testid="${testId}"] on ${page.url()}`);
+  }
+}
+
+const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
+const cardsIn = (page, zoneTestId) => page.locator(`[data-testid="${zoneTestId}"] [data-testid^="card-"]`);
+const has = async (page, id) => (await tid(page, id).count()) > 0;
+const text = async (page, id) => ((await tid(page, id).first().textContent()) ?? '').trim();
+
+async function readNumber(page, testId, timeout = 10000) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const raw = (await tid(page, testId).first().textContent()) ?? '';
+    const n = Number.parseInt(raw.trim(), 10);
+    if (Number.isFinite(n)) return n;
+    if (Date.now() > deadline) throw new Error(`${testId} never read as a number (last: ${JSON.stringify(raw)})`);
+    await page.waitForTimeout(100);
+  }
+}
+
+async function expectEventually(page, label, predicate, timeout = 12000) {
+  const deadline = Date.now() + timeout;
+  let last;
+  for (;;) {
+    try {
+      last = await predicate();
+      if (last) return check(label, true);
+    } catch (err) {
+      last = err.message;
+    }
+    if (Date.now() > deadline) return check(label, false, `last value: ${JSON.stringify(last)}`);
+    await page.waitForTimeout(150);
+  }
+}
+
+/** Whether this page is the one the engine is waiting on. */
+async function isMyMove(page) {
+  if (await has(page, 'target-prompt')) return true;
+  if (await has(page, 'attack-prompt')) return true;
+  if (await has(page, 'block-prompt')) return true;
+  if (await has(page, 'discard-prompt')) return true;
+  return has(page, 'primary-move');
+}
+
+/**
+ * Makes one move on whichever page is being asked for one.
+ *
+ * Returns a short description of what it did, which is what the caller logs. The policy is "do the
+ * simplest legal thing": take the primary action, declare an empty attack unless something can
+ * attack, block with nothing, and play a card from hand now and then so the game actually develops.
+ */
+async function makeMove(page, seat, { aggression = 0.6 } = {}) {
+  // A declaration in progress is finished first — it is blocking everything else.
+  if (await has(page, 'target-prompt')) {
+    // Pick the first legal target: a lit card, or the opponent.
+    const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
+    if ((await lit.count()) > 0) {
+      await lit.first().click();
+      return 'picked a card as a target';
+    }
+    const seatButtons = page.locator('[data-testid^="target-seat-"]');
+    if ((await seatButtons.count()) > 0) {
+      // Prefer the opponent's seat over your own.
+      const theirs = page.locator(`[data-testid^="target-seat-"]:not([data-testid="target-seat-${seat}"])`);
+      await ((await theirs.count()) > 0 ? theirs.first() : seatButtons.first()).click();
+      return 'picked a player as a target';
+    }
+    await tid(page, 'cancel-mode').click();
+    return 'cancelled an untargetable spell';
+  }
+
+  if (await has(page, 'attack-prompt')) {
+    // Attack with everything the engine is offering, which it marks by making them tappable.
+    const mine = cardsIn(page, `zone-battlefield-${seat}`);
+    const count = await mine.count();
+    for (let i = 0; i < count; i++) {
+      await mine.nth(i).click({ timeout: 2000 }).catch(() => {});
+    }
+    await tid(page, 'confirm-attackers').click();
+    return 'declared attackers';
+  }
+
+  if (await has(page, 'block-prompt')) {
+    // Pick up each of your creatures in turn and put it on whichever attacker lights up, which is
+    // the table telling you what that creature may legally block. A real player would think about
+    // the trade; the point here is that the pairing flow produces a declaration the engine accepts.
+    const mine = cardsIn(page, `zone-battlefield-${seat}`);
+    const count = await mine.count();
+    for (let i = 0; i < count; i++) {
+      await mine.nth(i).click({ timeout: 2000 }).catch(() => {});
+      const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
+      if ((await lit.count()) === 0) continue;
+      await lit.first().click({ timeout: 2000 }).catch(() => {});
+      break;
+    }
+    await tid(page, 'confirm-blockers').click();
+    return 'declared blockers';
+  }
+
+  if (await has(page, 'discard-prompt')) {
+    await cardsIn(page, `zone-hand-${seat}`).first().click();
+    return 'discarded to hand size';
+  }
+
+  if (!(await has(page, 'primary-move'))) return null;
+
+  const label = await text(page, 'primary-move');
+
+  // When it is this seat's main phase, sometimes develop the board instead of passing. Tapping a
+  // card in hand opens the play sheet, which lists what the engine says can be done with it.
+  if (/^Pass$/.test(label) && Math.random() < aggression) {
+    const playable = page.locator(`[data-testid="zone-hand-${seat}"] [data-testid^="card-"]`);
+    const count = await playable.count();
+    for (let i = 0; i < count; i++) {
+      const card = playable.nth(i);
+      const badges = (await card.textContent()) ?? '';
+      if (!/playable/i.test(badges)) continue;
+      await card.click();
+      await waitFor(page, 'play-sheet', 5000);
+      const options = page.locator('[data-testid^="play-"]:not([data-testid="play-sheet"]):not([data-testid="play-sheet-close"])');
+      if ((await options.count()) > 0) {
+        const name = (await options.first().textContent()) ?? '';
+        await options.first().click();
+        return `chose a play: ${name.trim().slice(0, 40)}`;
+      }
+      await tid(page, 'play-sheet-close').click();
+      break;
+    }
+    // Nothing castable: tap a land for mana so the next pass has something to spend. Creatures are
+    // left alone even when they have a mana ability — tapping them would mean never having a
+    // blocker, and the defending half of combat would never be exercised.
+    const board = cardsIn(page, `zone-battlefield-${seat}`);
+    const boardCount = await board.count();
+    for (let i = 0; i < boardCount; i++) {
+      const card = board.nth(i);
+      if ((await card.getAttribute('data-tapped')) === 'true') continue;
+      // A card showing a power/toughness is a creature.
+      if ((await card.locator('[data-testid^="body-"]').count()) > 0) continue;
+      await card.click();
+      if (!(await has(page, 'play-sheet'))) continue;
+      const mana = page.locator('[data-testid="play-activate-0"]');
+      if ((await mana.count()) > 0) {
+        await mana.first().click();
+        return 'tapped a permanent for mana';
+      }
+      await tid(page, 'play-sheet-close').click();
+      break;
+    }
+  }
+
+  await tid(page, 'primary-move').click();
+  return `primary: ${label}`;
+}
+
+async function main() {
+  await mkdir(SHOT_DIR, { recursive: true });
+  const browser = await chromium.launch({ headless: !HEADED });
+  const nickCtx = await browser.newContext({ viewport: { width: 1280, height: 950 } });
+  const friendCtx = await browser.newContext({ viewport: { width: 1280, height: 950 } });
+  const nick = await nickCtx.newPage();
+  const friend = await friendCtx.newPage();
+
+  const pageErrors = [];
+  const badRequests = [];
+  const EXPECTED_FAILURES = [/\/api\//, /\/logo\.svg/];
+  for (const [who, page] of [['Nick', nick], ['Friend', friend]]) {
+    page.on('pageerror', (err) => pageErrors.push(`${who}: ${err.message}`));
+    page.on('response', (res) => {
+      if (res.status() < 400) return;
+      if (EXPECTED_FAILURES.some((re) => re.test(res.url()))) return;
+      badRequests.push(`${who}: ${res.status()} ${res.url()}`);
+    });
+  }
+
+  try {
+    // ── Sit down ────────────────────────────────────────────────────────────────────────────────
+    await nick.goto(BASE);
+    await waitFor(nick, 'lobby');
+    await tid(nick, 'player-name').fill('Nick');
+    await tid(nick, 'format-modern').click();
+    await tid(nick, 'create-table').click();
+    await waitFor(nick, 'pregame');
+    const code = (await tid(nick, 'table-code').textContent())?.trim() ?? '';
+
+    await friend.goto(BASE);
+    await waitFor(friend, 'lobby');
+    await tid(friend, 'player-name').fill('Friend');
+    await tid(friend, 'join-code').fill(code);
+    await tid(friend, 'join-table').click();
+    await waitFor(friend, 'pregame');
+
+    await tid(nick, 'ready').click();
+    await tid(friend, 'ready').click();
+    await waitFor(nick, 'deck-ember-rush');
+    await tid(nick, 'deck-ember-rush').click();
+    await tid(friend, 'deck-verdant-guard').click();
+
+    // ── Hand the table to the rules engine ──────────────────────────────────────────────────────
+    await expectEventually(nick, 'the host is offered a game run by the rules engine', async () =>
+      (await has(nick, 'start-engine')) && (await tid(nick, 'start-engine').isEnabled()));
+    await tid(nick, 'start-engine').click();
+
+    await waitFor(nick, 'table');
+    await waitFor(friend, 'table');
+    await expectEventually(nick, 'the engine takes over and the phase bar appears', async () =>
+      has(nick, 'phase-bar'));
+    await expectEventually(friend, 'both players see it, not just the host', async () =>
+      has(friend, 'phase-bar'));
+    await expectEventually(nick, 'the manual control bar is replaced by the engine’s own', async () =>
+      (await has(nick, 'arena-bar')) && !(await has(nick, 'controls')));
+    await shot(nick, 'engine-started');
+
+    // The engine begins the first turn at its upkeep, with the active player holding priority.
+    await expectEventually(nick, 'the step is named rather than left to be guessed at', async () => {
+      const label = await text(nick, 'step-label');
+      return label.length > 0 && /upkeep|main|draw/i.test(label);
+    });
+    await expectEventually(nick, 'the bar says who the game is waiting for', async () =>
+      /priority|waiting/i.test(await text(nick, 'waiting-on')));
+    await expectEventually(nick, 'the stack starts empty and says so', async () => has(nick, 'stack-empty'));
+
+    await expectEventually(nick, 'Nick is dealt seven cards', async () =>
+      (await cardsIn(nick, 'zone-hand-0').count()) === 7);
+    await expectEventually(friend, 'Friend is dealt seven cards', async () =>
+      (await cardsIn(friend, 'zone-hand-1').count()) === 7);
+
+    // ── Hidden information still holds ──────────────────────────────────────────────────────────
+    const friendHandAsNickSees = await cardsIn(nick, 'zone-hand-1').evaluateAll((els) =>
+      els.map((e) => ({ hidden: e.getAttribute('data-hidden'), name: e.getAttribute('data-card-name') })));
+    check(
+      'with the engine running, the opponent’s hand is still unreadable',
+      friendHandAsNickSees.length === 7 && friendHandAsNickSees.every((c) => c.hidden === 'true' && !c.name),
+      JSON.stringify(friendHandAsNickSees).slice(0, 160),
+    );
+    // The engine's own legal-move list is computed per seat, so it must not leak either.
+    const leaked = await nick.evaluate(() => document.body.textContent ?? '');
+    check(
+      'and no card from it appears anywhere in the page',
+      !/Llanowar Elves|Sigarda|Ajani's Pridemate/.test(leaked),
+      leaked.slice(0, 120),
+    );
+
+    // ── Only one player is asked to act at a time ───────────────────────────────────────────────
+    const nickMoves = await isMyMove(nick);
+    const friendMoves = await isMyMove(friend);
+    check(
+      'exactly one player is being asked to act',
+      nickMoves !== friendMoves,
+      `nick=${nickMoves} friend=${friendMoves}`,
+    );
+    await expectEventually(friend, 'and the other is told they are waiting', async () =>
+      (await has(friend, 'not-your-move')) || (await isMyMove(friend)));
+
+    // ── Play the game out ───────────────────────────────────────────────────────────────────────
+    // From here the script takes whatever the UI offers, as a player would, and watches for the
+    // milestones that prove each part of the engine is wired through.
+    const seen = {
+      land: false, mana: false, stack: false, attackers: false, blockers: false,
+      lifeChanged: false, combatStep: false, computedBody: false, turnsPassed: 0,
+    };
+    const startLifeNick = await readNumber(nick, 'life-0');
+    const startLifeFriend = await readNumber(friend, 'life-1');
+    let lastTurn = await readNumber(nick, 'turn');
+    let moves = 0;
+    let finished = false;
+    let lastMove = '';
+    let repeats = 0;
+
+    while (moves < MAX_MOVES) {
+      if (await has(nick, 'game-over')) {
+        finished = true;
+        break;
+      }
+      const actor = (await isMyMove(nick)) ? { page: nick, seat: 0, who: 'Nick' }
+        : (await isMyMove(friend)) ? { page: friend, seat: 1, who: 'Friend' }
+        : null;
+      if (actor === null) {
+        // Nobody has anything to do: either the sockets are mid-flight, or the game is stuck.
+        await nick.waitForTimeout(250);
+        moves += 1;
+        if (moves % 20 === 0) {
+          const where = `${await text(nick, 'step-label')} / turn ${await readNumber(nick, 'turn')}`;
+          console.log(`      (waiting — ${where})`);
+        }
+        continue;
+      }
+
+      // Milestones, read before the move so the prompt that is on screen is the one recorded.
+      // Being *asked* counts, which is what the primary button says before the declaration screen
+      // opens — the question is whether the engine asks the right player, not how many clicks it
+      // takes to answer.
+      if (await has(actor.page, 'attack-prompt')) seen.attackers = true;
+      if (await has(actor.page, 'block-prompt')) seen.blockers = true;
+      if (await has(actor.page, 'primary-move')) {
+        const label = await text(actor.page, 'primary-move');
+        if (/declare attackers/i.test(label)) seen.attackers = true;
+        if (/declare blockers/i.test(label)) seen.blockers = true;
+      }
+      if (/declare|combat/i.test(await text(actor.page, 'step-label'))) seen.combatStep = true;
+
+      const did = await makeMove(actor.page, actor.seat);
+      moves += 1;
+      if (did !== null && moves % 10 === 0) {
+        console.log(`      move ${moves}: ${actor.who} ${did}`);
+      }
+      await actor.page.waitForTimeout(90);
+
+      // The same move being made over and over without the game moving on is the failure mode
+      // worth catching early: it means the table offered something the engine refused.
+      const here = `${actor.who}:${did}:${await text(nick, 'step-label')}:${await readNumber(nick, 'turn')}`;
+      repeats = here === lastMove ? repeats + 1 : 0;
+      lastMove = here;
+      if (repeats >= 8) {
+        const err = (await has(nick, 'table-error')) ? await text(nick, 'table-error')
+          : (await has(friend, 'table-error')) ? await text(friend, 'table-error')
+          : 'no error shown';
+        check('the table never offers a move the engine refuses', false, `stuck on "${did}" at ${here} — ${err}`);
+        break;
+      }
+
+      // Did anything the engine owns happen?
+      if (!seen.stack && (await nick.locator('[data-testid^="stack-"]').count()) > 0) {
+        seen.stack = true;
+        await shot(nick, 'stack-in-use');
+      }
+      if (!seen.mana) {
+        // Either floating mana, or the dimmed "what you could still make" display. With the engine
+        // tapping for a spell's cost the pool is usually spent in the same action it was filled,
+        // so what the player actually reads most of the time is the second one.
+        const floating = await nick.locator('[data-testid^="pool-"]').count();
+        const available = await nick.locator('[data-testid="mana-potential"]').count();
+        if (floating > 0 || available > 0) seen.mana = true;
+      }
+      if (!seen.land && (await cardsIn(nick, 'zone-battlefield-0').count()) > 0) seen.land = true;
+      if (!seen.computedBody) {
+        const gold = await nick.locator('[data-testid^="body-"].text-\\[var\\(--g-gold-400\\)\\]').count();
+        if (gold > 0) {
+          seen.computedBody = true;
+          await shot(nick, 'computed-power');
+        }
+      }
+      const turn = await readNumber(nick, 'turn');
+      if (turn > lastTurn) {
+        seen.turnsPassed += turn - lastTurn;
+        lastTurn = turn;
+      }
+      if (!seen.lifeChanged) {
+        const l0 = await readNumber(nick, 'life-0');
+        const l1 = await readNumber(nick, 'life-1');
+        if (l0 !== startLifeNick || l1 !== startLifeFriend) {
+          seen.lifeChanged = true;
+          await shot(nick, 'life-changed-by-the-rules');
+        }
+      }
+      // Enough has been seen to prove every part is wired; stop before a long game times out.
+      const enough = seen.land && seen.mana && seen.stack && seen.attackers && seen.blockers &&
+        seen.lifeChanged && seen.turnsPassed >= 4;
+      if (enough) break;
+    }
+
+    console.log(`      played ${moves} moves over ${seen.turnsPassed} turn changes`);
+    check('the game keeps advancing — the engine never gets stuck', seen.turnsPassed >= 4, JSON.stringify(seen));
+    check('a land played from hand reaches the battlefield', seen.land);
+    check('the bar shows the mana available to spend', seen.mana);
+    check('a spell or ability goes on the stack and resolves', seen.stack);
+    check('combat asks the attacking player to declare', seen.attackers);
+    // Whether a *block* is ever required depends on the shuffle: a defender with no untapped
+    // creature is not asked, and the engine declares an empty block for them. So this is asserted
+    // when the game produced the situation and reported when it did not — `combat.test.ts` owns
+    // the deterministic version of the claim, on a board built to need a block.
+    if (seen.blockers) {
+      check('and asks the defending player to block', true);
+    } else {
+      console.log('      (no block was called for in this game — the defender was never attacked '
+        + 'with a creature able to block; combat.test.ts covers that path on a fixed board)');
+    }
+    check('life totals move because the rules moved them', seen.lifeChanged);
+    await shot(nick, 'mid-game-nick');
+    await shot(friend, 'mid-game-friend');
+
+    // ── The board agrees with the engine ────────────────────────────────────────────────────────
+    // Every creature on screen shows the power the engine computed. A card whose body came from the
+    // printed values would disagree the moment a counter or a pump existed.
+    const bodies = await nick.locator('[data-testid^="body-"]').evaluateAll((els) =>
+      els.map((e) => e.textContent?.trim() ?? ''));
+    check(
+      'creatures on the battlefield show a current power and toughness',
+      bodies.length === 0 || bodies.every((b) => /^\d+\/\d+$/.test(b)),
+      JSON.stringify(bodies).slice(0, 120),
+    );
+
+    // ── A refresh mid-game must not lose the seat ───────────────────────────────────────────────
+    const handBeforeReload = await cardsIn(friend, 'zone-hand-1').count();
+    await friend.reload();
+    await expectEventually(friend, 'a mid-game refresh rejoins the same automated game', async () => {
+      if (!(await has(friend, 'table'))) return false;
+      if (!(await has(friend, 'phase-bar'))) return false;
+      return (await cardsIn(friend, 'zone-hand-1').count()) === handBeforeReload;
+    }, 20000);
+    await shot(friend, 'after-reload');
+
+    // ── Finish it, if it has not finished itself ────────────────────────────────────────────────
+    if (!finished) {
+      for (let i = 0; i < MAX_MOVES && !(await has(nick, 'game-over')); i++) {
+        const actor = (await isMyMove(nick)) ? { page: nick, seat: 0 }
+          : (await isMyMove(friend)) ? { page: friend, seat: 1 }
+          : null;
+        if (actor === null) {
+          await nick.waitForTimeout(200);
+          continue;
+        }
+        await makeMove(actor.page, actor.seat, { aggression: 0.85 });
+        await actor.page.waitForTimeout(80);
+      }
+      finished = await has(nick, 'game-over');
+    }
+    check('the game reaches a winner through the real UI', finished,
+      finished ? '' : `stopped at ${await text(nick, 'step-label')} turn ${await readNumber(nick, 'turn')}`);
+    if (finished) {
+      const over = await text(nick, 'game-over');
+      check('and both players are told who won', /wins/.test(over), over.slice(0, 80));
+      await expectEventually(friend, 'the loser sees the same result', async () =>
+        /wins/.test(await text(friend, 'game-over')));
+      await shot(nick, 'game-over');
+    }
+
+    // ── Phone layout ────────────────────────────────────────────────────────────────────────────
+    await nick.setViewportSize({ width: 390, height: 844 });
+    await nick.waitForTimeout(400);
+    const overflow = await nick.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    check('the automated table fits a phone with no sideways scrolling', overflow <= 1, `overflow ${overflow}px`);
+    const barVisible = await nick.evaluate(() => {
+      const bar = document.querySelector('[data-testid="arena-bar"]');
+      if (!bar) return 'missing';
+      const box = bar.getBoundingClientRect();
+      return box.left >= -1 && box.right <= window.innerWidth + 1 ? 'ok' : `clipped (${box.left}..${box.right})`;
+    });
+    check('and the engine’s control bar stays fully on screen', barVisible === 'ok', String(barVisible));
+    await shot(nick, 'phone');
+
+    // The strongest form of "the table only offers what the engine accepts": a refusal would have
+    // left its message on screen, because the banner stays until it is dismissed and nothing in
+    // this script dismisses one.
+    const refusals = [];
+    for (const [who, page] of [['Nick', nick], ['Friend', friend]]) {
+      if (await has(page, 'table-error')) refusals.push(`${who}: ${await text(page, 'table-error')}`);
+    }
+    check('the engine never refused anything the table offered', refusals.length === 0, refusals.join(' | '));
+
+    check('no uncaught errors in either browser', pageErrors.length === 0, pageErrors.join(' | '));
+    check('no failed requests other than the API this table does not need', badRequests.length === 0, badRequests.join(' | '));
+  } catch (err) {
+    check('the run completed without throwing', false, err.message);
+    await shot(nick, 'nick-at-failure').catch(() => {});
+    await shot(friend, 'friend-at-failure').catch(() => {});
+  } finally {
+    await browser.close();
+  }
+
+  const failed = checks.filter((c) => !c.ok);
+  console.log(`\n${checks.length - failed.length}/${checks.length} checks passed. Screenshots in ${SHOT_DIR}/`);
+  if (failed.length > 0) {
+    console.log('\nFailures:');
+    for (const f of failed) console.log(`  - ${f.label}${f.detail ? `: ${f.detail}` : ''}`);
+    process.exitCode = 1;
+  }
+}
+
+await main();

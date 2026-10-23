@@ -17,9 +17,8 @@ import { legalActions, type LegalActions, type LegalPlay } from './legalActions.
 import { pendingDeclaration } from './automation.js';
 import { characteristicsOf } from './characteristics.js';
 import { canAttack, canBlock } from './combat.js';
-import { poolOf } from './effects.js';
 import { applyAction } from './engine.js';
-import { canPay, costValue, parseManaCost } from './mana.js';
+import { costValue, parseManaCost } from './mana.js';
 import type { Target } from './turnTypes.js';
 import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
@@ -73,21 +72,6 @@ function rank(state: GameState, target: Target, foes: readonly SeatIndex[]): num
   const mine = !foes.includes(inst.zoneSeat);
   const size = characteristicsOf(state, inst).power;
   return mine ? -50 + size : 50 + size;
-}
-
-/** Taps mana abilities until `cost` can be paid, or gives up. */
-function tapFor(state: GameState, seat: SeatIndex, manaCost: string): GameState | null {
-  let next = state;
-  const cost = parseManaCost(manaCost);
-  for (let guard = 0; guard < 24; guard++) {
-    if (canPay(poolOf(next, seat), cost)) return next;
-    const source = legalActions(next, seat).plays.find((p) => p.isManaAbility);
-    if (source === undefined) return null;
-    next = applyAction(next, {
-      type: 'auto:activate', by: seat, card: source.card, abilityIndex: source.abilityIndex ?? 0,
-    }, HOST);
-  }
-  return null;
 }
 
 /** Everything the seat can attack with, which for this bot is everything it is allowed to. */
@@ -187,23 +171,17 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
   return { type: 'auto:pass', by: seat };
 }
 
-/** Applies one bot action for one seat, tapping whatever mana it needs first. */
+/**
+ * Applies one bot action for one seat.
+ *
+ * There is no mana bookkeeping here on purpose: the engine taps for a cost it can pay, so a play
+ * `legalActions` offered is one the engine will accept. A bot that tapped lands itself would be
+ * second-guessing that, and would get it wrong the first time a land made two colours.
+ */
 export function botStep(state: GameState, seat: SeatIndex): GameState {
   const action = botAction(state, seat);
   if (action === null) return state;
-  let next = state;
-  if (action.type === 'auto:cast' || action.type === 'auto:activate') {
-    const play = legalActions(state, seat).plays.find(
-      (p) => p.card === action.card
-        && (action.type !== 'auto:activate' || p.abilityIndex === action.abilityIndex),
-    );
-    const paid = tapFor(next, seat, play?.manaCost ?? '');
-    // If the mana cannot be produced after all, pass rather than send an action that will be
-    // refused: a bot that argues with the engine is a bot that hangs the game.
-    if (paid === null) return applyAction(next, { type: 'auto:pass', by: seat }, HOST);
-    next = paid;
-  }
-  return applyAction(next, action, HOST);
+  return applyAction(state, action, HOST);
 }
 
 export interface PlayOutResult {

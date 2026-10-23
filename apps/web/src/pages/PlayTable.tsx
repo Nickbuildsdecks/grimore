@@ -1,28 +1,46 @@
 /**
- * The Play Realm table: two people, one game of Magic.
+ * The Play Realm table: two people, one game of Magic — in either of two modes.
  *
- * A shared digital tabletop rather than a rules engine. Nothing here decides whether a play is
- * legal — the players do that, exactly as they do with cardboard — so every card in every zone can
- * be moved anywhere, and the table works with any deck instead of only with cards someone has
- * written code for. `packages/rules-engine/src/cards.ts` explains why that is the right trade.
+ * **Arena mode**, when the server sends `view.automation`, is a rules engine running the game. The
+ * steps advance themselves, priority is tracked, the stack resolves, combat is declared and damage
+ * is dealt, and an illegal play is refused. Every move the player is offered comes from
+ * `view.automation.you`, which the engine computed — this file works out no rules of its own, so
+ * what the table offers and what the engine accepts cannot drift apart.
  *
- * What the table *does* do is the bookkeeping that is tedious and easy to get wrong: shuffling,
- * drawing, untapping, counters, tokens, commander damage, the turn counter, and a log of everything
- * that happened so a disagreement can be settled by scrolling up.
+ * **Tabletop mode** is the same board with no rules at all: every card in every zone can be moved
+ * anywhere, exactly as it can with cardboard. That is not a fallback for a bug, it is the design.
+ * No card pool is fully scripted, and a game that stops dead because a card does something the
+ * engine cannot express is worse than a game where that one card is moved by hand. The manual moves
+ * stay reachable inside Arena mode for the same reason, under "Move by hand".
+ *
+ * Either way the table does the bookkeeping that is tedious and easy to get wrong: shuffling,
+ * drawing, untapping, counters, tokens, commander damage, and a log of everything that happened so
+ * a disagreement can be settled by scrolling up.
  *
  * Interaction is tap-first, with no hover-only affordances and no drag, because one of the two
  * players may be on a phone: pick a card, choose from the sheet that opens.
  */
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowDownToLine, ArrowUpToLine, Dices, Hand, Layers, Link2, LogOut, MessageSquare, Minus, Plus,
   HelpCircle, RotateCcw, Search, Send, Shuffle, Skull, Sparkles, SquareStack, Swords, Undo2,
 } from "lucide-react"
-import { COMMON_TOKENS, STARTER_DECKS, type GameView, type SeatView, type VisibleCard, type ZoneId } from "@grimore/rules-engine"
-import { CardFace } from "@/components/table/CardFace"
+import {
+  COMMON_TOKENS, STARTER_DECKS,
+  type GameView, type LegalPlay, type SeatView, type VisibleCard, type ZoneId,
+} from "@grimore/rules-engine"
+import { CardFace, type CardHighlight } from "@/components/table/CardFace"
+import { ArenaBar } from "@/components/table/ArenaBar"
+import { PhaseBar } from "@/components/table/PhaseBar"
+import { PlaySheet } from "@/components/table/PlaySheet"
+import { StackPanel } from "@/components/table/StackPanel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import {
+  IDLE, arenaReducer, candidatesAt, cardBadges, playsForCard,
+  type ArenaEvent, type ArenaMode,
+} from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
 
 const NAME_KEY = "grimore.table.name"
@@ -202,9 +220,37 @@ function PreGame({ table }: { table: UseTable }) {
             ))}
           </section>
           {isHost ? (
-            <Button data-testid="start-game" disabled={!everyoneHasADeck} onClick={() => void table.send({ type: "game:start" })}>
-              {everyoneHasADeck ? "Start the game" : "Waiting for decks"}
-            </Button>
+            <section className="flex flex-col gap-2">
+              <h2 className="text-xs font-medium uppercase tracking-wide text-[var(--g-text-muted)]">Start</h2>
+              {/*
+                Two genuinely different games, so two buttons rather than a setting buried
+                somewhere. The engine is the default because it is what most people want; the
+                tabletop is there because it plays any card, scripted or not.
+              */}
+              <Button
+                data-testid="start-engine"
+                disabled={!everyoneHasADeck}
+                onClick={() => {
+                  // One after the other: `auto:start` needs a dealt table to take over.
+                  void table.send({ type: "game:start" })
+                  void table.send({ type: "auto:start" })
+                }}
+              >
+                {everyoneHasADeck ? "Play with the rules engine" : "Waiting for decks"}
+              </Button>
+              <Button
+                variant="secondary"
+                data-testid="start-game"
+                disabled={!everyoneHasADeck}
+                onClick={() => void table.send({ type: "game:start" })}
+              >
+                Play as a tabletop
+              </Button>
+              <p className="px-1 text-[10px] leading-snug text-[var(--g-text-muted)]">
+                The engine enforces the rules, tracks priority and runs combat. The tabletop
+                enforces nothing and lets you move any card anywhere, the way cardboard does.
+              </p>
+            </section>
           ) : (
             <p className="text-sm text-[var(--g-text-muted)]">Waiting for the host to start.</p>
           )}
@@ -287,6 +333,51 @@ function menuFor(card: VisibleCard, opponents: number[]): CardMenuItem[] {
   }
 }
 
+/**
+ * The manual move list for one card.
+ *
+ * Its own component because it serves two sheets: the whole of the tabletop's card sheet, and the
+ * "move by hand" disclosure inside the engine's play sheet. There is one list of physical moves and
+ * both modes show the same one.
+ */
+function CardMenu({
+  card,
+  opponents,
+  onAct,
+  onAttach,
+  onClose,
+}: {
+  card: VisibleCard
+  opponents: number[]
+  onAct: (action: TableAction) => void
+  onAttach: (card: VisibleCard) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {menuFor(card, opponents).map((item) => (
+        <Button
+          key={item.id}
+          data-testid={`act-${item.id}`}
+          variant="secondary"
+          className="justify-start"
+          onClick={() => {
+            if (item.action) onAct(item.action)
+            onClose()
+          }}
+        >
+          {item.label}
+        </Button>
+      ))}
+      {card.zone === "battlefield" ? (
+        <Button data-testid="act-attach" variant="secondary" className="justify-start" onClick={() => { onAttach(card); onClose() }}>
+          <Link2 className="size-4" /> {card.attachedTo === null ? "Attach to…" : "Detach"}
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 function CardSheet({
   card,
   opponents,
@@ -300,7 +391,6 @@ function CardSheet({
   onAttach: (card: VisibleCard) => void
   onClose: () => void
 }) {
-  const items = menuFor(card, opponents)
   return (
     <div
       data-testid="card-sheet"
@@ -314,30 +404,10 @@ function CardSheet({
         <div className="mb-3 flex items-start gap-3">
           <CardFace card={card} size="large" />
         </div>
-        <div className="flex flex-col gap-1.5">
-          {items.map((item) => (
-            <Button
-              key={item.id}
-              data-testid={`act-${item.id}`}
-              variant="secondary"
-              className="justify-start"
-              onClick={() => {
-                if (item.action) onAct(item.action)
-                onClose()
-              }}
-            >
-              {item.label}
-            </Button>
-          ))}
-          {card.zone === "battlefield" ? (
-            <Button data-testid="act-attach" variant="secondary" className="justify-start" onClick={() => { onAttach(card); onClose() }}>
-              <Link2 className="size-4" /> {card.attachedTo === null ? "Attach to…" : "Detach"}
-            </Button>
-          ) : null}
-          <Button data-testid="sheet-close" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
+        <CardMenu card={card} opponents={opponents} onAct={onAct} onAttach={onAttach} onClose={onClose} />
+        <Button className="mt-1.5 w-full" data-testid="sheet-close" variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
       </div>
     </div>
   )
@@ -354,6 +424,9 @@ function SeatStrip({
   commanderFormat,
   mySeat,
   onAct,
+  targetable,
+  onTarget,
+  manualLife,
 }: {
   seat: SeatView
   isMe: boolean
@@ -361,6 +434,11 @@ function SeatStrip({
   commanderFormat: boolean
   mySeat: number
   onAct: (action: TableAction) => void
+  /** Lit as a legal target while a spell is being aimed. */
+  targetable?: boolean
+  onTarget?: () => void
+  /** The life buttons, which the engine's own life changes make unnecessary and misleading. */
+  manualLife?: boolean
 }) {
   const life = (delta: number) => onAct({ type: "life:adjust", seat: seat.index, delta })
   return (
@@ -369,9 +447,20 @@ function SeatStrip({
       className={cn(
         "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-2.5 py-1.5 text-xs",
         isActive ? "border-[var(--g-gold-400)]/60 bg-[var(--g-gold-400)]/5" : "border-white/10",
+        targetable === true && "border-[var(--g-status-info)] ring-2 ring-[var(--g-status-info)]",
         seat.eliminated && "opacity-50",
       )}
     >
+      {targetable === true ? (
+        <Button
+          size="sm"
+          data-testid={`target-seat-${seat.index}`}
+          className="h-6 px-2 text-[10px]"
+          onClick={onTarget}
+        >
+          Target {isMe ? "yourself" : seat.name}
+        </Button>
+      ) : null}
       <span className="font-semibold text-[var(--g-text-high)]">
         {seat.name}
         {isMe ? " (you)" : ""}
@@ -380,15 +469,24 @@ function SeatStrip({
       {seat.eliminated ? <span className="text-[var(--g-mana-r)]">out ({seat.eliminatedReason})</span> : null}
 
       <span className="flex items-center gap-1">
-        <Button data-testid={`life-down-${seat.index}`} size="icon" variant="ghost" className="size-6" onClick={() => life(-1)} aria-label="Lose 1 life">
-          <Minus className="size-3" />
-        </Button>
+        {/*
+          With the engine running, life is its business: it deals the damage and gains the life, and
+          a stray tap on a button here would silently disagree with what the rules just did. The
+          buttons are a tabletop affordance, so they only exist on a tabletop.
+        */}
+        {manualLife !== false ? (
+          <Button data-testid={`life-down-${seat.index}`} size="icon" variant="ghost" className="size-6" onClick={() => life(-1)} aria-label="Lose 1 life">
+            <Minus className="size-3" />
+          </Button>
+        ) : null}
         <span data-testid={`life-${seat.index}`} className="min-w-[2.5ch] text-center text-base font-bold tabular-nums text-[var(--g-text-high)]">
           {seat.life}
         </span>
-        <Button data-testid={`life-up-${seat.index}`} size="icon" variant="ghost" className="size-6" onClick={() => life(1)} aria-label="Gain 1 life">
-          <Plus className="size-3" />
-        </Button>
+        {manualLife !== false ? (
+          <Button data-testid={`life-up-${seat.index}`} size="icon" variant="ghost" className="size-6" onClick={() => life(1)} aria-label="Gain 1 life">
+            <Plus className="size-3" />
+          </Button>
+        ) : null}
       </span>
 
       <span className="text-[var(--g-text-muted)]">
@@ -426,6 +524,9 @@ function ZoneRow({
   testId,
   onSelect,
   selectedId,
+  selectedIds,
+  highlightOf,
+  badgesOf,
   empty,
 }: {
   label: string
@@ -434,6 +535,11 @@ function ZoneRow({
   testId: string
   onSelect?: (c: VisibleCard) => void
   selectedId?: string | null
+  /** For the multi-select steps: attackers being picked, blockers being paired. */
+  selectedIds?: ReadonlySet<string>
+  /** Why each card is lit, if it is: a legal target, an attacker, a blocker. */
+  highlightOf?: (c: VisibleCard) => CardHighlight | null
+  badgesOf?: (c: VisibleCard) => readonly string[]
   empty?: string
 }) {
   return (
@@ -450,14 +556,24 @@ function ZoneRow({
           "flex items-end gap-1 overflow-x-auto rounded-md border border-white/5 bg-black/20 p-1.5",
           // An empty zone collapses to a thin strip. Reserving full card height for every empty
           // zone pushed the hand off the bottom of a laptop screen before a card had been played.
-          cards.length === 0 ? "min-h-[34px] items-center" : size === "hand" ? "min-h-[136px]" : "min-h-[72px]",
+          // A zone with cards in it is sized by them: each card now occupies a slot of its own
+          // size, so a fixed minimum here would only ever clip the bottom of a row.
+          cards.length === 0 ? "min-h-[34px] items-center" : "",
         )}
       >
         {cards.length === 0 ? (
           <span className="px-2 text-[11px] text-[var(--g-text-muted)]">{empty ?? "empty"}</span>
         ) : (
           cards.map((c) => (
-            <CardFace key={c.id} card={c} size={size} onSelect={onSelect} selected={selectedId === c.id} />
+            <CardFace
+              key={c.id}
+              card={c}
+              size={size}
+              onSelect={onSelect}
+              selected={selectedId === c.id || selectedIds?.has(c.id) === true}
+              highlight={highlightOf?.(c) ?? null}
+              badges={badgesOf?.(c)}
+            />
           ))
         )}
       </div>
@@ -469,6 +585,15 @@ function Board({ table }: { table: UseTable }) {
   const { view, seat } = table
   const [picked, setPicked] = useState<VisibleCard | null>(null)
   const [attachFrom, setAttachFrom] = useState<VisibleCard | null>(null)
+  /**
+   * What the player is halfway through — choosing targets, picking attackers, pairing blockers.
+   *
+   * Mirrored into a ref as well as state because `onSelect` has to read the *current* mode to
+   * decide what a tap means, and a value captured by a closure is one render behind: tapping two
+   * targets in quick succession would otherwise send the first choice twice.
+   */
+  const [arenaMode, setArenaMode] = useState<ArenaMode>(IDLE)
+  const arenaRef = useRef<ArenaMode>(IDLE)
   const [showLog, setShowLog] = useState(false)
   const [showTokens, setShowTokens] = useState(false)
   const [showChat, setShowChat] = useState(false)
@@ -483,12 +608,103 @@ function Board({ table }: { table: UseTable }) {
 
   const act = useCallback((action: TableAction) => void table.send(action), [table])
 
+  /**
+   * Runs one interaction event and sends whatever action it completed.
+   *
+   * The send is deliberately outside the state updater: React may call an updater twice in
+   * development, and a doubled `auto:cast` is a spell cast twice.
+   */
+  const dispatchArena = useCallback(
+    (event: ArenaEvent) => {
+      const result = arenaReducer(arenaRef.current, event)
+      arenaRef.current = result.mode
+      setArenaMode(result.mode)
+      if (result.action !== null) void table.send(result.action)
+    },
+    [table],
+  )
+
+  /**
+   * Drops a half-finished interaction the game has moved past.
+   *
+   * The spell got countered, the creature died, the step ended while the player was still
+   * choosing. Holding on to the selection would leave the board lit up for a decision nobody is
+   * being asked for any more.
+   */
+  const awaitingKind = view?.automation?.awaiting?.kind ?? null
+  const stateVersion = view?.stateVersion ?? 0
+  useEffect(() => {
+    const mode = arenaRef.current
+    if (mode.kind === "idle") return
+    const stale =
+      (mode.kind === "attackers" && awaitingKind !== "attackers") ||
+      (mode.kind === "blockers" && awaitingKind !== "blockers") ||
+      (mode.kind === "targeting" && view !== null && playsForCard(view, mode.play.card).length === 0)
+    if (!stale) return
+    arenaRef.current = IDLE
+    setArenaMode(IDLE)
+    // `view` is read only to re-check the current mode; the version is what says it changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [awaitingKind, stateVersion])
+
   if (!view || seat === null) return null
   const me = view.seats.find((s) => s.index === seat)
   const opponents = view.seats.filter((s) => s.index !== seat)
   const commanderFormat = view.format === "pod" || view.format === "edh"
   const isMyTurn = view.activeSeat === seat
+  const auto = view.automation
+  const you = auto?.you ?? null
+  const automated = auto !== null
+  const myAttackers = new Set(you?.attackers ?? [])
+  const attackingIds = new Set((auto?.combat.attacks ?? []).map((a) => a.attacker))
+  const blockingIds = new Set((auto?.combat.attacks ?? []).flatMap((a) => a.blockers))
+  /**
+   * Which attackers each of this seat's creatures may block, straight from the engine.
+   *
+   * Without this the table would happily let a ground creature be assigned to a flier, the engine
+   * would refuse the whole declaration, and the step would never end — the player would be asked
+   * to block again, make the same illegal choice, and the game would stop. Evasion is a rule, so
+   * the answer comes from the rules; the UI only has to stop offering what is not on the list.
+   */
+  const blockableBy = new Map<string, Set<string>>(
+    (you?.blockers ?? []).map((option) => [option.blocker, new Set(option.canBlock)]),
+  )
+  const holdingBlocker = arenaMode.kind === "blockers" ? arenaMode.holding : null
+  const assignableAttackers = holdingBlocker === null
+    ? new Set<string>()
+    : (blockableBy.get(holdingBlocker) ?? new Set<string>())
 
+  /** Cards that are a legal choice for the pick the player is on, while targeting. */
+  const targetableCards = new Set<string>(
+    arenaMode.kind === "targeting"
+      ? candidatesAt(arenaMode.play, arenaMode.chosen.length, arenaMode.chosen)
+          .filter((t) => t.kind === "card")
+          .map((t) => (t as { id: string }).id)
+      : [],
+  )
+  const targetableSeats = new Set<number>(
+    arenaMode.kind === "targeting"
+      ? candidatesAt(arenaMode.play, arenaMode.chosen.length, arenaMode.chosen)
+          .filter((t) => t.kind === "player")
+          .map((t) => (t as { seat: number }).seat)
+      : [],
+  )
+  const chosenIds = new Set<string>(
+    arenaMode.kind === "targeting"
+      ? arenaMode.chosen.filter((t) => t.kind === "card").map((t) => (t as { id: string }).id)
+      : arenaMode.kind === "attackers"
+        ? arenaMode.chosen
+        : arenaMode.kind === "blockers"
+          ? [...arenaMode.chosen.map((b) => b.blocker), ...(arenaMode.holding === null ? [] : [arenaMode.holding])]
+          : [],
+  )
+
+  /**
+   * What a tap means, which depends entirely on what the player is in the middle of.
+   *
+   * Nothing here decides legality: a card is tappable as a target because the engine listed it as
+   * a candidate, and tappable as an attacker because the engine listed it in `attackers`.
+   */
   const onSelect = (card: VisibleCard) => {
     // Mid-attach, the next battlefield card tapped becomes the host rather than opening a sheet.
     if (attachFrom !== null) {
@@ -498,8 +714,53 @@ function Board({ table }: { table: UseTable }) {
       setAttachFrom(null)
       return
     }
+
+    const mode = arenaRef.current
+    if (mode.kind === "targeting") {
+      if (targetableCards.has(card.id) || chosenIds.has(card.id)) {
+        dispatchArena({ kind: "pickTarget", target: { kind: "card", id: card.id } })
+      }
+      // A tap on something that is not a legal target does nothing at all, rather than silently
+      // dropping out of targeting and leaving the player wondering where their spell went.
+      return
+    }
+    if (mode.kind === "attackers") {
+      if (myAttackers.has(card.id) || mode.chosen.includes(card.id)) {
+        dispatchArena({ kind: "toggleAttacker", card: card.id })
+      }
+      return
+    }
+    if (mode.kind === "blockers") {
+      if (card.zoneSeat === seat) {
+        // Only a creature the engine listed as a possible blocker can be picked up.
+        if (blockableBy.has(card.id) || mode.chosen.some((b) => b.blocker === card.id)) {
+          dispatchArena({ kind: "holdBlocker", card: card.id })
+        }
+        return
+      }
+      // And it can only be put on an attacker it is allowed to block.
+      if (assignableAttackers.has(card.id)) dispatchArena({ kind: "assignBlock", attacker: card.id })
+      return
+    }
+
+    // A card in hand with a discard owed goes straight out, which is the only thing it can do.
+    if (you !== null && you.mustDiscard > 0 && card.zone === "hand" && card.zoneSeat === seat) {
+      act({ type: "auto:discard", card: card.id })
+      return
+    }
     setPicked(card)
   }
+
+  /** How a card on the battlefield is lit, and what the small print under it says. */
+  const highlightOf = (card: VisibleCard): CardHighlight | null => {
+    if (targetableCards.has(card.id)) return "target"
+    // While a blocker is held, the attackers it may be put on are the ones lit.
+    if (assignableAttackers.has(card.id)) return "target"
+    if (attackingIds.has(card.id)) return "attacking"
+    if (blockingIds.has(card.id)) return "blocking"
+    return null
+  }
+  const badgesOf = (card: VisibleCard): readonly string[] => (automated ? cardBadges(view, card) : [])
 
   const onAttach = (card: VisibleCard) => {
     if (card.attachedTo !== null) {
@@ -516,9 +777,11 @@ function Board({ table }: { table: UseTable }) {
         <span className="font-semibold text-[var(--g-text-high)]">
           Turn <span data-testid="turn">{view.turn}</span>
         </span>
-        <span data-testid="whose-turn" className={cn("rounded px-1.5 py-0.5", isMyTurn ? "bg-[var(--g-gold-400)] text-black" : "bg-white/10 text-[var(--g-text-muted)]")}>
-          {isMyTurn ? "your turn" : `${view.seats[view.activeSeat]?.name ?? "opponent"}'s turn`}
-        </span>
+        {automated ? null : (
+          <span data-testid="whose-turn" className={cn("rounded px-1.5 py-0.5", isMyTurn ? "bg-[var(--g-gold-400)] text-black" : "bg-white/10 text-[var(--g-text-muted)]")}>
+            {isMyTurn ? "your turn" : `${view.seats[view.activeSeat]?.name ?? "opponent"}'s turn`}
+          </span>
+        )}
         <span className="font-mono text-[var(--g-text-muted)]">{table.pod?.code}</span>
         {table.connection !== "connected" ? (
           <span data-testid="connection" className="rounded bg-[var(--g-mana-r)]/20 px-1.5 py-0.5 text-[var(--g-mana-r)]">
@@ -547,6 +810,8 @@ function Board({ table }: { table: UseTable }) {
         </Button>
       </div>
 
+      {automated ? <PhaseBar view={view} /> : null}
+
       {view.finished ? (
         <div data-testid="game-over" className="rounded-md border border-[var(--g-gold-400)]/50 bg-[var(--g-gold-400)]/10 px-3 py-2 text-sm font-semibold text-[var(--g-text-high)]">
           {view.winnerSeat === null ? "The game is over." : `${view.seats[view.winnerSeat]?.name} wins.`}{" "}
@@ -568,7 +833,17 @@ function Board({ table }: { table: UseTable }) {
       {/* Opponents */}
       {opponents.map((o) => (
         <div key={o.index} className="flex flex-col gap-1.5">
-          <SeatStrip seat={o} isMe={false} isActive={view.activeSeat === o.index} commanderFormat={commanderFormat} mySeat={seat} onAct={act} />
+          <SeatStrip
+            seat={o}
+            isMe={false}
+            isActive={view.activeSeat === o.index}
+            commanderFormat={commanderFormat}
+            mySeat={seat}
+            onAct={act}
+            manualLife={!automated}
+            targetable={targetableSeats.has(o.index)}
+            onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat: o.index } })}
+          />
           <div className="flex gap-1.5">
             <ZoneRow
               label={`${o.name}'s hand`}
@@ -585,6 +860,9 @@ function Board({ table }: { table: UseTable }) {
             cards={cardsIn(view, zoneAt(view, o.index, "battlefield"))}
             onSelect={onSelect}
             selectedId={attachFrom?.id ?? null}
+            selectedIds={chosenIds}
+            highlightOf={highlightOf}
+            badgesOf={badgesOf}
           />
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
             <ZoneRow label="graveyard" testId={`zone-graveyard-${o.index}`} size="pile" cards={cardsIn(view, zoneAt(view, o.index, "graveyard"))} onSelect={onSelect} />
@@ -596,19 +874,37 @@ function Board({ table }: { table: UseTable }) {
         </div>
       ))}
 
-      {/* The stack, shared */}
-      <ZoneRow
-        label="The stack"
-        testId="zone-stack"
-        size="board"
-        cards={cardsIn(view, stackOf(view))}
-        onSelect={onSelect}
-        empty="nothing waiting to resolve"
-      />
+      {/*
+        The stack, shared. With the engine running it is a list rather than a row of cards: an
+        ability on the stack has no card to draw, and what matters is what resolves next and at
+        what, which is text.
+      */}
+      {automated ? (
+        <StackPanel view={view} />
+      ) : (
+        <ZoneRow
+          label="The stack"
+          testId="zone-stack"
+          size="board"
+          cards={cardsIn(view, stackOf(view))}
+          onSelect={onSelect}
+          empty="nothing waiting to resolve"
+        />
+      )}
 
       {/* Me */}
       {me ? (
-        <SeatStrip seat={me} isMe isActive={isMyTurn} commanderFormat={commanderFormat} mySeat={seat} onAct={act} />
+        <SeatStrip
+          seat={me}
+          isMe
+          isActive={isMyTurn}
+          commanderFormat={commanderFormat}
+          mySeat={seat}
+          onAct={act}
+          manualLife={!automated}
+          targetable={targetableSeats.has(seat)}
+          onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat } })}
+        />
       ) : null}
       <ZoneRow
         label="Your battlefield"
@@ -617,6 +913,9 @@ function Board({ table }: { table: UseTable }) {
         cards={cardsIn(view, zoneAt(view, seat, "battlefield"))}
         onSelect={onSelect}
         selectedId={attachFrom?.id ?? null}
+        selectedIds={chosenIds}
+        highlightOf={highlightOf}
+        badgesOf={badgesOf}
       />
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
         <ZoneRow label="Your graveyard" testId={`zone-graveyard-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "graveyard"))} onSelect={onSelect} />
@@ -641,15 +940,28 @@ function Board({ table }: { table: UseTable }) {
         size="hand"
         cards={cardsIn(view, zoneAt(view, seat, "hand"))}
         onSelect={onSelect}
+        selectedIds={chosenIds}
+        highlightOf={highlightOf}
+        badgesOf={(card) =>
+          // In hand, the useful thing to say is whether it can be played at all right now.
+          automated && playsForCard(view, card.id).length > 0 ? ["playable"] : []
+        }
         empty="no cards in hand"
       />
       {/*
         The control bar is sticky at the bottom of the viewport, so without a spacer the bottom of
         the hand sits underneath it and the cards there cannot be tapped. Matches the bar's height.
       */}
-      <div aria-hidden className="h-16 shrink-0" />
+      <div aria-hidden className="h-24 shrink-0" />
 
-      {/* Controls */}
+      {/*
+        Controls. With the engine running, everything in the manual bar either duplicates something
+        the engine does (draw, untap, pass turn) or breaks it (moving a card by hand mid-step), so
+        it is replaced by one bar holding whatever the engine is actually waiting for.
+      */}
+      {automated ? (
+        <ArenaBar view={view} mode={arenaMode} dispatch={dispatchArena} onAct={act} />
+      ) : (
       <div data-testid="controls" className="sticky bottom-0 -mx-2 flex gap-1.5 overflow-x-auto border-t border-white/10 bg-[var(--g-surface-base)]/95 px-2 py-2 backdrop-blur sm:-mx-4 sm:px-4">
         <Button size="sm" data-testid="draw" onClick={() => act({ type: "zone:draw", seat, count: 1 })}>
           <Hand className="size-3.5" /> Draw
@@ -680,13 +992,43 @@ function Board({ table }: { table: UseTable }) {
         <Button size="sm" variant="secondary" data-testid="roll" onClick={() => act({ type: "dice:roll", sides: 6, count: 1 })}>
           <Dices className="size-3.5" /> d6
         </Button>
+        <Button size="sm" variant="secondary" data-testid="hand-to-engine" onClick={() => act({ type: "auto:start" })}>
+          <Sparkles className="size-3.5" /> Rules engine
+        </Button>
         <Button size="sm" variant="ghost" data-testid="concede" onClick={() => act({ type: "concede" })}>
           <Skull className="size-3.5" /> Concede
         </Button>
       </div>
+      )}
 
       {/* Overlays */}
-      {picked !== null ? (
+      {picked !== null && automated ? (
+        <PlaySheet
+          card={picked}
+          plays={playsForCard(view, picked.id)}
+          mustDiscard={picked.zone === "hand" && picked.zoneSeat === seat ? (you?.mustDiscard ?? 0) : 0}
+          onPlay={(play: LegalPlay) => {
+            setPicked(null)
+            dispatchArena({ kind: "choosePlay", play })
+          }}
+          onDiscard={() => {
+            act({ type: "auto:discard", card: picked.id })
+            setPicked(null)
+          }}
+          manual={
+            <CardMenu
+              card={picked}
+              opponents={opponents.map((o) => o.index)}
+              onAct={act}
+              onAttach={onAttach}
+              onClose={() => setPicked(null)}
+            />
+          }
+          onClose={() => setPicked(null)}
+        />
+      ) : null}
+
+      {picked !== null && !automated ? (
         <CardSheet
           card={picked}
           opponents={opponents.map((o) => o.index)}
