@@ -880,7 +880,11 @@ function Board({ table }: { table: UseTable }) {
         what, which is text.
       */}
       {automated ? (
-        <StackPanel view={view} />
+        <StackPanel
+          view={view}
+          targetable={targetableCards}
+          onPick={(id) => dispatchArena({ kind: "pickTarget", target: { kind: "card", id } })}
+        />
       ) : (
         <ZoneRow
           label="The stack"

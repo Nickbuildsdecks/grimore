@@ -48,7 +48,14 @@ export type TriggerEvent =
   | {
       readonly kind: 'spell-cast';
       readonly by?: 'you' | 'opponent' | 'any';
-      readonly spell?: 'creature' | 'noncreature' | 'any';
+      /**
+       * Which spells count. `noncreature` is prowess; `instant-or-sorcery` is the narrower one
+       * Talrand and friends want, and it is a separate option rather than being folded into
+       * `noncreature` because an artifact is a noncreature spell and is not an instant.
+       */
+      readonly spell?: 'creature' | 'noncreature' | 'instant-or-sorcery' | 'any';
+      /** Set by the engine when it raises the event: the spell's card types, lowercased. */
+      readonly types?: readonly string[];
     }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
   | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' };

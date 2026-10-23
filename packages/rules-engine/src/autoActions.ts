@@ -93,7 +93,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   };
   // Prowess and friends trigger on the cast, which is why this is here and not in `resolveTop`.
   const spellKind = characteristics.isCreature ? 'creature' : 'noncreature';
-  next = raise(next, { kind: 'spell-cast', spell: spellKind }, action.by);
+  next = raise(next, {
+    kind: 'spell-cast',
+    spell: spellKind,
+    types: characteristics.typeLine.types.map((t) => t.toLowerCase()),
+  }, action.by);
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,

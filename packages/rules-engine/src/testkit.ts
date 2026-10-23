@@ -70,6 +70,8 @@ export function refusal(s: GameState, action: Action): string | null {
 export type Lands = number | readonly string[];
 
 export interface Setup {
+  /** Which deck each seat plays, when a test needs a card the default decks do not contain. */
+  readonly decks?: Readonly<Record<number, string>>;
   /** Cards to put in each seat's hand, by name. Everything else goes back to the library. */
   readonly hands?: Readonly<Record<number, readonly string[]>>;
   /** Cards to put onto each seat's battlefield, by name. */
@@ -94,9 +96,10 @@ const DECKS: Readonly<Record<number, string>> = { 0: 'ember-rush', 1: 'verdant-g
 export function arena(setup: Setup = {}): GameState {
   const first = setup.firstSeat ?? 0;
   let s = createGame({ id: 'game-auto', format: 'modern', players: PLAYERS, seed: 20261023 });
+  const decks = { ...DECKS, ...setup.decks };
   s = applyAll(s, [
-    { type: 'deck:load', by: 0, seat: 0, deckId: DECKS[0]! },
-    { type: 'deck:load', by: 1, seat: 1, deckId: DECKS[1]! },
+    { type: 'deck:load', by: 0, seat: 0, deckId: decks[0]! },
+    { type: 'deck:load', by: 1, seat: 1, deckId: decks[1]! },
     { type: 'game:start', by: 0, firstSeat: first },
   ]);
 

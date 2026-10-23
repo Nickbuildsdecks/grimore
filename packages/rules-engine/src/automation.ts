@@ -278,8 +278,13 @@ function triggerMatches(
       if (by === 'you' && actorSeat !== sourceSeat) return false;
       if (by === 'opponent' && actorSeat === sourceSeat) return false;
       const spell = want.spell ?? 'any';
-      if (spell !== 'any' && e.spell !== spell) return false;
-      return true;
+      if (spell === 'any') return true;
+      // The narrow one is answered from the spell's own types rather than from the broad
+      // creature/noncreature split, so an artifact spell does not pass for "instant or sorcery".
+      if (spell === 'instant-or-sorcery') {
+        return (e.types ?? []).some((t) => t === 'instant' || t === 'sorcery');
+      }
+      return e.spell === spell;
     }
     case 'life-gained':
       return (want.by ?? 'you') === 'any' || actorSeat === sourceSeat;

@@ -60,6 +60,9 @@ const SHOT_DIR = process.env.SHOT_DIR ?? path.join('e2e-shots', 'arena');
 const HEADED = process.env.HEADED === '1';
 /** How many clicks the auto-player is allowed before it gives up and reports where it stopped. */
 const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '600', 10);
+/** Which decks the two players pick. `tidal-mind` is the one with counterspells. */
+const DECK_A = process.env.DECK_A ?? 'ember-rush';
+const DECK_B = process.env.DECK_B ?? 'verdant-guard';
 
 let step = 0;
 const checks = [];
@@ -134,7 +137,15 @@ async function isMyMove(page) {
 async function makeMove(page, seat, { aggression = 0.6 } = {}) {
   // A declaration in progress is finished first — it is blocking everything else.
   if (await has(page, 'target-prompt')) {
-    // Pick the first legal target: a lit card, or the opponent.
+    // A spell on the stack is a row in the stack panel rather than a card face, because an ability
+    // waiting to resolve has no card at all. It is the first thing looked for: a counterspell with
+    // a legal target should always take it.
+    const onStack = page.locator('[data-testid^="target-stack-"]');
+    if ((await onStack.count()) > 0) {
+      await onStack.first().click();
+      return 'countered something on the stack';
+    }
+    // Otherwise the first legal target: a lit card, or the opponent.
     const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
     if ((await lit.count()) > 0) {
       await lit.first().click();
@@ -188,51 +199,55 @@ async function makeMove(page, seat, { aggression = 0.6 } = {}) {
 
   const label = await text(page, 'primary-move');
 
-  // When it is this seat's main phase, sometimes develop the board instead of passing. Tapping a
-  // card in hand opens the play sheet, which lists what the engine says can be done with it.
-  if (/^Pass$/.test(label) && Math.random() < aggression) {
-    const playable = page.locator(`[data-testid="zone-hand-${seat}"] [data-testid^="card-"]`);
-    const count = await playable.count();
-    for (let i = 0; i < count; i++) {
-      const card = playable.nth(i);
-      const badges = (await card.textContent()) ?? '';
-      if (!/playable/i.test(badges)) continue;
-      await card.click();
-      await waitFor(page, 'play-sheet', 5000);
-      const options = page.locator('[data-testid^="play-"]:not([data-testid="play-sheet"]):not([data-testid="play-sheet-close"])');
-      if ((await options.count()) > 0) {
-        const name = (await options.first().textContent()) ?? '';
-        await options.first().click();
-        return `chose a play: ${name.trim().slice(0, 40)}`;
-      }
-      await tid(page, 'play-sheet-close').click();
-      break;
-    }
-    // Nothing castable: tap a land for mana so the next pass has something to spend. Creatures are
-    // left alone even when they have a mana ability — tapping them would mean never having a
-    // blocker, and the defending half of combat would never be exercised.
-    const board = cardsIn(page, `zone-battlefield-${seat}`);
-    const boardCount = await board.count();
-    for (let i = 0; i < boardCount; i++) {
-      const card = board.nth(i);
-      if ((await card.getAttribute('data-tapped')) === 'true') continue;
-      // A card showing a power/toughness is a creature.
-      if ((await card.locator('[data-testid^="body-"]').count()) > 0) continue;
-      await card.click();
-      if (!(await has(page, 'play-sheet'))) continue;
-      const mana = page.locator('[data-testid="play-activate-0"]');
-      if ((await mana.count()) > 0) {
-        await mana.first().click();
-        return 'tapped a permanent for mana';
-      }
-      await tid(page, 'play-sheet-close').click();
-      break;
-    }
+  // Responding is the whole point of holding an instant, and it is the only way a counterspell
+  // ever gets cast — so a chance to respond is taken more often than a chance to develop. The
+  // engine decides what is castable in either case; this only decides whether to look.
+  const responding = /^Resolve/.test(label);
+  const develop = /^Pass$/.test(label) && Math.random() < aggression;
+  if (responding || develop) {
+    const played = await tryToPlayFromHand(page, seat);
+    if (played !== null) return played;
   }
-
   await tid(page, 'primary-move').click();
   return `primary: ${label}`;
 }
+
+/**
+ * Taps a card in hand the table says is playable and takes the first play it offers.
+ *
+ * "Playable" is the table's own badge, which comes from `legalActions` — so this never tries a
+ * card the engine would refuse, and a spell that cannot be cast right now (a sorcery in response,
+ * something unaffordable) simply does not carry the badge.
+ */
+async function tryToPlayFromHand(page, seat) {
+  const playable = page.locator(`[data-testid="zone-hand-${seat}"] [data-testid^="card-"]`);
+  const count = await playable.count();
+  for (let i = 0; i < count; i++) {
+    const card = playable.nth(i);
+    const badges = (await card.textContent()) ?? '';
+    if (!/playable/i.test(badges)) continue;
+    await card.click();
+    await waitFor(page, 'play-sheet', 5000);
+    const options = page.locator('[data-testid^="play-"]:not([data-testid="play-sheet"]):not([data-testid="play-sheet-close"])');
+    if ((await options.count()) > 0) {
+      const name = (await options.first().textContent()) ?? '';
+      await options.first().click();
+      return `chose a play: ${name.trim().slice(0, 40)}`;
+    }
+    await tid(page, 'play-sheet-close').click();
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Nothing taps mana by hand, on purpose.
+ *
+ * The engine taps for a cost it can pay, so a driver that tapped lands first would only be
+ * spending mana it did not need — and, worse, leaving nothing untapped at the end of its own turn,
+ * which is exactly the mana a counterspell is held up for. Playing without touching a land is
+ * also how a person would play: you pick the spell and the mana follows.
+ */
 
 async function main() {
   await mkdir(SHOT_DIR, { recursive: true });
@@ -273,9 +288,9 @@ async function main() {
 
     await tid(nick, 'ready').click();
     await tid(friend, 'ready').click();
-    await waitFor(nick, 'deck-ember-rush');
-    await tid(nick, 'deck-ember-rush').click();
-    await tid(friend, 'deck-verdant-guard').click();
+    await waitFor(nick, `deck-${DECK_A}`);
+    await tid(nick, `deck-${DECK_A}`).click();
+    await tid(friend, `deck-${DECK_B}`).click();
 
     // ── Hand the table to the rules engine ──────────────────────────────────────────────────────
     await expectEventually(nick, 'the host is offered a game run by the rules engine', async () =>
@@ -338,7 +353,7 @@ async function main() {
     // milestones that prove each part of the engine is wired through.
     const seen = {
       land: false, mana: false, stack: false, attackers: false, blockers: false,
-      lifeChanged: false, combatStep: false, computedBody: false, turnsPassed: 0,
+      lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
     };
     const startLifeNick = await readNumber(nick, 'life-0');
     const startLifeFriend = await readNumber(friend, 'life-1');
@@ -405,6 +420,13 @@ async function main() {
         seen.stack = true;
         await shot(nick, 'stack-in-use');
       }
+      // Looked for on whichever page is acting: targeting is a state of that one browser, so the
+      // other player never sees the prompt at all.
+      if (!seen.countered && (await actor.page.locator('[data-testid^="target-stack-"]').count()) > 0) {
+        seen.countered = true;
+        await shot(actor.page, 'countering-a-spell');
+      }
+      if (did !== null && /counter/i.test(did)) seen.countered = true;
       if (!seen.mana) {
         // Either floating mana, or the dimmed "what you could still make" display. With the engine
         // tapping for a spell's cost the pool is usually spent in the same action it was filled,
@@ -442,6 +464,17 @@ async function main() {
 
     console.log(`      played ${moves} moves over ${seen.turnsPassed} turn changes`);
     check('the game keeps advancing — the engine never gets stuck', seen.turnsPassed >= 4, JSON.stringify(seen));
+    // The stack is drawn as a list rather than as cards, so a spell on it needs its own way to be
+    // pointed at. Whether the situation comes up is the shuffle's business — a counterspell has to
+    // be drawn, be affordable, and have something worth countering — so it is asserted when the
+    // game produced it and reported when it did not. `playout.test.ts` asserts deterministically
+    // that counterspells get cast; this is about the one thing only a browser can show, which is
+    // that a row in the stack panel can be tapped as a target.
+    if (seen.countered) {
+      check('a spell on the stack can be targeted', true);
+    } else if (DECK_A === 'tidal-mind' || DECK_B === 'tidal-mind') {
+      console.log('      (no counterspell was castable in this game — nothing to aim at the stack)');
+    }
     check('a land played from hand reaches the battlefield', seen.land);
     check('the bar shows the mana available to spend', seen.mana);
     check('a spell or ability goes on the stack and resolves', seen.stack);
@@ -483,7 +516,10 @@ async function main() {
 
     // ── Finish it, if it has not finished itself ────────────────────────────────────────────────
     if (!finished) {
-      for (let i = 0; i < MAX_MOVES && !(await has(nick, 'game-over')); i++) {
+      // A longer budget than the first loop: that one stops as soon as it has seen every part of
+      // the engine work, while this one has to actually finish a game — and a slow matchup can run
+      // past turn forty before somebody dies or decks out.
+      for (let i = 0; i < MAX_MOVES * 4 && !(await has(nick, 'game-over')); i++) {
         const actor = (await isMyMove(nick)) ? { page: nick, seat: 0 }
           : (await isMyMove(friend)) ? { page: friend, seat: 1 }
           : null;
@@ -492,7 +528,7 @@ async function main() {
           continue;
         }
         await makeMove(actor.page, actor.seat, { aggression: 0.85 });
-        await actor.page.waitForTimeout(80);
+        await actor.page.waitForTimeout(40);
       }
       finished = await has(nick, 'game-over');
     }

@@ -6,9 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  EMBER_RUSH,
   STARTER_DECKS,
-  VERDANT_GUARD,
   applyAction,
   applyMany,
   createGame,
@@ -50,9 +48,9 @@ const firstInZone = (s: GameState, seat: SeatIndex, zone: Parameters<typeof zone
 };
 
 describe('starter decks', () => {
-  it('ships two decks that are exactly 60 cards plus a commander', () => {
-    expect(Object.keys(STARTER_DECKS).sort()).toEqual(['ember-rush', 'verdant-guard']);
-    for (const deck of [EMBER_RUSH, VERDANT_GUARD]) {
+  it('ships decks that are exactly 60 cards plus a commander', () => {
+    expect(Object.keys(STARTER_DECKS).sort()).toEqual(['ember-rush', 'tidal-mind', 'verdant-guard']);
+    for (const deck of Object.values(STARTER_DECKS)) {
       expect(deckSize(deck)).toBe(61);
       expect(deck.commander).toBeDefined();
     }
@@ -61,7 +59,7 @@ describe('starter decks', () => {
   it('gives every card a legible face without needing artwork', () => {
     // This environment cannot reach Scryfall and a fresh database has no images, so a card that
     // relied on one would render blank. Name and type line are the minimum to play with.
-    for (const deck of [EMBER_RUSH, VERDANT_GUARD]) {
+    for (const deck of Object.values(STARTER_DECKS)) {
       for (const entry of [...deck.cards.map((c) => c.card), deck.commander!]) {
         expect(entry.name.length).toBeGreaterThan(0);
         expect(entry.typeLine.length).toBeGreaterThan(0);

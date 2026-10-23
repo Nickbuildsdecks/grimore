@@ -14,8 +14,9 @@
 import { characteristicsOf, hasSubtype } from './characteristics.js';
 import type { CardDef } from './cards.js';
 import {
-  addCounters, cardTargets, createToken, dealDamage, destroy, draw, exileCard, firstCardTarget,
-  firstPlayerTarget, gainControl, gainLife, opponentsOf, pump, pumpTeam, tap, type EffectContext,
+  addCounters, cardTargets, counterSpell, createToken, dealDamage, destroy, discardAtRandom, draw,
+  exileCard, firstCardTarget, firstPlayerTarget, gainControl, gainLife, loseLife, mill, opponentsOf,
+  pump, pumpTeam, tap, type EffectContext,
 } from './effects.js';
 import type { CardScript, TargetSpec } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -230,6 +231,107 @@ const SIGARDA: CardScript = {
   keywords: ['flying', 'hexproof'],
 };
 
+// ── Blue-black control ───────────────────────────────────────────────────────────────────────────
+
+/** A spell on the stack, which is what "counter target spell" points at. */
+const TARGET_SPELL: TargetSpec = { kind: 'spell', description: 'target spell' };
+
+const isNoncreatureSpell = (state: GameState, candidate: Target): boolean => {
+  if (candidate.kind !== 'card') return false;
+  const inst = state.instances[candidate.id];
+  if (inst === undefined) return false;
+  return !characteristicsOf(state, inst).isCreature;
+};
+
+const COUNTERSPELL: CardScript = {
+  name: 'Counterspell',
+  targets: [TARGET_SPELL],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : counterSpell(c.state, id);
+  },
+};
+
+const NEGATE: CardScript = {
+  name: 'Negate',
+  targets: [{ ...TARGET_SPELL, description: 'target noncreature spell', filter: isNoncreatureSpell }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : counterSpell(c.state, id);
+  },
+};
+
+const DOOM_BLADE: CardScript = {
+  name: 'Doom Blade',
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : destroy(c.state, id);
+  },
+};
+
+const DIVINATION: CardScript = {
+  name: 'Divination',
+  onResolve: (c) => draw(c.state, c.controller, 2),
+};
+
+const SIGN_IN_BLOOD: CardScript = {
+  name: 'Sign in Blood',
+  targets: [TARGET_PLAYER],
+  onResolve: (c) => {
+    const seat = firstPlayerTarget(c);
+    if (seat === null) return c.state;
+    // Drawing first matters: a player taken to 0 by the life loss still drew the cards, and a
+    // player who had no cards left to draw has already lost either way.
+    return loseLife(draw(c.state, seat, 2), seat, 2);
+  },
+};
+
+const TOME_SCOUR: CardScript = {
+  name: 'Tome Scour',
+  targets: [TARGET_PLAYER],
+  onResolve: (c) => {
+    const seat = firstPlayerTarget(c);
+    return seat === null ? c.state : mill(c.state, seat, 5);
+  },
+};
+
+const RAVENOUS_RATS: CardScript = {
+  name: 'Ravenous Rats',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'each opponent discards a card at random',
+      effect: (c) =>
+        opponentsOf(c.state, c.controller).reduce((state, seat) => discardAtRandom(state, seat, 1), c.state),
+    },
+  ],
+};
+
+const CHILD_OF_NIGHT: CardScript = { name: 'Child of Night', keywords: ['lifelink'] };
+const WIND_DRAKE: CardScript = { name: 'Wind Drake', keywords: ['flying'] };
+const VAMPIRE_NIGHTHAWK: CardScript = {
+  name: 'Vampire Nighthawk',
+  keywords: ['flying', 'deathtouch', 'lifelink'],
+};
+const AIR_ELEMENTAL: CardScript = { name: 'Air Elemental', keywords: ['flying'] };
+
+export const DRAKE_TOKEN: CardDef = {
+  name: 'Drake', typeLine: 'Token Creature — Drake', manaCost: '', cmc: 0,
+  power: '2', toughness: '2', oracleText: 'Flying', colors: ['U'],
+};
+
+const TALRAND: CardScript = {
+  name: 'Talrand, Sky Summoner',
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      description: 'create a 2/2 blue Drake creature token with flying',
+      effect: (c) => createToken(c.state, c.controller, DRAKE_TOKEN, 1),
+    },
+  ],
+};
+
 // ── Helpers the scripts above share ──────────────────────────────────────────────────────────────
 
 /** "deals N damage to any target" — the target may be a creature or a player. */
@@ -256,10 +358,14 @@ const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
   basicLand('Plains', 'W'),
+  basicLand('Island', 'U'),
+  basicLand('Swamp', 'B'),
   MONASTERY_SWIFTSPEAR, RAGING_GOBLIN, FIREBRAND_ARCHER, SHIVAN_DRAGON,
   LIGHTNING_BOLT, SHOCK, LAVA_SPIKE, FLAME_SLASH, ACT_OF_TREASON, KRENKO,
   LLANOWAR_ELVES, AJANIS_PRIDEMATE, SERRA_ANGEL, GIANT_GROWTH, PACIFISM,
   SWORDS_TO_PLOWSHARES, HARMONIZE, OVERRUN, SIGARDA,
+  COUNTERSPELL, NEGATE, DOOM_BLADE, DIVINATION, SIGN_IN_BLOOD, TOME_SCOUR,
+  RAVENOUS_RATS, CHILD_OF_NIGHT, WIND_DRAKE, VAMPIRE_NIGHTHAWK, AIR_ELEMENTAL, TALRAND,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

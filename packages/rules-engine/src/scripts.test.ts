@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  EMBER_RUSH, STARTER_DECKS, VERDANT_GUARD, characteristicsOf, scriptFor, scriptedCardNames,
+  STARTER_DECKS, characteristicsOf, scriptFor, scriptedCardNames,
 } from './index.js';
 import {
   advanceTo, apply, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
@@ -418,6 +418,221 @@ describe('green and white', () => {
   });
 });
 
+describe('blue-black control', () => {
+  /** Seat 1 plays the control deck, with Islands and Swamps untapped. */
+  const control = (hand: readonly string[], lands: readonly string[], extra: readonly string[] = []): GameState => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      hands: { 1: hand }, battlefield: { 1: [...lands, ...extra] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (name !== 'Island' && name !== 'Swamp') continue;
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  it('Counterspell counters a spell on the stack, which goes to its owner’s graveyard', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      hands: { 0: ['Hill Giant'], 1: ['Counterspell'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Island', 'Island'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Hill Giant') });
+    const giant = ids(s, 0, 'stack')[0]!;
+    expect(s.stackOrder).toEqual([giant]);
+
+    // Seat 1 responds. A counterspell is an instant, so holding priority is all it needs.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Counterspell'),
+      targets: [{ kind: 'card', id: giant }],
+    });
+    s = passBoth(s); // the Counterspell resolves
+    expect(namesIn(s, 0, 'graveyard')).toContain('Hill Giant');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Hill Giant');
+    // And the stack is empty: the countered spell did not stay on it.
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('Negate cannot be aimed at a creature spell', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      hands: { 0: ['Hill Giant'], 1: ['Negate'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Island', 'Island'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Hill Giant') });
+    const giant = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    expect(refusal(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Negate'),
+      targets: [{ kind: 'card', id: giant }],
+    })).toMatch(/noncreature/);
+  });
+
+  it('Negate counters a noncreature spell', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      hands: { 0: ['Lightning Bolt'], 1: ['Negate'] },
+      battlefield: { 0: ['Mountain'], 1: ['Island', 'Island'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    const bolt = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Negate'), targets: [{ kind: 'card', id: bolt }],
+    });
+    s = passBoth(s);
+    s = passBoth(s);
+    expect(life(s, 1)).toBe(20);
+    expect(countOf(s, 0, 'graveyard', 'Lightning Bolt')).toBe(1);
+  });
+
+  it('a counterspell with nothing left to counter does not resolve (CR 608.2b)', () => {
+    // Both players point at the same spell; the first counter resolves, so the second fizzles.
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      hands: { 0: ['Lightning Bolt'], 1: ['Counterspell', 'Negate'] },
+      battlefield: { 0: ['Mountain'], 1: ['Island', 'Island', 'Island', 'Island'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    const bolt = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Counterspell'), targets: [{ kind: 'card', id: bolt }] });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Negate'), targets: [{ kind: 'card', id: bolt }] });
+
+    s = passBoth(s); // Negate resolves and counters the Bolt
+    expect(countOf(s, 0, 'graveyard', 'Lightning Bolt')).toBe(1);
+    s = passBoth(s); // the Counterspell has nothing to counter
+    expect(s.log.at(-1)!.message).toContain('countered');
+    expect(life(s, 1)).toBe(20);
+  });
+
+  it('Doom Blade destroys a creature', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      hands: { 1: ['Doom Blade'] },
+      battlefield: { 1: ['Island', 'Swamp'], 0: ['Shivan Dragon'] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    s = cast(s, 1, 'Doom Blade', [{ kind: 'card', id: find(s, 0, 'battlefield', 'Shivan Dragon') }]);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Shivan Dragon');
+  });
+
+  it('Divination draws two', () => {
+    let s = control(['Divination'], ['Island', 'Island', 'Island']);
+    const before = ids(s, 1, 'hand').length;
+    s = cast(s, 1, 'Divination');
+    expect(ids(s, 1, 'hand').length).toBe(before - 1 + 2);
+  });
+
+  it('Sign in Blood draws two and costs two life', () => {
+    let s = control(['Sign in Blood'], ['Swamp', 'Swamp']);
+    const before = ids(s, 1, 'hand').length;
+    s = cast(s, 1, 'Sign in Blood', [{ kind: 'player', seat: 1 }]);
+    expect(ids(s, 1, 'hand').length).toBe(before - 1 + 2);
+    expect(life(s, 1)).toBe(18);
+  });
+
+  it('Sign in Blood can be aimed at an opponent, which is what makes it removal', () => {
+    let s = control(['Sign in Blood'], ['Swamp', 'Swamp']);
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 2 } : seat)) };
+    s = cast(s, 1, 'Sign in Blood', [{ kind: 'player', seat: 0 }]);
+    expect(s.seats[0]!.eliminated).toBe(true);
+  });
+
+  it('Tome Scour mills five', () => {
+    let s = control(['Tome Scour'], ['Island']);
+    const library = ids(s, 0, 'library').length;
+    s = cast(s, 1, 'Tome Scour', [{ kind: 'player', seat: 0 }]);
+    expect(ids(s, 0, 'library').length).toBe(library - 5);
+    expect(ids(s, 0, 'graveyard').length).toBe(5);
+  });
+
+  it('Ravenous Rats makes each opponent discard at random, and the same seed discards the same card', () => {
+    const play = (): GameState => {
+      let s = arena({
+        decks: { 1: 'tidal-mind' },
+        hands: { 0: ['Shock', 'Hill Giant', 'Mountain'], 1: ['Ravenous Rats'] },
+        battlefield: { 1: ['Island', 'Swamp'] },
+        turn: 2, firstSeat: 1,
+      });
+      s = advanceTo(s, 'precombat-main');
+      s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Ravenous Rats') });
+      s = passBoth(s); // the Rats resolve onto the battlefield
+      return passBoth(s); // and the ETB trigger resolves
+    };
+    const a = play();
+    expect(ids(a, 0, 'hand').length).toBe(2);
+    expect(ids(a, 0, 'graveyard').length).toBe(1);
+    // Deterministic: the engine's own seeded stream, so a replayed game discards the same card.
+    expect(namesIn(play(), 0, 'graveyard')).toEqual(namesIn(a, 0, 'graveyard'));
+  });
+
+  it('Talrand makes a Drake for an instant, and not for a creature', () => {
+    let s = control(['Tome Scour', 'Child of Night'], ['Island', 'Island', 'Swamp'], ['Talrand, Sky Summoner']);
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Tome Scour'), targets: [{ kind: 'player', seat: 0 }] });
+    expect(s.stackOrder.length).toBe(2); // the spell and the trigger
+    s = passBoth(s);
+    expect(countOf(s, 1, 'battlefield', 'Drake')).toBe(1);
+    s = passBoth(s);
+
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Child of Night') });
+    expect(s.stackOrder.length).toBe(1); // a creature spell is not an instant or sorcery
+  });
+
+  it('keeps the printed keywords of the creatures it does not script beyond them', () => {
+    let s = control([], ['Island'], ['Vampire Nighthawk', 'Air Elemental', 'Child of Night', 'Wind Drake']);
+    const keywords = (name: string) =>
+      [...characteristicsOf(s, s.instances[find(s, 1, 'battlefield', name)]!).keywords].sort();
+    expect(keywords('Vampire Nighthawk')).toEqual(['deathtouch', 'flying', 'lifelink']);
+    expect(keywords('Air Elemental')).toEqual(['flying']);
+    expect(keywords('Child of Night')).toEqual(['lifelink']);
+    expect(keywords('Wind Drake')).toEqual(['flying']);
+  });
+
+  it('a Nighthawk kills whatever it blocks and gains the life', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      battlefield: { 0: ['Shivan Dragon'], 1: ['Vampire Nighthawk'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, life: 10 } : seat)) };
+    s = advanceTo(s, 'declare-attackers');
+    const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+    const hawk = find(s, 1, 'battlefield', 'Vampire Nighthawk');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: dragon, defender: 1 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: hawk, attacker: dragon }] });
+    for (let i = 0; i < 6 && s.step !== 'postcombat-main'; i++) s = passBoth(s);
+    // 2 deathtouch damage kills a 5/5, and lifelink gains 2 — but the 5/5 kills the 2/3 as well.
+    expect(namesIn(s, 0, 'graveyard')).toContain('Shivan Dragon');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Vampire Nighthawk');
+    expect(life(s, 1)).toBe(12);
+  });
+});
+
 describe('unscripted cards', () => {
   it('casts, resolves and fights normally, and says in the log that it is not automated', () => {
     // Hill Giant has no script: no triggers, no abilities, nothing printed but a body.
@@ -433,7 +648,8 @@ describe('unscripted cards', () => {
   it('says so when a spell with no script resolves', () => {
     // A sorcery with no script is the case worth being honest about: it resolves and does nothing,
     // and the log has to say that rather than let a player think it worked.
-    const unscripted = [...EMBER_RUSH.cards, ...VERDANT_GUARD.cards]
+    const unscripted = Object.values(STARTER_DECKS)
+      .flatMap((deck) => deck.cards)
       .map((entry) => entry.card)
       .filter((card) => scriptFor(card.name) === undefined)
       .filter((card) => !/creature|land|artifact|enchantment/i.test(card.typeLine));

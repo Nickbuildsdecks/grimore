@@ -14,12 +14,15 @@ import {
 } from './index.js';
 import { PLAYERS, HOST } from './testkit.js';
 
-/** A full table with both starter decks shuffled on `seed`, handed to the rules engine. */
-function table(seed: number, firstSeat: SeatIndex = 0): GameState {
+/** A full table with two starter decks shuffled on `seed`, handed to the rules engine. */
+function table(
+  seed: number, firstSeat: SeatIndex = 0,
+  decks: readonly [string, string] = ['ember-rush', 'verdant-guard'],
+): GameState {
   let s = createGame({ id: `game-${seed}`, format: 'modern', players: PLAYERS, seed });
   for (const action of [
-    { type: 'deck:load', by: 0, seat: 0, deckId: 'ember-rush' },
-    { type: 'deck:load', by: 1, seat: 1, deckId: 'verdant-guard' },
+    { type: 'deck:load', by: 0, seat: 0, deckId: decks[0] },
+    { type: 'deck:load', by: 1, seat: 1, deckId: decks[1] },
     { type: 'game:start', by: 0, firstSeat },
     { type: 'auto:start', by: 0, firstSeat },
   ] as Action[]) {
@@ -27,6 +30,15 @@ function table(seed: number, firstSeat: SeatIndex = 0): GameState {
   }
   return s;
 }
+
+/** Every pairing of the built-in decks, which is what a matchup test should cover. */
+const MATCHUPS: readonly (readonly [string, string])[] = [
+  ['ember-rush', 'verdant-guard'],
+  ['ember-rush', 'tidal-mind'],
+  ['tidal-mind', 'verdant-guard'],
+  ['tidal-mind', 'tidal-mind'],
+  ['verdant-guard', 'verdant-guard'],
+];
 
 describe('a whole automated game', () => {
   it('plays from a shuffled deck to a winner with nobody steering', () => {
@@ -50,6 +62,33 @@ describe('a whole automated game', () => {
       }
     }
     expect(unfinished).toEqual([]);
+  });
+
+  it('reaches a winner in every pairing of the built-in decks', () => {
+    // The control deck is the one that could break a player that only ever does the obvious thing:
+    // its spells target objects on the stack, which exist for a moment and then do not.
+    const unfinished: string[] = [];
+    for (const decks of MATCHUPS) {
+      for (let seed = 1; seed <= 4; seed++) {
+        const first: SeatIndex = seed % 2 === 0 ? 1 : 0;
+        const result = playOut(table(seed * 104729, first, decks));
+        if (!result.state.finished) {
+          unfinished.push(`${decks[0]} vs ${decks[1]} seed ${seed}: stopped on turn ${result.turns} at ${result.state.step}`);
+        }
+      }
+    }
+    expect(unfinished).toEqual([]);
+  });
+
+  it('counters spells when it has the mana for it, rather than ignoring the stack', () => {
+    // A game where nothing was ever countered would pass every other test here while leaving the
+    // whole interaction untested, so this one asserts a counterspell actually resolved.
+    let countered = 0;
+    for (let seed = 1; seed <= 6 && countered === 0; seed++) {
+      const result = playOut(table(seed * 7723, 0, ['ember-rush', 'tidal-mind']));
+      countered += result.state.log.filter((e) => /counter/i.test(e.message)).length;
+    }
+    expect(countered).toBeGreaterThan(0);
   });
 
   it('never offers a play it then refuses', () => {

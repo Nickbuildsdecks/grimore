@@ -255,6 +255,131 @@ const SIGARDA_HOST_OF_HERONS: CardDef = {
   colors: ['G', 'W'],
 };
 
+// ── Blue-black control ───────────────────────────────────────────────────────────────────────────
+
+const ISLAND = land('Island', 'U', 'Island');
+const SWAMP = land('Swamp', 'B', 'Swamp');
+
+const COUNTERSPELL: CardDef = {
+  name: 'Counterspell',
+  typeLine: 'Instant',
+  manaCost: '{U}{U}',
+  cmc: 2,
+  oracleText: 'Counter target spell.',
+  colors: ['U'],
+};
+
+const NEGATE: CardDef = {
+  name: 'Negate',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  oracleText: 'Counter target noncreature spell.',
+  colors: ['U'],
+};
+
+const DOOM_BLADE: CardDef = {
+  name: 'Doom Blade',
+  typeLine: 'Instant',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  oracleText: 'Destroy target creature.',
+  colors: ['B'],
+};
+
+const DIVINATION: CardDef = {
+  name: 'Divination',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{U}',
+  cmc: 3,
+  oracleText: 'Draw two cards.',
+  colors: ['U'],
+};
+
+const SIGN_IN_BLOOD: CardDef = {
+  name: 'Sign in Blood',
+  typeLine: 'Sorcery',
+  manaCost: '{B}{B}',
+  cmc: 2,
+  oracleText: 'Target player draws two cards and loses 2 life.',
+  colors: ['B'],
+};
+
+const TOME_SCOUR: CardDef = {
+  name: 'Tome Scour',
+  typeLine: 'Sorcery',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: "Target player mills five cards.",
+  colors: ['U'],
+};
+
+const RAVENOUS_RATS: CardDef = {
+  name: 'Ravenous Rats',
+  typeLine: 'Creature — Rat',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'When Ravenous Rats enters the battlefield, each opponent discards a card at random.',
+  colors: ['B'],
+};
+
+const CHILD_OF_NIGHT: CardDef = {
+  name: 'Child of Night',
+  typeLine: 'Creature — Vampire',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'Lifelink',
+  colors: ['B'],
+};
+
+const WIND_DRAKE: CardDef = {
+  name: 'Wind Drake',
+  typeLine: 'Creature — Drake',
+  manaCost: '{2}{U}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Flying',
+  colors: ['U'],
+};
+
+const VAMPIRE_NIGHTHAWK: CardDef = {
+  name: 'Vampire Nighthawk',
+  typeLine: 'Creature — Vampire Shaman',
+  manaCost: '{1}{B}{B}',
+  cmc: 3,
+  power: '2',
+  toughness: '3',
+  oracleText: 'Flying, deathtouch, lifelink',
+  colors: ['B'],
+};
+
+const AIR_ELEMENTAL: CardDef = {
+  name: 'Air Elemental',
+  typeLine: 'Creature — Elemental',
+  manaCost: '{3}{U}{U}',
+  cmc: 5,
+  power: '4',
+  toughness: '4',
+  oracleText: 'Flying',
+  colors: ['U'],
+};
+
+const TALRAND: CardDef = {
+  name: 'Talrand, Sky Summoner',
+  typeLine: 'Legendary Creature — Merfolk Wizard',
+  manaCost: '{2}{U}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Whenever you cast an instant or sorcery spell, create a 2/2 blue Drake creature token with flying.',
+  colors: ['U'],
+};
+
 // ── The decks ────────────────────────────────────────────────────────────────────────────────────
 
 export const EMBER_RUSH: DeckSpec = {
@@ -298,9 +423,32 @@ export const VERDANT_GUARD: DeckSpec = {
   ],
 };
 
+export const TIDAL_MIND: DeckSpec = {
+  id: 'tidal-mind',
+  name: 'Tidal Mind',
+  description: 'Blue-black control. Counter what matters, kill what lands, and win in the air.',
+  commander: TALRAND,
+  cards: [
+    { card: ISLAND, count: 12 },
+    { card: SWAMP, count: 11 },
+    { card: COUNTERSPELL, count: 4 },
+    { card: NEGATE, count: 3 },
+    { card: DOOM_BLADE, count: 4 },
+    { card: DIVINATION, count: 4 },
+    { card: SIGN_IN_BLOOD, count: 3 },
+    { card: TOME_SCOUR, count: 2 },
+    { card: RAVENOUS_RATS, count: 4 },
+    { card: CHILD_OF_NIGHT, count: 3 },
+    { card: WIND_DRAKE, count: 3 },
+    { card: VAMPIRE_NIGHTHAWK, count: 4 },
+    { card: AIR_ELEMENTAL, count: 3 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
+  [TIDAL_MIND.id]: TIDAL_MIND,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

@@ -18,7 +18,7 @@ import { defKeyFor, zoneKey, type CardDef } from './cards.js';
 import {
   drawFromLibrary, listAt, normaliseDef, relocate, requireInstance, withInstance, withZones,
 } from './cardActions.js';
-import { clampValue, replaceSeat } from './internal.js';
+import { actionSeed, clampValue, mulberry32, replaceSeat } from './internal.js';
 import type { ManaType } from './mana.js';
 import { addMana, EMPTY_POOL } from './mana.js';
 import type { Target } from './turnTypes.js';
@@ -147,6 +147,66 @@ export function putOntoBattlefield(state: GameState, id: string, seat: SeatIndex
   const inst = state.instances[id];
   if (inst === undefined) return state;
   return relocate(state, inst, 'battlefield', seat, 'bottom');
+}
+
+/**
+ * Counters a spell on the stack: it is removed and put into its owner's graveyard (CR 701.5a).
+ *
+ * The stack is reached directly rather than through `automation.ts`, which imports this module —
+ * a spell waiting to resolve is just two fields on the state, and routing through the engine would
+ * only buy a cycle. An ability has no card, so countering one simply removes it.
+ */
+export function counterSpell(state: GameState, id: string): GameState {
+  const object = state.stackObjects[id];
+  if (object === undefined) return state;
+  const objects = { ...state.stackObjects };
+  delete objects[id];
+  const next: GameState = {
+    ...state,
+    stackObjects: objects,
+    stackOrder: state.stackOrder.filter((o) => o !== id),
+  };
+  const inst = next.instances[id];
+  if (object.kind !== 'spell' || inst === undefined) return next;
+  return relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+}
+
+/** Puts the top `count` cards of a library into its owner's graveyard. */
+export function mill(state: GameState, seat: SeatIndex, count: number): GameState {
+  let next = state;
+  for (let i = 0; i < Math.max(0, count); i++) {
+    const top = listAt(next, zoneKey(seat, 'library'))[0];
+    if (top === undefined) break;
+    const inst = next.instances[top];
+    if (inst === undefined) break;
+    next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+  }
+  return next;
+}
+
+/**
+ * Discards cards at random from a hand.
+ *
+ * "At random" is the only kind of discard the engine can carry out, because a discard the *player*
+ * chooses is a decision during resolution and there is no way to ask for one — see the header of
+ * `scripts.ts`. A card that says "discards a card" of their choosing is therefore not scripted
+ * rather than quietly made random, which would be a different and worse card.
+ *
+ * The randomness is the engine's own seeded stream, so a replayed game discards the same cards.
+ */
+export function discardAtRandom(state: GameState, seat: SeatIndex, count: number): GameState {
+  let next = state;
+  for (let i = 0; i < Math.max(0, count); i++) {
+    const hand = listAt(next, zoneKey(seat, 'hand'));
+    if (hand.length === 0) break;
+    const seq = next.autoSeq + 1;
+    const roll = mulberry32(actionSeed(next.rngSeed, next.stateVersion + seq))();
+    const pick = hand[Math.min(hand.length - 1, Math.floor(roll * hand.length))];
+    const inst = pick === undefined ? undefined : next.instances[pick];
+    if (inst === undefined) break;
+    next = relocate({ ...next, autoSeq: seq }, inst, 'graveyard', inst.owner, 'bottom');
+  }
+  return next;
 }
 
 export function draw(state: GameState, seat: SeatIndex, count: number): GameState {
