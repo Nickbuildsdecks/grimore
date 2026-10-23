@@ -42,7 +42,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 22 scripted cards |
+| `scripts.ts` | All 45 scripted cards |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -135,7 +135,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**295 tests in the rules engine, 77 in the web app, 858 across the workspace.**
+**315 tests in the rules engine, 85 in the web app, 892 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -153,7 +153,8 @@ The ones that carry the most weight:
   `FORCE_MULLIGAN=1` makes both players mulligan, because at one hand in nine the flow after a
   mulligan would otherwise almost never run.
 - **`scripts/e2e-solo.mjs`** plays a whole game in one browser against the server — thirteen checks,
-  and a game takes thirty-three moves.
+  and a game takes thirty-three moves. `OPPONENT_DECK` picks which deck the server plays, so the
+  solo game is run against each of the four.
 - **`combat.test.ts`** asserts each combat rule on a board built to need it, with the CR reference
   in the test name — so a failure says which rule broke rather than which line did.
 - **`scripts.test.ts`** plays every scripted card the way a player would, and checks that no card in
@@ -185,7 +186,7 @@ what keeps the game on the wire.
 
 ## Added after the first checkpoint
 
-Four things, in the order they mattered.
+Seven things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -218,13 +219,44 @@ Two more bugs, both of which had been waiting for a second player who was never 
 seat decides at once) and wrong in a pod (every defender declares); and leaving a table left the
 server playing alone until the pod expired.
 
+**A triggered ability that asks who it is pointed at.** "When this enters the battlefield, destroy
+target creature" is one of the most common things a creature does, and until this it could not be
+scripted at all: a trigger went on the stack with no targets and no way to get any. Targets for a
+trigger are chosen as it is put on the stack (CR 603.3d), and only one of the three cases is a
+question — no legal target means the trigger never goes on the stack (CR 603.3c), exactly one legal
+target is taken, and anything else stops the game and asks its controller. Flametongue Kavu's famous
+drawback falls straight out of those rules rather than being written anywhere: played with nothing
+else on the board, the only thing it can point at is itself, so it kills itself and the engine does
+not even ask.
+
+**A fourth deck, and the graveyard as somewhere to point at.** Rot Harvest (green-black) is built on
+getting creatures back, which needed a target that is a *card in a graveyard* — a different object in
+a different zone from a creature on the battlefield, so it is its own target kind rather than a
+filter. A card in a graveyard has no continuous effects on it and its printed type is what it is.
+One real UI bug came out of playing it: targets were only lit on the battlefield, so "return target
+creature card from your graveyard" was a prompt with no visible answer and the game stopped dead.
+Every zone a spell can point at now lights its legal targets.
+
+**A cost paid by sacrificing a creature.** "Sacrifice another creature:" is a **cost**, not a target,
+and the difference is the whole reason to implement it properly: a cost is paid as the ability is
+activated, so the creature is in the graveyard before the ability is on the stack, it cannot be
+answered by killing the creature in response, and anything watching for a death sees it then rather
+than on resolution. Modelled as a target it would have looked right and been wrong exactly where it
+mattered — which is why these two cards were cut from the deck a commit earlier rather than
+approximated. The choice travels with the activation, so no new engine phase was needed: an outlet
+with nothing to feed it is not offered at all, and the table asks for the sacrifice first and the
+targets second, in the order the rules pay them. The bot got judgement rather than just capability —
+it feeds the outlet only when what goes in is worth less than what is being fed, because one that
+ate its best creature every turn would play itself out of the game while passing every other test in
+the file.
+
 ## Next
 
-1. More scripts. The vocabulary in `effects.ts` covers far more than the 34 cards currently using
+1. A way to stop and ask during resolution. It is the one missing capability behind most of the
+   cards that cannot be scripted — a tutor, "choose one", an opponent's discard. The shape now
+   exists three times over in `pendingDiscard`, the opening-hand phase and `pendingChoice`.
+2. More scripts. The vocabulary in `effects.ts` covers far more than the 45 cards currently using
    it; adding a card is a few declarative lines.
-2. A way to stop and ask during resolution. It is the one missing capability behind most of the
-   cards that cannot be scripted — a tutor, "choose one", a targeted trigger. The shape already
-   exists twice over in `pendingDiscard` and the opening-hand phase.
 3. Loading a real Grimore deck into an automated table. `deck:load` already resolves any deck handed
    to it; the gap is that unscripted cards are common in a real list, which the "move by hand"
    escape hatch covers but has not been played against at volume.

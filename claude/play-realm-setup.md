@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — thirty-four, today, across three starter decks. A tabletop works with
+cards somebody has scripted — forty-five, today, across four starter decks. A tabletop works with
 every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -119,11 +119,12 @@ so neither of you needs this page open while playing.
 The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
 anybody's turn, which is what makes instants and responses work at all.
 
-### Three starter decks
+### Four starter decks
 
-**Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange) and **Tidal Mind**
-(blue-black control, with counterspells), 60 cards each plus a commander, so a table can start with
-no setup at all. Any pairing works, including a deck against itself. They are also the only decks
+**Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange), **Tidal Mind**
+(blue-black control, with counterspells) and **Rot Harvest** (green-black, built on getting
+creatures back out of the graveyard and on feeding them to sacrifice outlets), 60 cards each plus a
+commander, so a table can start with no setup at all. Any pairing works, including a deck against itself. They are also the only decks
 right now — see *What is not done* below.
 
 Cards are drawn as text, not pictures. That is deliberate: there is no card artwork available (the
@@ -189,24 +190,28 @@ for the cases the shuffle makes rare:
 
 ```bash
 DECK_B=tidal-mind node scripts/e2e-arena.mjs     # counterspells, so the stack gets targeted
+DECK_A=rot-harvest DECK_B=rot-harvest node scripts/e2e-arena.mjs   # graveyards and sacrifice outlets
 FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatever they drew
+OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (295 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (315 tests, including whole
 games played out by bots that only ever send moves the engine offered them) and `apps/realtime`
 (22 tests against live Redis, including two socket clients playing to a finish and one person
 playing the server).
 
 ## What is not done
 
-- **Only the three starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
+- **Only the four starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows thirty-four cards.** Everything in the three starter decks. A card that needs
+- **The engine knows forty-five cards.** Everything in the four starter decks. A card that needs
   a decision *while it is resolving* — searching a library, "choose one", an opponent discarding a
   card of their choice — is deliberately not scripted rather than approximated, because the engine
-  has no way to stop and ask. Those resolve by hand.
+  has no way to stop and ask. Those resolve by hand. A card that asks *before* resolving does work:
+  a spell's targets, a trigger's targets (CR 603.3d) and a sacrifice paid as a cost are all chosen
+  as the thing goes on the stack, and the engine stops and asks for each.
 - **The computer opponent is not a strong player.** It attacks with everything, blocks when the
   trade is good, casts the biggest thing it can afford and mulligans a hand with no land in it. It
   plays a real game; it does not plan one.

@@ -781,3 +781,42 @@ the honest failure is "this cost is not automated yet".
 
 **Not decided here:** whether a one-player table ships. `bot.ts` already plays a full game and
 exists in `src/` rather than a test file for that reason, but nobody has asked for it yet.
+
+## D29 — A cost is not a target, and the difference is worth the engine it takes
+
+Three capabilities arrived after D28, and two of them are the same decision in different clothes:
+the engine stops and asks *before* a thing is on the stack, never during its resolution.
+
+**Decided: a trigger chooses its targets as it is put on the stack, and only sometimes asks** (CR
+603.3d). "When this enters the battlefield, destroy target creature" is one of the most common
+things a creature does and could not be scripted at all before this — a trigger went on the stack
+with no targets and no way to get any. Three cases, and only one is a question: no legal target at
+all and the trigger never goes on the stack (CR 603.3c), so a hexproof creature an opponent cannot
+touch is the same as no creature as far as their trigger is concerned; exactly one legal target and
+it is taken, because a choice between one thing is not a choice and a prompt with a single button is
+noise; anything else and the controller chooses, with nothing happening until they do. Flametongue
+Kavu's famous drawback is then not written anywhere — played with nothing else on the board the only
+thing it can point at is itself, so it kills itself and the engine does not even ask.
+
+**Decided: a card in a graveyard is its own target kind, not a filter on "creature".** It is a
+different object in a different zone. A card in a graveyard has no continuous effects applied to it
+and its printed type is what it is, where a creature on the battlefield is whatever the layers say
+it currently is. Writing it as a filter would have put graveyard cards through the characteristics
+pipeline, which has nothing true to say about them.
+
+**Decided: "sacrifice another creature" is implemented as a cost, with the engine that requires.**
+This is the one worth the length. A cost is paid as the ability is activated: the creature is in the
+graveyard *before* the ability is on the stack, so an opponent cannot answer by killing it in
+response, and anything watching for a death sees it then rather than on resolution. A target is the
+opposite in all three respects. Modelled as a target it would have looked right in every screenshot
+and been wrong exactly where it mattered — which is why the deck shipped a commit earlier without
+Vampire Aristocrat and Bloodthrone Vampire at all, with the gap written down, rather than with an
+approximation nobody would notice until it cost somebody a game. The choice travels with the
+activation rather than being asked for afterwards, so no new engine phase was needed: `legalActions`
+offers the creatures that could pay, an outlet with nothing to feed it is not offered, and the
+sacrifice is validated before anything is spent.
+
+**Still not decided, and still the same gap:** a decision made *during* a resolution. A tutor,
+"choose one", an opponent discarding a card of their choice. D28's rule holds — those cards are
+left unscripted rather than approximated — but the shape to fix it now exists three times over, in
+`pendingDiscard`, the opening-hand phase and `pendingChoice`.
