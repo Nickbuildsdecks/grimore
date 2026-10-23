@@ -1417,3 +1417,39 @@ What this does not fix, and is worth naming: the panels do not line up row for r
 is as tall as its own contents. A grid with shared rows would align them and would also leave a
 player with no creatures holding an empty box the height of somebody else's board. The misalignment
 is the better of the two, until there is a reason to think otherwise.
+
+## D44 — The bot stops throwing creatures away
+
+"It attacks with everything, blocks when the trade is good, and casts the biggest thing it can
+afford" has been the honest description since D20, and the first clause was the worst of it: the
+bot ran a 1/1 into an untapped 3/3 every turn because the engine said it was allowed to. Measured
+over twenty games across every matchup: **292 attackers declared, 40 of them dead.** Two creatures
+a game, given away.
+
+**Decided: each attack is weighed against the blocks it could actually face.** Nothing that can
+block it — attack, that is free damage. Nothing that blocks it can kill it — attack, the worst
+case is no damage. It dies but takes something at least as good with it — attack, that is a
+trade. It dies for nothing — stay home. Four lines of judgement, all of it read off the board:
+no card knowledge, no search, nothing the bot could not work out by looking.
+
+**With one exception that overrules all of it: lethal.** If enough damage gets through to kill the
+defender, everything attacks — a creature saved on the turn you could have won is a creature saved
+for nothing. "Gets through" assumes each untapped blocker eats the biggest attacker, which
+under-claims lethal rather than over-claiming it; being wrong in that direction costs a turn, and
+being wrong the other way costs the team.
+
+**And blocking picks the best fight rather than the first legal one.** The old loop took the first
+attacker a creature could block, so a 4/4 ate a 1/1 while a 5/5 walked past. Now each blocker
+takes the biggest attacker it can actually handle, preferring a fight it survives.
+
+**A near-miss worth recording.** `exchange(attacker, blocker)` reads from the first creature's
+side, and in the blocking loop I destructured it as though the sides swapped — two lines that
+would have made the bot block its best creature into death and call it a trade. Caught by naming
+the two halves at the point of use (`iDie: attackerDies, itDies: blockerDies`) rather than
+carrying `iDie` around and remembering whose "I" it was.
+
+**Measured after: 240 attackers declared, 16 dead.** Sixty per cent fewer creatures given away
+while still attacking 82% as often — and the average game got *shorter*, 19.4 turns to 18.6, which
+is the number that says the bot did not solve the problem by refusing to fight. All three are
+asserted in `playout.test.ts`, including the attack count, because without it the test passes by
+doing nothing.

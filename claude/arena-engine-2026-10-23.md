@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**399 tests in the rules engine, 104 in the web app, 998 across the workspace.**
+**400 tests in the rules engine, 104 in the web app, 999 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -230,7 +230,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Nineteen things, in the order they mattered.
+Twenty things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -576,6 +576,21 @@ captured scroll, and on any body resize, lands on the edge of the row facing the
 passes pointer events straight through — without that, every card under it would stop being
 tappable at the exact moment the defender needs to tap their creatures.
 
+**The bot stopped throwing creatures away.** "Attacks with everything" has been the honest
+description since the first checkpoint, and it is the worst thing a bot can do: it ran a 1/1 into
+an untapped 3/3 every turn because the engine said it was allowed to. Each attack is now weighed
+against the blocks it could actually face — free damage, survives it, trades up, or stays home —
+with one exception that overrules all of it, which is lethal: a creature saved on the turn you
+could have won is a creature saved for nothing. Blocking picks the biggest attacker a creature can
+actually handle instead of the first legal pairing, which is what let a 4/4 eat a 1/1 while a 5/5
+walked past.
+
+All of it is read off the board. No card knowledge, no search, nothing the bot could not work out
+by looking — and the measurement is the point: **292 attackers declared and 40 dead, down to 240
+declared and 16 dead**, with the average game getting *shorter* (19.4 turns to 18.6). That last
+number is the one that says it did not solve the problem by refusing to fight, and all three are
+asserted in `playout.test.ts`.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the 63 cards currently using
@@ -589,9 +604,11 @@ tappable at the exact moment the defender needs to tap their creatures.
    environment cannot reach Scryfall. A deck of bare names has no type line, so the engine cannot
    tell a land from a spell and Arena mode would be unusable; the tabletop would be fine. Worth
    building where the data exists, not here.
-3. A stronger opponent. The current one plays a real game but does not plan one. It now answers
-   mid-resolution questions in the direction that helps it and prefers taking more of a modal
-   spell, which is judgement rather than search — a search needs a position evaluator.
+3. A stronger opponent. It no longer gives creatures away in combat, answers mid-resolution
+   questions in the direction that helps it and will not cast an X spell for nothing — but all of
+   that is judgement one step deep. It does not hold a creature back to block, does not keep mana
+   up for the counterspell in its hand, and does not know what any card does. Each of those needs
+   it to reason about the *next* turn, which is a search and a position evaluator.
 4. The pod interface beyond "it works". Three opponents sit side by side now and the combat is
    drawn rather than described, which were the two things that made a four-player board
    unreadable. What is still missing is everything a pod is *socially*: no table talk beyond the

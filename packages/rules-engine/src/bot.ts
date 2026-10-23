@@ -19,6 +19,7 @@ import { listAt } from './cardActions.js';
 import { bottomOwed, pendingDeclaration, stillDeciding } from './automation.js';
 import { characteristicsOf } from './characteristics.js';
 import { canAttack, canBlock } from './combat.js';
+import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
 import { costValue, parseManaCost } from './mana.js';
 import type { Target } from './turnTypes.js';
@@ -146,16 +147,62 @@ function rank(state: GameState, target: Target, foes: readonly SeatIndex[]): num
   return mine ? -50 + size : 50 + size;
 }
 
-/** Everything the seat can attack with, which for this bot is everything it is allowed to. */
+/** What a creature is worth to the board, crudely: how much it can do and how hard it is to kill. */
+const creatureValue = (state: GameState, id: string): number => {
+  const inst = state.instances[id];
+  if (inst === undefined) return 0;
+  const ch = characteristicsOf(state, inst);
+  return ch.power + ch.toughness;
+};
+
+/** Whether `attacker` would die to `blocker` in combat, and whether it would take it with it. */
+function exchange(
+  state: GameState, attackerId: string, blockerId: string,
+): { iDie: boolean; itDies: boolean } {
+  const attacker = state.instances[attackerId];
+  const blocker = state.instances[blockerId];
+  if (attacker === undefined || blocker === undefined) return { iDie: false, itDies: false };
+  const mine = characteristicsOf(state, attacker);
+  const theirs = characteristicsOf(state, blocker);
+  const deadly = (power: number, deathtouch: boolean, toughness: number) =>
+    deathtouch ? power > 0 : power >= toughness;
+  return {
+    iDie: deadly(theirs.power, theirs.keywords.has('deathtouch'), mine.toughness)
+      && !mine.keywords.has('indestructible'),
+    itDies: deadly(mine.power, mine.keywords.has('deathtouch'), theirs.toughness)
+      && !theirs.keywords.has('indestructible'),
+  };
+}
+
+/** The creatures a seat could actually block with right now: its own, untapped. */
+const readyBlockers = (state: GameState, seat: SeatIndex): string[] =>
+  creaturesControlledBy(state, seat).filter((id) => state.instances[id]?.tapped === false);
+
 /**
  * Who attacks, and whom.
  *
- * In a two-player game "whom" is not a question. In a pod it is the whole question, and the bot's
- * answer is the shallow one that is still a real answer: go for whoever is closest to dead, and
- * send a creature at somebody else when the lowest player already has enough coming at them to
- * finish them. That spreads attacks across seats, which also means several defenders owe a block
- * at once — a path no four-player game exercised before, because aiming everything at one seat
- * meant the engine's multi-defender declarations were only ever asserted on a built board.
+ * Two questions, and the bot answers them separately.
+ *
+ * **Whom** is not a question in a duel and is the whole question in a pod: go for whoever is
+ * closest to dead, and send the next creature somewhere else once the lowest player already has
+ * enough coming at them to finish them. That spreads attacks across seats, which also means
+ * several defenders owe a block at once.
+ *
+ * **Who** used to be "everything that can". That is how a bot gives away two creatures a game:
+ * it ran a 1/1 into an untapped 3/3 every turn because the engine said it was allowed to. Now
+ * each attacker is weighed against the blocks it could actually face:
+ *
+ *  - nothing can block it — attack, that is free damage;
+ *  - nothing that blocks it can kill it — attack, the worst case is no damage;
+ *  - it dies but takes something at least as good with it — attack, that is a trade;
+ *  - it dies for nothing — stay home.
+ *
+ * With one exception that overrules all of it: if enough damage gets through to kill the
+ * defender, everything attacks. A creature saved on the turn you could have won is a creature
+ * saved for nothing, and a bot that never alpha-strikes draws out games it had already won.
+ *
+ * What it still does not do is hold creatures back to block. It knows what it is attacking into;
+ * it does not know what is coming the other way.
  */
 function chooseAttackers(state: GameState, seat: SeatIndex): { attacker: string; defender: SeatIndex }[] {
   const foes = foesOf(state, seat)
@@ -163,15 +210,56 @@ function chooseAttackers(state: GameState, seat: SeatIndex): { attacker: string;
     .sort((a, b) => a.life - b.life);
   if (foes.length === 0) return [];
   const able = legalActions(state, seat).attackers.filter((id) => canAttack(state, id, seat) === null);
+  if (able.length === 0) return [];
+
+  /**
+   * Whether swinging with everything kills this player.
+   *
+   * Each untapped creature they have blocks one attacker, so the biggest attackers are assumed
+   * blocked and the rest gets through. Pessimistic about trample and about several blockers on
+   * one attacker, which is the right direction to be wrong in: it under-claims lethal rather
+   * than attacking into a board that eats the team.
+   */
+  const lethalAgainst = (foe: { index: SeatIndex; life: number }): boolean => {
+    const blockers = readyBlockers(state, foe.index).length;
+    const powers = able
+      .map((id) => {
+        const inst = state.instances[id];
+        return inst === undefined ? 0 : characteristicsOf(state, inst).power;
+      })
+      .sort((a, b) => b - a);
+    const through = powers.slice(blockers).reduce((n, p) => n + p, 0);
+    return through >= foe.life && foe.life > 0;
+  };
+
+  const worthAttacking = (attackerId: string, foe: SeatIndex): boolean => {
+    const blockers = readyBlockers(state, foe)
+      .filter((blockerId) => canBlock(state, blockerId, attackerId, foe) === null);
+    if (blockers.length === 0) return true;
+    let worstLoss = false;
+    let trade = false;
+    for (const blockerId of blockers) {
+      const { iDie, itDies } = exchange(state, attackerId, blockerId);
+      if (!iDie) continue;
+      // A blocker that kills it for nothing is the reason to stay home; one that dies with it is
+      // a trade, and worth it when what dies is at least as good as what is lost.
+      if (!itDies) worstLoss = true;
+      else if (creatureValue(state, blockerId) >= creatureValue(state, attackerId)) trade = true;
+      else worstLoss = true;
+    }
+    return !worstLoss || trade;
+  };
 
   const out: { attacker: string; defender: SeatIndex }[] = [];
   let at = 0;
   let committed = 0;
   for (const attacker of able) {
     const target = foes[at] ?? foes[foes.length - 1]!;
-    out.push({ attacker, defender: target.index });
-    const inst = state.instances[attacker];
-    committed += inst === undefined ? 0 : characteristicsOf(state, inst).power;
+    if (lethalAgainst(target) || worthAttacking(attacker, target.index)) {
+      out.push({ attacker, defender: target.index });
+      const inst = state.instances[attacker];
+      committed += inst === undefined ? 0 : characteristicsOf(state, inst).power;
+    }
     // Enough to kill them outright: anything further is wasted here, so the next one goes
     // somewhere else. Unblocked damage is the assumption, which is what makes it shallow.
     if (committed >= target.life && at < foes.length - 1) {
@@ -183,10 +271,20 @@ function chooseAttackers(state: GameState, seat: SeatIndex): { attacker: string;
 }
 
 /**
- * Blocks where the trade is not a loss: the blocker kills the attacker, or survives it.
+ * What to block, and with what.
  *
- * A bot that chump-blocked everything would never die, and a bot that never blocked would die to
- * the first two creatures — neither plays a game out, which is the whole point of this file.
+ * A bot that chump-blocked everything would never die and never win; one that never blocked would
+ * die to the first two creatures. Neither plays a game out, which is the whole point of this file.
+ * So each possible blocker takes the best fight available to it:
+ *
+ *  - kill it and live — always worth it;
+ *  - kill it and die with it — worth it when what dies is worth at least as much;
+ *  - live through it — worth it, that is damage stopped for nothing;
+ *  - die for nothing — only with lethal coming in, where any block is better than none.
+ *
+ * Between two fights it is the same kind of answer as attacking: block the biggest thing it can
+ * actually handle. Picking the first legal pairing instead — which is what this did — meant a 4/4
+ * eating a 1/1 while a 5/5 walked past it.
  */
 function chooseBlocks(state: GameState, seat: SeatIndex): { blocker: string; attacker: string }[] {
   const out: { blocker: string; attacker: string }[] = [];
@@ -204,22 +302,31 @@ function chooseBlocks(state: GameState, seat: SeatIndex): { blocker: string; att
   for (const option of legalActions(state, seat).blockers) {
     const blocker = state.instances[option.blocker];
     if (blocker === undefined) continue;
-    const mine = characteristicsOf(state, blocker);
+    let best: { attacker: string; score: number } | null = null;
     for (const attackerId of option.canBlock) {
       if (taken.has(attackerId) && !desperate) continue;
       const attacker = state.instances[attackerId];
       if (attacker === undefined) continue;
       if (canBlock(state, option.blocker, attackerId, seat) !== null) continue;
-      const theirs = characteristicsOf(state, attacker);
-      const kills = mine.power >= theirs.toughness;
-      const survives = mine.toughness > theirs.power;
       // Menace needs two blockers, which this bot does not coordinate, so it leaves them alone.
-      if (theirs.keywords.has('menace')) continue;
-      if (!desperate && !kills && !survives) continue;
-      out.push({ blocker: option.blocker, attacker: attackerId });
-      taken.add(attackerId);
-      break;
+      if (characteristicsOf(state, attacker).keywords.has('menace')) continue;
+      // `exchange` reads from the first creature's side, and here the first creature really is
+      // the attacker: `iDie` is the attacker dying and `itDies` is this seat's blocker dying.
+      // Naming them is not pedantry — the two are a swap away from a bot that blocks its best
+      // creature into death and calls it a trade.
+      const { iDie: attackerDies, itDies: blockerDies } = exchange(state, attackerId, option.blocker);
+      const worthIt = attackerDies
+        ? (!blockerDies || creatureValue(state, attackerId) >= creatureValue(state, option.blocker))
+        : !blockerDies;
+      if (!worthIt && !desperate) continue;
+      // Stop the biggest thing this creature can actually handle, preferring a fight it survives.
+      const score = characteristicsOf(state, attacker).power
+        + (attackerDies ? 10 : 0) + (blockerDies ? 0 : 5);
+      if (best === null || score > best.score) best = { attacker: attackerId, score };
     }
+    if (best === null) continue;
+    out.push({ blocker: option.blocker, attacker: best.attacker });
+    taken.add(best.attacker);
   }
   return out;
 }

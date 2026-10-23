@@ -47,6 +47,9 @@ function table(
 }
 
 /** Every pairing of the built-in decks, which is what a matchup test should cover. */
+/** The four decks, for tests that want a spread of matchups rather than a named pairing. */
+const DECK_IDS = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest'] as const;
+
 const MATCHUPS: readonly (readonly [string, string])[] = [
   ['ember-rush', 'verdant-guard'],
   ['ember-rush', 'tidal-mind'],
@@ -241,6 +244,49 @@ describe('a whole automated game', () => {
       expect(s.finished).toBe(true);
     }
     expect(fired).toBeGreaterThan(0);
+  });
+
+  it('does not throw creatures away: it attacks into blocks it can live with', () => {
+    // A bot that attacks with everything is the easiest bot to write and the worst to play
+    // against: it feeds a creature a turn into an untapped blocker and the game becomes a
+    // formality. The claim here is about the *rate* — it still attacks, it just stops attacking
+    // into certain death — so it is measured over whole games rather than asserted on a board.
+    //
+    // Measured before and after the change, over these twenty games: 292 attackers declared and
+    // 40 of them dead, down to 240 declared and 16 dead. Games got slightly shorter, not longer,
+    // which is the thing to watch — a bot that solves this by never attacking has made it worse.
+    let declared = 0;
+    let lost = 0;
+    let finished = 0;
+    const turns: number[] = [];
+    for (let seed = 1; seed <= 20; seed++) {
+      const decks = [DECK_IDS[seed % 4]!, DECK_IDS[(seed + 1) % 4]!] as const;
+      let s = table(seed * 5171, (seed % 2) as SeatIndex, decks);
+      for (let i = 0; i < 9000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const before = s;
+        const version = s.stateVersion;
+        s = stepWatching(s, seat, (action) => {
+          if (action.type === 'auto:attack') declared += action.attackers.length;
+        });
+        if (s.stateVersion === version) break;
+        for (const attack of before.combat.attacks) {
+          const was = before.instances[attack.attacker];
+          const now = s.instances[attack.attacker];
+          if (was?.zone === 'battlefield' && now?.zone === 'graveyard') lost += 1;
+        }
+      }
+      if (s.finished) finished += 1;
+      turns.push(s.turn);
+    }
+    expect(finished).toBe(20);
+    // It still attacks — a lot. Without this the next assertion passes by doing nothing.
+    expect(declared).toBeGreaterThan(120);
+    // And loses well under a creature a game to it. The old policy lost two.
+    expect(lost / 20).toBeLessThan(1.5);
+    // Games did not get longer, which is how a cautious bot goes wrong.
+    expect(turns.reduce((a, b) => a + b, 0) / turns.length).toBeLessThan(26);
   });
 
   it('casts spells with {X} in the cost, and for more than nothing', () => {

@@ -215,7 +215,7 @@ FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatev
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (399 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (400 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (104 tests, the interaction reducer behind every prompt) and
 `apps/realtime`
@@ -241,9 +241,11 @@ playing the server).
   with counters" *are* in now, which is why Golgari Charm is in a deck after two checkpoints of
   being the example of what could not be scripted. Anything still beyond the engine resolves by
   hand, and the log says it was not automated.
-- **The computer opponent is not a strong player.** It attacks with everything, blocks when the
-  trade is good, casts the biggest thing it can afford and mulligans a hand with no land in it. It
-  plays a real game; it does not plan one.
+- **The computer opponent is not a strong player.** It attacks only where the trade is not a
+  loss, swings with everything when that is lethal, blocks the biggest thing each creature can
+  handle, casts the biggest spell it can afford and mulligans a hand with no land in it. What it
+  does not do is think about next turn: it will not hold a creature back to block or keep mana up
+  for the counterspell in its hand. It plays a real game; it does not plan one.
 - **No card images**, for the reason above.
 - **A pod plays, and the pod *interface* is plain.** Four browsers play one to a survivor every
   test run — commanders cast from the command zone and taxed, attacks aimed at whichever opponent
