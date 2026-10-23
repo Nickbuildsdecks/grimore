@@ -11,12 +11,12 @@
  * way to interrupt resolution and ask a player, which the engine does not have. A card like that
  * should be left unscripted and resolved by hand rather than approximated.
  */
-import { characteristicsOf, hasSubtype } from './characteristics.js';
+import { characteristicsOf, hasSubtype, hasType, parseTypeLine } from './characteristics.js';
 import type { CardDef } from './cards.js';
 import {
   addCounters, bounceToHand, cardTargets, counterSpell, createToken, dealDamage, destroy,
   discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget, gainControl, gainLife,
-  loseLife, mill, opponentsOf, pump, pumpTeam, tap, type EffectContext,
+  loseLife, mill, opponentsOf, pump, pumpTeam, putOntoBattlefield, tap, type EffectContext,
 } from './effects.js';
 import type { CardScript, TargetSpec } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -364,6 +364,94 @@ const TALRAND: CardScript = {
   ],
 };
 
+// ── Green-black graveyard ────────────────────────────────────────────────────────────────────────
+
+/** A creature card sitting in your own graveyard, which is a different object from a creature. */
+const yourGraveyardCreature: TargetSpec = {
+  kind: 'graveyard-creature',
+  description: 'target creature card in your graveyard',
+  filter: (state, candidate, controller) =>
+    candidate.kind === 'card' && state.instances[candidate.id]?.zoneSeat === controller,
+};
+
+const GRAVEDIGGER: CardScript = {
+  name: 'Gravedigger',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      targets: [yourGraveyardCreature],
+      description: 'return target creature card from your graveyard to your hand',
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : bounceToHand(c.state, id);
+      },
+    },
+  ],
+};
+
+const RAISE_DEAD: CardScript = {
+  name: 'Raise Dead',
+  targets: [yourGraveyardCreature],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : bounceToHand(c.state, id);
+  },
+};
+
+const ZOMBIFY: CardScript = {
+  name: 'Zombify',
+  targets: [yourGraveyardCreature],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    // Onto *your* battlefield, which is the whole point: it comes back under your control.
+    return id === null ? c.state : putOntoBattlefield(c.state, id, c.controller);
+  },
+};
+
+const THORNWEALD_ARCHER: CardScript = { name: 'Thornweald Archer', keywords: ['reach', 'deathtouch'] };
+
+const WALL_OF_BLOSSOMS: CardScript = {
+  name: 'Wall of Blossoms',
+  keywords: ['defender'],
+  triggers: [{ on: { kind: 'etb' }, description: 'draw a card', effect: (c) => draw(c.state, c.controller, 1) }],
+};
+
+const LOTLETH_GIANT: CardScript = {
+  name: 'Lotleth Giant',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'each opponent loses 1 life for each creature card in your graveyard',
+      effect: (c) => {
+        const bodies = creatureCardsInGraveyard(c.state, c.controller);
+        return opponentsOf(c.state, c.controller).reduce((state, seat) => loseLife(state, seat, bodies), c.state);
+      },
+    },
+  ],
+};
+
+export const INSECT_TOKEN: CardDef = {
+  name: 'Insect', typeLine: 'Token Creature — Insect', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: '', colors: ['B', 'G'],
+};
+
+const IZONI: CardScript = {
+  name: 'Izoni, Thousand-Eyed',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'create an Insect for each creature card in your graveyard',
+      effect: (c) => {
+        const bodies = creatureCardsInGraveyard(c.state, c.controller);
+        return bodies === 0 ? c.state : createToken(c.state, c.controller, INSECT_TOKEN, bodies);
+      },
+    },
+  ],
+  // Izoni's second ability — sacrificing creatures to drain — is not automated: paying a cost by
+  // sacrificing something the player chooses is a decision the engine cannot ask for yet. It is
+  // printed on the card face, and "Move by hand" is there for it.
+};
+
 // ── Helpers the scripts above share ──────────────────────────────────────────────────────────────
 
 /** "deals N damage to any target" — the target may be a creature or a player. */
@@ -371,6 +459,17 @@ function damageFirstTarget(c: EffectContext, amount: number): GameState {
   const target = c.targets[0];
   if (target === undefined) return c.state;
   return dealDamage(c.state, target, amount, { controller: c.controller });
+}
+
+/** Creature cards in a seat's own graveyard, which several cards in Rot Harvest count. */
+function creatureCardsInGraveyard(state: GameState, seat: SeatIndex): number {
+  let n = 0;
+  for (const id of state.zones[`${seat}:graveyard`] ?? []) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    if (hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'creature')) n += 1;
+  }
+  return n;
 }
 
 function goblinCount(state: GameState, seat: SeatIndex): number {
@@ -398,6 +497,7 @@ const ALL: readonly CardScript[] = [
   SWORDS_TO_PLOWSHARES, HARMONIZE, OVERRUN, SIGARDA,
   COUNTERSPELL, NEGATE, DOOM_BLADE, DIVINATION, SIGN_IN_BLOOD, TOME_SCOUR,
   RAVENOUS_RATS, CHILD_OF_NIGHT, WIND_DRAKE, VAMPIRE_NIGHTHAWK, AIR_ELEMENTAL, TALRAND, MAN_O_WAR,
+  GRAVEDIGGER, RAISE_DEAD, ZOMBIFY, THORNWEALD_ARCHER, WALL_OF_BLOSSOMS, LOTLETH_GIANT, IZONI,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

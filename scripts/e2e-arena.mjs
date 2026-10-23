@@ -192,6 +192,8 @@ async function makeMove(page, seat, { aggression = 0.6 } = {}) {
       await seatButtons.first().click();
       return 'aimed a trigger at a player';
     }
+    // Nothing lit anywhere: the table is asking for a target it is not showing, which is a defect
+    // in the table rather than something to wait out.
     return null;
   }
 
@@ -412,11 +414,17 @@ async function main() {
       friendHandAsNickSees.length >= 6 && friendHandAsNickSees.every((c) => c.hidden === 'true' && !c.name),
       JSON.stringify(friendHandAsNickSees).slice(0, 160),
     );
-    // The engine's own legal-move list is computed per seat, so it must not leak either.
-    const leaked = await nick.evaluate(() => document.body.textContent ?? '');
+    // Not merely hidden by a CSS rule: there is no card text inside those elements at all,
+    // because the server never sent any. Scoped to the hand itself rather than to the whole page,
+    // because two decks can legitimately contain the same card — a page-wide grep for a card name
+    // fails the moment both players are playing green.
+    const leaked = await nick.evaluate(() => {
+      const zone = document.querySelector('[data-testid="zone-hand-1"]');
+      return zone === null ? 'missing' : (zone.textContent ?? '');
+    });
     check(
-      'and no card from it appears anywhere in the page',
-      !/Llanowar Elves|Sigarda|Ajani's Pridemate/.test(leaked),
+      'and there is no card text inside the opponent’s hand at all',
+      leaked !== 'missing' && !/[a-z]{4}/.test(leaked.replace(/GRIMORE/gi, '')),
       leaked.slice(0, 120),
     );
 
@@ -602,15 +610,28 @@ async function main() {
       // A longer budget than the first loop: that one stops as soon as it has seen every part of
       // the engine work, while this one has to actually finish a game — and a slow matchup can run
       // past turn forty before somebody dies or decks out.
+      let idle = 0;
       for (let i = 0; i < MAX_MOVES * 4 && !(await has(nick, 'game-over')); i++) {
         const actor = (await isMyMove(nick)) ? { page: nick, seat: 0 }
           : (await isMyMove(friend)) ? { page: friend, seat: 1 }
           : null;
         if (actor === null) {
+          // Nobody on the clock for a long stretch means the game is stuck, not slow. Without
+          // this the run burns its whole budget and then reports only where it stopped.
+          idle += 1;
+          if (idle > 60) break;
           await nick.waitForTimeout(200);
           continue;
         }
-        await makeMove(actor.page, actor.seat, { aggression: 0.85 });
+        idle = 0;
+        const did = await makeMove(actor.page, actor.seat, { aggression: 0.85 });
+        if (did === null) {
+          // The table is asking for something this script cannot answer, which is worth saying
+          // out loud rather than letting it look like a slow game.
+          check('every prompt the table shows can be answered', false,
+            `no answer at ${await text(actor.page, 'step-label')} on turn ${await readNumber(nick, 'turn')}`);
+          break;
+        }
         await actor.page.waitForTimeout(40);
       }
       finished = await has(nick, 'game-over');

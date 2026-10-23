@@ -22,7 +22,12 @@ import type { Step, Target } from './turnTypes.js';
 
 /** What a spell or ability needs pointed at it before it can be put on the stack. */
 export interface TargetSpec {
-  readonly kind: 'creature' | 'permanent' | 'player' | 'any' | 'spell';
+  /**
+   * What may be pointed at. `graveyard-creature` is a creature *card* in a graveyard rather than a
+   * creature on the battlefield — a different object in a different zone, which is why it is its
+   * own kind rather than a filter on `creature`.
+   */
+  readonly kind: 'creature' | 'permanent' | 'player' | 'any' | 'spell' | 'graveyard-creature';
   /** Shown to the player choosing, e.g. "target creature an opponent controls". */
   readonly description: string;
   /** How many of this spec. Defaults to 1. */

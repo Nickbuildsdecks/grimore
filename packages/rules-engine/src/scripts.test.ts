@@ -725,6 +725,127 @@ describe('triggers that need a target', () => {
   });
 });
 
+describe('the graveyard, which is a place cards come back from', () => {
+  /** Seat 1 plays the graveyard deck, with its lands tapped. */
+  const rot = (hand: readonly string[], lands: readonly string[], extra: readonly string[] = []): GameState => {
+    let s = arena({
+      decks: { 1: 'rot-harvest' },
+      hands: { 1: hand }, battlefield: { 1: [...lands, ...extra] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (name !== 'Forest' && name !== 'Swamp') continue;
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  /** Puts a card from a seat's library straight into its graveyard, as a trade would. */
+  const bury = (s: GameState, seat: SeatIndex, name: string): GameState =>
+    apply(s, { type: 'card:move', by: seat, card: find(s, seat, 'library', name), toZone: 'graveyard' });
+
+  it('Raise Dead returns a creature card, and will not take a land or an opponent’s', () => {
+    let s = rot(['Raise Dead'], ['Swamp']);
+    s = bury(s, 1, 'Centaur Courser');
+    s = bury(s, 1, 'Swamp');
+    s = bury(s, 0, 'Hill Giant');
+
+    const theirs = find(s, 0, 'graveyard', 'Hill Giant');
+    const land = find(s, 1, 'graveyard', 'Swamp');
+    const mine = find(s, 1, 'graveyard', 'Centaur Courser');
+    const raise = find(s, 1, 'hand', 'Raise Dead');
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: raise, targets: [{ kind: 'card', id: theirs }] })).toBeTruthy();
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: raise, targets: [{ kind: 'card', id: land }] })).toBeTruthy();
+
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: raise, targets: [{ kind: 'card', id: mine }] }));
+    expect(namesIn(s, 1, 'hand')).toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Centaur Courser');
+  });
+
+  it('Zombify puts it straight onto the battlefield instead', () => {
+    let s = rot(['Zombify'], ['Swamp', 'Swamp', 'Swamp', 'Swamp']);
+    s = bury(s, 1, 'Centaur Courser');
+    const mine = find(s, 1, 'graveyard', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Zombify'), targets: [{ kind: 'card', id: mine }],
+    }));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Centaur Courser');
+    // And it is summoning sick, because it only just arrived.
+    expect(s.instances[mine]!.enteredTurn).toBe(s.turn);
+  });
+
+  it('Gravedigger asks which card it brings back', () => {
+    let s = rot(['Gravedigger'], ['Swamp', 'Swamp', 'Swamp', 'Swamp']);
+    s = bury(s, 1, 'Centaur Courser');
+    s = bury(s, 1, 'Thornweald Archer');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Gravedigger') });
+    s = passBoth(s);
+    expect(s.pendingChoice).not.toBeNull();
+    const courser = find(s, 1, 'graveyard', 'Centaur Courser');
+    s = apply(s, { type: 'auto:choose', by: 1, targets: [{ kind: 'card', id: courser }] });
+    s = passBoth(s);
+    expect(namesIn(s, 1, 'hand')).toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Thornweald Archer');
+  });
+
+  it('Gravedigger with an empty graveyard simply does not trigger', () => {
+    let s = rot(['Gravedigger'], ['Swamp', 'Swamp', 'Swamp', 'Swamp']);
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Gravedigger') });
+    s = passBoth(s);
+    expect(s.pendingChoice).toBeNull();
+    expect(s.stackOrder).toEqual([]);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Gravedigger');
+  });
+
+  it('Wall of Blossoms draws a card and cannot attack', () => {
+    let s = rot(['Wall of Blossoms'], ['Forest', 'Forest']);
+    const before = ids(s, 1, 'hand').length;
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Wall of Blossoms') }));
+    s = passBoth(s); // the trigger
+    expect(ids(s, 1, 'hand').length).toBe(before - 1 + 1);
+    const wall = find(s, 1, 'battlefield', 'Wall of Blossoms');
+    expect(characteristicsOf(s, s.instances[wall]!).cantAttack).toBe(true);
+  });
+
+  it('Lotleth Giant drains for each creature card in your graveyard', () => {
+    let s = rot(['Lotleth Giant'], Array.from({ length: 7 }, () => 'Swamp'));
+    s = bury(s, 1, 'Centaur Courser');
+    s = bury(s, 1, 'Thornweald Archer');
+    s = bury(s, 1, 'Swamp'); // a land does not count
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lotleth Giant') }));
+    s = passBoth(s);
+    expect(life(s, 0)).toBe(18);
+  });
+
+  it('Izoni makes an Insect for each creature card in your graveyard', () => {
+    // In a format with no command zone the commander is simply the deck's 61st card, so it can be
+    // drawn and cast like anything else.
+    let s = rot(['Izoni, Thousand-Eyed'], ['Forest', 'Swamp', 'Swamp', 'Swamp']);
+    s = bury(s, 1, 'Centaur Courser');
+    s = bury(s, 1, 'Thornweald Archer');
+    s = bury(s, 1, 'Swamp'); // a land is not a creature card
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Izoni, Thousand-Eyed') }));
+    expect(countOf(s, 1, 'battlefield', 'Insect')).toBe(0); // the trigger is still on the stack
+    s = passBoth(s);
+    expect(countOf(s, 1, 'battlefield', 'Insect')).toBe(2);
+  });
+
+  it('does not fire a trigger for a card moved by hand, because the tabletop enforces nothing', () => {
+    // The manual moves are a physical escape hatch, not a second way to play: putting a creature
+    // onto the battlefield by hand is picking it up and putting it down, and the player resolves
+    // whatever it says themselves. Worth pinning, because the alternative — triggers firing from
+    // manual moves — would double-fire every card the engine already handles.
+    let s = rot([], ['Forest', 'Swamp', 'Swamp', 'Swamp']);
+    s = bury(s, 1, 'Centaur Courser');
+    const izoni = find(s, 1, 'library', 'Izoni, Thousand-Eyed');
+    s = apply(s, { type: 'card:move', by: 1, card: izoni, toZone: 'battlefield' });
+    expect(s.stackOrder).toEqual([]);
+    expect(countOf(s, 1, 'battlefield', 'Insect')).toBe(0);
+  });
+});
+
 describe('unscripted cards', () => {
   it('casts, resolves and fights normally, and says in the log that it is not automated', () => {
     // Hill Giant has no script: no triggers, no abilities, nothing printed but a body.

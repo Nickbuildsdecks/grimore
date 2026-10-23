@@ -402,6 +402,81 @@ const TALRAND: CardDef = {
   colors: ['U'],
 };
 
+// ── Green-black graveyard ────────────────────────────────────────────────────────────────────────
+
+const GRAVEDIGGER: CardDef = {
+  name: 'Gravedigger',
+  typeLine: 'Creature — Zombie',
+  manaCost: '{3}{B}',
+  cmc: 4,
+  power: '2',
+  toughness: '2',
+  oracleText: 'When Gravedigger enters the battlefield, return target creature card from your graveyard to your hand.',
+  colors: ['B'],
+};
+
+const RAISE_DEAD: CardDef = {
+  name: 'Raise Dead',
+  typeLine: 'Sorcery',
+  manaCost: '{B}',
+  cmc: 1,
+  oracleText: 'Return target creature card from your graveyard to your hand.',
+  colors: ['B'],
+};
+
+const ZOMBIFY: CardDef = {
+  name: 'Zombify',
+  typeLine: 'Sorcery',
+  manaCost: '{3}{B}',
+  cmc: 4,
+  oracleText: 'Put target creature card from your graveyard onto the battlefield under your control.',
+  colors: ['B'],
+};
+
+const THORNWEALD_ARCHER: CardDef = {
+  name: 'Thornweald Archer',
+  typeLine: 'Creature — Elf Archer',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'Reach, deathtouch',
+  colors: ['G'],
+};
+
+const WALL_OF_BLOSSOMS: CardDef = {
+  name: 'Wall of Blossoms',
+  typeLine: 'Creature — Plant Wall',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '0',
+  toughness: '4',
+  oracleText: 'Defender\nWhen Wall of Blossoms enters the battlefield, draw a card.',
+  colors: ['G'],
+};
+
+const LOTLETH_GIANT: CardDef = {
+  name: 'Lotleth Giant',
+  typeLine: 'Creature — Zombie Giant',
+  manaCost: '{6}{B}',
+  cmc: 7,
+  power: '5',
+  toughness: '6',
+  oracleText: 'When Lotleth Giant enters the battlefield, each opponent loses 1 life for each creature card in your graveyard.',
+  colors: ['B'],
+};
+
+const IZONI: CardDef = {
+  name: 'Izoni, Thousand-Eyed',
+  typeLine: 'Legendary Creature — Elf Shaman',
+  manaCost: '{2}{B}{G}',
+  cmc: 4,
+  power: '2',
+  toughness: '3',
+  oracleText: 'When Izoni, Thousand-Eyed enters the battlefield, create a 1/1 black and green Insect creature token for each creature card in your graveyard.',
+  colors: ['B', 'G'],
+};
+
 // ── The decks ────────────────────────────────────────────────────────────────────────────────────
 
 export const EMBER_RUSH: DeckSpec = {
@@ -469,10 +544,33 @@ export const TIDAL_MIND: DeckSpec = {
   ],
 };
 
+export const ROT_HARVEST: DeckSpec = {
+  id: 'rot-harvest',
+  name: 'Rot Harvest',
+  description: 'Green-black graveyard. Trade creatures freely, then buy them all back.',
+  commander: IZONI,
+  cards: [
+    { card: FOREST, count: 11 },
+    { card: SWAMP, count: 12 },
+    { card: LLANOWAR_ELVES, count: 4 },
+    { card: THORNWEALD_ARCHER, count: 4 },
+    { card: WALL_OF_BLOSSOMS, count: 4 },
+    { card: CENTAUR_COURSER, count: 3 },
+    { card: CHILD_OF_NIGHT, count: 3 },
+    { card: VAMPIRE_NIGHTHAWK, count: 3 },
+    { card: GRAVEDIGGER, count: 4 },
+    { card: RAISE_DEAD, count: 3 },
+    { card: ZOMBIFY, count: 3 },
+    { card: DOOM_BLADE, count: 4 },
+    { card: LOTLETH_GIANT, count: 2 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
   [TIDAL_MIND.id]: TIDAL_MIND,
+  [ROT_HARVEST.id]: ROT_HARVEST,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

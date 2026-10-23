@@ -49,7 +49,8 @@ const firstInZone = (s: GameState, seat: SeatIndex, zone: Parameters<typeof zone
 
 describe('starter decks', () => {
   it('ships decks that are exactly 60 cards plus a commander', () => {
-    expect(Object.keys(STARTER_DECKS).sort()).toEqual(['ember-rush', 'tidal-mind', 'verdant-guard']);
+    expect(Object.keys(STARTER_DECKS).sort())
+      .toEqual(['ember-rush', 'rot-harvest', 'tidal-mind', 'verdant-guard']);
     for (const deck of Object.values(STARTER_DECKS)) {
       expect(deckSize(deck)).toBe(61);
       expect(deck.commander).toBeDefined();

@@ -35,8 +35,12 @@ function table(
 const MATCHUPS: readonly (readonly [string, string])[] = [
   ['ember-rush', 'verdant-guard'],
   ['ember-rush', 'tidal-mind'],
+  ['ember-rush', 'rot-harvest'],
   ['tidal-mind', 'verdant-guard'],
+  ['rot-harvest', 'verdant-guard'],
+  ['rot-harvest', 'tidal-mind'],
   ['tidal-mind', 'tidal-mind'],
+  ['rot-harvest', 'rot-harvest'],
   ['verdant-guard', 'verdant-guard'],
 ];
 
@@ -137,6 +141,17 @@ describe('a whole automated game', () => {
     const rate = mulligans / hands;
     expect(rate).toBeGreaterThan(0.03);
     expect(rate).toBeLessThan(0.35);
+  });
+
+  it('brings creatures back out of a graveyard, rather than leaving the deck half-played', () => {
+    // A deck whose point is recursion would pass every other test here while never once casting
+    // the spell it is built around — the graveyard targets are in a zone nothing else points at.
+    let returned = 0;
+    for (let seed = 1; seed <= 8 && returned === 0; seed++) {
+      const result = playOut(table(seed * 5431, 0, ['rot-harvest', 'rot-harvest']));
+      returned += result.state.log.filter((e) => /Raise Dead|Zombify|Gravedigger/.test(e.message)).length;
+    }
+    expect(returned).toBeGreaterThan(0);
   });
 
   it('never offers a play it then refuses', () => {

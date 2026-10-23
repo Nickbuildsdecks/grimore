@@ -879,6 +879,13 @@ function Board({ table }: { table: UseTable }) {
     return null
   }
   const badgesOf = (card: VisibleCard): readonly string[] => (automated ? cardBadges(view, card) : [])
+  /**
+   * What every zone a spell can point at needs.
+   *
+   * Not only the battlefield: "return target creature card from your graveyard" aims at a card in
+   * a graveyard, and a target the player cannot see lit is a prompt with no visible answer.
+   */
+  const aiming = { selectedIds: chosenIds, highlightOf, badgesOf }
 
   const onAttach = (card: VisibleCard) => {
     if (card.attachedTo !== null) {
@@ -983,10 +990,10 @@ function Board({ table }: { table: UseTable }) {
             badgesOf={badgesOf}
           />
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-            <ZoneRow label="graveyard" testId={`zone-graveyard-${o.index}`} size="pile" cards={cardsIn(view, zoneAt(view, o.index, "graveyard"))} onSelect={onSelect} />
-            <ZoneRow label="exile" testId={`zone-exile-${o.index}`} size="pile" cards={cardsIn(view, zoneAt(view, o.index, "exile"))} onSelect={onSelect} />
+            <ZoneRow label="graveyard" testId={`zone-graveyard-${o.index}`} size="pile" cards={cardsIn(view, zoneAt(view, o.index, "graveyard"))} onSelect={onSelect} {...aiming} />
+            <ZoneRow label="exile" testId={`zone-exile-${o.index}`} size="pile" cards={cardsIn(view, zoneAt(view, o.index, "exile"))} onSelect={onSelect} {...aiming} />
             {commanderFormat ? (
-              <ZoneRow label="command" testId={`zone-command-${o.index}`} size="pile" cards={cardsIn(view, zoneAt(view, o.index, "command"))} onSelect={onSelect} />
+              <ZoneRow label="command" testId={`zone-command-${o.index}`} size="pile" cards={cardsIn(view, zoneAt(view, o.index, "command"))} onSelect={onSelect} {...aiming} />
             ) : null}
           </div>
         </div>
@@ -1040,10 +1047,10 @@ function Board({ table }: { table: UseTable }) {
         badgesOf={badgesOf}
       />
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-        <ZoneRow label="Your graveyard" testId={`zone-graveyard-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "graveyard"))} onSelect={onSelect} />
-        <ZoneRow label="Your exile" testId={`zone-exile-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "exile"))} onSelect={onSelect} />
+        <ZoneRow label="Your graveyard" testId={`zone-graveyard-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "graveyard"))} onSelect={onSelect} {...aiming} />
+        <ZoneRow label="Your exile" testId={`zone-exile-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "exile"))} onSelect={onSelect} {...aiming} />
         {commanderFormat ? (
-          <ZoneRow label="Command zone" testId={`zone-command-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "command"))} onSelect={onSelect} />
+          <ZoneRow label="Command zone" testId={`zone-command-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "command"))} onSelect={onSelect} {...aiming} />
         ) : null}
       </div>
       {/* Searching shows your own library, and only while you are looking. */}

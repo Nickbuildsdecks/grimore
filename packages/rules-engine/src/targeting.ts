@@ -6,7 +6,7 @@
  * makes killing the creature in response to a bolt work. Doing the check in one place means both
  * moments agree about what "legal" means, which is the only way that rule stays correct.
  */
-import { characteristicsOf } from './characteristics.js';
+import { characteristicsOf, hasType, parseTypeLine } from './characteristics.js';
 import { listAt } from './cardActions.js';
 import { zoneKey } from './cards.js';
 import type { TargetSpec } from './scriptTypes.js';
@@ -42,6 +42,13 @@ export function isLegalTarget(
     return spec.filter ? spec.filter(state, candidate, controller) : true;
   }
 
+  if (spec.kind === 'graveyard-creature') {
+    if (inst.zone !== 'graveyard') return false;
+    // A card in a graveyard has no continuous effects on it, so its printed type is what it is.
+    if (!hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'creature')) return false;
+    return spec.filter ? spec.filter(state, candidate, controller) : true;
+  }
+
   if (inst.zone !== 'battlefield') return false;
   const ch = characteristicsOf(state, inst);
   // "Any target" means a creature, a player or a planeswalker — never an untargetable permanent.
@@ -65,6 +72,15 @@ export function legalTargets(state: GameState, spec: TargetSpec, controller: Sea
     for (const id of listAt(state, 'stack')) {
       const candidate: Target = { kind: 'card', id };
       if (isLegalTarget(state, spec, candidate, controller)) out.push(candidate);
+    }
+    return out;
+  }
+  if (spec.kind === 'graveyard-creature') {
+    for (const seat of state.seats) {
+      for (const id of listAt(state, zoneKey(seat.index, 'graveyard'))) {
+        const candidate: Target = { kind: 'card', id };
+        if (isLegalTarget(state, spec, candidate, controller)) out.push(candidate);
+      }
     }
     return out;
   }
