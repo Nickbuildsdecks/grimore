@@ -592,8 +592,8 @@ tappable at the exact moment the defender needs to tap their creatures.
 3. A stronger opponent. The current one plays a real game but does not plan one. It now answers
    mid-resolution questions in the direction that helps it and prefers taking more of a modal
    spell, which is judgement rather than search — a search needs a position evaluator.
-4. The pod interface beyond "it works". Four seats are laid out as three opponent strips above
-   your own board, which fits a phone and is not yet *good* at four: whose turn it is reads as a
-   gold border rather than a layout, and there is no politics anywhere — no table talk beyond the
-   chat panel, no "attack them instead" affordance, nothing that makes a pod feel like a pod
-   rather than three duels sharing a board.
+4. The pod interface beyond "it works". Three opponents sit side by side now and the combat is
+   drawn rather than described, which were the two things that made a four-player board
+   unreadable. What is still missing is everything a pod is *socially*: no table talk beyond the
+   chat panel, no "attack them instead" affordance, no way to read the politics of who is ahead
+   at a glance.

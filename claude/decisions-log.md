@@ -1393,3 +1393,27 @@ know what an attack is and the players point at each other themselves.
 The screenshot the pod suite takes is the argument for the whole thing: Cleo's Drudge Skeletons
 with a line running down the board to Boris's row, and Boris — reading his own screen — knows
 without parsing a badge that the attack is his to block.
+
+## D43 — Three opponents are not one opponent three times
+
+The pod suite's screenshot was the argument: **two and a half thousand pixels** of board. Four
+hands, four battlefields and twelve mostly-empty piles stacked vertically, with the player about
+to attack you somewhere off the top of the screen. Every row of it was correct and the whole was
+unreadable.
+
+**Decided: opponents sit side by side once there are several of them.** Three columns on a wide
+screen, one full-width panel in a duel, and the vertical stack on a phone — three columns of card
+on 390 pixels is nothing anybody can read. It is shorter (1,300–1,500px instead of 2,547) and it
+is *truer*: that is where those players are sitting.
+
+The layout is the only thing that changed. No zone was hidden and no card was made unreachable,
+which was the constraint: a graveyard collapsed to a count is a graveyard a spell cannot be
+pointed at, and "a prompt with no visible answer" is a stopped game — the failure that the
+graveyard-targeting bug produced the first time round. The piles under an opponent went from two
+columns to three because the panel is narrower now, and each panel scrolls its own battlefield
+sideways rather than pushing the page wide.
+
+What this does not fix, and is worth naming: the panels do not line up row for row, because each
+is as tall as its own contents. A grid with shared rows would align them and would also leave a
+player with no creatures holding an empty box the height of somebody else's board. The misalignment
+is the better of the two, until there is a reason to think otherwise.

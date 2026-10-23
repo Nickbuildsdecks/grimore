@@ -1027,9 +1027,25 @@ function Board({ table }: { table: UseTable }) {
         </div>
       ) : null}
 
-      {/* Opponents */}
+      {/*
+        Opponents, side by side once there are several of them.
+
+        A pod stacked vertically is two and a half thousand pixels of board: four hands, four
+        battlefields and twelve mostly-empty piles between you and your own cards, and the player
+        you are about to be attacked by is off the top of the screen. Three opponents in three
+        columns is both shorter and truer — it is where they are sitting. One opponent keeps the
+        full width, because a duel has no reason to use half the screen, and a phone keeps the
+        stack, because three columns of card on 390 pixels is nothing anybody can read.
+      */}
+      <div
+        className={cn(
+          "grid gap-1.5",
+          opponents.length === 2 ? "lg:grid-cols-2" : "",
+          opponents.length >= 3 ? "lg:grid-cols-3" : "",
+        )}
+      >
       {opponents.map((o) => (
-        <div key={o.index} className="flex flex-col gap-1.5">
+        <div key={o.index} className="flex min-w-0 flex-col gap-1.5">
           <SeatStrip
             seat={o}
             isMe={false}
@@ -1062,7 +1078,7 @@ function Board({ table }: { table: UseTable }) {
             highlightOf={highlightOf}
             badgesOf={badgesOf}
           />
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-1.5">
             <ZoneRow label="graveyard" testId={`zone-graveyard-${o.index}`} size="pile" cards={cardsIn(view, zoneAt(view, o.index, "graveyard"))} onSelect={onSelect} {...aiming} />
             <ZoneRow label="exile" testId={`zone-exile-${o.index}`} size="pile" cards={cardsIn(view, zoneAt(view, o.index, "exile"))} onSelect={onSelect} {...aiming} />
             {commanderFormat ? (
@@ -1071,6 +1087,7 @@ function Board({ table }: { table: UseTable }) {
           </div>
         </div>
       ))}
+      </div>
 
       {/*
         The stack, shared. With the engine running it is a list rather than a row of cards: an
