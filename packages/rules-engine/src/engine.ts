@@ -139,6 +139,7 @@ export function createGame(options: CreateGameOptions): GameState {
     instanceSeq: 0,
     // Automation, empty until a table is switched into automated mode.
     automated: false,
+    autoPass: true,
     step: 'precombat-main',
     priority: null,
     passed: [],
@@ -456,6 +457,7 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         // with no active step and no way to hand priority to anyone, and `auto:start` refuses to
         // run twice, so nobody could restart it.
         automated: false,
+        autoPass: true,
         step: 'precombat-main',
         priority: null,
         passed: [],

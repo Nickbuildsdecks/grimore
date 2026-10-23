@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest"
 import type { GameView, LegalPlay, Target } from "@grimore/rules-engine"
 import {
   IDLE, arenaReducer, attackSummary, blockersOf, candidatesAt, cardBadges, manaPips, playsForCard,
-  primaryMove, specAt, targetKey, targetsRequired, targetsWanted, type ArenaMode,
+  primaryMove, specAt, splitBattlefield, targetKey, targetsRequired, targetsWanted, type ArenaMode,
 } from "./arena"
 
 const player = (seat: number): Target => ({ kind: "player", seat: seat as 0 })
@@ -248,7 +248,7 @@ function view(over: Partial<GameView> = {}): GameView {
 
 const automation = (over: Record<string, unknown> = {}): GameView["automation"] =>
   ({
-    step: "precombat-main", stepLabel: "Main phase 1", priority: 0, passed: [], stack: [],
+    step: "precombat-main", stepLabel: "Main phase 1", autoPass: true, priority: 0, passed: [], stack: [],
     pools: {}, combat: { attacks: [], firstStrikeDealt: false, attackersDeclared: false, blockersDeclaredBy: [] },
     awaiting: null,
     you: {
@@ -340,6 +340,29 @@ describe("view helpers", () => {
   })
 })
 
+describe("splitBattlefield", () => {
+  const card = (id: string, power?: number) =>
+    ({ id, zone: "battlefield", ...(power === undefined ? {} : { power, toughness: power }) }) as never
+
+  it("puts what fights in one row and what makes mana in another", () => {
+    const { creatures, lands } = splitBattlefield([card("bear", 2), card("forest"), card("angel", 4)])
+    expect(creatures.map((c) => c.id)).toEqual(["bear", "angel"])
+    expect(lands.map((c) => c.id)).toEqual(["forest"])
+  })
+
+  it("keeps the order within each row, so a board does not reshuffle itself", () => {
+    const { creatures } = splitBattlefield([card("a", 1), card("l"), card("b", 1), card("c", 1)])
+    expect(creatures.map((c) => c.id)).toEqual(["a", "b", "c"])
+  })
+
+  it("treats anything the engine gave no power as not a creature", () => {
+    // A face-down permanent and an enchantment are both in the second row, which is right: the
+    // question that row answers is "what is not fighting".
+    const { lands } = splitBattlefield([card("pacifism"), card("facedown")])
+    expect(lands).toHaveLength(2)
+  })
+})
+
 describe("cardBadges", () => {
   const permanent = (over: Record<string, unknown> = {}) =>
     ({
@@ -376,6 +399,18 @@ describe("cardBadges", () => {
     expect(cardBadges(view({ automation: auto }), permanent())).toContain("not ready")
     // And says nothing outside that step, where it would just be noise.
     expect(cardBadges(view({ automation: automation() }), permanent())).not.toContain("not ready")
+  })
+
+  it("names what an Aura is attached to, which is often on the other side of the table", () => {
+    const aura = permanent({ id: "aura", attachedTo: "host", card: { name: "Pacifism", typeLine: "Enchantment — Aura", manaCost: "{1}{W}", cmc: 2, oracleText: "", colors: ["W"] }, power: undefined, toughness: undefined })
+    const host = permanent({ id: "host" })
+    const v = view({
+      automation: automation(),
+      cards: { aura, host } as unknown as GameView["cards"],
+    })
+    expect(cardBadges(v, aura)).toContain("on Grizzly Bears")
+    // And the creature says what is on it, so an effect is never invisible.
+    expect(cardBadges(v, host)).toContain("Pacifism")
   })
 
   it("says nothing about a card that is not on the battlefield", () => {

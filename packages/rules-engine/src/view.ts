@@ -91,6 +91,8 @@ export interface StackView {
 export interface AutomationView {
   readonly step: Step;
   readonly stepLabel: string;
+  /** Whether the engine passes for a player with nothing to do. A table setting, not a rule. */
+  readonly autoPass: boolean;
   readonly priority: SeatIndex | null;
   readonly passed: readonly SeatIndex[];
   readonly stack: readonly StackView[];
@@ -233,6 +235,7 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
   return {
     step: state.step,
     stepLabel: STEP_LABELS[state.step],
+    autoPass: state.autoPass,
     priority: state.priority,
     passed: state.passed,
     stack,

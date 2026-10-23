@@ -38,7 +38,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  IDLE, arenaReducer, candidatesAt, cardBadges, playsForCard,
+  IDLE, arenaReducer, candidatesAt, cardBadges, playsForCard, splitBattlefield,
   type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
@@ -581,6 +581,52 @@ function ZoneRow({
   )
 }
 
+/**
+ * A battlefield, split into what fights and what makes mana.
+ *
+ * Only in Arena mode, where the engine tells the client which permanents are creatures. On the
+ * manual tabletop nothing knows what a card is, so it stays one row — which is also the right
+ * answer there, because a tabletop's whole point is that a card can be anywhere.
+ *
+ * The `zone-battlefield-{seat}` test id stays on a wrapper around both rows, so everything that
+ * counted the permanents on a side still does.
+ */
+function Battlefield({
+  label,
+  seat,
+  cards,
+  split,
+  onSelect,
+  selectedId,
+  selectedIds,
+  highlightOf,
+  badgesOf,
+}: {
+  label: string
+  seat: number
+  cards: VisibleCard[]
+  split: boolean
+  onSelect?: (c: VisibleCard) => void
+  selectedId?: string | null
+  selectedIds?: ReadonlySet<string>
+  highlightOf?: (c: VisibleCard) => CardHighlight | null
+  badgesOf?: (c: VisibleCard) => readonly string[]
+}) {
+  const shared = { onSelect, selectedId, selectedIds, highlightOf, badgesOf }
+  if (!split) {
+    return (
+      <ZoneRow label={`${label} battlefield`} testId={`zone-battlefield-${seat}`} size="board" cards={cards} {...shared} />
+    )
+  }
+  const { creatures, lands } = splitBattlefield(cards)
+  return (
+    <div data-testid={`zone-battlefield-${seat}`} className="flex min-w-0 flex-col gap-1">
+      <ZoneRow label={`${label} creatures`} testId={`zone-creatures-${seat}`} size="board" cards={creatures} empty="no creatures" {...shared} />
+      <ZoneRow label={`${label} lands and other`} testId={`zone-lands-${seat}`} size="pile" cards={lands} empty="no lands" {...shared} />
+    </div>
+  )
+}
+
 function Board({ table }: { table: UseTable }) {
   const { view, seat } = table
   const [picked, setPicked] = useState<VisibleCard | null>(null)
@@ -853,11 +899,11 @@ function Board({ table }: { table: UseTable }) {
               empty="no cards"
             />
           </div>
-          <ZoneRow
-            label={`${o.name}'s battlefield`}
-            testId={`zone-battlefield-${o.index}`}
-            size="board"
+          <Battlefield
+            label={`${o.name}'s`}
+            seat={o.index}
             cards={cardsIn(view, zoneAt(view, o.index, "battlefield"))}
+            split={automated}
             onSelect={onSelect}
             selectedId={attachFrom?.id ?? null}
             selectedIds={chosenIds}
@@ -910,11 +956,11 @@ function Board({ table }: { table: UseTable }) {
           onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat } })}
         />
       ) : null}
-      <ZoneRow
-        label="Your battlefield"
-        testId={`zone-battlefield-${seat}`}
-        size="board"
+      <Battlefield
+        label="Your"
+        seat={seat}
         cards={cardsIn(view, zoneAt(view, seat, "battlefield"))}
+        split={automated}
         onSelect={onSelect}
         selectedId={attachFrom?.id ?? null}
         selectedIds={chosenIds}

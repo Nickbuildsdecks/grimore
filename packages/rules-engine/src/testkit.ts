@@ -80,6 +80,17 @@ export interface Setup {
   readonly firstSeat?: SeatIndex;
   /** Turn to pretend we have reached, so battlefield creatures are not summoning sick. */
   readonly turn?: number;
+  /**
+   * Whether the engine passes for a player with nothing to do. **Off by default here**, unlike at
+   * a real table.
+   *
+   * A test board is deliberately almost empty — seven named cards instead of a hand — so with it
+   * on, both seats would have nothing to do and the engine would correctly fast-forward past the
+   * very step the test is about. A test that cares about one rule wants lock-step priority; the
+   * playability of auto-passing is asserted by its own tests and by `playout.test.ts`, which play
+   * real games from full hands.
+   */
+  readonly autoPass?: boolean;
 }
 
 const DECKS: Readonly<Record<number, string>> = { 0: 'ember-rush', 1: 'verdant-guard' };
@@ -127,7 +138,7 @@ export function arena(setup: Setup = {}): GameState {
   for (let turn = 1; turn < target; turn++) s = apply(s, { type: 'turn:pass', by: s.activeSeat });
   if (s.activeSeat !== first) s = apply(s, { type: 'turn:pass', by: s.activeSeat });
 
-  return apply(s, { type: 'auto:start', by: 0, firstSeat: first });
+  return apply(s, { type: 'auto:start', by: 0, firstSeat: first, autoPass: setup.autoPass ?? false });
 }
 
 /** Passes priority round the table until something happens: the stack resolves or the step ends. */

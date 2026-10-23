@@ -10,7 +10,7 @@
  * It holds no rules. The label comes from `legalActions.passLabel`, the legal attackers come from
  * `legalActions.attackers`, and the mana comes from the pool the server sent.
  */
-import { Check, Hand, Swords, X } from "lucide-react"
+import { Check, FastForward, Hand, Swords, X } from "lucide-react"
 import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -168,6 +168,26 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             waiting for your opponent
           </span>
         ) : null}
+
+        {/*
+          The stops toggle. On, the engine passes for you whenever passing is your only legal move,
+          which is most of a game — off, you are offered every priority in every step, which is
+          what a player wants when they are bluffing or learning the turn structure.
+        */}
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="toggle-stops"
+          aria-pressed={auto.autoPass}
+          title={auto.autoPass
+            ? "Skipping priority when you have nothing to do. Tap to be asked every time."
+            : "Being asked at every step. Tap to skip the ones you cannot act in."}
+          className={cn("h-7 px-2 text-[10px]", mode.kind === "idle" && move !== null ? "" : "ml-auto")}
+          onClick={() => onAct({ type: "auto:stops", autoPass: !auto.autoPass })}
+        >
+          <FastForward className={cn("size-3.5", auto.autoPass ? "" : "opacity-40")} />
+          {auto.autoPass ? "skipping" : "every step"}
+        </Button>
       </div>
     </div>
   )

@@ -91,6 +91,35 @@ describe('a whole automated game', () => {
     expect(countered).toBeGreaterThan(0);
   });
 
+  it('asks a player to act about three times a turn, not twenty', () => {
+    // The number that decides whether a person will play a second game. Priority is offered to
+    // every player in every step, which without auto-passing is twenty-odd prompts a turn — most
+    // of them "you still cannot do anything, press pass". Measured rather than asserted by eye,
+    // because it is the kind of thing that quietly regresses when a new rule adds a step.
+    let actions = 0;
+    let turns = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const result = playOut(table(seed * 7919));
+      expect(result.state.finished).toBe(true);
+      actions += result.actions;
+      turns += result.turns;
+    }
+    const perTurn = actions / turns;
+    expect(perTurn).toBeLessThan(6);
+    // And a whole game is a few dozen decisions rather than a few hundred.
+    expect(actions / 6).toBeLessThan(120);
+  });
+
+  it('offers every priority when a player asks for it', () => {
+    // The setting exists for the player who wants to see each step go by, so turning it off has
+    // to actually restore the prompts it removes.
+    const loud = playOut(applyAction(
+      table(7919, 0), { type: 'auto:stops', by: 0, autoPass: false }, HOST,
+    ));
+    expect(loud.state.finished).toBe(true);
+    expect(loud.actions / loud.turns).toBeGreaterThan(10);
+  });
+
   it('never offers a play it then refuses', () => {
     // The strongest form of the claim: take every action the bot chose from `legalActions`, and
     // check the engine accepted it. A single refusal here is a UI that will show a dead button.

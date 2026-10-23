@@ -25,6 +25,7 @@ import { canPay, parseManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
 import type { CardScript, TargetSpec } from './scriptTypes.js';
 import { hasAnyLegalTargets } from './targeting.js';
+import { legalActions } from './legalActions.js';
 import { EMPTY_COMBAT, MAIN_STEPS, type CombatAttack, type StackObject, type Target } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
 
@@ -355,7 +356,20 @@ function discard(state: GameState, action: { by: SeatIndex; card: string }): Out
 
 // ── Starting ─────────────────────────────────────────────────────────────────────────────────────
 
-function startAutomation(state: GameState, action: { by: SeatIndex; firstSeat?: SeatIndex }): Outcome {
+function setStops(state: GameState, action: { by: SeatIndex; autoPass: boolean }): Outcome {
+  requireAutomated(state);
+  return {
+    state: { ...state, autoPass: action.autoPass },
+    message: action.autoPass
+      ? `${seatName(state, action.by)} lets the table pass when there is nothing to do`
+      : `${seatName(state, action.by)} asks to be offered every priority`,
+    data: { autoPass: action.autoPass },
+  };
+}
+
+function startAutomation(
+  state: GameState, action: { by: SeatIndex; firstSeat?: SeatIndex; autoPass?: boolean },
+): Outcome {
   if (state.automated) throw new EngineError('ALREADY_STARTED', 'the rules engine is already running');
   if (!state.started) throw new EngineError('NOT_STARTED', 'deal the table first');
   const first = action.firstSeat ?? state.activeSeat;
@@ -363,6 +377,7 @@ function startAutomation(state: GameState, action: { by: SeatIndex; firstSeat?: 
   let next: GameState = {
     ...state,
     automated: true,
+    autoPass: action.autoPass ?? true,
     activeSeat: first,
     step: 'untap',
     combat: EMPTY_COMBAT,
@@ -383,9 +398,49 @@ function startAutomation(state: GameState, action: { by: SeatIndex; firstSeat?: 
   };
 }
 
+// ── Passing for a player with nothing to do ──────────────────────────────────────────────────────
+
+/**
+ * Passes on behalf of any player whose only legal move is to pass.
+ *
+ * This is the difference between an engine that is correct and one that is playable. Priority is
+ * offered to every player in every step, which for a real game of Magic means a player with no
+ * instants and nothing to activate is asked twenty-five times a turn to confirm that they still
+ * cannot do anything. Nobody plays that twice.
+ *
+ * It takes nothing away, because it only acts when passing is the *only* legal move: a player with
+ * no non-mana play has, by definition, no other choice. Mana abilities are excluded from that
+ * count on purpose — floating mana you have nothing to spend on is not a reason to hold priority,
+ * and counting it would mean a player with an untapped land never auto-passes at all.
+ *
+ * Four things always stop it, because each is a real decision:
+ *
+ *   - a combat declaration, which is a turn-based action rather than a priority one
+ *   - a discard to hand size
+ *   - any play at all, including a land
+ *   - the start of a new turn, so a player always sees their own turn begin
+ */
+function autoPass(state: GameState): { state: GameState; passes: number } {
+  let next = state;
+  let passes = 0;
+  for (let guard = 0; guard < 64; guard++) {
+    if (next.finished || !next.automated || !next.autoPass) break;
+    if (next.pendingDiscard !== null) break;
+    if (pendingDeclaration(next) !== null) break;
+    const seat = next.priority;
+    if (seat === null) break;
+    if (legalActions(next, seat).plays.some((play) => !play.isManaAbility)) break;
+    next = pass(next, { by: seat }).state;
+    passes += 1;
+    // One action never carries play past the beginning of somebody's turn.
+    if (next.turn !== state.turn) break;
+  }
+  return { state: next, passes };
+}
+
 // ── Dispatch ─────────────────────────────────────────────────────────────────────────────────────
 
-export function reduceAutoAction(state: GameState, action: AutoAction, _ctx: ActionContext): Outcome {
+function dispatch(state: GameState, action: AutoAction): Outcome {
   switch (action.type) {
     case 'auto:start': return startAutomation(state, action);
     case 'auto:playLand': return playLand(state, action);
@@ -395,11 +450,26 @@ export function reduceAutoAction(state: GameState, action: AutoAction, _ctx: Act
     case 'auto:attack': return declareAttackers(state, action);
     case 'auto:block': return declareBlockers(state, action);
     case 'auto:discard': return discard(state, action);
+    case 'auto:stops': return setStops(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);
     }
   }
+}
+
+export function reduceAutoAction(state: GameState, action: AutoAction, _ctx: ActionContext): Outcome {
+  const outcome = dispatch(state, action);
+  const auto = autoPass(outcome.state);
+  if (auto.passes === 0) return outcome;
+  // The log says where play ended up, because several steps may have gone by without anybody
+  // being asked anything, and a log that said only "Nick passes" would be baffling.
+  const moved = auto.state.step !== outcome.state.step || auto.state.turn !== outcome.state.turn;
+  return {
+    state: auto.state,
+    message: moved ? `${outcome.message} — ${stepLabel(auto.state.step)}` : outcome.message,
+    data: { ...(outcome.data ?? {}), autoPassed: auto.passes, step: auto.state.step },
+  };
 }
 
 export { canPay, hasAnyLegalTargets, MAIN_STEPS, pendingDeclaration, stackTop, stateBasedActions, legalAttackers, legalBlockers, poolOf, handOf, spellTargets };

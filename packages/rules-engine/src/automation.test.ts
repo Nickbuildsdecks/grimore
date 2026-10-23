@@ -7,7 +7,7 @@
  * says which rule broke rather than which line did.
  */
 import { describe, it, expect } from 'vitest';
-import { legalActions, stackTop, viewFor } from './index.js';
+import { legalActions, pendingDeclaration, stackTop, viewFor } from './index.js';
 import {
   advanceTo, apply, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal, stackNames,
   tapAllLands,
@@ -618,6 +618,116 @@ describe('legalActions', () => {
 
 const nameFor = (s: Parameters<typeof legalActions>[0], id: string): string =>
   s.cardDefs[s.instances[id]!.defKey]!.name;
+
+describe('passing for a player with nothing to do', () => {
+  it('is on at a real table, and off for the lock-step tests in this file', () => {
+    expect(arena().autoPass).toBe(false);
+    expect(arena({ autoPass: true }).autoPass).toBe(true);
+  });
+
+  it('hands control over at the first moment there is something to do', () => {
+    // Nobody can act in the untap, upkeep or draw steps of turn one with an empty board, so the
+    // game opens where the game actually starts: the first main phase, with a land to play.
+    const s = arena({ autoPass: true, hands: { 0: ['Mountain'] }, battlefield: { 0: ['Mountain'] } });
+    expect(s.step).toBe('precombat-main');
+    expect(s.priority).toBe(0);
+    expect(legalActions(s, 0).plays.map((p) => p.name)).toContain('Mountain');
+  });
+
+  it('asks the player who can act, even when it is not their turn', () => {
+    // Seat 0 has nothing in its upkeep; seat 1 is holding an instant, so seat 1 is the one asked.
+    const s = arena({
+      autoPass: true,
+      hands: { 0: ['Mountain'], 1: ['Giant Growth'] },
+      battlefield: { 1: ['Forest', 'Grizzly Bears'] },
+    });
+    expect(s.activeSeat).toBe(0);
+    expect(s.priority).toBe(1);
+    expect(legalActions(s, 1).plays.map((p) => p.name)).toContain('Giant Growth');
+  });
+
+  it('does not count a mana ability as something to do', () => {
+    // Floating mana you have nothing to spend on is not a reason to hold priority — and counting
+    // it would mean a player with an untapped land never auto-passed at all. Seat 1 has only a
+    // Forest, so it is passed over and play reaches seat 0's main phase.
+    const s = arena({ autoPass: true, hands: { 0: ['Mountain'] }, battlefield: { 1: ['Forest'] } });
+    expect(s.step).toBe('precombat-main');
+    expect(s.priority).toBe(0);
+  });
+
+  it('never carries play past the start of somebody’s turn', () => {
+    // With nothing on either side there is nothing to do all game, so the only thing that stops
+    // the engine is the turn boundary. A player always sees their own turn begin.
+    const s = arena({ autoPass: true });
+    expect(s.turn).toBe(2);
+    expect(s.step).toBe('upkeep');
+  });
+
+  it('stops for a combat declaration, which is not a priority decision', () => {
+    const s = arena({ autoPass: true, battlefield: { 0: ['Hill Giant'] }, turn: 2, firstSeat: 0 });
+    expect(s.step).toBe('declare-attackers');
+    expect(pendingDeclaration(s)).toEqual({ kind: 'attackers', seats: [0] });
+    expect(s.priority).toBeNull();
+  });
+
+  it('stops for a discard to hand size', () => {
+    // Nine lands and nothing else: one is playable, and after that there is genuinely nothing to
+    // do for the rest of the turn — so the next thing the player is asked is the discard.
+    const grip = Array.from({ length: 9 }, () => 'Mountain');
+    let s = arena({ autoPass: true, hands: { 0: grip } });
+    const land = legalActions(s, 0).plays.find((p) => p.kind === 'land')!;
+    s = apply(s, { type: 'auto:playLand', by: 0, card: land.card });
+    expect(s.pendingDiscard).toEqual({ seat: 0, count: 1 });
+    expect(s.step).toBe('cleanup');
+  });
+
+  it('resolves a spell nobody can respond to without asking anybody', () => {
+    let s = arena({ autoPass: true, hands: { 0: ['Shock'] }, battlefield: { 0: ['Mountain'] } });
+    // Shock is an instant, so the very first priority of the game is one the player can use —
+    // the engine stops in the upkeep rather than walking past a step they could act in.
+    expect(s.step).toBe('upkeep');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'), targets: [{ kind: 'player', seat: 1 }] });
+    // Neither player has anything left, so the Shock resolved inside the action that cast it.
+    expect(s.stackOrder).toEqual([]);
+    expect(life(s, 1)).toBe(18);
+  });
+
+  it('still offers a response to a player who has one', () => {
+    let s = arena({
+      autoPass: true,
+      hands: { 0: ['Lightning Bolt'], 1: ['Giant Growth'] },
+      battlefield: { 0: ['Mountain'], 1: ['Forest', 'Grizzly Bears'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }],
+    });
+    // The Bolt is still on the stack, because seat 1 can save the bear and must be asked.
+    expect(stackNames(s)).toEqual(['Lightning Bolt']);
+    expect(s.priority).toBe(1);
+  });
+
+  it('can be turned off mid-game, and back on', () => {
+    let s = arena({ autoPass: true, hands: { 0: ['Mountain'] } });
+    s = apply(s, { type: 'auto:stops', by: 0, autoPass: false });
+    expect(s.autoPass).toBe(false);
+    const step = s.step;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    // With it off, the other seat is offered priority even with nothing to do.
+    expect(s.step).toBe(step);
+    expect(s.priority).toBe(1);
+    s = apply(s, { type: 'auto:stops', by: 1, autoPass: true });
+    expect(s.autoPass).toBe(true);
+  });
+
+  it('says in the log where play ended up, so a skipped step is not a mystery', () => {
+    const s = arena({ autoPass: true, hands: { 0: ['Mountain'] } });
+    const entry = s.log.at(-1)!;
+    expect(entry.message).toMatch(/—/);
+    expect(entry.data?.['autoPassed']).toBeGreaterThan(0);
+  });
+});
 
 describe('what the view carries', () => {
   it('has no automation block on a manual table, which is how a client picks its interface', () => {

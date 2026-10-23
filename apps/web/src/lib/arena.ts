@@ -229,10 +229,43 @@ export function attackSummary(view: GameView): { attacker: string; defender: num
   }))
 }
 
+/**
+ * Splits a battlefield into the rows a player actually reads.
+ *
+ * Arena-style tables separate the creatures from the mana for a reason: a board of eleven
+ * permanents where six are Forests is unreadable as one row, and the question being asked of it is
+ * almost always "what can fight". Lands go in their own compact row beneath, and everything else —
+ * enchantments, artifacts, tokens that are not creatures — goes with them.
+ */
+export function splitBattlefield(cards: readonly VisibleCard[]): {
+  creatures: VisibleCard[]
+  lands: VisibleCard[]
+} {
+  const creatures: VisibleCard[] = []
+  const lands: VisibleCard[] = []
+  for (const card of cards) {
+    // The view sends power only for a creature, which is the engine's own answer to the question.
+    if (card.power !== undefined) creatures.push(card)
+    else lands.push(card)
+  }
+  return { creatures, lands }
+}
+
 /** Short badges for a permanent: its current body, marked damage, and why it cannot fight. */
 export function cardBadges(view: GameView, card: VisibleCard): string[] {
   const out: string[] = []
   if (card.zone !== "battlefield") return out
+  // An Aura is drawn on its controller's side, which is often not the side its host is on, so
+  // without naming the host there is nothing on screen that says what a Pacifism is doing.
+  if (card.attachedTo !== null) {
+    const host = view.cards[card.attachedTo]
+    out.push(`on ${host?.card?.name ?? "a creature"}`)
+  }
+  const attached = Object.values(view.cards)
+    .filter((c) => c.attachedTo === card.id && c.zone === "battlefield")
+    .map((c) => c.card?.name)
+    .filter((name): name is string => name !== undefined)
+  for (const name of attached) out.push(name)
   if (card.power !== undefined && card.toughness !== undefined && card.card?.power !== undefined) {
     out.push(`${card.power}/${card.toughness}`)
   }

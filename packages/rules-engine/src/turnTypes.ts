@@ -115,6 +115,14 @@ export const EMPTY_COMBAT: CombatState = Object.freeze({
 export interface AutomationState {
   /** True when the engine runs the rules. False is the manual tabletop. */
   readonly automated: boolean;
+  /**
+   * Whether the engine passes priority for a player whose only legal move is to pass.
+   *
+   * On by default, because without it a real game asks each player twenty-five times a turn to
+   * confirm they still cannot do anything. A player who wants to be offered every priority —
+   * to bluff, or to watch each step go by — turns it off.
+   */
+  readonly autoPass: boolean;
   readonly step: Step;
   /** Seat holding priority, or null in a step where nobody gets it. */
   readonly priority: SeatIndex | null;
@@ -141,7 +149,13 @@ export interface AutomationState {
 }
 
 // ── Automated actions ────────────────────────────────────────────────────────────────────────────
-export interface AutoStartAction { readonly type: 'auto:start'; readonly by: SeatIndex; readonly firstSeat?: SeatIndex }
+export interface AutoStartAction {
+  readonly type: 'auto:start'; readonly by: SeatIndex; readonly firstSeat?: SeatIndex;
+  /** Defaults to true. See `AutomationState.autoPass`. */
+  readonly autoPass?: boolean;
+}
+/** Turns auto-passing on or off mid-game, which is a table setting rather than a game rule. */
+export interface AutoStopsAction { readonly type: 'auto:stops'; readonly by: SeatIndex; readonly autoPass: boolean }
 export interface AutoPlayLandAction { readonly type: 'auto:playLand'; readonly by: SeatIndex; readonly card: string }
 export interface AutoCastAction {
   readonly type: 'auto:cast'; readonly by: SeatIndex; readonly card: string;
@@ -164,11 +178,11 @@ export interface AutoDiscardAction { readonly type: 'auto:discard'; readonly by:
 
 export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
-  | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoDiscardAction;
+  | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoDiscardAction | AutoStopsAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
-  'auto:block', 'auto:discard',
+  'auto:block', 'auto:discard', 'auto:stops',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>
