@@ -18,7 +18,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { io, type Socket } from "socket.io-client"
-import type { GameView } from "@grimore/rules-engine"
+import { unpackView, type GameView, type PackedView } from "@grimore/rules-engine"
 import type { Pod, PodErrorEvent } from "@grimore/shared"
 
 /** Same-origin by default, which is how it runs behind one reverse proxy. */
@@ -172,17 +172,22 @@ export function useTable(playerName: string): UseTable {
     socket.on("disconnect", () => setState((s) => ({ ...s, connection: "disconnected" })))
     socket.io.on("reconnect_attempt", () => setState((s) => ({ ...s, connection: "connecting" })))
 
-    socket.on("pod:state", (payload: { pod: Pod; state: GameView | null; stateVersion: number }) => {
+    socket.on("pod:state", (payload: { pod: Pod; state: PackedView | null; stateVersion: number }) => {
       versionRef.current = payload.stateVersion
+      // The server sends the view in its wire form — each card definition said once, and the
+      // fields that are false on almost every card left out — which halves a payload with a
+      // library open. Unpacked here, once, so every component downstream sees the same `GameView`
+      // it always did and nothing else in the app knows the wire form exists.
+      const view = payload.state === null ? null : unpackView(payload.state)
       setState((s) => {
         // The server is authoritative about which seat this socket is, including after the table is
         // dealt and seat indices are compacted.
-        const mine = payload.state?.seat ?? s.seat
+        const mine = view?.seat ?? s.seat
         seatRef.current = mine
         return {
           ...s,
           pod: payload.pod,
-          view: payload.state,
+          view,
           stateVersion: payload.stateVersion,
           seat: mine,
           code: payload.pod.code,

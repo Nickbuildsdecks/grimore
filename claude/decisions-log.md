@@ -890,3 +890,32 @@ disagreement between the table and the engine and still shows, which is the one 
 travels as a count travels as fifty card definitions. That is inside the cap for a 60-card deck and
 outside it for a 100-card Commander one — which is this project's stated centre. Sending the same
 definition once per copy is the cost; fixing it is its own piece of work.
+
+## D31 — The view gets a wire form, and nothing else learns of it
+
+The measurement in D30 said a view with a library open reached 45.8KB against a 64KB socket cap,
+where ordinary play peaks at 18.5KB, and that a 100-card Commander library would not have fitted.
+This is that fix.
+
+**Decided: packing is a transport concern, not a change to the view contract.** `viewFor` still
+returns a view with every card definition in place, so the engine, its tests and every one of the
+thirty-odd places that read `card.card` are untouched. `apps/realtime` packs on the way out and
+`apps/web` unpacks once, in `lib/table.ts`, and nothing downstream knows the wire form exists. The
+alternative — making every consumer resolve a definition key — would have spread a transport detail
+through the UI for no gain.
+
+**Decided: the property to test is that packing is invisible.** `unpackView(packView(v))` equals
+`v`, asserted for every state of a whole game rather than on one hand-built view. The size claim is
+the *point* of doing it, but the correctness claim is that a client cannot tell.
+
+**Decided: two things get said once.** The definitions, keyed by their own content so two copies of
+one printing collapse and two different printings never do; and the fields that are false on almost
+every card — untapped, face up, unrevealed, not a token, not a commander, attached to nothing, no
+counters. The second half was the surprise: with a sixty-card library on screen the per-card
+scaffolding costs more than the definitions, and deduping definitions alone only bought 23%. Both
+together: **45.8KB to 25.3KB**, and a search is no longer the peak at all.
+
+**Decided: the dedup gets its own leak test, because sharing is exactly how it could leak.** Two
+ways, both asserted over a whole game across the wire: a card a seat may not identify must carry no
+definition key, and the shared table must contain nothing that no visible card asked for — a
+definition shipped because a *hidden* card wanted it would be readable by whoever got the payload.

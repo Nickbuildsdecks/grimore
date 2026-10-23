@@ -8,7 +8,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  bottomOwed, createGame, legalActions, pendingDeclaration, stackTop, stillDeciding, viewFor,
+  bottomOwed, createGame, legalActions, packView, pendingDeclaration, stackTop, stillDeciding,
+  unpackView, viewFor,
 } from './index.js';
 import {
   advanceTo, apply, applyAll, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
@@ -913,6 +914,32 @@ describe('redaction still holds with the engine running', () => {
     expect(view.cards[onStack]!.card!.name).toBe('Shock');
     const theirCard = ids(s, 1, 'hand')[0]!;
     expect(view.cards[theirCard]!.card).toBeUndefined();
+  });
+
+  it('says each card definition once on the wire, and puts them back on arrival', () => {
+    // The property worth asserting is that packing is invisible: a consumer that reads the
+    // unpacked view cannot tell. The size claim is the point of doing it, and it is checked on a
+    // board where it actually bites — a library open, which is fifty cards and fifteen printings.
+    let s = advanceTo(arena({
+      hands: { 1: ['Rampant Growth'] }, battlefield: { 1: ['Forest', 'Forest'] }, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
+    expect(s.seats[1]!.searching).toBe(true);
+
+    const view = viewFor(s, 1);
+    const packed = packView(view);
+    expect(unpackView(packed)).toEqual(view);
+    // Fewer definitions than cards, which is the entire mechanism: a library of twenty-two
+    // Forests says "Forest" once.
+    expect(Object.keys(packed.defs).length).toBeLessThan(Object.keys(view.cards).length);
+    const inline = JSON.stringify(view).length;
+    const wire = JSON.stringify(packed).length;
+    console.log(`      library open: ${inline}B inlined, ${wire}B on the wire`);
+    expect(wire * 2).toBeLessThan(inline);
+    // And the headroom this was for: a 100-card Commander library is roughly twice this one, and
+    // the cap is 64KB. Asserted on the measurement rather than on faith.
+    expect(wire * 2).toBeLessThan(64 * 1024);
   });
 
   it('opens a searcher’s own library to them, and to nobody else', () => {

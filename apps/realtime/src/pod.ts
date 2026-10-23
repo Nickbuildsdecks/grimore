@@ -32,8 +32,9 @@ import {
   applyAction as engineApply,
   botAction,
   seatsToAct,
+  packView,
   viewFor,
-  type GameView,
+  type PackedView,
   createGame,
   EngineError,
   FORMATS,
@@ -150,10 +151,14 @@ export function toSnapshot(record: PodRecord, version: number): PodSnapshot {
   };
 }
 
-/** A snapshot carrying one seat's redacted view instead of the whole game state. */
+/**
+ * A snapshot carrying one seat's redacted view instead of the whole game state.
+ *
+ * `PackedView` rather than `GameView`: the same thing in its wire form. See `toSeatSnapshot`.
+ */
 export interface PodViewSnapshot {
   pod: Pod;
-  state: GameView | null;
+  state: PackedView | null;
   stateVersion: number;
 }
 
@@ -164,11 +169,16 @@ export interface PodViewSnapshot {
  * `GameState`, which contains both hands and the order of both libraries — broadcasting it to the
  * room would hand every player their opponent's grip, and no amount of client-side discipline fixes
  * data the client already has. See the header of `packages/rules-engine/src/view.ts`.
+ *
+ * `packView` is the wire form of the same view: each card definition said once instead of once per
+ * copy, and the fields that are false on almost every card left out. It changes nothing about what
+ * a seat may see — the client unpacks it back to the identical `GameView` — and it is what keeps a
+ * library search inside `STATE_MAX_BYTES`: 45.8KB inlined, 25.3KB packed, against a 64KB cap.
  */
 export function toSeatSnapshot(snapshot: PodSnapshot, seat: number | null): PodViewSnapshot {
   return {
     pod: snapshot.pod,
-    state: snapshot.state === null ? null : viewFor(snapshot.state, seat),
+    state: snapshot.state === null ? null : packView(viewFor(snapshot.state, seat)),
     stateVersion: snapshot.stateVersion,
   };
 }

@@ -162,6 +162,132 @@ export interface GameView {
   readonly zones: Readonly<Record<string, readonly string[]>>;
 }
 
+// ── The wire form ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A card as it travels: its definition replaced by a key, and its boring fields left out.
+ *
+ * Almost every card in a view is untapped, face up, unrevealed, not a token, not a commander,
+ * attached to nothing and carrying no counters. Sending all seven anyway costs about a hundred
+ * bytes per card, which for a sixty-card library open on screen is more than the definitions.
+ */
+export interface PackedCard {
+  readonly id: string;
+  readonly owner: SeatIndex;
+  readonly zone: ZoneId;
+  /** Omitted when it is the owner's own zone, which is the usual case. */
+  readonly zoneSeat?: SeatIndex;
+  /** Key into `PackedView.defs`, present exactly when `VisibleCard.card` was. */
+  readonly def?: string;
+  /** Each present only when true, or non-empty, or non-null. */
+  readonly tapped?: true;
+  readonly faceDown?: true;
+  readonly revealed?: true;
+  readonly isToken?: true;
+  readonly isCommander?: true;
+  readonly counters?: Readonly<Record<string, number>>;
+  readonly attachedTo?: string;
+  readonly damage?: number;
+  readonly power?: number;
+  readonly toughness?: number;
+  readonly keywords?: readonly Keyword[];
+  readonly cantAttack?: true;
+  readonly cantBlock?: true;
+}
+
+/** A view as it travels: the same thing, with each card definition said once. */
+export interface PackedView extends Omit<GameView, 'cards'> {
+  readonly cards: Readonly<Record<string, PackedCard>>;
+  /** Every definition this view needs, once each. */
+  readonly defs: Readonly<Record<string, CardDef>>;
+}
+
+/**
+ * The same view with the card definitions said once instead of once per copy.
+ *
+ * A 60-card library is about fifteen distinct cards, so inlining a definition onto every instance
+ * sends the Mountain text twenty-two times. That is invisible in ordinary play, where only a hand
+ * and a battlefield travel, and it is the whole difference during a **library search**: measured,
+ * 45.8KB inlined against a 64KB socket cap, where ordinary play peaks at 18.5KB. A 100-card
+ * Commander library would not have fitted at all, and Commander is what this is for.
+ *
+ * Deliberately a transport concern and nothing else. `viewFor` still returns a view with every
+ * definition in place, so the engine, its tests and every consumer are untouched; the realtime
+ * layer packs on the way out and the client unpacks on the way in. `unpackView(packView(v))` is
+ * `v`, which is the property worth testing and the reason this is two small pure functions rather
+ * than a change to the view contract.
+ */
+export function packView(view: GameView): PackedView {
+  const defs: Record<string, CardDef> = {};
+  // Keyed by the definition's own content, so two instances of the same printing collapse and two
+  // different printings never do. Identity would not collapse anything: `redact` reads each one
+  // out of `cardDefs` separately.
+  const keyOf = new Map<string, string>();
+  const cards: Record<string, PackedCard> = {};
+  for (const [id, card] of Object.entries(view.cards)) {
+    const packed: Record<string, unknown> = { id: card.id, owner: card.owner, zone: card.zone };
+    if (card.zoneSeat !== card.owner) packed.zoneSeat = card.zoneSeat;
+    if (card.card !== undefined) {
+      const fingerprint = JSON.stringify(card.card);
+      let key = keyOf.get(fingerprint);
+      if (key === undefined) {
+        key = `d${keyOf.size}`;
+        keyOf.set(fingerprint, key);
+        defs[key] = card.card;
+      }
+      packed.def = key;
+    }
+    if (card.tapped) packed.tapped = true;
+    if (card.faceDown) packed.faceDown = true;
+    if (card.revealed) packed.revealed = true;
+    if (card.isToken) packed.isToken = true;
+    if (card.isCommander) packed.isCommander = true;
+    if (Object.keys(card.counters).length > 0) packed.counters = card.counters;
+    if (card.attachedTo !== null) packed.attachedTo = card.attachedTo;
+    // The computed characteristics, which only a battlefield creature has at all. `damage` and the
+    // two bodies travel as they are, zero included, because a zero is a fact about a creature.
+    if (card.damage !== undefined) packed.damage = card.damage;
+    if (card.power !== undefined) packed.power = card.power;
+    if (card.toughness !== undefined) packed.toughness = card.toughness;
+    if (card.keywords !== undefined) packed.keywords = card.keywords;
+    if (card.cantAttack === true) packed.cantAttack = true;
+    if (card.cantBlock === true) packed.cantBlock = true;
+    cards[id] = packed as unknown as PackedCard;
+  }
+  const { cards: _dropped, ...view_ } = view;
+  return { ...view_, cards, defs };
+}
+
+/** Puts it all back, so every consumer sees the `GameView` it always did. */
+export function unpackView(packed: PackedView): GameView {
+  const cards: Record<string, VisibleCard> = {};
+  for (const [id, card] of Object.entries(packed.cards)) {
+    const def = card.def === undefined ? undefined : packed.defs[card.def];
+    cards[id] = {
+      id: card.id,
+      owner: card.owner,
+      zoneSeat: card.zoneSeat ?? card.owner,
+      zone: card.zone,
+      tapped: card.tapped === true,
+      faceDown: card.faceDown === true,
+      revealed: card.revealed === true,
+      counters: card.counters ?? {},
+      attachedTo: card.attachedTo ?? null,
+      isToken: card.isToken === true,
+      isCommander: card.isCommander === true,
+      ...(def === undefined ? {} : { card: def }),
+      ...(card.damage === undefined ? {} : { damage: card.damage }),
+      ...(card.power === undefined ? {} : { power: card.power }),
+      ...(card.toughness === undefined ? {} : { toughness: card.toughness }),
+      ...(card.keywords === undefined ? {} : { keywords: card.keywords }),
+      ...(card.cantAttack === true ? { cantAttack: true } : {}),
+      ...(card.cantBlock === true ? { cantBlock: true } : {}),
+    };
+  }
+  const { defs: _defs, cards: _packedCards, ...view } = packed;
+  return { ...view, cards };
+}
+
 const listAt = (state: GameState, key: string): readonly string[] => state.zones[key] ?? [];
 
 /** Whether `viewer` is allowed to know what `inst` is. */

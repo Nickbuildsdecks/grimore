@@ -7,6 +7,7 @@ import { createRealtime, type Realtime } from './io.js';
 import type { AckResult } from './handlers.js';
 import { TokenBucket } from './ratelimit.js';
 import { generateCode, toEngineFormat, maxSeatsFor } from './pod.js';
+import { unpackView, type PackedView } from '@grimore/rules-engine';
 import { POD_CODE_REGEX } from '@grimore/shared';
 
 const REDIS_URL = process.env.REDIS_URL;
@@ -375,7 +376,20 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       } | null;
     } | null;
   }
-  const viewOf = (e: PodStateEvent): View => e.state as unknown as View;
+  /**
+   * The view as a client holds it.
+   *
+   * The server sends the wire form — each card definition said once, the boring fields left out —
+   * so this unpacks it exactly as `apps/web` does. Every redaction assertion below keeps its
+   * meaning: a card a seat may not identify has no definition on the wire, so it has none here.
+   */
+  const viewOf = (e: PodStateEvent): View => {
+    // A lobby payload carries no game yet, and callers below already handle that.
+    const wire = e.state as unknown as PackedView | null;
+    return (wire === null ? null : unpackView(wire)) as unknown as View;
+  };
+  /** The raw wire payload, for the claims that are about the wire rather than about the client. */
+  const wireOf = (e: PodStateEvent): PackedView => e.state as unknown as PackedView;
 
   describe('a whole game over the wire', () => {
     it('two clients play from shuffled decks to a winner, and never see each other\u2019s hand', async () => {
@@ -540,6 +554,10 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         if (nv === null) continue;
         for (const id of nv.zones['1:hand'] ?? []) {
           expect(nv.cards[id]!.card).toBeUndefined();
+          // And on the wire, not only after unpacking. The packed form shares one definition
+          // between every card that has it, so a leak here would be a hidden card carrying a key
+          // into that shared table — which is the only way the dedup could give something away.
+          expect(wireOf(e).cards[id]!.def).toBeUndefined();
           checked++;
         }
         // Nor was any library ever shipped to him.
@@ -547,6 +565,15 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         expect(nv.zones['1:library']).toBeUndefined();
       }
       expect(checked).toBeGreaterThan(20);
+      // Nothing in the shared definition table that no visible card needed. With dedup by content
+      // this is the second way a leak could happen: a definition shipped because a *hidden* card
+      // wanted it, readable by anybody who got the payload.
+      for (const e of nickSaw) {
+        const wire = wireOf(e);
+        if (wire === null) continue;
+        const wanted = new Set(Object.values(wire.cards).map((c) => c.def).filter((k) => k !== undefined));
+        expect(Object.keys(wire.defs).sort()).toEqual([...wanted].sort());
+      }
     }, 30_000);
 
     it('refuses to let one client act for the other seat', async () => {

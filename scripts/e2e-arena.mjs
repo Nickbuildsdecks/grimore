@@ -450,7 +450,10 @@ async function main() {
       els.map((e) => ({ hidden: e.getAttribute('data-hidden'), name: e.getAttribute('data-card-name') })));
     check(
       'with the engine running, the opponent’s hand is still unreadable',
-      friendHandAsNickSees.length >= 6 && friendHandAsNickSees.every((c) => c.hidden === 'true' && !c.name),
+      // Four, not seven: a London mulligan settles at seven minus the number taken, so a hand of
+      // five is a player who mulliganed twice rather than a bug. The floor is only here to stop
+      // the claim going vacuous against an empty hand — the claim itself is the `every`.
+      friendHandAsNickSees.length >= 4 && friendHandAsNickSees.every((c) => c.hidden === 'true' && !c.name),
       JSON.stringify(friendHandAsNickSees).slice(0, 160),
     );
     // Not merely hidden by a CSS rule: there is no card text inside those elements at all,

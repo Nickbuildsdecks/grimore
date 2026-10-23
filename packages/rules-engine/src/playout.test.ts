@@ -9,7 +9,8 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  applyAction, botAction, createGame, legalActions, playOut, seatToAct, viewFor,
+  applyAction, botAction, createGame, legalActions, packView, playOut, seatToAct, unpackView,
+  viewFor,
   type Action, type GameState, type SeatIndex,
 } from './index.js';
 import { PLAYERS, HOST } from './testkit.js';
@@ -239,11 +240,15 @@ describe('a whole automated game', () => {
     // A state that grows without bound plays fine in a test and breaks on a socket. The cap is
     // `STATE_MAX_BYTES` in the shared contracts (64KB); the view is what actually travels.
     //
+    // Measured on the **wire** form, which is what actually travels: `packView` says each card
+    // definition once instead of once per copy and leaves out the fields that are false on almost
+    // every card. See `view.ts`.
+    //
     // Tidal Mind against itself on purpose, because the peak is not a long game — it is a *search*.
     // Diabolic Tutor opens the whole library to its controller, and a view that normally carries a
-    // count suddenly carries fifty card definitions. Measured: 18.5KB in ordinary play, 45.8KB
-    // while a library is open. That is inside the cap for a 60-card deck and nowhere near
-    // comfortable for a 100-card Commander one, which is why the two are measured separately.
+    // count suddenly carries fifty cards. Measured: 25.3KB at worst packed, against 45.8KB inlined
+    // and a 64KB cap — which is what makes room for a 100-card Commander library. The search case
+    // is measured separately because it used to be the peak and no longer is.
     let worst = 0;
     let searching = 0;
     let s = table(4242, 0, ['tidal-mind', 'tidal-mind']);
@@ -258,7 +263,12 @@ describe('a whole automated game', () => {
       // very next action shuffles and closes it. Sampling every twenty-fifth action would miss
       // the only moment the payload is anywhere near the cap.
       for (const viewer of [0, 1] as SeatIndex[]) {
-        const size = JSON.stringify(viewFor(s, viewer)).length;
+        const view = viewFor(s, viewer);
+        const packed = packView(view);
+        // Packing has to be invisible: the client unpacks it and must hold the identical view.
+        // Asserted here rather than only in a unit test, across every state of a whole game.
+        expect(unpackView(packed)).toEqual(view);
+        const size = JSON.stringify(packed).length;
         worst = Math.max(worst, size);
         if (s.seats[viewer]!.searching) searching = Math.max(searching, size);
       }

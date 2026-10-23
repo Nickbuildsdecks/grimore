@@ -49,7 +49,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `autoActions.ts` | The reducer for `auto:*` — what a player may do and what happens |
 | `legalActions.ts` | What a seat can legally do right now, for the client |
 | `bot.ts` | A player that only ever does what the engine offers |
-| `view.ts` | Per-seat redaction, now carrying the automation block |
+| `view.ts` | Per-seat redaction, the automation block, and the wire form |
 
 In the web app: `lib/arena.ts` (the interaction reducer), `components/table/{PhaseBar, StackPanel,
 ArenaBar, PlaySheet}.tsx`, and `pages/PlayTable.tsx` branching on `view.automation`.
@@ -167,13 +167,15 @@ Measured, not assumed: the raw `GameState` reaches 57.7KB in a long game against
 redacted view peaks at 22.3KB — of which the whole automation block is 2.6KB. Redaction is still
 what keeps the game on the wire.
 
-**The one number with no headroom is a library search.** Ordinary play peaks at 18.5KB; a view with
-a library open reaches **45.8KB**, because a zone that normally travels as a count suddenly travels
-as fifty card definitions. That is inside the 64KB cap for a 60-card deck and would be *outside* it
-for a 100-card Commander one — which is this project's stated centre. The budget test measures the
-two separately and asserts a search actually happened, so the number cannot quietly go vacuous. The
-fix is to stop sending the same definition once per copy; that is its own piece of work, written
-down here rather than discovered later.
+**The number that had no headroom was a library search, and it has headroom now.** Ordinary play
+peaks at 18.5KB; a view with a library open reached **45.8KB** inlined, because a zone that normally
+travels as a count suddenly travels as fifty cards. Inside the 64KB cap for a 60-card deck and
+*outside* it for a 100-card Commander one — which is this project's stated centre. The view now
+travels in a wire form (`packView`/`unpackView`) that says each card definition once instead of once
+per copy and leaves out the fields that are false on almost every card: **25.3KB at worst, 23.3KB
+during a search**, so the search is no longer even the peak. Packing is a transport concern and
+nothing else — `viewFor` is unchanged, the client unpacks once in `lib/table.ts`, and
+`unpackView(packView(v))` is asserted equal to `v` for every state of a whole game.
 
 ---
 
