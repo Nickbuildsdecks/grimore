@@ -21,14 +21,6 @@ export default defineConfig({
         target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:4000",
         changeOrigin: true,
       },
-      // Routes not yet ported out of server.js (Moxfield import, password reset, Google sign-in) are
-      // called through this prefix — see legacyUrl() in src/lib/apiClient.ts. The prefix is stripped so
-      // the legacy server still sees its own /api/... paths.
-      "/legacy-api": {
-        target: process.env.VITE_LEGACY_PROXY_TARGET ?? "http://localhost:3000",
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/legacy-api/, ""),
-      },
     },
   },
 })

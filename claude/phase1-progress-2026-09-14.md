@@ -1278,3 +1278,46 @@ lists), Gemini's `/api/sandbox/ai-advisor`, the four sandbox room routes (D11), 
 (D13), `/api/jobs/:jobId` and the MTGJSON sync (D25), and the static page handlers. Then **Wave 7**:
 the web cutover — 5 `legacyUrl()` callers, `CardSearch.tsx`'s duplicated interfaces, and the
 ~40 places in the legacy `public/*.js` client that read `data.error` as a string.
+
+## Checkpoint — Wave 7 begins: the second API base resolved nowhere (D26)
+
+`apps/web` had two API bases. The second one, `legacyUrl()`, produced `/legacy-api/<path>` whenever
+`VITE_LEGACY_API_URL` was unset — **and it is set nowhere in this repository**: not in
+`deploy-gcp.ps1`, not in CI, not in any env template. `/legacy-api` is mapped in exactly one place,
+the Vite **dev** proxy.
+
+So in production those calls POSTed to a path no server answers. `server.js` serves the SPA from
+`/react` and its only catch-all is `app.get('*')`, so a POST to
+`/legacy-api/api/auth/forgot-password` reaches Express's default handler and gets
+`Cannot POST ...` as HTML. **Password recovery and password reset have been broken in the deployed
+React SPA since `Login.tsx` was written**, and worked perfectly on every development machine. That
+asymmetry is the whole reason it lasted.
+
+Both recovery routes are ported, and both servers answer them at the same same-origin `/api/...`
+path, so the three call sites now use `apiUrl()` — correct before the cutover and after it. The
+helper, `LEGACY_BASE`, `VITE_LEGACY_API_URL` and the `/legacy-api` dev-proxy rule are removed, so
+nothing can drift back onto a dev-only prefix. A parameterised test pins all three.
+
+`apps/web` 29 -> 31 tests; workspace 553 -> 555. Recorded as **D26**.
+
+### The dependency this creates
+
+`/api/decks/register` is the one of the three `apps/api` does not serve (api.moxfield.com is denied
+by the proxy). Same-origin reaches `server.js` today, which is right. It must be ported before the
+reverse proxy sends `/api` to `apps/api` — even if only as a 503 `MOXFIELD_UNAVAILABLE`, the way
+`/api/decks/reprice-init` already is — or it becomes a bare 404. Marked `TODO(moxfield)` at the call
+site, where whoever moves the proxy will be looking.
+
+### Still open in Wave 7
+
+- `CardSearch.tsx`'s duplicated `RecommendationResponse` / `RecommendationCard` /
+  `RecommendationProfile` interfaces, which now shadow the contracts the recommendations slice added.
+- The ~40 places in the legacy `public/*.js` client that read `data.error` as a string. Correct
+  against `server.js`; "[object Object]" the moment `/api` points at `apps/api`. One systemic change.
+
+### For Nick
+
+**This one is a live bug fix, not a migration step.** If anyone has tried "forgot my password" in the
+React app at `/react` and had it fail, this is why. The vanilla page at `/` was never affected — it
+calls `/api/auth/forgot-password` directly. Recovery still needs `SMTP_URL` on the VM to actually
+send anything; without it both apps answer 503 by design, which is a different failure from this one.

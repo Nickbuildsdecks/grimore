@@ -633,3 +633,42 @@ carried across:
 sandbox page, and the catch-all for the legacy pages in `public/`. `apps/web` serves the SPA and the
 legacy pages stay with `server.js` until the Wave 7 cutover moves them. There is nothing for
 `apps/api` to answer here, and adding a static-file handler to a JSON API would be the wrong shape.
+
+## D26 — The second API base resolved nowhere in production, and is removed rather than fixed
+
+**The finding.** `apps/web`'s `legacyUrl()` existed so call sites for routes not yet ported out of
+`server.js` would be visible rather than silently 404ing. It read
+`import.meta.env.VITE_LEGACY_API_URL`, and when that is unset it returned `/legacy-api/<path>`.
+
+`VITE_LEGACY_API_URL` is set **nowhere**: not in `deploy-gcp.ps1`, not in CI, not in any env file or
+template in the repository. And `/legacy-api` is mapped in exactly one place — the Vite **dev**
+proxy. Nothing in production maps it: the SPA is served from `/react` by `server.js`, whose only
+catch-all is `app.get('*')`, so a POST to `/legacy-api/api/auth/forgot-password` falls through to
+Express's default handler and answers `Cannot POST ...` as HTML.
+
+So **password recovery and password reset have been broken in the deployed React SPA** since that
+page was written, and worked perfectly in development. That asymmetry is why it survived: the dev
+proxy papered over it on every machine anyone tested on. (The third call site, Moxfield import, has
+no caller yet.)
+
+**Decided: remove the helper, not repair it.** Repairing it would mean adding a `/legacy-api` rule to
+the production reverse proxy — a VM change, which is out of bounds, and one that adds a second
+public path to the legacy server for the sake of three calls. Both recovery routes are ported now,
+and both servers answer them at the same same-origin `/api/...` path, so `apiUrl()` is correct before
+the cutover and after it. The helper, the `LEGACY_BASE` constant, `VITE_LEGACY_API_URL` and the
+`/legacy-api` dev-proxy rule are all gone, so nothing can drift back onto a prefix that only works in
+development. A parameterised test asserts all three call sites resolve to a same-origin `/api` path
+and contain no `/legacy-api`.
+
+**One dependency this creates, stated rather than hidden.** `/api/decks/register` is the one of the
+three that `apps/api` does not serve — api.moxfield.com is denied by the egress proxy, so it has no
+port. Same-origin means it reaches `server.js` today, which is correct. It must be ported before the
+reverse proxy sends `/api` to `apps/api`, even if only as a 503 `MOXFIELD_UNAVAILABLE` the way
+`/api/decks/reprice-init` already is, or it becomes a bare 404. Marked `TODO(moxfield)` at the call
+site, which is where whoever moves the proxy will be looking.
+
+**The general lesson, which is the third time this shape has appeared.** A mechanism whose only
+working configuration is the development one is not a seam, it is a hiding place — alongside
+`loadActiveMatch()` (never called), `asyncJobsMap` (never written), and the Scryfall Tagger fetch
+(result discarded). The check that finds all four is the same: ask what provides the thing this reads,
+and in which environment.
