@@ -81,6 +81,18 @@ export interface CardInstance {
   readonly attachedTo: string | null;
   readonly isToken: boolean;
   readonly isCommander: boolean;
+  /**
+   * Damage marked on this permanent, which is wiped in the cleanup step. Separate from toughness
+   * because toughness is computed and damage is not: a creature with 3 damage that gets +3/+3 stops
+   * being dead, and that only works if the damage is remembered rather than subtracted at the time.
+   */
+  readonly damage: number;
+  /**
+   * The turn this permanent came under its controller's control. A creature is summoning sick while
+   * `enteredTurn >= state.turn`: anything that entered on an earlier turn has, by definition, been
+   * there since the start of the current turn.
+   */
+  readonly enteredTurn: number;
 }
 
 /** Key into `GameState.zones`. The stack is shared, so it is not seat-scoped. */

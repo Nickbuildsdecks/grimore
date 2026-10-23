@@ -1,3 +1,5 @@
+import { EMPTY_COMBAT } from './turnTypes.js';
+import { EMPTY_POOL } from './mana.js';
 import {
   COMMANDER_DAMAGE_THRESHOLD,
   FORMATS,
@@ -5,6 +7,9 @@ import {
   isFormatId,
 } from './formats.js';
 import { dealOpeningHands, reduceCardAction } from './cardActions.js';
+import { reduceAutoAction } from './autoActions.js';
+import { stateBasedActions } from './automation.js';
+import { isAutoAction } from './turnTypes.js';
 import {
   assertCounterKey,
   assertDelta,
@@ -29,6 +34,7 @@ import {
 } from './internal.js';
 import {
   EngineError,
+  isCardAction,
   MAX_LOG_ENTRIES,
   type Action,
   type ActionContext,
@@ -131,6 +137,20 @@ export function createGame(options: CreateGameOptions): GameState {
     instances: {},
     zones: {},
     instanceSeq: 0,
+    // Automation, empty until a table is switched into automated mode.
+    automated: false,
+    step: 'precombat-main',
+    priority: null,
+    passed: [],
+    stackObjects: {},
+    stackOrder: [],
+    pools: {},
+    combat: EMPTY_COMBAT,
+    effects: [],
+    landsPlayed: {},
+    autoSeq: 0,
+    drewFromEmpty: [],
+    pendingDiscard: null,
   };
 }
 
@@ -161,7 +181,10 @@ interface Elimination {
 function resolveStateBasedActions(state: GameState): { state: GameState; eliminations: Elimination[] } {
   const def = FORMATS[state.format];
   const eliminations: Elimination[] = [];
-  let next = state;
+  // On an automated table the rules that check themselves — lethal damage, auras with nothing to
+  // enchant, drawing from an empty library — run first, because they can produce the very
+  // eliminations this function is about to look for.
+  let next = state.automated ? stateBasedActions(state) : state;
 
   for (const seat of state.seats) {
     if (seat.eliminated) continue;
@@ -429,14 +452,33 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         instances: {},
         zones: {},
         instanceSeq: 0,
+        // Back to the manual tabletop: an automated table reset mid-game would otherwise be left
+        // with no active step and no way to hand priority to anyone, and `auto:start` refuses to
+        // run twice, so nobody could restart it.
+        automated: false,
+        step: 'precombat-main',
+        priority: null,
+        passed: [],
+        stackObjects: {},
+        stackOrder: [],
+        pools: {},
+        combat: EMPTY_COMBAT,
+        effects: [],
+        landsPlayed: {},
+        autoSeq: 0,
+        drewFromEmpty: [],
+        pendingDiscard: null,
       };
       return { state: fresh, message: 'game reset', data: { rngSeed: fresh.rngSeed } };
     }
 
-    // Card actions have their own reducer, which owns the exhaustiveness check for the rest of the
-    // union and throws INVALID_ACTION for a type that is in neither half.
-    default:
-      return reduceCardAction(state, action, ctx);
+    // Card actions and automated actions each have their own reducer, and each keeps a real
+    // exhaustiveness check over its own half because the narrowing happens here.
+    default: {
+      if (isAutoAction(action)) return reduceAutoAction(state, action, ctx);
+      if (isCardAction(action)) return reduceCardAction(state, action, ctx);
+      throw new EngineError('INVALID_ACTION', `unknown action type: ${String((action as { type?: unknown }).type)}`);
+    }
   }
 }
 

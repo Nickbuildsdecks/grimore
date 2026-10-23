@@ -1,5 +1,6 @@
 import type { CardDef, CardInstance, ZoneId } from './cards.js';
 import type { FormatId } from './formats.js';
+import type { AutoAction, AutomationState } from './turnTypes.js';
 
 /** Zero-based seat index at the table. */
 export type SeatIndex = number;
@@ -44,7 +45,16 @@ export interface LogEntry {
   readonly data?: Readonly<Record<string, unknown>>;
 }
 
-export interface GameState {
+/**
+ * The whole table.
+ *
+ * Extends `AutomationState` rather than nesting it: the automated engine reads `state.step` and
+ * `state.effects` on nearly every call, and a table in manual mode simply leaves those at their
+ * empty values. One state means the manual moves stay available as the escape hatch for a card
+ * nobody has scripted, which is the point of building the automation on top of the tabletop rather
+ * than beside it.
+ */
+export interface GameState extends AutomationState {
   readonly id: string;
   readonly format: FormatId;
   readonly seats: readonly Seat[];
@@ -255,7 +265,8 @@ export type Action =
   | CardControlAction
   | TurnUntapAllAction
   | TokenCreateAction
-  | MulliganAction;
+  | MulliganAction
+  | AutoAction;
 
 export type ActionType = Action['type'];
 

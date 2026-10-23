@@ -40,8 +40,8 @@ import {
 import { STARTER_DECKS } from './starterDecks.js';
 import {
   EngineError,
-  isCardAction,
   type Action,
+  type CardAction,
   type ActionContext,
   type GameState,
   type Outcome,
@@ -55,13 +55,13 @@ export const OPENING_HAND_SIZE = 7;
 // Zone and instance helpers (all return new objects)
 // ---------------------------------------------------------------------------
 
-const listAt = (state: GameState, key: string): readonly string[] => state.zones[key] ?? [];
+export const listAt = (state: GameState, key: string): readonly string[] => state.zones[key] ?? [];
 
-function withZones(state: GameState, patch: Record<string, readonly string[]>): GameState {
+export function withZones(state: GameState, patch: Record<string, readonly string[]>): GameState {
   return { ...state, zones: { ...state.zones, ...patch } };
 }
 
-function requireInstance(state: GameState, id: unknown): CardInstance {
+export function requireInstance(state: GameState, id: unknown): CardInstance {
   if (typeof id !== 'string' || id.length === 0) {
     throw new EngineError('INVALID_CARD', 'card must be an instance id');
   }
@@ -70,7 +70,7 @@ function requireInstance(state: GameState, id: unknown): CardInstance {
   return inst;
 }
 
-function withInstance(state: GameState, id: string, patch: Partial<CardInstance>): GameState {
+export function withInstance(state: GameState, id: string, patch: Partial<CardInstance>): GameState {
   const inst = requireInstance(state, id);
   return { ...state, instances: { ...state.instances, [id]: { ...inst, ...patch } } };
 }
@@ -94,7 +94,7 @@ function assertMayTouch(state: GameState, action: Action, inst: CardInstance, ct
  * Leaving the battlefield with an aura still attached is the kind of stale pointer that shows up
  * three turns later as a card that cannot be picked up.
  */
-function relocate(
+export function relocate(
   state: GameState,
   inst: CardInstance,
   toZone: ZoneId,
@@ -122,9 +122,13 @@ function relocate(
     return detachAllFrom(next, inst.id);
   }
 
+  const arriving = toZone === 'battlefield' && (inst.zone !== 'battlefield' || inst.zoneSeat !== toSeat);
   next = withInstance(next, inst.id, {
     zone: toZone,
     zoneSeat: toSeat,
+    // Entering the battlefield, or changing control, restarts summoning sickness and wipes damage.
+    ...(arriving ? { enteredTurn: state.turn, damage: 0 } : {}),
+    ...(toZone === 'battlefield' ? {} : { damage: 0 }),
     // Only the battlefield has an orientation, and only a permanent can carry counters that
     // belong to a physical object. Everything resets on the way out.
     tapped: toZone === 'battlefield' ? inst.tapped : false,
@@ -153,7 +157,7 @@ function defaultSeatFor(inst: CardInstance, toZone: ZoneId, by: SeatIndex): Seat
   return inst.owner;
 }
 
-function drawFromLibrary(state: GameState, seat: SeatIndex, count: number): { state: GameState; drawn: number } {
+export function drawFromLibrary(state: GameState, seat: SeatIndex, count: number): { state: GameState; drawn: number } {
   let next = state;
   let drawn = 0;
   for (let i = 0; i < count; i++) {
@@ -183,7 +187,7 @@ function assertCardDef(card: unknown): asserts card is CardDef {
   }
 }
 
-function normaliseDef(card: CardDef): CardDef {
+export function normaliseDef(card: CardDef): CardDef {
   return {
     name: card.name.trim(),
     typeLine: card.typeLine ?? '',
@@ -245,12 +249,12 @@ export function dealOpeningHands(state: GameState): { state: GameState; dealt: n
 // Reducer
 // ---------------------------------------------------------------------------
 
-export function reduceCardAction(state: GameState, action: Action, ctx: ActionContext): Outcome {
-  // Narrowed first so the switch below has a real exhaustiveness check over the card actions, and
-  // an action in neither half of the union reports as unknown rather than falling through.
-  if (!isCardAction(action)) {
-    throw new EngineError('INVALID_ACTION', `unknown action type: ${String(action.type)}`);
-  }
+/**
+ * Takes a `CardAction` rather than the whole union, so the switch below keeps a real exhaustiveness
+ * check: adding a card action without handling it is a type error. The dispatch in `engine.ts`
+ * does the narrowing, since it is the only caller and it has to choose between the reducers anyway.
+ */
+export function reduceCardAction(state: GameState, action: CardAction, ctx: ActionContext): Outcome {
   switch (action.type) {
     case 'deck:load': {
       if (state.started) throw new EngineError('ALREADY_STARTED', 'decks are loaded before the game starts');
@@ -286,6 +290,8 @@ export function reduceCardAction(state: GameState, action: Action, ctx: ActionCo
           attachedTo: null,
           isToken: false,
           isCommander,
+          damage: 0,
+          enteredTurn: 0,
         };
         (isCommander ? commandIds : libraryIds).push(id);
       };
@@ -527,6 +533,8 @@ export function reduceCardAction(state: GameState, action: Action, ctx: ActionCo
           attachedTo: null,
           isToken: true,
           isCommander: false,
+          damage: 0,
+          enteredTurn: state.turn,
         };
         created.push(id);
       }
