@@ -37,12 +37,22 @@ export type ArenaMode =
   /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
   | { kind: "choosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string; chosen: Target[] }
   | { kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string }
-  | { kind: "attackers"; chosen: string[]; defender: SeatIndex }
+  /**
+   * Declaring attackers. `chosen` carries a defender per attacker, not one for the declaration,
+   * because in a pod each creature may attack a different player — and `defender` here is only
+   * which player the *next* creature tapped will be sent at.
+   */
+  | { kind: "attackers"; chosen: Attack[]; defender: SeatIndex }
   | { kind: "blockers"; chosen: Block[]; holding: string | null }
 
 export interface Block {
   blocker: string
   attacker: string
+}
+
+export interface Attack {
+  attacker: string
+  defender: SeatIndex
 }
 
 /** The engine's mid-resolution question, exactly as `legalActions` reports it. */
@@ -62,6 +72,8 @@ export type ArenaEvent =
   | { kind: "confirm" }
   | { kind: "declareAttackers"; defender: SeatIndex }
   | { kind: "toggleAttacker"; card: string }
+  /** Points the creatures tapped from now on at a different player. */
+  | { kind: "aimAttacks"; seat: SeatIndex }
   | { kind: "declareBlockers" }
   | { kind: "holdBlocker"; card: string }
   | { kind: "assignBlock"; attacker: string }
@@ -222,10 +234,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (mode.kind === "attackers") {
         return {
           mode: IDLE,
-          action: {
-            type: "auto:attack",
-            attackers: mode.chosen.map((attacker) => ({ attacker, defender: mode.defender })),
-          },
+          action: { type: "auto:attack", attackers: mode.chosen.map((a) => ({ ...a })) },
         }
       }
       if (mode.kind === "blockers") {
@@ -255,10 +264,21 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
 
     case "toggleAttacker": {
       if (mode.kind !== "attackers") return { mode, action: null }
-      const chosen = mode.chosen.includes(event.card)
-        ? mode.chosen.filter((id) => id !== event.card)
-        : [...mode.chosen, event.card]
+      const already = mode.chosen.find((a) => a.attacker === event.card)
+      // Tapping a creature that is already attacking somebody *else* re-points it, rather than
+      // dropping it: having changed who you are aiming at, a second tap plainly means "this one
+      // too", and making the player untap and retap to move one attacker is a trap.
+      const chosen = already === undefined
+        ? [...mode.chosen, { attacker: event.card, defender: mode.defender }]
+        : already.defender === mode.defender
+          ? mode.chosen.filter((a) => a.attacker !== event.card)
+          : mode.chosen.map((a) => (a.attacker === event.card ? { ...a, defender: mode.defender } : a))
       return { mode: { ...mode, chosen }, action: null }
+    }
+
+    case "aimAttacks": {
+      if (mode.kind !== "attackers") return { mode, action: null }
+      return { mode: { ...mode, defender: event.seat }, action: null }
     }
 
     case "declareBlockers":
@@ -399,6 +419,19 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     out.push(`${card.power}/${card.toughness}`)
   }
   if ((card.damage ?? 0) > 0) out.push(`${card.damage} dmg`)
+  /*
+    Who this creature is attacking, and who is in its way.
+
+    With one opponent "attacking" says everything there is to say; with three it says almost
+    nothing, and the board had no other place that named the defender at all — the engine has
+    accepted a defender per attack since combat was written, and the table was not showing it.
+  */
+  for (const attack of view.automation?.combat.attacks ?? []) {
+    if (attack.attacker !== card.id) continue;
+    const at = view.seats.find((s) => s.index === attack.defender)
+    out.push(`attacking ${at?.name ?? `seat ${attack.defender}`}`)
+    if (attack.blockers.length > 0) out.push(`blocked by ${attack.blockers.length}`)
+  }
   if (card.cantAttack === true && card.cantBlock === true) out.push("can't fight")
   else if (card.cantAttack === true) out.push("can't attack")
   else if (card.cantBlock === true) out.push("can't block")

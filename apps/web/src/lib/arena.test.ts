@@ -414,15 +414,46 @@ describe("answering a question a card asked while resolving", () => {
 })
 
 describe("declaring attackers", () => {
-  it("toggles creatures in and out, then sends them all at one defender", () => {
+  it("toggles creatures in and out, then sends them at the player they were aimed at", () => {
     let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
     mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
     mode = arenaReducer(mode, { kind: "toggleAttacker", card: "b" }).mode
     mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
-    expect(mode).toEqual({ kind: "attackers", chosen: ["b"], defender: 1 })
+    expect(mode).toEqual({ kind: "attackers", chosen: [{ attacker: "b", defender: 1 }], defender: 1 })
     expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
       type: "auto:attack", attackers: [{ attacker: "b", defender: 1 }],
     })
+  })
+
+  it("sends each creature at the player it was tapped for, which is what a pod needs", () => {
+    // The whole point of a pod: one creature left, one right. Before this the declaration carried
+    // a single defender and every attack went at the lowest-numbered opponent, whatever the
+    // player tapped.
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    mode = arenaReducer(mode, { kind: "aimAttacks", seat: 3 }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "b" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack",
+      attackers: [{ attacker: "a", defender: 1 }, { attacker: "b", defender: 3 }],
+    })
+  })
+
+  it("re-points an attacker rather than dropping it when it is tapped again at a new player", () => {
+    // A second tap means "remove" only if nothing changed in between. Having re-aimed, it plainly
+    // means "this one too" — and making the player untap and retap to move one attacker is a trap.
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    mode = arenaReducer(mode, { kind: "aimAttacks", seat: 2 }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    expect(mode).toEqual({ kind: "attackers", chosen: [{ attacker: "a", defender: 2 }], defender: 2 })
+    // And tapping it once more, with nothing re-aimed, takes it out of the attack.
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({ type: "auto:attack", attackers: [] })
+  })
+
+  it("ignores an aim outside a declaration", () => {
+    expect(arenaReducer(IDLE, { kind: "aimAttacks", seat: 2 })).toEqual({ mode: IDLE, action: null })
   })
 
   it("sends an empty declaration, which is how you attack with nothing", () => {

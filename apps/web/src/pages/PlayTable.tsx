@@ -552,16 +552,27 @@ function SeatStrip({
       <span className="text-[var(--g-text-muted)]">gy {seat.graveyardCount}</span>
       {seat.poison > 0 ? <span className="text-[var(--g-mana-g)]">poison {seat.poison}</span> : null}
 
+      {/*
+        Commander damage, counted the same way life is: by hand on a tabletop, by the engine on an
+        automated table. The engine records the damage its own combat dealt, so a button here would
+        add a second count on top of it — the same trap the life buttons were, one rule along.
+      */}
       {commanderFormat && !isMe ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-1.5 text-[10px]"
-          data-testid={`cmd-dmg-${seat.index}`}
-          onClick={() => onAct({ type: "commanderDamage:adjust", seat: seat.index, fromSeat: mySeat, delta: 1 })}
-        >
-          <Swords className="size-3" /> cmd {seat.commanderDamage[String(mySeat)] ?? 0}
-        </Button>
+        manualLife !== false ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-[10px]"
+            data-testid={`cmd-dmg-${seat.index}`}
+            onClick={() => onAct({ type: "commanderDamage:adjust", seat: seat.index, fromSeat: mySeat, delta: 1 })}
+          >
+            <Swords className="size-3" /> cmd {seat.commanderDamage[String(mySeat)] ?? 0}
+          </Button>
+        ) : (
+          <span data-testid={`cmd-dmg-${seat.index}`} className="flex items-center gap-1 text-[10px] text-[var(--g-text-muted)]">
+            <Swords className="size-3" /> cmd {seat.commanderDamage[String(mySeat)] ?? 0}
+          </span>
+        )
       ) : null}
     </div>
   )
@@ -805,7 +816,7 @@ function Board({ table }: { table: UseTable }) {
     arenaMode.kind === "targeting" || arenaMode.kind === "choosing"
       ? arenaMode.chosen.filter((t) => t.kind === "card").map((t) => (t as { id: string }).id)
       : arenaMode.kind === "attackers"
-        ? arenaMode.chosen
+        ? arenaMode.chosen.map((a) => a.attacker)
         : arenaMode.kind === "blockers"
           ? [...arenaMode.chosen.map((b) => b.blocker), ...(arenaMode.holding === null ? [] : [arenaMode.holding])]
           : arenaMode.kind === "bottoming" || arenaMode.kind === "deciding"
@@ -859,7 +870,7 @@ function Board({ table }: { table: UseTable }) {
       return
     }
     if (mode.kind === "attackers") {
-      if (myAttackers.has(card.id) || mode.chosen.includes(card.id)) {
+      if (myAttackers.has(card.id) || mode.chosen.some((a) => a.attacker === card.id)) {
         dispatchArena({ kind: "toggleAttacker", card: card.id })
       }
       return
@@ -1065,8 +1076,21 @@ function Board({ table }: { table: UseTable }) {
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
         <ZoneRow label="Your graveyard" testId={`zone-graveyard-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "graveyard"))} onSelect={onSelect} {...aiming} />
         <ZoneRow label="Your exile" testId={`zone-exile-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "exile"))} onSelect={onSelect} {...aiming} />
+        {/*
+          The badge matters more on the command zone than anywhere: a commander is castable on most
+          turns of a Commander game, and with no badge the one card you always want to cast was the
+          only card on the table that never said it could be. The hand row says the same thing.
+        */}
         {commanderFormat ? (
-          <ZoneRow label="Command zone" testId={`zone-command-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "command"))} onSelect={onSelect} {...aiming} />
+          <ZoneRow
+            label="Command zone"
+            testId={`zone-command-${seat}`}
+            size="pile"
+            cards={cardsIn(view, zoneAt(view, seat, "command"))}
+            onSelect={onSelect}
+            {...aiming}
+            badgesOf={(card) => (automated && playsForCard(view, card.id).length > 0 ? ["playable"] : [])}
+          />
         ) : null}
       </div>
       {/* Searching shows your own library, and only while you are looking. */}

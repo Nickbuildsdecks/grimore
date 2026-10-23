@@ -176,6 +176,7 @@ run end to end.
 | Handshake fails with **403** | An origin is being refused. Either `SOCKET_ALLOWED_ORIGINS` does not list the address you are browsing from, or clear it to allow any. |
 | `/api/auth/status` fails in the console | Expected. The table does not use `apps/api`; this is the rest of the SPA asking whether you are signed in. |
 | A reload loses the game | It should not — your seat is held for two minutes and reclaimed automatically. Past that the seat is gone. |
+| A change to the rules engine does not show up | Restart `scripts/play.mjs`. The web app hot-reloads; the table server does not — it holds the build it loaded at startup, so an engine change needs `pnpm -r --filter './packages/*' run build` and a restart. This looks exactly like a bug in the new code, and it caught me twice. |
 
 ## Proving it works
 
@@ -184,7 +185,8 @@ Three browser suites, one per way of playing. All need the stack running and Pla
 
 ```bash
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 47 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 32 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 35 checks
+node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 33 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 13 checks
 ```
 
@@ -195,7 +197,13 @@ running, taking whatever the UI offers rather than a fixed sequence, so it plays
 shuffle deals; it checks that the engine never refuses something the table offered, and has modes
 for the cases the shuffle makes rare:
 
+The pod suite is the four-player one: four seats on one code, four opening hands at once, a
+commander cast from the command zone and back in it after it died, attacks sent at more than one
+opponent, a player conceding while the other three carry on, and one survivor. `DECKS=` picks who
+plays what, in seat order.
+
 ```bash
+DECKS=rot-harvest,tidal-mind,ember-rush,verdant-guard node scripts/e2e-pod.mjs
 DECK_B=tidal-mind node scripts/e2e-arena.mjs     # counterspells, so the stack gets targeted
 DECK_A=rot-harvest DECK_B=rot-harvest node scripts/e2e-arena.mjs   # graveyards and sacrifice outlets
 FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatever they drew
@@ -204,7 +212,8 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 
 The layers under them have their own suites: `packages/rules-engine` (365 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels) and `apps/realtime`
+pods as well as duels), `apps/web` (98 tests, the interaction reducer behind every prompt) and
+`apps/realtime`
 (22 tests against live Redis, including two socket clients playing to a finish and one person
 playing the server).
 
@@ -231,11 +240,11 @@ playing the server).
   trade is good, casts the biggest thing it can afford and mulligans a hand with no land in it. It
   plays a real game; it does not plan one.
 - **No card images**, for the reason above.
-- **A four-seat pod has not been driven through four real browsers.** The engine plays them — ten
-  pods played to one survivor per test run, commanders cast and taxed, commander damage reaching
-  21, attacks in all twelve directions — and the server seats four. What has not been *looked at*
-  is the four-player interface: three opponents on one screen, and a phone showing all of them.
-  Play one and expect the rules to hold and the layout to need work.
+- **A pod plays, and the pod *interface* is plain.** Four browsers play one to a survivor every
+  test run — commanders cast from the command zone and taxed, attacks aimed at whichever opponent
+  you choose, a conceding seat skipped by everything. What is missing is everything a pod is
+  socially: three opponents are three strips above your own board, whose turn it is reads as a gold
+  border rather than a layout, and there is no politics anywhere beyond the chat panel.
 - **No spectators in the UI.** The server already builds a spectator view that hides both hands;
   nothing in the lobby joins as one yet.
 - **No undo.** The log records everything, but putting a card back is a manual move.

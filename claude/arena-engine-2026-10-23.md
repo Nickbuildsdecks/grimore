@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**365 tests in the rules engine, 95 in the web app, 955 across the workspace.**
+**365 tests in the rules engine, 98 in the web app, 958 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -165,6 +165,12 @@ The ones that carry the most weight:
   that the whole thing fits a phone. `DECK_B=tidal-mind` brings counterspells into it and
   `FORCE_MULLIGAN=1` makes both players mulligan, because at one hand in nine the flow after a
   mulligan would otherwise almost never run.
+- **`scripts/e2e-pod.mjs`** plays a four-player Commander pod through four browser contexts —
+  four seats on one code, four opening hands at once, a commander cast *from the command zone* and
+  back in it after it died, attacks sent at more than one opponent, a seat conceding while the
+  other three play on, and one survivor. Thirty-three checks. It is also the suite that proves the
+  things only a four-player table can get wrong: that one player's screen hides all **three**
+  opponents' hands, and that four seats fit a phone.
 - **`scripts/e2e-solo.mjs`** plays a whole game in one browser against the server — thirteen checks,
   and a game takes thirty-three moves. `OPPONENT_DECK` picks which deck the server plays, so the
   solo game is run against each of the four.
@@ -222,7 +228,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Twelve things, in the order they mattered.
+Thirteen things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -407,6 +413,32 @@ pod where everybody attacks the same player is not a pod. Measured over ten game
 to 22 — and attacks in all twelve directions, which is the assertion that says a four-seat game is
 being played rather than three sequential duels.
 
+**The same pod through four real browsers, which is where the interface was wrong.** The engine
+playing a pod says nothing about whether four people can play one, and three things were missing
+from the *table* — each invisible from the engine's side, because the engine had always been right.
+
+Attacking could only ever be aimed at one player: the reducer sent every attacker at
+`firstOpponent(view)`, the lowest-numbered living opponent, while the engine has accepted a
+defender per attack since combat was written. In a duel that is the only answer and the code reads
+as though it meant it. The prompt now offers the players who can be attacked and each creature
+keeps the one it was tapped for, so one attack goes left and the next right. Nothing on the board
+named a defender either — `attackSummary` existed and no component called it — so an attacking
+creature now says who it is attacking and how many creatures are in its way. And the engine's
+control bar had no **Concede**, which the manual bar has always had: a player in an automated game
+had no way out of one, which is a stuck table in a duel and three people waiting on a fourth in a
+pod. It arms on the first tap and acts on the second.
+
+Two smaller ones, both Commander-specific. The command zone carried no badges, so the one card a
+Commander player always wants to cast was the only card on the table that never said it was
+playable. And the `cmd` button was a tabletop affordance rendered in both modes, so a tap on it
+with the engine running added a second count on top of the damage combat had already recorded —
+the same trap the life buttons were, one rule along.
+
+`scripts/e2e-pod.mjs` is the suite: four browser contexts, one Commander table, 33 checks, played
+to one survivor over 80-odd turn changes. The driver the arena suite had grown is now shared
+(`scripts/lib/table-driver.mjs`), because four browsers playing Commander ask for exactly the same
+moves as two playing a duel.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the 63 cards currently using
@@ -423,7 +455,8 @@ being played rather than three sequential duels.
 3. A stronger opponent. The current one plays a real game but does not plan one. It now answers
    mid-resolution questions in the direction that helps it and prefers taking more of a modal
    spell, which is judgement rather than search — a search needs a position evaluator.
-4. A pod driven through four real browsers. The engine plays pods and the server seats four, but
-   every browser suite here opens two contexts, so the four-seat *interface* — whose turn it is
-   with three opponents on screen, who is being asked to block, a phone showing three other
-   boards — has been reasoned about rather than looked at.
+4. The pod interface beyond "it works". Four seats are laid out as three opponent strips above
+   your own board, which fits a phone and is not yet *good* at four: whose turn it is reads as a
+   gold border rather than a layout, and there is no politics anywhere — no table talk beyond the
+   chat panel, no "attack them instead" affordance, nothing that makes a pod feel like a pod
+   rather than three duels sharing a board.

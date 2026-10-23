@@ -1082,3 +1082,54 @@ view — and the cap appears once, where a view is checked against the contract.
 state the cap in one place (`testkit.WIRE_CAP`) with the derivation named where the real constant
 lives; the engine does not import it, because the engine depends on nothing and least of all on
 the transport.
+
+## D36 — Four browsers, and the four-player interface nobody had looked at
+
+D35 put four seats in the engine. This is the same pod driven through four real browsers, and it
+was written because the engine passing a pod test says nothing about whether four people can play
+one. Three things were missing from the *table*, and each of them was invisible from the engine's
+side because the engine had always been right.
+
+**Decided: a declaration carries a defender per attacker, not one for the whole attack.** The
+reducer sent `chosen.map((attacker) => ({ attacker, defender: mode.defender }))` with `defender`
+fixed at `firstOpponent(view)` — the lowest-numbered living opponent. In a duel that is the only
+answer and the code reads as if it meant it. In a pod it means **you could only ever attack one
+specific player**, whatever you intended, and the engine had accepted a defender per attack since
+combat was written. The attack prompt now offers the players who can be attacked, each creature
+keeps the one it was tapped for, and tapping a creature again *after* re-aiming re-points it
+instead of dropping it — a second tap with nothing changed in between still removes it.
+
+**Decided: an attacking creature says who it is attacking, on its own face.** Nothing on the board
+named a defender anywhere: `attackSummary` existed in `lib/arena.ts` and no component called it.
+With one opponent there is nothing to say; with three, "attacking" alone is a board you cannot
+read, and the blockers' count belongs next to it.
+
+**Decided: the engine's control bar offers Concede.** The manual bar always had one; the Arena bar
+never did, so a player in an automated game had **no way out of it** — a duel where somebody
+walks away is a stuck table, and a pod is three people waiting on a fourth. Conceding is a rule
+(CR 104.3a) and `concede` has always been accepted; nothing offered it. It arms on the first tap
+and acts on the second, which the tabletop's own button does not do and should: there, a misclick
+costs a game two people can carry on playing by hand, and here it ends your game inside the engine.
+
+**Decided: the commander's zone says the commander is playable.** The hand's cards carry a
+"playable" badge from `legalActions`; the command zone carried no badges at all. So the one card a
+Commander player always wants to cast was the only card on the table that never said it could be.
+
+**And commander damage follows life.** The `cmd` button was a tabletop affordance rendered in both
+modes, so with the engine running a tap on it added a second count on top of the damage combat had
+already recorded — the same trap the life buttons were (D15), one rule along. It is a number with
+the engine running and a button on a tabletop.
+
+**The run that found nothing, twice, and why.** Two pod runs reported "the command zone was read
+250 times and never said playable" while the engine offered the commander in 15% of the same
+moments. The table server was a process started before the commander work existed: Vite hot-reloads
+the UI, and the socket server does not — it holds the `dist` it loaded at startup. Nothing was
+wrong with either the engine or the table. It is written into the setup doc's troubleshooting table
+because it will catch a person exactly as it caught me, and the shape of the lesson is general: **a
+browser suite tests the server that is running, not the code in the tree.**
+
+**The driver is shared now** (`scripts/lib/table-driver.mjs`). Four browsers playing Commander ask
+for exactly the same moves as two playing a duel, so a second copy of that policy would have
+drifted inside a week. The arena suite passing 35 checks on the extracted driver is what says the
+extraction was faithful; the only pod-specific line in it is that an attack is aimed at a random
+legal player before each creature is tapped, which does nothing at a two-player table.

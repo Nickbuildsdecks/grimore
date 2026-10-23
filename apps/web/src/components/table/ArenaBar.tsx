@@ -10,7 +10,8 @@
  * It holds no rules. The label comes from `legalActions.passLabel`, the legal attackers come from
  * `legalActions.attackers`, and the mana comes from the pool the server sent.
  */
-import { Check, FastForward, Hand, Swords, X } from "lucide-react"
+import { useState } from "react"
+import { Check, FastForward, Hand, Skull, Swords, X } from "lucide-react"
 import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -38,10 +39,25 @@ export interface ArenaBarProps {
 }
 
 export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
+  /**
+   * Whether the concede button is armed.
+   *
+   * Two taps, which the tabletop's own concede button does not ask for — and should, but there a
+   * misclick costs a game two people can simply carry on playing by hand. Here it ends your game
+   * inside the engine, and in a pod it ends it while three other people keep playing.
+   */
+  const [arming, setArming] = useState(false)
   const auto = view.automation
   const you = auto?.you
   if (!auto || !you) return null
   const move = primaryMove(view)
+  /** The players an attack can be sent at: everybody still in the game but you. */
+  const defendable = view.seats.filter((s) => s.index !== view.seat && !s.eliminated)
+  /** Who the game is waiting on, when it is exactly one person and not you. */
+  const waitingSeats = (auto.awaiting?.seats ?? []).filter((s) => s !== view.seat)
+  const waitingFor = waitingSeats.length === 1
+    ? view.seats.find((s) => s.index === waitingSeats[0])?.name ?? null
+    : null
   const pool = manaPips(auto.pools[String(view.seat)] as Record<string, number> | undefined)
   const potential = manaPips(you.potential as unknown as Record<string, number>)
 
@@ -124,6 +140,34 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           <span className="text-[var(--g-text-muted)]">
             {you.attackers.length} can attack
           </span>
+          {/*
+            Who you are attacking, when there is more than one answer. With two players there is
+            nothing to choose and the row would be a button that does nothing; in a pod it is the
+            whole decision, and without it every attack went at the lowest-numbered opponent.
+            Each creature keeps the player it was tapped for, so one attack can go left and the
+            next right — which is what the engine has always accepted.
+          */}
+          {defendable.length > 1 ? (
+            <span className="flex flex-wrap items-center gap-1">
+              <span className="text-[var(--g-text-muted)]">attacking</span>
+              {defendable.map((s) => {
+                const aimed = mode.chosen.filter((a) => a.defender === s.index).length
+                return (
+                  <Button
+                    key={s.index}
+                    size="sm"
+                    variant={mode.defender === s.index ? "default" : "ghost"}
+                    className="h-6 px-2 text-[10px]"
+                    data-testid={`attack-seat-${s.index}`}
+                    onClick={() => dispatch({ kind: "aimAttacks", seat: s.index })}
+                  >
+                    {s.name}
+                    {aimed > 0 ? ` ${aimed}` : ""}
+                  </Button>
+                )
+              })}
+            </span>
+          ) : null}
           <span className="ml-auto flex gap-1.5">
             <Button size="sm" data-testid="confirm-attackers" onClick={() => dispatch({ kind: "confirm" })}>
               <Check className="size-3.5" /> {mode.chosen.length === 0 ? "Attack with nothing" : "Attack"}
@@ -259,7 +303,8 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         ) : null}
         {mode.kind === "idle" && move === null && you.mustDiscard === 0 && !view.finished ? (
           <span data-testid="not-your-move" className="ml-auto text-xs text-[var(--g-text-muted)]">
-            waiting for your opponent
+            {/* Named, because "your opponent" is three people at a pod and one of them is holding it up. */}
+            {waitingFor === null ? "waiting for the other players" : `waiting for ${waitingFor}`}
           </span>
         ) : null}
         {view.finished ? (
@@ -287,6 +332,32 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           <FastForward className={cn("size-3.5", auto.autoPass ? "" : "opacity-40")} />
           {auto.autoPass ? "skipping" : "every step"}
         </Button>
+
+        {/*
+          Leaving the game. The manual bar has always had this and the engine's bar had not, so a
+          player in an automated game had no way out of one — in a duel that is a stuck table, and
+          in a pod it is three people waiting on somebody who has walked away. Conceding is a real
+          rule (CR 104.3a) and the engine has always accepted it; nothing was offering it.
+        */}
+        {view.finished ? null : (
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="concede"
+            className="h-7 px-2 text-[10px]"
+            onClick={() => {
+              if (!arming) {
+                setArming(true)
+                return
+              }
+              setArming(false)
+              onAct({ type: "concede" })
+            }}
+            onBlur={() => setArming(false)}
+          >
+            <Skull className="size-3.5" /> {arming ? "really?" : "Concede"}
+          </Button>
+        )}
       </div>
     </div>
   )
