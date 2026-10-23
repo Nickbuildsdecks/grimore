@@ -1236,3 +1236,46 @@ the X-cost prompt had been taught only to the shared driver — so the copy sat 
 that was waiting for it. It is now the driver too, with one line of its own saying why it always
 develops. The rule this keeps re-proving: **a copy of a policy is a copy of the next thing you
 forget to tell it.**
+
+## D39 — Equipment, and what a target filter is allowed to know
+
+An Equipment is an Aura that outlives its creature, and saying it that way is most of the design:
+everything the engine already had for Auras applies, and the two differences are where the work
+is.
+
+**Decided: equip is an ordinary activated ability, not a new kind of card.** Sorcery-speed
+abilities, targets, mana costs and continuous effects all existed; `equipTo` is the one new verb.
+No `CardScript.equipment` field, no new resolution path, nothing in `legalActions` that knows what
+an Equipment is. A card type that needs an engine change is a card type the engine does not
+really support.
+
+**Decided: the attachment ends, the Equipment stays (CR 301.5c).** An Aura attached to nothing
+goes to the graveyard; an Equipment just comes loose, which is why a board wipe leaves the gear
+behind. One more clause in state-based actions, next to the Aura one.
+
+**And the bug in it, which is the Aura bug wearing a different hat.** The first version checked
+`attachedTo !== null` and found nothing wrong — because `relocate` detaches everything pointing at
+a card *as that card leaves*, so by the time the state-based actions run the Equipment is attached
+to nothing rather than to something dead. The check is on the **effect** as well: an Equipment
+with no legal host and a `+2/+0` still in `state.effects` is the thing to fix, and that bonus
+would otherwise have sat there for the rest of the game, waiting to be applied to whatever next
+held that instance id. D21 found this shape for Auras; this is the same mistake, caught in a test
+this time rather than in a game.
+
+**Decided: a target filter may see the card it belongs to.** `TargetSpec.filter` now takes an
+optional `source`. Equip without it offers the creature the Equipment is already on — legal by the
+rules, useless in practice, a trap for a player and a waste of mana for a bot. Measured before and
+after over ten games: **51 equips of which 35 were re-equipping the same creature, down to 26 of
+which none were.** The capability is general and other cards want it: "another target creature" is
+printed on hundreds.
+
+**And a bug the new cards exposed: a game could end with a question still on the table.** Magma
+Jet deals its damage, the engine asks where to put the top of the library, and the state-based
+actions that end the game run in the same action — leaving a prompt nobody can answer on a
+finished table, with `legalActions` refusing priority because a decision was outstanding. The game
+ending now clears priority and every pending question, which is what CR 104.1 means by the game
+ending immediately. Found by a playout, in the one matchup that could produce it.
+
+Bonesplitter (+2/+0 for {1}), Loxodon Warhammer (+3/+0, trample, lifelink) and Basilisk Collar
+(deathtouch and lifelink on anything, which turns a Llanowar Elves into a creature nobody blocks).
+Seventy-four scripted cards.

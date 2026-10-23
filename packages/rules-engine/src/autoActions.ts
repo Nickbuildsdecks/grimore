@@ -113,7 +113,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
 
   const specs = modes === undefined ? spellTargets(script) : modeTargetSpecs(modesOf(script, modes));
   const chosen = action.targets ?? [];
-  const check = checkTargets(state, specs, chosen, action.by);
+  const check = checkTargets(state, specs, chosen, action.by, inst.id);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
   // The tax is generic mana on top of the printed cost, and it only applies to a cast from the
@@ -225,7 +225,7 @@ function activate(
 
   const specs = ability.targets ?? [];
   const chosen = action.targets ?? [];
-  const check = checkTargets(state, specs, chosen, action.by);
+  const check = checkTargets(state, specs, chosen, action.by, inst.id);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
   // The sacrifice is chosen and checked before anything is spent, so a refusal leaves the board
@@ -546,7 +546,7 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
   if (object === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'that ability is no longer on the stack');
 
   const specs = specsForObject(state, object);
-  const check = checkTargets(state, specs, action.targets, action.by);
+  const check = checkTargets(state, specs, action.targets, action.by, object.source);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
   let next: GameState = {

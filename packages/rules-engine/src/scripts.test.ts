@@ -1916,6 +1916,153 @@ describe('cards that stop and ask while they resolve', () => {
   });
 });
 
+describe('equipment, which is an aura that survives its creature', () => {
+  /** A seat with the named Equipment already on the battlefield, lands tapped, in its main phase. */
+  function equipped(
+    seat: SeatIndex, gear: string, creatures: readonly string[], lands: number,
+    deck?: string, basicLand?: string,
+  ) {
+    const basic = basicLand ?? (seat === 0 ? 'Mountain' : 'Forest');
+    let s = arena({
+      battlefield: { [seat]: [...Array.from({ length: lands }, () => basic), gear, ...creatures] },
+      turn: 3, firstSeat: seat,
+      ...(deck === undefined ? {} : { decks: { [seat]: deck } }),
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, seat, 'battlefield')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== basic) continue;
+      s = apply(s, { type: 'auto:activate', by: seat, card: id, abilityIndex: 0 });
+    }
+    return s;
+  }
+
+  const equipIndex = 0;
+
+  it('moves onto a creature you control and makes it bigger', () => {
+    let s = equipped(0, 'Bonesplitter', ['Raging Goblin'], 2);
+    const axe = find(s, 0, 'battlefield', 'Bonesplitter');
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+    expect(power(s, goblin)).toBe(1);
+
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: equipIndex,
+      targets: [{ kind: 'card', id: goblin }],
+    }));
+    expect(s.instances[axe]!.attachedTo).toBe(goblin);
+    expect(power(s, goblin)).toBe(3);
+  });
+
+  it('can only be equipped at sorcery speed, and only to a creature you control', () => {
+    let s = equipped(0, 'Bonesplitter', ['Raging Goblin'], 2);
+    const axe = find(s, 0, 'battlefield', 'Bonesplitter');
+    // Seat 1's creature is not a legal target: equip says "creature you control" (CR 301.5c).
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Grizzly Bears'), toZone: 'battlefield' });
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: equipIndex,
+      targets: [{ kind: 'card', id: theirs }],
+    })).not.toBeNull();
+
+    // And not during the opponent's turn, when a sorcery could not be cast either.
+    const theirTurn = advanceTo(nextTurn(s), 'precombat-main');
+    expect(legalActions(theirTurn, 0).plays.filter((p) => p.name === 'Bonesplitter')).toEqual([]);
+  });
+
+  it('moves from one creature to another, taking its bonus with it', () => {
+    // The difference from an Aura that nothing else shows: an Equipment is re-equipped, and the
+    // creature it leaves goes back to its printed size the moment it does.
+    let s = equipped(0, 'Bonesplitter', ['Raging Goblin', 'Hill Giant'], 3);
+    const axe = find(s, 0, 'battlefield', 'Bonesplitter');
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: equipIndex,
+      targets: [{ kind: 'card', id: goblin }],
+    }));
+    expect([power(s, goblin), power(s, giant)]).toEqual([3, 3]);
+
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: equipIndex,
+      targets: [{ kind: 'card', id: giant }],
+    }));
+    expect(s.instances[axe]!.attachedTo).toBe(giant);
+    expect([power(s, goblin), power(s, giant)]).toEqual([1, 5]);
+    // One effect, not two: a second equip must not leave the first one behind.
+    expect(s.effects.filter((e) => e.source === axe)).toHaveLength(1);
+  });
+
+  it('is not offered to the creature it is already on', () => {
+    // Legal by the rules and useless in practice, which makes it a trap for a player and a waste
+    // of mana for the bot: three quarters of the bot's equips were re-equipping the same creature
+    // until the target filter could see which creature that was.
+    let s = equipped(0, 'Bonesplitter', ['Raging Goblin', 'Hill Giant'], 3);
+    const axe = find(s, 0, 'battlefield', 'Bonesplitter');
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: equipIndex,
+      targets: [{ kind: 'card', id: goblin }],
+    }));
+
+    const offer = legalActions(s, 0).plays.find((p) => p.name === 'Bonesplitter');
+    expect(offer?.candidates[0]?.map((c) => (c.kind === 'card' ? c.id : 'player'))).toEqual([giant]);
+    // And the engine refuses it if a client sends it anyway.
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: equipIndex,
+      targets: [{ kind: 'card', id: goblin }],
+    })).not.toBeNull();
+  });
+
+  it('stays on the battlefield when its creature dies, and the bonus goes with the creature', () => {
+    let s = equipped(0, 'Bonesplitter', ['Raging Goblin'], 2);
+    const axe = find(s, 0, 'battlefield', 'Bonesplitter');
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: equipIndex,
+      targets: [{ kind: 'card', id: goblin }],
+    }));
+    s = drain(apply(s, { type: 'card:move', by: 0, card: goblin, toZone: 'graveyard' }));
+
+    // An Aura would be in the graveyard here (CR 704.5m); an Equipment is not (CR 301.5c).
+    expect(s.instances[axe]!.zone).toBe('battlefield');
+    expect(s.instances[axe]!.attachedTo).toBeNull();
+    // And the +2/+0 is gone with it, rather than waiting in `effects` for the next thing to hold
+    // that instance id.
+    expect(s.effects.filter((e) => e.source === axe)).toEqual([]);
+  });
+
+  it('grants keywords, not only a body: trample and lifelink from the Warhammer', () => {
+    let s = equipped(1, 'Loxodon Warhammer', ['Centaur Courser'], 4, 'verdant-guard');
+    const hammer = find(s, 1, 'battlefield', 'Loxodon Warhammer');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 1, card: hammer, abilityIndex: equipIndex,
+      targets: [{ kind: 'card', id: courser }],
+    }));
+    const ch = characteristicsOf(s, s.instances[courser]!);
+    expect(power(s, courser)).toBe(6);
+    expect(ch.keywords.has('trample')).toBe(true);
+    expect(ch.keywords.has('lifelink')).toBe(true);
+  });
+
+  it('turns a small creature into something nothing wants to block, with the Collar', () => {
+    // Deathtouch on a 1/1 is the whole card, and it is the keyword that is easiest to grant
+    // wrongly: the bonus belongs to the creature, so a blocker trading with it has to die.
+    let s = equipped(0, 'Basilisk Collar', ['Llanowar Elves'], 3, 'rot-harvest', 'Forest');
+    const collar = find(s, 0, 'battlefield', 'Basilisk Collar');
+    const goblin = find(s, 0, 'battlefield', 'Llanowar Elves');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: collar, abilityIndex: equipIndex,
+      targets: [{ kind: 'card', id: goblin }],
+    }));
+    const ch = characteristicsOf(s, s.instances[goblin]!);
+    expect(ch.keywords.has('deathtouch')).toBe(true);
+    expect(ch.keywords.has('lifelink')).toBe(true);
+    // Still a 1/1: the Collar grants keywords and no body at all.
+    expect([power(s, goblin), toughness(s, goblin)]).toEqual([1, 1]);
+  });
+});
+
 describe('scry, which is the other way a player sees their own library', () => {
   /** The ids on top of a seat's library, top first. */
   const topOf = (s: GameState, seat: SeatIndex, n: number): string[] =>

@@ -30,7 +30,9 @@ import {
   canAttack, canBlock, dealCombatDamage, legalAttackers, legalBlockers, menaceSatisfied,
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
-import { destroy, draw, poolOf, setPool, untapAll, type EffectContext, type EffectFn } from './effects.js';
+import {
+  destroy, draw, poolOf, removeEffectsFrom, setPool, untapAll, type EffectContext, type EffectFn,
+} from './effects.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
 import {
   EMPTY_POOL, addMana, canPay, parseManaCost, payCost, solveTap,
@@ -425,8 +427,8 @@ function raise(
         continue;
       }
       // A trigger that needs targets and has none legal is never put on the stack (CR 603.3c).
-      if (!hasAnyLegalTargets(next, specs, inst.zoneSeat)) continue;
-      const auto = obviousTargets(next, specs, inst.zoneSeat);
+      if (!hasAnyLegalTargets(next, specs, inst.zoneSeat, id)) continue;
+      const auto = obviousTargets(next, specs, inst.zoneSeat, id);
       next = pushAbility(next, id, inst.zoneSeat, i, auto ?? [], 'triggered', trigger.description);
       if (auto !== null) continue;
       // Otherwise the controller chooses, and nothing happens until they do.
@@ -459,13 +461,13 @@ function raise(
  * because taking it or not is a real decision.
  */
 function obviousTargets(
-  state: GameState, specs: readonly TargetSpec[], controller: SeatIndex,
+  state: GameState, specs: readonly TargetSpec[], controller: SeatIndex, source?: string,
 ): Target[] | null {
   const chosen: Target[] = [];
   for (const spec of specs) {
     const want = Math.max(1, spec.count ?? 1);
     if (spec.optional) return null;
-    const available = legalTargets(state, spec, controller).filter(
+    const available = legalTargets(state, spec, controller, source).filter(
       (t) => !chosen.some((c) => targetKey(c) === targetKey(t)),
     );
     if (available.length !== want) return null;
@@ -533,6 +535,27 @@ export function stateBasedActions(state: GameState): GameState {
             next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
             changed = true;
             continue;
+          }
+        }
+
+        // CR 301.5c: an Equipment attached to something that is no longer a creature its
+        // controller controls simply comes unattached — it stays on the battlefield, which is the
+        // whole difference from an Aura and the reason equipment survives a board wipe. The bonus
+        // has to go with the attachment, or a dead creature's +2/+0 would sit in `effects` for the
+        // rest of the game, waiting to be applied to whatever next took that instance id.
+        if (hasSubtype(ch.typeLine, 'equipment')) {
+          const host = inst.attachedTo === null ? undefined : next.instances[inst.attachedTo];
+          const stillLegal = host !== undefined && host.zone === 'battlefield'
+            && host.zoneSeat === inst.zoneSeat && characteristicsOf(next, host).isCreature;
+          // Checked on the *effect* as well as on the attachment, and that is the whole trick:
+          // `relocate` detaches everything pointing at a card as it leaves, so by the time this
+          // runs the Equipment is attached to nothing rather than to something dead. Reading only
+          // `attachedTo` would find nothing wrong and leave the +2/+0 in `effects` forever —
+          // exactly the shape of the Aura bug in D21, one card type along.
+          const bonus = next.effects.some((e) => e.source === inst.id);
+          if (!stillLegal && (inst.attachedTo !== null || bonus)) {
+            next = removeEffectsFrom(withInstance(next, inst.id, { attachedTo: null }), inst.id);
+            changed = true;
           }
         }
 
@@ -966,7 +989,8 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
   const specs = targetSpecsFor(state, script, object);
 
   // A spell or ability whose targets have all become illegal does not resolve at all (CR 608.2b).
-  if (specs.length > 0 && !stillHasLegalTarget(state, specs, object.targets, object.controller)) {
+  if (specs.length > 0
+    && !stillHasLegalTarget(state, specs, object.targets, object.controller, object.source)) {
     let next = popStack(state, object.id);
     const name = next.cardDefs[object.cardKey]?.name ?? 'it';
     if (object.kind === 'spell') {

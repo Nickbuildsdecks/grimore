@@ -38,8 +38,17 @@ export interface TargetSpec {
   readonly count?: number;
   /** "up to": the spell is castable with fewer, including none. */
   readonly optional?: boolean;
-  /** Extra restriction beyond the kind, e.g. only creatures you control. */
-  readonly filter?: (state: GameState, candidate: Target, controller: SeatIndex) => boolean;
+  /**
+   * Extra restriction beyond the kind, e.g. only creatures you control.
+   *
+   * `source` is the card the targeting belongs to, when there is one — the permanent whose
+   * ability this is, or the spell being cast. That is what "another target creature" and "a
+   * creature this is not already attached to" need, and without it a script would have to guess
+   * which of the candidates was itself.
+   */
+  readonly filter?: (
+    state: GameState, candidate: Target, controller: SeatIndex, source?: string,
+  ) => boolean;
 }
 
 /**

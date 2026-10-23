@@ -34,13 +34,13 @@ const GRAVEYARD_KINDS: Readonly<Record<string, string | null | undefined>> = {
  * target, and a script that had to remember them would eventually forget.
  */
 export function isLegalTarget(
-  state: GameState, spec: TargetSpec, candidate: Target, controller: SeatIndex,
+  state: GameState, spec: TargetSpec, candidate: Target, controller: SeatIndex, source?: string,
 ): boolean {
   if (candidate.kind === 'player') {
     if (spec.kind !== 'player' && spec.kind !== 'any') return false;
     const seat = state.seats[candidate.seat];
     if (seat === undefined || seat.eliminated) return false;
-    return spec.filter ? spec.filter(state, candidate, controller) : true;
+    return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }
 
   // The candidate is a card from here on, so a spec that only takes players cannot be satisfied by
@@ -53,7 +53,7 @@ export function isLegalTarget(
 
   if (spec.kind === 'spell') {
     if (inst.zone !== 'stack') return false;
-    return spec.filter ? spec.filter(state, candidate, controller) : true;
+    return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }
 
   const wantedInGraveyard = GRAVEYARD_KINDS[spec.kind];
@@ -64,7 +64,7 @@ export function isLegalTarget(
       && !hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), wantedInGraveyard)) {
       return false;
     }
-    return spec.filter ? spec.filter(state, candidate, controller) : true;
+    return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }
 
   if (inst.zone !== 'battlefield') return false;
@@ -74,22 +74,24 @@ export function isLegalTarget(
   // Hexproof stops opponents targeting it; shroud stops everyone.
   if (ch.keywords.has('shroud')) return false;
   if (ch.keywords.has('hexproof') && inst.zoneSeat !== controller) return false;
-  return spec.filter ? spec.filter(state, candidate, controller) : true;
+  return spec.filter ? spec.filter(state, candidate, controller, source) : true;
 }
 
 /** Everything that could legally be chosen for this spec right now. */
-export function legalTargets(state: GameState, spec: TargetSpec, controller: SeatIndex): Target[] {
+export function legalTargets(
+  state: GameState, spec: TargetSpec, controller: SeatIndex, source?: string,
+): Target[] {
   const out: Target[] = [];
   if (spec.kind === 'player' || spec.kind === 'any') {
     for (const seat of state.seats) {
       const candidate: Target = { kind: 'player', seat: seat.index };
-      if (isLegalTarget(state, spec, candidate, controller)) out.push(candidate);
+      if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);
     }
   }
   if (spec.kind === 'spell') {
     for (const id of listAt(state, 'stack')) {
       const candidate: Target = { kind: 'card', id };
-      if (isLegalTarget(state, spec, candidate, controller)) out.push(candidate);
+      if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);
     }
     return out;
   }
@@ -97,7 +99,7 @@ export function legalTargets(state: GameState, spec: TargetSpec, controller: Sea
     for (const seat of state.seats) {
       for (const id of listAt(state, zoneKey(seat.index, 'graveyard'))) {
         const candidate: Target = { kind: 'card', id };
-        if (isLegalTarget(state, spec, candidate, controller)) out.push(candidate);
+        if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);
       }
     }
     return out;
@@ -106,7 +108,7 @@ export function legalTargets(state: GameState, spec: TargetSpec, controller: Sea
     for (const seat of state.seats) {
       for (const id of listAt(state, zoneKey(seat.index, 'battlefield'))) {
         const candidate: Target = { kind: 'card', id };
-        if (isLegalTarget(state, spec, candidate, controller)) out.push(candidate);
+        if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);
       }
     }
   }
@@ -130,17 +132,18 @@ export function checkTargets(
   specs: readonly TargetSpec[],
   chosen: readonly Target[],
   controller: SeatIndex,
+  source?: string,
 ): TargetCheck {
   let index = 0;
   const seen = new Set<string>();
   for (const spec of specs) {
     const want = Math.max(1, spec.count ?? 1);
-    const available = legalTargets(state, spec, controller);
+    const available = legalTargets(state, spec, controller, source);
     const taken: Target[] = [];
     for (let i = 0; i < want && index < chosen.length; i++) {
       const candidate = chosen[index];
       if (candidate === undefined) break;
-      if (!isLegalTarget(state, spec, candidate, controller)) {
+      if (!isLegalTarget(state, spec, candidate, controller, source)) {
         return { ok: false, reason: `that is not ${spec.description}` };
       }
       if (seen.has(targetKey(candidate))) {
@@ -164,16 +167,17 @@ export function checkTargets(
 /** Whether a spell on the stack still has at least one legal target, for the fizzle rule. */
 export function stillHasLegalTarget(
   state: GameState, specs: readonly TargetSpec[], chosen: readonly Target[], controller: SeatIndex,
+  source?: string,
 ): boolean {
   if (specs.length === 0 || chosen.length === 0) return true;
   return chosen.some((candidate) =>
-    specs.some((spec) => isLegalTarget(state, spec, candidate, controller)),
+    specs.some((spec) => isLegalTarget(state, spec, candidate, controller, source)),
   );
 }
 
 /** Whether every spec that must be satisfied can be, which decides if a spell is castable at all. */
 export function hasAnyLegalTargets(
-  state: GameState, specs: readonly TargetSpec[], controller: SeatIndex,
+  state: GameState, specs: readonly TargetSpec[], controller: SeatIndex, source?: string,
 ): boolean {
-  return specs.every((spec) => spec.optional || legalTargets(state, spec, controller).length > 0);
+  return specs.every((spec) => spec.optional || legalTargets(state, spec, controller, source).length > 0);
 }

@@ -239,7 +239,26 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
   const alive = aliveSeats(next);
   if (!next.finished && alive.length <= 1) {
     const winner = alive[0];
-    next = { ...next, finished: true, winnerSeat: winner === undefined ? null : winner.index };
+    /*
+      The game ends immediately, and nothing is outstanding when it does (CR 104.1).
+
+      A resolution can be halfway through asking somebody a question when the last opponent dies:
+      Magma Jet deals its damage, the engine asks where to put the top of the library, and the
+      state-based actions that end the game run in the same action. Leaving the question set
+      leaves a prompt on a finished table that nothing will ever answer, and `legalActions`
+      refusing priority while a decision is outstanding means the table offers nothing else
+      either. Found by a playout: a game that ended on a Magma Jet left its scry standing.
+    */
+    next = {
+      ...next,
+      finished: true,
+      winnerSeat: winner === undefined ? null : winner.index,
+      priority: null,
+      passed: [],
+      pendingDecision: null,
+      pendingChoice: null,
+      pendingDiscard: null,
+    };
   }
 
   return { state: next, eliminations };

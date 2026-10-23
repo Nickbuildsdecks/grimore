@@ -23,7 +23,7 @@ import {
   addCounters, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
   gainControl, gainLife, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump, pumpTeam,
-  putOntoBattlefield, tap, type EffectContext,
+  putOntoBattlefield, tap, equipTo, type EffectContext, type PumpOptions,
 } from './effects.js';
 import type { CardScript, DecisionSpec, TargetSpec } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -141,6 +141,41 @@ const FIREBALL: CardScript = {
  * the ones you keep; that needs a question whose answer is a sequence rather than a set, and no
  * card in this pool turns on it. Where the engine stops is written down rather than papered over.
  */
+/**
+ * An Equipment: one activated ability that moves it onto a creature you control.
+ *
+ * Equip is sorcery-speed (CR 702.6b) and targets a creature **its controller controls** — not any
+ * creature, which is the difference from an Aura and the reason you cannot hand your Warhammer to
+ * somebody else's Serra Angel. Written as an ordinary ability rather than as a new kind of card
+ * because that is all it is: the engine already has sorcery-speed abilities, targets and
+ * continuous effects, and `equipTo` is the one new verb.
+ */
+const equipment = (name: string, cost: string, bonus: PumpOptions, text: string): CardScript => ({
+  name,
+  abilities: [
+    {
+      cost: { mana: cost },
+      sorcerySpeed: true,
+      description: `Equip ${cost} — ${text}`,
+      targets: [{
+        kind: 'creature',
+        description: 'creature you control',
+        // Not the creature it is already on. Equipping it again is legal and does nothing, and a
+        // play that does nothing is a trap for a person and a waste of mana for the bot — which
+        // spent three quarters of its equips re-equipping the same creature before this line.
+        filter: (state, candidate, controller, source) =>
+          creatureYouControl(state, candidate, controller)
+          && !(candidate.kind === 'card' && source !== undefined
+            && state.instances[source]?.attachedTo === candidate.id),
+      }],
+      effect: (c) => {
+        const host = firstCardTarget(c);
+        return host === null ? c.state : equipTo(c.state, c.source, host, c.controller, bonus);
+      },
+    },
+  ],
+});
+
 const scry = (count: number): DecisionSpec => ({
   who: 'controller',
   from: 'library-top',
@@ -1074,6 +1109,11 @@ const ALL: readonly CardScript[] = [
   BLOOD_ARTIST, ZULAPORT_CUTTHROAT, SOUL_WARDEN, IMPACT_TREMORS,
   FIREBALL, SECURE_THE_WASTES, MIND_SPRING, EXSANGUINATE, HURRICANE,
   MAGMA_JET, PREORDAIN, OMENSPEAKER,
+  equipment('Bonesplitter', '{1}', { power: 2 }, 'equipped creature gets +2/+0'),
+  equipment('Loxodon Warhammer', '{3}', { power: 3, keywords: ['trample', 'lifelink'] },
+    'equipped creature gets +3/+0 and has trample and lifelink'),
+  equipment('Basilisk Collar', '{2}', { keywords: ['deathtouch', 'lifelink'] },
+    'equipped creature has deathtouch and lifelink'),
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

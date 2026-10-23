@@ -163,9 +163,9 @@ const specsFor = (script: CardScript | undefined): readonly TargetSpec[] =>
   script?.targets ?? (script?.aura ? [script.aura.target] : []);
 
 function playableTargets(
-  state: GameState, specs: readonly TargetSpec[], seat: SeatIndex,
+  state: GameState, specs: readonly TargetSpec[], seat: SeatIndex, source?: string,
 ): { ok: boolean; candidates: Target[][] } {
-  const candidates = specs.map((spec) => legalTargets(state, spec, seat));
+  const candidates = specs.map((spec) => legalTargets(state, spec, seat, source));
   const ok = specs.every((spec, i) => spec.optional || (candidates[i]?.length ?? 0) > 0);
   return { ok, candidates };
 }
@@ -228,7 +228,7 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
       for (const modes of combinations) {
         const chosen = modesOf(script, modes);
         const specs = modeTargetSpecs(chosen);
-        const { ok, candidates } = playableTargets(state, specs, seat);
+        const { ok, candidates } = playableTargets(state, specs, seat, id);
         if (!ok) continue;
         out.push({
           kind: 'cast', card: id, name: ch.name,
@@ -241,7 +241,7 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
     }
 
     const specs = specsFor(script);
-    const { ok, candidates } = playableTargets(state, specs, seat);
+    const { ok, candidates } = playableTargets(state, specs, seat, id);
     if (!ok) continue;
 
     out.push({
@@ -278,7 +278,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, potential: ManaPool
       if (ability.cost.sacrifice !== undefined && victims.length === 0) continue;
 
       const specs = ability.targets ?? [];
-      const { ok, candidates } = playableTargets(state, specs, seat);
+      const { ok, candidates } = playableTargets(state, specs, seat, id);
       if (!ok) continue;
 
       out.push({

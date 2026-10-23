@@ -323,6 +323,25 @@ export function attachTo(state: GameState, auraId: string, hostId: string): Game
   return withInstance(state, auraId, { attachedTo: hostId });
 }
 
+/**
+ * Equip: move an Equipment onto a creature its controller controls, bonus and all.
+ *
+ * Different from an Aura in the two ways that matter. It *moves* — equipping again takes it off
+ * the creature it was on, so the old bonus has to go with it, which is what `removeEffectsFrom`
+ * is doing here. And it **stays on the battlefield** when that creature dies; only the attachment
+ * ends (CR 301.5c), which is handled by the state-based actions rather than here.
+ */
+export function equipTo(
+  state: GameState, equipId: string, hostId: string, controller: SeatIndex, bonus: PumpOptions,
+): GameState {
+  const equipment = state.instances[equipId];
+  const host = state.instances[hostId];
+  if (equipment === undefined || host === undefined || host.zone !== 'battlefield') return state;
+  if (host.zoneSeat !== controller) return state;
+  const moved = withInstance(removeEffectsFrom(state, equipId), equipId, { attachedTo: hostId });
+  return staticEffect(moved, equipId, controller, { kind: 'cards', ids: [hostId] }, bonus);
+}
+
 // ── Continuous effects ───────────────────────────────────────────────────────────────────────────
 
 export interface PumpOptions {

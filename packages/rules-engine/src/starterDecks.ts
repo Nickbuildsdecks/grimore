@@ -193,6 +193,15 @@ const KRENKO_MOB_BOSS: CardDef = {
   colors: ['R'],
 };
 
+const BONESPLITTER: CardDef = {
+  name: 'Bonesplitter',
+  typeLine: 'Artifact — Equipment',
+  manaCost: '{1}',
+  cmc: 1,
+  oracleText: 'Equipped creature gets +2/+0.\nEquip {1}',
+  colors: [],
+};
+
 const MAGMA_JET: CardDef = {
   name: 'Magma Jet',
   typeLine: 'Instant',
@@ -371,6 +380,15 @@ const SIGARDA_HOST_OF_HERONS: CardDef = {
   toughness: '5',
   oracleText: "Flying, hexproof\nSpells and abilities your opponents control can't cause you to sacrifice permanents.",
   colors: ['G', 'W'],
+};
+
+const LOXODON_WARHAMMER: CardDef = {
+  name: 'Loxodon Warhammer',
+  typeLine: 'Artifact — Equipment',
+  manaCost: '{3}',
+  cmc: 3,
+  oracleText: 'Equipped creature gets +3/+0 and has trample and lifelink.\nEquip {3}',
+  colors: [],
 };
 
 const SECURE_THE_WASTES: CardDef = {
@@ -552,6 +570,15 @@ const TALRAND: CardDef = {
   toughness: '2',
   oracleText: 'Whenever you cast an instant or sorcery spell, create a 2/2 blue Drake creature token with flying.',
   colors: ['U'],
+};
+
+const BASILISK_COLLAR: CardDef = {
+  name: 'Basilisk Collar',
+  typeLine: 'Artifact — Equipment',
+  manaCost: '{1}',
+  cmc: 1,
+  oracleText: 'Equipped creature has deathtouch and lifelink.\nEquip {2}',
+  colors: [],
 };
 
 const PREORDAIN: CardDef = {
@@ -759,7 +786,9 @@ export const EMBER_RUSH: DeckSpec = {
   description: 'Mono-red aggro. Cheap hasty creatures, burn to the face, and a dragon to finish.',
   commander: KRENKO_MOB_BOSS,
   cards: [
-    { card: MOUNTAIN, count: 22 },
+    // Twenty-one rather than twenty-two: the Equipment and the X spell had to come from
+    // somewhere, and a land is the only thing in here no test reaches for by name.
+    { card: MOUNTAIN, count: 21 },
     { card: MONASTERY_SWIFTSPEAR, count: 4 },
     { card: RAGING_GOBLIN, count: 2 },
     { card: GOBLIN_ARSONIST, count: 3 },
@@ -771,13 +800,14 @@ export const EMBER_RUSH: DeckSpec = {
     { card: SHIVAN_DRAGON, count: 3 },
     { card: LIGHTNING_BOLT, count: 4 },
     { card: SHOCK, count: 2 },
+    { card: BONESPLITTER, count: 2 },
     { card: LAVA_SPIKE, count: 1 },
     // The deck's X spell, and the reason the burn counts above came down by one each: a Fireball
     // is what a mana-flooded red deck does with a board it cannot get past.
     { card: FIREBALL, count: 2 },
     { card: IMPACT_TREMORS, count: 2 },
     { card: FAITHLESS_LOOTING, count: 2 },
-    { card: FLAME_SLASH, count: 3 },
+    { card: FLAME_SLASH, count: 2 },
     { card: ACT_OF_TREASON, count: 1 },
   ],
 };
@@ -802,12 +832,13 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: CENTAUR_COURSER, count: 3 },
     { card: AJANIS_PRIDEMATE, count: 2 },
     { card: SERRA_ANGEL, count: 3 },
-    { card: GIANT_GROWTH, count: 2 },
+    { card: GIANT_GROWTH, count: 1 },
+    { card: LOXODON_WARHAMMER, count: 2 },
     { card: SELESNYA_CHARM, count: 2 },
     { card: SECURE_THE_WASTES, count: 2 },
     { card: PACIFISM, count: 2 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
-    { card: HARMONIZE, count: 2 },
+    { card: HARMONIZE, count: 1 },
     { card: OVERRUN, count: 2 },
   ],
 };
@@ -860,11 +891,12 @@ export const ROT_HARVEST: DeckSpec = {
     { card: FLESHBAG_MARAUDER, count: 3 },
     { card: BLOODTHRONE_VAMPIRE, count: 2 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },
-    { card: GRAVEDIGGER, count: 4 },
+    { card: GRAVEDIGGER, count: 3 },
+    { card: BASILISK_COLLAR, count: 2 },
     { card: RAISE_DEAD, count: 1 },
     { card: GRIM_DISCOVERY, count: 2 },
     { card: ZOMBIFY, count: 1 },
-    { card: DOOM_BLADE, count: 2 },
+    { card: DOOM_BLADE, count: 1 },
     { card: LOTLETH_GIANT, count: 2 },
     // Green's X spell. It hits its own controller too, which is the card: a deck of ground
     // creatures pays nothing and a table of fliers pays everything.

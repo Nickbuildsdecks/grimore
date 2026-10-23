@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 71 scripted cards |
+| `scripts.ts` | All 74 scripted cards |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**379 tests in the rules engine, 104 in the web app, 978 across the workspace.**
+**386 tests in the rules engine, 104 in the web app, 985 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -228,7 +228,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Fifteen things, in the order they mattered.
+Sixteen things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -492,6 +492,32 @@ Preordain, Magma Jet (which damages *before* it asks, through the same `beforeDe
 Faithless Looting needed) and Omenspeaker, for the trigger path. The bot bottoms a land once it
 has five and otherwise keeps what it is shown — the one scry decision that is obviously right
 without knowing anything else about the game.
+
+**Equipment, which is an Aura that outlives its creature.** Saying it that way is most of the
+design: everything the engine had for Auras applies, and the two differences are where the work
+is. Equip is an ordinary sorcery-speed activated ability — no new card-type machinery, no new
+resolution path, nothing in `legalActions` that knows what an Equipment is, because a card type
+that needs an engine change is a card type the engine does not really support. And the attachment
+ends while the Equipment stays (CR 301.5c), which is why a board wipe leaves the gear behind.
+
+The bug in it was the Aura bug wearing a different hat. The first version looked at `attachedTo`
+and found nothing wrong, because `relocate` detaches everything pointing at a card *as that card
+leaves* — so the state-based action has to check for an Equipment with no host **and a bonus still
+in `state.effects`**, or a dead creature's +2/+0 sits there for the rest of the game waiting to be
+applied to whatever next holds that instance id.
+
+A target filter can now see the card it belongs to, which is what stopped equip offering the
+creature it is already on: legal by the rules, useless in practice, a trap for a player and a
+waste of mana for a bot. Measured over ten games — 51 equips of which 35 were re-equipping the
+same creature, down to 26 of which none were. "Another target creature" is printed on hundreds of
+cards and now has somewhere to live.
+
+Bonesplitter, Loxodon Warhammer and Basilisk Collar, which turns a Llanowar Elves into a creature
+nobody wants to block. And one more bug the new cards exposed: **a game could end with a question
+still on the table** — Magma Jet's damage ends the game in the same action the scry is asked in,
+and the prompt stayed on a finished board with the control bar refusing everything else. The game
+ending now clears priority and every pending question, which is what CR 104.1 means by it ending
+immediately.
 
 ## Next
 
