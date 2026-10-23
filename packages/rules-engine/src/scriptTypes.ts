@@ -266,6 +266,14 @@ export interface CardScript {
    */
   readonly entersTapped?: boolean;
   /**
+   * What this Equipment gives the creature it is attached to.
+   *
+   * Declared rather than left inside the equip ability's own effect, because other cards read it:
+   * a commander that moves every Equipment you control onto itself has to know what each of them
+   * does, and a bonus closed over by one function cannot be asked.
+   */
+  readonly equipBonus?: PumpOptions;
+  /**
    * "Enters the battlefield with N counters on it" (CR 614.1c), where N may be the X it was cast
    * for. A permanent that arrives any other way — reanimated, copied, made as a token — enters
    * with X of zero, which is the rule and not a shortcut.

@@ -842,6 +842,77 @@ const HURRICANE: CardDef = {
   colors: ['G'],
 };
 
+// ── Red-white equipment ──────────────────────────────────────────────────────────────────────────
+
+const BOROS_GUILDGATE: CardDef = {
+  name: 'Boros Guildgate',
+  typeLine: 'Land — Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Boros Guildgate enters the battlefield tapped.\n{T}: Add {R} or {W}.',
+  colors: [],
+};
+
+const ELITE_VANGUARD: CardDef = {
+  name: 'Elite Vanguard',
+  typeLine: 'Creature — Human Soldier',
+  manaCost: '{W}',
+  cmc: 1,
+  power: '2',
+  toughness: '1',
+  oracleText: '',
+  colors: ['W'],
+};
+
+const LEONIN_SKYHUNTER: CardDef = {
+  name: 'Leonin Skyhunter',
+  typeLine: 'Creature — Cat Knight',
+  manaCost: '{W}{W}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Flying',
+  colors: ['W'],
+};
+
+const RAISE_THE_ALARM: CardDef = {
+  name: 'Raise the Alarm',
+  typeLine: 'Instant',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  oracleText: 'Create two 1/1 white Soldier creature tokens.',
+  colors: ['W'],
+};
+
+const ANGELIC_GIFT: CardDef = {
+  name: 'Angelic Gift',
+  typeLine: 'Enchantment — Aura',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  oracleText: 'Enchant creature\nWhen Angelic Gift enters the battlefield, draw a card.\nEnchanted creature has flying.',
+  colors: ['W'],
+};
+
+const INSPIRED_CHARGE: CardDef = {
+  name: 'Inspired Charge',
+  typeLine: 'Instant',
+  manaCost: '{2}{W}',
+  cmc: 3,
+  oracleText: 'Creatures you control get +2/+1 until end of turn.',
+  colors: ['W'],
+};
+
+const BALAN: CardDef = {
+  name: 'Balan, Wandering Knight',
+  typeLine: 'Legendary Creature — Cat Knight',
+  manaCost: '{2}{W}{W}',
+  cmc: 4,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Double strike\n{1}{W}: Attach all Equipment you control to Balan, Wandering Knight.',
+  colors: ['W'],
+};
+
 // ── The decks ────────────────────────────────────────────────────────────────────────────────────
 
 export const EMBER_RUSH: DeckSpec = {
@@ -977,11 +1048,49 @@ export const ROT_HARVEST: DeckSpec = {
   ],
 };
 
+/**
+ * The fifth deck, and the first built out of what the engine learned rather than what it had.
+ *
+ * Equipment, X tokens, a dual that enters tapped and an aura that draws a card are all things no
+ * deck could use six commits ago. Balan is the commander because the card is the archetype: one
+ * activation moves every Equipment onto it, which is also the first card that has to *read*
+ * another card's script.
+ */
+export const FORGE_ALLIANCE: DeckSpec = {
+  id: 'forge-alliance',
+  name: 'Forge Alliance',
+  description: 'Red-white equipment. A board of small creatures, and a sword for one of them.',
+  commander: BALAN,
+  cards: [
+    { card: PLAINS, count: 10 },
+    { card: MOUNTAIN, count: 9 },
+    { card: BOROS_GUILDGATE, count: 3 },
+    { card: ELITE_VANGUARD, count: 3 },
+    { card: MONASTERY_SWIFTSPEAR, count: 3 },
+    { card: DOOMED_TRAVELER, count: 3 },
+    { card: LEONIN_SKYHUNTER, count: 3 },
+    { card: FIREBRAND_ARCHER, count: 2 },
+    { card: AJANIS_PRIDEMATE, count: 2 },
+    { card: SERRA_ANGEL, count: 2 },
+    { card: BONESPLITTER, count: 3 },
+    { card: LOXODON_WARHAMMER, count: 2 },
+    { card: BASILISK_COLLAR, count: 2 },
+    { card: RAISE_THE_ALARM, count: 2 },
+    { card: SECURE_THE_WASTES, count: 2 },
+    { card: ANGELIC_GIFT, count: 2 },
+    { card: INSPIRED_CHARGE, count: 2 },
+    { card: LIGHTNING_BOLT, count: 2 },
+    { card: MAGMA_JET, count: 2 },
+    { card: FIREBALL, count: 1 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
   [TIDAL_MIND.id]: TIDAL_MIND,
   [ROT_HARVEST.id]: ROT_HARVEST,
+  [FORGE_ALLIANCE.id]: FORGE_ALLIANCE,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

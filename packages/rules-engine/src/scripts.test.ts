@@ -1916,6 +1916,82 @@ describe('cards that stop and ask while they resolve', () => {
   });
 });
 
+describe('the fifth deck, which is built out of what the engine learned', () => {
+  /** Forge Alliance on seat 0, lands down and tapped, in its main phase. */
+  const forge = (hand: readonly string[], lands: readonly string[], board: readonly string[] = []) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'forge-alliance' }, hands: { 0: hand },
+      battlefield: { 0: [...lands, ...board] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (name !== 'Plains' && name !== 'Mountain') continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  it('makes two soldiers at instant speed', () => {
+    let s = forge(['Raise the Alarm'], ['Plains', 'Plains']);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Raise the Alarm') }));
+    expect(countOf(s, 0, 'battlefield', 'Soldier')).toBe(2);
+  });
+
+  it('gives a creature flying and draws a card as it lands', () => {
+    // Two halves on one card: the flying is the aura's continuous effect, the draw is a trigger
+    // on it entering, and both have to happen for the card to be the card.
+    let s = forge(['Angelic Gift'], ['Plains', 'Plains'], ['Elite Vanguard']);
+    const vanguard = find(s, 0, 'battlefield', 'Elite Vanguard');
+    const before = ids(s, 0, 'hand').length;
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Angelic Gift'),
+      targets: [{ kind: 'card', id: vanguard }],
+    }));
+    s = drain(s);
+    expect(characteristicsOf(s, s.instances[vanguard]!).keywords.has('flying')).toBe(true);
+    // One Gift out of hand, one card drawn: the hand is the size it started.
+    expect(ids(s, 0, 'hand').length).toBe(before);
+  });
+
+  it('pumps the whole team and nobody else', () => {
+    let s = forge(['Inspired Charge'], ['Plains', 'Plains', 'Plains'], ['Elite Vanguard']);
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Grizzly Bears'), toZone: 'battlefield' });
+    const mine = find(s, 0, 'battlefield', 'Elite Vanguard');
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Inspired Charge') }));
+    expect([power(s, mine), toughness(s, mine)]).toEqual([4, 2]);
+    expect([power(s, theirs), toughness(s, theirs)]).toEqual([2, 2]);
+  });
+
+  it('moves every Equipment onto the commander with one activation', () => {
+    // The first script that reads another script: the bonus belongs to each Equipment, so Balan
+    // has to look it up rather than knowing it.
+    let s = forge([], ['Plains', 'Plains', 'Plains', 'Plains', 'Plains'],
+      ['Balan, Wandering Knight', 'Elite Vanguard', 'Bonesplitter', 'Loxodon Warhammer']);
+    const balan = find(s, 0, 'battlefield', 'Balan, Wandering Knight');
+    const vanguard = find(s, 0, 'battlefield', 'Elite Vanguard');
+    const axe = find(s, 0, 'battlefield', 'Bonesplitter');
+    const hammer = find(s, 0, 'battlefield', 'Loxodon Warhammer');
+
+    // One of them starts on somebody else, which is the case that matters: it has to move.
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: 0,
+      targets: [{ kind: 'card', id: vanguard }],
+    }));
+    expect(power(s, vanguard)).toBe(4);
+
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: balan, abilityIndex: 0 }));
+    expect(s.instances[axe]!.attachedTo).toBe(balan);
+    expect(s.instances[hammer]!.attachedTo).toBe(balan);
+    // 2/2 with +2/+0 and +3/+0, and the Warhammer's keywords with it.
+    expect(power(s, balan)).toBe(7);
+    expect(power(s, vanguard)).toBe(2);
+    const ch = characteristicsOf(s, s.instances[balan]!);
+    expect(ch.keywords.has('trample')).toBe(true);
+    expect(ch.keywords.has('double strike')).toBe(true);
+  });
+});
+
 describe('replacement effects: regenerating, and entering with counters', () => {
   /** Rot Harvest on both sides, so either seat can reach the black and green cards. */
   const rot = (hand: readonly string[], lands: readonly string[], board: readonly string[] = []) =>

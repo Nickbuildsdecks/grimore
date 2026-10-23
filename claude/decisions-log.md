@@ -1453,3 +1453,41 @@ while still attacking 82% as often — and the average game got *shorter*, 19.4 
 is the number that says the bot did not solve the problem by refusing to fight. All three are
 asserted in `playout.test.ts`, including the attack count, because without it the test passes by
 doing nothing.
+
+## D45 — A fifth deck, built out of what the engine learned
+
+The four starter decks were written against the engine as it was: creatures, burn, counterspells,
+a graveyard. **Forge Alliance** is the first deck written against the engine as it is now —
+Equipment, X tokens, a dual that enters tapped, an aura that draws a card. Nothing in it would
+have worked ten commits ago, which is the point of building it: a deck is the honest test of
+whether a feature is usable rather than merely present.
+
+**Decided: an Equipment's bonus is declared on its script, not closed over by its own ability.**
+Balan, Wandering Knight moves every Equipment you control onto itself, so it is the first card
+that has to *read another card's script* — and a `+2/+0` that exists only inside the Bonesplitter's
+effect function cannot be asked what it is. `CardScript.equipBonus` is the smallest thing that
+makes the question answerable, and it costs the `equipment()` helper one line.
+
+**Most of the deck is cards the other decks already define.** Monastery Swiftspear, Doomed
+Traveler, Serra Angel, Ajani's Pridemate, Lightning Bolt, Magma Jet, Fireball, the three
+Equipment, Secure the Wastes. A `CardDef` is data and a script is keyed by name, so a deck list is
+genuinely just a list — which is what a deck *should* be, and worth saying because it means the
+next deck costs almost nothing.
+
+Five new cards for the things it needed: Boros Guildgate, Elite Vanguard (a vanilla 2/1, no script
+at all), Leonin Skyhunter, Raise the Alarm, Angelic Gift and Inspired Charge. Angelic Gift is the
+interesting one — an Aura with a trigger on it, so the flying is the continuous effect and the
+draw is the card entering, and both halves had to be there for the card to be the card.
+
+Five decks mean fifteen pairings; `playout.test.ts` now plays all of them to a finish, which is
+the check that matters when a new deck arrives: not that its cards work, but that a game between
+it and every other deck ends.
+
+**A harness correction that came with it.** The pod suite reported "Nick stuck at Declare blockers
+on turn 33" in a game that then carried on and finished. It was the driver, not the table: between
+"is it this page's move" and the move itself, another of the four browsers acted and took the move
+away. In a pod that happens on its own. The driver now says *the moment passed* instead of
+reporting a defect — a prompt that genuinely cannot be answered still returns null from the
+branches that find a question with nothing lit, and a table that has actually stopped shows up in
+the callers' idle and repeat detectors, which describe it more accurately than one missing button
+can.

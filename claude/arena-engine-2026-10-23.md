@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 82 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 88 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**400 tests in the rules engine, 104 in the web app, 999 across the workspace.**
+**404 tests in the rules engine, 104 in the web app, 1,003 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -230,7 +230,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Twenty things, in the order they mattered.
+Twenty-one things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -590,6 +590,24 @@ by looking — and the measurement is the point: **292 attackers declared and 40
 declared and 16 dead**, with the average game getting *shorter* (19.4 turns to 18.6). That last
 number is the one that says it did not solve the problem by refusing to fight, and all three are
 asserted in `playout.test.ts`.
+
+**A fifth deck, and the first built out of what the engine learned.** The four starter decks were
+written against the engine as it was: creatures, burn, counterspells, a graveyard. **Forge
+Alliance** is red-white Equipment and tokens, and nothing in it would have worked ten commits ago
+— which is the point of building it, because a deck is the honest test of whether a feature is
+usable rather than merely present.
+
+Balan, Wandering Knight is the commander and the reason for the one engine change: "attach all
+Equipment you control to Balan" is the first card that has to read *another card's script*, and a
+`+2/+0` closed over inside the Bonesplitter's own effect cannot be asked what it is. An
+Equipment's bonus is declared on its script now, which costs the helper one line.
+
+Most of the deck is cards the other decks already define — a `CardDef` is data and a script is
+keyed by name, so a deck list is genuinely just a list, and the next deck costs almost nothing.
+Five new cards for what it needed, including a vanilla 2/1 with no script at all and an Aura with
+a trigger on it. Five decks mean fifteen pairings, and `playout.test.ts` plays all of them to a
+finish: when a new deck arrives the question is not whether its cards work, it is whether a game
+between it and every other deck ends.
 
 ## Next
 

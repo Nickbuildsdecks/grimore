@@ -310,7 +310,20 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     return 'discarded to hand size';
   }
 
-  if (!(await has(page, 'primary-move'))) return null;
+  /*
+    Nothing to do after all.
+
+    Not a defect, and reporting it as one was wrong: between "is it this page's move" and here,
+    another player can act and take the move away — which in a pod, where four browsers are
+    reading the same table, happens on its own. Caught exactly that way: "Nick stuck at Declare
+    blockers on turn 33" in a game that then carried on and finished normally.
+
+    A prompt that genuinely cannot be answered still returns null, from the branches above that
+    find a question with nothing lit and nothing to confirm. A table that has actually stopped
+    shows up in the callers' own idle and repeat detectors, which say so more accurately than a
+    single missing button can.
+  */
+  if (!(await has(page, 'primary-move'))) return 'the moment passed';
 
   const label = await text(page, 'primary-move');
 

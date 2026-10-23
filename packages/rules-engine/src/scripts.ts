@@ -171,6 +171,10 @@ const FIREBALL: CardScript = {
  */
 const equipment = (name: string, cost: string, bonus: PumpOptions, text: string): CardScript => ({
   name,
+  // Written down rather than closed over, because Balan needs to read it: a card that moves every
+  // Equipment you control onto itself has to know what each of them does, and a bonus that only
+  // exists inside its own effect function cannot be asked.
+  equipBonus: bonus,
   abilities: [
     {
       cost: { mana: cost },
@@ -603,6 +607,69 @@ const HURRICANE: CardScript = {
   },
 };
 
+// ── Red-white equipment ──────────────────────────────────────────────────────────────────────────
+
+const LEONIN_SKYHUNTER: CardScript = { name: 'Leonin Skyhunter', keywords: ['flying'] };
+
+const RAISE_THE_ALARM: CardScript = {
+  name: 'Raise the Alarm',
+  onResolve: (c) => createToken(c.state, c.controller, SOLDIER_TOKEN, 2),
+};
+
+/**
+ * An Aura that does two things, which is why it is here rather than beside Pacifism: the flying
+ * is the aura's continuous effect and the card is the trigger on it entering.
+ */
+const ANGELIC_GIFT: CardScript = {
+  name: 'Angelic Gift',
+  aura: {
+    target: { kind: 'creature', description: 'enchant creature' },
+    effect: { keywords: ['flying'] },
+  },
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'draw a card',
+      effect: (c) => draw(c.state, c.controller, 1),
+    },
+  ],
+};
+
+const INSPIRED_CHARGE: CardScript = {
+  name: 'Inspired Charge',
+  onResolve: (c) => pumpTeam(c.state, c.source, c.controller, { power: 2, toughness: 1 }),
+};
+
+/**
+ * The commander that reads other cards.
+ *
+ * "Attach all Equipment you control to Balan" is one activation and an arbitrary number of
+ * attachments, each with a bonus that belongs to the Equipment rather than to this card — so this
+ * is the first script that looks another script up and uses what it finds. Equipment already on
+ * Balan is left where it is, which `equipTo` would do anyway.
+ */
+const BALAN: CardScript = {
+  name: 'Balan, Wandering Knight',
+  keywords: ['double strike'],
+  abilities: [
+    {
+      cost: { mana: '{1}{W}' },
+      description: '{1}{W}: Attach all Equipment you control to Balan.',
+      effect: (c) => {
+        let state = c.state;
+        for (const id of battlefield(state, (cardId) => state.instances[cardId]?.zoneSeat === c.controller)) {
+          const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+          if (!hasSubtype(parseTypeLine(def?.typeLine), 'equipment')) continue;
+          const bonus = scriptFor(def?.name)?.equipBonus;
+          if (bonus === undefined) continue;
+          state = equipTo(state, id, c.source, c.controller, bonus);
+        }
+        return state;
+      },
+    },
+  ],
+};
+
 const DRUDGE_SKELETONS: CardScript = {
   name: 'Drudge Skeletons',
   abilities: [
@@ -720,6 +787,11 @@ export const ZOMBIE_TOKEN: CardDef = {
 export const KNIGHT_TOKEN: CardDef = {
   name: 'Knight', typeLine: 'Token Creature — Knight', manaCost: '', cmc: 0,
   power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
+};
+
+export const SOLDIER_TOKEN: CardDef = {
+  name: 'Soldier', typeLine: 'Token Creature — Soldier', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: '', colors: ['W'],
 };
 
 export const WARRIOR_TOKEN: CardDef = {
@@ -1194,6 +1266,8 @@ const ALL: readonly CardScript[] = [
   FIREBALL, SECURE_THE_WASTES, MIND_SPRING, EXSANGUINATE, HURRICANE,
   MAGMA_JET, PREORDAIN, OMENSPEAKER,
   DRUDGE_SKELETONS, GOLGARI_CHARM, ENDLESS_ONE,
+  LEONIN_SKYHUNTER, RAISE_THE_ALARM, ANGELIC_GIFT, INSPIRED_CHARGE, BALAN,
+  guildgate('Boros Guildgate', 'R', 'W'),
   equipment('Bonesplitter', '{1}', { power: 2 }, 'equipped creature gets +2/+0'),
   equipment('Loxodon Warhammer', '{3}', { power: 3, keywords: ['trample', 'lifelink'] },
     'equipped creature gets +3/+0 and has trample and lifelink'),

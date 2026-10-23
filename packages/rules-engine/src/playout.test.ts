@@ -47,8 +47,8 @@ function table(
 }
 
 /** Every pairing of the built-in decks, which is what a matchup test should cover. */
-/** The four decks, for tests that want a spread of matchups rather than a named pairing. */
-const DECK_IDS = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest'] as const;
+/** Every deck, for tests that want a spread of matchups rather than a named pairing. */
+const DECK_IDS = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance'] as const;
 
 const MATCHUPS: readonly (readonly [string, string])[] = [
   ['ember-rush', 'verdant-guard'],
@@ -60,6 +60,11 @@ const MATCHUPS: readonly (readonly [string, string])[] = [
   ['tidal-mind', 'tidal-mind'],
   ['rot-harvest', 'rot-harvest'],
   ['verdant-guard', 'verdant-guard'],
+  ['forge-alliance', 'ember-rush'],
+  ['forge-alliance', 'tidal-mind'],
+  ['forge-alliance', 'rot-harvest'],
+  ['forge-alliance', 'verdant-guard'],
+  ['forge-alliance', 'forge-alliance'],
 ];
 
 describe('a whole automated game', () => {
