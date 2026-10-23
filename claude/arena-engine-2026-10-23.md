@@ -42,7 +42,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 45 scripted cards |
+| `scripts.ts` | All 50 scripted cards |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -87,10 +87,12 @@ unaffordable.
 **Hybrid and phyrexian costs are reported unpayable rather than read as generic.** Offering a spell
 that cannot actually be cast is worse than refusing a card no current deck contains.
 
-**A card that needs a decision during resolution is left unscripted, not approximated.** Searching a
-library, "choose one", an opponent discarding — the engine has no way to interrupt a resolution and
-ask. Such a card is resolved by hand, and the log says it was not automated. A tutor that silently
-picks for you is worse than one you resolve yourself.
+**A decision made during resolution is a different thing from a target, and is modelled as one.**
+A target is chosen as the spell goes on the stack, by its controller, from a public zone, and an
+opponent may respond to it. A decision is made as the spell resolves, possibly by somebody else,
+possibly from a hidden zone, and nobody can respond — the spell is already resolving. Writing
+"search your library for a creature card" as a target would get every one of those wrong, which is
+why it took its own mechanism rather than a filter.
 
 **Combat declarations are turn-based actions, not priority actions** (CR 508.1, 509.1). This is
 the rule, and getting it wrong deadlocks the game — see below.
@@ -124,6 +126,7 @@ found by executing the code, not by reading it.
 
 | Bug | Mechanism |
 | --- | --- |
+| **The other player's table offered Pass forever** | A suspended resolution left `state.priority` naming whoever last passed. That seat's table offered Pass, the engine refused it because a question was outstanding, and the two disagreed for as long as the question stood — on turn ten of a real game, with a red banner and no way forward. Nobody holds priority in the middle of a resolution, and the state now says so; `legalActions` also refuses to report `hasPriority` while anything is blocking, because one of the two has to be hard to get wrong and that is the field the table keys its one button on. |
 | **Nothing castable was ever cast** | `legalActions` offered spells against potential mana; `auto:cast` required mana already floating. Every cast was refused. With no creatures there was then no combat and no damage — a whole half of the game missing, from one absent function. Fixed by `solveTap`. |
 | **A deadlock on blocking** | The table let a blocker be assigned to an attacker it could not legally block (a ground creature onto a flier). The engine refused the whole declaration, the step never ended, the player was asked again, made the same choice, and the game stopped. Assignment is now restricted to each creature's own `canBlock` list. |
 | Every land drew as a 0/0 | The view sent the zeroes `characteristicsOf` computes for a non-creature. P/T now travels only for creatures. |
@@ -135,7 +138,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**315 tests in the rules engine, 85 in the web app, 892 across the workspace.**
+**328 tests in the rules engine, 91 in the web app, 914 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -164,12 +167,22 @@ Measured, not assumed: the raw `GameState` reaches 57.7KB in a long game against
 redacted view peaks at 22.3KB — of which the whole automation block is 2.6KB. Redaction is still
 what keeps the game on the wire.
 
+**The one number with no headroom is a library search.** Ordinary play peaks at 18.5KB; a view with
+a library open reaches **45.8KB**, because a zone that normally travels as a count suddenly travels
+as fifty card definitions. That is inside the 64KB cap for a 60-card deck and would be *outside* it
+for a 100-card Commander one — which is this project's stated centre. The budget test measures the
+two separately and asserts a search actually happened, so the number cannot quietly go vacuous. The
+fix is to stop sending the same definition once per copy; that is its own piece of work, written
+down here rather than discovered later.
+
 ---
 
 ## What is deliberately not done
 
-- **A card needing a decision mid-resolution.** The engine cannot interrupt a resolution to ask.
-  Those cards are resolved by hand and the log says so.
+- **Modal spells** ("choose one"). The near miss, now that mid-resolution decisions exist: the mode
+  *is* a decision, but the mode decides what the spell **targets**, and targets are chosen before a
+  spell is on the stack. Resolving that means a two-stage cast, which is a bigger change than it
+  looks. Such a card is left unscripted and resolved by hand rather than approximated.
 - **True layer interaction** (CR 613). What is here is a fixed order — printed, then effects, then
   counters — which is right for every effect the card pool produces. Characteristic-setting and copy
   effects need the real thing.
@@ -186,7 +199,7 @@ what keeps the game on the wire.
 
 ## Added after the first checkpoint
 
-Seven things, in the order they mattered.
+Eight things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -250,11 +263,41 @@ it feeds the outlet only when what goes in is worth less than what is being fed,
 ate its best creature every turn would play itself out of the game while passing every other test in
 the file.
 
+**A card that stops and asks while it is resolving.** The capability behind every tutor, every
+own-choice discard and every "each player sacrifices", and the one the first checkpoint named as
+missing. A spell declares `decisions`; the engine stops, asks, and hands the answers to the effect.
+The spell stays **on the stack** while the question is outstanding, so both tables still show what
+is resolving, and nothing else happens at all until it is answered — no priority, not even for the
+player who cast it. Three questions are answered by the engine rather than asked, and each is a
+stopped game avoided: one with nothing to choose from is never asked (an opponent with no creature
+is not asked to sacrifice one), one that must take exactly what is available is taken, and a player
+who has left the game between one question and the next is not asked. `each-player` and
+`each-opponent` expand into one question each in turn order from the active player (CR 101.4),
+because who answers first is sometimes the whole card.
+
+Two things in it are worth naming separately. **A library search opens that seat's own library to
+it, and only to it** — which needed no new mechanism, because the tabletop's **Search deck** already
+did exactly that, and the view is keyed on the same `searching` flag. Answering shuffles (CR
+701.19e), which is both what the cards say and what stops the searcher keeping the order they were
+just shown. And **the candidate list is the whole authorisation**: it travels only inside the
+answering seat's own `you` block, and `auto:decide` refuses any id that is not on it — without that
+check a crafted action could fetch any card out of any library.
+
+Five cards, each exercising a different facet, taking the engine to 50. Rampant Growth searches for
+a basic land and may fail to find, because failing to find is legal (CR 701.19c) and occasionally
+right. Diabolic Tutor takes anything. Mind Rot is answered by the player *discarding*, not by the
+caster — the thing that makes it a different card from Ravenous Rats. Fleshbag Marauder makes every
+player sacrifice, including its controller, including itself when it is the only creature they have.
+And Faithless Looting is the one that needed `beforeDecisions`: the cards it offers to discard are
+the ones it has not drawn yet, so the draw has to happen before the question can be asked.
+
+Izoni's second ability is scripted now too — it was printed in prose with "Move by hand" underneath
+it two commits ago, for want of a sacrifice cost.
+
 ## Next
 
-1. A way to stop and ask during resolution. It is the one missing capability behind most of the
-   cards that cannot be scripted — a tutor, "choose one", an opponent's discard. The shape now
-   exists three times over in `pendingDiscard`, the opening-hand phase and `pendingChoice`.
+1. Modal spells. The last common shape that cannot be scripted, and the reason is specific: the
+   mode decides what the spell targets, and targets are chosen before it is on the stack.
 2. More scripts. The vocabulary in `effects.ts` covers far more than the 45 cards currently using
    it; adding a card is a few declarative lines.
 3. Loading a real Grimore deck into an automated table. `deck:load` already resolves any deck handed

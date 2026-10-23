@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — forty-five, today, across four starter decks. A tabletop works with
+cards somebody has scripted — fifty, today, across four starter decks. A tabletop works with
 every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -195,7 +195,7 @@ FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatev
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (315 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (328 tests, including whole
 games played out by bots that only ever send moves the engine offered them) and `apps/realtime`
 (22 tests against live Redis, including two socket clients playing to a finish and one person
 playing the server).
@@ -206,12 +206,14 @@ playing the server).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows forty-five cards.** Everything in the four starter decks. A card that needs
-  a decision *while it is resolving* — searching a library, "choose one", an opponent discarding a
-  card of their choice — is deliberately not scripted rather than approximated, because the engine
-  has no way to stop and ask. Those resolve by hand. A card that asks *before* resolving does work:
-  a spell's targets, a trigger's targets (CR 603.3d) and a sacrifice paid as a cost are all chosen
-  as the thing goes on the stack, and the engine stops and asks for each.
+- **The engine knows fifty cards.** Everything in the four starter decks. It stops and asks for
+  every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a sacrifice
+  paid as a cost, and — the newest of them — a decision made *while a card is resolving*. That last
+  one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your library to you and
+  nobody else, Mind Rot is answered by the player discarding rather than by whoever cast it, and
+  Fleshbag Marauder asks each player in turn order. **Modal spells** ("choose one") are still
+  deliberately not scripted rather than approximated, because the mode decides what the spell
+  targets and targets are chosen before it is on the stack. Those resolve by hand.
 - **The computer opponent is not a strong player.** It attacks with everything, blocks when the
   trade is good, casts the biggest thing it can afford and mulligans a hand with no land in it. It
   plays a real game; it does not plan one.

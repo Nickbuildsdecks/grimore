@@ -131,6 +131,7 @@ async function expectEventually(page, label, predicate, timeout = 12000) {
 /** Whether this page is the one the engine is waiting on. */
 async function isMyMove(page) {
   if (await has(page, 'mulligan-prompt')) return true;
+  if (await has(page, 'decide-prompt')) return true;
   if (await has(page, 'choose-prompt')) return true;
   if (await has(page, 'feed-prompt')) return true;
   if (await has(page, 'bottom-prompt')) return true;
@@ -178,6 +179,32 @@ async function makeMove(page, seat, { aggression = 0.6 } = {}) {
     }
     await tid(page, 'primary-move').click();
     return 'kept the opening hand';
+  }
+
+  // A card that stopped mid-resolution to ask this player something blocks everything, including
+  // the player whose spell it is. Answered before priority is even looked at.
+  if (await has(page, 'decide-prompt')) {
+    const prompt = await text(page, 'decide-prompt');
+    // The candidates are lit wherever they are — hand, battlefield, graveyard, or the library,
+    // which is the one zone the table draws only while a search is open.
+    for (let pick = 0; pick < 4; pick++) {
+      const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
+      if ((await lit.count()) === 0) break;
+      await lit.first().click({ timeout: 2000 }).catch(() => {});
+      // An exact count sends itself; a range needs confirming, and "choose nothing" is an answer.
+      if (!(await has(page, 'decide-prompt'))) return `answered: ${prompt}`;
+      if (await has(page, 'confirm-decision')) {
+        await tid(page, 'confirm-decision').click();
+        return `answered: ${prompt}`;
+      }
+    }
+    if (await has(page, 'confirm-decision')) {
+      await tid(page, 'confirm-decision').click();
+      return `answered with nothing: ${prompt}`;
+    }
+    // Nothing lit and nothing to confirm: the table is asking a question it is not showing an
+    // answer to, which stops the game — a defect to report rather than wait out.
+    return null;
   }
 
   if (await has(page, 'feed-prompt')) {
@@ -457,6 +484,7 @@ async function main() {
     const seen = {
       land: false, mana: false, stack: false, attackers: false, blockers: false,
       lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
+      decided: false, searched: false,
     };
     const startLifeNick = await readNumber(nick, 'life-0');
     const startLifeFriend = await readNumber(friend, 'life-1');
@@ -491,6 +519,14 @@ async function main() {
       // takes to answer.
       if (await has(actor.page, 'attack-prompt')) seen.attackers = true;
       if (await has(actor.page, 'block-prompt')) seen.blockers = true;
+      // Looked for before the move is made, because answering it is what clears it.
+      if (await has(actor.page, 'decide-prompt')) {
+        seen.decided = true;
+        if (await has(actor.page, `zone-library-${actor.seat}`)) {
+          if (!seen.searched) await shot(actor.page, 'searching-a-library');
+          seen.searched = true;
+        }
+      }
       if (await has(actor.page, 'primary-move')) {
         const label = await text(actor.page, 'primary-move');
         if (/declare attackers/i.test(label)) seen.attackers = true;
@@ -573,6 +609,19 @@ async function main() {
     // game produced it and reported when it did not. `playout.test.ts` asserts deterministically
     // that counterspells get cast; this is about the one thing only a browser can show, which is
     // that a row in the stack panel can be tapped as a target.
+    // A question asked mid-resolution. Whether one comes up is the shuffle's business — a tutor or
+    // a looting spell has to be drawn and affordable — so it is asserted when the game produced
+    // one and reported when it did not. The deterministic version lives in `scripts.test.ts`; what
+    // only a browser can show is that the prompt has a visible answer, and the search case is the
+    // one worth naming because the cards are in a library the table draws nowhere else.
+    if (seen.decided) {
+      check('a question asked mid-resolution can be answered from the table', true);
+      if (seen.searched) check('a library search shows the library and lights what may be taken', true);
+      else console.log('      (nothing searched a library in this game)');
+    } else {
+      console.log('      (no card stopped to ask a question in this game — scripts.test.ts covers '
+        + 'that path on a fixed board)');
+    }
     if (seen.countered) {
       check('a spell on the stack can be targeted', true);
     } else if (DECK_A === 'tidal-mind' || DECK_B === 'tidal-mind') {

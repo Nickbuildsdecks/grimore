@@ -15,8 +15,8 @@ import { characteristicsOf } from './characteristics.js';
 import {
   advanceStep, aliveSeats, atSorcerySpeed, bottomOwed, canAttack, canBlock, checkTargets,
   endTurnCleanup, legalAttackers, legalBlockers, menaceSatisfied, payFrom, pendingDeclaration,
-  prevAlive, pushAbility, raise, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle,
-  stackTop, stateBasedActions, stillDeciding, tapAttackers,
+  answerDecision, prevAlive, pushAbility, raise, resetPriority, resolveTop, sacrificeOptions,
+  scriptOf, settle, stackTop, stateBasedActions, stillDeciding, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
 } from './automation.js';
 import { addToPool, poolOf } from './effects.js';
@@ -239,6 +239,9 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
   if (state.pendingChoice !== null) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${state.pendingChoice.description} needs a target first`);
   }
+  if (state.pendingDecision !== null) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${state.pendingDecision.prompt} must be answered first`);
+  }
   const owed = pendingDeclaration(state);
   if (owed !== null) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${owed.kind} must be declared before anyone passes`);
@@ -261,8 +264,11 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
   if (state.stackOrder.length > 0) {
     const before = state;
     const resolved = resolveTop({ ...state, passed: [] });
-    const next = resetPriority(settle(resolved.state, before));
-    return { state: next, message: resolved.message, data: { resolved: true } };
+    // A resolution that stopped to ask a question is not over, and nobody gets priority back in
+    // the middle of one — the spell is still on the stack and the answer continues it.
+    const suspended = resolved.state.pendingDecision !== null;
+    const next = suspended ? settle(resolved.state, before) : resetPriority(settle(resolved.state, before));
+    return { state: next, message: resolved.message, data: { resolved: !suspended } };
   }
   const before = state;
   const advanced = advanceStep({ ...state, passed: [] });
@@ -501,6 +507,52 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
   };
 }
 
+// ── Answering a question a card asked while resolving ────────────────────────────────────────────
+
+/**
+ * Answers a card's mid-resolution question, and lets the resolution carry on.
+ *
+ * The whole validation is here rather than split with the engine, because every one of these is a
+ * way a client could otherwise reach into a hidden zone: a library search hands the chooser a list
+ * of candidates, and accepting an id that is not on that list would let a crafted action fetch any
+ * card from any library. So the id must be one the engine itself offered, for this question, and
+ * the count must be what the card asked for.
+ */
+function decide(state: GameState, action: { by: SeatIndex; cards?: readonly string[] }): Outcome {
+  requireAutomated(state);
+  const pending = state.pendingDecision;
+  if (pending === null) throw new EngineError('RULE_NOT_APPLICABLE', 'nothing is waiting on a decision');
+  if (pending.seat !== action.by) throw new EngineError('FORBIDDEN', 'it is not your decision to make');
+  const chosen = action.cards ?? [];
+  if (chosen.length < pending.min || chosen.length > pending.max) {
+    throw new EngineError('RULE_NOT_APPLICABLE', pending.min === pending.max
+      ? `choose exactly ${pending.min}`
+      : `choose between ${pending.min} and ${pending.max}`);
+  }
+  const seen = new Set<string>();
+  for (const id of chosen) {
+    if (seen.has(id)) throw new EngineError('RULE_NOT_APPLICABLE', 'the same card cannot be chosen twice');
+    seen.add(id);
+    if (!pending.candidates.includes(id)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not one of the choices');
+    }
+  }
+  const names = chosen.map((id) => characteristicsOf(state, requireInstance(state, id)).name);
+  const resumed = answerDecision(state, chosen);
+  // Priority returns only once the resolution is actually over; a resolution that stopped to ask
+  // somebody else something is still resolving, and nobody may act in the middle of it.
+  const next = resumed.state.pendingDecision === null
+    ? resetPriority(settle(resumed.state, state))
+    : settle(resumed.state, state);
+  return {
+    state: next,
+    message: names.length === 0
+      ? `${seatName(state, action.by)} chooses nothing — ${resumed.message}`
+      : `${seatName(state, action.by)} chooses ${names.join(', ')} — ${resumed.message}`,
+    data: { cards: [...chosen], resolved: next.pendingDecision === null },
+  };
+}
+
 // ── Starting ─────────────────────────────────────────────────────────────────────────────────────
 
 function setStops(state: GameState, action: { by: SeatIndex; autoPass: boolean }): Outcome {
@@ -573,6 +625,7 @@ function autoPass(state: GameState): { state: GameState; passes: number } {
   for (let guard = 0; guard < 64; guard++) {
     if (next.finished || !next.automated || !next.autoPass || next.openingHands) break;
     if (next.pendingDiscard !== null || next.pendingChoice !== null) break;
+    if (next.pendingDecision !== null) break;
     if (pendingDeclaration(next) !== null) break;
     const seat = next.priority;
     if (seat === null) break;
@@ -600,6 +653,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:stops': return setStops(state, action);
     case 'auto:keep': return keepHand(state, action);
     case 'auto:choose': return chooseTargets(state, action);
+    case 'auto:decide': return decide(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);

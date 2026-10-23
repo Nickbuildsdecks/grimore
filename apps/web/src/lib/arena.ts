@@ -16,13 +16,22 @@
  * target disappearing while you choose — and a reducer is the only version of them that can be
  * tested without a browser.
  */
-import type { GameView, LegalPlay, SeatIndex, Target, VisibleCard } from "@grimore/rules-engine"
+import type { GameView, LegalActions, LegalPlay, SeatIndex, Target, VisibleCard } from "@grimore/rules-engine"
 import type { TableAction } from "@/lib/table"
 
 /** What the player is in the middle of doing. `idle` is the ordinary "pick something" state. */
 export type ArenaMode =
   | { kind: "idle" }
   | { kind: "bottoming"; chosen: string[] }
+  /**
+   * A card has stopped mid-resolution to ask this player to pick cards — a search, a discard of
+   * their own choosing, a creature to sacrifice.
+   *
+   * Unlike `targeting` this one has no `play`: the spell is already resolving, so there is nothing
+   * left to send but the answer. `ask` is the engine's own question, carried whole rather than
+   * unpacked, so a new kind of decision needs no change here.
+   */
+  | { kind: "deciding"; ask: Decision; chosen: string[] }
   /** Picking what to feed an ability whose cost is a sacrifice, before it is activated. */
   | { kind: "feeding"; play: LegalPlay }
   /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
@@ -36,11 +45,16 @@ export interface Block {
   attacker: string
 }
 
+/** The engine's mid-resolution question, exactly as `legalActions` reports it. */
+export type Decision = NonNullable<LegalActions["mustDecide"]>
+
 export type ArenaEvent =
   | { kind: "cancel" }
   | { kind: "startBottoming" }
   | { kind: "startChoosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string }
   | { kind: "toggleBottom"; card: string }
+  | { kind: "startDeciding"; ask: Decision }
+  | { kind: "toggleDecision"; card: string }
   | { kind: "feed"; card: string }
   | { kind: "choosePlay"; play: LegalPlay }
   | { kind: "pickTarget"; target: Target }
@@ -217,6 +231,12 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (mode.kind === "bottoming") {
         return { mode: IDLE, action: { type: "auto:keep", bottom: [...mode.chosen] } }
       }
+      if (mode.kind === "deciding") {
+        // Fewer than the minimum is not an answer the engine accepts, so the button does nothing
+        // rather than sending something that bounces back as an error the player cannot read.
+        if (mode.chosen.length < mode.ask.min) return { mode, action: null }
+        return { mode: IDLE, action: { type: "auto:decide", cards: [...mode.chosen] } }
+      }
       if (mode.kind === "choosing") {
         // A trigger's targets are never optional: it was only put on the stack because legal ones
         // existed, so confirming early would send an ability the engine refuses.
@@ -243,6 +263,28 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
 
     case "startBottoming":
       return { mode: { kind: "bottoming", chosen: [] }, action: null }
+
+    case "startDeciding":
+      return { mode: { kind: "deciding", ask: event.ask, chosen: [] }, action: null }
+
+    case "toggleDecision": {
+      if (mode.kind !== "deciding") return { mode, action: null }
+      if (!mode.ask.candidates.includes(event.card)) return { mode, action: null }
+      if (mode.chosen.includes(event.card)) {
+        return { mode: { ...mode, chosen: mode.chosen.filter((id) => id !== event.card) }, action: null }
+      }
+      // At the limit, picking another one is a correction rather than an error: the oldest pick
+      // drops out. A player at max who taps a different card means that one instead.
+      const chosen = mode.chosen.length >= mode.ask.max
+        ? [...mode.chosen.slice(1), event.card]
+        : [...mode.chosen, event.card]
+      // Sent as soon as it is unambiguous. A question asking for exactly one does not need a
+      // confirm button; one with a range does, because stopping early is a legal answer.
+      if (mode.ask.min === mode.ask.max && chosen.length === mode.ask.max) {
+        return { mode: IDLE, action: { type: "auto:decide", cards: chosen } }
+      }
+      return { mode: { ...mode, chosen }, action: null }
+    }
 
     case "toggleBottom": {
       if (mode.kind !== "bottoming") return { mode, action: null }
@@ -376,6 +418,15 @@ export function primaryMove(view: GameView): { label: string; event: ArenaEvent 
   const auto = view.automation
   const you = auto?.you
   if (!auto || !you || view.finished) return null
+  // A card that stopped mid-resolution to ask this player something blocks everything else,
+  // including the player whose spell it is — so it comes before priority and before declarations.
+  if (you.mustDecide !== null) {
+    return {
+      label: you.mustDecide.prompt,
+      event: { kind: "startDeciding", ask: you.mustDecide },
+      action: null,
+    }
+  }
   // A trigger waiting for its targets blocks everything else.
   if (you.mustChoose !== null) {
     return {
@@ -402,6 +453,13 @@ export function primaryMove(view: GameView): { label: string; event: ArenaEvent 
   if (you.mustDeclare === "blockers") return { label: "Declare blockers", event: { kind: "declareBlockers" }, action: null }
   if (!you.hasPriority) return null
   return { label: you.passLabel || "Pass", event: null, action: { type: "auto:pass" } }
+}
+
+/** How a decision's progress reads on the confirm button: "Discard two cards (1 of 2)". */
+export function decisionLabel(ask: Decision, chosen: readonly string[]): string {
+  if (ask.min === ask.max) return `${ask.prompt} (${chosen.length} of ${ask.max})`
+  if (ask.min === 0) return chosen.length === 0 ? `${ask.prompt} — or choose nothing` : `${ask.prompt} (${chosen.length})`
+  return `${ask.prompt} (${chosen.length}, at least ${ask.min})`
 }
 
 /** The nearest live opponent, which in a two-player game is simply the other seat. */

@@ -13,14 +13,16 @@
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { characteristicsOf } from './characteristics.js';
-import { atSorcerySpeed, bottomOwed, pendingDeclaration, sacrificeOptions, stackTop } from './automation.js';
+import {
+  atSorcerySpeed, bottomOwed, pendingDeclaration, sacrificeOptions, stackTop,
+} from './automation.js';
 import { legalAttackers, legalBlockers, canBlock } from './combat.js';
 import { poolOf } from './effects.js';
 import { addMana, canPay, parseManaCost, type ManaPool, type ManaType } from './mana.js';
 import { scriptFor } from './scripts.js';
 import type { AbilityDef, CardScript, TargetSpec } from './scriptTypes.js';
 import { legalTargets } from './targeting.js';
-import { MAIN_STEPS, type Step, type Target } from './turnTypes.js';
+import { MAIN_STEPS, type DecisionZone, type Step, type Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 /** One thing a player could do, with everything the UI needs to offer it. */
@@ -81,6 +83,20 @@ export interface LegalActions {
     readonly description: string;
     readonly specs: readonly TargetSpec[];
     readonly candidates: readonly (readonly Target[])[];
+  } | null;
+  /**
+   * A question a card asked this seat while it was resolving, with the cards it may choose between.
+   *
+   * Per-seat for a reason that is not cosmetic: the candidates for a library search are cards in a
+   * hidden zone, so they travel in `you` — which `viewFor` only ever builds for the seat it is
+   * addressed to — and never in the public part of the view.
+   */
+  readonly mustDecide: {
+    readonly prompt: string;
+    readonly from: DecisionZone;
+    readonly candidates: readonly string[];
+    readonly min: number;
+    readonly max: number;
   } | null;
   /**
    * A declaration this seat owes before play continues. Separate from `hasPriority` because
@@ -210,7 +226,18 @@ function activatablePlays(state: GameState, seat: SeatIndex, potential: ManaPool
 
 /** Everything `seat` may do in the current state. */
 export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
-  const hasPriority = state.automated && state.priority === seat;
+  /**
+   * Holding priority, which is not the same as being named in `state.priority`.
+   *
+   * Everything that blocks the game is listed, and the list is belt-and-braces on purpose: the
+   * engine clears `priority` when it stops to ask, but the consequence of forgetting to is a table
+   * that offers a pass the engine refuses *every time*, for as long as the question stands — a
+   * stuck game rather than a wrong label. One of the two has to be hard to get wrong, and this is
+   * the one the client actually reads.
+   */
+  const hasPriority = state.automated && state.priority === seat
+    && !state.openingHands && state.pendingDecision === null && state.pendingChoice === null
+    && state.pendingDiscard === null && pendingDeclaration(state) === null;
   const potential = potentialMana(state, seat);
   const pending = state.pendingDiscard;
   const mustDiscard = pending !== null && pending.seat === seat ? pending.count : 0;
@@ -236,17 +263,28 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     };
   }
 
+  const decision = state.pendingDecision;
+  const mustDecide: LegalActions['mustDecide'] = decision !== null && decision.seat === seat
+    ? {
+        prompt: decision.prompt, from: decision.from,
+        candidates: decision.candidates, min: decision.min, max: decision.max,
+      }
+    : null;
+
   const empty: LegalActions = {
     seat, step: state.step, hasPriority, isActivePlayer: state.activeSeat === seat,
     canPass: false, passLabel: '', plays: [], attackers: [], blockers: [],
     mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat), mustChoose,
-    pool: poolOf(state, seat), potential,
+    mustDecide, pool: poolOf(state, seat), potential,
   };
   if (!state.automated || state.finished) return empty;
   // Opening hands come before anything else, including priority.
   if (state.openingHands) return mustSettleHand ? { ...empty, passLabel: 'Keep' } : empty;
   // So does a trigger waiting for its targets: nothing else can happen until it has them.
   if (choice !== null) return mustChoose === null ? empty : { ...empty, passLabel: 'Choose a target' };
+  // And so does a spell that stopped mid-resolution to ask somebody a question. It is still on the
+  // stack; nobody holds priority until it is answered, including the player who cast it.
+  if (decision !== null) return mustDecide === null ? empty : { ...empty, passLabel: 'Choose' };
   if (mustDiscard > 0) return { ...empty, passLabel: `Discard ${mustDiscard}` };
   // A declaration comes before priority, so it is offered to the seat that owes it even though
   // nobody holds priority while it is outstanding.

@@ -630,9 +630,20 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       expect(view.turn).toBeGreaterThanOrEqual(1);
 
       // Play it out by only ever doing what the table offers.
+      const decisions: string[] = [];
       for (let move = 0; move < 400 && !view.finished; move++) {
         const you = view.automation?.you;
         if (you === undefined || you === null) break;
+        // A card that stopped mid-resolution to ask comes before everything, including priority:
+        // the spell is already resolving and nothing else is legal until it is answered. Without
+        // this the game stops dead the first time this seat casts a tutor or a looting spell —
+        // which is what a real client has to handle too.
+        if (you.mustDecide !== null) {
+          const ask = you.mustDecide;
+          decisions.push(ask.prompt);
+          view = await act({ type: 'auto:decide', cards: ask.candidates.slice(0, ask.min) });
+          continue;
+        }
         if (you.mustDiscard > 0) {
           const hand = view.zones['0:hand'] ?? [];
           if (hand.length === 0) break;
@@ -658,8 +669,13 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       const theirs = view.seats[1]!;
       expect(theirs.libraryCount).toBeLessThan(54);
       expect(view.turn).toBeGreaterThan(4);
-      // And the person never saw the server's hand.
+      // And the person never saw the server's hand, nor either library's order.
       for (const id of view.zones['1:hand'] ?? []) expect(view.cards[id]!.card).toBeUndefined();
+      expect(view.zones['1:library']).toBeUndefined();
+      expect(view.zones['0:library']).toBeUndefined();
+      // Whatever questions came up over the wire were answered over the wire, and none was left
+      // outstanding at the end — a game that ends mid-resolution has not ended.
+      expect(view.automation!.awaiting).toBeNull();
     }, 60_000);
 
     it('closes a table when the last person leaves, rather than leaving the server playing alone', async () => {

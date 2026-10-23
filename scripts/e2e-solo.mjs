@@ -74,7 +74,7 @@ async function readNumber(page, testId) {
 
 /** Whether the table is asking this player for anything. */
 async function myMove(page) {
-  for (const id of ['mulligan-prompt', 'bottom-prompt', 'choose-prompt', 'feed-prompt', 'target-prompt', 'attack-prompt', 'block-prompt', 'discard-prompt', 'primary-move']) {
+  for (const id of ['mulligan-prompt', 'bottom-prompt', 'decide-prompt', 'choose-prompt', 'feed-prompt', 'target-prompt', 'attack-prompt', 'block-prompt', 'discard-prompt', 'primary-move']) {
     if (await has(page, id)) return true;
   }
   return false;
@@ -99,6 +99,32 @@ async function takeTurn(page) {
     await tid(page, 'primary-move').click();
     return 'kept the opening hand';
   }
+  // A card that stopped mid-resolution to ask this player something blocks everything, including
+  // the player whose spell it is. Answered before priority is even looked at.
+  if (await has(page, 'decide-prompt')) {
+    const prompt = await text(page, 'decide-prompt');
+    // The candidates are lit wherever they are — hand, battlefield, graveyard, or the library,
+    // which is the one zone the table draws only while a search is open.
+    for (let pick = 0; pick < 4; pick++) {
+      const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
+      if ((await lit.count()) === 0) break;
+      await lit.first().click({ timeout: 2000 }).catch(() => {});
+      // An exact count sends itself; a range needs confirming, and "choose nothing" is an answer.
+      if (!(await has(page, 'decide-prompt'))) return `answered: ${prompt}`;
+      if (await has(page, 'confirm-decision')) {
+        await tid(page, 'confirm-decision').click();
+        return `answered: ${prompt}`;
+      }
+    }
+    if (await has(page, 'confirm-decision')) {
+      await tid(page, 'confirm-decision').click();
+      return `answered with nothing: ${prompt}`;
+    }
+    // Nothing lit and nothing to confirm: the table is asking a question it is not showing an
+    // answer to, which stops the game — a defect to report rather than wait out.
+    return null;
+  }
+
   if (await has(page, 'feed-prompt')) {
     // An ability whose cost is a sacrifice: the creatures that can pay for it are lit.
     const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');

@@ -122,6 +122,15 @@ const FLAME_SLASH: CardDef = {
   colors: ['R'],
 };
 
+const FAITHLESS_LOOTING: CardDef = {
+  name: 'Faithless Looting',
+  typeLine: 'Sorcery',
+  manaCost: '{R}',
+  cmc: 1,
+  oracleText: 'Draw two cards, then discard two cards.',
+  colors: ['R'],
+};
+
 const ACT_OF_TREASON: CardDef = {
   name: 'Act of Treason',
   typeLine: 'Sorcery',
@@ -208,6 +217,15 @@ const AJANIS_PRIDEMATE: CardDef = {
   toughness: '2',
   oracleText: "Whenever you gain life, put a +1/+1 counter on Ajani's Pridemate.",
   colors: ['W'],
+};
+
+const RAMPANT_GROWTH: CardDef = {
+  name: 'Rampant Growth',
+  typeLine: 'Sorcery',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  oracleText: 'Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.',
+  colors: ['G'],
 };
 
 const GIANT_GROWTH: CardDef = {
@@ -316,6 +334,24 @@ const SIGN_IN_BLOOD: CardDef = {
   colors: ['B'],
 };
 
+const MIND_ROT: CardDef = {
+  name: 'Mind Rot',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  oracleText: 'Target player discards two cards.',
+  colors: ['B'],
+};
+
+const DIABOLIC_TUTOR: CardDef = {
+  name: 'Diabolic Tutor',
+  typeLine: 'Sorcery',
+  manaCost: '{3}{B}',
+  cmc: 4,
+  oracleText: 'Search your library for a card and put that card into your hand, then shuffle.',
+  colors: ['B'],
+};
+
 const TOME_SCOUR: CardDef = {
   name: 'Tome Scour',
   typeLine: 'Sorcery',
@@ -403,6 +439,17 @@ const TALRAND: CardDef = {
 };
 
 // ── Green-black graveyard ────────────────────────────────────────────────────────────────────────
+
+const FLESHBAG_MARAUDER: CardDef = {
+  name: 'Fleshbag Marauder',
+  typeLine: 'Creature — Human Warrior',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'When Fleshbag Marauder enters the battlefield, each player sacrifices a creature.',
+  colors: ['B'],
+};
 
 const GRAVEDIGGER: CardDef = {
   name: 'Gravedigger',
@@ -495,7 +542,7 @@ const IZONI: CardDef = {
   cmc: 4,
   power: '2',
   toughness: '3',
-  oracleText: 'When Izoni, Thousand-Eyed enters the battlefield, create a 1/1 black and green Insect creature token for each creature card in your graveyard.',
+  oracleText: 'When Izoni, Thousand-Eyed enters the battlefield, create a 1/1 black and green Insect creature token for each creature card in your graveyard.\n{B}{G}, Sacrifice another creature: You gain 1 life and draw a card.',
   colors: ['B', 'G'],
 };
 
@@ -511,12 +558,13 @@ export const EMBER_RUSH: DeckSpec = {
     { card: MONASTERY_SWIFTSPEAR, count: 4 },
     { card: RAGING_GOBLIN, count: 4 },
     { card: FIREBRAND_ARCHER, count: 4 },
-    { card: HILL_GIANT, count: 2 },
+    { card: HILL_GIANT, count: 1 },
     { card: FLAMETONGUE_KAVU, count: 2 },
     { card: SHIVAN_DRAGON, count: 4 },
     { card: LIGHTNING_BOLT, count: 4 },
-    { card: SHOCK, count: 4 },
-    { card: LAVA_SPIKE, count: 4 },
+    { card: SHOCK, count: 3 },
+    { card: LAVA_SPIKE, count: 3 },
+    { card: FAITHLESS_LOOTING, count: 3 },
     { card: FLAME_SLASH, count: 4 },
     { card: ACT_OF_TREASON, count: 2 },
   ],
@@ -531,12 +579,13 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: FOREST, count: 12 },
     { card: PLAINS, count: 10 },
     { card: LLANOWAR_ELVES, count: 4 },
-    { card: GRIZZLY_BEARS, count: 4 },
+    { card: RAMPANT_GROWTH, count: 4 },
+    { card: GRIZZLY_BEARS, count: 2 },
     { card: CENTAUR_COURSER, count: 4 },
     { card: AJANIS_PRIDEMATE, count: 4 },
     { card: SERRA_ANGEL, count: 4 },
-    { card: GIANT_GROWTH, count: 4 },
-    { card: PACIFISM, count: 4 },
+    { card: GIANT_GROWTH, count: 3 },
+    { card: PACIFISM, count: 3 },
     { card: SWORDS_TO_PLOWSHARES, count: 4 },
     { card: HARMONIZE, count: 4 },
     { card: OVERRUN, count: 2 },
@@ -552,17 +601,19 @@ export const TIDAL_MIND: DeckSpec = {
     { card: ISLAND, count: 12 },
     { card: SWAMP, count: 11 },
     { card: COUNTERSPELL, count: 4 },
-    { card: NEGATE, count: 3 },
+    { card: NEGATE, count: 2 },
     { card: DOOM_BLADE, count: 4 },
-    { card: DIVINATION, count: 4 },
+    { card: DIVINATION, count: 3 },
     { card: SIGN_IN_BLOOD, count: 3 },
-    { card: TOME_SCOUR, count: 2 },
+    { card: TOME_SCOUR, count: 1 },
+    { card: MIND_ROT, count: 3 },
+    { card: DIABOLIC_TUTOR, count: 2 },
     { card: RAVENOUS_RATS, count: 4 },
-    { card: CHILD_OF_NIGHT, count: 3 },
+    { card: CHILD_OF_NIGHT, count: 2 },
     { card: WIND_DRAKE, count: 1 },
     { card: MAN_O_WAR, count: 2 },
     { card: VAMPIRE_NIGHTHAWK, count: 4 },
-    { card: AIR_ELEMENTAL, count: 3 },
+    { card: AIR_ELEMENTAL, count: 2 },
   ],
 };
 
@@ -575,9 +626,10 @@ export const ROT_HARVEST: DeckSpec = {
     { card: FOREST, count: 11 },
     { card: SWAMP, count: 12 },
     { card: LLANOWAR_ELVES, count: 4 },
-    { card: THORNWEALD_ARCHER, count: 4 },
+    { card: THORNWEALD_ARCHER, count: 2 },
     { card: WALL_OF_BLOSSOMS, count: 4 },
-    { card: CENTAUR_COURSER, count: 3 },
+    { card: FLESHBAG_MARAUDER, count: 4 },
+    { card: CENTAUR_COURSER, count: 1 },
     { card: BLOODTHRONE_VAMPIRE, count: 3 },
     { card: VAMPIRE_ARISTOCRAT, count: 3 },
     { card: GRAVEDIGGER, count: 4 },

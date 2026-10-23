@@ -177,6 +177,50 @@ export interface AutomationState {
     /** How many targets are still to choose, in order. */
     readonly remaining: number;
   } | null;
+  /**
+   * A resolution that has stopped to ask somebody a question.
+   *
+   * Targets are chosen before a spell is on the stack; *this* is the other kind of decision — the
+   * one a card asks for while it is resolving, and the one that kept tutors, "choose one" and an
+   * opponent's own-choice discard off the scripted list entirely. Searching a library for a card is
+   * not a target: it is not chosen when the spell is cast, it cannot be responded to, and the cards
+   * it chooses between are in a hidden zone.
+   *
+   * The spell stays **on the stack** while this is outstanding, so both tables still show what is
+   * resolving, and nothing else happens until it is answered: no priority, no further resolution,
+   * no step change. `resume` is what the engine needs to pick the resolution back up — the answers
+   * so far and which question is next — and it is part of the state rather than a closure because
+   * the state is serialised to Redis between one action and the next.
+   */
+  readonly pendingDecision: {
+    /** Who answers. Not always the controller: a discard is chosen by the player discarding. */
+    readonly seat: SeatIndex;
+    /** The stack object that is resolving. */
+    readonly stackId: string;
+    readonly prompt: string;
+    /** Instance ids that may be chosen, computed when the question is asked. */
+    readonly candidates: readonly string[];
+    readonly min: number;
+    readonly max: number;
+    /** Where they are being chosen from, which is what the table needs to draw the picker. */
+    readonly from: DecisionZone;
+    readonly resume: {
+      /** Every question this resolution asks, in order: a spec index and who answers it. */
+      readonly plan: readonly { readonly seat: SeatIndex; readonly specIndex: number }[];
+      /** Which question in the plan is outstanding. */
+      readonly at: number;
+      readonly answers: readonly DecisionAnswer[];
+    };
+  } | null;
+}
+
+/** Where a mid-resolution decision chooses its cards from. */
+export type DecisionZone = 'library' | 'hand' | 'graveyard' | 'battlefield';
+
+/** One answered decision, in the order the card asked. */
+export interface DecisionAnswer {
+  readonly seat: SeatIndex;
+  readonly ids: readonly string[];
 }
 
 // ── Automated actions ────────────────────────────────────────────────────────────────────────────
@@ -212,6 +256,10 @@ export interface AutoDiscardAction { readonly type: 'auto:discard'; readonly by:
 export interface AutoChooseAction {
   readonly type: 'auto:choose'; readonly by: SeatIndex; readonly targets: readonly Target[];
 }
+/** Answers a question a card asked while it was resolving. */
+export interface AutoDecideAction {
+  readonly type: 'auto:decide'; readonly by: SeatIndex; readonly cards: readonly string[];
+}
 /** Settles on an opening hand, putting back one card for each mulligan taken. */
 export interface AutoKeepAction {
   readonly type: 'auto:keep'; readonly by: SeatIndex;
@@ -222,11 +270,11 @@ export interface AutoKeepAction {
 export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoDiscardAction | AutoStopsAction
-  | AutoKeepAction | AutoChooseAction;
+  | AutoKeepAction | AutoChooseAction | AutoDecideAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
-  'auto:block', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
+  'auto:block', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose', 'auto:decide',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

@@ -167,6 +167,53 @@ describe('a whole automated game', () => {
     expect(sacrifices).toBeGreaterThan(0);
   });
 
+  it('answers the questions cards ask mid-resolution, and answers them the right way round', () => {
+    // Every one of these cards could sit in a deck and never be drawn, cast or answered while
+    // every other test in this file passed, so the behaviour is asserted from real games: the
+    // questions get asked, they get answered, and the bot answers them in the direction that
+    // helps it. One that tutored up a basic land while discarding its dragon would finish every
+    // game in this file without complaint.
+    //
+    // Watched as the game runs rather than read off `state.log` afterwards, because the log is a
+    // 200-entry window and a game is several hundred actions — a question answered on turn three
+    // has scrolled off by the time the game ends.
+    const asked: string[] = [];
+    const tutored: number[] = [];
+    const pitched: number[] = [];
+    let games = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      let s = table(seed * 911, (seed % 2) as SeatIndex, ['tidal-mind', 'ember-rush']);
+      for (let i = 0; i < 6000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const pending = s.pendingDecision;
+        const before = s.stateVersion;
+        s = stepOnce(s, seat);
+        if (s.stateVersion === before) break;
+        if (pending === null) continue;
+        asked.push(pending.prompt);
+        // What the bot actually picked, which is the half that can be subtly wrong.
+        const chosen = (s.log[s.log.length - 1]?.data as { cards?: readonly string[] })?.cards ?? [];
+        const values = chosen.map((id) => s.cardDefs[s.instances[id]!.defKey]?.cmc ?? 0);
+        if (pending.from === 'library') tutored.push(...values);
+        if (pending.from === 'hand') pitched.push(...values);
+      }
+      expect(s.finished).toBe(true);
+      // A resolution that stopped to ask is never left outstanding.
+      expect(s.pendingDecision).toBeNull();
+      games += 1;
+    }
+    expect(games).toBe(12);
+    expect(asked.filter((p) => /Search your library/.test(p)).length).toBeGreaterThan(0);
+    expect(asked.filter((p) => /Discard two cards/.test(p)).length).toBeGreaterThan(0);
+    if (tutored.length > 0 && pitched.length > 0) {
+      const mean = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
+      // It fetches the expensive card and pitches the one it is least likely to cast. The two are
+      // one ranking read in opposite directions, so getting it backwards shows up right here.
+      expect(mean(tutored)).toBeGreaterThan(mean(pitched));
+    }
+  });
+
   it('never offers a play it then refuses', () => {
     // The strongest form of the claim: take every action the bot chose from `legalActions`, and
     // check the engine accepted it. A single refusal here is a UI that will show a dead button.
@@ -191,22 +238,38 @@ describe('a whole automated game', () => {
   it('keeps every seat’s view inside the realtime payload budget for the whole game', () => {
     // A state that grows without bound plays fine in a test and breaks on a socket. The cap is
     // `STATE_MAX_BYTES` in the shared contracts (64KB); the view is what actually travels.
-    let s = table(31337);
+    //
+    // Tidal Mind against itself on purpose, because the peak is not a long game — it is a *search*.
+    // Diabolic Tutor opens the whole library to its controller, and a view that normally carries a
+    // count suddenly carries fifty card definitions. Measured: 18.5KB in ordinary play, 45.8KB
+    // while a library is open. That is inside the cap for a 60-card deck and nowhere near
+    // comfortable for a 100-card Commander one, which is why the two are measured separately.
     let worst = 0;
+    let searching = 0;
+    let s = table(4242, 0, ['tidal-mind', 'tidal-mind']);
     for (let i = 0; i < 4000 && !s.finished; i++) {
       const seat = seatToAct(s);
       if (seat === null) break;
       const before = s.stateVersion;
       s = stepOnce(s, seat);
       if (s.stateVersion === before) break;
-      if (i % 25 !== 0) continue;
+      // Every action, not a sample. The peak is one action wide: a library search inlines that
+      // seat's whole library — sixty card definitions the view normally never carries — and the
+      // very next action shuffles and closes it. Sampling every twenty-fifth action would miss
+      // the only moment the payload is anywhere near the cap.
       for (const viewer of [0, 1] as SeatIndex[]) {
-        worst = Math.max(worst, JSON.stringify(viewFor(s, viewer)).length);
+        const size = JSON.stringify(viewFor(s, viewer)).length;
+        worst = Math.max(worst, size);
+        if (s.seats[viewer]!.searching) searching = Math.max(searching, size);
       }
     }
     expect(s.finished).toBe(true);
     expect(worst).toBeGreaterThan(0);
     expect(worst).toBeLessThan(64 * 1024);
+    // Measured, not assumed: without this the claim above is about a game in which no library was
+    // ever opened, which is the one case that matters.
+    expect(searching).toBeGreaterThan(0);
+    expect(searching).toBeLessThan(64 * 1024);
   });
 
   it('never gives priority to an eliminated seat', () => {
@@ -261,9 +324,13 @@ describe('what the engine tells a client', () => {
       const seat = seatToAct(s);
       if (seat === null) break;
       const actions = legalActions(s, seat);
+      // Every way the engine can be waiting on somebody. A new one that is not listed here is a
+      // deadlock as far as a client is concerned, which is why the list is exhaustive rather than
+      // just the common cases.
       const hasSomething =
         actions.canPass || actions.plays.length > 0 || actions.mustDiscard > 0 ||
-        actions.mustDeclare !== null || actions.mustSettleHand;
+        actions.mustDeclare !== null || actions.mustSettleHand ||
+        actions.mustChoose !== null || actions.mustDecide !== null;
       if (!hasSomething) stuck.push(`seat ${seat} at ${s.step} on turn ${s.turn}`);
       const before = s.stateVersion;
       s = stepOnce(s, seat);

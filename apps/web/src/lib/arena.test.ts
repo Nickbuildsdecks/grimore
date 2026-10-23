@@ -9,8 +9,9 @@
 import { describe, it, expect } from "vitest"
 import type { GameView, LegalPlay, Target } from "@grimore/rules-engine"
 import {
-  IDLE, arenaReducer, attackSummary, blockersOf, candidatesAt, cardBadges, manaPips, playsForCard,
-  primaryMove, specAt, splitBattlefield, targetKey, targetsRequired, targetsWanted, type ArenaMode,
+  IDLE, arenaReducer, attackSummary, blockersOf, candidatesAt, cardBadges, decisionLabel, manaPips,
+  playsForCard, primaryMove, specAt, splitBattlefield, targetKey, targetsRequired, targetsWanted,
+  type ArenaMode, type Decision,
 } from "./arena"
 
 const player = (seat: number): Target => ({ kind: "player", seat: seat as 0 })
@@ -283,6 +284,77 @@ describe("aiming a triggered ability", () => {
   })
 })
 
+describe("answering a question a card asked while resolving", () => {
+  const ask = (over: Partial<Decision> = {}): Decision => ({
+    prompt: "Discard two cards", from: "hand", candidates: ["h1", "h2", "h3"], min: 2, max: 2, ...over,
+  })
+
+  it("asks before anything else, including the player who cast the spell", () => {
+    // The spell is already resolving: nobody holds priority, not even its controller, so this has
+    // to come ahead of the pass button rather than beside it.
+    const auto = automation({
+      awaiting: { kind: "decide", seats: [0], prompt: "Discard two cards" },
+      you: { ...automation()!.you!, hasPriority: false, canPass: false, mustDecide: ask() },
+    })
+    const move = primaryMove(view({ automation: auto }))
+    expect(move?.label).toBe("Discard two cards")
+    expect(move?.event).toEqual({ kind: "startDeciding", ask: ask() })
+  })
+
+  it("sends as soon as the count is reached, when the count is exact", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: ask() }).mode
+    expect(mode.kind).toBe("deciding")
+    expect(arenaReducer(mode, { kind: "toggleDecision", card: "h1" }).action).toBeNull()
+    mode = arenaReducer(mode, { kind: "toggleDecision", card: "h1" }).mode
+    // Two of two: no confirm needed, because there is nothing left to decide.
+    expect(arenaReducer(mode, { kind: "toggleDecision", card: "h3" }).action).toEqual({
+      type: "auto:decide", cards: ["h1", "h3"],
+    })
+  })
+
+  it("takes a pick back, and will not take a card that was not offered", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: ask() }).mode
+    mode = arenaReducer(mode, { kind: "toggleDecision", card: "h1" }).mode
+    mode = arenaReducer(mode, { kind: "toggleDecision", card: "h1" }).mode
+    expect((mode as { chosen: unknown[] }).chosen).toEqual([])
+    // A card the engine did not offer is not a misclick to absorb — it is an action that would be
+    // refused, so it never becomes one.
+    const after = arenaReducer(mode, { kind: "toggleDecision", card: "elsewhere" })
+    expect(after.action).toBeNull()
+    expect((after.mode as { chosen: unknown[] }).chosen).toEqual([])
+  })
+
+  it("replaces the oldest pick rather than ignoring a tap at the limit", () => {
+    // At the limit a tap on a different card means "that one instead", which is what a player
+    // changing their mind is doing. Ignoring it looks like the table has frozen.
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: ask({ min: 1, max: 1 }) }).mode
+    expect(arenaReducer(mode, { kind: "toggleDecision", card: "h1" }).action)
+      .toEqual({ type: "auto:decide", cards: ["h1"] })
+    mode = arenaReducer(IDLE, { kind: "startDeciding", ask: ask({ min: 0, max: 2 }) }).mode
+    mode = arenaReducer(mode, { kind: "toggleDecision", card: "h1" }).mode
+    mode = arenaReducer(mode, { kind: "toggleDecision", card: "h2" }).mode
+    mode = arenaReducer(mode, { kind: "toggleDecision", card: "h3" }).mode
+    expect((mode as { chosen: unknown[] }).chosen).toEqual(["h2", "h3"])
+  })
+
+  it("lets a search be answered with nothing, because failing to find is legal", () => {
+    const search: Decision = {
+      prompt: "Search your library for a basic land card", from: "library",
+      candidates: ["l1", "l2"], min: 0, max: 1,
+    }
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: search }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({ type: "auto:decide", cards: [] })
+    expect(decisionLabel(search, [])).toBe("Search your library for a basic land card — or choose nothing")
+  })
+
+  it("will not send fewer than the question asked for", () => {
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: ask() }).mode
+    const one = arenaReducer(mode, { kind: "toggleDecision", card: "h1" }).mode
+    expect(arenaReducer(one, { kind: "confirm" }).action).toBeNull()
+    expect(decisionLabel(ask(), ["h1"])).toBe("Discard two cards (1 of 2)")
+  })
+})
+
 describe("declaring attackers", () => {
   it("toggles creatures in and out, then sends them all at one defender", () => {
     let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
@@ -384,7 +456,7 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
     you: {
       seat: 0, step: "precombat-main", hasPriority: true, isActivePlayer: true, canPass: true,
       passLabel: "Pass", plays: [], attackers: [], blockers: [], mustDiscard: 0, mustDeclare: null,
-      mustSettleHand: false, bottomOwed: 0, mustChoose: null,
+      mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null,
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     },
     ...over,

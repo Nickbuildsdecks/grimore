@@ -18,7 +18,7 @@ import type { Keyword } from './characteristics.js';
 import type { EffectFn, PumpOptions } from './effects.js';
 import type { ManaType } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
-import type { Step, Target } from './turnTypes.js';
+import type { DecisionZone, Step, Target } from './turnTypes.js';
 
 /** What a spell or ability needs pointed at it before it can be put on the stack. */
 export interface TargetSpec {
@@ -65,10 +65,51 @@ export type TriggerEvent =
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
   | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' };
 
+/**
+ * A question a card asks *while it is resolving* (CR 608.2).
+ *
+ * The distinction from a `TargetSpec` is the whole point. A target is chosen as the spell goes on
+ * the stack, by its controller, from a public zone, and an opponent may respond to it. A decision
+ * is made as the spell resolves, possibly by somebody else, possibly from a hidden zone, and
+ * nobody can respond — the spell is already resolving. Writing "search your library for a creature
+ * card" as a target would get every one of those wrong.
+ *
+ * The engine asks each spec in turn and hands the answers to the effect as `ctx.decisions`, in the
+ * same order. A spec whose zone turns out to hold nothing it would accept is not asked at all: a
+ * prompt with no answer is a stuck game, which is exactly what the old graveyard-targeting bug was.
+ */
+export interface DecisionSpec {
+  /**
+   * Who chooses. "Target player discards two cards" is chosen by the player discarding, not by the
+   * caster — getting that wrong would make Mind Rot a very different card. `each-player` and
+   * `each-opponent` expand into one question each, asked in turn order starting from the active
+   * player (CR 101.4), because who answers first is sometimes the whole card: the second player to
+   * sacrifice has seen what the first gave up.
+   */
+  readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent';
+  /**
+   * Which zone, from the chooser's own side. `library` is a search: the chooser may look through
+   * the whole library while deciding, as they would at a table, and it is shuffled afterwards
+   * (CR 701.19e) — which is also what stops them keeping the order they just read.
+   */
+  readonly from: DecisionZone;
+  /** Shown to whoever is choosing, in their own words: "Search your library for a creature card". */
+  readonly prompt: string;
+  /** Both default to 1, and both are clamped to what the zone actually holds. */
+  readonly min?: number;
+  readonly max?: number;
+  /** Which cards in that zone qualify. Without one, any card in the zone does. */
+  readonly filter?: (state: GameState, id: string, chooser: SeatIndex) => boolean;
+}
+
 export interface TriggerDef {
   readonly on: TriggerEvent;
   readonly description: string;
   readonly targets?: readonly TargetSpec[];
+  /** Questions asked while it resolves. See `DecisionSpec`. */
+  readonly decisions?: readonly DecisionSpec[];
+  /** What it does before those questions are asked. See `CardScript.beforeDecisions`. */
+  readonly beforeDecisions?: EffectFn;
   readonly effect: EffectFn;
 }
 
@@ -96,6 +137,10 @@ export interface AbilityDef {
    * (CR 605.3a) — which is what makes tapping a land for mana in response to something work.
    */
   readonly produces?: readonly ManaType[];
+  /** Questions asked while it resolves. See `DecisionSpec`. */
+  readonly decisions?: readonly DecisionSpec[];
+  /** What it does before those questions are asked. See `CardScript.beforeDecisions`. */
+  readonly beforeDecisions?: EffectFn;
   readonly effect?: EffectFn;
   /** Only activatable when you could cast a sorcery. */
   readonly sorcerySpeed?: boolean;
@@ -114,6 +159,19 @@ export interface CardScript {
   readonly keywords?: readonly Keyword[];
   /** What the spell targets when cast. */
   readonly targets?: readonly TargetSpec[];
+  /**
+   * Questions asked while the spell resolves, answered before `onResolve` runs. See `DecisionSpec`.
+   */
+  readonly decisions?: readonly DecisionSpec[];
+  /**
+   * What the spell does *before* its questions are asked.
+   *
+   * "Draw two cards, then discard two cards" cannot ask first: the cards it offers to discard are
+   * the ones it has not drawn yet. So a card whose question depends on what it has already done
+   * puts that half here, the engine asks, and `onResolve` finishes with the answers. Only useful
+   * alongside `decisions` — without them it is just a slower `onResolve`.
+   */
+  readonly beforeDecisions?: EffectFn;
   /** What happens when the spell resolves. A permanent enters the battlefield either way. */
   readonly onResolve?: EffectFn;
   readonly aura?: AuraDef;

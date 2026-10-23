@@ -31,6 +31,40 @@ const playValue = (play: LegalPlay): number => {
   return costValue(parseManaCost(play.manaCost));
 };
 
+/**
+ * Answers a card's mid-resolution question.
+ *
+ * The one judgement that matters is which way the question cuts. A card out of a library or a
+ * graveyard is something the bot is *gaining*, so it takes as many as it may and the best of them;
+ * a card out of its hand or off its battlefield is something it is *losing*, so it gives up as few
+ * as it may and the worst of them. A bot that answered every question with "the first candidate"
+ * would tutor up a Mountain and sacrifice its best creature while passing every test that only
+ * checks the game finished.
+ */
+function decideCards(
+  state: GameState, ask: NonNullable<LegalActions['mustDecide']>,
+): string[] {
+  const gaining = ask.from === 'library' || ask.from === 'graveyard';
+  const ranked = [...ask.candidates].sort((a, b) => cardWorth(state, b) - cardWorth(state, a));
+  const take = gaining ? ask.max : ask.min;
+  return (gaining ? ranked : ranked.reverse()).slice(0, take);
+}
+
+/**
+ * Roughly how much the bot wants a card, for a choice it has no other way to judge.
+ *
+ * Mana value, with a land worth a flat amount: a land has no mana cost, so cost alone would make
+ * every land the worst card in every pile — and a tutor that fetches land is most of what a tutor
+ * in these decks is for.
+ */
+function cardWorth(state: GameState, id: string): number {
+  const inst = state.instances[id];
+  if (inst === undefined) return 0;
+  const def = state.cardDefs[inst.defKey];
+  if (/land/i.test(def?.typeLine ?? '')) return 2.5;
+  return costValue(parseManaCost(def?.manaCost));
+}
+
 /** The opponents of a seat, nearest first. */
 const foesOf = (state: GameState, seat: SeatIndex): SeatIndex[] =>
   state.seats.filter((s) => s.index !== seat && !s.eliminated).map((s) => s.index);
@@ -182,7 +216,12 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
   }
   const actions: LegalActions = legalActions(state, seat);
 
-  // A trigger waiting for its targets blocks everything else, so it is answered first.
+  // A card that stopped mid-resolution to ask this seat something blocks everything, including
+  // the player whose spell it is, so it is answered before anything else is even considered.
+  const ask = actions.mustDecide;
+  if (ask !== null) return { type: 'auto:decide', by: seat, cards: decideCards(state, ask) };
+
+  // A trigger waiting for its targets blocks everything else, so it is answered next.
   const choice = actions.mustChoose;
   if (choice !== null) {
     const foes = foesOf(state, seat);
@@ -306,7 +345,8 @@ export function seatsToAct(state: GameState): SeatIndex[] {
   if (!state.automated || state.finished) return [];
   // Opening hands come before anything else, including priority.
   if (state.openingHands) return stillDeciding(state);
-  // So does a trigger waiting for its targets.
+  // So does a resolution that stopped to ask a question, and a trigger waiting for its targets.
+  if (state.pendingDecision !== null) return [state.pendingDecision.seat];
   if (state.pendingChoice !== null) return [state.pendingChoice.seat];
   if (state.pendingDiscard !== null) return [state.pendingDiscard.seat];
   const owed = pendingDeclaration(state);

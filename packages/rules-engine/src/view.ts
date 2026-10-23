@@ -13,7 +13,9 @@
  *    layout are right and the contents are not there to leak.
  *  - **Libraries are a count**, including your own. A player who could read their own library would
  *    know every draw for the rest of the game. The one exception is while that seat is searching,
- *    which is the same moment a real player is allowed to look — and shuffling ends it.
+ *    which is the same moment a real player is allowed to look — and shuffling ends it. A card that
+ *    stops mid-resolution to ask this seat to search sets the same flag, so one mechanism covers
+ *    the tabletop's **Search deck** and the engine's tutors, and the answer shuffles.
  *  - **Face-down cards** are visible to the seat they sit with and to nobody else, which is what
  *    makes a face-down permanent or an exiled-face-down card work at all.
  *  - **Everything else** — battlefield, graveyard, exile, command zone, the stack — is public, as it
@@ -100,8 +102,14 @@ export interface AutomationView {
   readonly combat: CombatState;
   /** Who the engine is waiting on, and for what. */
   readonly awaiting: {
-    readonly kind: 'attackers' | 'blockers' | 'discard' | 'mulligan' | 'choose';
+    readonly kind: 'attackers' | 'blockers' | 'discard' | 'mulligan' | 'choose' | 'decide';
     readonly seats: readonly SeatIndex[];
+    /**
+     * What is being asked, when it is a mid-resolution decision. Public on purpose: the other
+     * player should see "Searching their library" rather than a table that has silently stopped.
+     * Only the prompt travels — never the cards it is choosing between.
+     */
+    readonly prompt?: string;
   } | null;
   /** This seat's own legal moves, or null for a spectator. */
   readonly you: LegalActions | null;
@@ -234,6 +242,8 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
   const awaiting: AutomationView['awaiting'] =
     // Opening hands come before anything else, including priority.
     deciding.length > 0 ? { kind: 'mulligan', seats: deciding }
+    : state.pendingDecision !== null
+      ? { kind: 'decide', seats: [state.pendingDecision.seat], prompt: state.pendingDecision.prompt }
     : state.pendingChoice !== null ? { kind: 'choose', seats: [state.pendingChoice.seat] }
     : pending !== null ? { kind: 'discard', seats: [pending.seat] }
     : owed !== null ? { kind: owed.kind, seats: owed.seats }

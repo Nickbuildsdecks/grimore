@@ -914,4 +914,39 @@ describe('redaction still holds with the engine running', () => {
     const theirCard = ids(s, 1, 'hand')[0]!;
     expect(view.cards[theirCard]!.card).toBeUndefined();
   });
+
+  it('opens a searcher’s own library to them, and to nobody else', () => {
+    // Searching a library is the one moment a player may read their own, and the moment where a
+    // leak would be worst: the whole remaining deck, in order, for the rest of the game.
+    let s = advanceTo(arena({
+      hands: { 1: ['Rampant Growth'] }, battlefield: { 1: ['Forest', 'Forest'] }, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
+    expect(s.pendingDecision).not.toBeNull();
+
+    const mine = viewFor(s, 1);
+    const theirs = viewFor(s, 0);
+    const libraryKey = `1:library`;
+    expect(mine.zones[libraryKey]!.length).toBeGreaterThan(0);
+    expect(theirs.zones[libraryKey]).toBeUndefined();
+
+    // The candidates are instance ids of cards in a hidden zone, so they travel only inside the
+    // searcher's own `you` block — never in the public part of the view that both seats receive.
+    expect(mine.automation!.you!.mustDecide!.candidates.length).toBeGreaterThan(0);
+    expect(theirs.automation!.you!.mustDecide).toBeNull();
+    // The other seat is told that somebody is deciding, and what about, but not the answer.
+    expect(theirs.automation!.awaiting).toEqual({
+      kind: 'decide', seats: [1], prompt: 'Search your library for a basic land card',
+    });
+    // Not one card in that library reaches the other seat's view, by id or by identity. The spell
+    // itself is on the stack and public, which is the point of checking the library rather than
+    // the page: a name can be there legitimately, a library card cannot.
+    for (const id of ids(s, 1, 'library')) expect(theirs.cards[id]).toBeUndefined();
+
+    // And once answered, the library closes again.
+    const chosen = s.pendingDecision!.candidates[0]!;
+    s = apply(s, { type: 'auto:decide', by: 1, cards: [chosen] });
+    expect(viewFor(s, 1).zones[libraryKey]).toBeUndefined();
+  });
 });

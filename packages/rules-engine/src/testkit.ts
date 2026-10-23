@@ -157,6 +157,9 @@ export function passBoth(s: GameState): GameState {
     if (next.priority === null) return next;
     next = apply(next, { type: 'auto:pass', by: next.priority });
     if (next.pendingChoice !== null) return next;
+    // A spell that stopped mid-resolution to ask a question is still on the stack, so neither the
+    // step nor the contents have changed — passing again would just be refused.
+    if (next.pendingDecision !== null) return next;
     if (next.step !== step || next.stackOrder.join(',') !== top) return next;
   }
   throw new Error(`passing did not change anything (step ${step})`);
@@ -177,6 +180,14 @@ export function nextTurn(s: GameState): GameState {
     const discard = next.pendingDiscard;
     if (discard !== null) {
       next = apply(next, { type: 'auto:discard', by: discard.seat, card: ids(next, discard.seat, 'hand')[0]! });
+      continue;
+    }
+    const decision = next.pendingDecision;
+    if (decision !== null) {
+      next = apply(next, {
+        type: 'auto:decide', by: decision.seat,
+        cards: decision.candidates.slice(0, decision.min),
+      });
       continue;
     }
     const owed = pendingDeclaration(next);
@@ -207,6 +218,9 @@ export function advanceTo(s: GameState, step: Step, limit = 60): GameState {
   for (let i = 0; i < limit; i++) {
     if (next.step === step) return next;
     if (next.pendingDiscard !== null) throw new Error(`stopped at a discard before reaching ${step}`);
+    if (next.pendingDecision !== null) {
+      throw new Error(`stopped at "${next.pendingDecision.prompt}" before reaching ${step}`);
+    }
     if (next.priority === null) throw new Error(`stopped at ${next.step} (a declaration is owed) before reaching ${step}`);
     next = apply(next, { type: 'auto:pass', by: next.priority });
   }
@@ -224,6 +238,32 @@ export function tapAllLands(s: GameState, seat: SeatIndex): GameState {
     next = apply(next, { type: 'auto:activate', by: seat, card: id, abilityIndex: 0 });
   }
   return next;
+}
+
+/**
+ * Answers a mid-resolution question with the named cards, and fails loudly if nothing is asking.
+ *
+ * Named rather than indexed, because a test that said `candidates[0]` would keep passing after the
+ * card it meant stopped being first.
+ */
+export function decide(s: GameState, names: readonly string[]): GameState {
+  const pending = s.pendingDecision;
+  if (pending === null) throw new Error('nothing is waiting on a decision');
+  const cards = names.map((name) => {
+    const id = pending.candidates.find((c) => nameOf(s, c) === name);
+    if (id === undefined) {
+      throw new Error(`"${name}" is not a choice (offered: ${pending.candidates.map((c) => nameOf(s, c)).join(', ')})`);
+    }
+    return id;
+  });
+  return apply(s, { type: 'auto:decide', by: pending.seat, cards });
+}
+
+/** What a mid-resolution question is offering, by name and sorted, for an assertion. */
+export function choices(s: GameState): string[] {
+  const pending = s.pendingDecision;
+  if (pending === null) throw new Error('nothing is waiting on a decision');
+  return pending.candidates.map((c) => nameOf(s, c)).sort();
 }
 
 /** The names on the stack, bottom first. */

@@ -741,6 +741,7 @@ function Board({ table }: { table: UseTable }) {
       (mode.kind === "blockers" && awaitingKind !== "blockers") ||
       (mode.kind === "bottoming" && awaitingKind !== "mulligan") ||
       (mode.kind === "choosing" && awaitingKind !== "choose") ||
+      (mode.kind === "deciding" && awaitingKind !== "decide") ||
       (mode.kind === "targeting" && view !== null && playsForCard(view, mode.play.card).length === 0)
     if (!stale) return
     arenaRef.current = IDLE
@@ -793,6 +794,9 @@ function Board({ table }: { table: UseTable }) {
     // A creature that could be fed to an ability is lit the same way a target is: it is the next
     // thing to tap, and the player should not have to guess which of their creatures qualifies.
     ...(arenaMode.kind === "feeding" ? arenaMode.play.sacrificeOptions : []),
+    // A card a mid-resolution question is offering is lit exactly like a target, wherever it is —
+    // including a library, which is the one zone the table normally does not draw at all.
+    ...(arenaMode.kind === "deciding" ? arenaMode.ask.candidates : []),
   ])
   const targetableSeats = new Set<number>(
     nowChoosing.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat),
@@ -804,7 +808,7 @@ function Board({ table }: { table: UseTable }) {
         ? arenaMode.chosen
         : arenaMode.kind === "blockers"
           ? [...arenaMode.chosen.map((b) => b.blocker), ...(arenaMode.holding === null ? [] : [arenaMode.holding])]
-          : arenaMode.kind === "bottoming"
+          : arenaMode.kind === "bottoming" || arenaMode.kind === "deciding"
             ? arenaMode.chosen
             : [],
   )
@@ -839,6 +843,11 @@ function Board({ table }: { table: UseTable }) {
     if (mode.kind === "bottoming") {
       // Tapping a card in hand picks it to go back; tapping it again changes your mind.
       if (card.zone === "hand" && card.zoneSeat === seat) dispatchArena({ kind: "toggleBottom", card: card.id })
+      return
+    }
+    if (mode.kind === "deciding") {
+      // Only what the engine offered, and tapping it again takes it back.
+      if (mode.ask.candidates.includes(card.id)) dispatchArena({ kind: "toggleDecision", card: card.id })
       return
     }
     if (mode.kind === "targeting") {
@@ -1063,11 +1072,14 @@ function Board({ table }: { table: UseTable }) {
       {/* Searching shows your own library, and only while you are looking. */}
       {me?.searching ? (
         <ZoneRow
-          label="Your library (searching)"
+          label={arenaMode.kind === "deciding" && arenaMode.ask.from === "library"
+            ? `Your library — ${arenaMode.ask.prompt}`
+            : "Your library (searching)"}
           testId={`zone-library-${seat}`}
           size="pile"
           cards={cardsIn(view, zoneAt(view, seat, "library"))}
           onSelect={onSelect}
+          {...aiming}
         />
       ) : null}
       <ZoneRow

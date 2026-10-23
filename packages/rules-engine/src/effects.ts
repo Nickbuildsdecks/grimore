@@ -7,11 +7,11 @@
  * marks damage and does not check whether anything died, because dying is a state-based action and
  * belongs to the engine, not to Lightning Bolt.
  *
- * Nothing here chooses anything. A target was chosen when the spell was cast and arrives in the
- * context; an effect that would need a decision *during* resolution (searching a library, "choose
- * one", an opponent's discard) has no way to ask, and such a card is not scriptable yet. That is
- * stated in `scripts/index.ts` rather than faked with an automatic choice, because a tutor that
- * silently picks for you is worse than one you have to resolve by hand.
+ * Nothing here chooses anything, and that is the rule rather than a limitation. A target was
+ * chosen when the spell was cast; a decision made *during* resolution — searching a library, an
+ * opponent's own-choice discard — was asked for by the engine and answered by a player before the
+ * effect ran, and arrives in `ctx.decisions` the same way. An effect that picked for itself would
+ * be a tutor that chooses your card for you, which is worse than one you resolve by hand.
  */
 import { characteristicsOf, type ContinuousEffect, type EffectDuration, type Keyword } from './characteristics.js';
 import { defKeyFor, zoneKey, type CardDef } from './cards.js';
@@ -21,7 +21,7 @@ import {
 import { actionSeed, clampValue, mulberry32, replaceSeat } from './internal.js';
 import type { ManaType } from './mana.js';
 import { addMana, EMPTY_POOL } from './mana.js';
-import type { Target } from './turnTypes.js';
+import type { DecisionAnswer, Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 /** What an effect is given when it runs. */
@@ -33,6 +33,11 @@ export interface EffectContext {
   readonly targets: readonly Target[];
   /** The chosen value of X, 0 when the cost had none. */
   readonly x: number;
+  /**
+   * Answers to the questions this spell or ability asked while resolving, in the order its
+   * `decisions` asked them. Empty for everything that asks nothing — which is almost everything.
+   */
+  readonly decisions: readonly DecisionAnswer[];
 }
 
 export type EffectFn = (ctx: EffectContext) => GameState;
@@ -143,10 +148,13 @@ export function bounceToHand(state: GameState, id: string): GameState {
   return relocate(state, inst, 'hand', inst.owner, 'bottom');
 }
 
-export function putOntoBattlefield(state: GameState, id: string, seat: SeatIndex): GameState {
+export function putOntoBattlefield(
+  state: GameState, id: string, seat: SeatIndex, opts: { readonly tapped?: boolean } = {},
+): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;
-  return relocate(state, inst, 'battlefield', seat, 'bottom');
+  const next = relocate(state, inst, 'battlefield', seat, 'bottom');
+  return opts.tapped === true ? withInstance(next, id, { tapped: true }) : next;
 }
 
 /**
@@ -367,6 +375,36 @@ export const firstPlayerTarget = (ctx: EffectContext): SeatIndex | null => {
   const t = ctx.targets.find((x) => x.kind === 'player');
   return t && t.kind === 'player' ? t.seat : null;
 };
+
+/** The cards chosen in answer to one of the questions this spell asked, by index. */
+export const chosenCards = (ctx: EffectContext, index = 0): readonly string[] =>
+  ctx.decisions[index]?.ids ?? [];
+
+/** The one card chosen in answer to a question, or null — a search that found nothing is legal. */
+export const chosenCard = (ctx: EffectContext, index = 0): string | null =>
+  ctx.decisions[index]?.ids[0] ?? null;
+
+/** Puts chosen cards into a hand, which is what a tutor does. */
+export function moveToHand(state: GameState, ids: readonly string[]): GameState {
+  let next = state;
+  for (const id of ids) {
+    const inst = next.instances[id];
+    if (inst === undefined) continue;
+    next = relocate(next, inst, 'hand', inst.owner, 'bottom');
+  }
+  return next;
+}
+
+/** Puts chosen cards into their owner's graveyard: a discard, or a sacrifice. */
+export function moveToGraveyard(state: GameState, ids: readonly string[]): GameState {
+  let next = state;
+  for (const id of ids) {
+    const inst = next.instances[id];
+    if (inst === undefined) continue;
+    next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+  }
+  return next;
+}
 
 /** The instance a spell or ability came from, if it still exists. */
 export const sourceOf = (ctx: EffectContext) => ctx.state.instances[ctx.source];

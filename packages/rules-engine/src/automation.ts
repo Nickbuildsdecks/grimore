@@ -36,13 +36,15 @@ import {
   EMPTY_POOL, addMana, canPay, parseManaCost, payCost, solveTap,
   type ManaPool, type ManaType,
 } from './mana.js';
-import { replaceSeat, seatName } from './internal.js';
+import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
 import { scriptFor } from './scripts.js';
-import type { AbilityCost, AbilityDef, CardScript, TargetSpec, TriggerEvent } from './scriptTypes.js';
+import type {
+  AbilityCost, AbilityDef, CardScript, DecisionSpec, TargetSpec, TriggerEvent,
+} from './scriptTypes.js';
 import { checkTargets, hasAnyLegalTargets, legalTargets, stillHasLegalTarget } from './targeting.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
-  type StackObject, type Step, type Target,
+  type DecisionAnswer, type StackObject, type Step, type Target,
 } from './turnTypes.js';
 
 export const MAX_HAND_SIZE = 7;
@@ -157,7 +159,20 @@ export function atSorcerySpeed(state: GameState, seat: SeatIndex): boolean {
 // ── Priority and steps ───────────────────────────────────────────────────────────────────────────
 
 /** After anything happens, the active player gets priority and everybody's passes are forgotten. */
+/**
+ * Hands priority back, unless something is blocking the game.
+ *
+ * The guard is here rather than at each call site because most actions end in
+ * `resetPriority(settle(...))` and `settle` is where a trigger that needs aiming gets raised — so
+ * an action that stopped the game to ask a question would otherwise hand priority straight back
+ * over the top of it. Nobody holds priority while a question, a discard or a declaration is
+ * outstanding, and a state that says otherwise makes a table offer a move the engine then refuses
+ * for as long as the question stands.
+ */
 function resetPriority(state: GameState, to: SeatIndex = state.activeSeat): GameState {
+  const blocked = state.openingHands || state.pendingDecision !== null || state.pendingChoice !== null
+    || state.pendingDiscard !== null || pendingDeclaration(state) !== null;
+  if (blocked) return { ...state, priority: null, passed: [] };
   return { ...state, priority: to, passed: [] };
 }
 
@@ -372,6 +387,11 @@ function raise(
       const stackId = next.stackOrder[next.stackOrder.length - 1]!;
       next = {
         ...next,
+        // As with `pendingDecision` above: nothing happens until it is answered, so nobody holds
+        // priority. Leaving a seat named here is what let the *other* player's table offer a pass
+        // the engine then refused.
+        priority: null,
+        passed: [],
         pendingChoice: {
           seat: inst.zoneSeat,
           stackId,
@@ -588,26 +608,214 @@ function payFrom(
   return { state: setPool(next, seat, result.pool as ManaPool), tapped };
 }
 
-/** Resolves the object on top of the stack. */
+// ── Decisions made while something resolves ──────────────────────────────────────────────────────
+
+/**
+ * The questions a stack object asks while it resolves.
+ *
+ * Separate from its targets in every respect: asked later, possibly of somebody else, possibly
+ * about cards in a hidden zone, and never answerable by an opponent. See `DecisionSpec`.
+ */
+function decisionSpecsFor(state: GameState, object: StackObject): readonly DecisionSpec[] {
+  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
+  if (object.kind === 'spell') return script?.decisions ?? [];
+  return abilityOrTrigger(script, object)?.decisions ?? [];
+}
+
+/** The half of a card that runs before its questions are asked. */
+function beforeDecisionsFor(state: GameState, object: StackObject): EffectFn | undefined {
+  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
+  if (object.kind === 'spell') return script?.beforeDecisions;
+  return abilityOrTrigger(script, object)?.beforeDecisions;
+}
+
+/**
+ * Who answers each question, in order, with `each-opponent` expanded to one entry per opponent.
+ *
+ * Expanded up front rather than as it goes, so the plan is a fixed list the state can carry across
+ * the gap between one action and the next — and so a player eliminated mid-resolution is not
+ * suddenly asked something. `target-player` with no player target asks nobody, which is not an
+ * error: the spell simply has nothing to ask.
+ */
+function decisionPlan(
+  state: GameState, specs: readonly DecisionSpec[], object: StackObject,
+): { seat: SeatIndex; specIndex: number }[] {
+  const plan: { seat: SeatIndex; specIndex: number }[] = [];
+  for (let i = 0; i < specs.length; i++) {
+    const spec = specs[i]!;
+    if (spec.who === 'controller') {
+      plan.push({ seat: object.controller, specIndex: i });
+      continue;
+    }
+    if (spec.who === 'target-player') {
+      const target = object.targets.find((t) => t.kind === 'player');
+      if (target !== undefined && target.kind === 'player') plan.push({ seat: target.seat, specIndex: i });
+      continue;
+    }
+    for (const seat of turnOrder(state)) {
+      if (spec.who === 'each-opponent' && seat === object.controller) continue;
+      plan.push({ seat, specIndex: i });
+    }
+  }
+  return plan;
+}
+
+/**
+ * Living seats in turn order from the active player (CR 101.4).
+ *
+ * Which is the order "each player sacrifices a creature" asks in, and that order is sometimes the
+ * whole card: the second player to answer has seen what the first gave up.
+ */
+function turnOrder(state: GameState): SeatIndex[] {
+  const alive = state.seats.filter((s) => !s.eliminated).map((s) => s.index);
+  const start = alive.indexOf(state.activeSeat);
+  return start < 0 ? alive : [...alive.slice(start), ...alive.slice(0, start)];
+}
+
+/** The cards in the chooser's own zone that a decision would accept. */
+export function decisionCandidates(
+  state: GameState, spec: DecisionSpec, chooser: SeatIndex,
+): string[] {
+  return listAt(state, zoneKey(chooser, spec.from)).filter((id) => {
+    if (state.instances[id] === undefined) return false;
+    return spec.filter === undefined || spec.filter(state, id, chooser);
+  });
+}
+
+/** How many a decision asks for, clamped to what the chooser actually has. */
+function decisionBounds(spec: DecisionSpec, available: number): { min: number; max: number } {
+  const max = Math.min(spec.max ?? 1, available);
+  return { min: Math.min(spec.min ?? 1, max), max };
+}
+
+/**
+ * Asks the next question in a resolution's plan, or finishes the resolution when they run out.
+ *
+ * Two kinds of question are answered by the engine rather than asked, and both matter:
+ *
+ *  - **Nothing to choose from.** "Each opponent sacrifices a creature" asks nothing of an opponent
+ *    who controls none. Asking would put a prompt on their screen with no button that answers it,
+ *    which is a stopped game — the exact failure the graveyard-targeting bug produced.
+ *  - **Exactly the number it must take.** A player discarding two cards with two cards in hand has
+ *    no decision to make. A prompt with one possible answer is noise, and in a solo game it is a
+ *    prompt the player has to click through for no reason.
+ *
+ * Anything else is a real decision, and the game stops until it is answered. A library decision is
+ * a search, so the chooser is allowed to look through their library while they decide.
+ */
+function askOrFinish(
+  state: GameState, object: StackObject,
+  plan: readonly { seat: SeatIndex; specIndex: number }[], from: number,
+  soFar: readonly DecisionAnswer[],
+): { state: GameState; message: string } {
+  const specs = decisionSpecsFor(state, object);
+  let answers = soFar;
+  for (let i = from; i < plan.length; i++) {
+    const entry = plan[i]!;
+    const spec = specs[entry.specIndex];
+    if (spec === undefined) continue;
+    // A seat that has left the game between one question and the next is not asked.
+    if (state.seats[entry.seat]?.eliminated !== false) {
+      answers = [...answers, { seat: entry.seat, ids: [] }];
+      continue;
+    }
+    // Nothing already chosen by this seat earlier in the same resolution. Answers are applied by
+    // the effect at the end, not as the questions are asked — which is right, because "each player
+    // sacrifices a creature" is simultaneous and the second player must not see the first's
+    // creature already gone. The consequence is that two questions put to the *same* seat from the
+    // same zone would otherwise offer the same card twice, so they are taken out here.
+    const taken = new Set(answers.filter((a) => a.seat === entry.seat).flatMap((a) => [...a.ids]));
+    const candidates = decisionCandidates(state, spec, entry.seat).filter((id) => !taken.has(id));
+    const { min, max } = decisionBounds(spec, candidates.length);
+    if (max === 0 || (min === max && candidates.length === max)) {
+      answers = [...answers, { seat: entry.seat, ids: max === 0 ? [] : candidates }];
+      continue;
+    }
+    const asking: GameState = {
+      ...state,
+      // Nobody holds priority in the middle of a resolution, and saying so is not cosmetic: a
+      // state that still names a seat makes that seat's table offer Pass, the engine refuses it
+      // because a question is outstanding, and the two disagree for as long as the question
+      // stands. Found exactly that way, in two browsers, on turn ten.
+      priority: null,
+      passed: [],
+      pendingDecision: {
+        seat: entry.seat, stackId: object.id, prompt: spec.prompt,
+        candidates, min, max, from: spec.from,
+        resume: { plan: [...plan], at: i, answers: [...answers] },
+      },
+    };
+    return {
+      // Searching a library is allowed to look at it, which is what a real search is.
+      state: spec.from === 'library' ? replaceSeat(asking, entry.seat, { searching: true }) : asking,
+      message: `${object.description} — ${seatName(state, entry.seat)}: ${spec.prompt}`,
+    };
+  }
+  return completeResolution(state, object, answers);
+}
+
+/**
+ * Records an answer and carries the resolution on.
+ *
+ * Validation is the caller's; this is the part that has to be right about the library. A search
+ * ends by shuffling (CR 701.19e), which is both what the cards say and what stops the chooser
+ * keeping the order they were just shown — and it closes the view onto their own library, because
+ * `searching` is the only thing that opens it.
+ */
+export function answerDecision(
+  state: GameState, chosen: readonly string[],
+): { state: GameState; message: string } {
+  const pending = state.pendingDecision;
+  if (pending === null) return { state, message: 'nothing to decide' };
+  const object = state.stackObjects[pending.stackId];
+  let next: GameState = { ...state, pendingDecision: null };
+  if (pending.from === 'library') {
+    const key = zoneKey(pending.seat, 'library');
+    const rng = mulberry32(actionSeed(next.rngSeed, next.stateVersion + next.autoSeq));
+    next = replaceSeat(withZones(next, { [key]: shuffled(listAt(next, key), rng) }), pending.seat, {
+      searching: false,
+    });
+  }
+  // The object leaving the stack mid-resolution should not be possible — nothing else can happen
+  // while a decision is outstanding — but a resolution with nothing to resolve is simply over.
+  if (object === undefined) return { state: next, message: 'that resolution is gone' };
+  const answers = [...pending.resume.answers, { seat: pending.seat, ids: [...chosen] }];
+  return askOrFinish(next, object, pending.resume.plan, pending.resume.at + 1, answers);
+}
+
+/** Takes a stack object off the stack, which is the first thing resolving it does. */
+function popStack(state: GameState, id: string): GameState {
+  const objects = { ...state.stackObjects };
+  delete objects[id];
+  return { ...state, stackObjects: objects, stackOrder: state.stackOrder.filter((o) => o !== id) };
+}
+
+/** The target specs a stack object was pointed with, for the fizzle check. */
+function targetSpecsFor(
+  state: GameState, script: CardScript | undefined, object: StackObject,
+): readonly TargetSpec[] {
+  return object.kind === 'spell'
+    ? script?.targets ?? (script?.aura ? [script.aura.target] : [])
+    : abilityOrTrigger(script, object)?.targets ?? [];
+}
+
+/**
+ * Begins resolving the object on top of the stack.
+ *
+ * Three outcomes. It is countered for having no legal target left (CR 608.2b); it stops to ask
+ * somebody a question, in which case it is still on the stack and `pendingDecision` is set; or it
+ * resolves there and then, which is what almost everything does.
+ */
 export function resolveTop(state: GameState): { state: GameState; message: string } {
   const object = stackTop(state);
   if (object === undefined) return { state, message: 'nothing to resolve' };
-  let next: GameState = {
-    ...state,
-    stackOrder: state.stackOrder.slice(0, -1),
-  };
-  const objects = { ...next.stackObjects };
-  delete objects[object.id];
-  next = { ...next, stackObjects: objects };
 
-  const script = scriptFor(next.cardDefs[object.cardKey]?.name);
-  const specs: readonly TargetSpec[] =
-    object.kind === 'spell'
-      ? script?.targets ?? (script?.aura ? [script.aura.target] : [])
-      : abilityOrTrigger(script, object)?.targets ?? [];
+  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
+  const specs = targetSpecsFor(state, script, object);
 
   // A spell or ability whose targets have all become illegal does not resolve at all (CR 608.2b).
-  if (specs.length > 0 && !stillHasLegalTarget(next, specs, object.targets, object.controller)) {
+  if (specs.length > 0 && !stillHasLegalTarget(state, specs, object.targets, object.controller)) {
+    let next = popStack(state, object.id);
     const name = next.cardDefs[object.cardKey]?.name ?? 'it';
     if (object.kind === 'spell') {
       const inst = next.instances[object.id];
@@ -616,12 +824,33 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     return { state: next, message: `${name} is countered: its targets are gone` };
   }
 
+  const wanted = decisionSpecsFor(state, object);
+  if (wanted.length > 0) {
+    // The half of the card that comes before its question. See `CardScript.beforeDecisions`.
+    const first = beforeDecisionsFor(state, object);
+    const ready = first === undefined ? state : first({
+      state, source: object.kind === 'spell' ? object.id : object.source,
+      controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
+    });
+    return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
+  }
+  return completeResolution(state, object, []);
+}
+
+/** Finishes a resolution: the effect runs, and a permanent arrives on the battlefield. */
+function completeResolution(
+  state: GameState, object: StackObject, answers: readonly DecisionAnswer[],
+): { state: GameState; message: string } {
+  let next = popStack({ ...state, pendingDecision: null }, object.id);
+  const script = scriptFor(next.cardDefs[object.cardKey]?.name);
+
   const ctx: EffectContext = {
     state: next,
     source: object.kind === 'spell' ? object.id : object.source,
     controller: object.controller,
     targets: object.targets,
     x: object.x ?? 0,
+    decisions: answers,
   };
 
   if (object.kind === 'spell') {
@@ -656,6 +885,8 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
 /** An activated ability and a triggered one resolve the same way: targets, then an effect. */
 interface Resolvable {
   readonly targets?: readonly TargetSpec[];
+  readonly decisions?: readonly DecisionSpec[];
+  readonly beforeDecisions?: EffectFn;
   readonly effect?: EffectFn;
 }
 

@@ -15,7 +15,8 @@ import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  manaPips, primaryMove, specAt, targetsRequired, targetsWanted, type ArenaEvent, type ArenaMode,
+  decisionLabel, manaPips, primaryMove, specAt, targetsRequired, targetsWanted,
+  type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
 
 const MANA_BG: Record<string, string> = {
@@ -86,6 +87,30 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           <span className="text-[var(--g-text-muted)]">choose a target</span>
           <span className="ml-auto text-[10px] uppercase tracking-wide text-[var(--g-text-muted)]">
             the ability is already on the stack
+          </span>
+        </div>
+      ) : null}
+
+      {/*
+        A question a card asked while it was resolving. Different from targeting in the one way
+        that matters on screen: the spell is already resolving, so there is nothing to cancel —
+        the game is stopped until it is answered. A library search draws the library beside the
+        prompt, which is the only time that zone is on screen at all.
+      */}
+      {mode.kind === "deciding" ? (
+        <div data-testid="decide-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-[var(--g-text-high)]">
+            {decisionLabel(mode.ask, mode.chosen)}
+          </span>
+          <span className="text-[var(--g-text-muted)]">
+            {mode.ask.from === "library" ? "tap a card in your library below" : `tap a card in your ${mode.ask.from}`}
+          </span>
+          <span className="ml-auto flex gap-1.5">
+            {mode.chosen.length >= mode.ask.min && mode.ask.min !== mode.ask.max ? (
+              <Button size="sm" data-testid="confirm-decision" onClick={() => dispatch({ kind: "confirm" })}>
+                <Check className="size-3.5" /> {mode.chosen.length === 0 ? "Choose nothing" : "Confirm"}
+              </Button>
+            ) : null}
           </span>
         </div>
       ) : null}

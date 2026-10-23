@@ -80,7 +80,10 @@ export function PhaseBar({ view }: { view: GameView }) {
         >
           {auto.awaiting === null
             ? `${waitingName === "you" ? "you have" : `${waitingName} has`} priority`
-            : `waiting on ${waitingName} — ${auto.awaiting.kind}`}
+            // A mid-resolution question carries what it is asking, which is far more use than the
+            // word "decide" — the other player wants to know their opponent is searching a library,
+            // not that something unnamed is happening.
+            : `waiting on ${waitingName} — ${auto.awaiting.prompt ?? auto.awaiting.kind}`}
         </span>
       ) : null}
     </div>

@@ -5,20 +5,27 @@
  * still functions as cardboard — castable, a permanent if it is one, with its printed keywords read
  * from its text — it simply has no automated effect, and the log says so.
  *
- * What is **not** scriptable with this vocabulary, stated so nobody discovers it by surprise:
- * anything needing a decision during resolution (searching a library, "choose one", an opponent
- * discarding), copy effects, characteristic-setting effects, and replacement effects. Those need a
- * way to interrupt resolution and ask a player, which the engine does not have. A card like that
- * should be left unscripted and resolved by hand rather than approximated.
+ * A card may ask a question while it resolves — search a library, discard a card of your choice,
+ * sacrifice a creature — by declaring `decisions`. The engine stops, asks, and hands the answers to
+ * the effect. See `DecisionSpec`, and note that this is a different thing from a target in every
+ * respect: asked later, sometimes of somebody else, sometimes about a hidden zone, and never
+ * answerable by an opponent.
+ *
+ * What is still **not** scriptable with this vocabulary, stated so nobody discovers it by surprise:
+ * modal spells ("choose one"), copy effects, characteristic-setting effects, and replacement
+ * effects. A modal spell is the near miss — the mode is a decision, but the mode decides what the
+ * spell *targets*, and targets are chosen before any of this runs. A card like that should be left
+ * unscripted and resolved by hand rather than approximated.
  */
 import { characteristicsOf, hasSubtype, hasType, parseTypeLine } from './characteristics.js';
 import type { CardDef } from './cards.js';
 import {
-  addCounters, bounceToHand, cardTargets, counterSpell, createToken, dealDamage, destroy,
-  discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget, gainControl, gainLife,
-  loseLife, mill, opponentsOf, pump, pumpTeam, putOntoBattlefield, tap, type EffectContext,
+  addCounters, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
+  dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
+  gainControl, gainLife, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump, pumpTeam,
+  putOntoBattlefield, tap, type EffectContext,
 } from './effects.js';
-import type { CardScript, TargetSpec } from './scriptTypes.js';
+import type { CardScript, DecisionSpec, TargetSpec } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 
@@ -475,9 +482,108 @@ const IZONI: CardScript = {
       },
     },
   ],
-  // Izoni's second ability — sacrificing creatures to drain — is not automated: paying a cost by
-  // sacrificing something the player chooses is a decision the engine cannot ask for yet. It is
-  // printed on the card face, and "Move by hand" is there for it.
+  abilities: [
+    {
+      // The ability this deck was built around, and the one it shipped without: paying a cost by
+      // sacrificing a creature the player chooses now exists, so it is scripted rather than
+      // printed in prose with "Move by hand" underneath it.
+      cost: { mana: '{B}{G}', sacrifice: 'another-creature' },
+      description: '{B}{G}, Sacrifice another creature: You gain 1 life and draw a card.',
+      effect: (c) => draw(gainLife(c.state, c.controller, 1), c.controller, 1),
+    },
+  ],
+};
+
+// ── Cards that stop and ask while they resolve ───────────────────────────────────────────────────
+
+/**
+ * A search of your own library, as a decision rather than a target.
+ *
+ * `min: 0` because failing to find is legal (CR 701.19c), and occasionally right — a player who
+ * does not want to shuffle, or who would rather not show that they have nothing. The engine will
+ * not make that call for them, which means the prompt always has a "choose nothing" answer.
+ */
+const searchYourLibrary = (prompt: string, filter?: DecisionSpec['filter']): DecisionSpec => ({
+  who: 'controller', from: 'library', prompt, min: 0, max: 1,
+  ...(filter === undefined ? {} : { filter }),
+});
+
+const isBasicLand = (state: GameState, id: string): boolean => {
+  const inst = state.instances[id];
+  const line = inst === undefined ? '' : (state.cardDefs[inst.defKey]?.typeLine ?? '');
+  return /basic/i.test(line) && /land/i.test(line);
+};
+
+const RAMPANT_GROWTH: CardScript = {
+  name: 'Rampant Growth',
+  decisions: [searchYourLibrary('Search your library for a basic land card', isBasicLand)],
+  onResolve: (c) => {
+    const found = chosenCard(c);
+    // Tapped, which is the cost of the card and the reason it is not simply a better land drop.
+    return found === null ? c.state : putOntoBattlefield(c.state, found, c.controller, { tapped: true });
+  },
+};
+
+const DIABOLIC_TUTOR: CardScript = {
+  name: 'Diabolic Tutor',
+  decisions: [searchYourLibrary('Search your library for a card')],
+  onResolve: (c) => moveToHand(c.state, chosenCards(c)),
+};
+
+/**
+ * "Target player discards two cards."
+ *
+ * The player discarding chooses, not the caster — which is the whole difference between this and
+ * `discardAtRandom`, and the reason Ravenous Rats is scripted as random and this is not. Two is
+ * clamped to the hand: a player with one card discards one, and one with none is never asked.
+ */
+const MIND_ROT: CardScript = {
+  name: 'Mind Rot',
+  targets: [TARGET_PLAYER],
+  decisions: [{
+    who: 'target-player', from: 'hand', prompt: 'Discard two cards', min: 2, max: 2,
+  }],
+  onResolve: (c) => moveToGraveyard(c.state, chosenCards(c)),
+};
+
+/**
+ * "Draw two cards, then discard two cards."
+ *
+ * The card that needs `beforeDecisions`: the cards it offers to discard are the ones it has not
+ * drawn yet, so the draw has to happen before the question can be asked. Asking first and drawing
+ * afterwards would be a different and much worse card.
+ */
+const FAITHLESS_LOOTING: CardScript = {
+  name: 'Faithless Looting',
+  beforeDecisions: (c) => draw(c.state, c.controller, 2),
+  decisions: [{ who: 'controller', from: 'hand', prompt: 'Discard two cards', min: 2, max: 2 }],
+  onResolve: (c) => moveToGraveyard(c.state, chosenCards(c)),
+};
+
+/**
+ * "When this enters the battlefield, each player sacrifices a creature."
+ *
+ * Including you, and including this one — a Marauder played with no other creature eats itself,
+ * which is the card working correctly rather than a bug. The questions are asked in turn order
+ * from the active player (CR 101.4), so the second player to answer has seen the first give
+ * something up.
+ */
+const FLESHBAG_MARAUDER: CardScript = {
+  name: 'Fleshbag Marauder',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'each player sacrifices a creature',
+      decisions: [{
+        who: 'each-player', from: 'battlefield', prompt: 'Sacrifice a creature', min: 1, max: 1,
+        filter: (state, id) => {
+          const inst = state.instances[id];
+          return inst !== undefined && characteristicsOf(state, inst).isCreature;
+        },
+      }],
+      effect: (c) => c.decisions.reduce((state, answer) => moveToGraveyard(state, answer.ids), c.state),
+    },
+  ],
 };
 
 // ── Helpers the scripts above share ──────────────────────────────────────────────────────────────
@@ -527,6 +633,7 @@ const ALL: readonly CardScript[] = [
   RAVENOUS_RATS, CHILD_OF_NIGHT, WIND_DRAKE, VAMPIRE_NIGHTHAWK, AIR_ELEMENTAL, TALRAND, MAN_O_WAR,
   GRAVEDIGGER, RAISE_DEAD, ZOMBIFY, THORNWEALD_ARCHER, WALL_OF_BLOSSOMS, LOTLETH_GIANT, IZONI,
   VAMPIRE_ARISTOCRAT, BLOODTHRONE_VAMPIRE,
+  RAMPANT_GROWTH, DIABOLIC_TUTOR, MIND_ROT, FAITHLESS_LOOTING, FLESHBAG_MARAUDER,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

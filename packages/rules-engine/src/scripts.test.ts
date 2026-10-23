@@ -15,7 +15,8 @@ import {
   STARTER_DECKS, characteristicsOf, legalActions, scriptFor, scriptedCardNames,
 } from './index.js';
 import {
-  advanceTo, apply, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
+  advanceTo, apply, arena, choices, countOf, decide, find, ids, life, namesIn, nextTurn,
+  passBoth, refusal,
 } from './testkit.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
@@ -650,6 +651,12 @@ describe('triggers that need a target', () => {
     expect(s.pendingChoice!.seat).toBe(0);
     expect(legalActions(s, 0).mustChoose!.description).toContain('4 damage');
     expect(refusal(s, { type: 'auto:pass', by: 0 })).toContain('needs a target');
+    // And the *other* player's table is offered nothing at all. Same shape as the mid-resolution
+    // decision: a state that still named a seat here would have that seat's table offering Pass
+    // and the engine refusing it for as long as the trigger went unaimed.
+    expect(s.priority).toBeNull();
+    for (const seat of [0, 1] as SeatIndex[]) expect(legalActions(s, seat).hasPriority).toBe(false);
+    expect(refusal(s, { type: 'auto:pass', by: 1 })).toBeTruthy();
 
     const courser = find(s, 1, 'battlefield', 'Centaur Courser');
     s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: courser }] });
@@ -899,6 +906,246 @@ describe('the graveyard, which is a place cards come back from', () => {
     s = apply(s, { type: 'card:move', by: 1, card: izoni, toZone: 'battlefield' });
     expect(s.stackOrder).toEqual([]);
     expect(countOf(s, 1, 'battlefield', 'Insect')).toBe(0);
+  });
+});
+
+describe('cards that stop and ask while they resolve', () => {
+  /** A seat set up in its main phase with its lands tapped, from any deck. */
+  const ready = (
+    seat: SeatIndex, deck: string, hand: readonly string[], lands: readonly string[],
+    extra: readonly string[] = [],
+  ): GameState => {
+    let s = arena({
+      decks: { [seat]: deck }, hands: { [seat]: hand },
+      battlefield: { [seat]: [...lands, ...extra] }, turn: 2, firstSeat: seat,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, seat, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (!/^(Mountain|Forest|Plains|Island|Swamp)$/.test(name)) continue;
+      s = apply(s, { type: 'auto:activate', by: seat, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  it('Rampant Growth offers only basic lands, and the one chosen enters tapped', () => {
+    let s = ready(1, 'verdant-guard', ['Rampant Growth'], ['Forest', 'Forest']);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
+
+    // Still on the stack: it is resolving, not resolved, and both tables should say so.
+    expect(s.pendingDecision).not.toBeNull();
+    expect(s.pendingDecision!.seat).toBe(1);
+    expect(s.pendingDecision!.from).toBe('library');
+    expect(s.stackOrder.length).toBe(1);
+    // Only basic lands, and nothing else from a 59-card library.
+    expect([...new Set(choices(s))]).toEqual(['Forest', 'Plains']);
+
+    s = decide(s, ['Plains']);
+    expect(s.pendingDecision).toBeNull();
+    const plains = find(s, 1, 'battlefield', 'Plains');
+    expect(s.instances[plains]!.tapped).toBe(true);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Rampant Growth');
+  });
+
+  it('lets a search fail to find, which is legal and sometimes right (CR 701.19c)', () => {
+    let s = ready(1, 'verdant-guard', ['Rampant Growth'], ['Forest', 'Forest']);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
+    expect(s.pendingDecision!.min).toBe(0);
+    const lands = countOf(s, 1, 'battlefield', 'Plains') + countOf(s, 1, 'battlefield', 'Forest');
+    s = decide(s, []);
+    expect(s.pendingDecision).toBeNull();
+    expect(countOf(s, 1, 'battlefield', 'Plains') + countOf(s, 1, 'battlefield', 'Forest')).toBe(lands);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Rampant Growth');
+  });
+
+  it('opens the searcher’s own library while they look, and shuffles it when they are done', () => {
+    let s = ready(1, 'verdant-guard', ['Rampant Growth'], ['Forest', 'Forest']);
+    expect(s.seats[1]!.searching).toBe(false);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
+    // Looking through your own library is exactly what a search is, and the view is keyed on this.
+    expect(s.seats[1]!.searching).toBe(true);
+    const before = ids(s, 1, 'library').join(',');
+    s = decide(s, ['Plains']);
+    expect(s.seats[1]!.searching).toBe(false);
+    // Shuffled, so the order they were just shown is no longer the order they will draw in.
+    expect(ids(s, 1, 'library').join(',')).not.toBe(before);
+  });
+
+  it('Diabolic Tutor takes any card out of the library and puts it in hand', () => {
+    let s = ready(0, 'tidal-mind', ['Diabolic Tutor'], ['Swamp', 'Swamp', 'Swamp', 'Swamp']);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Diabolic Tutor') }));
+    expect(choices(s)).toContain('Counterspell');
+    expect(namesIn(s, 0, 'hand')).not.toContain('Counterspell');
+    s = decide(s, ['Counterspell']);
+    expect(namesIn(s, 0, 'hand')).toContain('Counterspell');
+  });
+
+  it('Mind Rot is answered by the player discarding, not by the player who cast it', () => {
+    let s = arena({
+      decks: { 0: 'tidal-mind' }, hands: { 0: ['Mind Rot'], 1: ['Giant Growth', 'Serra Angel', 'Pacifism'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'] }, turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Mind Rot'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }));
+    // Seat 0 cast it; seat 1 chooses. Getting this round the wrong way would be a different card.
+    expect(s.pendingDecision!.seat).toBe(1);
+    expect(choices(s)).toEqual(['Giant Growth', 'Pacifism', 'Serra Angel']);
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [] })).toContain('not your decision');
+
+    s = decide(s, ['Giant Growth', 'Pacifism']);
+    expect(namesIn(s, 1, 'hand')).toEqual(['Serra Angel']);
+    expect(namesIn(s, 1, 'graveyard').sort()).toEqual(['Giant Growth', 'Pacifism']);
+  });
+
+  it('asks for only what a short hand holds, and asks nothing of an empty one', () => {
+    const cast = (theirHand: readonly string[]): GameState => {
+      let s = arena({
+        decks: { 0: 'tidal-mind' }, hands: { 0: ['Mind Rot'], 1: theirHand },
+        battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'] }, turn: 2, firstSeat: 0,
+      });
+      s = advanceTo(s, 'precombat-main');
+      for (const id of [...ids(s, 0, 'battlefield')]) {
+        s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+      }
+      return passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Mind Rot'),
+        targets: [{ kind: 'player', seat: 1 }],
+      }));
+    };
+
+    // One card: no decision to make, so the engine takes it rather than putting up a prompt with
+    // a single button — and the spell finishes in the same action.
+    let s = cast(['Serra Angel']);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 1, 'graveyard')).toEqual(['Serra Angel']);
+
+    // No cards: never asked at all. A prompt with no answer is a game that has stopped.
+    s = cast([]);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Mind Rot');
+  });
+
+  it('Faithless Looting draws before it asks, because the cards it discards are the ones drawn', () => {
+    let s = ready(0, 'ember-rush', ['Faithless Looting'], ['Mountain']);
+    const held = ids(s, 0, 'hand').length;
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Faithless Looting') }));
+    // It has already drawn by the time it asks. Asking first would have offered only what was in
+    // hand before — which for a hand of nothing but Faithless Looting is nothing at all.
+    expect(ids(s, 0, 'hand').length).toBe(held + 1);
+    expect(s.pendingDecision!.candidates.length).toBe(held + 1);
+    expect(s.pendingDecision!.min).toBe(2);
+    const pitched = s.pendingDecision!.candidates.slice(0, 2);
+    const names = pitched.map((id) => s.cardDefs[s.instances[id]!.defKey]!.name);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: pitched });
+    expect(ids(s, 0, 'hand').length).toBe(held - 1);
+    for (const name of names) expect(namesIn(s, 0, 'graveyard')).toContain(name);
+  });
+
+  it('Fleshbag Marauder makes every player sacrifice, in turn order from the active player', () => {
+    let s = arena({
+      decks: { 0: 'rot-harvest' },
+      hands: { 0: ['Fleshbag Marauder'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Centaur Courser'], 1: ['Serra Angel', 'Grizzly Bears'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== 'Swamp') continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    // One pass resolves the creature; the next resolves the trigger it put on the stack.
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fleshbag Marauder') }));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Fleshbag Marauder');
+    s = passBoth(s);
+
+    // The active player answers first (CR 101.4), and the Marauder itself is on offer.
+    expect(s.pendingDecision!.seat).toBe(0);
+    expect(choices(s)).toEqual(['Centaur Courser', 'Fleshbag Marauder']);
+    s = decide(s, ['Centaur Courser']);
+
+    // Then the other player, who has now seen what the first gave up.
+    expect(s.pendingDecision!.seat).toBe(1);
+    expect(choices(s)).toEqual(['Grizzly Bears', 'Serra Angel']);
+    s = decide(s, ['Grizzly Bears']);
+
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Fleshbag Marauder');
+  });
+
+  it('Fleshbag Marauder eats itself when it is the only creature its controller has', () => {
+    let s = arena({
+      decks: { 0: 'rot-harvest' }, hands: { 0: ['Fleshbag Marauder'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'] }, turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fleshbag Marauder') }));
+    s = passBoth(s);
+    // One candidate and one needed: not a choice, so it is taken. The card working as printed.
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Fleshbag Marauder');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Fleshbag Marauder');
+  });
+
+  it('Izoni drains for a creature: gain a life, draw a card, and the creature is gone', () => {
+    let s = arena({
+      decks: { 1: 'rot-harvest' },
+      battlefield: { 1: ['Forest', 'Swamp', 'Izoni, Thousand-Eyed', 'Centaur Courser'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (name !== 'Forest' && name !== 'Swamp') continue;
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    const before = ids(s, 1, 'hand').length;
+    const fodder = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Izoni, Thousand-Eyed'),
+      abilityIndex: 0, sacrifice: fodder,
+    }));
+    expect(life(s, 1)).toBe(21);
+    expect(ids(s, 1, 'hand').length).toBe(before + 1);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+  });
+
+  it('stops the game dead until it is answered, and will not take a card it did not offer', () => {
+    let s = ready(1, 'verdant-guard', ['Rampant Growth'], ['Forest', 'Forest']);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
+
+    // Nobody holds priority in the middle of a resolution — including the player resolving it.
+    expect(refusal(s, { type: 'auto:pass', by: 1 })).toContain('must be answered first');
+    expect(refusal(s, { type: 'auto:pass', by: 0 })).toBeTruthy();
+    expect(s.priority).toBeNull();
+    // `hasPriority` is the field the table keys its one button on, and this is the bug that cost a
+    // browser game: the state still named a seat, so the *other* player's table offered Pass, the
+    // engine refused it because a question was outstanding, and the two disagreed for as long as
+    // the question stood. Asserted for both seats, since neither holds it.
+    for (const seat of [0, 1] as SeatIndex[]) {
+      expect(legalActions(s, seat).hasPriority).toBe(false);
+      expect(legalActions(s, seat).canPass).toBe(false);
+      expect(legalActions(s, seat).passLabel === 'Pass').toBe(false);
+    }
+    expect(legalActions(s, 0).mustDecide).toBeNull();
+    expect(legalActions(s, 1).mustDecide!.from).toBe('library');
+
+    // The candidate list is the whole authorisation: a crafted action naming a card the engine did
+    // not offer would otherwise fetch anything out of any library.
+    const elsewhere = ids(s, 0, 'library')[0]!;
+    expect(refusal(s, { type: 'auto:decide', by: 1, cards: [elsewhere] })).toContain('not one of the choices');
+    const forest = find(s, 1, 'library', 'Forest');
+    expect(refusal(s, { type: 'auto:decide', by: 1, cards: [forest, forest] })).toBeTruthy();
   });
 });
 

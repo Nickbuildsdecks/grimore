@@ -269,8 +269,13 @@ export function useTable(playerName: string): UseTable {
   const send = useCallback<UseTable["send"]>(
     (action) => {
       const run = async (): Promise<void> => {
-        const attempt = async (): Promise<AckResult> =>
-          emit("pod:action", { action, expectedVersion: versionRef.current })
+        // The version this action was composed against, so a refusal can be told apart from a
+        // disagreement. See the `illegal_action` case below.
+        let sentAt = versionRef.current
+        const attempt = async (): Promise<AckResult> => {
+          sentAt = versionRef.current
+          return emit("pod:action", { action, expectedVersion: sentAt })
+        }
         let res = await attempt()
         // Two reasons an action bounces, and both are worth simply retrying rather than showing
         // the player an error for something they did nothing wrong to cause:
@@ -292,7 +297,22 @@ export function useTable(playerName: string): UseTable {
         // authoritative result of this action and arrives first, so the next action in the queue
         // composes against the right version instead of one that is briefly stale.
         if (res.ok && typeof res.stateVersion === "number") versionRef.current = res.stateVersion
-        if (!res.ok) setState((s) => ({ ...s, error: res.error.message }))
+        if (res.ok) return
+        /**
+         * An action the game had already moved past is not an error the player caused.
+         *
+         * Both players act at once at a real table. Tapping Pass a fraction of a second before an
+         * opponent's spell starts resolving sends a pass the engine then refuses — correctly, since
+         * nobody holds priority during a resolution — but the player did nothing wrong and an error
+         * banner saying so is just wrong. The test for it is precise: the pod has moved past the
+         * version this action was composed against, so what was offered was a view a moment stale.
+         *
+         * A refusal at the *current* version is a real disagreement between the table and the
+         * engine, and still shows — that is the one worth seeing, and `playout.test.ts` asserts
+         * deterministically that it should never happen.
+         */
+        if (res.error.code === "illegal_action" && versionRef.current > sentAt) return
+        setState((s) => ({ ...s, error: res.error.message }))
       }
       // Chain onto the queue, and never let one failure break the chain for everything after it.
       const queued = queueRef.current.then(run, run)

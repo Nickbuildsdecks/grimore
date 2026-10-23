@@ -820,3 +820,73 @@ sacrifice is validated before anything is spent.
 "choose one", an opponent discarding a card of their choice. D28's rule holds — those cards are
 left unscripted rather than approximated — but the shape to fix it now exists three times over, in
 `pendingDiscard`, the opening-hand phase and `pendingChoice`.
+
+## D30 — A decision during resolution gets its own mechanism, and D28's gap closes
+
+**D28 said** a card needing a decision during resolution is left unscripted rather than
+approximated, because the engine had no way to interrupt a resolution and ask. That was the right
+call while it was true, and it is the gap this closes. Every tutor, every own-choice discard and
+every "each player sacrifices" was behind it.
+
+**Decided: a resolution can suspend, and the spell stays on the stack while it does.** A spell
+declares `decisions`; the engine stops, asks, and hands the answers to the effect. Leaving it on
+the stack rather than popping it first is what keeps both tables honest — they still show what is
+resolving — and nothing else happens at all while a question is outstanding: no priority, no
+further resolution, no step change, not even for the player who cast it. The resumption state lives
+*in* the game state rather than in a closure, because the state is serialised to Redis between one
+action and the next.
+
+**Decided: a decision is not a target, and the difference drives the whole design.** A target is
+chosen as the spell goes on the stack, by its controller, from a public zone, and an opponent may
+respond. A decision is made as the spell resolves, possibly by somebody else, possibly from a
+hidden zone, and nobody can respond. Writing "search your library for a creature card" as a target
+gets all four wrong. Mind Rot is the card that proves it matters: *the player discarding chooses*,
+not the caster, and a target would have had that backwards.
+
+**Decided: three kinds of question are answered by the engine rather than asked.** One with nothing
+to choose from — "each player sacrifices a creature" asks nothing of a player with no creature. One
+that must take exactly what is available — a player discarding two cards with two cards in hand has
+no decision to make. And one whose asker has left the game between questions. Each of those, asked,
+is a prompt with no answer that stops the game dead; that failure mode has already happened once in
+this engine, with graveyard targets, and it is worth designing against rather than fixing twice.
+
+**Decided: a library search reuses `searching` rather than inventing a reveal.** The tabletop's
+**Search deck** already opens a seat's own library to that seat alone, and the view is already keyed
+on it. Answering shuffles (CR 701.19e), which is what the cards say and also what stops the searcher
+keeping the order they were just shown.
+
+**Decided: the candidate list is the authorisation.** The candidates travel only inside the
+answering seat's own `you` block, never in the public view, and `auto:decide` refuses any id not on
+that list. Without the second half, a crafted action could fetch any card from any library — the
+first half alone is a UI convention, not a rule.
+
+**Decided: `beforeDecisions` exists, for the one card shape that needs it.** "Draw two cards, then
+discard two cards" cannot ask first, because the cards it offers are the ones it has not drawn yet.
+A card whose question depends on what it has already done puts that half in `beforeDecisions`, the
+engine asks, and `onResolve` finishes with the answers.
+
+**Still not decided:** modal spells. The mode is a decision, but the mode decides what the spell
+*targets*, and targets are chosen before a spell is on the stack. That needs a two-stage cast, and
+D28's rule still holds for it: left unscripted rather than approximated.
+
+**Found in two browsers, and worth recording as a decision rather than a fix:** a suspended
+resolution left `state.priority` naming whoever last passed. That seat's table offered Pass, the
+engine refused it because a question was outstanding, and the two disagreed for as long as the
+question stood — a stuck game on turn ten, not a wrong label. **Decided: nobody holds priority in
+the middle of a resolution, and `legalActions` refuses to report `hasPriority` while anything is
+blocking at all.** Both halves on purpose: the state should be honest, but the consequence of
+forgetting to make it honest is a stuck game, and `hasPriority` is the field the table keys its one
+button on. One of the two has to be hard to get wrong.
+
+**Decided, separately: a refusal of an action the game had already moved past is not shown to the
+player.** Both players act at once at a real table. Tapping Pass a fraction of a second before an
+opponent's spell starts resolving sends a pass the engine then refuses — correctly — but the player
+did nothing wrong, and a red banner saying so is just wrong. The test is precise: the pod has moved
+past the version the action was composed against. A refusal at the *current* version is a real
+disagreement between the table and the engine and still shows, which is the one worth seeing.
+
+**Measured, and written down rather than left to be discovered:** a view with a library open reaches
+**45.8KB** against a 64KB socket cap, where ordinary play peaks at 18.5KB. A zone that normally
+travels as a count travels as fifty card definitions. That is inside the cap for a 60-card deck and
+outside it for a 100-card Commander one — which is this project's stated centre. Sending the same
+definition once per copy is the cost; fixing it is its own piece of work.
