@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import pg from 'pg';
-import { parseEnv } from '@grimore/shared';
+import { parseEnv, RecommendationResponse } from '@grimore/shared';
 import { runMigrations } from '@grimore/db';
 import { createApp, createContext, closeContext, type AppContext } from './app.js';
 import { loadLocalCandidates } from './lib/preferenceSignals.js';
@@ -272,5 +272,16 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('recommendations (requires DATABASE
     expect(r.status).toBe(200);
     const cultivate = r.body.cards.find((card: { name: string }) => card.name === 'Cultivate');
     expect(cultivate).toBeDefined();
+  });
+
+  // `apps/web`'s CardSearch page derives its types from this contract rather than redeclaring them,
+  // so the contract has to actually describe the response. Nothing else validates a response body
+  // against its contract — without this, a contract the client trusts is only documentation, and a
+  // drift between them is a silent production bug instead of a failing build.
+  it('returns a body its own contract accepts, for both the cold and the personalised page', async () => {
+    const cold = await request(app).get('/api/cards/recommendations?limit=8');
+    expect(() => RecommendationResponse.parse(cold.body)).not.toThrow();
+    const personalised = await alice.get(`/api/cards/recommendations?deckId=${DECK_ID}&limit=10`);
+    expect(() => RecommendationResponse.parse(personalised.body)).not.toThrow();
   });
 });

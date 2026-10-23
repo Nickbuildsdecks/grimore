@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import pg from 'pg';
-import { parseEnv } from '@grimore/shared';
+import { parseEnv, DeckSuggestionsResponse } from '@grimore/shared';
 import { runMigrations } from '@grimore/db';
 import { createApp, createContext, closeContext, type AppContext } from './app.js';
 import { loadSuggestionPool, loadSuggestionTarget } from './lib/deckSuggestions.js';
@@ -297,6 +297,14 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('deck suggestions (requires DATABAS
     expect(hits.length).toBe(1);
     // The cheapest printing wins, which is the price the deck builder would pay.
     expect(hits[0].price).toBeCloseTo(0.2, 5);
+  });
+
+  // Same reason as the recommendations contract test: a response contract nothing validates is only
+  // documentation, and this one is what a client would be written against.
+  it('returns a body its own contract accepts', async () => {
+    const r = await alice.get(`/api/decks/${GREEN_DECK}/suggestions?limit=300`);
+    expect(r.status).toBe(200);
+    expect(() => DeckSuggestionsResponse.parse(r.body)).not.toThrow();
   });
 
   it('reads the deck target in one pass: format, commanders, and every card it runs', async () => {

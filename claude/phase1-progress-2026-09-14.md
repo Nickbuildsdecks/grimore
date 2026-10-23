@@ -1321,3 +1321,45 @@ site, where whoever moves the proxy will be looking.
 React app at `/react` and had it fail, this is why. The vanilla page at `/` was never affected — it
 calls `/api/auth/forgot-password` directly. Recovery still needs `SMTP_URL` on the VM to actually
 send anything; without it both apps answer 503 by design, which is a different failure from this one.
+
+## Checkpoint — `CardSearch.tsx` derives its types from the contracts, and the contracts are now proven
+
+Closes the second Wave 7 item. `apps/api` 299 -> 301; workspace 555 -> 557.
+
+`CardSearch.tsx` declared `RecommendationCard`, `RecommendationProfile` and `RecommendationResponse`
+by hand, field for field, duplicating the contracts the recommendations slice had just added — the
+drift D2 exists to prevent. They are derived now:
+
+```ts
+type RecommendationCard = CardResult & RecommendedCard
+type RecommendationResponse = Omit<SharedRecommendationResponse, "cards"> & { cards: RecommendationCard[] }
+```
+
+`CardResult` stays in the intersection on purpose. It is this app's **render** contract — what every
+card component here accepts — and it requires `image_uri` and `rarity` where the wire contract leaves
+them to its passthrough. So the page keeps its own guarantee about what it can draw and takes the
+recommendation metadata, the part that can actually drift, from the contract.
+
+**Intersected rather than `Omit`-ed, and the first attempt showed why.** `RecommendedCard` is a
+`.passthrough()` contract, so its inferred type carries a `[k: string]: unknown` index signature.
+`keyof` that is `string | number`, so `Omit<RecommendedCard, keyof CardResult>` erases every declared
+field back to `unknown` — five type errors, all of the form `'card.reasons' is of type 'unknown'`.
+Worth knowing before deriving a type from any other passthrough contract in this repo.
+
+### The gap this change made load-bearing, now closed
+
+Deriving the client's types from a contract only helps if the contract describes the real response.
+**Nothing in this repository validated any response body against its contract** — grep for
+`.parse(r.body)` before this and there were zero hits. So every response contract was documentation,
+and a drift between a route and the contract its client trusts would have been a silent production
+bug rather than a failing build.
+
+Both contracts in play now have a conformance test — `RecommendationResponse.parse` on the cold and
+the personalised page, `DeckSuggestionsResponse.parse` on a full suggestions response. They are not
+vacuous: both contracts have required fields with no defaults, so an omitted `profile` or a mistyped
+`cards` fails.
+
+**Not done, and worth doing:** the other ~20 response contracts have no such test. One assertion per
+route group, in the test file that already exists for it, would make every response contract
+enforced rather than aspirational. It is mechanical but it is 20 files, so it belongs in its own
+change rather than riding along here.
