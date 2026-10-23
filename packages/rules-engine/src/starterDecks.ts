@@ -29,6 +29,39 @@ const MOUNTAIN = land('Mountain', 'R', 'Mountain');
 const FOREST = land('Forest', 'G', 'Forest');
 const PLAINS = land('Plains', 'W', 'Plains');
 
+/**
+ * The Guildgates: one mana of either of two colours, and they come in tapped.
+ *
+ * The tapped clause is the whole price of the card, and it is what makes a dual land fair enough
+ * to print at common. Between them they are also the first lands in the pool that are not basic.
+ */
+const SELESNYA_GUILDGATE: CardDef = {
+  name: 'Selesnya Guildgate',
+  typeLine: 'Land — Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Selesnya Guildgate enters the battlefield tapped.\n{T}: Add {G} or {W}.',
+  colors: [],
+};
+
+const DIMIR_GUILDGATE: CardDef = {
+  name: 'Dimir Guildgate',
+  typeLine: 'Land — Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Dimir Guildgate enters the battlefield tapped.\n{T}: Add {U} or {B}.',
+  colors: [],
+};
+
+const GOLGARI_GUILDGATE: CardDef = {
+  name: 'Golgari Guildgate',
+  typeLine: 'Land — Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Golgari Guildgate enters the battlefield tapped.\n{T}: Add {B} or {G}.',
+  colors: [],
+};
+
 // ── Mono-red aggro ───────────────────────────────────────────────────────────────────────────────
 
 const MONASTERY_SWIFTSPEAR: CardDef = {
@@ -818,8 +851,9 @@ export const VERDANT_GUARD: DeckSpec = {
   description: 'Green-white midrange. Bigger creatures, auras, exile removal and a fliers finish.',
   commander: SIGARDA_HOST_OF_HERONS,
   cards: [
-    { card: FOREST, count: 12 },
-    { card: PLAINS, count: 10 },
+    { card: FOREST, count: 11 },
+    { card: PLAINS, count: 9 },
+    { card: SELESNYA_GUILDGATE, count: 2 },
     { card: LLANOWAR_ELVES, count: 4 },
     { card: RAMPANT_GROWTH, count: 4 },
     { card: SOUL_WARDEN, count: 2 },
@@ -849,8 +883,9 @@ export const TIDAL_MIND: DeckSpec = {
   description: 'Blue-black control. Counter what matters, kill what lands, and win in the air.',
   commander: TALRAND,
   cards: [
-    { card: ISLAND, count: 12 },
-    { card: SWAMP, count: 11 },
+    { card: ISLAND, count: 11 },
+    { card: SWAMP, count: 10 },
+    { card: DIMIR_GUILDGATE, count: 2 },
     { card: COUNTERSPELL, count: 3 },
     { card: NEGATE, count: 2 },
     { card: DOOM_BLADE, count: 2 },
@@ -880,8 +915,9 @@ export const ROT_HARVEST: DeckSpec = {
   description: 'Green-black graveyard. Trade creatures freely, then buy them all back.',
   commander: IZONI,
   cards: [
-    { card: FOREST, count: 11 },
-    { card: SWAMP, count: 12 },
+    { card: FOREST, count: 10 },
+    { card: SWAMP, count: 11 },
+    { card: GOLGARI_GUILDGATE, count: 2 },
     { card: LLANOWAR_ELVES, count: 4 },
     { card: THORNWEALD_ARCHER, count: 1 },
     { card: BLOOD_ARTIST, count: 3 },

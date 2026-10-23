@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — seventy-four, today, across four starter decks. A tabletop works with
+cards somebody has scripted — seventy-nine, today, across four starter decks. A tabletop works with
 every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -92,7 +92,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | What you want to do | How |
 | --- | --- |
 | Play a land, cast a spell, use an ability | Tap the card. Everything you can legally do with it is listed; everything else is not. A card you can play right now says **playable**. |
-| Pay for it | Nothing. The engine taps what the spell costs. Tap lands yourself first if you want particular ones spent. |
+| Pay for it | Nothing. The engine taps what the spell costs — including picking which colour a dual land makes. Tap lands yourself first if you want particular ones spent. |
 | Choose a target | The legal ones light up. Tap one. A spell on the stack is targeted by tapping its row in the stack panel. |
 | Respond to their spell | While it is on the stack you hold priority — cast your instant, then pass. |
 | Attack | **Declare attackers**, tap the creatures, confirm. One that cannot attack is not tappable, and says why. |
@@ -134,8 +134,9 @@ anybody's turn, which is what makes instants and responses work at all.
 **Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange), **Tidal Mind**
 (blue-black control, with counterspells) and **Rot Harvest** (green-black, built on getting
 creatures back out of the graveyard and on feeding them to sacrifice outlets), 60 cards each plus a
-commander, so a table can start with no setup at all. Any pairing works, including a deck against itself. They are also the only decks
-right now — see *What is not done* below.
+commander, so a table can start with no setup at all. The three two-colour decks run a pair of
+Guildgates each: one mana of either colour, and they come in tapped. Any pairing works, including
+a deck against itself. They are also the only decks right now — see *What is not done* below.
 
 Cards are drawn as text, not pictures. That is deliberate: there is no card artwork available (the
 card table on the server has never been populated, and this environment cannot reach Scryfall), so
@@ -213,7 +214,7 @@ FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatev
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (386 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (392 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (104 tests, the interaction reducer behind every prompt) and
 `apps/realtime`
@@ -226,7 +227,7 @@ playing the server).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows seventy-four cards.** Everything in the four starter decks. It stops and asks
+- **The engine knows seventy-nine cards.** Everything in the four starter decks. It stops and asks
   for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

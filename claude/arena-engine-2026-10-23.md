@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 74 scripted cards |
+| `scripts.ts` | All 79 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**386 tests in the rules engine, 104 in the web app, 985 across the workspace.**
+**392 tests in the rules engine, 104 in the web app, 991 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -228,7 +228,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Sixteen things, in the order they mattered.
+Seventeen things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -518,6 +518,26 @@ still on the table** — Magma Jet's damage ends the game in the same action the
 and the prompt stayed on a finished board with the control bar refusing everything else. The game
 ending now clears priority and every pending question, which is what CR 104.1 means by it ending
 immediately.
+
+**A land that makes one of two colours, which the mana layer could not express.** A source's
+`produces` was a multiset — `['U','B']` meant one of each — so a Guildgate would have been two
+mana off one land. `solveTap` now returns *picks* rather than keys, because a choice source does
+not settle which colour it made until it is tapped, and the greedy rule already there turns out to
+be exactly right for duals: the least flexible source that makes a short colour goes first, so a
+Guildgate is saved for the colour only it can provide.
+
+The bigger change is behind it. Affordability was **two** answers to one question: `legalActions`
+counted an optimistic pool of every untapped source's colours, while the payment used `solveTap`.
+A dual land is exactly where those part company — counted as both its colours it looks like two
+mana and it is one — so the table would have offered a two-drop off one Guildgate and the engine
+would have refused to pay for it, which is the one failure this whole design is organised against.
+`canAfford` is now the only answer, and `potentialMana` survives as what it always really was: the
+dimmed pips on the control bar, optimistic on purpose, deciding nothing.
+
+"Enters the battlefield tapped" came with it — a replacement effect (CR 614.1c) applied in
+`settle`'s arrival drain, before the entry trigger, so the land is never observably untapped.
+Measured over twelve bot games: 19 gates played, **71 gate taps paying for spells**, no refusals,
+every game finished.
 
 ## Next
 

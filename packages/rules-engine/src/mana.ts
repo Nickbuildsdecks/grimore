@@ -163,13 +163,23 @@ export function maxX(pool: ManaPool, cost: ManaCost): number {
 /**
  * Something that can be tapped for mana, and exactly what it would add.
  *
- * `produces` is a multiset, not a choice: a source listing `['G','G']` adds two green when tapped,
- * and one listing `['W','U']` adds one of each. A source that offers a *choice* of colours cannot
- * be described here, which is deliberate — see `solveTap`.
+ * `produces` is a multiset by default: a source listing `['G','G']` adds two green when tapped and
+ * one listing `['W','U']` adds one of each. With `choose`, it is a *choice* instead — a Guildgate
+ * listing `['U','B']` adds one mana, of whichever of the two is wanted. The distinction is the
+ * whole difference between a dual land and a Sol Ring, and getting it wrong means offering spells
+ * that cannot be paid for.
  */
 export interface ManaSource {
   readonly key: string;
   readonly produces: readonly ManaType[];
+  /** One of `produces`, picked when it is tapped, rather than all of them. */
+  readonly choose?: boolean;
+}
+
+/** What tapping one source actually added, which a choice source only settles when it is tapped. */
+export interface ManaPick {
+  readonly key: string;
+  readonly types: readonly ManaType[];
 }
 
 /** Colours a cost needs more of than the pool holds. */
@@ -186,24 +196,29 @@ export function shortColors(pool: ManaPool, cost: ManaCost): ManaType[] {
  * Without it every spell would need the player to tap the right lands in the right order first,
  * and a UI offering a spell the engine then refused for want of mana would be simply broken.
  *
- * Greedy, and exact for every source that produces a fixed amount: colours that are short are
- * satisfied first, each from a source that makes one, and whatever is left over pays the generic
- * part. It is not a general solver — a source offering a *choice* of colours (a filter land, a
- * Treasure token) has no single `produces` and is left out of `sources` by the caller rather than
- * guessed at, so the worst case is a spell the player taps for by hand.
+ * Greedy, and exact for the sources in these decks: colours that are short are satisfied first,
+ * each from the least flexible source that makes one — so a dual is saved for the colour only it
+ * can provide — and whatever is left over pays the generic part. A source that offers a *choice*
+ * settles which colour it made as it is tapped, which is why the answer is a list of picks rather
+ * than a list of keys: the caller has to put the right mana in the pool.
+ *
+ * It is still not a general solver. A cost needing two colours from a pool of duals that each
+ * make one of those two can be solved greedily; a filter land that takes mana to make mana cannot
+ * be described here at all, and the caller leaves it out rather than guessing.
  */
 export function solveTap(
   pool: ManaPool, cost: ManaCost, sources: readonly ManaSource[], xAmount = 0,
-): readonly string[] | null {
+): readonly ManaPick[] | null {
   if (cost.unsupported !== undefined) return null;
   let working = pool;
-  const chosen: string[] = [];
+  const chosen: ManaPick[] = [];
   const left = [...sources];
 
   for (let guard = 0; guard <= sources.length; guard++) {
     if (canPay(working, cost, xAmount)) return chosen;
     const short = shortColors(working, cost);
     let index = -1;
+    let wanted: ManaType | null = null;
     if (short.length > 0) {
       // A colour requirement can only be met by a source that makes that colour, so those come
       // first — and the least flexible source that makes it, so a dual is saved for the colour
@@ -211,10 +226,12 @@ export function solveTap(
       let best = Number.POSITIVE_INFINITY;
       for (let i = 0; i < left.length; i++) {
         const source = left[i]!;
-        if (!source.produces.some((t) => short.includes(t))) continue;
+        const useful = source.produces.find((t) => short.includes(t));
+        if (useful === undefined) continue;
         if (source.produces.length < best) {
           best = source.produces.length;
           index = i;
+          wanted = useful;
         }
       }
       // Nothing can make a colour that is still short: the cost is unpayable, whatever else is
@@ -226,10 +243,40 @@ export function solveTap(
       if (index < 0) return null;
     }
     const source = left.splice(index, 1)[0]!;
-    for (const type of source.produces) working = addMana(working, type, 1);
-    chosen.push(source.key);
+    // A choice source adds the one colour it was tapped for; anything else adds all of its mana.
+    const types = source.choose === true
+      ? [wanted ?? source.produces[0]!]
+      : source.produces;
+    for (const type of types) working = addMana(working, type, 1);
+    chosen.push({ key: source.key, types });
   }
   return canPay(working, cost, xAmount) ? chosen : null;
+}
+
+/**
+ * Whether a cost can be paid at all: out of the pool, or by tapping for the rest.
+ *
+ * The one answer to "can this be afforded", used both by `legalActions` when it decides what to
+ * offer and by the payment itself. They used to be two answers — an optimistic pool of everything
+ * untapped, counted colour by colour, against this solver — and two answers to one question is
+ * how a table comes to offer a spell the engine then refuses. A dual land is exactly where they
+ * would have disagreed: counted as both its colours it looks like two mana, and it is one.
+ */
+export function canAfford(
+  pool: ManaPool, cost: ManaCost, sources: readonly ManaSource[], xAmount = 0,
+): boolean {
+  if (canPay(pool, cost, xAmount)) return true;
+  return solveTap(pool, cost, sources, xAmount) !== null;
+}
+
+/** The most X can be, given a pool, the rest of a cost, and what is left to tap. */
+export function maxAffordableX(
+  pool: ManaPool, cost: ManaCost, sources: readonly ManaSource[],
+): number {
+  if (!cost.x || cost.unsupported !== undefined) return 0;
+  let x = 0;
+  while (x < 100 && canAfford(pool, cost, sources, x + 1)) x += 1;
+  return x;
 }
 
 /** The colours in a cost, for colour-identity and devotion style questions. */

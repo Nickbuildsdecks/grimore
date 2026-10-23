@@ -55,6 +55,24 @@ const basicLand = (name: string, type: 'W' | 'U' | 'B' | 'R' | 'G'): CardScript 
   abilities: [{ cost: { tap: true }, description: `{T}: Add {${type}}.`, produces: [type] }],
 });
 
+/**
+ * A Guildgate: one mana of either colour, and it comes in tapped.
+ *
+ * Two abilities rather than one producing both, because tapping it pays once — `manaSources`
+ * collapses several free tap-for-mana abilities on one permanent into a single source that makes
+ * *one of* its colours, which is the difference between a dual land and a Sol Ring. A single
+ * ability listing both would be two mana off one land, and the engine would offer two-drops that
+ * cannot be cast.
+ */
+const guildgate = (name: string, a: 'W' | 'U' | 'B' | 'R' | 'G', b: 'W' | 'U' | 'B' | 'R' | 'G'): CardScript => ({
+  name,
+  entersTapped: true,
+  abilities: [
+    { cost: { tap: true }, description: `{T}: Add {${a}}.`, produces: [a] },
+    { cost: { tap: true }, description: `{T}: Add {${b}}.`, produces: [b] },
+  ],
+});
+
 // ── Mono-red ─────────────────────────────────────────────────────────────────────────────────────
 
 const MONASTERY_SWIFTSPEAR: CardScript = {
@@ -1094,6 +1112,9 @@ const ALL: readonly CardScript[] = [
   basicLand('Plains', 'W'),
   basicLand('Island', 'U'),
   basicLand('Swamp', 'B'),
+  guildgate('Selesnya Guildgate', 'G', 'W'),
+  guildgate('Dimir Guildgate', 'U', 'B'),
+  guildgate('Golgari Guildgate', 'B', 'G'),
   MONASTERY_SWIFTSPEAR, RAGING_GOBLIN, FIREBRAND_ARCHER, SHIVAN_DRAGON,
   LIGHTNING_BOLT, SHOCK, LAVA_SPIKE, FLAME_SLASH, ACT_OF_TREASON, KRENKO, FLAMETONGUE_KAVU,
   LLANOWAR_ELVES, AJANIS_PRIDEMATE, SERRA_ANGEL, GIANT_GROWTH, PACIFISM,

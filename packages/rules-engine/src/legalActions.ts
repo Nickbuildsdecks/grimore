@@ -19,7 +19,10 @@ import {
 } from './automation.js';
 import { legalAttackers, legalBlockers, canBlock } from './combat.js';
 import { poolOf } from './effects.js';
-import { addMana, canPay, maxX, parseManaCost, type ManaCost, type ManaPool, type ManaType } from './mana.js';
+import {
+  addMana, canAfford, maxAffordableX, parseManaCost,
+  type ManaCost, type ManaPool, type ManaType,
+} from './mana.js';
 import { scriptFor } from './scripts.js';
 import type { AbilityDef, CardScript, TargetSpec } from './scriptTypes.js';
 import { legalTargets } from './targeting.js';
@@ -137,6 +140,67 @@ export interface LegalActions {
 }
 
 /** Mana the seat could add to its pool without casting anything. */
+/**
+ * Permanents the engine may tap on a player's behalf to pay a cost.
+ *
+ * Only abilities that are free and need nothing but a tap: one that costs mana would need mana
+ * first, and pretending otherwise offers spells that cannot be cast. One entry per permanent,
+ * because tapping it is what pays — and several tap-for-mana abilities on one permanent are a
+ * *choice* between them rather than a sum, which is exactly what a dual land is.
+ *
+ * Lives here rather than in `automation.ts` because `legalActions` is what asks it the question
+ * that matters — "can this be paid for at all" — and `automation.ts` already imports this file.
+ */
+export function manaSources(
+  state: GameState, seat: SeatIndex,
+): { readonly key: string; readonly produces: readonly ManaType[]; readonly abilityIndex: number;
+     readonly choose?: boolean }[] {
+  const out: { key: string; produces: readonly ManaType[]; abilityIndex: number; choose?: boolean }[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.tapped) continue;
+    const script = scriptFor(state.cardDefs[inst.defKey]?.name);
+    const ch = characteristicsOf(state, inst);
+    const abilities = script?.abilities ?? [];
+    const usable: { index: number; produces: readonly ManaType[] }[] = [];
+    for (let i = 0; i < abilities.length; i++) {
+      const ability = abilities[i]!;
+      if (ability.produces === undefined || ability.produces.length === 0) continue;
+      if (ability.cost.mana !== undefined) continue;
+      if (!ability.cost.tap) continue;
+      if (ability.cost.sacrificeSelf) continue;
+      if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
+      usable.push({ index: i, produces: ability.produces as readonly ManaType[] });
+    }
+    if (usable.length === 0) continue;
+    // One source per permanent, because tapping it is what pays — and several tap abilities on
+    // one permanent are a *choice* between them, not a sum. That is what a dual land is: two
+    // abilities, one tap, one mana. Treating them as a sum would offer spells nobody can cast.
+    if (usable.length === 1) {
+      out.push({ key: id, produces: usable[0]!.produces, abilityIndex: usable[0]!.index });
+      continue;
+    }
+    out.push({
+      key: id,
+      produces: usable.flatMap((u) => u.produces),
+      abilityIndex: usable[0]!.index,
+      choose: true,
+    });
+  }
+  return out;
+}
+
+/** The sources `legalActions` asks about affordability, as `manaSources` reports them. */
+type ManaSources = ReturnType<typeof manaSources>;
+
+/**
+ * The mana a seat could still make, for the dimmed pips on the control bar.
+ *
+ * Optimistic on purpose, and only ever shown: a dual land counts once for each colour it could
+ * make, because "you could make U or B" is what a player wants to read off it. Nothing decides
+ * what is castable from this — that is `canAfford`, which asks the solver — and the two were one
+ * answer until a land existed that could make either of two colours but only one of them.
+ */
 export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
   let pool = poolOf(state, seat);
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
@@ -170,7 +234,7 @@ function playableTargets(
   return { ok, candidates };
 }
 
-function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): LegalPlay[] {
+function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources): LegalPlay[] {
   const out: LegalPlay[] = [];
   const sorcerySpeed = atSorcerySpeed(state, seat);
   const landsPlayed = state.landsPlayed[String(seat)] ?? 0;
@@ -214,11 +278,11 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
     const cost: ManaCost = fromCommand && tax > 0
       ? { ...printed, generic: printed.generic + tax }
       : printed;
-    if (!canPay(potential, cost)) continue;
+    if (!canAfford(poolOf(state, seat), cost, sources)) continue;
     const taxOn = fromCommand && tax > 0 ? { commanderTax: tax } : {};
     // X at zero is a legal cast of an X spell and sometimes the only one available, so a cost with
     // {X} is offered whenever the rest of it can be paid; `xMax` says how high the player may go.
-    const xOn = cost.x ? { xMax: maxX(potential, cost) } : {};
+    const xOn = cost.x ? { xMax: maxAffordableX(poolOf(state, seat), cost, sources) } : {};
 
     // A modal spell is offered once per legal combination of modes, and a combination whose
     // targets cannot be filled is not offered at all — so "destroy target creature; or draw two
@@ -254,7 +318,7 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
   return out;
 }
 
-function activatablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): LegalPlay[] {
+function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSources): LegalPlay[] {
   const out: LegalPlay[] = [];
   const sorcerySpeed = atSorcerySpeed(state, seat);
 
@@ -272,7 +336,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, potential: ManaPool
         if (inst.tapped) continue;
         if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       }
-      if (ability.cost.mana && !canPay(potential, parseManaCost(ability.cost.mana))) continue;
+      if (ability.cost.mana
+        && !canAfford(poolOf(state, seat), parseManaCost(ability.cost.mana), sources)) continue;
       // An ability whose cost is a sacrifice is not activatable with nothing to sacrifice.
       const victims = sacrificeOptions(state, seat, id, ability.cost);
       if (ability.cost.sacrifice !== undefined && victims.length === 0) continue;
@@ -307,6 +372,10 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     && !state.openingHands && state.pendingDecision === null && state.pendingChoice === null
     && state.pendingDiscard === null && pendingDeclaration(state) === null;
   const potential = potentialMana(state, seat);
+  // What could still be tapped, which is what decides affordability. `potential` above is the
+  // same question answered loosely for the *display*, and the two part company over a dual land:
+  // one source, one mana, two colours it might be.
+  const sources = manaSources(state, seat);
   const pending = state.pendingDiscard;
   const mustDiscard = pending !== null && pending.seat === seat ? pending.count : 0;
   const owed = pendingDeclaration(state);
@@ -368,7 +437,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     ? othersPassed ? `Resolve ${top.description}` : 'Pass'
     : othersPassed ? 'Next step' : 'Pass';
 
-  const plays = [...castablePlays(state, seat, potential), ...activatablePlays(state, seat, potential)];
+  const plays = [...castablePlays(state, seat, sources), ...activatablePlays(state, seat, sources)];
 
   return { ...empty, canPass: true, passLabel, plays, attackers: [], blockers: [] };
 }

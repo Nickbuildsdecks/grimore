@@ -33,10 +33,11 @@ import {
 import {
   destroy, draw, poolOf, removeEffectsFrom, setPool, untapAll, type EffectContext, type EffectFn,
 } from './effects.js';
+import { manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
 import {
   EMPTY_POOL, addMana, canPay, parseManaCost, payCost, solveTap,
-  type ManaPool, type ManaType,
+  type ManaPick, type ManaPool, type ManaType,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
 import { scriptFor } from './scripts.js';
@@ -601,7 +602,18 @@ function settle(state: GameState, before: GameState): GameState {
     next = { ...next, died: [], entered: [] };
     for (const id of dead) next = raise(next, { kind: 'dies' }, next.instances[id]?.zoneSeat, id);
     for (const id of arrived) {
-      if (next.instances[id]?.zone !== 'battlefield') continue;
+      const arrival = next.instances[id];
+      if (arrival?.zone !== 'battlefield') continue;
+      /*
+        "Enters the battlefield tapped" is a replacement effect (CR 614.1c), not a trigger: the
+        land was never untapped, so nobody could have tapped it for mana in between. Applied here,
+        before the entry trigger is raised, which is as close to "never untapped" as a state the
+        engine computes in one action can be — and the only way to be closer is a replacement
+        layer the rest of the engine has no use for yet.
+      */
+      if (!arrival.tapped && scriptFor(next.cardDefs[arrival.defKey]?.name)?.entersTapped === true) {
+        next = withInstance(next, id, { tapped: true });
+      }
       next = raise(next, { kind: 'etb' }, next.instances[id]?.zoneSeat, id);
     }
     next = stateBasedActions(next);
@@ -616,52 +628,14 @@ function settle(state: GameState, before: GameState): GameState {
 
 // ── Casting, activating, resolving ───────────────────────────────────────────────────────────────
 
-/**
- * Permanents the engine may tap on a player's behalf to pay a cost.
- *
- * Only abilities that are free, need nothing but a tap, and add a fixed amount of mana. An ability
- * that costs mana would need mana first; one offering a *choice* of colours cannot be described as
- * a fixed `produces` and is left out rather than guessed at, so the worst case for such a card is
- * that the player taps it by hand. A creature's mana ability is excluded while it is summoning
- * sick, same as any other tap ability (CR 302.6).
- */
-export function manaSources(
-  state: GameState, seat: SeatIndex,
-): { readonly key: string; readonly produces: readonly ManaType[]; readonly abilityIndex: number }[] {
-  const out: { key: string; produces: readonly ManaType[]; abilityIndex: number }[] = [];
-  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
-    const inst = state.instances[id];
-    if (inst === undefined || inst.tapped) continue;
-    const script = scriptFor(state.cardDefs[inst.defKey]?.name);
-    const ch = characteristicsOf(state, inst);
-    const abilities = script?.abilities ?? [];
-    for (let i = 0; i < abilities.length; i++) {
-      const ability = abilities[i]!;
-      if (ability.produces === undefined || ability.produces.length === 0) continue;
-      if (ability.cost.mana !== undefined) continue;
-      if (!ability.cost.tap) continue;
-      if (ability.cost.sacrificeSelf) continue;
-      if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
-      // One source per permanent: tapping it is what pays, so a second ability on the same
-      // permanent is not a second source.
-      out.push({ key: id, produces: ability.produces as readonly ManaType[], abilityIndex: i });
-      break;
-    }
-  }
-  return out;
-}
 
 /** Taps the chosen permanents and puts their mana in the pool. */
-function tapSources(
-  state: GameState, seat: SeatIndex,
-  sources: readonly { key: string; produces: readonly ManaType[] }[], keys: readonly string[],
-): GameState {
+function tapSources(state: GameState, seat: SeatIndex, picks: readonly ManaPick[]): GameState {
   let next = state;
-  for (const key of keys) {
-    const source = sources.find((s) => s.key === key);
-    if (source === undefined) continue;
-    next = withInstance(next, key, { tapped: true });
-    for (const type of source.produces) next = setPool(next, seat, addMana(poolOf(next, seat), type, 1));
+  for (const pick of picks) {
+    next = withInstance(next, pick.key, { tapped: true });
+    // What the solver decided this one made — for a dual, the single colour it was tapped for.
+    for (const type of pick.types) next = setPool(next, seat, addMana(poolOf(next, seat), type, 1));
   }
   return next;
 }
@@ -687,8 +661,8 @@ function payFrom(
     const sources = manaSources(next, seat);
     const plan = solveTap(poolOf(next, seat), cost, sources, x);
     if (plan !== null) {
-      next = tapSources(next, seat, sources, plan);
-      tapped = plan;
+      next = tapSources(next, seat, plan);
+      tapped = plan.map((pick) => pick.key);
     }
   }
   const result = payCost(poolOf(next, seat), cost, x);

@@ -134,13 +134,16 @@ describe('maxX', () => {
 
 describe('solveTap', () => {
   const land = (key: string, type: 'W' | 'U' | 'B' | 'R' | 'G') => ({ key, produces: [type] as const });
+  /** The plan as keys, for the assertions that are about which sources were tapped. */
+  const keys = (plan: ReturnType<typeof solveTap>): string[] | null =>
+    plan === null ? null : plan.map((pick) => pick.key);
 
   it('taps nothing when the pool already covers the cost', () => {
     expect(solveTap(pool({ R: 1 }), parseManaCost('{R}'), [land('m1', 'R')])).toEqual([]);
   });
 
   it('taps exactly one source for a one-mana spell', () => {
-    expect(solveTap(EMPTY_POOL, parseManaCost('{R}'), [land('m1', 'R'), land('m2', 'R')]))
+    expect(keys(solveTap(EMPTY_POOL, parseManaCost('{R}'), [land('m1', 'R'), land('m2', 'R')])))
       .toEqual(['m1']);
   });
 
@@ -161,7 +164,7 @@ describe('solveTap', () => {
     const plan = solveTap(EMPTY_POOL, parseManaCost('{3}{G}{W}'), sources);
     expect(plan).not.toBeNull();
     expect(plan).toHaveLength(5);
-    expect(plan).toContain('p1');
+    expect(keys(plan)).toContain('p1');
   });
 
   it('saves a dual land for the colour only it can make', () => {
@@ -174,12 +177,35 @@ describe('solveTap', () => {
     ];
     const plan = solveTap(EMPTY_POOL, parseManaCost('{W}{U}'), sources);
     expect(plan).toHaveLength(2);
-    expect(plan).toContain('plains');
+    expect(keys(plan)).toContain('plains');
   });
 
   it('counts a source that makes two mana as two', () => {
     const plan = solveTap(EMPTY_POOL, parseManaCost('{G}{G}'), [{ key: 'tree', produces: ['G', 'G'] }]);
-    expect(plan).toEqual(['tree']);
+    expect(plan).toEqual([{ key: 'tree', types: ['G', 'G'] }]);
+  });
+
+  it('taps a dual for one colour, not for both', () => {
+    // The distinction the whole type exists for. Without `choose`, a Guildgate listing ['U','B']
+    // reads as two mana and the engine offers a two-drop off one land.
+    const gate = { key: 'gate', produces: ['U', 'B'] as const, choose: true };
+    expect(solveTap(EMPTY_POOL, parseManaCost('{U}'), [gate]))
+      .toEqual([{ key: 'gate', types: ['U'] }]);
+    expect(solveTap(EMPTY_POOL, parseManaCost('{B}'), [gate]))
+      .toEqual([{ key: 'gate', types: ['B'] }]);
+    // One mana, so a two-mana spell is out of reach however many colours it could have made.
+    expect(solveTap(EMPTY_POOL, parseManaCost('{U}{B}'), [gate])).toBeNull();
+    expect(solveTap(EMPTY_POOL, parseManaCost('{1}{U}'), [gate])).toBeNull();
+  });
+
+  it('pays a two-colour cost from two duals, one colour each', () => {
+    const gates = [
+      { key: 'g1', produces: ['U', 'B'] as const, choose: true },
+      { key: 'g2', produces: ['U', 'B'] as const, choose: true },
+    ];
+    const plan = solveTap(EMPTY_POOL, parseManaCost('{U}{B}'), gates);
+    expect(plan).not.toBeNull();
+    expect(plan!.flatMap((pick) => pick.types).sort()).toEqual(['B', 'U']);
   });
 
   it('refuses a cost it cannot read rather than tapping hopefully', () => {

@@ -1279,3 +1279,42 @@ ending immediately. Found by a playout, in the one matchup that could produce it
 Bonesplitter (+2/+0 for {1}), Loxodon Warhammer (+3/+0, trample, lifelink) and Basilisk Collar
 (deathtouch and lifelink on anything, which turns a Llanowar Elves into a creature nobody blocks).
 Seventy-four scripted cards.
+
+## D40 — A land that makes one of two colours, and one answer about affordability
+
+The engine could not express a dual land. `ManaSource.produces` was a multiset — a source listing
+`['U','B']` added one of each — so a Guildgate would have been two mana off one land, and the
+comment in `mana.ts` said as much: a source offering a *choice* "is left out of `sources` by the
+caller rather than guessed at".
+
+**Decided: a source may be a choice, and the solver says which colour each tap made.** `solveTap`
+now returns picks — `{ key, types }` — instead of keys, because for a choice source the colour is
+not decided until it is tapped, and the caller has to put the right mana in the pool. The greedy
+rule that was already there turns out to be exactly right for duals: the *least flexible* source
+that makes a short colour goes first, so a Guildgate is saved for the colour only it can provide.
+
+**Decided: several free tap-for-mana abilities on one permanent are a choice, not a sum.** That is
+what a dual land is, and `manaSources` now collapses them into one source with `choose: true`.
+Before this it took the first such ability and ignored the rest, which was right for everything in
+the pool and wrong for anything with two.
+
+**Decided: affordability is one function, and it is the solver.** `legalActions` used to count an
+optimistic pool — every untapped source's colours added up — and `canPay` that against the cost,
+while the payment itself used `solveTap`. Two answers to one question, and a dual land is exactly
+where they part company: counted as both its colours it looks like two mana and it is one, so the
+table would have offered a two-drop off one Guildgate and the engine would have refused to pay for
+it. `canAfford` (pool, cost, sources) is now the only answer, and `maxAffordableX` with it.
+
+`potentialMana` survives as what it always really was: the **dimmed pips** on the control bar,
+"the colours you could still make", optimistic on purpose because that is the useful reading for a
+person. Nothing decides legality from it any more, and its doc comment says so.
+
+**Decided: "enters the battlefield tapped" is applied where arrivals are announced.** It is a
+replacement effect (CR 614.1c) and the engine has no replacement layer, so it is applied in
+`settle`'s arrival drain, before the entry trigger is raised — the permanent is never observably
+untapped, because nothing can act between the two inside one action. Honest about being an
+approximation of the right mechanism rather than the mechanism.
+
+Three Guildgates, one for each two-colour deck, two copies each in place of two basics. Measured
+over twelve bot games: 19 gates played, **71 gate taps paying for spells**, no refusals, every
+game finished. Seventy-nine scripted cards, the five basic lands among them.

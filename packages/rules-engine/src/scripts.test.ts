@@ -1916,6 +1916,62 @@ describe('cards that stop and ask while they resolve', () => {
   });
 });
 
+describe('lands that make one of two colours', () => {
+  /** A seat with the named lands on the battlefield, in its main phase, nothing tapped yet. */
+  const board = (seat: SeatIndex, lands: readonly string[], hand: readonly string[], deck: string) =>
+    advanceTo(arena({
+      decks: { [seat]: deck }, hands: { [seat]: hand }, battlefield: { [seat]: lands },
+      turn: 3, firstSeat: seat,
+    }), 'precombat-main');
+
+  it('makes one mana, of whichever colour the spell needs', () => {
+    let s = board(1, ['Dimir Guildgate'], [], 'tidal-mind');
+    const gate = find(s, 1, 'battlefield', 'Dimir Guildgate');
+    // Two abilities, one tap: the table offers both and either is legal.
+    const plays = legalActions(s, 1).plays.filter((p) => p.card === gate);
+    expect(plays.map((p) => p.description)).toEqual(['{T}: Add {U}.', '{T}: Add {B}.']);
+    s = apply(s, { type: 'auto:activate', by: 1, card: gate, abilityIndex: 1 });
+    expect(s.pools['1']).toMatchObject({ B: 1, U: 0 });
+    expect(s.instances[gate]!.tapped).toBe(true);
+  });
+
+  it('is one mana and not two, so a two-drop is not offered off one gate', () => {
+    // The bug this type exists to prevent: counted as both its colours a Guildgate looks like two
+    // mana, the table offers a two-drop, and the engine then refuses to pay for it.
+    const s = board(1, ['Dimir Guildgate'], ['Counterspell', 'Preordain'], 'tidal-mind');
+    const offered = legalActions(s, 1).plays.map((p) => p.name);
+    expect(offered).toContain('Preordain');
+    expect(offered).not.toContain('Counterspell');
+  });
+
+  it('pays a two-colour cost out of two gates, one colour each', () => {
+    let s = board(0, ['Golgari Guildgate', 'Golgari Guildgate'], ['Wall of Blossoms'], 'rot-harvest');
+    // {1}{G} off two gates: one makes the green, the other pays the generic.
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Wall of Blossoms') }));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Wall of Blossoms');
+    // Both gates spent, one mana each — not one gate tapped for two.
+    const gates = ids(s, 0, 'battlefield')
+      .filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Golgari Guildgate');
+    expect(gates.map((id) => s.instances[id]!.tapped)).toEqual([true, true]);
+  });
+
+  it('enters tapped, so it does nothing the turn it is played (CR 614.1c)', () => {
+    let s = advanceTo(arena({
+      decks: { 1: 'tidal-mind' }, hands: { 1: ['Dimir Guildgate'] }, turn: 2, firstSeat: 1,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:playLand', by: 1, card: find(s, 1, 'hand', 'Dimir Guildgate') });
+    const gate = find(s, 1, 'battlefield', 'Dimir Guildgate');
+    expect(s.instances[gate]!.tapped).toBe(true);
+    // And no mana from it this turn: the engine offers nothing off a tapped land.
+    expect(legalActions(s, 1).plays.filter((p) => p.card === gate)).toEqual([]);
+    expect(legalActions(s, 1).potential).toMatchObject({ U: 0, B: 0 });
+
+    // Untapping on the next turn is what makes it a land rather than a brick.
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[gate]!.tapped).toBe(false);
+  });
+});
+
 describe('equipment, which is an aura that survives its creature', () => {
   /** A seat with the named Equipment already on the battlefield, lands tapped, in its main phase. */
   function equipped(

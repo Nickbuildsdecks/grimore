@@ -260,6 +260,11 @@ export interface CardScript {
   /** What happens when the spell resolves. A permanent enters the battlefield either way. */
   readonly onResolve?: EffectFn;
   readonly aura?: AuraDef;
+  /**
+   * "Enters the battlefield tapped": a replacement effect (CR 614.1c) rather than a trigger, so
+   * the permanent is never untapped and nothing can be done with it on the way in.
+   */
+  readonly entersTapped?: boolean;
   readonly triggers?: readonly TriggerDef[];
   readonly abilities?: readonly AbilityDef[];
   /** Static effects the permanent creates while it is on the battlefield. */
