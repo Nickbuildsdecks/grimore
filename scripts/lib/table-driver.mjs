@@ -117,6 +117,11 @@ export async function expectEventually(page, label, predicate, timeout = 12000) 
 /** Whether this page is the one the engine is waiting on. */
 export async function isMyMove(page) {
   if (await has(page, 'mulligan-prompt')) return true;
+  // Every prompt that blocks the control bar belongs on this list, including the ones that are
+  // *this browser's* own half-finished interaction rather than something the engine is waiting
+  // for — while one is open the bar shows no primary action, so a prompt left off here reads as
+  // "nobody has anything to do" and the suite waits out its idle budget on a game that is fine.
+  if (await has(page, 'x-prompt')) return true;
   if (await has(page, 'decide-prompt')) return true;
   if (await has(page, 'choose-prompt')) return true;
   if (await has(page, 'feed-prompt')) return true;
@@ -190,6 +195,20 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     // Nothing lit and nothing to confirm: the table is asking a question it is not showing an
     // answer to, which stops the game — a defect to report rather than wait out.
     return null;
+  }
+
+  // How big is the Fireball? Asked before the targets, so it blocks everything after it.
+  if (await has(page, 'x-prompt')) {
+    const options = page.locator('[data-testid^="pick-x-"]');
+    const count = await options.count();
+    if (count > 1) {
+      // Not always the largest, which is what the table opens on: an X spell cast for its maximum
+      // every time would never exercise the picker, and X=0 is a legal cast worth seeing work.
+      await options.nth(Math.floor(Math.random() * count)).click({ timeout: 2000 }).catch(() => {});
+    }
+    const label = await text(page, 'confirm-x');
+    await tid(page, 'confirm-x').click();
+    return `chose ${label}`;
   }
 
   if (await has(page, 'feed-prompt')) {
@@ -318,6 +337,7 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
  * it reads as a fact about the whole game.
  */
 export async function notePrompts(seen, page, seat) {
+  if (await has(page, 'x-prompt')) seen.x = true;
   if (await has(page, 'decide-prompt')) {
     seen.decided = true;
     if (await has(page, `zone-library-${seat}`)) {
@@ -330,6 +350,7 @@ export async function notePrompts(seen, page, seat) {
 /** Records what the move just made proves. `did` is whatever `makeMove` reported. */
 export async function noteMove(seen, page, did) {
   if (did === null) return;
+  if (/^chose X = \d+$/.test(did)) seen.xCast = did;
   // A modal spell's play is labelled "Cast X — <the mode>", the only play label with an em dash.
   if (/chose a play: Cast .+ — /.test(did)) {
     if (!seen.modal) await shot(page, 'casting-a-mode');

@@ -20,7 +20,7 @@
 import { characteristicsOf, hasSubtype, hasType, parseTypeLine } from './characteristics.js';
 import type { CardDef } from './cards.js';
 import {
-  addCounters, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
+  addCounters, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
   gainControl, gainLife, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump, pumpTeam,
   putOntoBattlefield, tap, type EffectContext,
@@ -119,6 +119,19 @@ const LAVA_SPIKE: CardScript = {
     const seat = firstPlayerTarget(c);
     return seat === null ? c.state : dealDamage(c.state, { kind: 'player', seat }, 3, { controller: c.controller });
   },
+};
+
+/**
+ * The first card with {X} in its cost, and the simplest shape it comes in.
+ *
+ * X is chosen as the spell is cast (CR 601.2b) and paid for then, so by the time this runs the
+ * number is settled and `c.x` is just a number. Nothing here knows how it was paid for, which is
+ * the point: the mana layer took the decision and the card reads like the card.
+ */
+const FIREBALL: CardScript = {
+  name: 'Fireball',
+  targets: [ANY_TARGET],
+  onResolve: (c) => damageFirstTarget(c, c.x),
 };
 
 const FLAME_SLASH: CardScript = {
@@ -240,6 +253,13 @@ const PACIFISM: CardScript = {
   },
 };
 
+const SECURE_THE_WASTES: CardScript = {
+  name: 'Secure the Wastes',
+  // X tokens, at instant speed, which is why it is the one X card worth holding up: the mana is
+  // spent at the end of somebody else's turn rather than on your own.
+  onResolve: (c) => (c.x === 0 ? c.state : createToken(c.state, c.controller, WARRIOR_TOKEN, c.x)),
+};
+
 const SWORDS_TO_PLOWSHARES: CardScript = {
   name: 'Swords to Plowshares',
   targets: [TARGET_CREATURE],
@@ -323,6 +343,33 @@ const SIGN_IN_BLOOD: CardScript = {
     // Drawing first matters: a player taken to 0 by the life loss still drew the cards, and a
     // player who had no cards left to draw has already lost either way.
     return loseLife(draw(c.state, seat, 2), seat, 2);
+  },
+};
+
+const MIND_SPRING: CardScript = {
+  name: 'Mind Spring',
+  onResolve: (c) => draw(c.state, c.controller, c.x),
+};
+
+/**
+ * Drain, once per opponent — which is a different card at a pod than at a duel.
+ *
+ * At two players it is X life; at four it is 3X gained against X lost each, and that asymmetry is
+ * the card rather than a bug in it. The life gained is the life actually lost, so an opponent
+ * already dead or at less than X does not pay what they do not have.
+ */
+const EXSANGUINATE: CardScript = {
+  name: 'Exsanguinate',
+  onResolve: (c) => {
+    if (c.x === 0) return c.state;
+    let state = c.state;
+    let drained = 0;
+    for (const seat of opponentsOf(state, c.controller)) {
+      const before = state.seats[seat]?.life ?? 0;
+      state = loseLife(state, seat, c.x);
+      drained += before - (state.seats[seat]?.life ?? 0);
+    }
+    return drained === 0 ? state : gainLife(state, c.controller, drained);
   },
 };
 
@@ -423,6 +470,35 @@ const WALL_OF_BLOSSOMS: CardScript = {
   triggers: [{ on: { kind: 'etb' }, description: 'draw a card', effect: (c) => draw(c.state, c.controller, 1) }],
 };
 
+/**
+ * The one X spell that hits its own caster, which is what makes it a card rather than a bigger
+ * Fireball: a deck of ground creatures pays nothing for it and a table of fliers pays everything.
+ *
+ * Every player, not every opponent — including the one casting it, who can kill themselves with
+ * it. The creatures are read at resolution, so a flier that arrived while this was on the stack
+ * is hit and one that left is not.
+ */
+const HURRICANE: CardScript = {
+  name: 'Hurricane',
+  onResolve: (c) => {
+    if (c.x === 0) return c.state;
+    let state = c.state;
+    for (const id of battlefield(state, (cardId) => {
+      const inst = state.instances[cardId];
+      if (inst === undefined) return false;
+      const ch = characteristicsOf(state, inst);
+      return ch.isCreature && ch.keywords.has('flying');
+    })) {
+      state = dealDamage(state, { kind: 'card', id }, c.x, { controller: c.controller });
+    }
+    for (const seat of state.seats) {
+      if (seat.eliminated) continue;
+      state = dealDamage(state, { kind: 'player', seat: seat.index }, c.x, { controller: c.controller });
+    }
+    return state;
+  },
+};
+
 const LOTLETH_GIANT: CardScript = {
   name: 'Lotleth Giant',
   triggers: [
@@ -478,6 +554,11 @@ export const ZOMBIE_TOKEN: CardDef = {
 export const KNIGHT_TOKEN: CardDef = {
   name: 'Knight', typeLine: 'Token Creature — Knight', manaCost: '', cmc: 0,
   power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
+};
+
+export const WARRIOR_TOKEN: CardDef = {
+  name: 'Warrior', typeLine: 'Token Creature — Warrior', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: '', colors: ['W'],
 };
 
 export const INSECT_TOKEN: CardDef = {
@@ -941,6 +1022,7 @@ const ALL: readonly CardScript[] = [
   DOOMED_TRAVELER, DOOMED_DISSENTER, GOBLIN_ARSONIST, PHYREXIAN_ARENA, GLORIOUS_ANTHEM,
   THERMO_ALCHEMIST,
   BLOOD_ARTIST, ZULAPORT_CUTTHROAT, SOUL_WARDEN, IMPACT_TREMORS,
+  FIREBALL, SECURE_THE_WASTES, MIND_SPRING, EXSANGUINATE, HURRICANE,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

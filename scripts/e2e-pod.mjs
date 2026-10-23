@@ -159,7 +159,7 @@ async function main() {
     // ── Play it out ─────────────────────────────────────────────────────────────────────────────
     const seen = {
       land: false, stack: false, attackers: false, blockers: false, lifeChanged: false,
-      decided: false, searched: false, modal: false, turnsPassed: 0,
+      decided: false, searched: false, modal: false, turnsPassed: 0, x: false, xCast: null,
       /** A commander cast through the UI from the command zone. */
       commanderCast: false,
       /** A commander that died and was back in its command zone afterwards (CR 903.9). */
@@ -297,6 +297,10 @@ async function main() {
       check('a commander is cast from the command zone through the real UI', false,
         `the command zone was read ${seen.cmdLooks ?? 0} times and never said playable; `
         + `last read: ${seen.cmdText ?? '(never looked)'}`);
+    }
+    if (seen.x) {
+      check('an X spell asks how big it is, and is cast for what was chosen', Boolean(seen.xCast),
+        seen.xCast ?? 'the prompt appeared but no cast came out of it');
     }
     if (seen.commanderReturned) {
       check('a commander that died is back in its command zone (CR 903.9)', true);

@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — sixty-three, today, across four starter decks. A tabletop works with
+cards somebody has scripted — sixty-eight, today, across four starter decks. A tabletop works with
 every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -97,6 +97,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Respond to their spell | While it is on the stack you hold priority — cast your instant, then pass. |
 | Attack | **Declare attackers**, tap the creatures, confirm. One that cannot attack is not tappable, and says why. |
 | Block | **Declare blockers**, tap your creature, then tap the attacker it blocks. Only attackers it may legally block light up. |
+| Cast a spell with {X} in its cost | Tap it and pick X from the numbers offered — the list stops at what your mana covers, and it opens on the largest. X is chosen before the target, because that is when the rules choose it. |
 | Mulligan | At the start, **Mulligan** draws a fresh seven; keeping then asks which card goes to the bottom. |
 | Something the engine does not know | Tap the card → **Move by hand**, and the tabletop's full move list is underneath. |
 | Be asked at every step | The **skipping** toggle in the control bar. On by default, it passes for you whenever passing is your only legal move — which is most of a game. |
@@ -210,9 +211,9 @@ FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatev
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (365 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (373 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (98 tests, the interaction reducer behind every prompt) and
+pods as well as duels), `apps/web` (104 tests, the interaction reducer behind every prompt) and
 `apps/realtime`
 (22 tests against live Redis, including two socket clients playing to a finish and one person
 playing the server).
@@ -223,10 +224,10 @@ playing the server).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows sixty-three cards.** Everything in the four starter decks. It stops and asks
+- **The engine knows sixty-eight cards.** Everything in the four starter decks. It stops and asks
   for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
-  sacrifice paid as a cost, a mode on a modal spell, and a decision made *while a card is
-  resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your
+  sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
+  card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your
   library to you and nobody else, Mind Rot is answered by the player discarding rather than by
   whoever cast it, and Fleshbag Marauder asks each player in turn order. A modal spell shows up as
   one play per mode when you tap it — Selesnya Charm offers three, and Grim Discovery offers each

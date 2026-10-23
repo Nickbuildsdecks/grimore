@@ -204,7 +204,7 @@ async function main() {
     const seen = {
       land: false, mana: false, stack: false, attackers: false, blockers: false,
       lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
-      decided: false, searched: false, modal: false,
+      decided: false, searched: false, modal: false, x: false, xCast: null,
     };
     const startLifeNick = await readNumber(nick, 'life-0');
     const startLifeFriend = await readNumber(friend, 'life-1');
@@ -422,6 +422,13 @@ async function main() {
     // already run. Whether one is drawn and affordable at all is the shuffle's business, so it is
     // asserted when the game produced one and reported when it did not; `scripts.test.ts` owns the
     // deterministic version, on a board built to need it.
+    if (seen.x) {
+      check('an X spell asks how big it is, and is cast for what was chosen', Boolean(seen.xCast),
+        seen.xCast ?? 'the prompt appeared but no cast came out of it');
+    } else {
+      console.log('      (no X spell came up in this game — scripts.test.ts covers that path '
+        + 'on a fixed board)');
+    }
     if (seen.modal) {
       check('a modal spell offers its modes as plays and one can be cast', true);
     } else {

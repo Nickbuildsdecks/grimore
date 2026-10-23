@@ -36,7 +36,9 @@ const HOST: ActionContext = { isHost: true };
 const playValue = (play: LegalPlay): number => {
   if (play.kind === 'land') return 1000; // always make your land drop
   if (play.isManaAbility) return -1000; // mana is tapped on demand, not for its own sake
-  return costValue(parseManaCost(play.manaCost)) + (play.modes?.length ?? 0) / 10;
+  // An X spell is worth what X will be: `{X}{R}` parses as a one-mana card, so without this a
+  // Fireball for eight ranks below a Shock and gets cast for nothing or not at all.
+  return costValue(parseManaCost(play.manaCost)) + (play.xMax ?? 0) + (play.modes?.length ?? 0) / 10;
 };
 
 /**
@@ -302,6 +304,12 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
     if (play.kind === 'cast') {
       return {
         type: 'auto:cast', by: seat, card: play.card,
+        // X as large as the mana allows. The shallowness here is the same as everywhere else in
+        // this file — it does not know what the card does, so it does not know that a Hurricane
+        // hits its own controller too, and it will occasionally kill itself with one. That is the
+        // bot being a bot rather than the rules being wrong, and it is why `playout.test.ts`
+        // asserts that games *finish* rather than that they are played well.
+        ...(play.xMax === undefined ? {} : { x: play.xMax }),
         ...(play.modes === undefined ? {} : { modes: [...play.modes] }),
         ...(targets.length > 0 ? { targets } : {}),
       };

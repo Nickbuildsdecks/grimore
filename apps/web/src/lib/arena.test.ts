@@ -413,6 +413,63 @@ describe("answering a question a card asked while resolving", () => {
   })
 })
 
+describe("choosing X", () => {
+  const fireball = (over: Partial<LegalPlay> = {}): LegalPlay =>
+    play({ name: "Fireball", manaCost: "{X}{R}", xMax: 4, ...over })
+
+  it("asks for X before the targets, opening on the largest the mana allows", () => {
+    const result = arenaReducer(IDLE, { kind: "choosePlay", play: fireball() })
+    expect(result.action).toBeNull()
+    expect(result.mode).toEqual({ kind: "payingX", play: fireball(), chosen: 4 })
+  })
+
+  it("sends the chosen X with the cast, after the target", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: fireball() }).mode
+    mode = arenaReducer(mode, { kind: "setX", amount: 2 }).mode
+    expect((mode as { chosen: number }).chosen).toBe(2)
+    // Confirming X moves on to the target rather than sending anything: the spell is not cast
+    // until it has been aimed.
+    const afterX = arenaReducer(mode, { kind: "confirm" })
+    expect(afterX.action).toBeNull()
+    expect(afterX.mode.kind).toBe("targeting")
+    const sent = arenaReducer(afterX.mode, { kind: "pickTarget", target: player(1) })
+    expect(sent.action).toEqual({ type: "auto:cast", card: "c1", x: 2, targets: [player(1)] })
+  })
+
+  it("sends an X spell that needs no target as soon as X is confirmed", () => {
+    const spring = fireball({ name: "Mind Spring", targetSpecs: [], candidates: [], xMax: 3 })
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: spring }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:cast", card: "c1", x: 3,
+    })
+  })
+
+  it("refuses to let X past what the engine said could be paid for, or below nothing", () => {
+    // The ceiling is a mana fact and the engine owns it. Clamping here as well is belt and braces:
+    // a table that sent an unpayable X would be offering a play the engine then refuses, which is
+    // the one thing this whole reducer exists to avoid.
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: fireball() }).mode
+    mode = arenaReducer(mode, { kind: "setX", amount: 99 }).mode
+    expect((mode as { chosen: number }).chosen).toBe(4)
+    mode = arenaReducer(mode, { kind: "setX", amount: -3 }).mode
+    expect((mode as { chosen: number }).chosen).toBe(0)
+  })
+
+  it("sends X=0 rather than leaving it out, because a cost with {X} always has one", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: fireball() }).mode
+    mode = arenaReducer(mode, { kind: "setX", amount: 0 }).mode
+    mode = arenaReducer(mode, { kind: "confirm" }).mode
+    expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({
+      type: "auto:cast", card: "c1", x: 0, targets: [player(1)],
+    })
+  })
+
+  it("leaves a spell with no {X} alone", () => {
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: play() }).mode.kind).toBe("targeting")
+    expect(arenaReducer(IDLE, { kind: "setX", amount: 2 })).toEqual({ mode: IDLE, action: null })
+  })
+})
+
 describe("declaring attackers", () => {
   it("toggles creatures in and out, then sends them at the player they were aimed at", () => {
     let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode

@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 63 scripted cards |
+| `scripts.ts` | All 68 scripted cards |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**365 tests in the rules engine, 98 in the web app, 958 across the workspace.**
+**373 tests in the rules engine, 104 in the web app, 972 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -228,7 +228,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Thirteen things, in the order they mattered.
+Fourteen things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -438,6 +438,35 @@ the same trap the life buttons were, one rule along.
 to one survivor over 80-odd turn changes. The driver the arena suite had grown is now shared
 (`scripts/lib/table-driver.mjs`), because four browsers playing Commander ask for exactly the same
 moves as two playing a duel.
+
+**Spells with {X} in the cost, which were half-built — the worse half of missing.** The mana layer
+had parsed `{X}` since it was written, `payCost` took an amount for it, the stack object had a
+field for it, and `EffectContext.x` was documented as "the chosen value of X". Nothing ever set
+it: no card had an X, `legalActions` never reported one, and the table had no way to choose one.
+A missing feature is a gap you can see; one wired at both ends and never connected in the middle
+looks finished in every file you open.
+
+X is chosen as the spell is cast and before its targets (CR 601.2b, 601.2c), which is the same
+shape modal spells turned out to have — so again no new engine phase, only a step in front of
+targeting. `legalActions` reports `xMax`, because what X can be is a mana question and a client
+working it out would be a second mana engine disagreeing with the first. An X of zero is a legal
+cast and travels as a number rather than as a missing field, and an `x` on a card without one is
+refused rather than ignored. The stack says `Fireball (X=3)`, for the same reason it names a
+Charm's mode: the player holding a counterspell needs to know whether their 2/2 lives.
+
+Five cards, one per colour and each a different shape: Fireball, Mind Spring, Exsanguinate (X from
+*each opponent*, which is a different card at a pod than at a duel), Secure the Wastes (X tokens at
+instant speed) and Hurricane (X to every flier and every player, its controller included).
+
+It also caught a test method that had been quietly lucky. The modal test read `stackObjects` after
+each action to see what the bot had cast — but with auto-pass on, a spell nobody can respond to is
+cast *and resolved* inside one action, and of fifteen X spells cast across ten games exactly one
+was still on the stack to be seen. Both tests now watch the bot's own action.
+
+**And the number that decides a Commander game is on screen.** Each opponent's row showed the
+commander damage *you* had dealt them; your own row showed nothing, so a player could not see how
+close they were to losing to the 21-damage rule. Your row now carries the worst incoming total and
+whose it is — one number, because "cmd 7/0/14" is three numbers and no decision.
 
 ## Next
 

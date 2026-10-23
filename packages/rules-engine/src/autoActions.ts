@@ -97,6 +97,20 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no modes to choose`);
   }
 
+  // X is announced with the spell (CR 601.2b), so it arrives with the action rather than being
+  // asked for on resolution. Refused rather than ignored when the cost has no {X} in it: a client
+  // sending one has misunderstood the card, and silently dropping it would put an x on the stack
+  // object that an effect could read.
+  const printedCost = parseManaCost(def?.manaCost);
+  if (action.x !== undefined) {
+    if (!printedCost.x) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no X to choose`);
+    }
+    if (!Number.isInteger(action.x) || action.x < 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'X must be a whole number, and cannot be negative');
+    }
+  }
+
   const specs = modes === undefined ? spellTargets(script) : modeTargetSpecs(modesOf(script, modes));
   const chosen = action.targets ?? [];
   const check = checkTargets(state, specs, chosen, action.by);
@@ -117,12 +131,15 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const modeText = modes === undefined
     ? ''
     : ` — ${modesOf(script, modes).map((m) => m.description).join('; and ')}`;
+  // X is in the description for the same reason the modes are: the player deciding whether to
+  // respond has to know how big the Fireball is, and the stack is where both players read it.
+  const xText = printedCost.x ? ` (X=${action.x ?? 0})` : '';
   const object: StackObject = {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
     cardKey: inst.defKey, targets: [...chosen],
     ...(action.x === undefined ? {} : { x: action.x }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
-    description: `${characteristics.name}${modeText}`,
+    description: `${characteristics.name}${xText}${modeText}`,
   };
   next = {
     ...next,

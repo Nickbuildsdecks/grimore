@@ -19,7 +19,7 @@ import {
 } from './automation.js';
 import { legalAttackers, legalBlockers, canBlock } from './combat.js';
 import { poolOf } from './effects.js';
-import { addMana, canPay, parseManaCost, type ManaCost, type ManaPool, type ManaType } from './mana.js';
+import { addMana, canPay, maxX, parseManaCost, type ManaCost, type ManaPool, type ManaType } from './mana.js';
 import { scriptFor } from './scripts.js';
 import type { AbilityDef, CardScript, TargetSpec } from './scriptTypes.js';
 import { legalTargets } from './targeting.js';
@@ -41,6 +41,16 @@ export interface LegalPlay {
    * four-mana commander on its third cast would be lying about the card.
    */
   readonly commanderTax?: number;
+  /**
+   * The largest X this seat could pay for, for a cost with {X} in it, and absent for every other
+   * play.
+   *
+   * Reported rather than left to the client because what X can be is a mana question, and the
+   * client has no business re-deriving one: a table that offered an X it could not pay for would
+   * be offering a play the engine then refuses. X is chosen as the spell is cast (CR 601.2b),
+   * which is why it travels on the play and not into the resolution.
+   */
+  readonly xMax?: number;
   readonly abilityIndex?: number;
   /**
    * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
@@ -206,6 +216,9 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
       : printed;
     if (!canPay(potential, cost)) continue;
     const taxOn = fromCommand && tax > 0 ? { commanderTax: tax } : {};
+    // X at zero is a legal cast of an X spell and sometimes the only one available, so a cost with
+    // {X} is offered whenever the rest of it can be paid; `xMax` says how high the player may go.
+    const xOn = cost.x ? { xMax: maxX(potential, cost) } : {};
 
     // A modal spell is offered once per legal combination of modes, and a combination whose
     // targets cannot be filled is not offered at all — so "destroy target creature; or draw two
@@ -220,7 +233,7 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
         out.push({
           kind: 'cast', card: id, name: ch.name,
           description: `Cast ${ch.name} — ${chosen.map((m) => m.description).join('; and ')}`,
-          manaCost: def?.manaCost ?? '', ...taxOn, modes, targetSpecs: specs, candidates,
+          manaCost: def?.manaCost ?? '', ...taxOn, ...xOn, modes, targetSpecs: specs, candidates,
           isManaAbility: false, sacrificeOptions: [],
         });
       }
@@ -234,8 +247,8 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
     out.push({
       kind: 'cast', card: id, name: ch.name,
       description: fromCommand && tax > 0 ? `Cast ${ch.name} (+{${tax}} tax)` : `Cast ${ch.name}`,
-      manaCost: def?.manaCost ?? '', ...taxOn, targetSpecs: specs, candidates, isManaAbility: false,
-      sacrificeOptions: [],
+      manaCost: def?.manaCost ?? '', ...taxOn, ...xOn, targetSpecs: specs, candidates,
+      isManaAbility: false, sacrificeOptions: [],
     });
   }
   return out;

@@ -1133,3 +1133,55 @@ for exactly the same moves as two playing a duel, so a second copy of that polic
 drifted inside a week. The arena suite passing 35 checks on the extracted driver is what says the
 extraction was faithful; the only pod-specific line in it is that an attack is aimed at a random
 legal player before each creature is tapped, which does nothing at a two-player table.
+
+## D37 — {X} was half-built, which is worse than missing
+
+The mana layer has parsed `{X}` since it was written, `payCost` has taken an amount to pay for it,
+the stack object has had a field for it, and `EffectContext.x` has been documented as "the chosen
+value of X, 0 when the cost had none". Nothing ever set it. No card had an X in its cost, no
+`legalActions` ever reported one, the table had no way to choose one, and so none of that code had
+ever run.
+
+**That is a worse state than not having it.** A missing feature is a gap you can see; a feature
+wired at both ends and never connected in the middle looks finished in every file you open. The
+half that was missing is the half with the rules in it.
+
+**Decided: `legalActions` reports `xMax`, and the client never derives it.** What X can be is a
+mana question — untapped sources, what they can produce, what the rest of the cost needs first —
+and a client that worked it out would be a second mana engine disagreeing with the first. The
+reducer clamps what it sends to the reported ceiling as belt and braces, not as arithmetic of its
+own.
+
+**Decided: X is chosen at cast time, before targets, like a mode.** CR 601.2b puts X with the
+announcement and CR 601.2c puts targets after it, and that is the order the table walks: the
+Fireball's size, then what it points at. Modelling it as a mid-resolution decision would have been
+the same mistake modal spells nearly were (D27) — you would get to see how big the Fireball was
+only after it was too late to counter it. The table opens on the largest X the mana allows,
+because that is the choice a player makes nearly every time, and every smaller number is one tap.
+
+**Decided: an X of zero travels, and an X on a card without one is refused.** `{X}` at zero is a
+legal cast and sometimes the only one available, so a spell with an X in its cost always sends a
+number rather than leaving the field out — "no x" and "x = 0" must not be the same message. The
+opposite case is refused outright: a Lightning Bolt arriving with `x: 2` is a client that has
+misunderstood the card, and ignoring the number would leave an x on the stack object for some
+later effect to read.
+
+**The X is in the stack description.** "Fireball" does not tell the player holding a counterspell
+whether their 2/2 lives; "Fireball (X=3)" does. Same reasoning as the modes.
+
+**The bot takes the largest X, and that occasionally kills it.** It does not know what a card does
+— that shallowness is deliberate and recorded in D20 — so it does not know that a Hurricane hits
+its own controller too. Left as it is: the alternative is a card-specific hack dressed up as a
+rule, and `playout.test.ts` asserts that games *finish*, not that they are played well.
+
+**And a test method that was quietly wrong.** The modal test watched `state.stackObjects` after
+each action to see what the bot had cast. With auto-pass on, a spell nobody can respond to is cast
+*and resolved* inside one action, so the stack is empty again by the next line: of fifteen X
+spells cast across ten games, exactly **one** was still there to be seen. The modal test had been
+passing on the same luck. Both now read the bot's own action through a `stepWatching` helper,
+which is the thing they were always trying to assert.
+
+Five cards, one per colour, each a different shape: Fireball (targeted damage), Mind Spring (draw
+X), Exsanguinate (X from each opponent, which is a different card at a pod than at a duel), Secure
+the Wastes (X tokens, at instant speed) and Hurricane (X to every flier **and every player**,
+including its controller). Sixty-eight scripted cards.

@@ -21,7 +21,7 @@ import {
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 
-const BASICS = new Set(['Mountain', 'Forest', 'Plains']);
+const BASICS = new Set(['Mountain', 'Forest', 'Plains', 'Island', 'Swamp']);
 
 /**
  * Sets a seat up in its main phase with every land tapped for mana and `hand` in hand.
@@ -31,6 +31,7 @@ const BASICS = new Set(['Mountain', 'Forest', 'Plains']);
  */
 function withMana(
   seat: SeatIndex, hand: readonly string[], lands: number | readonly string[], extra: readonly string[] = [],
+  deck?: string,
 ): GameState {
   const names = typeof lands === 'number'
     ? Array.from({ length: lands }, () => (seat === 0 ? 'Mountain' : 'Forest'))
@@ -38,6 +39,7 @@ function withMana(
   let s = arena({
     hands: { [seat]: hand }, battlefield: { [seat]: [...names, ...extra] },
     turn: 2, firstSeat: seat,
+    ...(deck === undefined ? {} : { decks: { [seat]: deck } }),
   });
   s = advanceTo(s, 'precombat-main');
   for (const id of [...ids(s, seat, 'battlefield')]) {
@@ -1911,6 +1913,119 @@ describe('cards that stop and ask while they resolve', () => {
     expect(refusal(s, { type: 'auto:decide', by: 1, cards: [elsewhere] })).toContain('not one of the choices');
     const forest = find(s, 1, 'library', 'Forest');
     expect(refusal(s, { type: 'auto:decide', by: 1, cards: [forest, forest] })).toBeTruthy();
+  });
+});
+
+describe('spells with {X} in the cost, chosen as the spell is cast', () => {
+  const plays = (s: GameState, seat: SeatIndex, name: string) =>
+    legalActions(s, seat).plays.filter((p) => p.name === name);
+
+  it('offers the spell with the largest X the mana allows, and X=0 is a legal cast', () => {
+    // Four Mountains tapped: {X}{R} leaves three for X. The table is told the ceiling rather than
+    // working it out, because what X can be is a mana question and a second answer to it would be
+    // a second mana engine.
+    let s = withMana(0, ['Fireball'], 4);
+    const offer = plays(s, 0, 'Fireball');
+    expect(offer).toHaveLength(1);
+    expect(offer[0]!.xMax).toBe(3);
+
+    // One Mountain pays for the {R} and nothing else, and the spell is still offered: a Fireball
+    // for nothing is legal, and sometimes it is the only cast available.
+    s = withMana(0, ['Fireball'], 1);
+    expect(plays(s, 0, 'Fireball')[0]!.xMax).toBe(0);
+  });
+
+  it('deals exactly the X that was paid for, and says so on the stack', () => {
+    let s = withMana(0, ['Fireball'], 4);
+    const bear = find(s, 1, 'library', 'Grizzly Bears');
+    s = apply(s, { type: 'card:move', by: 1, card: bear, toZone: 'battlefield' });
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fireball'),
+      x: 3, targets: [{ kind: 'card', id: bear }],
+    });
+    // On the stack with its X, which is what the other player needs in order to decide whether to
+    // respond: "Fireball" alone does not say whether the 2/2 lives.
+    expect(stackNames(s)).toEqual(['Fireball (X=3)']);
+    s = passBoth(s);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+  });
+
+  it('refuses an X the mana cannot pay for, and an X on a card that has none', () => {
+    const s = withMana(0, ['Fireball', 'Lightning Bolt'], 4);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fireball'), x: 9,
+      targets: [{ kind: 'player', seat: 1 }],
+    })).toContain('cannot pay');
+    // And the other direction: a Bolt with an X is a client that has misunderstood the card, and
+    // ignoring the number would leave an x on the stack object for an effect to read.
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'), x: 2,
+      targets: [{ kind: 'player', seat: 1 }],
+    })).toContain('no X to choose');
+  });
+
+  it('draws X cards', () => {
+    let s = withMana(1, ['Mind Spring'], ['Island', 'Island', 'Island', 'Island', 'Island'], [], 'tidal-mind');
+    const before = ids(s, 1, 'hand').length;
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Mind Spring'), x: 3 }));
+    // Three drawn, one Mind Spring gone.
+    expect(ids(s, 1, 'hand').length).toBe(before - 1 + 3);
+  });
+
+  it('creates X tokens, and none at all for X=0', () => {
+    // Five Plains for two casts: X=3 spends four of them and the fifth pays the {W} of the second,
+    // which is the one being asked about — nothing is created for X=0.
+    let s = withMana(1, ['Secure the Wastes', 'Secure the Wastes'],
+      ['Plains', 'Plains', 'Plains', 'Plains', 'Plains']);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Secure the Wastes'), x: 3 }));
+    expect(countOf(s, 1, 'battlefield', 'Warrior')).toBe(3);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Secure the Wastes'), x: 0 }));
+    expect(countOf(s, 1, 'battlefield', 'Warrior')).toBe(3);
+  });
+
+  it('drains each opponent for X and gains all of it, which is a different card at a pod', () => {
+    // Three opponents rather than one: X life each, 3X gained. That asymmetry is the card, and it
+    // is the reason this test is a pod and not a duel.
+    let s = arena({
+      format: 'pod', seats: 4, firstSeat: 0,
+      decks: { 0: 'tidal-mind' },
+      hands: { 0: ['Exsanguinate'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'] },
+      turn: 2,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Exsanguinate'), x: 2 });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect([life(s, 1), life(s, 2), life(s, 3)]).toEqual([38, 38, 38]);
+    expect(life(s, 0)).toBe(46);
+  });
+
+  it('hits every flier and every player with Hurricane, including its own controller', () => {
+    // The card that is not simply a bigger Fireball: it is symmetrical, so a deck of ground
+    // creatures pays nothing for it and a table of fliers pays everything.
+    let s = arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: ['Hurricane'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Centaur Courser'], 1: ['Wind Drake'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== 'Forest') continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const drake = find(s, 1, 'battlefield', 'Wind Drake');
+    const courser = find(s, 0, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Hurricane'), x: 2 }));
+    // The 2/2 flier dies; the 3/3 on the ground does not even take damage.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Wind Drake');
+    expect(s.instances[drake]!.zone).toBe('graveyard');
+    expect(s.instances[courser]!.damage).toBe(0);
+    // And both players took it, the caster included.
+    expect([life(s, 0), life(s, 1)]).toEqual([18, 18]);
   });
 });
 

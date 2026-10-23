@@ -87,6 +87,40 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         </div>
       ) : null}
 
+      {/*
+        How big is it? X is part of casting the spell (CR 601.2b), so it is asked before the
+        targets and shown as the numbers the player can actually pay for — the ceiling comes from
+        the engine, which is the only thing that knows what the mana will cover.
+      */}
+      {mode.kind === "payingX" ? (
+        <div data-testid="x-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-[var(--g-text-high)]">{mode.play.name}</span>
+          <span className="text-[var(--g-text-muted)]">choose X</span>
+          <span className="flex flex-wrap items-center gap-1">
+            {Array.from({ length: (mode.play.xMax ?? 0) + 1 }, (_, n) => n).map((n) => (
+              <Button
+                key={n}
+                size="sm"
+                variant={mode.chosen === n ? "default" : "ghost"}
+                className="h-6 w-7 px-0 text-[10px] tabular-nums"
+                data-testid={`pick-x-${n}`}
+                onClick={() => dispatch({ kind: "setX", amount: n })}
+              >
+                {n}
+              </Button>
+            ))}
+          </span>
+          <span className="ml-auto flex gap-1.5">
+            <Button size="sm" data-testid="confirm-x" onClick={() => dispatch({ kind: "confirm" })}>
+              <Check className="size-3.5" /> X = {mode.chosen}
+            </Button>
+            <Button size="sm" variant="ghost" data-testid="cancel-mode" onClick={() => dispatch({ kind: "cancel" })}>
+              <X className="size-3.5" /> Cancel
+            </Button>
+          </span>
+        </div>
+      ) : null}
+
       {mode.kind === "feeding" ? (
         <div data-testid="feed-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold text-[var(--g-text-high)]">{mode.play.description}</span>

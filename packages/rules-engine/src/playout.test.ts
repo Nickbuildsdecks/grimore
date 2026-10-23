@@ -243,13 +243,43 @@ describe('a whole automated game', () => {
     expect(fired).toBeGreaterThan(0);
   });
 
+  it('casts spells with {X} in the cost, and for more than nothing', () => {
+    // An X spell is the one card shape that can be cast *wrongly* while every other test passes:
+    // X=0 is a legal cast, so a bot that never chose an X would cast Fireball for no damage and
+    // Mind Spring for no cards, and the game would still finish. So what is watched is the value
+    // on the stack object, not that the spell was cast.
+    const sizes: number[] = [];
+    const names = new Set<string>();
+    for (let seed = 1; seed <= 10; seed++) {
+      let s = table(seed * 821, (seed % 2) as SeatIndex, ['ember-rush', 'tidal-mind']);
+      for (let i = 0; i < 6000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const before = s.stateVersion;
+        s = stepWatching(s, seat, (action, at) => {
+          if (action.type !== 'auto:cast' || action.x === undefined) return;
+          names.add(at.cardDefs[at.instances[action.card]?.defKey ?? '']?.name ?? '?');
+          sizes.push(action.x);
+        });
+        if (s.stateVersion === before) break;
+      }
+      expect(s.finished).toBe(true);
+    }
+    expect(sizes.length).toBeGreaterThan(0);
+    // Greater than one, not greater than zero: X=0 is a legal cast, so a bot that always chose
+    // zero would pass the first assertion while casting Fireball for no damage all game.
+    expect(Math.max(...sizes)).toBeGreaterThan(1);
+    expect(names.size).toBeGreaterThan(0);
+  });
+
   it('casts modal spells, and does not always take the same mode', () => {
     // A modal card could sit in a deck and never be cast while every other test in this file
     // passed, and a bot that always took mode one would look identical to a bot that could not
     // see the others. So: the modes get cast, and not always the same one.
     //
-    // Watched as the game runs rather than read off `state.log`, which is a 200-entry window on a
-    // game of several hundred actions.
+    // Watched on the bot's own action rather than on the stack or the log: the log is a 200-entry
+    // window on a game of several hundred actions, and a spell nobody can respond to is cast and
+    // resolved inside one action, so the stack is empty again by the next line.
     const taken = new Set<string>();
     let casts = 0;
     for (let seed = 1; seed <= 12; seed++) {
@@ -258,14 +288,13 @@ describe('a whole automated game', () => {
         const seat = seatToAct(s);
         if (seat === null) break;
         const before = s.stateVersion;
-        s = stepOnce(s, seat);
+        s = stepWatching(s, seat, (action, at) => {
+          if (action.type !== 'auto:cast' || action.modes === undefined) return;
+          const name = at.cardDefs[at.instances[action.card]?.defKey ?? '']?.name ?? '?';
+          casts += 1;
+          taken.add(`${name}:${[...action.modes].join(',')}`);
+        });
         if (s.stateVersion === before) break;
-        for (const object of Object.values(s.stackObjects)) {
-          if (object.modes === undefined) continue;
-          const name = s.cardDefs[object.cardKey]?.name ?? '?';
-          if (!taken.has(`${name}:${object.modes.join(',')}`)) casts += 1;
-          taken.add(`${name}:${object.modes.join(',')}`);
-        }
       }
       expect(s.finished).toBe(true);
     }
@@ -577,4 +606,22 @@ describe('what the engine tells a client', () => {
 function stepOnce(s: GameState, seat: SeatIndex): GameState {
   const action = botAction(s, seat)
   return action === null ? s : applyAction(s, action, HOST)
+}
+
+/**
+ * One bot move, with the action itself handed to a watcher before it is applied.
+ *
+ * For the tests that assert *what the bot chose* rather than what the game became. Reading those
+ * choices off the stack afterwards does not work: with auto-pass on, a spell nobody can respond to
+ * is cast and resolved inside the same action, so the stack is already empty by the time the next
+ * line runs. Measured, not assumed — of fifteen X spells cast across ten games, exactly one was
+ * still on the stack to be seen.
+ */
+function stepWatching(
+  s: GameState, seat: SeatIndex, watch: (action: Action, state: GameState) => void,
+): GameState {
+  const action = botAction(s, seat)
+  if (action === null) return s;
+  watch(action, s);
+  return applyAction(s, action, HOST);
 }

@@ -481,6 +481,7 @@ function SeatStrip({
   targetable,
   onTarget,
   manualLife,
+  seats,
 }: {
   seat: SeatView
   isMe: boolean
@@ -493,8 +494,26 @@ function SeatStrip({
   onTarget?: () => void
   /** The life buttons, which the engine's own life changes make unnecessary and misleading. */
   manualLife?: boolean
+  /** Every seat, so commander damage can name who dealt it rather than printing a seat number. */
+  seats: readonly SeatView[]
 }) {
   const life = (delta: number) => onAct({ type: "life:adjust", seat: seat.index, delta })
+  /**
+   * The largest commander damage this seat has taken, and who dealt it.
+   *
+   * Keyed by the seat the damage came from, which is how the engine and the tabletop both record
+   * it — a player, not a card, because the rule is about damage from "a commander" by player.
+   */
+  const worstCommanderDamage = (row: SeatView): { amount: number; from: string } | null => {
+    let worst: { amount: number; from: string } | null = null
+    for (const [from, amount] of Object.entries(row.commanderDamage)) {
+      if (amount <= 0) continue
+      if (worst !== null && amount <= worst.amount) continue
+      const dealer = seats.find((s) => String(s.index) === from)
+      worst = { amount, from: dealer?.name ?? `seat ${from}` }
+    }
+    return worst
+  }
   return (
     <div
       data-testid={`seat-${seat.index}`}
@@ -551,6 +570,20 @@ function SeatStrip({
       </span>
       <span className="text-[var(--g-text-muted)]">gy {seat.graveyardCount}</span>
       {seat.poison > 0 ? <span className="text-[var(--g-mana-g)]">poison {seat.poison}</span> : null}
+
+      {/*
+        The commander damage *you* have taken, on your own row, which is the number that decides
+        games: 21 from any one commander and you are out (CR 903.10), whatever your life total
+        says. Only the worst of the three is shown, and whose it is — a column per opponent would
+        read as "cmd 7/0/14" and tell you nothing you could act on.
+      */}
+      {commanderFormat && isMe ? (
+        worstCommanderDamage(seat) === null ? null : (
+          <span data-testid={`cmd-taken-${seat.index}`} className="flex items-center gap-1 text-[10px] text-[var(--g-mana-r)]">
+            <Swords className="size-3" /> cmd taken {worstCommanderDamage(seat)!.amount} ({worstCommanderDamage(seat)!.from})
+          </span>
+        )
+      ) : null}
 
       {/*
         Commander damage, counted the same way life is: by hand on a tabletop, by the engine on an
@@ -753,7 +786,10 @@ function Board({ table }: { table: UseTable }) {
       (mode.kind === "bottoming" && awaitingKind !== "mulligan") ||
       (mode.kind === "choosing" && awaitingKind !== "choose") ||
       (mode.kind === "deciding" && awaitingKind !== "decide") ||
-      (mode.kind === "targeting" && view !== null && playsForCard(view, mode.play.card).length === 0)
+      (mode.kind === "targeting" && view !== null && playsForCard(view, mode.play.card).length === 0) ||
+      // Choosing X is as perishable as choosing a target: a counterspell, a land tapped by
+      // something else, or the step simply ending can take the play away mid-decision.
+      (mode.kind === "payingX" && view !== null && playsForCard(view, mode.play.card).length === 0)
     if (!stale) return
     arenaRef.current = IDLE
     setArenaMode(IDLE)
@@ -993,6 +1029,7 @@ function Board({ table }: { table: UseTable }) {
             mySeat={seat}
             onAct={act}
             manualLife={!automated}
+            seats={view.seats}
             targetable={targetableSeats.has(o.index)}
             onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat: o.index } })}
           />
@@ -1058,6 +1095,7 @@ function Board({ table }: { table: UseTable }) {
           mySeat={seat}
           onAct={act}
           manualLife={!automated}
+          seats={view.seats}
           targetable={targetableSeats.has(seat)}
           onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat } })}
         />

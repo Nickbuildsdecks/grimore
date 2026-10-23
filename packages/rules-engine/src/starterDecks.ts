@@ -193,6 +193,15 @@ const KRENKO_MOB_BOSS: CardDef = {
   colors: ['R'],
 };
 
+const FIREBALL: CardDef = {
+  name: 'Fireball',
+  typeLine: 'Sorcery',
+  manaCost: '{X}{R}',
+  cmc: 1,
+  oracleText: 'Fireball deals X damage to any target.',
+  colors: ['R'],
+};
+
 // ── Green-white midrange ─────────────────────────────────────────────────────────────────────────
 
 const LLANOWAR_ELVES: CardDef = {
@@ -353,6 +362,15 @@ const SIGARDA_HOST_OF_HERONS: CardDef = {
   toughness: '5',
   oracleText: "Flying, hexproof\nSpells and abilities your opponents control can't cause you to sacrifice permanents.",
   colors: ['G', 'W'],
+};
+
+const SECURE_THE_WASTES: CardDef = {
+  name: 'Secure the Wastes',
+  typeLine: 'Instant',
+  manaCost: '{X}{W}',
+  cmc: 1,
+  oracleText: 'Create X 1/1 white Warrior creature tokens.',
+  colors: ['W'],
 };
 
 // ── Blue-black control ───────────────────────────────────────────────────────────────────────────
@@ -527,6 +545,24 @@ const TALRAND: CardDef = {
   colors: ['U'],
 };
 
+const MIND_SPRING: CardDef = {
+  name: 'Mind Spring',
+  typeLine: 'Sorcery',
+  manaCost: '{X}{U}{U}',
+  cmc: 2,
+  oracleText: 'Draw X cards.',
+  colors: ['U'],
+};
+
+const EXSANGUINATE: CardDef = {
+  name: 'Exsanguinate',
+  typeLine: 'Sorcery',
+  manaCost: '{X}{B}',
+  cmc: 1,
+  oracleText: 'Each opponent loses X life. You gain life equal to the life lost this way.',
+  colors: ['B'],
+};
+
 // ── Green-black graveyard ────────────────────────────────────────────────────────────────────────
 
 const FLESHBAG_MARAUDER: CardDef = {
@@ -677,6 +713,15 @@ const IZONI: CardDef = {
   colors: ['B', 'G'],
 };
 
+const HURRICANE: CardDef = {
+  name: 'Hurricane',
+  typeLine: 'Sorcery',
+  manaCost: '{X}{G}',
+  cmc: 1,
+  oracleText: 'Hurricane deals X damage to each creature with flying and each player.',
+  colors: ['G'],
+};
+
 // ── The decks ────────────────────────────────────────────────────────────────────────────────────
 
 export const EMBER_RUSH: DeckSpec = {
@@ -696,10 +741,13 @@ export const EMBER_RUSH: DeckSpec = {
     { card: SHIVAN_DRAGON, count: 3 },
     { card: LIGHTNING_BOLT, count: 4 },
     { card: SHOCK, count: 2 },
-    { card: LAVA_SPIKE, count: 2 },
+    { card: LAVA_SPIKE, count: 1 },
+    // The deck's X spell, and the reason the burn counts above came down by one each: a Fireball
+    // is what a mana-flooded red deck does with a board it cannot get past.
+    { card: FIREBALL, count: 2 },
     { card: IMPACT_TREMORS, count: 2 },
     { card: FAITHLESS_LOOTING, count: 2 },
-    { card: FLAME_SLASH, count: 4 },
+    { card: FLAME_SLASH, count: 3 },
     { card: ACT_OF_TREASON, count: 1 },
   ],
 };
@@ -722,10 +770,11 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: GRIZZLY_BEARS, count: 1 },
     { card: GLORIOUS_ANTHEM, count: 2 },
     { card: CENTAUR_COURSER, count: 3 },
-    { card: AJANIS_PRIDEMATE, count: 3 },
+    { card: AJANIS_PRIDEMATE, count: 2 },
     { card: SERRA_ANGEL, count: 3 },
     { card: GIANT_GROWTH, count: 2 },
-    { card: SELESNYA_CHARM, count: 3 },
+    { card: SELESNYA_CHARM, count: 2 },
+    { card: SECURE_THE_WASTES, count: 2 },
     { card: PACIFISM, count: 2 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
     { card: HARMONIZE, count: 2 },
@@ -744,14 +793,16 @@ export const TIDAL_MIND: DeckSpec = {
     { card: COUNTERSPELL, count: 3 },
     { card: NEGATE, count: 2 },
     { card: DOOM_BLADE, count: 3 },
-    { card: PHYREXIAN_ARENA, count: 3 },
+    { card: PHYREXIAN_ARENA, count: 2 },
     { card: DIVINATION, count: 2 },
+    { card: MIND_SPRING, count: 2 },
+    { card: EXSANGUINATE, count: 2 },
     { card: SIGN_IN_BLOOD, count: 2 },
     { card: TOME_SCOUR, count: 1 },
-    { card: MIND_ROT, count: 3 },
+    { card: MIND_ROT, count: 2 },
     { card: DIABOLIC_TUTOR, count: 2 },
-    { card: SOUL_MANIPULATION, count: 3 },
-    { card: RAVENOUS_RATS, count: 3 },
+    { card: SOUL_MANIPULATION, count: 2 },
+    { card: RAVENOUS_RATS, count: 2 },
     { card: CHILD_OF_NIGHT, count: 2 },
     { card: WIND_DRAKE, count: 1 },
     { card: MAN_O_WAR, count: 2 },
@@ -772,17 +823,20 @@ export const ROT_HARVEST: DeckSpec = {
     { card: THORNWEALD_ARCHER, count: 1 },
     { card: BLOOD_ARTIST, count: 3 },
     { card: ZULAPORT_CUTTHROAT, count: 2 },
-    { card: DOOMED_DISSENTER, count: 3 },
+    { card: DOOMED_DISSENTER, count: 2 },
     { card: WALL_OF_BLOSSOMS, count: 3 },
     { card: FLESHBAG_MARAUDER, count: 3 },
     { card: BLOODTHRONE_VAMPIRE, count: 2 },
-    { card: VAMPIRE_ARISTOCRAT, count: 3 },
+    { card: VAMPIRE_ARISTOCRAT, count: 2 },
     { card: GRAVEDIGGER, count: 4 },
     { card: RAISE_DEAD, count: 1 },
     { card: GRIM_DISCOVERY, count: 2 },
     { card: ZOMBIFY, count: 1 },
     { card: DOOM_BLADE, count: 2 },
     { card: LOTLETH_GIANT, count: 2 },
+    // Green's X spell. It hits its own controller too, which is the card: a deck of ground
+    // creatures pays nothing and a table of fliers pays everything.
+    { card: HURRICANE, count: 2 },
     // One copy, for the same reason as the Grizzly Bears in Verdant Guard: the graveyard tests
     // build their boards out of this deck and need a plain creature to bury.
     { card: CENTAUR_COURSER, count: 1 },

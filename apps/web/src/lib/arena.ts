@@ -36,7 +36,15 @@ export type ArenaMode =
   | { kind: "feeding"; play: LegalPlay }
   /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
   | { kind: "choosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string; chosen: Target[] }
-  | { kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string }
+  /**
+   * Choosing X, before anything else about the spell.
+   *
+   * X is announced as the spell is cast (CR 601.2b) and *before* its targets (CR 601.2c), which is
+   * the order this reducer walks: a player picks how big the Fireball is and then what it points
+   * at, because the size is part of casting it and not part of resolving it.
+   */
+  | { kind: "payingX"; play: LegalPlay; chosen: number }
+  | { kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string; x?: number }
   /**
    * Declaring attackers. `chosen` carries a defender per attacker, not one for the declaration,
    * because in a pod each creature may attack a different player — and `defender` here is only
@@ -68,6 +76,8 @@ export type ArenaEvent =
   | { kind: "feed"; card: string }
   | { kind: "choosePlay"; play: LegalPlay }
   | { kind: "pickTarget"; target: Target }
+  /** Sets X while it is being chosen. Clamped to what the engine said the player can pay for. */
+  | { kind: "setX"; amount: number }
   | { kind: "undoTarget" }
   | { kind: "confirm" }
   | { kind: "declareAttackers"; defender: SeatIndex }
@@ -142,14 +152,20 @@ export function choiceCandidatesAt(
 }
 
 /** The action a completed play turns into. */
-function playAction(play: LegalPlay, targets: readonly Target[], sacrifice?: string): TableAction {
+function playAction(
+  play: LegalPlay, targets: readonly Target[], sacrifice?: string, x?: number,
+): TableAction {
   const withTargets = targets.length > 0 ? { targets: [...targets] } : {}
   const withSacrifice = sacrifice === undefined ? {} : { sacrifice }
   if (play.kind === "land") return { type: "auto:playLand", card: play.card }
   // A modal spell's modes were chosen by choosing *this* play: the engine offers one play per
   // legal combination, so picking a mode and picking a spell are the same gesture.
   const withModes = play.modes === undefined ? {} : { modes: [...play.modes] }
-  if (play.kind === "cast") return { type: "auto:cast", card: play.card, ...withModes, ...withTargets }
+  // X travels with the cast for the same reason: it is announced, not resolved. Sent whenever the
+  // cost has an {X} in it, including zero — the engine refuses an x on a cost without one, and a
+  // missing x on a cost with one would silently cast it for nothing.
+  const withX = play.xMax === undefined ? {} : { x: Math.max(0, Math.min(x ?? 0, play.xMax)) }
+  if (play.kind === "cast") return { type: "auto:cast", card: play.card, ...withModes, ...withX, ...withTargets }
   return {
     type: "auto:activate", card: play.card, abilityIndex: play.abilityIndex ?? 0,
     ...withTargets, ...withSacrifice,
@@ -170,10 +186,22 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
     case "choosePlay": {
       const play = event.play
       // The cost comes first: a sacrifice is paid as the ability is activated, so it is chosen
-      // before the targets rather than after.
+      // before the targets rather than after. X is part of the cost in the same way, and the
+      // rules put it before the targets too.
       if (play.sacrificeOptions.length > 0) return { mode: { kind: "feeding", play }, action: null }
+      if (play.xMax !== undefined) {
+        // Opening on the largest X is the choice a player makes nearly every time — a Fireball is
+        // cast for everything available — and it is one tap from any smaller number.
+        return { mode: { kind: "payingX", play, chosen: play.xMax }, action: null }
+      }
       if (targetsWanted(play) === 0) return { mode: IDLE, action: playAction(play, []) }
       return { mode: { kind: "targeting", play, chosen: [] }, action: null }
+    }
+
+    case "setX": {
+      if (mode.kind !== "payingX") return { mode, action: null }
+      const max = mode.play.xMax ?? 0
+      return { mode: { ...mode, chosen: Math.max(0, Math.min(event.amount, max)) }, action: null }
     }
 
     case "feed": {
@@ -214,7 +242,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       }
       const chosen = [...mode.chosen, event.target]
       if (chosen.length >= targetsWanted(mode.play)) {
-        return { mode: IDLE, action: playAction(mode.play, chosen, mode.sacrifice) }
+        return { mode: IDLE, action: playAction(mode.play, chosen, mode.sacrifice, mode.x) }
       }
       return { mode: { ...mode, chosen }, action: null }
     }
@@ -226,10 +254,16 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
     }
 
     case "confirm": {
+      if (mode.kind === "payingX") {
+        if (targetsWanted(mode.play) === 0) {
+          return { mode: IDLE, action: playAction(mode.play, [], undefined, mode.chosen) }
+        }
+        return { mode: { kind: "targeting", play: mode.play, chosen: [], x: mode.chosen }, action: null }
+      }
       if (mode.kind === "targeting") {
         // "Up to" spells are the only ones that can be sent with fewer targets than they want.
         if (mode.chosen.length < targetsRequired(mode.play)) return { mode, action: null }
-        return { mode: IDLE, action: playAction(mode.play, mode.chosen, mode.sacrifice) }
+        return { mode: IDLE, action: playAction(mode.play, mode.chosen, mode.sacrifice, mode.x) }
       }
       if (mode.kind === "attackers") {
         return {
