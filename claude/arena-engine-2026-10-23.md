@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**404 tests in the rules engine, 104 in the web app, 1,003 across the workspace.**
+**406 tests in the rules engine, 104 in the web app, 1,005 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -230,7 +230,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Twenty-one things, in the order they mattered.
+Twenty-two things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -608,6 +608,19 @@ Five new cards for what it needed, including a vanilla 2/1 with no script at all
 a trigger on it. Five decks mean fifteen pairings, and `playout.test.ts` plays all of them to a
 finish: when a new deck arrives the question is not whether its cards work, it is whether a game
 between it and every other deck ends.
+
+**The log says what happened, not only what was played.** It read `Friend attacks with 2
+creature(s)`, `Nick blocks with 2 creature(s)`, `Friend passes`, `Friend passes` — a record of
+actions sent, with nothing about who was attacked, what blocked what, who took damage or what
+died. A board wipe read "Nick casts Golgari Charm" and four creatures died in silence.
+
+Consequences are **detected by comparing the table before and after**, which is the same rule as
+triggers one layer up: a consequence each caller has to remember to mention is one some caller
+will forget. `applyAction` diffs life totals and permanents that left the battlefield, and
+appends them — capped at six with the overflow counted, so a sweep is a line rather than a
+paragraph. Every card written from here on gets it for nothing. Combat names names, because
+"attacks with 2 creature(s)" is true and useless. And the client drops a pass that did nothing,
+because a hundred lines of "Friend passes" is how a player loses the four that mattered.
 
 ## Next
 

@@ -1916,6 +1916,42 @@ describe('cards that stop and ask while they resolve', () => {
   });
 });
 
+describe('the log, when a lot happens at once', () => {
+  it('names what died and stops before the line becomes a wall', () => {
+    // Seven tokens and a sweep: one action, seven deaths. The cap is what keeps the log readable
+    // when a board wipe lands, and the overflow still says how much it is not showing.
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest' }, hands: { 0: ['Golgari Charm'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Forest', 'Forest'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // The tokens arrive by hand: what is being tested is the log, not whatever made them.
+    s = apply(s, {
+      type: 'token:create', by: 0, seat: 0, count: 7,
+      card: {
+        name: 'Soldier', typeLine: 'Token Creature — Soldier', manaCost: '', cmc: 0,
+        power: '1', toughness: '1', oracleText: '', colors: ['W'],
+      },
+    });
+    expect(countOf(s, 0, 'battlefield', 'Soldier')).toBe(7);
+
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (name !== 'Swamp' && name !== 'Forest') continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Golgari Charm'), modes: [0],
+    }));
+    expect(countOf(s, 0, 'battlefield', 'Soldier')).toBe(0);
+
+    const line = s.log[s.log.length - 1]!.message;
+    expect(line).toContain('Soldier dies');
+    // Six consequences and then a count, rather than seven lines of Soldier.
+    expect(line).toContain('and 1 more');
+  });
+});
+
 describe('the fifth deck, which is built out of what the engine learned', () => {
   /** Forge Alliance on seat 0, lands down and tapped, in its main phase. */
   const forge = (hand: readonly string[], lands: readonly string[], board: readonly string[] = []) => {

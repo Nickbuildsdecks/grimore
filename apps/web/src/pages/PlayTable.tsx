@@ -1387,11 +1387,21 @@ function Board({ table }: { table: UseTable }) {
         <div data-testid="log-panel" className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setShowLog(false)}>
           <div className="flex w-full max-w-sm flex-col gap-2 overflow-y-auto border-l border-white/15 bg-[var(--g-surface-2)] p-4" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-sm font-semibold text-[var(--g-text-high)]">What happened</h2>
-            {[...view.log].reverse().map((entry, i) => (
-              <p key={`${entry.version}-${i}`} className="border-b border-white/5 pb-1 text-xs text-[var(--g-text-muted)]">
-                <span className="font-mono text-[10px] text-white/40">T{entry.turn}</span> {entry.message}
-              </p>
-            ))}
+            {/*
+              A pass that did nothing is not something that happened. Most of an automated game's
+              log is priority going round the table, and a hundred lines of "Friend passes" is how
+              a player loses the four lines that mattered. A pass that ended a step, dealt combat
+              damage or killed something keeps its line, because by then it is not a pass any more
+              — it is the action that caused all of that, and the engine says so on the same line.
+            */}
+            {[...view.log]
+              .filter((entry) => entry.type !== "auto:pass" || /[—;]/.test(entry.message))
+              .reverse()
+              .map((entry, i) => (
+                <p key={`${entry.version}-${i}`} className="border-b border-white/5 pb-1 text-xs text-[var(--g-text-muted)]">
+                  <span className="font-mono text-[10px] text-white/40">T{entry.turn}</span> {entry.message}
+                </p>
+              ))}
             <Button variant="ghost" onClick={() => setShowLog(false)}>Close</Button>
           </div>
         </div>

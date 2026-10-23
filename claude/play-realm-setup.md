@@ -34,7 +34,9 @@ skipped by all of it and the rest of you play on.
 
 What both modes do is the bookkeeping that is tedious and easy to get wrong: shuffling, drawing,
 untapping, counters, tokens, commander damage, and a complete log you can scroll back through when
-you disagree about what happened. There is a chat panel too.
+you disagree about what happened — it names who attacked whom, what blocked what, who took damage
+and what died, and it leaves out the hundred lines of passing priority in between. There is a chat
+panel too.
 
 **Nobody can see your hand.** That is enforced on the server, not in the browser — the identity of a
 card in your opponent's hand is never sent to your machine at all. Same for both libraries,
@@ -217,7 +219,7 @@ FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatev
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (404 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (406 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (104 tests, the interaction reducer behind every prompt) and
 `apps/realtime`

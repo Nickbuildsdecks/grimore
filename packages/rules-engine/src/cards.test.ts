@@ -421,6 +421,33 @@ describe('redaction', () => {
   });
 });
 
+describe('the log, which is how a player reconstructs a game', () => {
+  it('says what an action did to the board, not only what was played', () => {
+    // Detected by comparing the table before and after, the same way triggers are — so a card
+    // written next year gets it without anyone remembering to add a line. Before this, a board
+    // wipe read "Nick casts Golgari Charm" and four creatures died in silence.
+    let s = applyMany(newTable('modern'), [
+      { type: 'deck:load', by: 0, seat: 0, deckId: 'ember-rush' },
+      { type: 'deck:load', by: 1, seat: 1, deckId: 'verdant-guard' },
+      { type: 'game:start', by: 0, firstSeat: 0 },
+    ]);
+    const bear = firstInZone(s, 1, 'library');
+    s = applyAction(s, { type: 'card:move', by: 1, card: bear, toZone: 'battlefield' });
+    const name = nameOf(s, bear);
+
+    s = applyAction(s, { type: 'card:move', by: 1, card: bear, toZone: 'graveyard' });
+    expect(s.log[s.log.length - 1]!.message).toContain(`${name} dies`);
+
+    s = applyAction(s, { type: 'life:adjust', by: 0, seat: 0, delta: -3 });
+    // The new total is in the line, because "loses 3" without it means scrolling to find out.
+    expect(s.log[s.log.length - 1]!.message).toContain('loses 3 (17)');
+
+    s = applyAction(s, { type: 'life:adjust', by: 0, seat: 0, delta: 2 });
+    expect(s.log[s.log.length - 1]!.message).toContain('gains 2 (19)');
+  });
+
+});
+
 describe('a complete two-player game', () => {
   it('plays from shuffled decks to a winner using only actions a client can send', () => {
     // Nick on Ember Rush, his friend on Verdant Guard, 1v1 at 20 life.

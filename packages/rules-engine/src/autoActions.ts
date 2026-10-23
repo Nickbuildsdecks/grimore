@@ -339,6 +339,12 @@ const stepLabel = (step: string): string => step.replace(/-/g, ' ');
 
 // ── Combat ───────────────────────────────────────────────────────────────────────────────────────
 
+/** A card's printed name, by instance id, for the log lines that have to say what fought what. */
+const cardName = (state: GameState, id: string): string => {
+  const inst = state.instances[id];
+  return inst === undefined ? 'a creature' : state.cardDefs[inst.defKey]?.name ?? 'a creature';
+};
+
 function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
   requireAutomated(state);
   if (state.step !== 'declare-attackers') throw new EngineError('RULE_NOT_APPLICABLE', 'it is not the declare attackers step');
@@ -366,9 +372,13 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
   next = resetPriority(settle(next, state));
   return {
     state: next,
+    // Named, and aimed. "Attacks with 2 creature(s)" is true and useless: in a pod the question
+    // a reader has is who is being attacked, and in a duel it is what with.
     message: attacks.length === 0
       ? `${seatName(state, action.by)} attacks with nothing`
-      : `${seatName(state, action.by)} attacks with ${attacks.length} creature(s)`,
+      : `${seatName(state, action.by)} attacks: ${attacks
+          .map((a) => `${cardName(state, a.attacker)} at ${seatName(state, a.defender)}`)
+          .join(', ')}`,
     data: { attackers: attacks.map((a) => a.attacker) },
   };
 }
@@ -421,7 +431,10 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
     state: next,
     message: blocking === 0
       ? `${seatName(state, action.by)} does not block`
-      : `${seatName(state, action.by)} blocks with ${blocking} creature(s)`,
+      : `${seatName(state, action.by)} blocks: ${attacks
+          .filter((a) => a.defender === action.by && a.blockers.length > 0)
+          .map((a) => `${a.blockers.map((b) => cardName(state, b)).join(' and ')} on ${cardName(state, a.attacker)}`)
+          .join(', ')}`,
     data: { blockers: blocking },
   };
 }

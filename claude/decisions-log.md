@@ -1491,3 +1491,35 @@ reporting a defect — a prompt that genuinely cannot be answered still returns 
 branches that find a question with nothing lit, and a table that has actually stopped shows up in
 the callers' idle and repeat detectors, which describe it more accurately than one missing button
 can.
+
+## D46 — The log says what happened, not only what was played
+
+A game's log read like this: `Friend attacks with 2 creature(s)`, `Nick blocks with 2
+creature(s)`, `Friend passes`, `Friend passes`, `Friend passes`. Nothing about who was attacked,
+what blocked what, who took damage or what died — a board wipe read "Nick casts Golgari Charm"
+and four creatures died in silence. It is a record of *actions sent*, and what a player scrolling
+back wants is what happened.
+
+**Decided: consequences are detected by comparing the table before and after, not announced.**
+The same rule as triggers (D28, D34), applied to the log: a consequence each caller has to
+remember to mention is a consequence some caller will forget. `applyAction` diffs the state it
+started from against the state it produced — life totals that moved, permanents that left the
+battlefield for a graveyard or exile — and appends them to the line. Every card written from here
+on gets it for nothing, including the ones that kill something without mentioning it.
+
+A token that dies is *deleted* rather than moved, so "gone from the instances entirely" counts as
+a death too. It is the only way a token's death can be seen at all.
+
+**Capped at six, with the overflow counted.** A sweep that kills nine would otherwise be a
+paragraph; the line now ends "and 3 more", which is both shorter and honest about what it is not
+showing.
+
+**Combat names names.** "Attacks with 2 creature(s)" is true and useless: in a pod the question is
+who is being attacked and in a duel it is what with. `Friend attacks: Bloodthrone Vampire at Nick,
+Drudge Skeletons at Nick` and `Nick blocks: Warrior on Bloodthrone Vampire, Warrior on Drudge
+Skeletons` are the same information the arrows draw, in the form you can scroll back through.
+
+**And the client drops a pass that did nothing.** Most of an automated game's log is priority
+going round the table, and a hundred lines of "Friend passes" is how a player loses the four that
+mattered. A pass that ended a step or killed something keeps its line — by then it is not a pass,
+it is the action that caused all of that, and the engine now says so on the same line.

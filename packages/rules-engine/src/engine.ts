@@ -264,6 +264,43 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
   return { state: next, eliminations };
 }
 
+/** How many consequences one line of the log will carry before it stops listing them. */
+const MAX_NOTES = 6;
+
+/**
+ * What an action *did*, worked out by comparing the table before and after it.
+ *
+ * Detected rather than announced, for the same reason triggers are (see `settle`): a consequence
+ * that each caller has to remember to mention is a consequence some caller will forget, and the
+ * log was the proof of it — a board wipe read "Nick casts Golgari Charm" and nothing else, with
+ * four creatures dying silently. Every card written from here on gets this for nothing.
+ *
+ * Life and death only. Zone changes in general are far too chatty — every draw, every shuffle,
+ * every token — and the two things a player scrolling back wants to reconstruct are who took
+ * damage and what died.
+ */
+function consequences(before: GameState, after: GameState): string[] {
+  const notes: string[] = [];
+  for (const seat of after.seats) {
+    const was = before.seats[seat.index];
+    if (was === undefined || was.life === seat.life) continue;
+    const delta = seat.life - was.life;
+    notes.push(`${seat.name} ${delta > 0 ? 'gains' : 'loses'} ${Math.abs(delta)} (${seat.life})`);
+  }
+  for (const [id, was] of Object.entries(before.instances)) {
+    if (was.zone !== 'battlefield') continue;
+    const now = after.instances[id];
+    // A token that leaves the battlefield ceases to exist, so "gone entirely" is a death too —
+    // and is the only way a token's death can be seen at all.
+    const zone = now === undefined ? 'graveyard' : now.zone;
+    if (zone !== 'graveyard' && zone !== 'exile') continue;
+    const name = after.cardDefs[was.defKey]?.name ?? before.cardDefs[was.defKey]?.name ?? 'a permanent';
+    notes.push(zone === 'exile' ? `${name} is exiled` : `${name} dies`);
+  }
+  if (notes.length <= MAX_NOTES) return notes;
+  return [...notes.slice(0, MAX_NOTES), `and ${notes.length - MAX_NOTES} more`];
+}
+
 function appendLog(state: GameState, entry: Omit<LogEntry, 'version' | 'turn'>): GameState {
   const full: LogEntry = { version: state.stateVersion, turn: state.turn, ...entry };
   const log = state.log.length >= MAX_LOG_ENTRIES
@@ -557,6 +594,10 @@ export function applyAction(state: GameState, action: Action, ctx: ActionContext
 
   const data: Record<string, unknown> = { ...(outcome.data ?? {}) };
   let message = outcome.message;
+  // What the action actually did to the board, read off the difference rather than reported by
+  // whatever caused it.
+  const notes = isReset ? [] : consequences(state, next);
+  if (notes.length > 0) message += `; ${notes.join(', ')}`;
   if (resolved.eliminations.length > 0) {
     data['eliminations'] = resolved.eliminations;
     message += '; ' + resolved.eliminations
