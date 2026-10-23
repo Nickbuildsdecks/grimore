@@ -506,3 +506,40 @@ Tested in `test/postgres-write-paths.test.js`, which is the only harness that bo
 no affiliate environment variables, so the assertion exercises the default rather than a fixture. This
 removes `TCGPLAYER_AFFILIATE_ID=xJoE0d` from the list of things Nick has to set on the VM: setting it is
 now an override rather than a requirement.
+
+## D23 — The recommendation engine is its own package, and the candidate pool is bounded in SQL
+
+**Decided:** port `execution/recommendation_engine.js` into a new workspace package,
+`@grimore/recommender`, rather than into `packages/shared` or inline in the route; and replace its
+whole-table in-process candidate cache with a bounded, cursor-paged SQL window.
+
+**Why a package.** The engine is ~700 lines of pure domain logic — feature extraction, profile
+accumulation, scoring, diversification — with no contract surface and no I/O. That is exactly what
+`@grimore/auto-tagger` already is, and the precedent is worth following: `packages/shared` stays the
+place contracts and cross-cutting utilities live, and the engine stays testable without Postgres. The
+legacy engine's own test suite (`test/recommendation-engine.test.js`) was carried across verbatim as
+the port's regression oracle, which is the only thing that can honestly claim the TypeScript rewrite
+classifies cards the way the shipped engine does. Those assertions pin rules that have each been got
+wrong once already (a mana land is `Lands`, not `Utility Lands`; blink and graveyard recursion are
+not removal), so they fail the build rather than quietly changing what the product recommends.
+
+**Why bound the pool.** Legacy's `loadLocalRecommendationCandidates` selected every row of
+`scryfall_cards`, mapped it in JavaScript, and held the result in a module-level object for 30
+minutes; `loadCommunityCardCounts` did the same for a `GROUP BY` over every public deck's cards. Two
+problems, and the second is the one that decides it:
+
+1. It is a full table read per cold process, and the table is the entire card universe.
+2. **A process-local cache makes the cursor lie.** The feed's whole design rests on a stable
+   `page:cycle` cursor — the seed is derived from it so a reload returns the same page. With two API
+   instances holding caches populated at different times, the same cursor returns different cards
+   depending on which instance answers. `apps/api` is built to run more than one.
+
+So the pool is `ORDER BY edhrec_rank` with `LIMIT/OFFSET` from the cursor, deduplicated to one row
+per card name, and the community counts are computed for the names on the page rather than for every
+card in the product. Both are plain queries with no cached state: the same cursor returns the same
+page on any instance. The cost is a sort of the deduplicated card set per request, which the Scryfall
+pool this falls back from does server-side — one more reason to close `TODO(scryfall-fallback)`.
+
+**Not decided here:** whether the feed should be personalised for anonymous callers at all. It stays
+public, as legacy had it, because the discovery feed is the product's front door and a 401 there is a
+worse answer than a popularity-led page. An anonymous caller runs no signal queries.

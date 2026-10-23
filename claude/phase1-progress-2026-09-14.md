@@ -1028,3 +1028,91 @@ change, but `fetchJson` parsing a non-JSON error body without a guard is its own
 
 **Tests:** unchanged at 429 — this deletes code with no test coverage and adds none, since what
 replaced it is Express's default 404.
+
+## Checkpoint — recommendations ported (`GET /api/cards/recommendations`)
+
+The personalised discovery feed: the scoring engine moved to `packages/recommender` (new package,
+pure, 15 tests), the signal loaders to `apps/api/src/lib/preferenceSignals.ts`, the route into
+`routes/cards.ts`, contracts into `packages/shared/src/contracts/recommendations.ts`. 28 new tests;
+api suite 265 -> 278, workspace 504 -> 532. Port status: **100 of 126 legacy routes.**
+
+### Three of the five signal sources could never execute
+
+Same shape as every previous wave, with an extra twist: the feature *looked* like it worked.
+`safePreferenceQuery` wrapped each signal query in a try/catch that logged a warning and returned
+`[]`, so a player with a 400-card collection and a long wishlist got the same page as an account
+created ten seconds ago — and nothing in the response said so.
+
+- **`collection_cards.added_at` does not exist.** The column is `created_at`. The collection query
+  raised on every request, so what a player owns has never once influenced a recommendation on
+  Postgres. This is the fourth slice to find this exact column (decks, collections, recovery).
+- **`wishlist_cards.added_at` does not exist either** — same fix, and the wishlist is the single
+  strongest explicit signal the engine has (weight 1.8, `explicit: true`, +14 to the score).
+- **The candidate pool's primary query was dead code.** It selected `sc.scryfall_id`, which
+  `scryfall_cards` does not have (the column is `id`), so it raised and execution fell through to the
+  fallback query underneath it on every single request. The fallback read the right columns, which is
+  why nobody noticed.
+
+### The ban list stopped being enforced the moment the local cache became the source
+
+`candidateFitsDeck` read `candidate.legalities[deck.format]`. Candidates from the Scryfall API carry
+`legalities` as an object, so that worked. `scryfall_cards.legalities` is a **TEXT** column holding
+JSON, and indexing a string by `"commander"` gives `undefined` — which the check reads as "no
+legality recorded, allow it". So with the local pool (the only pool reachable from this environment)
+a card banned in Commander could be recommended into a Commander deck. `legalitiesOf` parses both
+shapes; a test asserts a banned card is dropped when its legalities arrive as text.
+
+### A signal's weight was multiplied by how often the card had been reprinted
+
+`LEFT JOIN scryfall_cards sc ON LOWER(sc.name) = LOWER(dc.card_name)` returns one row per printing,
+and there is no unique index on the name — Cultivate alone has dozens of rows. Every signal query
+joined that way, so one deck card became dozens of identical signals and its weight scaled with its
+print run, which is not a preference. `LATERAL ... LIMIT 1` throughout, matching the decks and cards
+slices. (`card_price_cache` could not fan out: migration 0013 made `LOWER(card_name)` unique there.)
+
+### The React app was calling this route and getting a 404
+
+`apps/web/src/pages/CardSearch.tsx` fetches `/api/cards/recommendations` through `api.get`, which
+resolves against **`apps/api`** — not the legacy server. The route did not exist there, so the SPA's
+discovery feed has been erroring since that page was written. The response shape the page declares
+locally matches what the port returns field for field, including `image_uri`, which is why the port
+reconstructs the Scryfall CDN URL when `scryfall_cards.image_uri` is empty rather than returning ''
+(a test asserts every card in the feed carries a renderable URL).
+
+### Deliberate deviations
+
+- **Own package, not `packages/shared`.** The engine is 700 lines of pure domain logic with no
+  contract surface, which is what `@grimore/auto-tagger` already is. `shared` keeps the contracts.
+- **The pool is bounded and paged in SQL.** Legacy read every row of `scryfall_cards` into a
+  process-local array and cached it for 30 minutes. Two instances with different caches answer the
+  same cursor differently, which defeats the point of a stable cursor. The pool is an
+  `ORDER BY edhrec_rank` window driven by the cursor now, deduplicated to one row per card.
+- **Community counts are scored, not cached.** Legacy grouped `deck_cards` over every public deck in
+  the product and held the map in memory. The score only reads the names on the page, so the count
+  query takes those names as a parameter.
+- **Failures surface.** A broken signal query is a 500, not a silent "new player".
+- `limit` still clamps to 4..40 and an unparseable value still falls back to 16, as legacy did; a
+  `deckId` the caller does not own is still a 404 rather than a silent score against the global
+  profile.
+
+### Not done here
+
+- The Scryfall-built, format-legal candidate pool (`TODO(scryfall-fallback)`). api.scryfall.com is
+  denied by the egress proxy, so `candidateSource` always reports `local-cache`. The field is in the
+  contract already, so adding the Scryfall page later changes no client.
+- `legacyUrl()` still has 5 callers in `apps/web`; this route was never one of them (see above).
+- **`CardSearch.tsx` still declares its own `RecommendationResponse` / `RecommendationCard` /
+  `RecommendationProfile` interfaces**, which now duplicate the contracts this slice added — the drift
+  D2 exists to prevent. They are left alone deliberately: the page's card type extends `apps/web`'s
+  own `CardResult`, which requires `image_uri` and `rarity` where the contract leaves them to the
+  passthrough, so swapping them is a typing job in the page's JSX rather than an import change. It
+  belongs in the Wave 7 web cutover alongside the `legacyUrl()` removals, not in a route port.
+
+### For Nick
+
+- **The discovery feed in the React app should work for the first time** once this deploys with
+  `apps/api` serving. Until the Postgres card sync is fixed it will be a thin feed: `scryfallService.js`
+  writes a `scryfall_id` column to `scryfall_cards` that does not exist, so the bulk sync cannot ever
+  have populated that table on Postgres (recorded as a cross-cutting item since 2026-09-14, still open).
+  The pool is only as good as that table.
+- Nothing here touches legacy `server.js`. The legacy engine and its tests are unchanged.
