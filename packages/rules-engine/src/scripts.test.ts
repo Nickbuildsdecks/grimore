@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STARTER_DECKS, characteristicsOf, legalActions, scriptFor, scriptedCardNames,
+  STARTER_DECKS, characteristicsOf, legalActions, scriptFor, scriptedCardNames, viewFor,
 } from './index.js';
 import {
   advanceTo, apply, arena, choices, countOf, decide, drain, find, ids, life, namesIn, nextTurn,
@@ -1913,6 +1913,104 @@ describe('cards that stop and ask while they resolve', () => {
     expect(refusal(s, { type: 'auto:decide', by: 1, cards: [elsewhere] })).toContain('not one of the choices');
     const forest = find(s, 1, 'library', 'Forest');
     expect(refusal(s, { type: 'auto:decide', by: 1, cards: [forest, forest] })).toBeTruthy();
+  });
+});
+
+describe('scry, which is the other way a player sees their own library', () => {
+  /** The ids on top of a seat's library, top first. */
+  const topOf = (s: GameState, seat: SeatIndex, n: number): string[] =>
+    [...ids(s, seat, 'library')].slice(0, n);
+
+  it('asks about the top card only, and leaves it there when nothing is chosen', () => {
+    let s = withMana(1, ['Preordain'], ['Island'], [], 'tidal-mind');
+    const [top, second] = topOf(s, 1, 2);
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Preordain') });
+    s = passBoth(s);
+    expect(s.pendingDecision?.from).toBe('library-top');
+    expect(s.pendingDecision?.candidates).toEqual([top]);
+    // Scry 1 is a question with two answers, so the engine asks rather than deciding for them.
+    expect([s.pendingDecision?.min, s.pendingDecision?.max]).toEqual([0, 1]);
+
+    s = apply(s, { type: 'auto:decide', by: 1, cards: [] });
+    expect(s.pendingDecision).toBeNull();
+    // Kept on top, and then drawn — which is the whole card.
+    expect(namesIn(s, 1, 'hand')).toContain(s.cardDefs[s.instances[top!]!.defKey]!.name);
+    expect(ids(s, 1, 'library')[0]).toBe(second);
+  });
+
+  it('puts what was chosen on the bottom, and draws what is left on top', () => {
+    let s = withMana(1, ['Preordain'], ['Island'], [], 'tidal-mind');
+    const [top, second] = topOf(s, 1, 2);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Preordain') }));
+    const library = ids(s, 1, 'library').length;
+    s = apply(s, { type: 'auto:decide', by: 1, cards: [top!] });
+    // The bottomed card is at the bottom, the next one was drawn, and nothing was shuffled: a
+    // scry that shuffled would be a very different card.
+    expect(ids(s, 1, 'library')[ids(s, 1, 'library').length - 1]).toBe(top);
+    expect(ids(s, 1, 'library').length).toBe(library - 1);
+    expect(s.instances[second!]!.zone).toBe('hand');
+  });
+
+  it('shows the scried cards to the player scrying and to nobody else', () => {
+    // The whole risk of reading your own library: a leak here is the top of a deck, in order, for
+    // the rest of the game. The library zone itself is not sent at all — only these cards.
+    let s = withMana(1, ['Omenspeaker'], ['Island', 'Island'], [], 'tidal-mind');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Omenspeaker') }));
+    s = passBoth(s);
+    expect(s.pendingDecision?.from).toBe('library-top');
+    const looked = s.pendingDecision!.candidates;
+    expect(looked).toHaveLength(2);
+
+    const mine = viewFor(s, 1);
+    const theirs = viewFor(s, 0);
+    const spectator = viewFor(s, null);
+    for (const id of looked) {
+      expect(mine.cards[id]?.card).toBeDefined();
+      expect(theirs.cards[id]).toBeUndefined();
+      expect(spectator.cards[id]).toBeUndefined();
+    }
+    // And the rest of the library stays unreadable even to its owner.
+    const rest = ids(s, 1, 'library').filter((id) => !looked.includes(id));
+    expect(rest.length).toBeGreaterThan(0);
+    for (const id of rest) expect(mine.cards[id]).toBeUndefined();
+    expect(mine.zones['1:library']).toBeUndefined();
+  });
+
+  it('stops showing them the moment the question is answered', () => {
+    let s = withMana(1, ['Omenspeaker'], ['Island', 'Island'], [], 'tidal-mind');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Omenspeaker') }));
+    s = passBoth(s);
+    const looked = [...s.pendingDecision!.candidates];
+    s = apply(s, { type: 'auto:decide', by: 1, cards: [looked[0]!] });
+    const mine = viewFor(s, 1);
+    // The one bottomed and the one kept are both unreadable again.
+    for (const id of looked) expect(mine.cards[id]).toBeUndefined();
+  });
+
+  it('refuses an answer naming a card that was not on the question', () => {
+    let s = withMana(1, ['Preordain'], ['Island'], [], 'tidal-mind');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Preordain') }));
+    const deeper = ids(s, 1, 'library')[4]!;
+    // Without this check a crafted answer could reach past the top of the deck — which is both a
+    // rules break and a way to read a card nobody was shown.
+    expect(refusal(s, { type: 'auto:decide', by: 1, cards: [deeper] })).not.toBeNull();
+  });
+
+  it('does the damage first and asks afterwards, which is the order Magma Jet prints', () => {
+    let s = withMana(0, ['Magma Jet'], 2);
+    const bear = find(s, 1, 'library', 'Grizzly Bears');
+    s = apply(s, { type: 'card:move', by: 1, card: bear, toZone: 'battlefield' });
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Magma Jet'),
+      targets: [{ kind: 'card', id: bear }],
+    }));
+    // Dead before the question is asked: what to keep on top is a different decision once the
+    // board has changed.
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(s.pendingDecision?.from).toBe('library-top');
+    expect(s.pendingDecision?.candidates).toHaveLength(2);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [] });
+    expect(s.pendingDecision).toBeNull();
   });
 });
 

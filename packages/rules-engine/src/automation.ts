@@ -806,7 +806,14 @@ function turnOrder(state: GameState): SeatIndex[] {
 export function decisionCandidates(
   state: GameState, spec: DecisionSpec, chooser: SeatIndex,
 ): string[] {
-  return listAt(state, zoneKey(chooser, spec.from)).filter((id) => {
+  // `library-top` is the top few cards of the chooser's own library rather than a whole zone —
+  // scry looks at two cards, not at fifty-three, and the candidate list is also the authorisation
+  // the answer is checked against, so taking the slice here is what stops a crafted answer
+  // reaching the rest of the deck.
+  const inZone = spec.from === 'library-top'
+    ? listAt(state, zoneKey(chooser, 'library')).slice(0, Math.max(0, spec.look ?? 1))
+    : listAt(state, zoneKey(chooser, spec.from));
+  return inZone.filter((id) => {
     if (state.instances[id] === undefined) return false;
     return spec.filter === undefined || spec.filter(state, id, chooser);
   });
@@ -876,7 +883,9 @@ function askOrFinish(
       },
     };
     return {
-      // Searching a library is allowed to look at it, which is what a real search is.
+      // Searching a library is allowed to look at it, which is what a real search is. Scry needs
+      // no flag: the top cards are readable because they are on the question, and `canIdentify`
+      // reads the same list.
       state: spec.from === 'library' ? replaceSeat(asking, entry.seat, { searching: true }) : asking,
       message: `${object.description} — ${seatName(state, entry.seat)}: ${spec.prompt}`,
     };
@@ -905,6 +914,18 @@ export function answerDecision(
     next = replaceSeat(withZones(next, { [key]: shuffled(listAt(next, key), rng) }), pending.seat, {
       searching: false,
     });
+  }
+  // Scry: the cards chosen go to the bottom and the rest stay on top, in the order they were
+  // already in. Done here rather than by the card, because putting them back is part of the
+  // keyword and not part of what the spell does afterwards — Preordain's own effect is the draw.
+  // No shuffle: a scry that shuffled would be a very different card.
+  if (pending.from === 'library-top') {
+    const key = zoneKey(pending.seat, 'library');
+    const bottomed = chosen.filter((id) => pending.candidates.includes(id));
+    if (bottomed.length > 0) {
+      const rest = listAt(next, key).filter((id) => !bottomed.includes(id));
+      next = withZones(next, { [key]: [...rest, ...bottomed] });
+    }
   }
   // The object leaving the stack mid-resolution should not be possible — nothing else can happen
   // while a decision is outstanding — but a resolution with nothing to resolve is simply over.

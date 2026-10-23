@@ -306,9 +306,18 @@ function canIdentify(state: GameState, inst: CardInstance, viewer: SeatIndex | n
   switch (inst.zone) {
     case 'hand':
       return isOwnSide;
-    case 'library':
-      // Only while this seat is actually searching, and only its own.
-      return isOwnSide && state.seats[inst.zoneSeat]?.searching === true;
+    case 'library': {
+      // Only its own, and only in the two situations where a player may read their own library:
+      // while searching it, and while looking at the top few cards of it.
+      if (!isOwnSide) return false;
+      if (state.seats[inst.zoneSeat]?.searching === true) return true;
+      // Scry. The authorisation is the engine's own candidate list — the same list `auto:decide`
+      // checks an answer against — rather than a second rule about how many cards are readable,
+      // which could disagree with it.
+      const ask = state.pendingDecision;
+      return ask !== null && ask.from === 'library-top' && ask.seat === viewer
+        && ask.candidates.includes(inst.id);
+    }
     case 'battlefield':
     case 'exile':
       // Face down hides a card from everyone except the seat it sits with.
@@ -428,6 +437,17 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     }
   }
   include('stack');
+
+  // The handful of cards a scry is about, sent to the seat being asked and to nobody else. They
+  // travel as cards without a zone list, deliberately: the library's own ids stay unsent, so what
+  // the table learns is "these three cards", not "here is the order of your deck".
+  const ask = state.pendingDecision;
+  if (viewer !== null && ask !== null && ask.from === 'library-top' && ask.seat === viewer) {
+    for (const id of ask.candidates) {
+      const inst = state.instances[id];
+      if (inst !== undefined) cards[id] = redact(state, inst, viewer);
+    }
+  }
 
   const seats: SeatView[] = state.seats.map((seat) => ({
     index: seat.index,

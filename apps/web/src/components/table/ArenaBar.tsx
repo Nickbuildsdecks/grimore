@@ -153,12 +153,21 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             {decisionLabel(mode.ask, mode.chosen)}
           </span>
           <span className="text-[var(--g-text-muted)]">
-            {mode.ask.from === "library" ? "tap a card in your library below" : `tap a card in your ${mode.ask.from}`}
+            {mode.ask.from === "library" ? "tap a card in your library below"
+              : mode.ask.from === "library-top" ? "tap the ones to put on the bottom"
+                : `tap a card in your ${mode.ask.from}`}
           </span>
           <span className="ml-auto flex gap-1.5">
             {mode.chosen.length >= mode.ask.min && mode.ask.min !== mode.ask.max ? (
               <Button size="sm" data-testid="confirm-decision" onClick={() => dispatch({ kind: "confirm" })}>
-                <Check className="size-3.5" /> {mode.chosen.length === 0 ? "Choose nothing" : "Confirm"}
+                <Check className="size-3.5" />
+                {/* "Choose nothing" is the right words for a sacrifice and the wrong ones for a
+                    scry, where choosing nothing is keeping what you were shown. */}
+                {mode.ask.from === "library-top"
+                  ? mode.chosen.length === 0
+                    ? `Keep ${mode.ask.max === 1 ? "it" : "them"} on top`
+                    : `Bottom ${mode.chosen.length}`
+                  : mode.chosen.length === 0 ? "Choose nothing" : "Confirm"}
               </Button>
             ) : null}
           </span>

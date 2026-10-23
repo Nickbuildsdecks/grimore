@@ -1131,6 +1131,22 @@ function Board({ table }: { table: UseTable }) {
           />
         ) : null}
       </div>
+      {/*
+        Scry. The top few cards of your own library, drawn nowhere else on the table and sent to
+        nobody else at all — they have no zone of their own in the view, so the row is built from
+        the question's own candidate list, which is also what the engine checks the answer
+        against. Tapping one marks it for the bottom; the rest stay on top.
+      */}
+      {arenaMode.kind === "deciding" && arenaMode.ask.from === "library-top" ? (
+        <ZoneRow
+          label={`Top of your library — ${arenaMode.ask.prompt}`}
+          testId={`zone-scry-${seat}`}
+          size="pile"
+          cards={cardsIn(view, [...arenaMode.ask.candidates])}
+          onSelect={onSelect}
+          {...aiming}
+        />
+      ) : null}
       {/* Searching shows your own library, and only while you are looking. */}
       {me?.searching ? (
         <ZoneRow

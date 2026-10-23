@@ -340,6 +340,10 @@ export async function notePrompts(seen, page, seat) {
   if (await has(page, 'x-prompt')) seen.x = true;
   if (await has(page, 'decide-prompt')) {
     seen.decided = true;
+    if (await has(page, `zone-scry-${seat}`)) {
+      if (!seen.scried) await shot(page, 'scrying');
+      seen.scried = true;
+    }
     if (await has(page, `zone-library-${seat}`)) {
       if (!seen.searched) await shot(page, 'searching-a-library');
       seen.searched = true;

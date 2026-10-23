@@ -204,7 +204,7 @@ async function main() {
     const seen = {
       land: false, mana: false, stack: false, attackers: false, blockers: false,
       lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
-      decided: false, searched: false, modal: false, x: false, xCast: null,
+      decided: false, searched: false, scried: false, modal: false, x: false, xCast: null,
     };
     const startLifeNick = await readNumber(nick, 'life-0');
     const startLifeFriend = await readNumber(friend, 'life-1');
@@ -331,6 +331,7 @@ async function main() {
     if (seen.decided) {
       check('a question asked mid-resolution can be answered from the table', true);
       if (seen.searched) check('a library search shows the library and lights what may be taken', true);
+      if (seen.scried) check('a scry shows the top of your own library and nobody else’s', true);
       else console.log('      (nothing searched a library in this game)');
     } else {
       console.log('      (no card stopped to ask a question in this game — scripts.test.ts covers '

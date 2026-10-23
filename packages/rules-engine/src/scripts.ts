@@ -134,6 +134,37 @@ const FIREBALL: CardScript = {
   onResolve: (c) => damageFirstTarget(c, c.x),
 };
 
+/**
+ * Scry, as a question whose answer is "these go to the bottom".
+ *
+ * The cards kept stay on top in the order they were already in. Real scry also lets you reorder
+ * the ones you keep; that needs a question whose answer is a sequence rather than a set, and no
+ * card in this pool turns on it. Where the engine stops is written down rather than papered over.
+ */
+const scry = (count: number): DecisionSpec => ({
+  who: 'controller',
+  from: 'library-top',
+  look: count,
+  prompt: `Scry ${count} — put any of these on the bottom`,
+  min: 0,
+  max: count,
+});
+
+/**
+ * "Deals 2 damage to any target. Scry 2."
+ *
+ * The damage is in `beforeDecisions` because the card does it first: by the time the player is
+ * looking at the top of their library the creature is already dead, which is the order printed on
+ * the card and occasionally the order that matters — what is drawn next is a different decision
+ * once the board has changed.
+ */
+const MAGMA_JET: CardScript = {
+  name: 'Magma Jet',
+  targets: [ANY_TARGET],
+  beforeDecisions: (c) => damageFirstTarget(c, 2),
+  decisions: [scry(2)],
+};
+
 const FLAME_SLASH: CardScript = {
   name: 'Flame Slash',
   targets: [TARGET_CREATURE],
@@ -371,6 +402,25 @@ const EXSANGUINATE: CardScript = {
     }
     return drained === 0 ? state : gainLife(state, c.controller, drained);
   },
+};
+
+const PREORDAIN: CardScript = {
+  name: 'Preordain',
+  // Scry *then* draw, which is the whole card: the draw sees the library the scry left behind.
+  decisions: [scry(1)],
+  onResolve: (c) => draw(c.state, c.controller, 1),
+};
+
+const OMENSPEAKER: CardScript = {
+  name: 'Omenspeaker',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'scry 2',
+      decisions: [scry(2)],
+      effect: (c) => c.state,
+    },
+  ],
 };
 
 const TOME_SCOUR: CardScript = {
@@ -1023,6 +1073,7 @@ const ALL: readonly CardScript[] = [
   THERMO_ALCHEMIST,
   BLOOD_ARTIST, ZULAPORT_CUTTHROAT, SOUL_WARDEN, IMPACT_TREMORS,
   FIREBALL, SECURE_THE_WASTES, MIND_SPRING, EXSANGUINATE, HURRICANE,
+  MAGMA_JET, PREORDAIN, OMENSPEAKER,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

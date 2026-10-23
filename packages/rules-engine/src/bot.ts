@@ -14,6 +14,8 @@
  * writing before the rules underneath them are trustworthy.
  */
 import { legalActions, type LegalActions, type LegalPlay } from './legalActions.js';
+import { zoneKey } from './cards.js';
+import { listAt } from './cardActions.js';
 import { bottomOwed, pendingDeclaration, stillDeciding } from './automation.js';
 import { characteristicsOf } from './characteristics.js';
 import { canAttack, canBlock } from './combat.js';
@@ -52,8 +54,22 @@ const playValue = (play: LegalPlay): number => {
  * checks the game finished.
  */
 function decideCards(
-  state: GameState, ask: NonNullable<LegalActions['mustDecide']>,
+  state: GameState, seat: SeatIndex, ask: NonNullable<LegalActions['mustDecide']>,
 ): string[] {
+  // Scry is neither gaining nor losing: the answer is "which of these do I not want to draw", and
+  // the only thing the bot knows about wanting is mana. So it bottoms a land once it has enough
+  // of them and keeps everything else, which is the one scry decision that is obviously right and
+  // the one a player would make without thinking. Anything cleverer needs it to know what it is
+  // holding and what it is playing against.
+  if (ask.from === 'library-top') {
+    const lands = listAt(state, zoneKey(seat, 'battlefield'))
+      .filter((id) => /land/i.test(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine ?? ''))
+      .length;
+    if (lands < 5) return [];
+    return ask.candidates
+      .filter((id) => /land/i.test(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine ?? ''))
+      .slice(0, ask.max);
+  }
   const gaining = ask.from === 'library' || ask.from === 'graveyard';
   const ranked = [...ask.candidates].sort((a, b) => cardWorth(state, b) - cardWorth(state, a));
   const take = gaining ? ask.max : ask.min;
@@ -256,7 +272,7 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
   // A card that stopped mid-resolution to ask this seat something blocks everything, including
   // the player whose spell it is, so it is answered before anything else is even considered.
   const ask = actions.mustDecide;
-  if (ask !== null) return { type: 'auto:decide', by: seat, cards: decideCards(state, ask) };
+  if (ask !== null) return { type: 'auto:decide', by: seat, cards: decideCards(state, seat, ask) };
 
   // A trigger waiting for its targets blocks everything else, so it is answered next.
   const choice = actions.mustChoose;

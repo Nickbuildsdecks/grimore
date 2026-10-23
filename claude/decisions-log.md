@@ -1185,3 +1185,54 @@ Five cards, one per colour, each a different shape: Fireball (targeted damage), 
 X), Exsanguinate (X from each opponent, which is a different card at a pod than at a duel), Secure
 the Wastes (X tokens, at instant speed) and Hurricane (X to every flier **and every player**,
 including its controller). Sixty-eight scripted cards.
+
+## D38 — Scry, and the second way a player may read their own library
+
+A library is the one zone hidden from its own owner, and until now there was exactly one hole in
+that: `searching`, which opens the whole thing. Scry needs a different hole — the top two cards,
+face up to you and to nobody else — and the interesting part is how the engine decides who may
+read them.
+
+**Decided: the candidate list is the authorisation, again.** `canIdentify` reveals a library card
+when there is a `pendingDecision` from `library-top`, it belongs to the viewer, and the card is on
+*that question's own candidate list* — the same list `auto:decide` validates an answer against.
+One list, two uses, so a crafted answer and an unauthorised read fail for the same reason and
+cannot drift apart. The alternative was a second rule saying "the top N are readable", which is
+a number that can disagree with the question.
+
+**Decided: the scried cards travel as cards without a zone.** The view sends their definitions to
+the one seat being asked and sends no library zone at all, so what the table learns is "these two
+cards", not "here is the order of your deck". The table draws them from the question's candidate
+list rather than from a zone, which is why no synthetic zone was needed anywhere.
+
+**Decided: putting them back is the engine's job, not the card's.** Scry is a keyword action with
+fixed semantics — the chosen cards go to the bottom, the rest stay on top, nothing is shuffled —
+so `answerDecision` does it, exactly where a search's shuffle already lives (CR 701.19e for the
+one, CR 701.17 for the other). Preordain's own effect is the draw and nothing else, which is what
+the card says.
+
+**Where the engine stops, written down: the cards kept stay in the order they were already in.**
+Printed scry also lets you reorder what you keep. That needs a question whose answer is a
+*sequence* rather than a set, which `DecisionSpec` cannot express, and no card in this pool turns
+on it. Scry 1 is therefore exact and scry 2 is very slightly simplified, and the limitation is in
+the code next to the type rather than in a changelog.
+
+**Magma Jet damages before it asks**, via `beforeDecisions` — the hook that existed for Faithless
+Looting's draw. That is the order printed on the card and occasionally the order that matters:
+what you want on top is a different question once the creature is dead.
+
+**The bot bottoms a land once it has five, and otherwise keeps everything.** Scry is neither
+gaining nor losing, so `decideCards`' existing rule — take the most and the best when gaining,
+the fewest and the worst when losing — says nothing useful about it. The one scry decision that
+is obviously right without knowing anything else is "I have enough lands", and that is all it
+makes. Anything cleverer needs the bot to know what it is holding and what it is playing against.
+
+Three cards: Preordain (scry 1, then draw), Magma Jet (damage, then scry 2) and Omenspeaker (an
+ETB scry on a 1/3 body, which is the trigger path). Seventy-one scripted cards.
+
+**Postscript, from the run that followed:** the solo suite stalled at turn seven while the two
+two-browser suites passed. Its move policy was a *third copy* of the same prompt-reading code, and
+the X-cost prompt had been taught only to the shared driver — so the copy sat looking at a table
+that was waiting for it. It is now the driver too, with one line of its own saying why it always
+develops. The rule this keeps re-proving: **a copy of a policy is a copy of the next thing you
+forget to tell it.**

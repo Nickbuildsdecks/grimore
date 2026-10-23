@@ -125,6 +125,14 @@ export interface DecisionSpec {
    * (CR 701.19e) — which is also what stops them keeping the order they just read.
    */
   readonly from: DecisionZone;
+  /**
+   * For `library-top`: how many cards off the top the question is about. Ignored everywhere else.
+   *
+   * The cards not chosen stay on top in the order they were already in. That is scry as far as
+   * this engine goes — the printed keyword also lets you reorder the ones you keep, which needs a
+   * question whose answer is a sequence rather than a set, and no card in the pool turns on it.
+   */
+  readonly look?: number;
   /** Shown to whoever is choosing, in their own words: "Search your library for a creature card". */
   readonly prompt: string;
   /** Both default to 1, and both are clamped to what the zone actually holds. */

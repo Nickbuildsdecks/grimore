@@ -159,7 +159,7 @@ async function main() {
     // ── Play it out ─────────────────────────────────────────────────────────────────────────────
     const seen = {
       land: false, stack: false, attackers: false, blockers: false, lifeChanged: false,
-      decided: false, searched: false, modal: false, turnsPassed: 0, x: false, xCast: null,
+      decided: false, searched: false, scried: false, modal: false, turnsPassed: 0, x: false, xCast: null,
       /** A commander cast through the UI from the command zone. */
       commanderCast: false,
       /** A commander that died and was back in its command zone afterwards (CR 903.9). */

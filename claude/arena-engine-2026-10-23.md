@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 68 scripted cards |
+| `scripts.ts` | All 71 scripted cards |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**373 tests in the rules engine, 104 in the web app, 972 across the workspace.**
+**379 tests in the rules engine, 104 in the web app, 978 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -228,7 +228,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Fourteen things, in the order they mattered.
+Fifteen things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -467,6 +467,31 @@ was still on the stack to be seen. Both tests now watch the bot's own action.
 commander damage *you* had dealt them; your own row showed nothing, so a player could not see how
 close they were to losing to the 21-damage rule. Your row now carries the worst incoming total and
 whose it is — one number, because "cmd 7/0/14" is three numbers and no decision.
+
+**Scry, which needed a second hole in the one zone hidden from its own owner.** A library is
+secret from everybody including the player who owns it, with exactly one exception —
+`searching`, which opens the whole thing. Scry is the other exception and a much smaller one: the
+top two cards, face up to you and to nobody else.
+
+The reveal is authorised by the question itself. `canIdentify` lets a seat read a library card
+when there is a decision from `library-top`, it is that seat's, and the card is on *that
+question's own candidate list* — the same list `auto:decide` checks an answer against. One list,
+two uses, so an unauthorised read and a crafted answer fail for the same reason and cannot drift
+apart. The cards travel as cards with no zone attached, so the table learns "these two cards" and
+not "here is the order of your deck", and the row is drawn from the candidate list rather than
+from a zone.
+
+Putting them back is the engine's job rather than the card's: scry is a keyword action with fixed
+semantics, so `answerDecision` bottoms what was chosen and leaves the rest on top, in the same
+place a search's shuffle already lived. Preordain's own effect is the draw and nothing else, which
+is exactly what the card says. Where the engine stops is written next to the type: the cards kept
+stay in the order they were in, because reordering needs a question whose answer is a sequence
+rather than a set and no card in the pool turns on it.
+
+Preordain, Magma Jet (which damages *before* it asks, through the same `beforeDecisions` hook
+Faithless Looting needed) and Omenspeaker, for the trigger path. The bot bottoms a land once it
+has five and otherwise keeps what it is shown — the one scry decision that is obviously right
+without knowing anything else about the game.
 
 ## Next
 

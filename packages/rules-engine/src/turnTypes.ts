@@ -248,7 +248,14 @@ export interface AutomationState {
 }
 
 /** Where a mid-resolution decision chooses its cards from. */
-export type DecisionZone = 'library' | 'hand' | 'graveyard' | 'battlefield';
+/**
+ * Where the cards a decision is about live.
+ *
+ * `library` is a search — the whole library, open to its owner while they look. `library-top` is
+ * the other way a player ever sees their own library: the top few cards, face up to them and to
+ * nobody else, which is scry and everything shaped like it.
+ */
+export type DecisionZone = 'library' | 'library-top' | 'hand' | 'graveyard' | 'battlefield';
 
 /** One answered decision, in the order the card asked. */
 export interface DecisionAnswer {

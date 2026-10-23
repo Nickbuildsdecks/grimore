@@ -14,26 +14,11 @@
  *   PLAY_HOST=127.0.0.1 node scripts/play.mjs &
  *   node scripts/e2e-solo.mjs
  */
-import { createRequire } from 'node:module';
-import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-
-const require = createRequire(import.meta.url);
-function loadPlaywright() {
-  const candidates = [
-    process.env.PLAYWRIGHT_PATH, 'playwright', 'playwright-core',
-    '/opt/node-tools/node_modules/playwright/index.js',
-  ].filter(Boolean);
-  for (const spec of candidates) {
-    try {
-      return require(spec);
-    } catch {
-      /* try the next one */
-    }
-  }
-  throw new Error('playwright not found. Install it (npm i -D playwright) or set PLAYWRIGHT_PATH.');
-}
-const { chromium } = loadPlaywright();
+import {
+  chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
+  isMyMove, makeMove, readNumber,
+} from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
 const SHOT_DIR = process.env.SHOT_DIR ?? path.join('e2e-shots', 'solo');
@@ -41,193 +26,20 @@ const HEADED = process.env.HEADED === '1';
 const OPPONENT_DECK = process.env.OPPONENT_DECK ?? 'tidal-mind';
 const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '2000', 10);
 
-let step = 0;
-const checks = [];
-const check = (label, ok, detail = '') => {
-  checks.push({ label, ok: Boolean(ok), detail });
-  console.log(`${ok ? ' ok ' : 'FAIL'}  ${label}${detail && !ok ? ` — ${detail}` : ''}`);
-};
-
-async function shot(page, name) {
-  step += 1;
-  await page.screenshot({ path: path.join(SHOT_DIR, `${String(step).padStart(2, '0')}-${name}.png`), fullPage: true });
-}
-
-const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
-const has = async (page, id) => (await tid(page, id).count()) > 0;
-const text = async (page, id) => ((await tid(page, id).first().textContent()) ?? '').trim();
-const cardsIn = (page, zone) => page.locator(`[data-testid="${zone}"] [data-testid^="card-"]`);
-
-async function waitFor(page, testId, timeout = 20000) {
-  try {
-    await page.waitForSelector(`[data-testid="${testId}"]`, { timeout, state: 'visible' });
-  } catch {
-    throw new Error(`timed out waiting for [data-testid="${testId}"]`);
-  }
-}
-
-async function readNumber(page, testId) {
-  const raw = (await tid(page, testId).first().textContent()) ?? '';
-  const n = Number.parseInt(raw.trim(), 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-/** Whether the table is asking this player for anything. */
-async function myMove(page) {
-  for (const id of ['mulligan-prompt', 'bottom-prompt', 'decide-prompt', 'choose-prompt', 'feed-prompt', 'target-prompt', 'attack-prompt', 'block-prompt', 'discard-prompt', 'primary-move']) {
-    if (await has(page, id)) return true;
-  }
-  return false;
-}
-
-/** Takes whatever the table offers, which on a solo table is the whole of playing. */
-async function takeTurn(page) {
-  if (await has(page, 'bottom-prompt')) {
-    const hand = cardsIn(page, 'zone-hand-0');
-    const count = await hand.count();
-    for (let i = 0; i < count && !(await has(page, 'confirm-bottom')); i++) {
-      await hand.nth(i).click({ timeout: 2000 }).catch(() => {});
-    }
-    if (await has(page, 'confirm-bottom')) {
-      await tid(page, 'confirm-bottom').click();
-      return 'kept a mulliganed hand';
-    }
-    await tid(page, 'cancel-mode').click();
-    return 'backed out';
-  }
-  if (await has(page, 'mulligan-prompt')) {
-    await tid(page, 'primary-move').click();
-    return 'kept the opening hand';
-  }
-  // A card that stopped mid-resolution to ask this player something blocks everything, including
-  // the player whose spell it is. Answered before priority is even looked at.
-  if (await has(page, 'decide-prompt')) {
-    const prompt = await text(page, 'decide-prompt');
-    // The candidates are lit wherever they are — hand, battlefield, graveyard, or the library,
-    // which is the one zone the table draws only while a search is open.
-    for (let pick = 0; pick < 4; pick++) {
-      const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
-      if ((await lit.count()) === 0) break;
-      await lit.first().click({ timeout: 2000 }).catch(() => {});
-      // An exact count sends itself; a range needs confirming, and "choose nothing" is an answer.
-      if (!(await has(page, 'decide-prompt'))) return `answered: ${prompt}`;
-      if (await has(page, 'confirm-decision')) {
-        await tid(page, 'confirm-decision').click();
-        return `answered: ${prompt}`;
-      }
-    }
-    if (await has(page, 'confirm-decision')) {
-      await tid(page, 'confirm-decision').click();
-      return `answered with nothing: ${prompt}`;
-    }
-    // Nothing lit and nothing to confirm: the table is asking a question it is not showing an
-    // answer to, which stops the game — a defect to report rather than wait out.
-    return null;
-  }
-
-  if (await has(page, 'feed-prompt')) {
-    // An ability whose cost is a sacrifice: the creatures that can pay for it are lit.
-    const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
-    if ((await lit.count()) > 0) {
-      await lit.first().click();
-      return 'fed a sacrifice outlet';
-    }
-    await tid(page, 'cancel-mode').click();
-    return 'backed out of a sacrifice';
-  }
-
-  if (await has(page, 'choose-prompt')) {
-    // A triggered ability waiting to be aimed. Its legal targets light up like a spell's.
-    const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
-    if ((await lit.count()) > 0) {
-      await lit.first().click();
-      return 'aimed a trigger';
-    }
-    const seatButton = page.locator('[data-testid^="target-seat-"]');
-    if ((await seatButton.count()) > 0) {
-      await seatButton.first().click();
-      return 'aimed a trigger at a player';
-    }
-    return 'nothing to aim at';
-  }
-  if (await has(page, 'target-prompt')) {
-    const onStack = page.locator('[data-testid^="target-stack-"]');
-    if ((await onStack.count()) > 0) {
-      await onStack.first().click();
-      return 'countered something';
-    }
-    const seatButton = page.locator('[data-testid="target-seat-1"]');
-    if ((await seatButton.count()) > 0) {
-      await seatButton.first().click();
-      return 'aimed at the opponent';
-    }
-    const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
-    if ((await lit.count()) > 0) {
-      await lit.first().click();
-      return 'aimed at a card';
-    }
-    await tid(page, 'cancel-mode').click();
-    return 'cancelled a spell with nothing to aim at';
-  }
-  if (await has(page, 'attack-prompt')) {
-    const mine = cardsIn(page, 'zone-battlefield-0');
-    const count = await mine.count();
-    for (let i = 0; i < count; i++) await mine.nth(i).click({ timeout: 2000 }).catch(() => {});
-    await tid(page, 'confirm-attackers').click();
-    return 'attacked';
-  }
-  if (await has(page, 'block-prompt')) {
-    const mine = cardsIn(page, 'zone-battlefield-0');
-    const count = await mine.count();
-    for (let i = 0; i < count; i++) {
-      await mine.nth(i).click({ timeout: 2000 }).catch(() => {});
-      const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
-      if ((await lit.count()) === 0) continue;
-      await lit.first().click({ timeout: 2000 }).catch(() => {});
-      break;
-    }
-    await tid(page, 'confirm-blockers').click();
-    return 'blocked';
-  }
-  if (await has(page, 'discard-prompt')) {
-    await cardsIn(page, 'zone-hand-0').first().click();
-    return 'discarded to hand size';
-  }
-
-  const label = await text(page, 'primary-move');
-  // Develop the board when there is time to: tapping a card the table marks playable opens the
-  // sheet listing what the engine says can be done with it.
-  if (/^Pass$/.test(label) || /^Resolve/.test(label)) {
-    const hand = page.locator('[data-testid="zone-hand-0"] [data-testid^="card-"]');
-    const count = await hand.count();
-    // Random order, not left to right. Left to right takes the leftmost playable card every time,
-    // which is nearly always a land or the cheapest creature, so anything further along in hand
-    // can sit there for a whole game and never be cast.
-    for (const i of [...Array(count).keys()].sort(() => Math.random() - 0.5)) {
-      const card = hand.nth(i);
-      if (!/playable/i.test((await card.textContent()) ?? '')) continue;
-      await card.click();
-      await waitFor(page, 'play-sheet', 5000);
-      const options = page.locator('[data-testid^="play-"]:not([data-testid="play-sheet"]):not([data-testid="play-sheet-close"])');
-      const choices = await options.count();
-      if (choices > 0) {
-        // And a random one of the plays it offers: a modal spell is one play per mode, so always
-        // taking the top option would only ever exercise mode one.
-        const pick = options.nth(Math.floor(Math.random() * choices));
-        const name = ((await pick.textContent()) ?? '').trim().replace(/\s+/g, ' ').slice(0, 60);
-        await pick.click();
-        return `played ${name}`;
-      }
-      await tid(page, 'play-sheet-close').click();
-      break;
-    }
-  }
-  await tid(page, 'primary-move').click();
-  return `primary: ${label}`;
-}
+/**
+ * The solo player's hands are the shared driver's.
+ *
+ * They used to be a copy of them, and the copy is what broke: the X-cost prompt was taught to
+ * `lib/table-driver.mjs`, the two-browser suites learned it for free, and this one sat on a
+ * stalled game at turn seven because its own copy had never heard of it. A third copy of "what
+ * does this prompt mean" is a third thing to forget.
+ */
+const myMove = (page) => isMyMove(page);
+/** Aggression 1: a solo game has nobody to hold mana up against, so it always develops. */
+const takeTurn = (page) => makeMove(page, 0, { aggression: 1 });
 
 async function main() {
-  await mkdir(SHOT_DIR, { recursive: true });
+  await setShotDir(SHOT_DIR);
   const browser = await chromium.launch({ headless: !HEADED });
   const context = await browser.newContext({ viewport: { width: 1280, height: 950 } });
   const page = await context.newPage();
@@ -333,13 +145,7 @@ async function main() {
     await browser.close();
   }
 
-  const failed = checks.filter((c) => !c.ok);
-  console.log(`\n${checks.length - failed.length}/${checks.length} checks passed. Screenshots in ${SHOT_DIR}/`);
-  if (failed.length > 0) {
-    console.log('\nFailures:');
-    for (const f of failed) console.log(`  - ${f.label}${f.detail ? `: ${f.detail}` : ''}`);
-    process.exitCode = 1;
-  }
+  summarize();
 }
 
 await main();

@@ -193,6 +193,15 @@ const KRENKO_MOB_BOSS: CardDef = {
   colors: ['R'],
 };
 
+const MAGMA_JET: CardDef = {
+  name: 'Magma Jet',
+  typeLine: 'Instant',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  oracleText: 'Magma Jet deals 2 damage to any target.\nScry 2.',
+  colors: ['R'],
+};
+
 const FIREBALL: CardDef = {
   name: 'Fireball',
   typeLine: 'Sorcery',
@@ -545,6 +554,26 @@ const TALRAND: CardDef = {
   colors: ['U'],
 };
 
+const PREORDAIN: CardDef = {
+  name: 'Preordain',
+  typeLine: 'Sorcery',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: 'Scry 1, then draw a card.',
+  colors: ['U'],
+};
+
+const OMENSPEAKER: CardDef = {
+  name: 'Omenspeaker',
+  typeLine: 'Creature — Human Wizard',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  power: '1',
+  toughness: '3',
+  oracleText: 'When Omenspeaker enters the battlefield, scry 2.',
+  colors: ['U'],
+};
+
 const MIND_SPRING: CardDef = {
   name: 'Mind Spring',
   typeLine: 'Sorcery',
@@ -732,9 +761,10 @@ export const EMBER_RUSH: DeckSpec = {
   cards: [
     { card: MOUNTAIN, count: 22 },
     { card: MONASTERY_SWIFTSPEAR, count: 4 },
-    { card: RAGING_GOBLIN, count: 3 },
+    { card: RAGING_GOBLIN, count: 2 },
     { card: GOBLIN_ARSONIST, count: 3 },
-    { card: FIREBRAND_ARCHER, count: 3 },
+    { card: FIREBRAND_ARCHER, count: 2 },
+    { card: MAGMA_JET, count: 2 },
     { card: THERMO_ALCHEMIST, count: 2 },
     { card: HILL_GIANT, count: 1 },
     { card: FLAMETONGUE_KAVU, count: 2 },
@@ -792,9 +822,11 @@ export const TIDAL_MIND: DeckSpec = {
     { card: SWAMP, count: 11 },
     { card: COUNTERSPELL, count: 3 },
     { card: NEGATE, count: 2 },
-    { card: DOOM_BLADE, count: 3 },
+    { card: DOOM_BLADE, count: 2 },
+    { card: PREORDAIN, count: 3 },
+    { card: OMENSPEAKER, count: 2 },
     { card: PHYREXIAN_ARENA, count: 2 },
-    { card: DIVINATION, count: 2 },
+    { card: DIVINATION, count: 1 },
     { card: MIND_SPRING, count: 2 },
     { card: EXSANGUINATE, count: 2 },
     { card: SIGN_IN_BLOOD, count: 2 },
@@ -803,11 +835,11 @@ export const TIDAL_MIND: DeckSpec = {
     { card: DIABOLIC_TUTOR, count: 2 },
     { card: SOUL_MANIPULATION, count: 2 },
     { card: RAVENOUS_RATS, count: 2 },
-    { card: CHILD_OF_NIGHT, count: 2 },
+    { card: CHILD_OF_NIGHT, count: 1 },
     { card: WIND_DRAKE, count: 1 },
     { card: MAN_O_WAR, count: 2 },
-    { card: VAMPIRE_NIGHTHAWK, count: 3 },
-    { card: AIR_ELEMENTAL, count: 2 },
+    { card: VAMPIRE_NIGHTHAWK, count: 2 },
+    { card: AIR_ELEMENTAL, count: 1 },
   ],
 };
 
