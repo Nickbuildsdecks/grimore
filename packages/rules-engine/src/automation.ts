@@ -495,9 +495,8 @@ export function stateBasedActions(state: GameState): GameState {
         const lethal = ch.toughness <= 0 || inst.damage >= ch.toughness || inst.counters['deathtouched'] !== undefined;
         if (!lethal) continue;
         if (ch.keywords.has('indestructible') && ch.toughness > 0) continue;
-        const died = next.instances[id];
+        // `relocate` records the death; `settle` raises it. See `AutomationState.died`.
         next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
-        if (died !== undefined) next = raise(next, { kind: 'dies' }, inst.zoneSeat, id);
         changed = true;
       }
     }
@@ -522,6 +521,16 @@ export function stateBasedActions(state: GameState): GameState {
  */
 function settle(state: GameState, before: GameState): GameState {
   let next = stateBasedActions(state);
+  // Deaths first, and in a loop: a creature dying can trigger something that kills another, and
+  // every one of those deaths has to reach its own trigger. `relocate` records them wherever they
+  // happen — lethal damage, a destroy spell, a sacrifice — and this is the only place they are
+  // announced, so no caller can forget to.
+  for (let pass = 0; pass < 32 && next.died.length > 0; pass++) {
+    const dead = next.died;
+    next = { ...next, died: [] };
+    for (const id of dead) next = raise(next, { kind: 'dies' }, next.instances[id]?.zoneSeat, id);
+    next = stateBasedActions(next);
+  }
   for (const seat of next.seats) {
     const was = before.seats[seat.index];
     if (was === undefined || seat.eliminated) continue;

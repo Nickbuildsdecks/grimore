@@ -110,6 +110,20 @@ export function relocate(
 
   let next = withZones(state, fromKey === toKey ? { [toKey]: to } : { [fromKey]: from, [toKey]: to });
 
+  /**
+   * A permanent moving from the battlefield to a graveyard has **died** (CR 700.4), whatever did
+   * it — lethal damage, a destroy spell, a sacrifice paid as a cost.
+   *
+   * Recorded here rather than announced by whatever caused it, because this is the one place a
+   * card changes zone: `settle` drains the list and raises the event. Only on an automated table,
+   * since nothing drains it on a tabletop and it would grow for the whole game. A token is
+   * recorded too and then ceases to exist below, so its trigger finds no source and does not
+   * fire — a real limitation, and no token in the pool has one.
+   */
+  if (state.automated && inst.zone === 'battlefield' && toZone === 'graveyard') {
+    next = { ...next, died: [...next.died, inst.id] };
+  }
+
   // A token that leaves the battlefield ceases to exist, as it does on a real table.
   if (inst.isToken && toZone !== 'battlefield') {
     const instances = { ...next.instances };

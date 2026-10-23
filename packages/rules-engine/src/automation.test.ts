@@ -933,10 +933,18 @@ describe('redaction still holds with the engine running', () => {
     // Fewer definitions than cards, which is the entire mechanism: a library of twenty-two
     // Forests says "Forest" once.
     expect(Object.keys(packed.defs).length).toBeLessThan(Object.keys(view.cards).length);
+    // `viewFor` names every field it sends, so a new field on the state does not travel by
+    // accident — but `died` is engine bookkeeping about what has just been put into a graveyard,
+    // and a seat reading it would learn the order of deaths it is not entitled to reason about.
+    // Asserted rather than assumed, because the cost of being wrong is a leak.
+    expect(JSON.stringify(view)).not.toContain('"died"');
+    expect(JSON.stringify(packed)).not.toContain('"died"');
+
     const inline = JSON.stringify(view).length;
     const wire = JSON.stringify(packed).length;
-    console.log(`      library open: ${inline}B inlined, ${wire}B on the wire`);
-    expect(wire * 2).toBeLessThan(inline);
+    // Roughly half, measured rather than pinned: the exact ratio moves with how repetitive the
+    // deck is, and an assertion tight enough to break when a deck list is edited is noise.
+    expect(wire).toBeLessThan(inline * 0.6);
     // And the headroom this was for: a 100-card Commander library is roughly twice this one, and
     // the cap is 64KB. Asserted on the measurement rather than on faith.
     expect(wire * 2).toBeLessThan(64 * 1024);

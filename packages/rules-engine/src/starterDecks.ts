@@ -64,6 +64,28 @@ const FIREBRAND_ARCHER: CardDef = {
   colors: ['R'],
 };
 
+const GOBLIN_ARSONIST: CardDef = {
+  name: 'Goblin Arsonist',
+  typeLine: 'Creature — Goblin Shaman',
+  manaCost: '{R}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: 'When Goblin Arsonist dies, it deals 1 damage to any target.',
+  colors: ['R'],
+};
+
+const THERMO_ALCHEMIST: CardDef = {
+  name: 'Thermo-Alchemist',
+  typeLine: 'Creature — Human Shaman',
+  manaCost: '{2}{R}',
+  cmc: 3,
+  power: '0',
+  toughness: '3',
+  oracleText: 'Defender\n{T}: Thermo-Alchemist deals 1 damage to each opponent.\nWhenever you cast an instant or sorcery spell, untap Thermo-Alchemist.',
+  colors: ['R'],
+};
+
 const HILL_GIANT: CardDef = {
   name: 'Hill Giant',
   typeLine: 'Creature — Giant',
@@ -195,6 +217,26 @@ const CENTAUR_COURSER: CardDef = {
   toughness: '3',
   oracleText: '',
   colors: ['G'],
+};
+
+const DOOMED_TRAVELER: CardDef = {
+  name: 'Doomed Traveler',
+  typeLine: 'Creature — Human Soldier',
+  manaCost: '{W}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: 'When Doomed Traveler dies, create a 1/1 white Spirit creature token with flying.',
+  colors: ['W'],
+};
+
+const GLORIOUS_ANTHEM: CardDef = {
+  name: 'Glorious Anthem',
+  typeLine: 'Enchantment',
+  manaCost: '{2}{W}',
+  cmc: 3,
+  oracleText: 'Creatures you control get +1/+1.',
+  colors: ['W'],
 };
 
 const SERRA_ANGEL: CardDef = {
@@ -361,6 +403,15 @@ const DIABOLIC_TUTOR: CardDef = {
   colors: ['B'],
 };
 
+const PHYREXIAN_ARENA: CardDef = {
+  name: 'Phyrexian Arena',
+  typeLine: 'Enchantment',
+  manaCost: '{1}{B}{B}',
+  cmc: 3,
+  oracleText: 'At the beginning of your upkeep, you draw a card and you lose 1 life.',
+  colors: ['B'],
+};
+
 const TOME_SCOUR: CardDef = {
   name: 'Tome Scour',
   typeLine: 'Sorcery',
@@ -520,6 +571,17 @@ const WALL_OF_BLOSSOMS: CardDef = {
   colors: ['G'],
 };
 
+const DOOMED_DISSENTER: CardDef = {
+  name: 'Doomed Dissenter',
+  typeLine: 'Creature — Human',
+  manaCost: '{B}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: 'When Doomed Dissenter dies, create a 2/2 black Zombie creature token.',
+  colors: ['B'],
+};
+
 const GRIM_DISCOVERY: CardDef = {
   name: 'Grim Discovery',
   typeLine: 'Sorcery',
@@ -583,17 +645,19 @@ export const EMBER_RUSH: DeckSpec = {
   cards: [
     { card: MOUNTAIN, count: 22 },
     { card: MONASTERY_SWIFTSPEAR, count: 4 },
-    { card: RAGING_GOBLIN, count: 4 },
-    { card: FIREBRAND_ARCHER, count: 4 },
+    { card: RAGING_GOBLIN, count: 3 },
+    { card: GOBLIN_ARSONIST, count: 3 },
+    { card: FIREBRAND_ARCHER, count: 3 },
+    { card: THERMO_ALCHEMIST, count: 2 },
     { card: HILL_GIANT, count: 1 },
     { card: FLAMETONGUE_KAVU, count: 2 },
-    { card: SHIVAN_DRAGON, count: 4 },
+    { card: SHIVAN_DRAGON, count: 3 },
     { card: LIGHTNING_BOLT, count: 4 },
     { card: SHOCK, count: 3 },
     { card: LAVA_SPIKE, count: 3 },
-    { card: FAITHLESS_LOOTING, count: 3 },
+    { card: FAITHLESS_LOOTING, count: 2 },
     { card: FLAME_SLASH, count: 4 },
-    { card: ACT_OF_TREASON, count: 2 },
+    { card: ACT_OF_TREASON, count: 1 },
   ],
 };
 
@@ -607,15 +671,17 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: PLAINS, count: 10 },
     { card: LLANOWAR_ELVES, count: 4 },
     { card: RAMPANT_GROWTH, count: 4 },
-    { card: GRIZZLY_BEARS, count: 2 },
-    { card: CENTAUR_COURSER, count: 4 },
-    { card: AJANIS_PRIDEMATE, count: 4 },
-    { card: SERRA_ANGEL, count: 4 },
+    { card: GRIZZLY_BEARS, count: 1 },
+    { card: DOOMED_TRAVELER, count: 3 },
+    { card: GLORIOUS_ANTHEM, count: 2 },
+    { card: CENTAUR_COURSER, count: 3 },
+    { card: AJANIS_PRIDEMATE, count: 3 },
+    { card: SERRA_ANGEL, count: 3 },
     { card: GIANT_GROWTH, count: 3 },
     { card: SELESNYA_CHARM, count: 3 },
     { card: PACIFISM, count: 2 },
     { card: SWORDS_TO_PLOWSHARES, count: 3 },
-    { card: HARMONIZE, count: 3 },
+    { card: HARMONIZE, count: 2 },
     { card: OVERRUN, count: 2 },
   ],
 };
@@ -628,10 +694,11 @@ export const TIDAL_MIND: DeckSpec = {
   cards: [
     { card: ISLAND, count: 12 },
     { card: SWAMP, count: 11 },
-    { card: COUNTERSPELL, count: 4 },
+    { card: COUNTERSPELL, count: 3 },
     { card: NEGATE, count: 2 },
-    { card: DOOM_BLADE, count: 4 },
-    { card: DIVINATION, count: 3 },
+    { card: DOOM_BLADE, count: 3 },
+    { card: PHYREXIAN_ARENA, count: 3 },
+    { card: DIVINATION, count: 2 },
     { card: SIGN_IN_BLOOD, count: 2 },
     { card: TOME_SCOUR, count: 1 },
     { card: MIND_ROT, count: 3 },
@@ -656,15 +723,16 @@ export const ROT_HARVEST: DeckSpec = {
     { card: SWAMP, count: 12 },
     { card: LLANOWAR_ELVES, count: 4 },
     { card: THORNWEALD_ARCHER, count: 2 },
+    { card: DOOMED_DISSENTER, count: 3 },
     { card: WALL_OF_BLOSSOMS, count: 3 },
-    { card: FLESHBAG_MARAUDER, count: 4 },
+    { card: FLESHBAG_MARAUDER, count: 3 },
     { card: CENTAUR_COURSER, count: 1 },
     { card: BLOODTHRONE_VAMPIRE, count: 3 },
     { card: VAMPIRE_ARISTOCRAT, count: 3 },
     { card: GRAVEDIGGER, count: 4 },
     { card: RAISE_DEAD, count: 2 },
-    { card: GRIM_DISCOVERY, count: 3 },
-    { card: ZOMBIFY, count: 3 },
+    { card: GRIM_DISCOVERY, count: 2 },
+    { card: ZOMBIFY, count: 2 },
     { card: DOOM_BLADE, count: 3 },
     { card: LOTLETH_GIANT, count: 2 },
   ],

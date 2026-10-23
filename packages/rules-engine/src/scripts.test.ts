@@ -909,6 +909,247 @@ describe('the graveyard, which is a place cards come back from', () => {
   });
 });
 
+describe('dying, upkeep and a static effect', () => {
+  const ready = (
+    seat: SeatIndex, deck: string, hand: readonly string[], lands: readonly string[],
+    extra: readonly string[] = [], turn = 2,
+  ): GameState => {
+    let s = arena({
+      decks: { [seat]: deck }, hands: { [seat]: hand },
+      battlefield: { [seat]: [...lands, ...extra] }, turn, firstSeat: seat,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, seat, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (!/^(Mountain|Forest|Plains|Island|Swamp)$/.test(name)) continue;
+      s = apply(s, { type: 'auto:activate', by: seat, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  it('Doomed Traveler leaves a flier behind when it is killed', () => {
+    let s = arena({
+      hands: { 0: ['Lightning Bolt'] },
+      battlefield: { 0: ['Mountain'], 1: ['Doomed Traveler'] },
+      decks: { 1: 'verdant-guard' }, turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    const traveler = find(s, 1, 'battlefield', 'Doomed Traveler');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: traveler }],
+    }));
+    // The bolt resolves, state-based actions bury it, and the trigger goes on the stack from the
+    // graveyard — so the token arrives on the pass after, not on the same one.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Doomed Traveler');
+    s = passBoth(s);
+    expect(countOf(s, 1, 'battlefield', 'Spirit')).toBe(1);
+    const spirit = find(s, 1, 'battlefield', 'Spirit');
+    expect(characteristicsOf(s, s.instances[spirit]!).keywords.has('flying')).toBe(true);
+  });
+
+  it('Goblin Arsonist deals its damage after it is already dead, and asks where', () => {
+    // Destroyed, not exiled: a creature that leaves for exile has not *died* (CR 700.4), so a
+    // `dies` trigger stays quiet. Swords to Plowshares would have proved nothing here.
+    let s = arena({
+      decks: { 1: 'tidal-mind' }, hands: { 1: ['Doom Blade'] },
+      battlefield: { 0: ['Goblin Arsonist'], 1: ['Swamp', 'Swamp', 'Child of Night'] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== 'Swamp') continue;
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    const arsonist = find(s, 0, 'battlefield', 'Goblin Arsonist');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: arsonist }],
+    }));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Goblin Arsonist');
+    // Its controller aims it from the graveyard. Two creatures and two players are legal, so it
+    // is a real choice and the engine stops for it.
+    expect(s.pendingChoice).not.toBeNull();
+    expect(s.pendingChoice!.seat).toBe(0);
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] });
+    s = passBoth(s);
+    expect(life(s, 1)).toBe(19);
+  });
+
+  it('Glorious Anthem lifts every creature its controller has, including the next one', () => {
+    let s = ready(1, 'verdant-guard', ['Glorious Anthem'], ['Plains', 'Plains', 'Plains'], ['Centaur Courser']);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    expect([power(s, courser), toughness(s, courser)]).toEqual([3, 3]);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Glorious Anthem') }));
+    expect([power(s, courser), toughness(s, courser)]).toEqual([4, 4]);
+
+    // Computed on demand, not written onto anything: a creature that arrives later gets it too,
+    // and the opponent's creatures do not.
+    s = apply(s, { type: 'token:create', by: 1, seat: 1, count: 1, card: {
+      name: 'Beast', typeLine: 'Token Creature — Beast', manaCost: '', cmc: 0,
+      power: '3', toughness: '3', oracleText: '', colors: ['G'],
+    } });
+    const beast = find(s, 1, 'battlefield', 'Beast');
+    expect([power(s, beast), toughness(s, beast)]).toEqual([4, 4]);
+
+    // And it goes away with the enchantment.
+    const anthem = find(s, 1, 'battlefield', 'Glorious Anthem');
+    s = apply(s, { type: 'card:move', by: 1, card: anthem, toZone: 'graveyard' });
+    expect([power(s, courser), toughness(s, courser)]).toEqual([3, 3]);
+  });
+
+  it('Glorious Anthem saves a creature from damage already marked on it', () => {
+    // The reason a static effect is read rather than stored. Two damage is marked on a 2/2 by a
+    // Shock, which would be lethal — the Anthem resolves in response and the creature lives,
+    // because the mark stays where it is and the toughness moves out from under it.
+    let s = arena({
+      decks: { 0: 'ember-rush' }, hands: { 0: ['Shock'], 1: ['Glorious Anthem'] },
+      battlefield: { 0: ['Mountain'], 1: ['Plains', 'Plains', 'Plains', 'Grizzly Bears'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      targets: [{ kind: 'card', id: bear }],
+    }));
+    // Two damage on a 2/2 is lethal, so it is already gone.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+
+    // Again, with the Anthem out first: the same two damage, and the bear survives at 3/3.
+    let t = arena({
+      decks: { 0: 'ember-rush' }, hands: { 0: ['Shock'], 1: ['Glorious Anthem'] },
+      battlefield: { 0: ['Mountain'], 1: ['Plains', 'Plains', 'Plains', 'Grizzly Bears'] },
+      turn: 2, firstSeat: 1,
+    });
+    t = advanceTo(t, 'precombat-main');
+    for (const id of [...ids(t, 1, 'battlefield')]) {
+      if (t.cardDefs[t.instances[id]!.defKey]!.name !== 'Plains') continue;
+      t = apply(t, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    t = passBoth(apply(t, { type: 'auto:cast', by: 1, card: find(t, 1, 'hand', 'Glorious Anthem') }));
+    const lifted = find(t, 1, 'battlefield', 'Grizzly Bears');
+    expect([power(t, lifted), toughness(t, lifted)]).toEqual([3, 3]);
+    t = nextTurn(t);
+    t = advanceTo(t, 'precombat-main');
+    t = apply(t, { type: 'auto:activate', by: 0, card: find(t, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    t = passBoth(apply(t, {
+      type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Shock'),
+      targets: [{ kind: 'card', id: lifted }],
+    }));
+    expect(namesIn(t, 1, 'battlefield')).toContain('Grizzly Bears');
+    expect(t.instances[lifted]!.damage).toBe(2);
+  });
+
+  it('Phyrexian Arena draws and drains at the beginning of its controller’s upkeep only', () => {
+    let s = ready(1, 'tidal-mind', ['Phyrexian Arena'], ['Swamp', 'Swamp', 'Swamp']);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Phyrexian Arena') }));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Phyrexian Arena');
+    const held = ids(s, 1, 'hand').length;
+    const started = life(s, 1);
+
+    // The opponent's upkeep comes first and does nothing.
+    s = nextTurn(s);
+    expect(s.activeSeat).toBe(0);
+    expect(life(s, 1)).toBe(started);
+
+    // Then its controller's. `nextTurn` stops the moment the turn counter moves, which is the
+    // upkeep — with the trigger on the stack and not yet resolved, so it takes a pass.
+    s = nextTurn(s);
+    expect(s.activeSeat).toBe(1);
+    expect(s.step).toBe('upkeep');
+    expect(stackNames(s).join()).toContain('draw a card');
+    s = passBoth(s);
+    expect(life(s, 1)).toBe(started - 1);
+    expect(ids(s, 1, 'hand').length).toBe(held + 1);
+  });
+
+  it('Thermo-Alchemist taps for damage, and an instant untaps it to do it again', () => {
+    let s = arena({
+      decks: { 0: 'ember-rush' }, hands: { 0: ['Shock'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Thermo-Alchemist'] }, turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const alchemist = find(s, 0, 'battlefield', 'Thermo-Alchemist');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: alchemist, abilityIndex: 0 }));
+    expect(life(s, 1)).toBe(19);
+    expect(s.instances[alchemist]!.tapped).toBe(true);
+    // Tapped, so it cannot be used again…
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: alchemist, abilityIndex: 0 })).toBeTruthy();
+
+    // …until an instant untaps it. The trigger fires on the cast, before the Shock resolves.
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== 'Mountain') continue;
+      if (s.instances[id]!.tapped) continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    s = passBoth(s); // the untap trigger resolves
+    expect(s.instances[alchemist]!.tapped).toBe(false);
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: alchemist, abilityIndex: 0 }));
+    expect(life(s, 1)).toBe(18);
+  });
+
+  it('dies on the way to a graveyard, and not on the way to exile (CR 700.4)', () => {
+    // The regression test for a real bug: "dies" used to mean "noticed by state-based actions",
+    // so a creature killed by *lethal damage* triggered and a creature **destroyed by a spell**
+    // did not. Doom Blade never fired a death trigger in its life. Both halves are asserted here,
+    // because getting the second one wrong is how the first one came back.
+    const kill = (spell: string, deck: string, lands: readonly string[]): GameState => {
+      let s = arena({
+        decks: { 0: 'verdant-guard', 1: deck }, hands: { 1: [spell] },
+        battlefield: { 0: ['Doomed Traveler'], 1: [...lands] },
+        turn: 2, firstSeat: 1,
+      });
+      s = advanceTo(s, 'precombat-main');
+      for (const id of [...ids(s, 1, 'battlefield')]) {
+        s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+      }
+      return passBoth(apply(s, {
+        type: 'auto:cast', by: 1, card: find(s, 1, 'hand', spell),
+        targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Doomed Traveler') }],
+      }));
+    };
+
+    // Destroyed: it died, so the Spirit comes.
+    let destroyed = kill('Doom Blade', 'tidal-mind', ['Swamp', 'Swamp']);
+    expect(namesIn(destroyed, 0, 'graveyard')).toContain('Doomed Traveler');
+    destroyed = passBoth(destroyed);
+    expect(countOf(destroyed, 0, 'battlefield', 'Spirit')).toBe(1);
+
+    // Exiled: it did not die, and nothing comes. Swords to Plowshares is the whole point of the
+    // card, and a death trigger firing off it would be a different and much worse game.
+    const exiled = kill('Swords to Plowshares', 'verdant-guard', ['Plains']);
+    expect(namesIn(exiled, 0, 'exile')).toContain('Doomed Traveler');
+    expect(exiled.stackOrder).toEqual([]);
+    expect(countOf(exiled, 0, 'battlefield', 'Spirit')).toBe(0);
+  });
+
+  it('Doomed Dissenter trades up when it dies', () => {
+    // Bolted rather than exiled, for the same reason as the Arsonist. (Doom Blade cannot touch
+    // it: the Dissenter is black.)
+    let s = arena({
+      decks: { 0: 'rot-harvest', 1: 'ember-rush' }, hands: { 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Doomed Dissenter'], 1: ['Mountain'] }, turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Doomed Dissenter') }],
+    }));
+    s = passBoth(s);
+    expect(countOf(s, 0, 'battlefield', 'Zombie')).toBe(1);
+    const zombie = find(s, 0, 'battlefield', 'Zombie');
+    expect([power(s, zombie), toughness(s, zombie)]).toEqual([2, 2]);
+  });
+});
+
 describe('modal spells, chosen as the spell is cast', () => {
   /** A seat in its main phase with its lands tapped, from any deck. */
   const set = (

@@ -465,6 +465,16 @@ const BLOODTHRONE_VAMPIRE: CardScript = {
   ],
 };
 
+export const SPIRIT_TOKEN: CardDef = {
+  name: 'Spirit', typeLine: 'Token Creature — Spirit', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: 'Flying', colors: ['W'],
+};
+
+export const ZOMBIE_TOKEN: CardDef = {
+  name: 'Zombie', typeLine: 'Token Creature — Zombie', manaCost: '', cmc: 0,
+  power: '2', toughness: '2', oracleText: '', colors: ['B'],
+};
+
 export const KNIGHT_TOKEN: CardDef = {
   name: 'Knight', typeLine: 'Token Creature — Knight', manaCost: '', cmc: 0,
   power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
@@ -495,6 +505,116 @@ const IZONI: CardScript = {
       cost: { mana: '{B}{G}', sacrifice: 'another-creature' },
       description: '{B}{G}, Sacrifice another creature: You gain 1 life and draw a card.',
       effect: (c) => draw(gainLife(c.state, c.controller, 1), c.controller, 1),
+    },
+  ],
+};
+
+// ── Dying, upkeep, and a static effect: the engine paths no card reached ─────────────────────────
+
+/**
+ * A `dies` trigger fires from the graveyard, for the creature that died and no other.
+ *
+ * Worth stating because it rules out a whole family of cards: "whenever **another** creature dies"
+ * (Blood Artist, Zulaport Cutthroat) cannot be scripted, since the engine only offers the event to
+ * the dying permanent's own script. The same is true of `etb` — "whenever another creature enters"
+ * is out for the same reason. These three are the self-only shape, which is most of them.
+ */
+const DOOMED_TRAVELER: CardScript = {
+  name: 'Doomed Traveler',
+  triggers: [
+    {
+      on: { kind: 'dies' },
+      description: 'create a 1/1 white Spirit creature token with flying',
+      effect: (c) => createToken(c.state, c.controller, SPIRIT_TOKEN, 1),
+    },
+  ],
+};
+
+const DOOMED_DISSENTER: CardScript = {
+  name: 'Doomed Dissenter',
+  triggers: [
+    {
+      on: { kind: 'dies' },
+      description: 'create a 2/2 black Zombie creature token',
+      effect: (c) => createToken(c.state, c.controller, ZOMBIE_TOKEN, 1),
+    },
+  ],
+};
+
+/**
+ * A `dies` trigger that has to be aimed, which is the two mechanisms together.
+ *
+ * The creature is already in the graveyard when its trigger goes on the stack, and the trigger
+ * still asks its controller where to point — or takes the only answer, or never goes on the stack
+ * at all when there is none (CR 603.3c). Blocking it with a 1/1 and dying to it is the whole card.
+ */
+const GOBLIN_ARSONIST: CardScript = {
+  name: 'Goblin Arsonist',
+  triggers: [
+    {
+      on: { kind: 'dies' },
+      targets: [ANY_TARGET],
+      description: 'deals 1 damage to any target',
+      effect: (c) => damageFirstTarget(c, 1),
+    },
+  ],
+};
+
+/**
+ * "At the beginning of your upkeep", which is the step trigger nothing used.
+ *
+ * `of: 'you'` is the difference between a card that helps its controller and one that helps
+ * everybody: the engine raises the step event for every upkeep, and the trigger decides whose it
+ * cares about.
+ */
+const PHYREXIAN_ARENA: CardScript = {
+  name: 'Phyrexian Arena',
+  triggers: [
+    {
+      on: { kind: 'step', step: 'upkeep', of: 'you' },
+      description: 'you draw a card and you lose 1 life',
+      effect: (c) => loseLife(draw(c.state, c.controller, 1), c.controller, 1),
+    },
+  ],
+};
+
+/**
+ * An anthem: the first card to use a static effect at all.
+ *
+ * `statics` is applied when the permanent arrives and removed with it, and the +1/+1 is read every
+ * time a creature's characteristics are computed rather than written onto anything — which is what
+ * makes it stack with a pump, wear off correctly when the enchantment is destroyed, and save a
+ * creature that already has damage marked on it.
+ */
+const GLORIOUS_ANTHEM: CardScript = {
+  name: 'Glorious Anthem',
+  statics: [{ scope: 'controller-creatures', effect: { power: 1, toughness: 1 } }],
+};
+
+/**
+ * Untapping, and a tap ability that reaches every opponent.
+ *
+ * The two halves are the card: it taps for damage, and casting an instant or sorcery untaps it, so
+ * it can be used again in the same turn. Nothing else in the pool untaps anything.
+ */
+const THERMO_ALCHEMIST: CardScript = {
+  name: 'Thermo-Alchemist',
+  keywords: ['defender'],
+  abilities: [
+    {
+      cost: { tap: true },
+      description: '{T}: deals 1 damage to each opponent.',
+      effect: (c) => opponentsOf(c.state, c.controller).reduce(
+        (state, seat) => dealDamage(state, { kind: 'player', seat }, 1, { controller: c.controller }),
+        c.state,
+      ),
+    },
+  ],
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      description: 'untap Thermo-Alchemist',
+      effect: (c) => tap(c.state, c.source, false),
     },
   ],
 };
@@ -747,6 +867,8 @@ const ALL: readonly CardScript[] = [
   VAMPIRE_ARISTOCRAT, BLOODTHRONE_VAMPIRE,
   RAMPANT_GROWTH, DIABOLIC_TUTOR, MIND_ROT, FAITHLESS_LOOTING, FLESHBAG_MARAUDER,
   SELESNYA_CHARM, SOUL_MANIPULATION, GRIM_DISCOVERY,
+  DOOMED_TRAVELER, DOOMED_DISSENTER, GOBLIN_ARSONIST, PHYREXIAN_ARENA, GLORIOUS_ANTHEM,
+  THERMO_ALCHEMIST,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

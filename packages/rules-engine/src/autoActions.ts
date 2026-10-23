@@ -224,10 +224,11 @@ function activate(
   if (sacrificed !== null) {
     const victim = requireInstance(next, sacrificed);
     const name = characteristicsOf(next, victim).name;
-    next = relocate(next, victim, 'graveyard', victim.owner, 'bottom');
     // A sacrificed creature dies, and anything that cares about that cares now — not when the
-    // ability resolves, because the cost was paid before it was ever on the stack.
-    next = raise(next, { kind: 'dies' }, action.by, sacrificed);
+    // ability resolves, because the cost was paid before it was ever on the stack. `relocate`
+    // records it and `settle` announces it, which also gets the ordering right: the death trigger
+    // goes on the stack above the ability and resolves before it (CR 603.3b).
+    next = relocate(next, victim, 'graveyard', victim.owner, 'bottom');
     sacrificedName = name;
   }
   if (ability.cost.sacrificeSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');

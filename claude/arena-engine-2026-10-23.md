@@ -42,7 +42,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 53 scripted cards |
+| `scripts.ts` | All 59 scripted cards |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -126,6 +126,7 @@ found by executing the code, not by reading it.
 
 | Bug | Mechanism |
 | --- | --- |
+| **"When this dies" never fired for a creature killed by a spell** | `dies` meant "noticed by state-based actions", which only sees *lethal damage* and a toughness at zero. A creature **destroyed** by Doom Blade is already in the graveyard by the time those run, so nothing announced it — and the two call sites that did care had each been patched to announce their own deaths by hand, which is the shape of a rule nobody owns. "Dies" means put into a graveyard from the battlefield (CR 700.4), so `relocate` — the one place a card changes zone — records the fact and `settle` raises it. Found by writing the first card with a death trigger: the engine had gone its whole life without one. |
 | **The other player's table offered Pass forever** | A suspended resolution left `state.priority` naming whoever last passed. That seat's table offered Pass, the engine refused it because a question was outstanding, and the two disagreed for as long as the question stood — on turn ten of a real game, with a red banner and no way forward. Nobody holds priority in the middle of a resolution, and the state now says so; `legalActions` also refuses to report `hasPriority` while anything is blocking, because one of the two has to be hard to get wrong and that is the field the table keys its one button on. |
 | **Nothing castable was ever cast** | `legalActions` offered spells against potential mana; `auto:cast` required mana already floating. Every cast was refused. With no creatures there was then no combat and no damage — a whole half of the game missing, from one absent function. Fixed by `solveTap`. |
 | **A deadlock on blocking** | The table let a blocker be assigned to an attacker it could not legally block (a ground creature onto a flier). The engine refused the whole declaration, the step never ended, the player was asked again, made the same choice, and the game stopped. Assignment is now restricted to each creature's own `canBlock` list. |
@@ -138,7 +139,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**337 tests in the rules engine, 95 in the web app, 927 across the workspace.**
+**346 tests in the rules engine, 95 in the web app, 936 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -202,7 +203,7 @@ nothing else — `viewFor` is unchanged, the client unpacks once in `lib/table.t
 
 ## Added after the first checkpoint
 
-Nine things, in the order they mattered.
+Ten things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -324,11 +325,34 @@ its type line in every case. And the play sheet now wraps instead of truncating:
 are three plays on the same card that differ only at the end of the sentence, and they had been
 sharing one `data-testid` as well, which breaks React and every selector that reads it.
 
+**Six cards for the parts of the engine no card reached.** Written by reading the engine rather than
+the card pool: `statics` had never been used by anything, nor had a `dies` trigger, a `step`
+trigger, or untapping. Untested code in a rules engine is where the bugs are, and this found one
+immediately — a creature killed by a *spell* never fired its death trigger, because "dies" had been
+implemented as "noticed by state-based actions" rather than as what the rules say it is.
+
+Glorious Anthem is the first static effect, and it is the clearest demonstration of why
+characteristics are computed instead of stored: it lifts a creature that arrives later, stops when
+the enchantment is destroyed, and saves a 2/2 with two damage already marked on it. Phyrexian Arena
+is the first "at the beginning of your upkeep". Thermo-Alchemist taps for damage and is untapped by
+casting an instant, which is the only card that untaps anything. Doomed Traveler and Doomed
+Dissenter leave something behind. And Goblin Arsonist is a death trigger that has to be *aimed* —
+the creature is already in the graveyard, and the trigger still asks.
+
+Two engine limits came out of writing them, both worth stating because they rule out whole families
+of cards. A `dies` trigger fires for the creature that died and **no other**, so "whenever another
+creature dies" (Blood Artist, Zulaport Cutthroat) is not scriptable; the same is true of `etb`, so
+"whenever another creature enters" is out too. And exiling is not dying (CR 700.4) — Swords to
+Plowshares fires nothing, which is the whole point of the card and is now asserted in both
+directions, because getting the second half wrong is how the first half comes back.
+
 ## Next
 
-1. More scripts. The vocabulary in `effects.ts` covers far more than the 53 cards currently using
-   it, and the three ways a card can ask a player something — targets, a cost, a mid-resolution
-   decision — are all in place now. Adding a card is a few declarative lines.
+1. More scripts. The vocabulary in `effects.ts` covers far more than the 59 cards currently using
+   it, and the four ways a card can ask a player something — a mode, targets, a cost, a
+   mid-resolution decision — are all in place. Adding a card is a few declarative lines. The
+   `becomes-tapped` trigger and the `all-creatures` static scope are still unused: both exist,
+   and the clean cards for them need something else the engine lacks.
 2. A four-player Commander pod, played end to end. The engine and the server both support up to
    four seats, and nobody has sat at one: declarations are per defender and a seat can only block
    what attacks it, but that is an assertion rather than a game anybody has played.

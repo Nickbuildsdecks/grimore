@@ -148,6 +148,19 @@ export interface AutomationState {
   /** Set when a player has lost by trying to draw from an empty library (CR 704.5b). */
   readonly drewFromEmpty: readonly SeatIndex[];
   /**
+   * Permanents that have moved from the battlefield to a graveyard and whose death nobody has
+   * announced yet. Drained by `settle`, which raises a `dies` event for each.
+   *
+   * This exists because "dies" means *put into a graveyard from the battlefield* (CR 700.4) — not
+   * "noticed by state-based actions", which is all it used to mean. A creature destroyed by Doom
+   * Blade, or sacrificed to pay a cost, never passes through the lethal-damage check, so its
+   * trigger never fired; two call sites had been patched to announce their own deaths by hand and
+   * every other one was silently wrong. `relocate` is the single place a card changes zone, so it
+   * records the fact and `settle` interprets it: a script cannot be forgotten because nothing
+   * announces itself.
+   */
+  readonly died: readonly string[];
+  /**
    * A cleanup-step discard that is blocking the turn from ending. Hand size is a real decision a
    * player has to make, so the engine stops and waits rather than discarding for them.
    */

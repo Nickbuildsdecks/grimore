@@ -168,6 +168,32 @@ describe('a whole automated game', () => {
     expect(sacrifices).toBeGreaterThan(0);
   });
 
+  it('fires death triggers in real games, whatever did the killing', () => {
+    // The bug this guards was silent for the whole life of the engine: "dies" meant "noticed by
+    // state-based actions", so lethal damage triggered and a destroy spell did not. A playout
+    // test is the right place for it because the question is not whether one card works — it is
+    // whether a death reaches its trigger from every direction a game kills things.
+    let fired = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      let s = table(seed * 1217, (seed % 2) as SeatIndex, ['ember-rush', 'verdant-guard']);
+      for (let i = 0; i < 6000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const before = s.stateVersion;
+        s = stepOnce(s, seat);
+        if (s.stateVersion === before) break;
+        for (const object of Object.values(s.stackObjects)) {
+          if (/create a 1\/1 white Spirit|deals 1 damage to any target/.test(object.description)) fired += 1;
+        }
+        // And nothing is ever left queued: a death recorded and never announced would sit in the
+        // state for the rest of the game.
+        expect(s.died).toEqual([]);
+      }
+      expect(s.finished).toBe(true);
+    }
+    expect(fired).toBeGreaterThan(0);
+  });
+
   it('casts modal spells, and does not always take the same mode', () => {
     // A modal card could sit in a deck and never be cast while every other test in this file
     // passed, and a bot that always took mode one would look identical to a bot that could not
@@ -332,19 +358,26 @@ describe('a whole automated game', () => {
     expect(s.finished).toBe(true);
   });
 
-  it('leaves the stack empty whenever a step ends', () => {
-    // A step that ends with something still on the stack means the engine advanced past a
+  it('never advances a step past something already waiting to resolve', () => {
+    // A step that ends with something still on the stack means the engine walked past a
     // resolution, which is the kind of bug that loses a player their removal spell.
+    //
+    // "Already waiting" is the precise claim, and the looser version was wrong rather than strict.
+    // *Entering* a step runs its turn-based actions: the combat damage step deals damage, a
+    // creature dies, and its `dies` trigger goes on the stack — inside the same action that
+    // changed the step, and entirely correctly. An assertion that the stack is empty the instant
+    // the step changes only held while no card in any deck had a `dies` trigger.
     let s = table(5150);
     let step = s.step;
     for (let i = 0; i < 4000 && !s.finished; i++) {
       const seat = seatToAct(s);
       if (seat === null) break;
-      const before = s.stateVersion;
+      const previous = s;
       s = stepOnce(s, seat);
-      if (s.stateVersion === before) break;
+      if (s.stateVersion === previous.stateVersion) break;
       if (s.step !== step) {
-        expect(s.stackOrder).toEqual([]);
+        const carried = s.stackOrder.filter((id) => previous.stackObjects[id] !== undefined);
+        expect(carried).toEqual([]);
         step = s.step;
       }
     }

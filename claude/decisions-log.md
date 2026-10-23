@@ -952,3 +952,38 @@ and characteristic-setting effects. These are the shapes `effects.ts` has no voc
 they are why Golgari Charm is not in a deck while Selesnya Charm is — one of its three modes
 regenerates, and a modal card with one unscriptable mode is an unscriptable card. D28's rule holds:
 left alone and resolved by hand rather than approximated.
+
+## D33 — "Dies" means what the rules say it means, and `relocate` is the only place that knows
+
+**Found by writing the first card with a death trigger**, which the engine had gone its entire life
+without. `dies` was raised in exactly two places: state-based actions, when they noticed lethal
+damage, and the sacrifice-cost path, which announced its own. So a creature **destroyed by a spell**
+— Doom Blade, the most ordinary removal there is — never fired a death trigger, because it was
+already in the graveyard by the time state-based actions looked.
+
+**Decided: the event is recorded where the card moves and raised where every other event is
+raised.** "Dies" means put into a graveyard from the battlefield (CR 700.4). `relocate` is the one
+place a card changes zone, so it appends to a `died` list; `settle` drains that list and raises the
+event, in a loop, because a death can trigger something that kills another creature. This restores
+the principle D28 set out and `dies` had quietly broken: *a script cannot forget to announce itself
+because nothing announces itself*. Two hand-patched call sites were a rule nobody owned.
+
+It also fixed the ordering for a sacrificed creature for free. The explicit raise put the death
+trigger on the stack *before* the ability it paid for; `settle` puts it on after, which is correct
+(CR 603.3b) and means it resolves first.
+
+**Decided: both halves of CR 700.4 are asserted, in both directions.** Destroying fires it and
+exiling does not. Swords to Plowshares firing a death trigger would be a different and much worse
+card, and getting that half wrong is exactly how the first half comes back.
+
+**Two limits, stated rather than discovered later.** A `dies` trigger fires for the creature that
+died and no other, because the engine offers the event only to the dying permanent's own script —
+so "whenever another creature dies" (Blood Artist, Zulaport Cutthroat) is not scriptable. The same
+holds for `etb`, which rules out "whenever another creature enters" (Soul Warden). Both are a whole
+family of cards each, and both are a change to `raise` rather than to a script.
+
+**And one test was wrong rather than strict.** "Leaves the stack empty whenever a step ends" only
+held while no card had a death trigger: *entering* the combat damage step deals damage, a creature
+dies, and its trigger goes on the stack inside the same action that changed the step — correctly.
+The claim worth asserting is narrower and now says so: a step never advances past something that
+was *already* waiting to resolve.
