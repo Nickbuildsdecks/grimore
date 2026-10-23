@@ -312,6 +312,10 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
     .filter((p) => !p.isManaAbility)
     .sort((a, b) => playValue(b) - playValue(a));
   for (const play of playable) {
+    // An X spell with X stuck at nothing is a card thrown away: a Fireball for no damage, an
+    // Endless One that enters as a 0/0 and dies before anyone can look at it. Legal, and never
+    // what the bot means — it was casting Endless One for zero before this line.
+    if (play.xMax === 0) continue;
     const targets = chooseTargets(state, seat, play);
     if (targets === null) continue;
     if (play.kind === 'land') return { type: 'auto:playLand', by: seat, card: play.card };

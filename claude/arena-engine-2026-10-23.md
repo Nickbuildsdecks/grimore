@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 79 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 82 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**392 tests in the rules engine, 104 in the web app, 991 across the workspace.**
+**399 tests in the rules engine, 104 in the web app, 998 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -207,11 +207,13 @@ bug rather than a board.
 
 ## What is deliberately not done
 
-- **Replacement effects** (regenerate, "if it would die instead exile it"), **copy effects** and
-  **characteristic-setting effects**. These are the shapes `effects.ts` has no vocabulary for, and
-  the reason Golgari Charm is not scripted while Selesnya Charm is: one of its three modes
-  regenerates, and a modal card with one unscriptable mode is an unscriptable card. A card like
-  that is left alone and resolved by hand rather than approximated.
+- **Most replacement effects.** Two are in — regeneration (CR 701.15) and "enters with counters"
+  (CR 614.1c) — and they are the two the card pool wanted, which is how Golgari Charm came to be
+  scripted after two checkpoints of being the standing example of what could not be. What is still
+  missing is a replacement *layer*: "if it would die, exile it instead", damage prevention and
+  protection all need an effect that other permanents contribute, rather than a shield sitting on
+  the one card. Cards needing those are left unscripted rather than approximated.
+- **Copy effects** and **characteristic-setting effects**: still no vocabulary for either.
 - **True layer interaction** (CR 613). What is here is a fixed order — printed, then effects, then
   counters — which is right for every effect the card pool produces. Characteristic-setting and copy
   effects need the real thing.
@@ -228,7 +230,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Seventeen things, in the order they mattered.
+Eighteen things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -538,6 +540,27 @@ dimmed pips on the control bar, optimistic on purpose, deciding nothing.
 `settle`'s arrival drain, before the entry trigger, so the land is never observably untapped.
 Measured over twelve bot games: 19 gates played, **71 gate taps paying for spells**, no refusals,
 every game finished.
+
+**Regeneration, and the card both checkpoints called unscriptable.** Golgari Charm was the stated
+limit — "a modal card with one unscriptable mode is an unscriptable card" — and the mode was
+*regenerate each creature you control*. A shield is a counter, because that is already a
+per-permanent, serialised, visible number, and the destruction is replaced in **both** places it
+can happen: in `destroy`, where a spell says so, and in the lethal-damage state-based action,
+which is the half players actually use. A shield that saved a creature from Doom Blade but not
+from the 3/3 it just blocked would be the wrong half of the card.
+
+All three parts of the replacement are real (CR 701.15a) — tapped, damage removed, **out of
+combat** — and the damage matters mechanically, because without clearing it the next pass of
+state-based actions kills the creature again and the shield buys nothing. A toughness of zero or
+less still cannot be regenerated away (CR 704.5a), which is the difference between regeneration
+and indestructible. An unspent shield expires with the turn, which the first version of the test
+got wrong in the player's favour.
+
+"Enters with N +1/+1 counters" came with it, applied where the X is known — so Endless One is as
+big as the mana poured into it, and a *reanimated* one comes back a 0/0 and dies, which is the
+rule rather than a shortcut. Drudge Skeletons, Golgari Charm and Endless One, to 82 cards. The bot
+puts shields up and never spends one: it activates on its own main phase rather than when
+something is about to die, the same shallowness as aiming a pump spell at an enemy creature.
 
 ## Next
 

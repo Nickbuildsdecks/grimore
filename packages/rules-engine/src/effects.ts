@@ -159,10 +159,70 @@ export function loseLife(state: GameState, seat: SeatIndex, amount: number): Gam
 // ── Moving cards ─────────────────────────────────────────────────────────────────────────────────
 
 /** Destroys a permanent: to its owner's graveyard, unless it is indestructible. */
+/** The counter a regeneration shield is kept as, so it travels with the permanent and the state. */
+export const REGENERATION = 'regeneration';
+
+/**
+ * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).
+ *
+ * A shield, not a trigger: it sits on the permanent and is spent the next time something would
+ * destroy it. Kept as a counter because that is already a per-permanent, serialised, visible
+ * number — a player can see how many shields a creature has, which is exactly right.
+ */
+export function regenerate(state: GameState, id: string): GameState {
+  const inst = state.instances[id];
+  if (inst === undefined || inst.zone !== 'battlefield') return state;
+  return addCounters(state, id, REGENERATION, 1);
+}
+
+/**
+ * Spends a regeneration shield, if there is one, instead of letting the creature be destroyed.
+ *
+ * The replacement is specific and all three parts matter: it is **tapped**, its damage is
+ * **removed**, and it is **taken out of combat** — so a regenerated attacker deals no more damage
+ * this turn, which is most of what makes regeneration a cost rather than a free save. Returns
+ * `null` when there was no shield, so each caller can carry on with the destruction it meant.
+ */
+export function spendRegeneration(state: GameState, id: string): GameState | null {
+  const inst = state.instances[id];
+  if (inst === undefined || inst.zone !== 'battlefield') return null;
+  const shields = inst.counters[REGENERATION] ?? 0;
+  if (shields <= 0) return null;
+  const counters = { ...inst.counters };
+  if (shields > 1) counters[REGENERATION] = shields - 1;
+  else delete counters[REGENERATION];
+  // Any lethal damage marked on it goes too, or the state-based actions would simply kill it again
+  // on the next pass and the shield would have bought nothing.
+  const next = withInstance(state, id, { tapped: true, damage: 0, counters });
+  return removeFromCombat(next, id);
+}
+
+/**
+ * Takes one creature out of combat: it stops attacking, and stops blocking whatever it blocked.
+ *
+ * An attack with no attacker left is dropped entirely; a blocker is lifted off every attack it
+ * was assigned to. Nothing else in combat changes, which is the point — the other attackers are
+ * still attacking and the other blockers are still blocking.
+ */
+export function removeFromCombat(state: GameState, id: string): GameState {
+  const attacks = state.combat.attacks
+    .filter((attack) => attack.attacker !== id)
+    .map((attack) => (attack.blockers.includes(id)
+      ? { ...attack, blockers: attack.blockers.filter((b) => b !== id) }
+      : attack));
+  const same = attacks.length === state.combat.attacks.length
+    && attacks.every((attack, i) => attack === state.combat.attacks[i]);
+  return same ? state : { ...state, combat: { ...state.combat, attacks } };
+}
+
 export function destroy(state: GameState, id: string): GameState {
   const inst = state.instances[id];
   if (inst === undefined || inst.zone !== 'battlefield') return state;
   if (characteristicsOf(state, inst).keywords.has('indestructible')) return state;
+  // Regeneration replaces the destruction rather than following it, so it is checked here — the
+  // one place a card is destroyed on purpose — and again where lethal damage is noticed.
+  const saved = spendRegeneration(state, id);
+  if (saved !== null) return saved;
   return relocate(state, inst, 'graveyard', inst.owner, 'bottom');
 }
 
@@ -385,6 +445,25 @@ export function pumpTeam(
   return pushEffect(state, {
     source, controller,
     scope: { kind: 'controller-creatures' },
+    ...(opts.power === undefined ? {} : { power: opts.power }),
+    ...(opts.toughness === undefined ? {} : { toughness: opts.toughness }),
+    ...(opts.keywords ? { keywords: opts.keywords } : {}),
+    duration: opts.duration ?? 'end-of-turn',
+  });
+}
+
+/**
+ * "All creatures get -1/-1 until end of turn", and anything else that hits the whole board.
+ *
+ * Symmetrical on purpose: the scope is every creature, including the caster's own, which is what
+ * makes a card like this a decision rather than a removal spell.
+ */
+export function pumpAll(
+  state: GameState, source: string, controller: SeatIndex, opts: PumpOptions,
+): GameState {
+  return pushEffect(state, {
+    source, controller,
+    scope: { kind: 'all-creatures' },
     ...(opts.power === undefined ? {} : { power: opts.power }),
     ...(opts.toughness === undefined ? {} : { toughness: opts.toughness }),
     ...(opts.keywords ? { keywords: opts.keywords } : {}),

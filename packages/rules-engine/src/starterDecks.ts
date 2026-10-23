@@ -605,6 +605,37 @@ const TALRAND: CardDef = {
   colors: ['U'],
 };
 
+const DRUDGE_SKELETONS: CardDef = {
+  name: 'Drudge Skeletons',
+  typeLine: 'Creature — Skeleton',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: '{B}: Regenerate Drudge Skeletons.',
+  colors: ['B'],
+};
+
+const GOLGARI_CHARM: CardDef = {
+  name: 'Golgari Charm',
+  typeLine: 'Instant',
+  manaCost: '{B}{G}',
+  cmc: 2,
+  oracleText: 'Choose one —\n• All creatures get -1/-1 until end of turn.\n• Destroy target enchantment.\n• Regenerate each creature you control.',
+  colors: ['B', 'G'],
+};
+
+const ENDLESS_ONE: CardDef = {
+  name: 'Endless One',
+  typeLine: 'Creature — Eldrazi',
+  manaCost: '{X}',
+  cmc: 0,
+  power: '0',
+  toughness: '0',
+  oracleText: 'Endless One enters the battlefield with X +1/+1 counters on it.',
+  colors: [],
+};
+
 const BASILISK_COLLAR: CardDef = {
   name: 'Basilisk Collar',
   typeLine: 'Artifact — Equipment',
@@ -918,19 +949,22 @@ export const ROT_HARVEST: DeckSpec = {
     { card: FOREST, count: 10 },
     { card: SWAMP, count: 11 },
     { card: GOLGARI_GUILDGATE, count: 2 },
-    { card: LLANOWAR_ELVES, count: 4 },
+    { card: LLANOWAR_ELVES, count: 3 },
     { card: THORNWEALD_ARCHER, count: 1 },
+    { card: DRUDGE_SKELETONS, count: 2 },
+    { card: GOLGARI_CHARM, count: 2 },
+    { card: ENDLESS_ONE, count: 2 },
     { card: BLOOD_ARTIST, count: 3 },
     { card: ZULAPORT_CUTTHROAT, count: 2 },
     { card: DOOMED_DISSENTER, count: 2 },
-    { card: WALL_OF_BLOSSOMS, count: 3 },
-    { card: FLESHBAG_MARAUDER, count: 3 },
-    { card: BLOODTHRONE_VAMPIRE, count: 2 },
+    { card: WALL_OF_BLOSSOMS, count: 2 },
+    { card: FLESHBAG_MARAUDER, count: 2 },
+    { card: BLOODTHRONE_VAMPIRE, count: 1 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },
-    { card: GRAVEDIGGER, count: 3 },
+    { card: GRAVEDIGGER, count: 2 },
     { card: BASILISK_COLLAR, count: 2 },
     { card: RAISE_DEAD, count: 1 },
-    { card: GRIM_DISCOVERY, count: 2 },
+    { card: GRIM_DISCOVERY, count: 1 },
     { card: ZOMBIFY, count: 1 },
     { card: DOOM_BLADE, count: 1 },
     { card: LOTLETH_GIANT, count: 2 },

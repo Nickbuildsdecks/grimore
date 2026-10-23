@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — seventy-nine, today, across four starter decks. A tabletop works with
+cards somebody has scripted — eighty-two, today, across four starter decks. A tabletop works with
 every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -214,7 +214,7 @@ FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatev
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (392 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (399 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (104 tests, the interaction reducer behind every prompt) and
 `apps/realtime`
@@ -227,7 +227,7 @@ playing the server).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows seventy-nine cards.** Everything in the four starter decks. It stops and asks
+- **The engine knows eighty-two cards.** Everything in the four starter decks. It stops and asks
   for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your
@@ -235,11 +235,11 @@ playing the server).
   whoever cast it, and Fleshbag Marauder asks each player in turn order. A modal spell shows up as
   one play per mode when you tap it — Selesnya Charm offers three, and Grim Discovery offers each
   half and both — and a mode whose target is not on the board is not offered at all.
-- **Replacement effects, copy effects and characteristic-setting effects** are deliberately not
-  scripted rather than approximated, because `effects.ts` has no honest way to express them. That
-  is why Golgari Charm is not in a deck and Selesnya Charm is: one of its modes regenerates, and a
-  modal card with one unscriptable mode is an unscriptable card. Anything like it resolves by hand,
-  and the log says it was not automated.
+- **Copy effects and characteristic-setting effects** are deliberately not scripted rather than
+  approximated, because `effects.ts` has no honest way to express them. Regeneration and "enters
+  with counters" *are* in now, which is why Golgari Charm is in a deck after two checkpoints of
+  being the example of what could not be scripted. Anything still beyond the engine resolves by
+  hand, and the log says it was not automated.
 - **The computer opponent is not a strong player.** It attacks with everything, blocks when the
   trade is good, casts the biggest thing it can afford and mulligans a hand with no land in it. It
   plays a real game; it does not plan one.

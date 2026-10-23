@@ -265,6 +265,12 @@ export interface CardScript {
    * the permanent is never untapped and nothing can be done with it on the way in.
    */
   readonly entersTapped?: boolean;
+  /**
+   * "Enters the battlefield with N counters on it" (CR 614.1c), where N may be the X it was cast
+   * for. A permanent that arrives any other way — reanimated, copied, made as a token — enters
+   * with X of zero, which is the rule and not a shortcut.
+   */
+  readonly entersWith?: { readonly counter: string; readonly amount: number | 'x' };
   readonly triggers?: readonly TriggerDef[];
   readonly abilities?: readonly AbilityDef[];
   /** Static effects the permanent creates while it is on the battlefield. */

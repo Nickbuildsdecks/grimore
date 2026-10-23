@@ -31,7 +31,8 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  destroy, draw, poolOf, removeEffectsFrom, setPool, untapAll, type EffectContext, type EffectFn,
+  REGENERATION, addCounters, destroy, draw, poolOf, removeEffectsFrom, setPool, spendRegeneration,
+  untapAll, type EffectContext, type EffectFn,
 } from './effects.js';
 import { manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -291,9 +292,13 @@ export function endTurnCleanup(state: GameState): GameState {
   let next = state;
   const instances = { ...next.instances };
   for (const [id, inst] of Object.entries(instances)) {
-    if (inst.damage !== 0 || inst.counters['deathtouched'] !== undefined) {
+    // Damage wears off, deathtouch is forgotten, and a regeneration shield that was never spent
+    // expires with the turn (CR 701.15b) — it is "the next time this turn", not a permanent save.
+    const hasShield = inst.counters[REGENERATION] !== undefined;
+    if (inst.damage !== 0 || inst.counters['deathtouched'] !== undefined || hasShield) {
       const counters = { ...inst.counters };
       delete counters['deathtouched'];
+      delete counters[REGENERATION];
       instances[id] = { ...inst, damage: 0, counters };
     }
   }
@@ -564,6 +569,19 @@ export function stateBasedActions(state: GameState): GameState {
         const lethal = ch.toughness <= 0 || inst.damage >= ch.toughness || inst.counters['deathtouched'] !== undefined;
         if (!lethal) continue;
         if (ch.keywords.has('indestructible') && ch.toughness > 0) continue;
+        // A regeneration shield replaces this destruction (CR 701.15). Checked here as well as in
+        // `destroy`, because most creatures die from damage rather than from a spell saying so —
+        // a shield honoured only by `destroy` would save a creature from Doom Blade and not from
+        // the 3/3 it was blocking, which is the half players actually use it for. A toughness of
+        // zero or less is not destruction and cannot be regenerated away (CR 704.5a).
+        if (ch.toughness > 0) {
+          const saved = spendRegeneration(next, inst.id);
+          if (saved !== null) {
+            next = saved;
+            changed = true;
+            continue;
+          }
+        }
         // `relocate` records the death; `settle` raises it. See `AutomationState.died`.
         next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
         changed = true;
@@ -1013,6 +1031,17 @@ function completeResolution(
     else if (script?.onResolve) next = script.onResolve({ ...ctx, state: next });
     if (isPermanent && inst !== undefined) {
       next = relocate(next, requireInstance(next, inst.id), 'battlefield', object.controller, 'bottom');
+      /*
+        "Enters the battlefield with N +1/+1 counters on it" (CR 614.1c), applied here because
+        this is the only place the X it was cast for is known: a creature put onto the battlefield
+        by something else — reanimated, or made as a token — enters with X of zero, which is what
+        the rules say rather than a simplification.
+      */
+      const arrives = script?.entersWith;
+      if (arrives !== undefined) {
+        const amount = arrives.amount === 'x' ? (object.x ?? 0) : arrives.amount;
+        if (amount > 0) next = addCounters(next, inst.id, arrives.counter, amount);
+      }
       if (script?.aura) {
         const host = object.targets.find((t) => t.kind === 'card');
         if (host && host.kind === 'card') {

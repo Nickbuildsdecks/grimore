@@ -1318,3 +1318,47 @@ approximation of the right mechanism rather than the mechanism.
 Three Guildgates, one for each two-colour deck, two copies each in place of two basics. Measured
 over twelve bot games: 19 gates played, **71 gate taps paying for spells**, no refusals, every
 game finished. Seventy-nine scripted cards, the five basic lands among them.
+
+## D41 — Two replacement effects, and the card both checkpoints said was unscriptable
+
+Golgari Charm has been the stated limit since the first checkpoint: "a modal card with one
+unscriptable mode is an unscriptable card", and the mode was *regenerate each creature you
+control*. This is that mode, and the other replacement effect the pool actually wants.
+
+**Decided: a regeneration shield is a counter, and the destruction is replaced in both places it
+can happen.** A counter because that is already a per-permanent, serialised, *visible* number — a
+player can see how many shields a creature has, which is exactly right — and because nothing else
+in the engine needs a general replacement layer yet. The replacement is honoured by `destroy`,
+where a spell says so, **and** by the lethal-damage state-based action, which is the half players
+actually use: a shield that saved a creature from Doom Blade but not from the 3/3 it just blocked
+would be the wrong half of the card.
+
+All three parts of the replacement are real (CR 701.15a): it is tapped, its damage is removed, and
+it is **taken out of combat**. The damage matters mechanically — without clearing it the next pass
+of state-based actions kills the creature again and the shield buys nothing — and the removal from
+combat is what makes regeneration a cost rather than a free save.
+
+**A toughness of zero or less cannot be regenerated away** (CR 704.5a): that is not destruction,
+it is a creature that does not exist as a creature. One `ch.toughness > 0` guard, and it is the
+difference between regeneration and indestructible.
+
+**Decided: an unspent shield expires with the turn**, in `endTurnCleanup` beside damage wearing
+off — "the next time this turn" (CR 701.15b) and not a permanent save. Found by writing the test
+the wrong way round: my first version regenerated, passed the turn, then cast the removal, and the
+creature died exactly as it should have.
+
+**Decided: "enters with N counters" is applied where the X is known.** In `completeResolution`,
+because that is the only place that has the stack object and therefore the X the spell was cast
+for. A permanent arriving any other way — reanimated, copied, a token — enters with X of zero,
+which is the rule (CR 614.1c) rather than a simplification: reanimate an Endless One and it comes
+back a 0/0 and dies, as it does at a real table.
+
+**And one bot line, measured.** It was casting Endless One for X=0 — a card thrown away for a 0/0
+that dies before anyone looks at it — so a play whose `xMax` is nothing is now skipped. Over
+twelve games that removed every X=0 cast and left the real ones alone.
+
+Drudge Skeletons, Golgari Charm (all three modes, the sweep included) and Endless One. **The bot
+puts up shields and never spends one**: it activates the ability on its own main phase rather than
+when something is about to die, which is the same shallowness as aiming a pump spell at an enemy
+creature (D20) and is recorded here rather than hidden — the engine path is asserted on a fixed
+board, in combat, with the shield going up between blockers and damage.

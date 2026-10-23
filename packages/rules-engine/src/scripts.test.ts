@@ -1916,6 +1916,167 @@ describe('cards that stop and ask while they resolve', () => {
   });
 });
 
+describe('replacement effects: regenerating, and entering with counters', () => {
+  /** Rot Harvest on both sides, so either seat can reach the black and green cards. */
+  const rot = (hand: readonly string[], lands: readonly string[], board: readonly string[] = []) =>
+    advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'rot-harvest' },
+      hands: { 0: hand }, battlefield: { 0: [...lands, ...board] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+
+  const tapAll = (s: GameState, seat: SeatIndex) => {
+    let next = s;
+    for (const id of [...ids(next, seat, 'battlefield')]) {
+      const name = next.cardDefs[next.instances[id]!.defKey]!.name;
+      if (name !== 'Swamp' && name !== 'Forest') continue;
+      next = apply(next, { type: 'auto:activate', by: seat, card: id, abilityIndex: 0 });
+    }
+    return next;
+  };
+
+  it('saves a creature from a spell that would destroy it, once', () => {
+    // Regenerating and then dying have to happen in the *same* turn: the shield is "the next time
+    // this turn" (CR 701.15b), so an opponent's instant on your own turn is the natural test.
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'rot-harvest' },
+      hands: { 0: [], 1: ['Doom Blade'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Drudge Skeletons'], 1: ['Swamp', 'Swamp'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAll(s, 0);
+    const skeleton = find(s, 0, 'battlefield', 'Drudge Skeletons');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: skeleton, abilityIndex: 0 }));
+    expect(s.instances[skeleton]!.counters['regeneration']).toBe(1);
+
+    // Seat 0 passes, so seat 1 holds priority in seat 0's main phase and can answer with an
+    // instant — which is when a regeneration shield is actually tested.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = tapAll(s, 1);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: skeleton }],
+    }));
+    // Destroyed is replaced by tapped, undamaged and no shield left (CR 701.15).
+    expect(s.instances[skeleton]!.zone).toBe('battlefield');
+    expect(s.instances[skeleton]!.tapped).toBe(true);
+    expect(s.instances[skeleton]!.counters['regeneration']).toBeUndefined();
+  });
+
+  it('saves a creature from lethal damage in combat, and takes it out of the fight', () => {
+    // The half players actually use. A shield honoured only by `destroy` would save a creature
+    // from a removal spell and not from the 3/3 it just blocked.
+    let s = arena({
+      decks: { 0: 'rot-harvest', 1: 'rot-harvest' },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Drudge Skeletons'], 1: ['Centaur Courser'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const skeleton = find(s, 0, 'battlefield', 'Drudge Skeletons');
+    s = apply(s, {
+      type: 'auto:attack', by: 1, attackers: [{ attacker: courser, defender: 0 }],
+    });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: skeleton, attacker: courser }] });
+    // Declaring blockers is a turn-based action, so priority goes to the *attacking* player first
+    // (CR 509.4) — the defender has to be given it before it can hold anything up.
+    if (s.priority === 1) s = apply(s, { type: 'auto:pass', by: 1 });
+    // The shield goes up after blockers are declared and before damage, which is exactly when a
+    // player would put it up.
+    s = tapAll(s, 0);
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: skeleton, abilityIndex: 0 }));
+    expect(s.instances[skeleton]!.counters['regeneration']).toBe(1);
+
+    // Through the damage step: three damage on a 1/1 is lethal, and the shield replaces it.
+    for (let i = 0; i < 8 && s.instances[skeleton]!.zone === 'battlefield'
+      && s.instances[skeleton]!.counters['regeneration'] !== undefined; i++) {
+      s = passBoth(s);
+    }
+    expect(s.instances[skeleton]!.zone).toBe('battlefield');
+    expect(s.instances[skeleton]!.damage).toBe(0);
+    expect(s.instances[skeleton]!.counters['regeneration']).toBeUndefined();
+    // And out of the fight: nothing lists it as a blocker any more (CR 701.15a).
+    for (const attack of s.combat.attacks) expect(attack.blockers).not.toContain(skeleton);
+  });
+
+  it('regenerates every creature its controller has, and nothing of anyone else’s', () => {
+    let s = rot(['Golgari Charm'], ['Swamp', 'Forest'], ['Llanowar Elves', 'Wall of Blossoms']);
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Llanowar Elves'), toZone: 'battlefield' });
+    const theirs = find(s, 1, 'battlefield', 'Llanowar Elves');
+    s = tapAll(s, 0);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Golgari Charm'), modes: [2],
+    }));
+    for (const id of ids(s, 0, 'battlefield')) {
+      const ch = characteristicsOf(s, s.instances[id]!);
+      if (!ch.isCreature) continue;
+      expect(s.instances[id]!.counters['regeneration']).toBe(1);
+    }
+    expect(s.instances[theirs]!.counters['regeneration']).toBeUndefined();
+  });
+
+  it('shrinks the whole board with the first mode, both sides of it', () => {
+    let s = rot(['Golgari Charm'], ['Swamp', 'Forest'], ['Wall of Blossoms']);
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Llanowar Elves'), toZone: 'battlefield' });
+    const theirs = find(s, 1, 'battlefield', 'Llanowar Elves');
+    const mine = find(s, 0, 'battlefield', 'Wall of Blossoms');
+    s = tapAll(s, 0);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Golgari Charm'), modes: [0],
+    }));
+    // The 1/1 is dead and the 0/4 is a 0/3 — symmetrical, which is what makes it a decision.
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+    expect(toughness(s, mine)).toBe(3);
+  });
+
+  it('destroys an enchantment with the second mode, and only offers it when there is one', () => {
+    let s = rot(['Golgari Charm'], ['Swamp', 'Forest']);
+    // Nothing to point at: the enchantment mode is not offered at all.
+    expect(legalActions(tapAll(s, 0), 0).plays
+      .filter((p) => p.name === 'Golgari Charm')
+      .map((p) => p.modes)).toEqual([[0], [2]]);
+
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Zombify'), toZone: 'hand' });
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Wall of Blossoms'), toZone: 'battlefield' });
+    // An enchantment on the other side, put there by hand.
+    const arena2 = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: ['Golgari Charm'] }, battlefield: { 0: ['Swamp', 'Forest'], 1: ['Phyrexian Arena'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let s2 = tapAll(arena2, 0);
+    const arenaCard = find(s2, 1, 'battlefield', 'Phyrexian Arena');
+    expect(legalActions(s2, 0).plays.filter((p) => p.name === 'Golgari Charm').map((p) => p.modes))
+      .toEqual([[0], [1], [2]]);
+    s2 = passBoth(apply(s2, {
+      type: 'auto:cast', by: 0, card: find(s2, 0, 'hand', 'Golgari Charm'), modes: [1],
+      targets: [{ kind: 'card', id: arenaCard }],
+    }));
+    expect(s2.instances[arenaCard]!.zone).toBe('graveyard');
+  });
+
+  it('enters as big as the X it was cast for, and as a 0/0 when it was not cast', () => {
+    let s = rot(['Endless One'], ['Swamp', 'Forest', 'Swamp', 'Forest']);
+    s = tapAll(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Endless One'), x: 4 }));
+    const one = find(s, 0, 'battlefield', 'Endless One');
+    expect(s.instances[one]!.counters['+1/+1']).toBe(4);
+    expect([power(s, one), toughness(s, one)]).toEqual([4, 4]);
+  });
+
+  it('lets a shield expire with the turn rather than keeping it forever', () => {
+    let s = rot([], ['Swamp', 'Swamp'], ['Drudge Skeletons']);
+    s = tapAll(s, 0);
+    const skeleton = find(s, 0, 'battlefield', 'Drudge Skeletons');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: skeleton, abilityIndex: 0 }));
+    expect(s.instances[skeleton]!.counters['regeneration']).toBe(1);
+    // "The next time this turn" (CR 701.15b): an unspent shield does not carry over.
+    s = nextTurn(s);
+    expect(s.instances[skeleton]!.counters['regeneration']).toBeUndefined();
+  });
+});
+
 describe('lands that make one of two colours', () => {
   /** A seat with the named lands on the battlefield, in its main phase, nothing tapped yet. */
   const board = (seat: SeatIndex, lands: readonly string[], hand: readonly string[], deck: string) =>

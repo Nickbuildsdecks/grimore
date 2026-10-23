@@ -23,7 +23,8 @@ import {
   addCounters, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
   gainControl, gainLife, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump, pumpTeam,
-  putOntoBattlefield, tap, equipTo, type EffectContext, type PumpOptions,
+  putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
+  type EffectContext, type PumpOptions,
 } from './effects.js';
 import type { CardScript, DecisionSpec, TargetSpec } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -602,6 +603,68 @@ const HURRICANE: CardScript = {
   },
 };
 
+const DRUDGE_SKELETONS: CardScript = {
+  name: 'Drudge Skeletons',
+  abilities: [
+    {
+      cost: { mana: '{B}' },
+      description: '{B}: Regenerate Drudge Skeletons.',
+      effect: (c) => regenerate(c.state, c.source),
+    },
+  ],
+};
+
+/**
+ * The card that was not scriptable, and the reason this engine now has replacement effects.
+ *
+ * Both checkpoints named Golgari Charm as the honest limit: a modal card with one unscriptable
+ * mode is an unscriptable card, and the mode was "regenerate each creature you control". With a
+ * regeneration shield it is three ordinary modes, and the first is still the interesting one — it
+ * hits *all* creatures, the caster's included, which is what makes it a decision.
+ */
+const GOLGARI_CHARM: CardScript = {
+  modal: {
+    modes: [
+      {
+        description: 'All creatures get -1/-1 until end of turn',
+        effect: (c) => pumpAll(c.state, c.source, c.controller, { power: -1, toughness: -1 }),
+      },
+      {
+        description: 'Destroy target enchantment',
+        targets: [{
+          kind: 'permanent',
+          description: 'target enchantment',
+          filter: (state, candidate) => candidate.kind === 'card'
+            && hasType(parseTypeLine(state.cardDefs[state.instances[candidate.id]?.defKey ?? '']?.typeLine), 'enchantment'),
+        }],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : destroy(c.state, id);
+        },
+      },
+      {
+        description: 'Regenerate each creature you control',
+        effect: (c) => creaturesControlledBy(c.state, c.controller)
+          .reduce((state, id) => regenerate(state, id), c.state),
+      },
+    ],
+  },
+  name: 'Golgari Charm',
+};
+
+/**
+ * A creature that is as big as the mana poured into it.
+ *
+ * The counters are a replacement effect on the way in (CR 614.1c), not a trigger, which is why it
+ * is a 0/0 that never dies: it is already a 4/4 by the time anything looks at it. Reanimate one
+ * and it enters with no counters at all and goes straight back to the graveyard, which is the
+ * rule working rather than the engine failing.
+ */
+const ENDLESS_ONE: CardScript = {
+  name: 'Endless One',
+  entersWith: { counter: '+1/+1', amount: 'x' },
+};
+
 const LOTLETH_GIANT: CardScript = {
   name: 'Lotleth Giant',
   triggers: [
@@ -1130,6 +1193,7 @@ const ALL: readonly CardScript[] = [
   BLOOD_ARTIST, ZULAPORT_CUTTHROAT, SOUL_WARDEN, IMPACT_TREMORS,
   FIREBALL, SECURE_THE_WASTES, MIND_SPRING, EXSANGUINATE, HURRICANE,
   MAGMA_JET, PREORDAIN, OMENSPEAKER,
+  DRUDGE_SKELETONS, GOLGARI_CHARM, ENDLESS_ONE,
   equipment('Bonesplitter', '{1}', { power: 2 }, 'equipped creature gets +2/+0'),
   equipment('Loxodon Warhammer', '{3}', { power: 3, keywords: ['trample', 'lifelink'] },
     'equipped creature gets +3/+0 and has trample and lifelink'),
