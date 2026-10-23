@@ -27,7 +27,7 @@ import { zoneKey, type CardDef, type CardInstance, type ZoneId } from './cards.j
 import type { FormatId } from './formats.js';
 import { characteristicsOf, type Keyword } from './characteristics.js';
 import { legalActions, type LegalActions } from './legalActions.js';
-import { pendingDeclaration } from './automation.js';
+import { pendingDeclaration, stillDeciding } from './automation.js';
 import { STEP_LABELS } from './turnTypes.js';
 import type { ManaPool } from './mana.js';
 import type { CombatState, StackObject, Step } from './turnTypes.js';
@@ -99,7 +99,10 @@ export interface AutomationView {
   readonly pools: Readonly<Record<string, ManaPool>>;
   readonly combat: CombatState;
   /** Who the engine is waiting on, and for what. */
-  readonly awaiting: { readonly kind: 'attackers' | 'blockers' | 'discard'; readonly seats: readonly SeatIndex[] } | null;
+  readonly awaiting: {
+    readonly kind: 'attackers' | 'blockers' | 'discard' | 'mulligan';
+    readonly seats: readonly SeatIndex[];
+  } | null;
   /** This seat's own legal moves, or null for a spectator. */
   readonly you: LegalActions | null;
 }
@@ -227,8 +230,11 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
 
   const pending = state.pendingDiscard;
   const owed = pendingDeclaration(state);
+  const deciding = state.openingHands ? stillDeciding(state) : [];
   const awaiting: AutomationView['awaiting'] =
-    pending !== null ? { kind: 'discard', seats: [pending.seat] }
+    // Opening hands come before anything else, including priority.
+    deciding.length > 0 ? { kind: 'mulligan', seats: deciding }
+    : pending !== null ? { kind: 'discard', seats: [pending.seat] }
     : owed !== null ? { kind: owed.kind, seats: owed.seats }
     : null;
 

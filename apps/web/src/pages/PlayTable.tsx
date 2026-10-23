@@ -685,6 +685,7 @@ function Board({ table }: { table: UseTable }) {
     const stale =
       (mode.kind === "attackers" && awaitingKind !== "attackers") ||
       (mode.kind === "blockers" && awaitingKind !== "blockers") ||
+      (mode.kind === "bottoming" && awaitingKind !== "mulligan") ||
       (mode.kind === "targeting" && view !== null && playsForCard(view, mode.play.card).length === 0)
     if (!stale) return
     arenaRef.current = IDLE
@@ -742,7 +743,9 @@ function Board({ table }: { table: UseTable }) {
         ? arenaMode.chosen
         : arenaMode.kind === "blockers"
           ? [...arenaMode.chosen.map((b) => b.blocker), ...(arenaMode.holding === null ? [] : [arenaMode.holding])]
-          : [],
+          : arenaMode.kind === "bottoming"
+            ? arenaMode.chosen
+            : [],
   )
 
   /**
@@ -762,6 +765,11 @@ function Board({ table }: { table: UseTable }) {
     }
 
     const mode = arenaRef.current
+    if (mode.kind === "bottoming") {
+      // Tapping a card in hand picks it to go back; tapping it again changes your mind.
+      if (card.zone === "hand" && card.zoneSeat === seat) dispatchArena({ kind: "toggleBottom", card: card.id })
+      return
+    }
     if (mode.kind === "targeting") {
       if (targetableCards.has(card.id) || chosenIds.has(card.id)) {
         dispatchArena({ kind: "pickTarget", target: { kind: "card", id: card.id } })

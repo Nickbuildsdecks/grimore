@@ -14,7 +14,7 @@
  * writing before the rules underneath them are trustworthy.
  */
 import { legalActions, type LegalActions, type LegalPlay } from './legalActions.js';
-import { pendingDeclaration } from './automation.js';
+import { bottomOwed, pendingDeclaration, stillDeciding } from './automation.js';
 import { characteristicsOf } from './characteristics.js';
 import { canAttack, canBlock } from './combat.js';
 import { applyAction } from './engine.js';
@@ -125,17 +125,54 @@ function chooseBlocks(state: GameState, seat: SeatIndex): { blocker: string; att
   return out;
 }
 
+/** The cards in a seat's hand, most expensive first — what to pitch, and what to bottom. */
+function handByCost(state: GameState, seat: SeatIndex): { id: string; cmc: number; land: boolean }[] {
+  return [...(state.zones[`${seat}:hand`] ?? [])]
+    .map((id) => {
+      const def = state.cardDefs[state.instances[id]!.defKey];
+      return {
+        id,
+        cmc: costValue(parseManaCost(def?.manaCost)),
+        land: /land/i.test(def?.typeLine ?? ''),
+      };
+    })
+    .sort((a, b) => b.cmc - a.cmc);
+}
+
+/**
+ * Keep or mulligan, on the one heuristic that matters.
+ *
+ * A hand with no land cannot be played and a hand that is all land cannot do anything, and those
+ * two cases are most of what a mulligan is for. Anything in between is kept, because judging a
+ * borderline hand needs to know what the deck is trying to do — which is a different piece of work
+ * from knowing the rules. It mulligans at most twice: a five-card hand is usually worse than a
+ * mediocre six.
+ */
+function settleOpeningHand(state: GameState, seat: SeatIndex): Action {
+  const hand = handByCost(state, seat);
+  const lands = hand.filter((c) => c.land).length;
+  const mulligans = state.seats[seat]?.mulligans ?? 0;
+  if (mulligans < 2 && (lands <= 1 || lands >= hand.length - 1)) {
+    return { type: 'mulligan', by: seat, seat };
+  }
+  // Bottom the most expensive non-lands first: a hand that mulliganed is short on mana, and the
+  // cards it can least afford to cast are the ones it will miss least.
+  const owed = bottomOwed(state, seat);
+  const pitchable = [...hand.filter((c) => !c.land), ...hand.filter((c) => c.land)];
+  return { type: 'auto:keep', by: seat, bottom: pitchable.slice(0, owed).map((c) => c.id) };
+}
+
 /** The single action this seat would take now, or null when it has nothing to do. */
 export function botAction(state: GameState, seat: SeatIndex): Action | null {
   if (!state.automated || state.finished) return null;
+  if (state.openingHands) {
+    return state.kept.includes(seat) ? null : settleOpeningHand(state, seat);
+  }
   const actions: LegalActions = legalActions(state, seat);
 
   if (actions.mustDiscard > 0) {
     // Pitch the most expensive thing, which is the card least likely to be castable.
-    const hand = [...(state.zones[`${seat}:hand`] ?? [])];
-    const worst = hand
-      .map((id) => ({ id, cmc: costValue(parseManaCost(state.cardDefs[state.instances[id]!.defKey]?.manaCost)) }))
-      .sort((a, b) => b.cmc - a.cmc)[0];
+    const worst = handByCost(state, seat)[0];
     return worst === undefined ? null : { type: 'auto:discard', by: seat, card: worst.id };
   }
 
@@ -214,6 +251,8 @@ export function playOut(state: GameState, maxActions = 6000): PlayOutResult {
 /** Which seat the engine is waiting on: the one owing a declaration, a discard, or priority. */
 export function seatToAct(state: GameState): SeatIndex | null {
   if (!state.automated || state.finished) return null;
+  // Opening hands come before anything else, including priority.
+  if (state.openingHands) return stillDeciding(state)[0] ?? null;
   if (state.pendingDiscard !== null) return state.pendingDiscard.seat;
   const owed = pendingDeclaration(state);
   if (owed !== null) return owed.seats[0] ?? null;

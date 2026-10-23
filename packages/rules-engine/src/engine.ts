@@ -140,6 +140,8 @@ export function createGame(options: CreateGameOptions): GameState {
     // Automation, empty until a table is switched into automated mode.
     automated: false,
     autoPass: true,
+    kept: [],
+    openingHands: false,
     step: 'precombat-main',
     priority: null,
     passed: [],
@@ -458,6 +460,8 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         // run twice, so nobody could restart it.
         automated: false,
         autoPass: true,
+        kept: [],
+        openingHands: false,
         step: 'precombat-main',
         priority: null,
         passed: [],

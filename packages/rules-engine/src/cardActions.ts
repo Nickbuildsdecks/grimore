@@ -572,6 +572,8 @@ export function reduceCardAction(state: GameState, action: CardAction, ctx: Acti
       const drawn = drawFromLibrary(next, action.seat, OPENING_HAND_SIZE);
       const mulligans = (state.seats[action.seat]?.mulligans ?? 0) + 1;
       next = replaceSeat(drawn.state, action.seat, { mulligans, searching: false });
+      // Drawing a fresh hand un-keeps it: the seat now owes one more card to the bottom.
+      next = { ...next, kept: next.kept.filter((seat) => seat !== action.seat) };
       return {
         state: next,
         message: `${seatName(state, action.seat)} mulliganed to ${Math.max(0, OPENING_HAND_SIZE - mulligans)}`

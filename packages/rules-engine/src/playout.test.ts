@@ -120,6 +120,25 @@ describe('a whole automated game', () => {
     expect(loud.actions / loud.turns).toBeGreaterThan(10);
   });
 
+  it('mulligans the hands that deserve it, and not many more', () => {
+    // A hand with no land cannot be played and a hand that is all land cannot do anything. Over
+    // forty games the rate should look like a player's, not like a bot that keeps everything or
+    // one that throws hands away — neither of which would ever fail any other test here.
+    let mulligans = 0;
+    let hands = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const result = playOut(table(seed * 7919, 0, ['ember-rush', 'tidal-mind']));
+      expect(result.state.finished).toBe(true);
+      for (const seat of result.state.seats) {
+        hands += 1;
+        mulligans += seat.mulligans;
+      }
+    }
+    const rate = mulligans / hands;
+    expect(rate).toBeGreaterThan(0.03);
+    expect(rate).toBeLessThan(0.35);
+  });
+
   it('never offers a play it then refuses', () => {
     // The strongest form of the claim: take every action the bot chose from `legalActions`, and
     // check the engine accepted it. A single refusal here is a UI that will show a dead button.
@@ -216,7 +235,7 @@ describe('what the engine tells a client', () => {
       const actions = legalActions(s, seat);
       const hasSomething =
         actions.canPass || actions.plays.length > 0 || actions.mustDiscard > 0 ||
-        actions.mustDeclare !== null;
+        actions.mustDeclare !== null || actions.mustSettleHand;
       if (!hasSomething) stuck.push(`seat ${seat} at ${s.step} on turn ${s.turn}`);
       const before = s.stateVersion;
       s = stepOnce(s, seat);

@@ -104,6 +104,55 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         </div>
       ) : null}
 
+      {/*
+        Opening hands. The decision sits on the board rather than on a screen of its own, because
+        what it is about is the seven cards already laid out in front of you.
+      */}
+      {you.mustSettleHand && mode.kind !== "bottoming" ? (
+        <div data-testid="mulligan-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-[var(--g-text-high)]">
+            {you.bottomOwed === 0 ? "Keep this hand, or mulligan?" : `Keep, putting ${you.bottomOwed} back`}
+          </span>
+          <Button
+            size="sm"
+            data-testid="primary-move"
+            onClick={() => {
+              if (move?.event != null) dispatch(move.event)
+              else if (move?.action != null) onAct(move.action)
+            }}
+          >
+            {move?.label ?? "Keep"}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            data-testid="mulligan"
+            onClick={() => onAct({ type: "mulligan", seat: view.seat ?? 0 })}
+          >
+            Mulligan
+          </Button>
+        </div>
+      ) : null}
+
+      {mode.kind === "bottoming" ? (
+        <div data-testid="bottom-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-[var(--g-text-high)]">
+            Tap {you.bottomOwed} card{you.bottomOwed === 1 ? "" : "s"} to put on the bottom
+          </span>
+          <span className="text-[var(--g-text-muted)]">{mode.chosen.length} chosen</span>
+          <span className="ml-auto flex gap-1.5">
+            {mode.chosen.length === you.bottomOwed ? (
+              <Button size="sm" data-testid="confirm-bottom" onClick={() => dispatch({ kind: "confirm" })}>
+                <Check className="size-3.5" /> Keep
+              </Button>
+            ) : null}
+            <Button size="sm" variant="ghost" data-testid="cancel-mode" onClick={() => dispatch({ kind: "cancel" })}>
+              <X className="size-3.5" /> Cancel
+            </Button>
+          </span>
+        </div>
+      ) : null}
+
       {you.mustDiscard > 0 ? (
         <div data-testid="discard-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <Hand className="size-3.5 text-[var(--g-gold-400)]" />
@@ -150,7 +199,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           ) : null}
         </span>
 
-        {mode.kind === "idle" && move !== null && you.mustDiscard === 0 ? (
+        {mode.kind === "idle" && move !== null && you.mustDiscard === 0 && !you.mustSettleHand ? (
           <Button
             size="sm"
             data-testid="primary-move"

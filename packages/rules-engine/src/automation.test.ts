@@ -7,11 +7,14 @@
  * says which rule broke rather than which line did.
  */
 import { describe, it, expect } from 'vitest';
-import { legalActions, pendingDeclaration, stackTop, viewFor } from './index.js';
 import {
-  advanceTo, apply, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal, stackNames,
-  tapAllLands,
+  bottomOwed, createGame, legalActions, pendingDeclaration, stackTop, stillDeciding, viewFor,
+} from './index.js';
+import {
+  advanceTo, apply, applyAll, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
+  stackNames, tapAllLands, PLAYERS,
 } from './testkit.js';
+import type { GameState } from './types.js';
 
 describe('taking over a table', () => {
   it('starts the engine on the seat that is meant to go first', () => {
@@ -38,6 +41,104 @@ describe('taking over a table', () => {
     const s = apply(arena(), { type: 'game:reset', by: 0 });
     expect(s.automated).toBe(false);
     expect(s.started).toBe(false);
+  });
+});
+
+describe('opening hands', () => {
+  /** A dealt table that has not yet been handed to the engine. */
+  const dealt = (): GameState =>
+    applyAll(createGame({ id: 'g-mull', format: 'modern', players: PLAYERS, seed: 4242 }), [
+      { type: 'deck:load', by: 0, seat: 0, deckId: 'ember-rush' },
+      { type: 'deck:load', by: 1, seat: 1, deckId: 'verdant-guard' },
+      { type: 'game:start', by: 0, firstSeat: 0 },
+    ]);
+
+  it('settles opening hands before the first turn, and nobody holds priority meanwhile', () => {
+    let s = apply(dealt(), { type: 'auto:start', by: 0 });
+    expect(s.automated).toBe(true);
+    expect(s.openingHands).toBe(true);
+    expect(s.priority).toBeNull();
+    expect(stillDeciding(s)).toEqual([0, 1]);
+    expect(legalActions(s, 0).mustSettleHand).toBe(true);
+
+    s = apply(s, { type: 'auto:keep', by: 0 });
+    expect(s.openingHands).toBe(true); // still waiting on the other seat
+    s = apply(s, { type: 'auto:keep', by: 1 });
+    // The last keep begins the game.
+    expect(s.openingHands).toBe(false);
+    expect(s.turn).toBe(1);
+    expect(s.priority).toBe(0);
+    expect(s.log.at(-1)!.message).toContain('begins turn 1');
+  });
+
+  it('will not begin a turn while somebody is still deciding', () => {
+    const s = apply(dealt(), { type: 'auto:start', by: 0 });
+    // Nothing a player can do advances the game until both hands are settled: no priority means
+    // there is nobody to pass.
+    expect(refusal(s, { type: 'auto:pass', by: 0 })).toContain('priority');
+  });
+
+  it('draws a fresh seven on a mulligan and remembers the debt (CR 103.4c)', () => {
+    let s = apply(dealt(), { type: 'mulligan', by: 0, seat: 0 });
+    expect(ids(s, 0, 'hand').length).toBe(7);
+    expect(s.seats[0]!.mulligans).toBe(1);
+    expect(bottomOwed(s, 0)).toBe(1);
+    s = apply(s, { type: 'mulligan', by: 0, seat: 0 });
+    expect(ids(s, 0, 'hand').length).toBe(7);
+    expect(bottomOwed(s, 0)).toBe(2);
+  });
+
+  it('holds the game while a seat that mulliganed still owes cards to the bottom', () => {
+    let s = apply(dealt(), { type: 'auto:start', by: 0 });
+    s = apply(s, { type: 'mulligan', by: 0, seat: 0 });
+    s = apply(s, { type: 'auto:keep', by: 1 });
+    expect(bottomOwed(s, 0)).toBe(1);
+    expect(refusal(s, { type: 'auto:keep', by: 0 })).toContain('exactly 1');
+    expect(s.openingHands).toBe(true);
+  });
+
+  it('puts back exactly as many as were mulliganed, and no more', () => {
+    let s = apply(apply(dealt(), { type: 'auto:start', by: 0 }), { type: 'mulligan', by: 0, seat: 0 });
+    const hand = [...ids(s, 0, 'hand')];
+    expect(refusal(s, { type: 'auto:keep', by: 0 })).toContain('exactly 1');
+    expect(refusal(s, { type: 'auto:keep', by: 0, bottom: [hand[0]!, hand[1]!] })).toContain('exactly 1');
+    expect(refusal(s, { type: 'auto:keep', by: 0, bottom: [hand[0]!, hand[0]!] })).toContain('exactly 1');
+
+    s = apply(s, { type: 'auto:keep', by: 0, bottom: [hand[0]!] });
+    expect(ids(s, 0, 'hand').length).toBe(6);
+    expect(ids(s, 0, 'library').at(-1)).toBe(hand[0]);
+    s = apply(s, { type: 'auto:keep', by: 1 });
+    expect(s.openingHands).toBe(false);
+  });
+
+  it('refuses to put back a card that is not in your hand', () => {
+    const s = apply(apply(dealt(), { type: 'auto:start', by: 0 }), { type: 'mulligan', by: 0, seat: 0 });
+    const theirs = ids(s, 1, 'hand')[0]!;
+    expect(refusal(s, { type: 'auto:keep', by: 0, bottom: [theirs] })).toContain('not in your hand');
+  });
+
+  it('un-keeps a hand that is mulliganed again, so the new debt has to be paid too', () => {
+    let s = apply(dealt(), { type: 'auto:start', by: 0 });
+    s = apply(s, { type: 'mulligan', by: 0, seat: 0 });
+    s = apply(s, { type: 'auto:keep', by: 0, bottom: [ids(s, 0, 'hand')[0]!] });
+    expect(s.kept).toEqual([0]);
+    s = apply(s, { type: 'mulligan', by: 0, seat: 0 });
+    expect(s.kept).toEqual([]);
+    expect(bottomOwed(s, 0)).toBe(2);
+    expect(s.openingHands).toBe(true);
+  });
+
+  it('lets a seat that never mulliganed simply say it is ready', () => {
+    // Nothing goes back, but saying so is how the table tells "ready" from "still deciding".
+    const s = apply(apply(dealt(), { type: 'auto:start', by: 0 }), { type: 'auto:keep', by: 1 });
+    expect(s.kept).toEqual([1]);
+    expect(s.log.at(-1)!.message).toContain('keeps');
+  });
+
+  it('refuses a keep once the game is under way', () => {
+    const s = arena();
+    expect(s.openingHands).toBe(false);
+    expect(refusal(s, { type: 'auto:keep', by: 0 })).toContain('already begun');
   });
 });
 

@@ -63,9 +63,19 @@ const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '600', 10);
 /** Which decks the two players pick. `tidal-mind` is the one with counterspells. */
 const DECK_A = process.env.DECK_A ?? 'ember-rush';
 const DECK_B = process.env.DECK_B ?? 'verdant-guard';
+/**
+ * Makes both players mulligan once, whatever they were dealt.
+ *
+ * Mulliganing is rare — one hand in nine — so left to the shuffle, the flow that follows it
+ * (choosing which card goes back to the bottom) would almost never be exercised. The run with
+ * this on is the one that tests it.
+ */
+const FORCE_MULLIGAN = process.env.FORCE_MULLIGAN === '1';
 
 let step = 0;
 const checks = [];
+/** How many times each seat has mulliganed, for FORCE_MULLIGAN. */
+const seatMulligans = {};
 
 function check(label, condition, detail = '') {
   checks.push({ label, ok: Boolean(condition), detail });
@@ -120,6 +130,8 @@ async function expectEventually(page, label, predicate, timeout = 12000) {
 
 /** Whether this page is the one the engine is waiting on. */
 async function isMyMove(page) {
+  if (await has(page, 'mulligan-prompt')) return true;
+  if (await has(page, 'bottom-prompt')) return true;
   if (await has(page, 'target-prompt')) return true;
   if (await has(page, 'attack-prompt')) return true;
   if (await has(page, 'block-prompt')) return true;
@@ -135,6 +147,37 @@ async function isMyMove(page) {
  * attack, block with nothing, and play a card from hand now and then so the game actually develops.
  */
 async function makeMove(page, seat, { aggression = 0.6 } = {}) {
+  // Opening hands come before anything else, including priority.
+  if (await has(page, 'bottom-prompt')) {
+    // Tap cards in hand until as many are chosen as the prompt asks for, then keep.
+    const hand = cardsIn(page, `zone-hand-${seat}`);
+    const count = await hand.count();
+    for (let i = 0; i < count; i++) {
+      if (await has(page, 'confirm-bottom')) break;
+      await hand.nth(i).click({ timeout: 2000 }).catch(() => {});
+    }
+    if (await has(page, 'confirm-bottom')) {
+      await tid(page, 'confirm-bottom').click();
+      return 'kept a mulliganed hand';
+    }
+    await tid(page, 'cancel-mode').click();
+    return 'backed out of bottoming';
+  }
+  if (await has(page, 'mulligan-prompt')) {
+    // Mulligan a hand with no land in it, which is the case the decision exists for.
+    const names = await cardsIn(page, `zone-hand-${seat}`).evaluateAll((els) =>
+      els.map((e) => e.getAttribute('data-card-name') ?? ''));
+    const lands = names.filter((n) => /Mountain|Forest|Plains|Island|Swamp/.test(n)).length;
+    const mulliganed = seatMulligans[seat] ?? 0;
+    if ((lands <= 1 || (FORCE_MULLIGAN && mulliganed === 0)) && (await has(page, 'mulligan'))) {
+      seatMulligans[seat] = mulliganed + 1;
+      await tid(page, 'mulligan').click();
+      return `mulliganed a hand with ${lands} land`;
+    }
+    await tid(page, 'primary-move').click();
+    return 'kept the opening hand';
+  }
+
   // A declaration in progress is finished first — it is blocking everything else.
   if (await has(page, 'target-prompt')) {
     // A spell on the stack is a row in the stack panel rather than a card face, because an ability
@@ -299,8 +342,36 @@ async function main() {
 
     await waitFor(nick, 'table');
     await waitFor(friend, 'table');
-    await expectEventually(nick, 'the engine takes over and the phase bar appears', async () =>
-      has(nick, 'phase-bar'));
+    await expectEventually(nick, 'the engine takes over and asks for an opening-hand decision', async () =>
+      (await has(nick, 'phase-bar')) && (await has(nick, 'mulligan-prompt')));
+    await expectEventually(friend, 'and asks the other player too, at the same time', async () =>
+      has(friend, 'mulligan-prompt'));
+    await shot(nick, 'opening-hand');
+    // Checked here, with the opening hand on the table: after the decision a player who
+    // mulliganed is holding six.
+    await expectEventually(nick, 'Nick is dealt seven cards', async () =>
+      (await cardsIn(nick, 'zone-hand-0').count()) === 7);
+    await expectEventually(friend, 'Friend is dealt seven cards', async () =>
+      (await cardsIn(friend, 'zone-hand-1').count()) === 7);
+
+    // Both keep (or mulligan) before anybody has priority.
+    for (const [page, seat] of [[nick, 0], [friend, 1]]) {
+      for (let i = 0; i < 6 && (await isMyMove(page)); i++) {
+        if (!(await has(page, 'mulligan-prompt')) && !(await has(page, 'bottom-prompt'))) break;
+        await makeMove(page, seat);
+        await page.waitForTimeout(150);
+      }
+    }
+    await expectEventually(nick, 'and the first turn begins once both hands are settled', async () =>
+      !(await has(nick, 'mulligan-prompt')) && !(await has(friend, 'mulligan-prompt')));
+    if (FORCE_MULLIGAN) {
+      // A London mulligan draws a fresh seven and puts one back, so the hand is six.
+      await expectEventually(nick, 'a mulliganed hand is six cards, not seven', async () =>
+        (await cardsIn(nick, 'zone-hand-0').count()) === 6);
+      await expectEventually(friend, 'and the same for the other player', async () =>
+        (await cardsIn(friend, 'zone-hand-1').count()) === 6);
+      await shot(nick, 'after-mulligan');
+    }
     await expectEventually(friend, 'both players see it, not just the host', async () =>
       has(friend, 'phase-bar'));
     await expectEventually(nick, 'the manual control bar is replaced by the engine’s own', async () =>
@@ -316,17 +387,12 @@ async function main() {
       /priority|waiting/i.test(await text(nick, 'waiting-on')));
     await expectEventually(nick, 'the stack starts empty and says so', async () => has(nick, 'stack-empty'));
 
-    await expectEventually(nick, 'Nick is dealt seven cards', async () =>
-      (await cardsIn(nick, 'zone-hand-0').count()) === 7);
-    await expectEventually(friend, 'Friend is dealt seven cards', async () =>
-      (await cardsIn(friend, 'zone-hand-1').count()) === 7);
-
     // ── Hidden information still holds ──────────────────────────────────────────────────────────
     const friendHandAsNickSees = await cardsIn(nick, 'zone-hand-1').evaluateAll((els) =>
       els.map((e) => ({ hidden: e.getAttribute('data-hidden'), name: e.getAttribute('data-card-name') })));
     check(
       'with the engine running, the opponent’s hand is still unreadable',
-      friendHandAsNickSees.length === 7 && friendHandAsNickSees.every((c) => c.hidden === 'true' && !c.name),
+      friendHandAsNickSees.length >= 6 && friendHandAsNickSees.every((c) => c.hidden === 'true' && !c.name),
       JSON.stringify(friendHandAsNickSees).slice(0, 160),
     );
     // The engine's own legal-move list is computed per seat, so it must not leak either.

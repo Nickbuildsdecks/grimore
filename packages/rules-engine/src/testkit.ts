@@ -138,7 +138,11 @@ export function arena(setup: Setup = {}): GameState {
   for (let turn = 1; turn < target; turn++) s = apply(s, { type: 'turn:pass', by: s.activeSeat });
   if (s.activeSeat !== first) s = apply(s, { type: 'turn:pass', by: s.activeSeat });
 
-  return apply(s, { type: 'auto:start', by: 0, firstSeat: first, autoPass: setup.autoPass ?? false });
+  s = apply(s, { type: 'auto:start', by: 0, firstSeat: first, autoPass: setup.autoPass ?? false });
+  // Opening hands are settled before turn one. Nothing here ever mulligans — a test board is built
+  // card by card — so both seats simply keep, which is what starts the game.
+  for (const seat of [0, 1] as SeatIndex[]) s = apply(s, { type: 'auto:keep', by: seat });
+  return s;
 }
 
 /** Passes priority round the table until something happens: the stack resolves or the step ends. */

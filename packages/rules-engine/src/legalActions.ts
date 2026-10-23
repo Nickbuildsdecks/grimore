@@ -13,7 +13,7 @@
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { characteristicsOf } from './characteristics.js';
-import { atSorcerySpeed, pendingDeclaration, stackTop } from './automation.js';
+import { atSorcerySpeed, bottomOwed, pendingDeclaration, stackTop } from './automation.js';
 import { legalAttackers, legalBlockers, canBlock } from './combat.js';
 import { poolOf } from './effects.js';
 import { addMana, canPay, parseManaCost, type ManaPool, type ManaType } from './mana.js';
@@ -61,6 +61,12 @@ export interface LegalActions {
   readonly blockers: readonly BlockOption[];
   /** How many cards still have to be discarded to hand size. */
   readonly mustDiscard: number;
+  /**
+   * Set while this seat is deciding on its opening hand: how many cards it owes the bottom of its
+   * library if it keeps now. Zero is a perfectly good answer — it means "keep a fresh seven".
+   */
+  readonly mustSettleHand: boolean;
+  readonly bottomOwed: number;
   /**
    * A declaration this seat owes before play continues. Separate from `hasPriority` because
    * declaring attackers or blockers is a turn-based action, so the seat that owes one holds no
@@ -190,13 +196,18 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   const mustDiscard = pending !== null && pending.seat === seat ? pending.count : 0;
   const owed = pendingDeclaration(state);
   const mustDeclare = owed !== null && owed.seats.includes(seat) ? owed.kind : null;
+  const mustSettleHand = state.automated && state.openingHands && !state.kept.includes(seat)
+    && state.seats[seat]?.eliminated === false;
 
   const empty: LegalActions = {
     seat, step: state.step, hasPriority, isActivePlayer: state.activeSeat === seat,
     canPass: false, passLabel: '', plays: [], attackers: [], blockers: [],
-    mustDiscard, mustDeclare, pool: poolOf(state, seat), potential,
+    mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat),
+    pool: poolOf(state, seat), potential,
   };
   if (!state.automated || state.finished) return empty;
+  // Opening hands come before anything else, including priority.
+  if (state.openingHands) return mustSettleHand ? { ...empty, passLabel: 'Keep' } : empty;
   if (mustDiscard > 0) return { ...empty, passLabel: `Discard ${mustDiscard}` };
   // A declaration comes before priority, so it is offered to the seat that owes it even though
   // nobody holds priority while it is outstanding.

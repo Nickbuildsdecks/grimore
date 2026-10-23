@@ -153,6 +153,46 @@ describe("target prompts", () => {
   })
 })
 
+describe("settling an opening hand", () => {
+  it("keeps straight away when nothing goes back", () => {
+    const auto = automation({
+      awaiting: { kind: "mulligan", seats: [0] },
+      you: { ...automation()!.you!, hasPriority: false, mustSettleHand: true, bottomOwed: 0 },
+    })
+    const move = primaryMove(view({ automation: auto }))
+    expect(move).toEqual({ label: "Keep", event: null, action: { type: "auto:keep" } })
+  })
+
+  it("asks which cards go back when the hand was mulliganed", () => {
+    const auto = automation({
+      awaiting: { kind: "mulligan", seats: [0] },
+      you: { ...automation()!.you!, hasPriority: false, mustSettleHand: true, bottomOwed: 2 },
+    })
+    const move = primaryMove(view({ automation: auto }))
+    expect(move?.label).toBe("Keep — put 2 back")
+    expect(move?.event).toEqual({ kind: "startBottoming" })
+  })
+
+  it("collects the cards to put back, and un-picks one tapped twice", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startBottoming" }).mode
+    mode = arenaReducer(mode, { kind: "toggleBottom", card: "a" }).mode
+    mode = arenaReducer(mode, { kind: "toggleBottom", card: "b" }).mode
+    mode = arenaReducer(mode, { kind: "toggleBottom", card: "a" }).mode
+    expect(mode).toEqual({ kind: "bottoming", chosen: ["b"] })
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:keep", bottom: ["b"],
+    })
+  })
+
+  it("comes before priority, so a seat with no priority is still asked", () => {
+    const auto = automation({
+      awaiting: { kind: "mulligan", seats: [0] },
+      you: { ...automation()!.you!, hasPriority: false, canPass: false, mustSettleHand: true, bottomOwed: 0 },
+    })
+    expect(primaryMove(view({ automation: auto }))).not.toBeNull()
+  })
+})
+
 describe("declaring attackers", () => {
   it("toggles creatures in and out, then sends them all at one defender", () => {
     let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
@@ -254,6 +294,7 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
     you: {
       seat: 0, step: "precombat-main", hasPriority: true, isActivePlayer: true, canPass: true,
       passLabel: "Pass", plays: [], attackers: [], blockers: [], mustDiscard: 0, mustDeclare: null,
+      mustSettleHand: false, bottomOwed: 0,
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     },
     ...over,

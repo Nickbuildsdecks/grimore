@@ -13,10 +13,10 @@ import { zoneKey } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
 import { characteristicsOf } from './characteristics.js';
 import {
-  advanceStep, aliveSeats, atSorcerySpeed, canAttack, canBlock, checkTargets, endTurnCleanup,
-  legalAttackers, legalBlockers, menaceSatisfied, payFrom, pendingDeclaration, prevAlive,
-  pushAbility, raise, resetPriority, resolveTop, scriptOf, settle, stackTop, stateBasedActions,
-  tapAttackers,
+  advanceStep, aliveSeats, atSorcerySpeed, bottomOwed, canAttack, canBlock, checkTargets,
+  endTurnCleanup, legalAttackers, legalBlockers, menaceSatisfied, payFrom, pendingDeclaration,
+  prevAlive, pushAbility, raise, resetPriority, resolveTop, scriptOf, settle, stackTop,
+  stateBasedActions, stillDeciding, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
 } from './automation.js';
 import { addToPool, poolOf } from './effects.js';
@@ -354,6 +354,71 @@ function discard(state: GameState, action: { by: SeatIndex; card: string }): Out
   };
 }
 
+// ── Opening hands ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Settles on an opening hand, putting back one card for each mulligan taken.
+ *
+ * Which cards go back is a real decision and one of the most consequential in a game of Magic, so
+ * the engine will not choose. A seat that never mulliganed owes nothing and keeps by sending this
+ * with no cards — the point of doing that rather than nothing at all is that `auto:start` can then
+ * tell "ready to play" from "still deciding".
+ */
+function keepHand(state: GameState, action: { by: SeatIndex; bottom?: readonly string[] }): Outcome {
+  if (!state.started) throw new EngineError('NOT_STARTED', 'deal the table first');
+  if (state.automated && !state.openingHands) throw new EngineError('ALREADY_STARTED', 'the game has already begun');
+  const owed = bottomOwed(state, action.by);
+  const chosen = action.bottom ?? [];
+  if (chosen.length !== owed) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      owed === 0
+        ? 'you have not mulliganed, so nothing goes back'
+        : `put exactly ${owed} card${owed === 1 ? '' : 's'} on the bottom`);
+  }
+  const seen = new Set<string>();
+  let next = state;
+  for (const id of chosen) {
+    if (seen.has(id)) throw new EngineError('RULE_NOT_APPLICABLE', 'the same card cannot go back twice');
+    seen.add(id);
+    const inst = requireInstance(next, id);
+    if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
+    }
+    next = relocate(next, inst, 'library', action.by, 'bottom');
+  }
+  next = { ...next, kept: next.kept.includes(action.by) ? next.kept : [...next.kept, action.by] };
+  const kept = owed === 0
+    ? `${seatName(state, action.by)} keeps`
+    : `${seatName(state, action.by)} keeps ${handOf(next, action.by).length} and puts ${owed} on the bottom`;
+
+  // The last player to settle starts the game.
+  if (next.openingHands && stillDeciding(next).length === 0) {
+    next = beginFirstTurn(next);
+    return {
+      state: next,
+      message: `${kept} — ${seatName(next, next.activeSeat)} begins turn ${next.turn}`,
+      data: { seat: action.by, bottom: owed, step: next.step, turn: next.turn },
+    };
+  }
+  return { state: next, message: kept, data: { seat: action.by, bottom: owed } };
+}
+
+/**
+ * Walks into the first step that gives somebody priority, doing untap and upkeep on the way.
+ *
+ * Entering from the cleanup step is what runs the start-of-turn actions, and that roll advances
+ * the active seat — so it starts from the seat *before* the first player, or the first player
+ * never gets their turn.
+ */
+function beginFirstTurn(state: GameState): GameState {
+  const first = state.activeSeat;
+  let next = advanceStep({
+    ...state, openingHands: false, step: 'cleanup', turn: state.turn - 1,
+    activeSeat: prevAlive(state, first),
+  });
+  return settle(next, state);
+}
+
 // ── Starting ─────────────────────────────────────────────────────────────────────────────────────
 
 function setStops(state: GameState, action: { by: SeatIndex; autoPass: boolean }): Outcome {
@@ -374,10 +439,15 @@ function startAutomation(
   if (!state.started) throw new EngineError('NOT_STARTED', 'deal the table first');
   const first = action.firstSeat ?? state.activeSeat;
   assertSeatIndex(state, first, 'firstSeat');
-  let next: GameState = {
+  const next: GameState = {
     ...state,
     automated: true,
     autoPass: action.autoPass ?? true,
+    // Opening hands come before the first turn (CR 103.4). Nobody holds priority and no step has
+    // begun until every seat has settled, which is also what tells both clients to show the
+    // mulligan decision rather than a board nobody can act on.
+    openingHands: true,
+    kept: [],
     activeSeat: first,
     step: 'untap',
     combat: EMPTY_COMBAT,
@@ -386,15 +456,10 @@ function startAutomation(
     passed: [],
     priority: null,
   };
-  // Walk into the first step that gives somebody priority, doing untap and upkeep on the way.
-  // Entering from the cleanup step is what runs the start-of-turn actions, and that roll advances
-  // the active seat — so it starts from the seat *before* `first`, or `first` never gets its turn.
-  next = advanceStep({ ...next, step: 'cleanup', turn: state.turn - 1, activeSeat: prevAlive(next, first) });
-  next = settle(next, state);
   return {
     state: next,
-    message: `the rules engine takes over; ${seatName(next, next.activeSeat)} begins turn ${next.turn}`,
-    data: { step: next.step, turn: next.turn },
+    message: 'the rules engine takes over; keep or mulligan your opening hands',
+    data: { openingHands: true, deciding: stillDeciding(next) },
   };
 }
 
@@ -424,7 +489,7 @@ function autoPass(state: GameState): { state: GameState; passes: number } {
   let next = state;
   let passes = 0;
   for (let guard = 0; guard < 64; guard++) {
-    if (next.finished || !next.automated || !next.autoPass) break;
+    if (next.finished || !next.automated || !next.autoPass || next.openingHands) break;
     if (next.pendingDiscard !== null) break;
     if (pendingDeclaration(next) !== null) break;
     const seat = next.priority;
@@ -451,6 +516,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:block': return declareBlockers(state, action);
     case 'auto:discard': return discard(state, action);
     case 'auto:stops': return setStops(state, action);
+    case 'auto:keep': return keepHand(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);
@@ -472,4 +538,4 @@ export function reduceAutoAction(state: GameState, action: AutoAction, _ctx: Act
   };
 }
 
-export { canPay, hasAnyLegalTargets, MAIN_STEPS, pendingDeclaration, stackTop, stateBasedActions, legalAttackers, legalBlockers, poolOf, handOf, spellTargets };
+export { bottomOwed, stillDeciding, canPay, hasAnyLegalTargets, MAIN_STEPS, pendingDeclaration, stackTop, stateBasedActions, legalAttackers, legalBlockers, poolOf, handOf, spellTargets };

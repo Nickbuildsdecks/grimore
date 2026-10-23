@@ -81,6 +81,18 @@ function prevAlive(state: GameState, from: SeatIndex): SeatIndex {
   return from;
 }
 
+/** How many cards a seat still owes the bottom of its library after mulliganing (CR 103.4c). */
+export function bottomOwed(state: GameState, seat: SeatIndex): number {
+  const mulligans = state.seats[seat]?.mulligans ?? 0;
+  if (mulligans === 0) return 0;
+  return Math.min(mulligans, listAt(state, zoneKey(seat, 'hand')).length);
+}
+
+/** Seats that have not yet settled on an opening hand. */
+export function stillDeciding(state: GameState): SeatIndex[] {
+  return state.seats.filter((s) => !s.eliminated && !state.kept.includes(s.index)).map((s) => s.index);
+}
+
 /**
  * The combat declaration the game is waiting for, if any.
  *

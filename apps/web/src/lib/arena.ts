@@ -22,6 +22,7 @@ import type { TableAction } from "@/lib/table"
 /** What the player is in the middle of doing. `idle` is the ordinary "pick something" state. */
 export type ArenaMode =
   | { kind: "idle" }
+  | { kind: "bottoming"; chosen: string[] }
   | { kind: "targeting"; play: LegalPlay; chosen: Target[] }
   | { kind: "attackers"; chosen: string[]; defender: SeatIndex }
   | { kind: "blockers"; chosen: Block[]; holding: string | null }
@@ -33,6 +34,8 @@ export interface Block {
 
 export type ArenaEvent =
   | { kind: "cancel" }
+  | { kind: "startBottoming" }
+  | { kind: "toggleBottom"; card: string }
   | { kind: "choosePlay"; play: LegalPlay }
   | { kind: "pickTarget"; target: Target }
   | { kind: "undoTarget" }
@@ -151,6 +154,9 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (mode.kind === "blockers") {
         return { mode: IDLE, action: { type: "auto:block", blocks: mode.chosen.map((b) => ({ ...b })) } }
       }
+      if (mode.kind === "bottoming") {
+        return { mode: IDLE, action: { type: "auto:keep", bottom: [...mode.chosen] } }
+      }
       return { mode, action: null }
     }
 
@@ -167,6 +173,17 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
 
     case "declareBlockers":
       return { mode: { kind: "blockers", chosen: [], holding: null }, action: null }
+
+    case "startBottoming":
+      return { mode: { kind: "bottoming", chosen: [] }, action: null }
+
+    case "toggleBottom": {
+      if (mode.kind !== "bottoming") return { mode, action: null }
+      const chosen = mode.chosen.includes(event.card)
+        ? mode.chosen.filter((id) => id !== event.card)
+        : [...mode.chosen, event.card]
+      return { mode: { kind: "bottoming", chosen }, action: null }
+    }
 
     case "holdBlocker": {
       if (mode.kind !== "blockers") return { mode, action: null }
@@ -292,6 +309,12 @@ export function primaryMove(view: GameView): { label: string; event: ArenaEvent 
   const auto = view.automation
   const you = auto?.you
   if (!auto || !you || view.finished) return null
+  // Opening hands come before anything else, including priority.
+  if (you.mustSettleHand) {
+    return you.bottomOwed === 0
+      ? { label: "Keep", event: null, action: { type: "auto:keep" } }
+      : { label: `Keep — put ${you.bottomOwed} back`, event: { kind: "startBottoming" }, action: null }
+  }
   if (you.mustDiscard > 0) return { label: `Discard ${you.mustDiscard}`, event: null, action: null }
   if (you.mustDeclare === "attackers") {
     return { label: "Declare attackers", event: { kind: "declareAttackers", defender: firstOpponent(view) }, action: null }

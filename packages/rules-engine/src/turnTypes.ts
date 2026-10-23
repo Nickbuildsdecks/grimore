@@ -146,6 +146,20 @@ export interface AutomationState {
    * player has to make, so the engine stops and waits rather than discarding for them.
    */
   readonly pendingDiscard: { readonly seat: SeatIndex; readonly count: number } | null;
+  /**
+   * Seats that have settled on their opening hand.
+   *
+   * A London mulligan draws a fresh seven and owes one card to the bottom of the library for each
+   * mulligan taken (CR 103.4c). The redraw is a physical move the tabletop already makes; what
+   * needs tracking is the debt, because a player who mulliganed twice and started with seven cards
+   * has not mulliganed at all. `auto:start` refuses while anybody still owes.
+   */
+  readonly kept: readonly SeatIndex[];
+  /**
+   * True between the engine taking over and the first turn beginning, while opening hands are
+   * settled. Nobody holds priority and no step has started.
+   */
+  readonly openingHands: boolean;
 }
 
 // ── Automated actions ────────────────────────────────────────────────────────────────────────────
@@ -175,14 +189,21 @@ export interface AutoBlockAction {
   readonly blocks: readonly { readonly blocker: string; readonly attacker: string }[];
 }
 export interface AutoDiscardAction { readonly type: 'auto:discard'; readonly by: SeatIndex; readonly card: string }
+/** Settles on an opening hand, putting back one card for each mulligan taken. */
+export interface AutoKeepAction {
+  readonly type: 'auto:keep'; readonly by: SeatIndex;
+  /** Cards to put on the bottom of the library, exactly as many as are owed. */
+  readonly bottom?: readonly string[];
+}
 
 export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
-  | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoDiscardAction | AutoStopsAction;
+  | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoDiscardAction | AutoStopsAction
+  | AutoKeepAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
-  'auto:block', 'auto:discard', 'auto:stops',
+  'auto:block', 'auto:discard', 'auto:stops', 'auto:keep',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>
