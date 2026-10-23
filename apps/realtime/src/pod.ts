@@ -30,6 +30,8 @@ import {
 } from '@grimore/shared';
 import {
   applyAction as engineApply,
+  botAction,
+  seatsToAct,
   viewFor,
   type GameView,
   createGame,
@@ -55,6 +57,8 @@ export interface SeatRecord extends PodSeat {
   token: string;
   /** Epoch ms of the disconnect that started the grace window, or null while connected. */
   disconnectedAt: number | null;
+  /** Which built-in deck a bot seat plays. Only set on bot seats. */
+  botDeck?: string;
 }
 
 export interface PodRecord {
@@ -134,6 +138,8 @@ const publicSeat = (s: SeatRecord): PodSeat => ({
   name: s.name,
   ready: s.ready,
   connected: s.connected,
+  // Which seats the server plays is not a secret, and a player should be able to see it.
+  bot: s.bot === true,
 });
 
 export function toSnapshot(record: PodRecord, version: number): PodSnapshot {
@@ -303,10 +309,11 @@ export class PodStore {
   // -------------------------------------------------------------------------
 
   async create(
-    input: { format: Format; visibility: PodVisibility; name: string },
+    input: { format: Format; visibility: PodVisibility; name: string; bots?: number; botDeck?: string },
     host: Player,
   ): Promise<JoinResult> {
     const token = makeSeatToken();
+    const bots = Math.max(0, Math.min(input.bots ?? 0, POD_MAX_SEATS - 1));
     const record: PodRecord = {
       pod: {
         code: '',
@@ -318,7 +325,19 @@ export class PodStore {
         createdAt: this.now(),
       },
       seats: [
-        { seat: 0, playerId: host.playerId, name: host.name, ready: false, connected: true, token, disconnectedAt: null },
+        { seat: 0, playerId: host.playerId, name: host.name, ready: false, connected: true, bot: false, token, disconnectedAt: null },
+        // Bot seats are ready from the moment they sit down: there is nobody to wait for.
+        ...Array.from({ length: bots }, (_, i) => ({
+          seat: i + 1,
+          playerId: `bot_${i + 1}_${makeSeatToken().slice(0, 12)}`,
+          name: BOT_NAMES[i] ?? `Opponent ${i + 1}`,
+          ready: true,
+          connected: true,
+          bot: true,
+          botDeck: input.botDeck ?? DEFAULT_BOT_DECK,
+          token: makeSeatToken(),
+          disconnectedAt: null,
+        })),
       ],
       game: null,
       lastActivity: this.now(),
@@ -375,6 +394,7 @@ export class PodStore {
         name: player.name,
         ready: false,
         connected: true,
+        bot: false,
         token,
         disconnectedAt: null,
       });
@@ -391,9 +411,10 @@ export class PodStore {
       const seat = record.seats.find((s) => s.playerId === playerId);
       if (!seat) throw new PodError('not_in_pod', 'you are not seated in this pod');
       record.seats = record.seats.filter((s) => s !== seat);
-      if (record.seats.length === 0) return { record: null, result: undefined };
+      // A table of nothing but bots is nobody's game: the last person out closes it.
+      if (record.seats.every((s) => s.bot)) return { record: null, result: undefined };
       if (record.pod.hostPlayerId === playerId) {
-        record.pod.hostPlayerId = record.seats[0]!.playerId;
+        record.pod.hostPlayerId = record.seats.find((s) => !s.bot)?.playerId ?? null;
       }
       if (record.game && !record.game.finished) {
         const gameSeat = record.game.seats[seat.seat];
@@ -518,6 +539,7 @@ export class PodStore {
         if (err instanceof EngineError) throw new PodError('illegal_action', `${err.code}: ${err.message}`);
         throw err;
       }
+      runBots(record);
       if (record.game.finished) record.pod.status = 'finished';
       else if (record.pod.status === 'finished') record.pod.status = 'in_progress';
       return { record, result: undefined };
@@ -544,6 +566,63 @@ export class PodStore {
   }
 }
 
+/** Names for the seats the server plays. Plain and obviously not a person. */
+const BOT_NAMES = ['Opponent', 'Opponent II', 'Opponent III'];
+const DEFAULT_BOT_DECK = 'verdant-guard';
+
+/**
+ * Lets the server's seats take their turns until a person is on the clock again.
+ *
+ * Run inside the same mutation as the action that provoked it, so a bot's whole reply lands in
+ * one pod version and one broadcast. Doing it as a separate write would show the player their own
+ * move, then a gap, then the answer — and would race another node applying the next human action
+ * against a state the bot had not finished moving in.
+ *
+ * The bot decides with `botAction`, which only ever returns a move the engine offered it, so a
+ * refusal here would mean the two disagree. It is caught rather than thrown anyway: a bot that
+ * cannot find a move should stall its own seat, not fail the human's action.
+ */
+function runBots(record: PodRecord, log?: (err: unknown) => void): void {
+  const botSeats = new Set(record.seats.filter((s) => s.bot).map((s) => s.seat));
+  if (botSeats.size === 0) return;
+  for (let guard = 0; guard < 500; guard += 1) {
+    const game = record.game;
+    if (game === null || game.finished) return;
+    // Any seat the engine is waiting on, not just the first: opening hands are settled
+    // simultaneously, so a bot whose human opponent is still deciding is behind them in the queue
+    // and would never be reached.
+    const seat = seatsToAct(game).find((s) => botSeats.has(s));
+    if (seat === undefined) return;
+    const action = botAction(game, seat);
+    if (action === null) return;
+    try {
+      const next = engineApply(game, action, { isHost: false });
+      // No progress means a move the engine accepted but that changed nothing, which would spin.
+      if (next.stateVersion === game.stateVersion) return;
+      record.game = next;
+    } catch (err) {
+      log?.(err);
+      return;
+    }
+  }
+}
+
+/** Gives every bot seat a deck, so a solo table needs no second person to pick one. */
+function loadBotDecks(record: PodRecord): void {
+  for (const seat of record.seats) {
+    if (!seat.bot || record.game === null) continue;
+    try {
+      record.game = engineApply(
+        record.game,
+        { type: 'deck:load', by: seat.seat, seat: seat.seat, deckId: seat.botDeck ?? DEFAULT_BOT_DECK },
+        { isHost: true },
+      );
+    } catch {
+      // An unknown deck id leaves the seat empty rather than stopping the table being dealt.
+    }
+  }
+}
+
 /** Compacts seat indices to 0..n-1 and creates the rules-engine game. */
 function dealTable(record: PodRecord): void {
   record.seats.sort((a, b) => a.seat - b.seat);
@@ -556,4 +635,5 @@ function dealTable(record: PodRecord): void {
     players: record.seats.map((s) => ({ playerId: s.playerId ?? `seat-${s.seat}`, name: s.name })),
   });
   record.pod.status = 'in_progress';
+  loadBotDecks(record);
 }

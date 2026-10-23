@@ -38,6 +38,8 @@ export const PodSeat = z.object({
   name: PlayerName,
   ready: z.boolean().default(false),
   connected: z.boolean().default(true),
+  /** A seat the server plays. Shown to everyone, because knowing who is a bot is not a secret. */
+  bot: z.boolean().default(false),
 });
 export type PodSeat = z.infer<typeof PodSeat>;
 
@@ -69,6 +71,14 @@ export const PodCreateInput = z.object({
    * the player's name; this is the same thing for the host.
    */
   playerName: PlayerName.optional(),
+  /**
+   * Seats for the server to play, so one person can start a table and play immediately rather
+   * than waiting for somebody to join. Capped well below the seat limit: a table of four bots is
+   * a demo, not a game.
+   */
+  bots: z.number().int().min(0).max(POD_MAX_SEATS - 1).default(0),
+  /** Which built-in deck each bot plays. Defaults to one the rules engine ships. */
+  botDeck: z.string().trim().min(1).max(64).optional(),
 });
 export type PodCreateInput = z.infer<typeof PodCreateInput>;
 

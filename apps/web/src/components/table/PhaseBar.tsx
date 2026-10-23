@@ -33,8 +33,9 @@ export function PhaseBar({ view }: { view: GameView }) {
   const isMyTurn = view.activeSeat === view.seat
   const current = PHASES.find((p) => p.steps.includes(auto.step))
 
-  // Who the game is actually waiting for, which is not always the player whose turn it is.
-  const waitingSeat = auto.awaiting?.seats[0] ?? auto.priority
+  // Who the game is actually waiting for, which is not always the player whose turn it is — and
+  // is nobody once the game is over, where a priority badge would be telling the loser to move.
+  const waitingSeat = view.finished ? null : (auto.awaiting?.seats[0] ?? auto.priority)
   const waitingName = waitingSeat === null || waitingSeat === undefined
     ? null
     : waitingSeat === view.seat

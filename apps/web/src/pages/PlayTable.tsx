@@ -126,6 +126,30 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
       </section>
 
       <section className="flex flex-col gap-3 rounded-lg border border-white/10 p-4">
+        <h2 className="text-sm font-semibold text-[var(--g-text-high)]">Play on your own</h2>
+        <p className="text-xs text-[var(--g-text-muted)]">
+          One seat for you and one the computer plays, with the rules engine running the game. No
+          code to share and nobody to wait for.
+        </p>
+        <div className="flex flex-col gap-2">
+          {Object.values(STARTER_DECKS).map((deck) => (
+            <button
+              key={deck.id}
+              type="button"
+              data-testid={`solo-${deck.id}`}
+              onClick={() => void table.createTable({
+                name: "Solo", format: "modern", bots: 1, botDeck: deck.id,
+              })}
+              className="rounded-md border border-white/10 px-3 py-2 text-left transition-colors hover:border-white/25"
+            >
+              <span className="block text-sm font-medium text-[var(--g-text-high)]">Play against {deck.name}</span>
+              <span className="block text-xs text-[var(--g-text-muted)]">{deck.description}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-lg border border-white/10 p-4">
         <h2 className="text-sm font-semibold text-[var(--g-text-high)]">Join a table</h2>
         <Input
           data-testid="join-code"
@@ -153,18 +177,44 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
 
 function PreGame({ table }: { table: UseTable }) {
   const { pod, view, seat } = table
+  /**
+   * On a table whose only other seats are the computer's, readying up is a click with no meaning:
+   * there is nobody to wait for and nothing to coordinate. So it is done for the player, and the
+   * lobby they see is the one that matters — pick a deck and start.
+   */
+  const soloReady = pod !== null && seat !== null
+    && pod.seats.length > 1
+    && pod.seats.every((s) => s.bot || s.seat === seat)
+    && pod.seats.find((s) => s.seat === seat)?.ready === false
+  const { setReady } = table
+  /**
+   * Fired once and only once.
+   *
+   * React runs an effect twice in development, and the second `pod:ready` lands after the table
+   * has already been dealt — which the server correctly refuses, putting an error banner in front
+   * of a player who did nothing. The ref is the guard; the effect's own condition is not, because
+   * the state it reads has not come back from the server yet when the second run happens.
+   */
+  const readiedRef = useRef(false)
+  useEffect(() => {
+    if (!soloReady || readiedRef.current) return
+    readiedRef.current = true
+    void setReady(true)
+  }, [soloReady, setReady])
+
   if (!pod) return null
   const mySeat = pod.seats.find((s) => s.seat === seat)
   const isHost = pod.hostPlayerId !== null && mySeat?.playerId === pod.hostPlayerId
   const myDeck = view?.seats.find((s) => s.index === seat)?.deckId ?? null
   const everyoneHasADeck = (view?.seats ?? []).every((s) => s.deckId !== null)
+  const soloOnly = pod.seats.length > 1 && pod.seats.every((s) => s.bot || s.seat === seat)
 
   return (
     <div data-testid="pregame" className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-8">
       <header className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold text-[var(--g-text-high)]">{pod.name}</h1>
         <p className="text-sm text-[var(--g-text-muted)]">
-          Share this code:{" "}
+          {soloOnly ? "Playing against the computer. " : "Share this code: "}
           <span data-testid="table-code" className="font-mono text-base font-semibold text-[var(--g-gold-400)]">
             {pod.code}
           </span>
@@ -184,13 +234,16 @@ function PreGame({ table }: { table: UseTable }) {
               {s.seat === seat ? " (you)" : ""}
             </span>
             <span className="text-xs text-[var(--g-text-muted)]">
-              {!s.connected ? "reconnecting" : s.ready ? "ready" : "not ready"}
+              {s.bot ? "the computer" : !s.connected ? "reconnecting" : s.ready ? "ready" : "not ready"}
             </span>
           </div>
         ))}
       </section>
 
       {view === null ? (
+        soloOnly ? (
+          <p className="text-sm text-[var(--g-text-muted)]">Dealing…</p>
+        ) : (
         <>
           <p className="text-sm text-[var(--g-text-muted)]">
             Both players ready up, then you each pick a deck.
@@ -199,6 +252,7 @@ function PreGame({ table }: { table: UseTable }) {
             {mySeat?.ready ? "Not ready" : "I'm ready"}
           </Button>
         </>
+        )
       ) : (
         <>
           <section className="flex flex-col gap-2">

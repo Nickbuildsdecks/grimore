@@ -84,7 +84,14 @@ type AckResult =
   | { ok: false; error: PodErrorEvent }
 
 export interface UseTable extends TableState {
-  createTable: (input: { name: string; format: string; visibility?: "public" | "private" }) => Promise<void>
+  createTable: (input: {
+    name: string
+    format: string
+    visibility?: "public" | "private"
+    /** Seats for the server to play, so one person can start a table and play now. */
+    bots?: number
+    botDeck?: string
+  }) => Promise<void>
   joinTable: (input: { code: string; name: string }) => Promise<void>
   leaveTable: () => Promise<void>
   setReady: (ready: boolean) => Promise<void>
@@ -221,6 +228,8 @@ export function useTable(playerName: string): UseTable {
         format: input.format,
         visibility: input.visibility ?? "private",
         playerName: nameRef.current,
+        bots: input.bots ?? 0,
+        ...(input.botDeck === undefined ? {} : { botDeck: input.botDeck }),
       })
       if (!res.ok) return setState((s) => ({ ...s, error: res.error.message }))
       if (res.code && res.seatToken) writeStored({ code: res.code, seatToken: res.seatToken, name: nameRef.current })

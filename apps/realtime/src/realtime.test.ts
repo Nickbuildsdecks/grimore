@@ -363,6 +363,17 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     }[];
     cards: Record<string, { id: string; zone: string; zoneSeat: number; tapped: boolean; card?: { name: string } }>;
     zones: Record<string, string[]>;
+    automation: {
+      awaiting: { kind: string; seats: number[] } | null;
+      you: {
+        hasPriority: boolean;
+        mustDiscard: number;
+        mustDeclare: 'attackers' | 'blockers' | null;
+        mustSettleHand: boolean;
+        attackers: string[];
+        plays: { kind: string; card: string; name: string }[];
+      } | null;
+    } | null;
   }
   const viewOf = (e: PodStateEvent): View => e.state as unknown as View;
 
@@ -558,6 +569,108 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         action: { type: 'life:adjust', seat: 1, delta: -3 },
         expectedVersion: state.stateVersion,
       }));
+    });
+
+    /**
+     * One person, one table, a whole game.
+     *
+     * The thing being tested is not the rules — the engine's own suite covers those — but that the
+     * server plays its seat *inside* the mutation that provoked it. A bot that replied in a
+     * separate write would show the player their own move, then a gap, then the answer, and would
+     * race another action against a state it had not finished moving in.
+     */
+    it('plays a whole game on its own against the server', async () => {
+      const solo = await client('Solo');
+      const saw: PodStateEvent[] = [];
+      solo.on('pod:state', (e: PodStateEvent) => saw.push(e));
+
+      const created = okAck(await emitAck(solo, 'pod:create', {
+        name: 'Just me', format: 'modern', visibility: 'private', bots: 1, botDeck: 'tidal-mind',
+      }));
+      // Readying up is enough to deal the table: the server's seat is ready from the moment it
+      // sits down, because there is nobody for it to wait for.
+      const dealt = waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.state !== null);
+      let version = okAck(await emitAck(solo, 'pod:ready', { ready: true })).stateVersion!;
+      const first = await dealt;
+      expect(first.pod.seats).toHaveLength(2);
+      expect(first.pod.seats[1]!.bot).toBe(true);
+      // And it already has a deck, so nobody has to pick one for it.
+      expect(viewOf(first).seats[1]!.deckId).toBe('tidal-mind');
+      expect(viewOf(first).seats[1]!.libraryCount).toBe(61);
+
+      const act = async (action: Record<string, unknown>): Promise<View> => {
+        // Backs off on `rate_limited` exactly as the browser client does: a solo game is a burst
+        // of actions from one socket, which is precisely what the limiter is there to shape.
+        let ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
+        for (let retry = 0; retry < 8 && !ack.ok && ack.error.code === 'rate_limited'; retry += 1) {
+          await new Promise((r) => setTimeout(r, 120));
+          ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
+        }
+        const res = okAck(ack);
+        version = res.stateVersion!;
+        if (!saw.some((e) => e.stateVersion >= version)) {
+          await waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.stateVersion >= version);
+        }
+        return viewOf(saw.at(-1)!);
+      };
+
+      await act({ type: 'deck:load', seat: 0, deckId: 'ember-rush' });
+      await act({ type: 'game:start', firstSeat: 0 });
+      let view = await act({ type: 'auto:start', firstSeat: 0 });
+
+      // The server settled its own opening hand in the same action, so the only seat still
+      // deciding is the person's.
+      expect(view.automation).not.toBeNull();
+      expect(view.automation!.awaiting).toEqual({ kind: 'mulligan', seats: [0] });
+
+      view = await act({ type: 'auto:keep' });
+      // With both hands settled the game has begun, and the server has already taken any turn of
+      // its own that came first.
+      expect(view.automation!.awaiting).toBeNull();
+      expect(view.turn).toBeGreaterThanOrEqual(1);
+
+      // Play it out by only ever doing what the table offers.
+      for (let move = 0; move < 400 && !view.finished; move++) {
+        const you = view.automation?.you;
+        if (you === undefined || you === null) break;
+        if (you.mustDiscard > 0) {
+          const hand = view.zones['0:hand'] ?? [];
+          if (hand.length === 0) break;
+          view = await act({ type: 'auto:discard', card: hand[0]! });
+          continue;
+        }
+        if (you.mustDeclare === 'attackers') {
+          view = await act({ type: 'auto:attack', attackers: you.attackers.map((a) => ({ attacker: a, defender: 1 })) });
+          continue;
+        }
+        if (you.mustDeclare === 'blockers') {
+          view = await act({ type: 'auto:block', blocks: [] });
+          continue;
+        }
+        if (!you.hasPriority) break;
+        const land = you.plays.find((p) => p.kind === 'land');
+        view = land === undefined ? await act({ type: 'auto:pass' }) : await act({ type: 'auto:playLand', card: land.card });
+      }
+
+      expect(view.finished).toBe(true);
+      expect(view.winnerSeat).not.toBeNull();
+      // The server played a real game: it has a board, a graveyard and a life total that moved.
+      const theirs = view.seats[1]!;
+      expect(theirs.libraryCount).toBeLessThan(54);
+      expect(view.turn).toBeGreaterThan(4);
+      // And the person never saw the server's hand.
+      for (const id of view.zones['1:hand'] ?? []) expect(view.cards[id]!.card).toBeUndefined();
+    }, 60_000);
+
+    it('closes a table when the last person leaves, rather than leaving the server playing alone', async () => {
+      const solo = await client('Solo');
+      const created = okAck(await emitAck(solo, 'pod:create', {
+        name: 'Just me', format: 'modern', visibility: 'private', bots: 1,
+      }));
+      okAck(await emitAck(solo, 'pod:leave', {}));
+      // The code is gone: rejoining it finds nothing.
+      const rejoin = await emitAck(solo, 'pod:join', { code: created.code!, name: 'Solo' });
+      expect(rejoin).toMatchObject({ ok: false });
     });
 
     it('reports a stale expectedVersion as a conflict without touching the game', async () => {

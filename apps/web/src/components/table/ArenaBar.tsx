@@ -212,9 +212,14 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             {move.label}
           </Button>
         ) : null}
-        {mode.kind === "idle" && move === null && you.mustDiscard === 0 ? (
+        {mode.kind === "idle" && move === null && you.mustDiscard === 0 && !view.finished ? (
           <span data-testid="not-your-move" className="ml-auto text-xs text-[var(--g-text-muted)]">
             waiting for your opponent
+          </span>
+        ) : null}
+        {view.finished ? (
+          <span data-testid="game-finished" className="ml-auto text-xs text-[var(--g-text-muted)]">
+            the game is over
           </span>
         ) : null}
 

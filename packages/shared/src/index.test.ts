@@ -269,7 +269,12 @@ describe("realtime events", () => {
   });
 
   it("pod:create applies defaults and length limits", () => {
-    expect(PodCreateInput.parse({ name: "Friday" })).toEqual({ name: "Friday", format: "commander", visibility: "private" });
+    expect(PodCreateInput.parse({ name: "Friday" }))
+      .toEqual({ name: "Friday", format: "commander", visibility: "private", bots: 0 })
+    // A table can seat the server, but not four of them: that is a demo, not a game.
+    expect(PodCreateInput.parse({ name: "Solo", bots: 1 }).bots).toBe(1)
+    expect(PodCreateInput.safeParse({ name: "Solo", bots: 4 }).success).toBe(false)
+    expect(PodCreateInput.safeParse({ name: "Solo", bots: -1 }).success).toBe(false);
     expect(PodCreateInput.safeParse({ name: "x".repeat(33) }).success).toBe(false);
     expect(PodCreateInput.safeParse({ name: "ok", visibility: "hidden" }).success).toBe(false);
   });

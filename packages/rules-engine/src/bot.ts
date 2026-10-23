@@ -248,13 +248,25 @@ export function playOut(state: GameState, maxActions = 6000): PlayOutResult {
   return { state: next, actions, turns: next.turn };
 }
 
-/** Which seat the engine is waiting on: the one owing a declaration, a discard, or priority. */
-export function seatToAct(state: GameState): SeatIndex | null {
-  if (!state.automated || state.finished) return null;
+/**
+ * Every seat the engine is waiting on.
+ *
+ * Usually one, because priority is held by one player at a time — but not always. Opening hands
+ * are settled independently and simultaneously, and in a pod every defender declares blockers.
+ * A caller that looked only at the front of the queue would never act for the others, which is
+ * exactly how a bot seat ends up never keeping its hand.
+ */
+export function seatsToAct(state: GameState): SeatIndex[] {
+  if (!state.automated || state.finished) return [];
   // Opening hands come before anything else, including priority.
-  if (state.openingHands) return stillDeciding(state)[0] ?? null;
-  if (state.pendingDiscard !== null) return state.pendingDiscard.seat;
+  if (state.openingHands) return stillDeciding(state);
+  if (state.pendingDiscard !== null) return [state.pendingDiscard.seat];
   const owed = pendingDeclaration(state);
-  if (owed !== null) return owed.seats[0] ?? null;
-  return state.priority;
+  if (owed !== null) return [...owed.seats];
+  return state.priority === null ? [] : [state.priority];
+}
+
+/** The seat at the front of that queue, for a caller that only handles one at a time. */
+export function seatToAct(state: GameState): SeatIndex | null {
+  return seatsToAct(state)[0] ?? null;
 }
