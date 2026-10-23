@@ -338,6 +338,13 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
  */
 export async function notePrompts(seen, page, seat) {
   if (await has(page, 'x-prompt')) seen.x = true;
+  // Combat drawn on the board rather than described beside it: an arrow from each attacker to the
+  // player it is aimed at. Looked for here because this runs on whichever page is acting, and in
+  // a pod the defender is as likely to be the one looking at it as the attacker.
+  if (seen.arrows !== true && (await page.locator('[data-testid^="arrow-a-"]').count()) > 0) {
+    seen.arrows = true;
+    await shot(page, 'combat-arrows');
+  }
   if (await has(page, 'decide-prompt')) {
     seen.decided = true;
     if (await has(page, `zone-scry-${seat}`)) {

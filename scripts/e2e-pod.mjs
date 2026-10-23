@@ -159,7 +159,7 @@ async function main() {
     // ── Play it out ─────────────────────────────────────────────────────────────────────────────
     const seen = {
       land: false, stack: false, attackers: false, blockers: false, lifeChanged: false,
-      decided: false, searched: false, scried: false, modal: false, turnsPassed: 0, x: false, xCast: null,
+      decided: false, searched: false, scried: false, arrows: false, modal: false, turnsPassed: 0, x: false, xCast: null,
       /** A commander cast through the UI from the command zone. */
       commanderCast: false,
       /** A commander that died and was back in its command zone afterwards (CR 903.9). */
@@ -286,6 +286,10 @@ async function main() {
     check('a spell or ability goes on the stack and resolves', seen.stack);
     check('life totals move because the rules moved them', seen.lifeChanged);
     check('combat asks the attacking player to declare', seen.attackers);
+    if (seen.attackers) {
+      check('an attack is drawn on the board, from the creature to whichever seat it is aimed at',
+        seen.arrows);
+    }
     if (seen.blockers) check('and asks a defending player to block', true);
     else console.log('      (no block was called for in this game — combat.test.ts covers that path)');
 

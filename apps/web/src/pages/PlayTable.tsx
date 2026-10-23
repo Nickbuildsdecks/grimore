@@ -31,6 +31,7 @@ import {
 } from "@grimore/rules-engine"
 import { CardFace, type CardHighlight } from "@/components/table/CardFace"
 import { ArenaBar } from "@/components/table/ArenaBar"
+import { CombatArrows } from "@/components/table/CombatArrows"
 import { PhaseBar } from "@/components/table/PhaseBar"
 import { PlaySheet } from "@/components/table/PlaySheet"
 import { StackPanel } from "@/components/table/StackPanel"
@@ -959,7 +960,15 @@ function Board({ table }: { table: UseTable }) {
   }
 
   return (
-    <div data-testid="table" className="flex min-h-dvh flex-col gap-1.5 px-2 pb-2 pt-2 sm:px-4">
+    // `relative` so the combat overlay can be positioned against the whole board rather than
+    // against the viewport: the board scrolls, and an arrow fixed to the viewport would slide off
+    // the cards it is pointing at.
+    <div data-testid="table" className="relative flex min-h-dvh flex-col gap-1.5 px-2 pb-2 pt-2 sm:px-4">
+      {/*
+        Who is attacking whom, drawn over the board. Only with the engine running: on a tabletop
+        nothing knows what an attack is, and the players point at each other themselves.
+      */}
+      {automated ? <CombatArrows view={view} /> : null}
       {/* Top bar */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="font-semibold text-[var(--g-text-high)]">

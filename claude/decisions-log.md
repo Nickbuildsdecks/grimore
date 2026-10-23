@@ -1362,3 +1362,34 @@ puts up shields and never spends one**: it activates the ability on its own main
 when something is about to die, which is the same shallowness as aiming a pump spell at an enemy
 creature (D20) and is recorded here rather than hidden — the engine path is asserted on a fixed
 board, in combat, with the shield going up between blockers and damage.
+
+## D42 — Drawing the combat instead of describing it
+
+D36 gave an attacking creature a badge reading "attacking Ana". That was the right first answer
+and it is not enough: with three opponents a badge is a sentence you read four times to work out
+what is happening to *you*, and the one question a defender has is whether they are the one being
+attacked.
+
+**Decided: the arrows are measured from the DOM, not computed from the layout.** The board is flex
+rows that wrap, inside containers that scroll, on a page that resizes and rotates. An overlay that
+knew where the cards were would be a second layout engine, and it would disagree with the first
+the moment a hand grew by one card. So the overlay asks the browser — `getBoundingClientRect` on
+`[data-testid="card-…"]` and `[data-testid="seat-…"]` — and re-measures on resize, on scroll
+(captured, so inner scrollers count) and on any body resize.
+
+**Decided: it lands on the edge facing the attacker.** Not the middle of the seat row, where the
+arrowhead disappears under the player's name, and not always the top: in a pod the rows are above
+*and* below you, so the only edge that reads as being pointed at is the near one.
+
+**`pointer-events: none` is not decoration here.** The overlay covers the whole board, and without
+it every card underneath would stop being tappable the moment somebody attacked — which is the
+exact moment the defender needs to tap their creatures.
+
+Blocks are drawn too, dashed and in the info colour rather than gold: a block is an answer, not a
+threat, and the two should not look the same at a glance. Nothing is drawn at all when there is no
+combat, which is most of a game, and nothing is drawn on a tabletop, where the engine does not
+know what an attack is and the players point at each other themselves.
+
+The screenshot the pod suite takes is the argument for the whole thing: Cleo's Drudge Skeletons
+with a line running down the board to Boris's row, and Boris — reading his own screen — knows
+without parsing a badge that the attack is his to block.

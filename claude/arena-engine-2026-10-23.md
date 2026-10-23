@@ -56,7 +56,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `view.ts` | Per-seat redaction, the automation block, and the wire form |
 
 In the web app: `lib/arena.ts` (the interaction reducer), `components/table/{PhaseBar, StackPanel,
-ArenaBar, PlaySheet}.tsx`, and `pages/PlayTable.tsx` branching on `view.automation`.
+ArenaBar, PlaySheet, CombatArrows}.tsx`, and `pages/PlayTable.tsx` branching on `view.automation`.
 
 ---
 
@@ -230,7 +230,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Eighteen things, in the order they mattered.
+Nineteen things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -561,6 +561,20 @@ big as the mana poured into it, and a *reanimated* one comes back a 0/0 and dies
 rule rather than a shortcut. Drudge Skeletons, Golgari Charm and Endless One, to 82 cards. The bot
 puts shields up and never spends one: it activates on its own main phase rather than when
 something is about to die, the same shallowness as aiming a pump spell at an enemy creature.
+
+**The combat is drawn on the board now, not described beside it.** An attacking creature carried a
+badge reading "attacking Ana", which is the right first answer and not enough: with three
+opponents that is a sentence you read four times to work out what is happening to *you*, and the
+only question a defender has is whether the attack is theirs to block. `CombatArrows` draws a line
+from each attacker to the seat row it is aimed at, and a dashed one from each blocker to what it
+blocked — a block is an answer, not a threat, and the two should not look the same at a glance.
+
+Every position is measured from the DOM rather than computed, because the board is flex rows that
+wrap inside containers that scroll on a page that rotates: an overlay that knew where the cards
+were would be a second layout engine disagreeing with the first. It re-measures on resize, on
+captured scroll, and on any body resize, lands on the edge of the row facing the attacker, and
+passes pointer events straight through — without that, every card under it would stop being
+tappable at the exact moment the defender needs to tap their creatures.
 
 ## Next
 
