@@ -172,7 +172,10 @@ export interface GameView {
  * bytes per card, which for a sixty-card library open on screen is more than the definitions.
  */
 export interface PackedCard {
-  readonly id: string;
+  /**
+   * No `id`: the map key *is* the id, and carrying it twice cost four kilobytes on a board of
+   * three hundred permanents. `unpackView` puts it back from the key.
+   */
   readonly owner: SeatIndex;
   readonly zone: ZoneId;
   /** Omitted when it is the owner's own zone, which is the usual case. */
@@ -225,7 +228,7 @@ export function packView(view: GameView): PackedView {
   const keyOf = new Map<string, string>();
   const cards: Record<string, PackedCard> = {};
   for (const [id, card] of Object.entries(view.cards)) {
-    const packed: Record<string, unknown> = { id: card.id, owner: card.owner, zone: card.zone };
+    const packed: Record<string, unknown> = { owner: card.owner, zone: card.zone };
     if (card.zoneSeat !== card.owner) packed.zoneSeat = card.zoneSeat;
     if (card.card !== undefined) {
       const fingerprint = JSON.stringify(card.card);
@@ -249,7 +252,9 @@ export function packView(view: GameView): PackedView {
     if (card.damage !== undefined) packed.damage = card.damage;
     if (card.power !== undefined) packed.power = card.power;
     if (card.toughness !== undefined) packed.toughness = card.toughness;
-    if (card.keywords !== undefined) packed.keywords = card.keywords;
+    // An empty keyword list is the common case on a battlefield — every vanilla creature and
+    // every land has one — and `"keywords":[]` on three hundred cards is another four kilobytes.
+    if (card.keywords !== undefined && card.keywords.length > 0) packed.keywords = card.keywords;
     if (card.cantAttack === true) packed.cantAttack = true;
     if (card.cantBlock === true) packed.cantBlock = true;
     cards[id] = packed as unknown as PackedCard;
@@ -264,7 +269,7 @@ export function unpackView(packed: PackedView): GameView {
   for (const [id, card] of Object.entries(packed.cards)) {
     const def = card.def === undefined ? undefined : packed.defs[card.def];
     cards[id] = {
-      id: card.id,
+      id,
       owner: card.owner,
       zoneSeat: card.zoneSeat ?? card.owner,
       zone: card.zone,
@@ -279,7 +284,10 @@ export function unpackView(packed: PackedView): GameView {
       ...(card.damage === undefined ? {} : { damage: card.damage }),
       ...(card.power === undefined ? {} : { power: card.power }),
       ...(card.toughness === undefined ? {} : { toughness: card.toughness }),
-      ...(card.keywords === undefined ? {} : { keywords: card.keywords }),
+      // Restored as an empty list for a battlefield card, because `redact` sends one for every
+      // permanent and a consumer reading `keywords.length` must not meet an undefined.
+      ...(card.keywords !== undefined ? { keywords: card.keywords }
+        : card.zone === 'battlefield' && card.def !== undefined ? { keywords: [] } : {}),
       ...(card.cantAttack === true ? { cantAttack: true } : {}),
       ...(card.cantBlock === true ? { cantBlock: true } : {}),
     };

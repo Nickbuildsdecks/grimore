@@ -90,14 +90,44 @@ export function dealDamage(
   state: GameState,
   target: Target,
   amount: number,
-  opts: { readonly deathtouch?: boolean; readonly lifelink?: boolean; readonly controller?: SeatIndex } = {},
+  opts: {
+    readonly deathtouch?: boolean;
+    readonly lifelink?: boolean;
+    readonly controller?: SeatIndex;
+    /**
+     * The attacking creature, when this is **combat** damage. Only combat damage from a commander
+     * counts towards the twenty-one that eliminates a player (CR 903.10), so this is passed by
+     * `dealCombatDamage` and by nothing else — a burn spell cast by a commander is not it, and a
+     * single `source` option would have been quietly wrong for exactly that case.
+     */
+    readonly combatFrom?: string;
+  } = {},
 ): GameState {
   if (amount <= 0) return state;
   let next = state;
   if (target.kind === 'player') {
     const seat = next.seats[target.seat];
     if (seat === undefined) return next;
-    next = replaceSeat(next, target.seat, { life: clampValue(seat.life - amount) });
+    const from = opts.combatFrom === undefined ? undefined : next.instances[opts.combatFrom];
+    /**
+     * Keyed by the **seat whose commander it is**, not by the commander's instance id.
+     *
+     * The id would be closer to the rule, which is per commander object. The seat is right
+     * anyway, and it is right for a reason worth stating: `commanderDamage:adjust` — the tabletop
+     * action a player uses to record damage by hand — has always keyed by seat, and `viewFor`
+     * ships the record straight to the client. Two key spaces in one record would mean ten damage
+     * recorded by hand and eleven dealt by the engine never add up to the twenty-one that
+     * eliminates, which is exactly the table a mixed game produces.
+     *
+     * Owner rather than controller, so a stolen commander still deals *its own* damage. The one
+     * case this is wrong for is a deck with two commanders, where the rule counts each separately
+     * and this would sum them; nothing in the pool has partner.
+     */
+    const key = from?.isCommander === true ? String(from.owner) : null;
+    const tally = key === null
+      ? {}
+      : { commanderDamage: { ...seat.commanderDamage, [key]: (seat.commanderDamage[key] ?? 0) + amount } };
+    next = replaceSeat(next, target.seat, { life: clampValue(seat.life - amount), ...tally });
   } else {
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') return next;

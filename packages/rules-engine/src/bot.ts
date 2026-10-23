@@ -129,12 +129,39 @@ function rank(state: GameState, target: Target, foes: readonly SeatIndex[]): num
 }
 
 /** Everything the seat can attack with, which for this bot is everything it is allowed to. */
+/**
+ * Who attacks, and whom.
+ *
+ * In a two-player game "whom" is not a question. In a pod it is the whole question, and the bot's
+ * answer is the shallow one that is still a real answer: go for whoever is closest to dead, and
+ * send a creature at somebody else when the lowest player already has enough coming at them to
+ * finish them. That spreads attacks across seats, which also means several defenders owe a block
+ * at once — a path no four-player game exercised before, because aiming everything at one seat
+ * meant the engine's multi-defender declarations were only ever asserted on a built board.
+ */
 function chooseAttackers(state: GameState, seat: SeatIndex): { attacker: string; defender: SeatIndex }[] {
-  const foe = foesOf(state, seat)[0];
-  if (foe === undefined) return [];
-  return legalActions(state, seat).attackers
-    .filter((id) => canAttack(state, id, seat) === null)
-    .map((attacker) => ({ attacker, defender: foe }));
+  const foes = foesOf(state, seat)
+    .map((index) => ({ index, life: state.seats[index]?.life ?? 0 }))
+    .sort((a, b) => a.life - b.life);
+  if (foes.length === 0) return [];
+  const able = legalActions(state, seat).attackers.filter((id) => canAttack(state, id, seat) === null);
+
+  const out: { attacker: string; defender: SeatIndex }[] = [];
+  let at = 0;
+  let committed = 0;
+  for (const attacker of able) {
+    const target = foes[at] ?? foes[foes.length - 1]!;
+    out.push({ attacker, defender: target.index });
+    const inst = state.instances[attacker];
+    committed += inst === undefined ? 0 : characteristicsOf(state, inst).power;
+    // Enough to kill them outright: anything further is wasted here, so the next one goes
+    // somewhere else. Unblocked damage is the assumption, which is what makes it shallow.
+    if (committed >= target.life && at < foes.length - 1) {
+      at += 1;
+      committed = 0;
+    }
+  }
+  return out;
 }
 
 /**

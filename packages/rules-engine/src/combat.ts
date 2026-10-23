@@ -126,8 +126,9 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
       const controller = attacker.inst.zoneSeat;
 
       if (attack.blockers.length === 0) {
+        // `combatFrom` is what makes commander damage accumulate; see `dealDamage`.
         next = dealDamage(next, { kind: 'player', seat: attack.defender }, attacker.ch.power, {
-          deathtouch, lifelink, controller,
+          deathtouch, lifelink, controller, combatFrom: attack.attacker,
         });
       } else {
         let remaining = attacker.ch.power;
@@ -142,8 +143,10 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
           remaining -= assigned;
         }
         if (remaining > 0 && attacker.ch.keywords.has('trample')) {
+          // Trample damage to a player is still combat damage from the attacker, so a trampling
+          // commander counts towards twenty-one just as an unblocked one does.
           next = dealDamage(next, { kind: 'player', seat: attack.defender }, remaining, {
-            deathtouch, lifelink, controller,
+            deathtouch, lifelink, controller, combatFrom: attack.attacker,
           });
         }
       }

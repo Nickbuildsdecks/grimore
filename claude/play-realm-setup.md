@@ -26,6 +26,12 @@ button in the control bar.
 server plays. No code to share and nobody to wait for. The opponent mulligans, plays lands, casts
 spells, attacks and blocks; it is not a strong player, but it is a real one.
 
+**Up to four of you.** Pick **Commander** when you create the table and it seats four at 40 life
+with a command zone each — cast your commander for its cost plus {2} a time, it goes back to the
+command zone when it dies, and 21 damage from one commander ends that player's game. Turn order,
+blocking and every "each opponent" on a card work with three opponents; a player who concedes is
+skipped by all of it and the rest of you play on.
+
 What both modes do is the bookkeeping that is tedious and easy to get wrong: shuffling, drawing,
 untapping, counters, tokens, commander damage, and a complete log you can scroll back through when
 you disagree about what happened. There is a chat panel too.
@@ -61,7 +67,8 @@ It prints the address to open:
 Open that on both devices — your laptop and your friend's laptop, or a laptop and a phone. One of
 you presses **Create table** and reads out the code (`GOBLIN-VAULT-51`); the other types it into
 **Join**. Ready up, pick a deck each, and the host presses **Play with the rules engine** (or
-**Play as a tabletop**).
+**Play as a tabletop**). For a pod, the host picks **Commander** before creating the table and up
+to three other people join on the same code.
 
 To play on your own, open it on one device and press one of the buttons under *Play on your own*.
 
@@ -195,8 +202,9 @@ FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatev
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (354 tests, including whole
-games played out by bots that only ever send moves the engine offered them) and `apps/realtime`
+The layers under them have their own suites: `packages/rules-engine` (365 tests, including whole
+games played out by bots that only ever send moves the engine offered them — four-seat Commander
+pods as well as duels) and `apps/realtime`
 (22 tests against live Redis, including two socket clients playing to a finish and one person
 playing the server).
 
@@ -223,8 +231,11 @@ playing the server).
   trade is good, casts the biggest thing it can afford and mulligans a hand with no land in it. It
   plays a real game; it does not plan one.
 - **No card images**, for the reason above.
-- **Up to four seats** is supported by the engine and the server, but only two-player tables have
-  been played end to end. A Commander pod should work; it has not been sat at.
+- **A four-seat pod has not been driven through four real browsers.** The engine plays them — ten
+  pods played to one survivor per test run, commanders cast and taxed, commander damage reaching
+  21, attacks in all twelve directions — and the server seats four. What has not been *looked at*
+  is the four-player interface: three opponents on one screen, and a phone showing all of them.
+  Play one and expect the rules to hold and the layout to need work.
 - **No spectators in the UI.** The server already builds a spectator view that hides both hands;
   nothing in the lobby joins as one yet.
 - **No undo.** The log records everything, but putting a card back is a manual move.

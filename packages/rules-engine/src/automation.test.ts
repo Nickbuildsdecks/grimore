@@ -13,7 +13,7 @@ import {
 } from './index.js';
 import {
   advanceTo, apply, applyAll, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
-  stackNames, tapAllLands, PLAYERS,
+  stackNames, tapAllLands, PLAYERS, WIRE_CAP,
 } from './testkit.js';
 import type { GameState } from './types.js';
 
@@ -946,8 +946,8 @@ describe('redaction still holds with the engine running', () => {
     // deck is, and an assertion tight enough to break when a deck list is edited is noise.
     expect(wire).toBeLessThan(inline * 0.6);
     // And the headroom this was for: a 100-card Commander library is roughly twice this one, and
-    // the cap is 64KB. Asserted on the measurement rather than on faith.
-    expect(wire * 2).toBeLessThan(64 * 1024);
+    // the cap is WIRE_CAP. Asserted on the measurement rather than on faith.
+    expect(wire * 2).toBeLessThan(WIRE_CAP);
   });
 
   it('opens a searcher’s own library to them, and to nobody else', () => {

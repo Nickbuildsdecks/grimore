@@ -221,6 +221,21 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
     next = { ...next, activeSeat: nextAliveSeat(next, next.activeSeat) };
   }
 
+  /**
+   * Nor can an eliminated seat hold priority (CR 800.4).
+   *
+   * The case this fixes only exists with more than two players, which is why it survived every
+   * two-player game: a seat passes, the combat damage that pass let through eliminates *them*,
+   * and `priority` still names them — because it was set while they were alive and the
+   * elimination is noticed here, afterwards. With two players the game ends in the same breath
+   * and nobody notices. With four it leaves the engine waiting on a player who has left, and the
+   * bot cheerfully acting for a dead seat.
+   */
+  const holder = next.priority === null ? undefined : next.seats[next.priority];
+  if (!next.finished && next.priority !== null && holder?.eliminated === true) {
+    next = { ...next, priority: nextAliveSeat(next, next.priority) };
+  }
+
   const alive = aliveSeats(next);
   if (!next.finished && alive.length <= 1) {
     const winner = alive[0];

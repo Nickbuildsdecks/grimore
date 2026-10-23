@@ -26,6 +26,13 @@ export const PLAYERS = [
   { playerId: 'p-friend', name: 'Friend' },
 ];
 
+/** Four seats, for a Commander pod. The first two are the same people as a two-player table. */
+export const POD_PLAYERS = [
+  ...PLAYERS,
+  { playerId: 'p-third', name: 'Third' },
+  { playerId: 'p-fourth', name: 'Fourth' },
+];
+
 export const HOST: ActionContext = { isHost: true };
 
 export const ids = (s: GameState, seat: SeatIndex, zone: Parameters<typeof zoneKey>[1]): readonly string[] =>
@@ -91,6 +98,14 @@ export interface Setup {
    * real games from full hands.
    */
   readonly autoPass?: boolean;
+  /**
+   * The table format. `modern` by default, which has no command zone — a commander test needs
+   * `edh` (two seats) or `pod` (up to four), because that is what puts the commander in the
+   * command zone and turns on the twenty-one-damage rule.
+   */
+  readonly format?: 'modern' | 'edh' | 'pod';
+  /** How many seats. Two by default; `pod` allows up to four. */
+  readonly seats?: number;
 }
 
 const DECKS: Readonly<Record<number, string>> = { 0: 'ember-rush', 1: 'verdant-guard' };
@@ -106,16 +121,22 @@ const DECKS: Readonly<Record<number, string>> = { 0: 'ember-rush', 1: 'verdant-g
  */
 export function arena(setup: Setup = {}): GameState {
   const first = setup.firstSeat ?? 0;
-  let s = createGame({ id: 'game-auto', format: 'modern', players: PLAYERS, seed: 20261023 });
+  const count = setup.seats ?? 2;
+  const seatList = Array.from({ length: count }, (_, i) => i as SeatIndex);
+  let s = createGame({
+    id: 'game-auto', format: setup.format ?? 'modern',
+    players: POD_PLAYERS.slice(0, count), seed: 20261023,
+  });
   const decks = { ...DECKS, ...setup.decks };
   s = applyAll(s, [
-    { type: 'deck:load', by: 0, seat: 0, deckId: decks[0]! },
-    { type: 'deck:load', by: 1, seat: 1, deckId: decks[1]! },
+    ...seatList.map((seat) => ({
+      type: 'deck:load' as const, by: seat, seat, deckId: decks[seat] ?? 'ember-rush',
+    })),
     { type: 'game:start', by: 0, firstSeat: first },
   ]);
 
-  // Clear both opening hands so only the named cards are held.
-  for (const seat of [0, 1] as SeatIndex[]) {
+  // Clear every opening hand so only the named cards are held.
+  for (const seat of seatList) {
     for (const id of [...ids(s, seat, 'hand')]) {
       s = apply(s, { type: 'card:move', by: seat, card: id, toZone: 'library', position: 'bottom' });
     }
@@ -140,8 +161,8 @@ export function arena(setup: Setup = {}): GameState {
 
   s = apply(s, { type: 'auto:start', by: 0, firstSeat: first, autoPass: setup.autoPass ?? false });
   // Opening hands are settled before turn one. Nothing here ever mulligans — a test board is built
-  // card by card — so both seats simply keep, which is what starts the game.
-  for (const seat of [0, 1] as SeatIndex[]) s = apply(s, { type: 'auto:keep', by: seat });
+  // card by card — so every seat simply keeps, which is what starts the game.
+  for (const seat of seatList) s = apply(s, { type: 'auto:keep', by: seat });
   return s;
 }
 
@@ -288,3 +309,13 @@ export function drain(s: GameState, limit = 16): GameState {
 /** The names on the stack, bottom first. */
 export const stackNames = (s: GameState): string[] =>
   [...s.stackOrder].map((id) => s.stackObjects[id]!.description);
+
+/**
+ * `STATE_MAX_BYTES` from the realtime contract, restated for the tests that measure against it.
+ *
+ * Restated rather than imported: the engine depends on nothing, least of all the transport, and a
+ * package dependency added for one number in a test would be the wrong trade. The derivation lives
+ * with the real constant in `packages/shared/src/realtime/events.ts` — change it there and these
+ * assertions are the ones that should fail next.
+ */
+export const WIRE_CAP = 128 * 1024;

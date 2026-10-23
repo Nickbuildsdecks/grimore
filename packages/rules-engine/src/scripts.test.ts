@@ -909,6 +909,153 @@ describe('the graveyard, which is a place cards come back from', () => {
   });
 });
 
+describe('the commander, which a Commander format is about', () => {
+  /** A seat in its main phase with every land tapped, at a table that has a command zone. */
+  const commanderTable = (
+    seat: SeatIndex, deck: string, lands: readonly string[], extra: readonly string[] = [], turn = 2,
+  ): GameState => {
+    let s = arena({
+      format: 'edh', decks: { [seat]: deck },
+      battlefield: { [seat]: [...lands, ...extra] }, turn, firstSeat: seat,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, seat, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (!/^(Mountain|Forest|Plains|Island|Swamp)$/.test(name)) continue;
+      s = apply(s, { type: 'auto:activate', by: seat, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  it('can be cast from the command zone at all, which it could not before', () => {
+    // `legalActions` only ever looked at the hand, so in a format whose entire point is the
+    // commander the engine never offered one. Krenko costs {2}{R}{R}.
+    const s = commanderTable(0, 'ember-rush', ['Mountain', 'Mountain', 'Mountain', 'Mountain']);
+    expect(ids(s, 0, 'command').length).toBe(1);
+    const offers = legalActions(s, 0).plays.filter((p) => p.name === 'Krenko, Mob Boss');
+    expect(offers).toHaveLength(1);
+    expect(offers[0]!.commanderTax).toBeUndefined();
+  });
+
+  it('costs {2} more each time it is cast from the command zone (CR 903.8)', () => {
+    // Twelve lands, all tapped by the helper, because the second cast has to be affordable with
+    // the tax on top of the four the first one spent.
+    let s = commanderTable(0, 'ember-rush', Array.from({ length: 12 }, () => 'Mountain'));
+    const krenko = ids(s, 0, 'command')[0]!;
+    expect(s.seats[0]!.commanderTax).toBe(0);
+
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: krenko }));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Krenko, Mob Boss');
+    // The tax goes up *after* the cast, so the first one is free of it.
+    expect(s.seats[0]!.commanderTax).toBe(2);
+
+    // Killed, so it is back in the command zone and castable again — at {2} more.
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Krenko, Mob Boss'), toZone: 'graveyard' });
+    expect(ids(s, 0, 'command')).toContain(krenko);
+    const again = legalActions(s, 0).plays.filter((p) => p.name === 'Krenko, Mob Boss');
+    expect(again).toHaveLength(1);
+    expect(again[0]!.commanderTax).toBe(2);
+    // The printed cost is unchanged: the tax is what the command zone adds, not a different card.
+    expect(again[0]!.manaCost).toBe('{2}{R}{R}');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: krenko }));
+    expect(s.seats[0]!.commanderTax).toBe(4);
+  });
+
+  it('is not offered when the tax has put it out of reach', () => {
+    // Four lands pays {2}{R}{R} exactly, so a {2} tax makes it unaffordable and the engine must
+    // stop offering it rather than offer a play it then refuses.
+    let s = commanderTable(0, 'ember-rush', ['Mountain', 'Mountain', 'Mountain', 'Mountain']);
+    const krenko = ids(s, 0, 'command')[0]!;
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, commanderTax: 2 } : seat)) };
+    expect(legalActions(s, 0).plays.filter((p) => p.name === 'Krenko, Mob Boss')).toHaveLength(0);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: krenko })).toContain('cannot pay');
+  });
+
+  it('goes back to the command zone instead of a graveyard, and so has not died (CR 903.9)', () => {
+    let s = commanderTable(1, 'rot-harvest', Array.from({ length: 6 }, (_, i) => (i % 2 ? 'Swamp' : 'Forest')));
+    const izoni = ids(s, 1, 'command')[0]!;
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: izoni }));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Izoni, Thousand-Eyed');
+    // Izoni's own entry trigger makes no tokens with an empty graveyard, so the stack is clear.
+    s = drain(s);
+
+    s = apply(s, { type: 'card:move', by: 1, card: izoni, toZone: 'graveyard' });
+    expect(ids(s, 1, 'command')).toContain(izoni);
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Izoni, Thousand-Eyed');
+    // It never reached a graveyard, so it did not die — nothing is queued to announce.
+    expect(s.died).toEqual([]);
+  });
+
+  it('accumulates commander damage from combat, and twenty-one eliminates (CR 903.10)', () => {
+    let s = arena({
+      format: 'edh', decks: { 0: 'ember-rush' },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const krenko = ids(s, 0, 'command')[0]!;
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: krenko }));
+    s = drain(s);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Krenko, Mob Boss');
+
+    // Krenko is a 3/3. Attacking unblocked logs three commander damage and three life.
+    s = nextTurn(s);
+    s = nextTurn(s);
+    s = advanceTo(s, 'declare-attackers');
+    const body = find(s, 0, 'battlefield', 'Krenko, Mob Boss');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: body, defender: 1 }] });
+    // The defender has no creature at all, so the engine declares the empty block for them and
+    // combat damage is dealt on the way into its step.
+    for (let i = 0; i < 8 && s.step !== 'postcombat-main'; i++) {
+      if (s.priority === null) break;
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+    }
+    // Keyed by the seat whose commander it is, which is what the tabletop action and the view
+    // have always used — see `dealDamage`.
+    expect(s.seats[1]!.commanderDamage['0']).toBe(3);
+    expect(life(s, 1)).toBe(37);
+
+    // Twenty-one is the threshold, and it eliminates on life that is nowhere near zero.
+    s = {
+      ...s,
+      seats: s.seats.map((seat) => (seat.index === 1
+        ? { ...seat, life: 40, commanderDamage: { 0: 20 } }
+        : seat)),
+    };
+    // Recorded by hand, on top of what the engine dealt — the two add up because they share a key.
+    s = apply(s, { type: 'commanderDamage:adjust', by: 0, seat: 1, fromSeat: 0, delta: 1 });
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.seats[1]!.eliminatedReason).toBe('commanderDamage');
+    expect(s.seats[1]!.life).toBe(40);
+  });
+
+  it('counts combat damage only, not a burn spell the commander happens to cast', () => {
+    // CR 903.10 is about combat damage. A single "source" option on `dealDamage` would have made
+    // every point from a commander count, which is a different and much faster format.
+    let s = arena({
+      format: 'edh', decks: { 0: 'ember-rush' }, hands: { 0: ['Lightning Bolt'] },
+      battlefield: { 0: ['Mountain'] }, turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }));
+    expect(life(s, 1)).toBe(37);
+    expect(s.seats[1]!.commanderDamage).toEqual({});
+  });
+
+  it('refuses to cast somebody else’s commander', () => {
+    const s = commanderTable(0, 'ember-rush', Array.from({ length: 8 }, () => 'Mountain'));
+    const theirs = ids(s, 1, 'command')[0]!;
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: theirs })).toContain('not your commander');
+  });
+});
+
 describe('triggers that watch the board rather than themselves', () => {
   it('Blood Artist drains for a creature dying anywhere, including itself', () => {
     let s = arena({

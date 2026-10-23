@@ -5,7 +5,23 @@ import { Id } from "../contracts/common.js";
 /** Payload caps, in bytes of UTF-8. Enforced by the socket gateway before parsing. */
 export const CHAT_MAX_BYTES = 500;
 export const ACTION_MAX_BYTES = 2 * 1024;
-export const STATE_MAX_BYTES = 64 * 1024;
+/**
+ * The largest redacted game state the gateway will broadcast.
+ *
+ * Derived rather than picked. The rules engine refuses to hold more than `MAX_INSTANCES` (600)
+ * cards on one table, and a packed card costs about a hundred bytes — so a table at the engine's
+ * own hard limit produces roughly 100KB of state once the log, the card definitions, the zone
+ * lists and a large combat are counted. 128KB is larger than that, which is the property a safety
+ * cap should have: **a legal game cannot reach it**, so what trips it is a bug rather than a
+ * Commander board.
+ *
+ * It was 64KB, set when the Play Realm was two players and a view peaked at 22KB. A four-player
+ * pod with 259 permanents measured 68KB, and that is an ordinary long game of Commander, not a
+ * pathological one — the cap was refusing to send a state the engine was right to build. This is
+ * our own check and nothing else: Socket.IO's `maxHttpBufferSize` governs what the server will
+ * *receive*, which is what `ACTION_MAX_BYTES` is for.
+ */
+export const STATE_MAX_BYTES = 128 * 1024;
 
 export const POD_NAME_MAX = 32;
 export const POD_MAX_SEATS = 4;

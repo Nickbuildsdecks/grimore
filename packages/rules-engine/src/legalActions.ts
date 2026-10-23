@@ -19,7 +19,7 @@ import {
 } from './automation.js';
 import { legalAttackers, legalBlockers, canBlock } from './combat.js';
 import { poolOf } from './effects.js';
-import { addMana, canPay, parseManaCost, type ManaPool, type ManaType } from './mana.js';
+import { addMana, canPay, parseManaCost, type ManaCost, type ManaPool, type ManaType } from './mana.js';
 import { scriptFor } from './scripts.js';
 import type { AbilityDef, CardScript, TargetSpec } from './scriptTypes.js';
 import { legalTargets } from './targeting.js';
@@ -33,6 +33,14 @@ export interface LegalPlay {
   readonly name: string;
   readonly description: string;
   readonly manaCost: string;
+  /**
+   * The commander tax on this cast, in generic mana, or absent when there is none.
+   *
+   * Separate from `manaCost` because the cost printed on the card has not changed — the tax is
+   * what the command zone adds (CR 903.8), and a table that showed `{3}{B}{G}` as the cost of a
+   * four-mana commander on its third cast would be lying about the card.
+   */
+  readonly commanderTax?: number;
   readonly abilityIndex?: number;
   /**
    * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
@@ -156,8 +164,17 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
   const out: LegalPlay[] = [];
   const sorcerySpeed = atSorcerySpeed(state, seat);
   const landsPlayed = state.landsPlayed[String(seat)] ?? 0;
+  const tax = state.seats[seat]?.commanderTax ?? 0;
 
-  for (const id of listAt(state, zoneKey(seat, 'hand'))) {
+  // A commander is cast from the command zone, which is why it is a second list rather than part
+  // of the hand. Without this the engine never offered a commander at all — in a format whose
+  // whole point is the commander.
+  const castable = [
+    ...listAt(state, zoneKey(seat, 'hand')).map((id) => ({ id, fromCommand: false })),
+    ...listAt(state, zoneKey(seat, 'command')).map((id) => ({ id, fromCommand: true })),
+  ];
+
+  for (const { id, fromCommand } of castable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     const def = state.cardDefs[inst.defKey];
@@ -165,6 +182,9 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
     const script = scriptFor(def?.name);
 
     if (ch.isLand) {
+      // A land commander would be *played*, not cast, and nothing in the pool is one; refusing to
+      // offer it is better than offering a land drop out of the command zone.
+      if (fromCommand) continue;
       if (sorcerySpeed && landsPlayed < 1) {
         out.push({
           kind: 'land', card: id, name: ch.name, description: `Play ${ch.name}`,
@@ -177,9 +197,15 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
     const instantSpeed = ch.typeLine.types.some((t) => t.toLowerCase() === 'instant') || ch.keywords.has('flash');
     if (!instantSpeed && !sorcerySpeed) continue;
 
-    const cost = parseManaCost(def?.manaCost);
-    if (cost.unsupported !== undefined) continue;
+    const printed = parseManaCost(def?.manaCost);
+    if (printed.unsupported !== undefined) continue;
+    // The tax is generic mana on top of the printed cost (CR 903.8), and it only applies to a
+    // cast from the command zone.
+    const cost: ManaCost = fromCommand && tax > 0
+      ? { ...printed, generic: printed.generic + tax }
+      : printed;
     if (!canPay(potential, cost)) continue;
+    const taxOn = fromCommand && tax > 0 ? { commanderTax: tax } : {};
 
     // A modal spell is offered once per legal combination of modes, and a combination whose
     // targets cannot be filled is not offered at all — so "destroy target creature; or draw two
@@ -194,7 +220,7 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
         out.push({
           kind: 'cast', card: id, name: ch.name,
           description: `Cast ${ch.name} — ${chosen.map((m) => m.description).join('; and ')}`,
-          manaCost: def?.manaCost ?? '', modes, targetSpecs: specs, candidates,
+          manaCost: def?.manaCost ?? '', ...taxOn, modes, targetSpecs: specs, candidates,
           isManaAbility: false, sacrificeOptions: [],
         });
       }
@@ -206,8 +232,9 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
     if (!ok) continue;
 
     out.push({
-      kind: 'cast', card: id, name: ch.name, description: `Cast ${ch.name}`,
-      manaCost: def?.manaCost ?? '', targetSpecs: specs, candidates, isManaAbility: false,
+      kind: 'cast', card: id, name: ch.name,
+      description: fromCommand && tax > 0 ? `Cast ${ch.name} (+{${tax}} tax)` : `Cast ${ch.name}`,
+      manaCost: def?.manaCost ?? '', ...taxOn, targetSpecs: specs, candidates, isManaAbility: false,
       sacrificeOptions: [],
     });
   }

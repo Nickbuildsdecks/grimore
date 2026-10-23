@@ -18,6 +18,7 @@ import {
   type GameState,
   type SeatIndex,
 } from './index.js';
+import { WIRE_CAP } from './testkit.js';
 
 const TWO = [
   { playerId: 'p-nick', name: 'Nick' },
@@ -405,8 +406,8 @@ describe('redaction', () => {
   });
 
   it('keeps a view comfortably inside the realtime payload cap', () => {
-    // STATE_MAX_BYTES is 64KB. The full state is far larger than a view, which is the other reason
-    // redaction matters: a board mid-game must still fit on the wire.
+    // The full state is far larger than a view, which is the other reason redaction matters: a
+    // board mid-game must still fit inside STATE_MAX_BYTES to reach the other player at all.
     let s = applyAction(loaded('edh'), { type: 'game:start', by: 0 });
     for (const seat of [0, 1] as const) {
       for (let i = 0; i < 7; i++) {
@@ -416,7 +417,7 @@ describe('redaction', () => {
       }
     }
     const bytes = new TextEncoder().encode(JSON.stringify(viewFor(s, 0))).length;
-    expect(bytes).toBeLessThan(64 * 1024);
+    expect(bytes).toBeLessThan(WIRE_CAP);
   });
 });
 
@@ -549,9 +550,10 @@ describe('a complete two-player game', () => {
       }
     }
     // Redaction is not only a privacy measure — it is what makes a pod fit on the wire at all.
-    // Play it out and the full state is well past STATE_MAX_BYTES while a single seat's view is a
-    // fraction of it. Broadcasting the raw state, as the socket layer used to, could not have
-    // carried a four-player Commander game however private anyone was willing to be.
+    // Play it out and the raw state dwarfs any one seat's view. Stated as a ratio between the two
+    // rather than against the byte cap, because the cap has moved once already and the claim being
+    // made here is about redaction, not about this month's limit: broadcasting the raw state, as
+    // the socket layer used to, sends several times what a seat is entitled to see.
     let played = s;
     for (let turn = 0; turn < 40; turn++) {
       const seat = (turn % 4) as SeatIndex;
@@ -568,9 +570,10 @@ describe('a complete two-player game', () => {
       played = applyAction(played, { type: 'turn:pass', by: seat });
     }
     const size = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length;
-    const CAP = 64 * 1024;
-    expect(size(played)).toBeGreaterThan(CAP);
-    for (const seat of [0, 1, 2, 3] as const) expect(size(viewFor(played, seat))).toBeLessThan(CAP);
+    const widest = Math.max(...[0, 1, 2, 3].map((seat) => size(viewFor(played, seat as SeatIndex))));
+    expect(size(played)).toBeGreaterThan(widest * 2);
+    // And the view a seat is actually sent still fits the realtime contract.
+    expect(widest).toBeLessThan(WIRE_CAP);
 
     // The turn passes round all four, and an eliminated seat is skipped.
     expect(s.activeSeat).toBe(0);
@@ -619,11 +622,11 @@ describe('a complete two-player game', () => {
 
     const bytes = (seat: SeatIndex): number =>
       new TextEncoder().encode(JSON.stringify(viewFor(s, seat))).length;
-    // 64KB is STATE_MAX_BYTES in the realtime contract; a view that exceeds it cannot be sent.
-    expect(bytes(0)).toBeLessThan(64 * 1024);
-    expect(bytes(1)).toBeLessThan(64 * 1024);
+    // WIRE_CAP is STATE_MAX_BYTES in the realtime contract; a view over it cannot be sent.
+    expect(bytes(0)).toBeLessThan(WIRE_CAP);
+    expect(bytes(1)).toBeLessThan(WIRE_CAP);
     // And a spectator, who sees both boards and neither hand.
-    expect(new TextEncoder().encode(JSON.stringify(viewFor(s, null))).length).toBeLessThan(64 * 1024);
+    expect(new TextEncoder().encode(JSON.stringify(viewFor(s, null))).length).toBeLessThan(WIRE_CAP);
 
     // Redaction still holds this far in, which is the thing most likely to quietly regress.
     const view = viewFor(s, 0);

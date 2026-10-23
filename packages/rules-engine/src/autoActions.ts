@@ -21,7 +21,7 @@ import {
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
 } from './automation.js';
 import { addToPool, poolOf } from './effects.js';
-import { assertSeatIndex, seatName } from './internal.js';
+import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
 import type { CardScript, TargetSpec } from './scriptTypes.js';
@@ -50,8 +50,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   requireAutomated(state);
   requirePriority(state, action.by);
   const inst = requireInstance(state, action.card);
-  if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
+  // A commander is cast from the command zone (CR 903.8); everything else from hand.
+  const fromCommand = inst.zone === 'command' && inst.isCommander;
+  if (!fromCommand && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
+  }
+  if (fromCommand && inst.zoneSeat !== action.by) {
+    throw new EngineError('FORBIDDEN', 'that is not your commander');
   }
   const def = state.cardDefs[inst.defKey];
   const script = scriptFor(def?.name);
@@ -97,8 +102,14 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const check = checkTargets(state, specs, chosen, action.by);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
-  const paid = payFrom(state, action.by, def?.manaCost, action.x ?? 0);
+  // The tax is generic mana on top of the printed cost, and it only applies to a cast from the
+  // command zone. It goes up by two *after* the cast, so the first one is free of it.
+  const tax = fromCommand ? (state.seats[action.by]?.commanderTax ?? 0) : 0;
+  const paid = payFrom(state, action.by, def?.manaCost, action.x ?? 0, tax);
   let next = paid.state;
+  if (fromCommand) {
+    next = replaceSeat(next, action.by, { commanderTax: tax + 2 });
+  }
   // The card physically moves to the stack, and an object describes how it was cast.
   next = relocate(next, requireInstance(next, inst.id), 'stack', action.by, 'bottom');
   // The modes are named in the stack description, because both players can see what was chosen
@@ -131,7 +142,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The lands tapped for it are named, because they turn sideways on screen and a player who
     // did not tap them should be able to see why.
     message: paid.tapped.length === 0
-      ? `${seatName(state, action.by)} casts ${characteristics.name}`
+      ? `${seatName(state, action.by)} casts ${characteristics.name}${tax > 0 ? ` (+{${tax}} tax)` : ''}`
       : `${seatName(state, action.by)} taps ${paid.tapped.length} for ${characteristics.name} and casts it`,
     data: { card: inst.id, name: characteristics.name, tapped: [...paid.tapped] },
   };

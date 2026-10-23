@@ -1022,3 +1022,63 @@ object doing one thing, which is why neither has been wrong.
 never calls `settle`, so a death or arrival it causes is recorded and waits for the next engine
 action to announce it. A test that makes a token by hand and then looks at the stack sees an empty
 one. `testkit.drain` exists for that and says so.
+
+## D35 — A four-player Commander pod, and the three rules that had never had a game to be wrong in
+
+The engine and the server have supported four seats since the first checkpoint, and D31 recorded
+pod *assertions* — per-defender declarations, a seat blocking only what attacks it. Nobody had
+played one. Sitting four seats down found that the headline format of a Commander product could
+not cast a commander.
+
+**`legalActions` only ever scanned the hand.** The command zone is a zone a spell is cast *from*
+(CR 903.8), and the function that decides what a seat may do had one list: `zoneKey(seat, 'hand')`.
+So in Arena mode the commander sat in the command zone for the whole game, uncastable, in a
+product whose first sentence is Commander. It is two lines — scan both zones, carry a flag — and
+that is the point: it was never hard, it was never *reached*, because every automated game ever
+played here had been 1v1 with no command zone.
+
+**Decided: commander tax is extra generic on the cost, not a rewritten cost string.** `payFrom`
+takes `extraGeneric`, so {2} per previous cast is added to whatever the card costs rather than the
+cost text being reassembled — a rewritten string has to be re-parsed, and a hybrid or phyrexian
+pip would not survive the round trip.
+
+**Decided: commander damage is keyed by the commander's owner seat.** This is a correction to what
+I first wrote: I keyed combat damage by the *instance* id, which reads better — several commanders,
+several counters — and is incompatible with `commanderDamage:adjust`, the tabletop action that has
+keyed by `fromSeat` since the manual table shipped. Two key spaces in one record never add up to
+21, so a game played half by hand and half by the engine would have had a player at 20 damage from
+each of two keys and alive. The rules talk about damage from "a commander" by player (CR 903.10),
+so the seat is also the right key.
+
+**Decided: a commander that would die goes to the command zone automatically, in `relocate`.** CR
+903.9 gives its owner the *choice*; the engine takes it for them. Written down as a trade rather
+than hidden: the alternative is stopping every single death to ask a question whose answer is "the
+command zone" essentially always, and `relocate` is already the one choke point every zone change
+goes through, which is why the rule costs four lines instead of a patch per call site (D28, D34).
+
+**A bug only a pod could have: an eliminated seat could hold priority** (CR 800.4). A two-player
+game cannot show it — when one player loses, the game ends in the same breath, so the state never
+survives long enough for the dead seat to be asked for anything. With four seats it survives for
+most of the game, and the table of a conceded player was offered a Pass the engine would refuse.
+The same shape as the `pendingDecision` priority bug in D32: *priority naming a seat that cannot
+act is a deadlock, however it got there.*
+
+**Decided: the realtime payload cap is derived, not measured.** `STATE_MAX_BYTES` was 64KB, set
+when the Play Realm was two players and a redacted view peaked at 22KB. A four-player pod with 259
+permanents measured **68.5KB** — an ordinary long game of Commander, not a pathological one — so
+the cap was refusing to send a state the engine was right to build. Two packing wastes came out
+first, because a cap raised over avoidable bytes is a cap raised twice: the card id was travelling
+as a field *and* as its map key, and `keywords: []` was travelling on every card that has none.
+That is 68.5KB → 60.8KB, which is still only 5% of headroom, so the cap itself is now derived from
+the engine's own hard limit — `MAX_INSTANCES` (600) × ~100 bytes a packed card ≈ 100KB worst case,
+and 128KB is above it. **A legal game cannot reach the cap**, which is the property a safety limit
+should have: what trips it is a bug, not a board.
+
+**And a test that was asserting the cap when it meant something else.** "The full state is well
+past `STATE_MAX_BYTES` while a view is a fraction of it" broke the moment the cap moved, because
+the claim it was making is about *redaction* and it had been written against this month's byte
+limit. It now asserts the ratio it always meant — the raw state is more than twice the widest
+view — and the cap appears once, where a view is checked against the contract. The engine's tests
+state the cap in one place (`testkit.WIRE_CAP`) with the derivation named where the real constant
+lives; the engine does not import it, because the engine depends on nothing and least of all on
+the transport.

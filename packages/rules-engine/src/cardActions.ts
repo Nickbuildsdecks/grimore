@@ -101,6 +101,28 @@ export function relocate(
   toSeat: SeatIndex,
   position: 'top' | 'bottom',
 ): GameState {
+  /**
+   * A commander on its way to a graveyard or to exile goes to the command zone instead (CR 903.9).
+   *
+   * Done here because this is the one place a card changes zone, and because it is a rule of the
+   * *format* rather than of a card — the same kind of thing as a token ceasing to exist below. Two
+   * consequences are deliberate and worth naming: a commander redirected this way never reaches a
+   * graveyard, so it has not **died** and a death trigger does not see it (which is correct), and
+   * it becomes castable again with its tax raised.
+   *
+   * The real rule says its owner *may* do this. Taking it automatically is the simplification,
+   * because the alternative is a prompt on every commander death and the engine has no phase to
+   * ask in outside a resolution. It is wrong only for a deck that wants its commander in the
+   * graveyard, and losing a commander to a forgotten prompt is the worse failure. Only on an
+   * automated table: a tabletop move means what the player said.
+   */
+  if (
+    state.automated && inst.isCommander && inst.zone === 'battlefield'
+    && (toZone === 'graveyard' || toZone === 'exile')
+  ) {
+    toZone = 'command';
+    toSeat = inst.owner;
+  }
   const fromKey = zoneKey(inst.zoneSeat, inst.zone);
   const toKey = zoneKey(toSeat, toZone);
   const from = listAt(state, fromKey).filter((id) => id !== inst.id);

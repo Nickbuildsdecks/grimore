@@ -652,9 +652,12 @@ function tapSources(
  * play it had just offered.
  */
 function payFrom(
-  state: GameState, seat: SeatIndex, costText: string | undefined, x: number,
+  state: GameState, seat: SeatIndex, costText: string | undefined, x: number, extraGeneric = 0,
 ): { state: GameState; tapped: readonly string[] } {
-  const cost = parseManaCost(costText);
+  const printed = parseManaCost(costText);
+  // `extraGeneric` is the commander tax (CR 903.8): generic mana on top of the printed cost, which
+  // the card itself has not changed.
+  const cost = extraGeneric > 0 ? { ...printed, generic: printed.generic + extraGeneric } : printed;
   let next = state;
   let tapped: readonly string[] = [];
   if (!canPay(poolOf(next, seat), cost, x)) {
@@ -666,7 +669,10 @@ function payFrom(
     }
   }
   const result = payCost(poolOf(next, seat), cost, x);
-  if (!result.paid) throw new EngineError('RULE_NOT_APPLICABLE', `cannot pay ${costText ?? '{0}'}: ${result.shortfall}`);
+  if (!result.paid) {
+    const shown = extraGeneric > 0 ? `${costText ?? '{0}'} +{${extraGeneric}}` : costText ?? '{0}';
+    throw new EngineError('RULE_NOT_APPLICABLE', `cannot pay ${shown}: ${result.shortfall}`);
+  }
   return { state: setPool(next, seat, result.pool as ManaPool), tapped };
 }
 

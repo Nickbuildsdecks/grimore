@@ -28,6 +28,10 @@ there the computer plays Magic with you:
 - Creatures die when they should, auras fall off when their host leaves, life totals move on their
   own, and the game ends when somebody hits zero.
 - A card nobody has scripted still works as cardboard, and **Move by hand** is one tap away.
+- **Four seats, with commanders.** Pick Commander in the lobby and the table deals four 40-life
+  seats, each with its commander in the command zone: cast it for its cost plus {2} a time, it goes
+  back there when it dies, 21 damage from one commander kills, and a conceded seat is skipped by
+  everything from turn order to who is asked to block.
 
 A one-player table is a short step from here: `packages/rules-engine/src/bot.ts` already plays.
 
@@ -120,6 +124,9 @@ found by executing the code, not by reading it.
 | `auto:start` gave the first turn to the wrong seat | Entering from the cleanup step is what runs the start-of-turn actions, and that roll advances the active seat — so starting *on* `firstSeat` skipped it. |
 | A "target player" spell accepted a creature | None of the checks after the player branch look at the spec's kind, so a hand-built action went straight past them. The UI never offered it; an action sent directly would have been accepted. |
 | An Aura outlived the creature it enchanted | `relocate` detaches an Aura when its host leaves the battlefield, so by the time state-based actions ran the Aura was attached to **nothing** rather than to something illegal — and only the second case was checked. CR 704.5m covers both; now so does the engine. |
+| **The engine could never cast a commander** | `legalActions` had one list of castable cards: the hand. The command zone is a zone a spell is cast *from* (CR 903.8), so in a Commander game the commander sat there uncastable for the whole game — the headline format of the product, missing from the function that decides what a seat may do. Never hard; never reached, because every automated game before this was 1v1 with no command zone. |
+| **Commander damage was never recorded by combat** | `dealDamage` knew nothing about where the damage came from, so the 21-damage rule (CR 903.10) could only ever fire from the tabletop's **cmd** button. The automated game had the rule and no way to feed it. |
+| **An eliminated seat could hold priority** (CR 800.4) | Impossible to see in a two-player game — when one player loses the game ends in the same breath. With four seats the state outlives the elimination, and a conceded player's table was offered a Pass the engine refused. |
 | `game:reset` left an unplayable table | Reset kept `automated: true` but cleared the step and priority, and `auto:start` refuses to run twice. Nobody could do anything. Reset now hands the table back to manual. |
 
 ### Found by playing it in two real browsers
@@ -140,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**354 tests in the rules engine, 95 in the web app, 944 across the workspace.**
+**365 tests in the rules engine, 95 in the web app, 955 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -148,8 +155,9 @@ The ones that carry the most weight:
   `legalActions` offered them. Twenty different shuffles, both seats going first, all reaching a
   winner — 12 to 27 turns and 267 to 600 actions each, every one decided on life totals. A game that
   finishes proves three things no single assertion covers: the engine never offers a play it then
-  refuses, never reaches a state where nobody can act, and keeps every seat's view inside the 64KB
-  socket budget for the whole game.
+  refuses, never reaches a state where nobody can act, and keeps every seat's view inside the
+  socket budget for the whole game. Four-seat pods play out the same way, which is where turn order
+  has to skip eliminated seats and several defenders can owe a block at once.
 - **`scripts/e2e-arena.mjs`** does the same through two real browsers, taking whatever the UI offers
   rather than a fixed sequence, so it plays whatever the shuffle deals. Thirty-two checks, including
   that the opponent's hand is still unreadable with the engine running, that the engine never
@@ -165,9 +173,10 @@ The ones that carry the most weight:
 - **`scripts.test.ts`** plays every scripted card the way a player would, and checks that no card in
   either starter deck is left unscripted unless it is a vanilla creature that needs no script.
 
-Measured, not assumed: the raw `GameState` reaches 57.7KB in a long game against a 64KB cap, while a
-redacted view peaks at 22.3KB — of which the whole automation block is 2.6KB. Redaction is still
-what keeps the game on the wire.
+Measured, not assumed: the raw `GameState` reaches 57.7KB in a long two-player game while a redacted
+view peaks at 22.3KB — of which the whole automation block is 2.6KB. Redaction is still what keeps
+the game on the wire, and a four-player pod is where that stops being a nicety: 98KB of state
+against a 36KB view.
 
 **The number that had no headroom was a library search, and it has headroom now.** Ordinary play
 peaks at 18.5KB; a view with a library open reached **45.8KB** inlined, because a zone that normally
@@ -178,6 +187,15 @@ per copy and leaves out the fields that are false on almost every card: **25.3KB
 during a search**, so the search is no longer even the peak. Packing is a transport concern and
 nothing else — `viewFor` is unchanged, the client unpacks once in `lib/table.ts`, and
 `unpackView(packView(v))` is asserted equal to `v` for every state of a whole game.
+
+**And the cap it is measured against is now derived rather than observed.** A four-player pod with
+259 permanents packed to 68.5KB — an ordinary long game of Commander — against a 64KB cap set when
+the Play Realm was two players. Two avoidable wastes came out first (the card id travelled as a
+field *and* as its map key; `keywords: []` travelled on every card without any), taking it to
+60.8KB. Then the cap itself: `MAX_INSTANCES` is 600 and a packed card costs about a hundred bytes,
+so a table at the engine's own hard limit is roughly 100KB and **128KB is a limit a legal game
+cannot reach** — which is the property a safety cap should have, because then what trips it is a
+bug rather than a board.
 
 ---
 
@@ -204,7 +222,7 @@ nothing else — `viewFor` is unchanged, the client unpacks once in `lib/table.t
 
 ## Added after the first checkpoint
 
-Eleven things, in the order they mattered.
+Twelve things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -368,6 +386,27 @@ battlefield by Zombify arrived silently and a token triggered nothing at all. Bo
 where the card actually moves and announced in one place — `settle` drains a list of deaths and a
 list of arrivals, in a loop, because a creature dying can leave a token behind.
 
+**A four-player Commander pod, played rather than asserted.** Four seats have been supported since
+the first checkpoint and nobody had sat at one, which is how the product's headline format turned
+out to be the one thing the engine could not do: `legalActions` scanned the hand and nothing else,
+so the commander sat in the command zone, uncastable, for the whole game.
+
+What a pod needed was four rules, each small and each in exactly one place. The commander is cast
+from the command zone, for its cost plus {2} for every previous cast — carried as extra generic
+rather than a rewritten cost string, because a rewritten string has to be re-parsed and a hybrid
+pip would not survive the trip. It returns to the command zone instead of dying (CR 903.9), in
+`relocate`, which is the one choke point every zone change goes through. Combat damage records who
+dealt it so 21 from one commander ends a game (CR 903.10) — keyed by the commander's *owner seat*,
+not its instance, because the tabletop's **cmd** button has keyed by seat since the manual table
+shipped and two key spaces in one record never add up to 21. And an eliminated seat is skipped by
+everything, including the thing nothing had ever checked: holding priority.
+
+The bot learned to spread its attacks across the table rather than hammering one seat, because a
+pod where everybody attacks the same player is not a pod. Measured over ten games: all ten finish,
+46–50 commander casts, tax reaching {6}–{8}, 19–26 returns to the command zone, commander damage
+to 22 — and attacks in all twelve directions, which is the assertion that says a four-seat game is
+being played rather than three sequential duels.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the 63 cards currently using
@@ -375,15 +414,16 @@ list of arrivals, in a loop, because a creature dying can leave a token behind.
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. The
    `becomes-tapped` trigger and the `all-creatures` static scope are still unused: both exist,
    and the clean cards for them need something else the engine lacks.
-2. A four-player Commander pod, played end to end. The engine and the server both support up to
-   four seats, and nobody has sat at one: declarations are per defender and a seat can only block
-   what attacks it, but that is an assertion rather than a game anybody has played.
-3. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
+2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
    `deck:load` already resolves any deck handed to it, but a real list needs card data — type
    lines, mana costs, oracle text — and the `cards` table has never been populated while this
    environment cannot reach Scryfall. A deck of bare names has no type line, so the engine cannot
    tell a land from a spell and Arena mode would be unusable; the tabletop would be fine. Worth
    building where the data exists, not here.
-4. A stronger opponent. The current one plays a real game but does not plan one. It now answers
+3. A stronger opponent. The current one plays a real game but does not plan one. It now answers
    mid-resolution questions in the direction that helps it and prefers taking more of a modal
    spell, which is judgement rather than search — a search needs a position evaluator.
+4. A pod driven through four real browsers. The engine plays pods and the server seats four, but
+   every browser suite here opens two contexts, so the four-seat *interface* — whose turn it is
+   with three opponents on screen, who is being asked to block, a phone showing three other
+   boards — has been reasoned about rather than looked at.

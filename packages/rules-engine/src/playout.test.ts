@@ -13,7 +13,21 @@ import {
   viewFor,
   type Action, type GameState, type SeatIndex,
 } from './index.js';
-import { PLAYERS, HOST } from './testkit.js';
+import { PLAYERS, POD_PLAYERS, HOST, WIRE_CAP } from './testkit.js';
+
+/** A four-seat Commander pod, every seat on a different deck, handed to the rules engine. */
+function pod(seed: number, firstSeat: SeatIndex = 0): GameState {
+  const decks = ['ember-rush', 'rot-harvest', 'tidal-mind', 'verdant-guard'];
+  let s = createGame({ id: `pod-${seed}`, format: 'pod', players: POD_PLAYERS, seed });
+  for (const action of [
+    ...decks.map((deckId, seat) => ({ type: 'deck:load' as const, by: seat, seat, deckId })),
+    { type: 'game:start', by: 0, firstSeat },
+    { type: 'auto:start', by: 0, firstSeat },
+  ] as Action[]) {
+    s = applyAction(s, action, HOST);
+  }
+  return s;
+}
 
 /** A full table with two starter decks shuffled on `seed`, handed to the rules engine. */
 function table(
@@ -373,11 +387,11 @@ describe('a whole automated game', () => {
       expect(s.finished).toBe(true);
     }
     expect(worst).toBeGreaterThan(0);
-    expect(worst).toBeLessThan(64 * 1024);
+    expect(worst).toBeLessThan(WIRE_CAP);
     // Measured, not assumed: without this the claim above is about a game in which no library was
     // ever opened, which is the one case that matters.
     expect(searching).toBeGreaterThan(0);
-    expect(searching).toBeLessThan(64 * 1024);
+    expect(searching).toBeLessThan(WIRE_CAP);
   });
 
   it('never gives priority to an eliminated seat', () => {
@@ -426,6 +440,109 @@ describe('a whole automated game', () => {
     expect(a.turns).toBe(b.turns);
     expect(a.actions).toBe(b.actions);
     expect(a.state.log.length).toBe(b.state.log.length);
+  });
+});
+
+describe('a four-player Commander pod', () => {
+  it('plays four seats down to one survivor', () => {
+    // The format this project is built around, and nobody had sat at one: four seats, forty life,
+    // a command zone, and a turn order that has to skip the seats that are out.
+    for (let seed = 1; seed <= 6; seed++) {
+      const result = playOut(pod(seed * 977, (seed % 4) as SeatIndex), 20000);
+      expect(result.state.finished).toBe(true);
+      expect(result.state.winnerSeat).not.toBeNull();
+      // Three out, one standing — not two winners and not a draw.
+      expect(result.state.seats.filter((s) => s.eliminated).length).toBe(3);
+      expect(result.turns).toBeGreaterThan(5);
+      expect(result.turns).toBeLessThan(200);
+    }
+  });
+
+  it('casts commanders, taxes them, and tracks the damage they deal', () => {
+    // Every one of these was impossible a commit ago: `legalActions` only looked at the hand, so
+    // the engine never offered a commander at all, the tax was a number only a human could move,
+    // and combat never recorded commander damage. In a Commander-first product.
+    let casts = 0;
+    let maxTax = 0;
+    let maxCommanderDamage = 0;
+    let returnedToCommandZone = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      let s = pod(seed * 1409, (seed % 4) as SeatIndex);
+      for (let i = 0; i < 20000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const previous = s;
+        const action = botAction(s, seat);
+        if (action === null) break;
+        s = applyAction(s, action, HOST);
+        if (s.stateVersion === previous.stateVersion) break;
+        if (action.type === 'auto:cast' && previous.instances[action.card]?.zone === 'command') casts += 1;
+        for (const [id, inst] of Object.entries(s.instances)) {
+          if (!inst.isCommander) continue;
+          if (inst.zone === 'command' && previous.instances[id]?.zone === 'battlefield') {
+            returnedToCommandZone += 1;
+          }
+        }
+        for (const x of s.seats) {
+          maxTax = Math.max(maxTax, x.commanderTax);
+          for (const d of Object.values(x.commanderDamage)) maxCommanderDamage = Math.max(maxCommanderDamage, d);
+        }
+      }
+      expect(s.finished).toBe(true);
+    }
+    expect(casts).toBeGreaterThan(0);
+    // Cast more than once, which only happens if it came back and the tax went up.
+    expect(maxTax).toBeGreaterThanOrEqual(4);
+    expect(returnedToCommandZone).toBeGreaterThan(0);
+    // Commander damage actually accrues in a real game, rather than only on a built board.
+    expect(maxCommanderDamage).toBeGreaterThan(0);
+  });
+
+  it('keeps a four-seat view inside the realtime payload budget', () => {
+    // Four seats is three opponents' boards and graveyards, which is the largest a view gets.
+    let worst = 0;
+    let s = pod(31337);
+    for (let i = 0; i < 20000 && !s.finished; i++) {
+      const seat = seatToAct(s);
+      if (seat === null) break;
+      const before = s.stateVersion;
+      s = stepOnce(s, seat);
+      if (s.stateVersion === before) break;
+      for (const viewer of [0, 1, 2, 3] as SeatIndex[]) {
+        const view = viewFor(s, viewer);
+        const packed = packView(view);
+        expect(unpackView(packed)).toEqual(view);
+        worst = Math.max(worst, JSON.stringify(packed).length);
+      }
+    }
+    expect(s.finished).toBe(true);
+    expect(worst).toBeGreaterThan(0);
+    expect(worst).toBeLessThan(WIRE_CAP);
+  });
+
+  it('never offers a play it then refuses, with four seats in the game', () => {
+    // The same claim the two-player games make, re-made where turn order has to skip eliminated
+    // seats and several defenders can owe a block at once.
+    let s = pod(8675309, 2);
+    for (let i = 0; i < 20000 && !s.finished; i++) {
+      const seat = seatToAct(s);
+      if (seat === null) break;
+      const action = botAction(s, seat);
+      if (action === null) break;
+      const before = s.stateVersion;
+      let threw: string | null = null;
+      try {
+        s = applyAction(s, action, HOST);
+      } catch (err) {
+        threw = err instanceof Error ? err.message : String(err);
+      }
+      expect(threw).toBeNull();
+      if (s.stateVersion === before) break;
+      // And an eliminated seat is never given priority or asked for anything.
+      const next = seatToAct(s);
+      if (next !== null) expect(s.seats[next]!.eliminated).toBe(false);
+    }
+    expect(s.finished).toBe(true);
   });
 });
 
