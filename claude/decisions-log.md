@@ -729,3 +729,55 @@ through `ActionContext.decks`.
 **Not decided here:** whether the legacy sandbox routes get deleted. They should, once
 `public/app.js` stops calling them, but that is a legacy-client change and D11's exposure note still
 stands until then.
+
+---
+
+## D28 — The rules engine arrives beside the tabletop, not instead of it. D27 stands
+
+**D27 chose** a shared digital tabletop over an Arena-style engine, because a rules engine has to be
+written card by card and would work for a few dozen cards out of thirty thousand. It also said the
+action vocabulary was chosen "so per-card automation can be layered on top later without changing
+the state model". Nick then asked for exactly that: *"an mtg arena style engine with scripts for
+each card, automating game functions."* This is that layer. D27 is not superseded — its reasoning is
+why the tabletop is still underneath, and still reachable.
+
+**Decided: one `GameState`, two modes.** A table sets `automated` and the engine owns the turn; a
+table that does not is the tabletop exactly as it was, down to the last action. No tabletop action
+changed, and the manual moves stay reachable *inside* Arena mode under "Move by hand". That is the
+answer to D27's objection rather than a retreat from it: the engine handles the cards it knows, and
+a card nobody has scripted is still a card you can pick up and move. A game that stops dead because
+one card does something the engine cannot express would be worse than the tabletop it replaced.
+
+**Decided: the client works out no rules.** `viewFor` carries an `automation` block including that
+seat's own `legalActions`, and every move the table offers comes from it — every castable card,
+every legal target, every creature that may block which attacker. A UI that decided any of that for
+itself would be a second, worse copy of the engine, and the two would disagree the moment either
+changed. This is not theoretical: the one deadlock found in a real game was the table offering a
+block the engine refused, and the fix was to stop the table having an opinion.
+
+**Decided: affordability is judged against mana you could make, and the engine taps for it.** The
+two halves are load-bearing together. Offering spells against *potential* mana is right — nobody
+taps five lands and then decides what to cast — but without auto-tapping the engine refuses plays it
+has just offered, which in the browser meant no spell was ever cast, so no creature arrived, so
+there was no combat and no damage: a whole half of the game missing from one absent function. The
+reverse pairing fails too: auto-tapping without the potential-mana basis makes a castable spell look
+unaffordable. Floating mana is spent before anything is tapped, so a player who tapped particular
+lands on purpose gets what they intended.
+
+**Decided: nothing dies where it dies.** Damage is marked; lethal damage is noticed by state-based
+actions after every action (CR 704). That is the rule, and it is also the thing that makes "pump it
+in response to the bolt" work with no special case anywhere. The same choice is why triggers are
+raised by the engine rather than announced by scripts: `settle` detects the moments by comparing
+state before and after, so a script cannot forget to announce itself because it never does.
+
+**Decided: a card that needs a decision during resolution is left unscripted, not approximated.**
+Searching a library, "choose one", an opponent discarding. The engine has no way to interrupt a
+resolution and ask, so those cards resolve by hand and the log records that they were not automated.
+A tutor that silently picks for you is worse than one you resolve yourself.
+
+**Decided: unparseable costs are refused, not guessed.** `{R/G}` read as generic would let a player
+cast a spell they cannot afford. No deck in the pool uses hybrid or phyrexian mana; when one does,
+the honest failure is "this cost is not automated yet".
+
+**Not decided here:** whether a one-player table ships. `bot.ts` already plays a full game and
+exists in `src/` rather than a test file for that reason, but nobody has asked for it yet.
