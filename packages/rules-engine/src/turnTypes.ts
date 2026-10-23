@@ -195,6 +195,8 @@ export interface AutoCastAction {
 export interface AutoActivateAction {
   readonly type: 'auto:activate'; readonly by: SeatIndex; readonly card: string;
   readonly abilityIndex: number; readonly targets?: readonly Target[];
+  /** The creature sacrificed to pay for it, when the ability's cost asks for one. */
+  readonly sacrifice?: string;
 }
 export interface AutoPassAction { readonly type: 'auto:pass'; readonly by: SeatIndex }
 export interface AutoAttackAction {

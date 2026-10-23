@@ -74,7 +74,7 @@ async function readNumber(page, testId) {
 
 /** Whether the table is asking this player for anything. */
 async function myMove(page) {
-  for (const id of ['mulligan-prompt', 'bottom-prompt', 'choose-prompt', 'target-prompt', 'attack-prompt', 'block-prompt', 'discard-prompt', 'primary-move']) {
+  for (const id of ['mulligan-prompt', 'bottom-prompt', 'choose-prompt', 'feed-prompt', 'target-prompt', 'attack-prompt', 'block-prompt', 'discard-prompt', 'primary-move']) {
     if (await has(page, id)) return true;
   }
   return false;
@@ -99,6 +99,17 @@ async function takeTurn(page) {
     await tid(page, 'primary-move').click();
     return 'kept the opening hand';
   }
+  if (await has(page, 'feed-prompt')) {
+    // An ability whose cost is a sacrifice: the creatures that can pay for it are lit.
+    const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
+    if ((await lit.count()) > 0) {
+      await lit.first().click();
+      return 'fed a sacrifice outlet';
+    }
+    await tid(page, 'cancel-mode').click();
+    return 'backed out of a sacrifice';
+  }
+
   if (await has(page, 'choose-prompt')) {
     // A triggered ability waiting to be aimed. Its legal targets light up like a spell's.
     const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');

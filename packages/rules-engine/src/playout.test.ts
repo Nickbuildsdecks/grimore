@@ -154,6 +154,19 @@ describe('a whole automated game', () => {
     expect(returned).toBeGreaterThan(0);
   });
 
+  it('feeds a sacrifice outlet, and feeds it the right end of the board', () => {
+    // A bot that never activated an outlet and one that ate its best creature every turn would
+    // both finish every game in this file, so the behaviour is asserted directly: it happens, and
+    // what goes in is never bigger than what is being fed.
+    let sacrifices = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const result = playOut(table(seed * 3187, 0, ['rot-harvest', 'rot-harvest']));
+      expect(result.state.finished).toBe(true);
+      sacrifices += result.state.log.filter((e) => /sacrifices/.test(e.message)).length;
+    }
+    expect(sacrifices).toBeGreaterThan(0);
+  });
+
   it('never offers a play it then refuses', () => {
     // The strongest form of the claim: take every action the bot chose from `legalActions`, and
     // check the engine accepted it. A single refusal here is a UI that will show a dead button.

@@ -25,6 +25,7 @@ const play = (over: Partial<LegalPlay> = {}): LegalPlay => ({
   targetSpecs: [{ kind: "any", description: "any target" }],
   candidates: [[player(0), player(1), card("x1")]],
   isManaAbility: false,
+  sacrificeOptions: [],
   ...over,
 })
 
@@ -190,6 +191,48 @@ describe("settling an opening hand", () => {
       you: { ...automation()!.you!, hasPriority: false, canPass: false, mustSettleHand: true, bottomOwed: 0 },
     })
     expect(primaryMove(view({ automation: auto }))).not.toBeNull()
+  })
+})
+
+describe("paying for an ability by sacrificing something", () => {
+  const outlet = (over: Partial<LegalPlay> = {}) => play({
+    kind: "activate", abilityIndex: 0, name: "Vampire Aristocrat",
+    description: "Sacrifice a creature: +2/+2", manaCost: "",
+    targetSpecs: [], candidates: [], sacrificeOptions: ["fodder", "self"],
+    ...over,
+  })
+
+  it("asks what to feed it before anything else, because a cost is paid on activation", () => {
+    const result = arenaReducer(IDLE, { kind: "choosePlay", play: outlet() })
+    expect(result.action).toBeNull()
+    expect(result.mode.kind).toBe("feeding")
+  })
+
+  it("sends the activation with the creature chosen", () => {
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: outlet() }).mode
+    const result = arenaReducer(mode, { kind: "feed", card: "fodder" })
+    expect(result.action).toEqual({
+      type: "auto:activate", card: "c1", abilityIndex: 0, sacrifice: "fodder",
+    })
+  })
+
+  it("ignores a creature the engine did not offer", () => {
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: outlet() }).mode
+    expect(arenaReducer(mode, { kind: "feed", card: "somebody-elses" }).action).toBeNull()
+  })
+
+  it("goes on to the targets when the ability has some, keeping the sacrifice", () => {
+    const aimed = outlet({
+      targetSpecs: [{ kind: "creature", description: "target creature" }],
+      candidates: [[card("a")]],
+    })
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: aimed }).mode
+    mode = arenaReducer(mode, { kind: "feed", card: "fodder" }).mode
+    expect(mode.kind).toBe("targeting")
+    const result = arenaReducer(mode, { kind: "pickTarget", target: card("a") })
+    expect(result.action).toEqual({
+      type: "auto:activate", card: "c1", abilityIndex: 0, targets: [card("a")], sacrifice: "fodder",
+    })
   })
 })
 

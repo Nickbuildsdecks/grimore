@@ -13,7 +13,7 @@
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { characteristicsOf } from './characteristics.js';
-import { atSorcerySpeed, bottomOwed, pendingDeclaration, stackTop } from './automation.js';
+import { atSorcerySpeed, bottomOwed, pendingDeclaration, sacrificeOptions, stackTop } from './automation.js';
 import { legalAttackers, legalBlockers, canBlock } from './combat.js';
 import { poolOf } from './effects.js';
 import { addMana, canPay, parseManaCost, type ManaPool, type ManaType } from './mana.js';
@@ -37,6 +37,12 @@ export interface LegalPlay {
   readonly candidates: readonly (readonly Target[])[];
   /** A mana ability resolves immediately, which the UI shows differently. */
   readonly isManaAbility: boolean;
+  /**
+   * Creatures that could be sacrificed to pay for this, when its cost asks for one. Empty for
+   * everything else — a cost is paid as the ability is activated, so the choice travels with the
+   * play rather than being asked for afterwards.
+   */
+  readonly sacrificeOptions: readonly string[];
 }
 
 export interface BlockOption {
@@ -138,7 +144,7 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
       if (sorcerySpeed && landsPlayed < 1) {
         out.push({
           kind: 'land', card: id, name: ch.name, description: `Play ${ch.name}`,
-          manaCost: '', targetSpecs: [], candidates: [], isManaAbility: false,
+          manaCost: '', targetSpecs: [], candidates: [], isManaAbility: false, sacrificeOptions: [],
         });
       }
       continue;
@@ -158,6 +164,7 @@ function castablePlays(state: GameState, seat: SeatIndex, potential: ManaPool): 
     out.push({
       kind: 'cast', card: id, name: ch.name, description: `Cast ${ch.name}`,
       manaCost: def?.manaCost ?? '', targetSpecs: specs, candidates, isManaAbility: false,
+      sacrificeOptions: [],
     });
   }
   return out;
@@ -182,6 +189,9 @@ function activatablePlays(state: GameState, seat: SeatIndex, potential: ManaPool
         if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       }
       if (ability.cost.mana && !canPay(potential, parseManaCost(ability.cost.mana))) continue;
+      // An ability whose cost is a sacrifice is not activatable with nothing to sacrifice.
+      const victims = sacrificeOptions(state, seat, id, ability.cost);
+      if (ability.cost.sacrifice !== undefined && victims.length === 0) continue;
 
       const specs = ability.targets ?? [];
       const { ok, candidates } = playableTargets(state, specs, seat);
@@ -191,6 +201,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, potential: ManaPool
         kind: 'activate', card: id, name: ch.name, description: ability.description,
         manaCost: ability.cost.mana ?? '', abilityIndex: i,
         targetSpecs: specs, candidates, isManaAbility: ability.produces !== undefined,
+        sacrificeOptions: victims,
       });
     }
   }

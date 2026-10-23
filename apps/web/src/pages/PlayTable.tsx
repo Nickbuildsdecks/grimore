@@ -788,9 +788,12 @@ function Board({ table }: { table: UseTable }) {
       : arenaMode.kind === "choosing"
         ? choiceCandidatesAt(arenaMode.specs, arenaMode.candidates, arenaMode.chosen)
         : []
-  const targetableCards = new Set<string>(
-    nowChoosing.filter((t) => t.kind === "card").map((t) => (t as { id: string }).id),
-  )
+  const targetableCards = new Set<string>([
+    ...nowChoosing.filter((t) => t.kind === "card").map((t) => (t as { id: string }).id),
+    // A creature that could be fed to an ability is lit the same way a target is: it is the next
+    // thing to tap, and the player should not have to guess which of their creatures qualifies.
+    ...(arenaMode.kind === "feeding" ? arenaMode.play.sacrificeOptions : []),
+  ])
   const targetableSeats = new Set<number>(
     nowChoosing.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat),
   )
@@ -823,6 +826,10 @@ function Board({ table }: { table: UseTable }) {
     }
 
     const mode = arenaRef.current
+    if (mode.kind === "feeding") {
+      if (mode.play.sacrificeOptions.includes(card.id)) dispatchArena({ kind: "feed", card: card.id })
+      return
+    }
     if (mode.kind === "choosing") {
       if (targetableCards.has(card.id) || chosenIds.has(card.id)) {
         dispatchArena({ kind: "pickTarget", target: { kind: "card", id: card.id } })

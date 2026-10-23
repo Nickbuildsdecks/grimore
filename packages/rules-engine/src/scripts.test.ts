@@ -832,6 +832,62 @@ describe('the graveyard, which is a place cards come back from', () => {
     expect(countOf(s, 1, 'battlefield', 'Insect')).toBe(2);
   });
 
+  it('Vampire Aristocrat eats a creature as a cost, before anybody could respond', () => {
+    let s = rot([], ['Forest', 'Swamp'], ['Vampire Aristocrat', 'Centaur Courser']);
+    const vamp = find(s, 1, 'battlefield', 'Vampire Aristocrat');
+    const food = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = apply(s, { type: 'auto:activate', by: 1, card: vamp, abilityIndex: 0, sacrifice: food });
+
+    // The creature is already in the graveyard with the ability still on the stack: a cost is
+    // paid on activation, which is exactly what makes it uncounterable and unresponsive-to.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    expect(s.stackOrder.length).toBe(1);
+    s = passBoth(s);
+    expect([power(s, vamp), toughness(s, vamp)]).toEqual([4, 4]);
+    // And it wears off, being a pump rather than a counter.
+    s = nextTurn(s);
+    expect(power(s, vamp)).toBe(2);
+  });
+
+  it('Vampire Aristocrat can eat itself, and Bloodthrone Vampire cannot', () => {
+    const s = rot([], ['Forest', 'Swamp'], ['Vampire Aristocrat', 'Bloodthrone Vampire']);
+    const aristocrat = find(s, 1, 'battlefield', 'Vampire Aristocrat');
+    const bloodthrone = find(s, 1, 'battlefield', 'Bloodthrone Vampire');
+    const options = (card: string) =>
+      legalActions(s, 1).plays.find((p) => p.card === card && p.kind === 'activate')!.sacrificeOptions;
+    expect([...options(aristocrat)].sort()).toEqual([aristocrat, bloodthrone].sort());
+    expect(options(bloodthrone)).toEqual([aristocrat]);
+  });
+
+  it('refuses a sacrifice that is not offered, and one that is not chosen at all', () => {
+    const s = rot([], ['Forest', 'Swamp'], ['Vampire Aristocrat']);
+    const vamp = find(s, 1, 'battlefield', 'Vampire Aristocrat');
+    expect(refusal(s, { type: 'auto:activate', by: 1, card: vamp, abilityIndex: 0 }))
+      .toContain('choose a creature to sacrifice');
+    const theirs = find(s, 0, 'library', 'Hill Giant');
+    expect(refusal(s, { type: 'auto:activate', by: 1, card: vamp, abilityIndex: 0, sacrifice: theirs }))
+      .toContain('cannot be sacrificed');
+  });
+
+  it('does not offer an outlet with nothing to feed it', () => {
+    const s = rot([], ['Forest', 'Swamp'], ['Bloodthrone Vampire']);
+    const vamp = find(s, 1, 'battlefield', 'Bloodthrone Vampire');
+    expect(legalActions(s, 1).plays.some((p) => p.card === vamp && p.kind === 'activate')).toBe(false);
+    expect(refusal(s, { type: 'auto:activate', by: 1, card: vamp, abilityIndex: 0, sacrifice: vamp }))
+      .toContain('no creature to sacrifice');
+  });
+
+  it('a creature eaten as a cost dies, so anything watching for a death sees it', () => {
+    // The sacrifice happens while the ability is being activated, not when it resolves, so a
+    // dies-trigger fires then — which is the whole archetype the outlets exist for.
+    let s = rot([], ['Forest', 'Swamp'], ['Vampire Aristocrat', 'Centaur Courser']);
+    const vamp = find(s, 1, 'battlefield', 'Vampire Aristocrat');
+    const food = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = apply(s, { type: 'auto:activate', by: 1, card: vamp, abilityIndex: 0, sacrifice: food });
+    expect(s.instances[food]!.zone).toBe('graveyard');
+    expect(s.log.at(-1)!.message).toContain('sacrifices Centaur Courser');
+  });
+
   it('does not fire a trigger for a card moved by hand, because the tabletop enforces nothing', () => {
     // The manual moves are a physical escape hatch, not a second way to play: putting a creature
     // onto the battlefield by hand is picking it up and putting it down, and the player resolves

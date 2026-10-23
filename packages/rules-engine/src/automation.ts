@@ -38,7 +38,7 @@ import {
 } from './mana.js';
 import { replaceSeat, seatName } from './internal.js';
 import { scriptFor } from './scripts.js';
-import type { AbilityDef, CardScript, TargetSpec, TriggerEvent } from './scriptTypes.js';
+import type { AbilityCost, AbilityDef, CardScript, TargetSpec, TriggerEvent } from './scriptTypes.js';
 import { checkTargets, hasAnyLegalTargets, legalTargets, stillHasLegalTarget } from './targeting.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
@@ -86,6 +86,23 @@ export function bottomOwed(state: GameState, seat: SeatIndex): number {
   const mulligans = state.seats[seat]?.mulligans ?? 0;
   if (mulligans === 0) return 0;
   return Math.min(mulligans, listAt(state, zoneKey(seat, 'hand')).length);
+}
+
+/**
+ * Creatures a seat may sacrifice to pay for one of `source`'s abilities.
+ *
+ * Empty when the cost asks for no sacrifice, which is also how `legalActions` tells an ability
+ * that needs one from an ability that does not.
+ */
+export function sacrificeOptions(
+  state: GameState, seat: SeatIndex, source: string, cost: AbilityCost,
+): string[] {
+  if (cost.sacrifice === undefined) return [];
+  return listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
+    if (cost.sacrifice === 'another-creature' && id === source) return false;
+    const inst = state.instances[id];
+    return inst !== undefined && characteristicsOf(state, inst).isCreature;
+  });
 }
 
 /** Seats that have not yet settled on an opening hand. */

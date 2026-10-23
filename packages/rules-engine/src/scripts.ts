@@ -430,6 +430,34 @@ const LOTLETH_GIANT: CardScript = {
   ],
 };
 
+/**
+ * The sacrifice outlets. The cost is paid as the ability is activated, so the creature is already
+ * in the graveyard by the time anybody could respond — which is the whole reason it is a cost and
+ * not a target.
+ */
+const VAMPIRE_ARISTOCRAT: CardScript = {
+  name: 'Vampire Aristocrat',
+  abilities: [
+    {
+      cost: { sacrifice: 'creature' },
+      description: 'Sacrifice a creature: +2/+2 until end of turn.',
+      effect: (c) => pump(c.state, [c.source], c.source, c.controller, { power: 2, toughness: 2 }),
+    },
+  ],
+};
+
+const BLOODTHRONE_VAMPIRE: CardScript = {
+  name: 'Bloodthrone Vampire',
+  abilities: [
+    {
+      // "Another" creature: it cannot eat itself, which is the difference from the Aristocrat.
+      cost: { sacrifice: 'another-creature' },
+      description: 'Sacrifice another creature: +2/+2 until end of turn.',
+      effect: (c) => pump(c.state, [c.source], c.source, c.controller, { power: 2, toughness: 2 }),
+    },
+  ],
+};
+
 export const INSECT_TOKEN: CardDef = {
   name: 'Insect', typeLine: 'Token Creature — Insect', manaCost: '', cmc: 0,
   power: '1', toughness: '1', oracleText: '', colors: ['B', 'G'],
@@ -498,6 +526,7 @@ const ALL: readonly CardScript[] = [
   COUNTERSPELL, NEGATE, DOOM_BLADE, DIVINATION, SIGN_IN_BLOOD, TOME_SCOUR,
   RAVENOUS_RATS, CHILD_OF_NIGHT, WIND_DRAKE, VAMPIRE_NIGHTHAWK, AIR_ELEMENTAL, TALRAND, MAN_O_WAR,
   GRAVEDIGGER, RAISE_DEAD, ZOMBIFY, THORNWEALD_ARCHER, WALL_OF_BLOSSOMS, LOTLETH_GIANT, IZONI,
+  VAMPIRE_ARISTOCRAT, BLOODTHRONE_VAMPIRE,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

@@ -15,8 +15,8 @@ import { characteristicsOf } from './characteristics.js';
 import {
   advanceStep, aliveSeats, atSorcerySpeed, bottomOwed, canAttack, canBlock, checkTargets,
   endTurnCleanup, legalAttackers, legalBlockers, menaceSatisfied, payFrom, pendingDeclaration,
-  prevAlive, pushAbility, raise, resetPriority, resolveTop, scriptOf, settle, stackTop,
-  stateBasedActions, stillDeciding, tapAttackers,
+  prevAlive, pushAbility, raise, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle,
+  stackTop, stateBasedActions, stillDeciding, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
 } from './automation.js';
 import { addToPool, poolOf } from './effects.js';
@@ -140,7 +140,11 @@ function playLand(state: GameState, action: { by: SeatIndex; card: string }): Ou
 // ── Activated abilities ──────────────────────────────────────────────────────────────────────────
 
 function activate(
-  state: GameState, action: { by: SeatIndex; card: string; abilityIndex: number; targets?: readonly Target[] },
+  state: GameState,
+  action: {
+    by: SeatIndex; card: string; abilityIndex: number;
+    targets?: readonly Target[]; sacrifice?: string;
+  },
 ): Outcome {
   requireAutomated(state);
   requirePriority(state, action.by);
@@ -170,9 +174,36 @@ function activate(
   const check = checkTargets(state, specs, chosen, action.by);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
+  // The sacrifice is chosen and checked before anything is spent, so a refusal leaves the board
+  // exactly as it was rather than halfway through paying.
+  let sacrificed: string | null = null;
+  let sacrificedName = '';
+  if (ability.cost.sacrifice !== undefined) {
+    const options = sacrificeOptions(state, action.by, inst.id, ability.cost);
+    if (options.length === 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'you have no creature to sacrifice for that');
+    }
+    if (action.sacrifice === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'choose a creature to sacrifice');
+    }
+    if (!options.includes(action.sacrifice)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that creature cannot be sacrificed for this');
+    }
+    sacrificed = action.sacrifice;
+  }
+
   const paid = payFrom(state, action.by, ability.cost.mana, 0);
   let next = paid.state;
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
+  if (sacrificed !== null) {
+    const victim = requireInstance(next, sacrificed);
+    const name = characteristicsOf(next, victim).name;
+    next = relocate(next, victim, 'graveyard', victim.owner, 'bottom');
+    // A sacrificed creature dies, and anything that cares about that cares now — not when the
+    // ability resolves, because the cost was paid before it was ever on the stack.
+    next = raise(next, { kind: 'dies' }, action.by, sacrificed);
+    sacrificedName = name;
+  }
   if (ability.cost.sacrificeSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
 
   if (ability.produces !== undefined) {
@@ -191,8 +222,13 @@ function activate(
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
-    message: `${seatName(state, action.by)} activates ${ch.name}`,
-    data: { card: inst.id, ability: action.abilityIndex },
+    message: sacrificed === null
+      ? `${seatName(state, action.by)} activates ${ch.name}`
+      : `${seatName(state, action.by)} sacrifices ${sacrificedName} and activates ${ch.name}`,
+    data: {
+      card: inst.id, ability: action.abilityIndex,
+      ...(sacrificed === null ? {} : { sacrificed }),
+    },
   };
 }
 
@@ -585,4 +621,4 @@ export function reduceAutoAction(state: GameState, action: AutoAction, _ctx: Act
   };
 }
 
-export { bottomOwed, stillDeciding, canPay, hasAnyLegalTargets, MAIN_STEPS, pendingDeclaration, stackTop, stateBasedActions, legalAttackers, legalBlockers, poolOf, handOf, spellTargets };
+export { bottomOwed, sacrificeOptions, stillDeciding, canPay, hasAnyLegalTargets, MAIN_STEPS, pendingDeclaration, stackTop, stateBasedActions, legalAttackers, legalBlockers, poolOf, handOf, spellTargets };

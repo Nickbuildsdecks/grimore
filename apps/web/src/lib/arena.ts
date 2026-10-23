@@ -23,9 +23,11 @@ import type { TableAction } from "@/lib/table"
 export type ArenaMode =
   | { kind: "idle" }
   | { kind: "bottoming"; chosen: string[] }
+  /** Picking what to feed an ability whose cost is a sacrifice, before it is activated. */
+  | { kind: "feeding"; play: LegalPlay }
   /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
   | { kind: "choosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string; chosen: Target[] }
-  | { kind: "targeting"; play: LegalPlay; chosen: Target[] }
+  | { kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string }
   | { kind: "attackers"; chosen: string[]; defender: SeatIndex }
   | { kind: "blockers"; chosen: Block[]; holding: string | null }
 
@@ -39,6 +41,7 @@ export type ArenaEvent =
   | { kind: "startBottoming" }
   | { kind: "startChoosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string }
   | { kind: "toggleBottom"; card: string }
+  | { kind: "feed"; card: string }
   | { kind: "choosePlay"; play: LegalPlay }
   | { kind: "pickTarget"; target: Target }
   | { kind: "undoTarget" }
@@ -113,11 +116,15 @@ export function choiceCandidatesAt(
 }
 
 /** The action a completed play turns into. */
-function playAction(play: LegalPlay, targets: readonly Target[]): TableAction {
+function playAction(play: LegalPlay, targets: readonly Target[], sacrifice?: string): TableAction {
   const withTargets = targets.length > 0 ? { targets: [...targets] } : {}
+  const withSacrifice = sacrifice === undefined ? {} : { sacrifice }
   if (play.kind === "land") return { type: "auto:playLand", card: play.card }
   if (play.kind === "cast") return { type: "auto:cast", card: play.card, ...withTargets }
-  return { type: "auto:activate", card: play.card, abilityIndex: play.abilityIndex ?? 0, ...withTargets }
+  return {
+    type: "auto:activate", card: play.card, abilityIndex: play.abilityIndex ?? 0,
+    ...withTargets, ...withSacrifice,
+  }
 }
 
 /**
@@ -133,8 +140,21 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
 
     case "choosePlay": {
       const play = event.play
+      // The cost comes first: a sacrifice is paid as the ability is activated, so it is chosen
+      // before the targets rather than after.
+      if (play.sacrificeOptions.length > 0) return { mode: { kind: "feeding", play }, action: null }
       if (targetsWanted(play) === 0) return { mode: IDLE, action: playAction(play, []) }
       return { mode: { kind: "targeting", play, chosen: [] }, action: null }
+    }
+
+    case "feed": {
+      if (mode.kind !== "feeding") return { mode, action: null }
+      if (!mode.play.sacrificeOptions.includes(event.card)) return { mode, action: null }
+      if (targetsWanted(mode.play) === 0) {
+        return { mode: IDLE, action: playAction(mode.play, [], event.card) }
+      }
+      // Something to aim as well: keep the sacrifice and go on to the targets.
+      return { mode: { kind: "targeting", play: mode.play, chosen: [], sacrifice: event.card }, action: null }
     }
 
     case "startChoosing":
@@ -165,7 +185,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       }
       const chosen = [...mode.chosen, event.target]
       if (chosen.length >= targetsWanted(mode.play)) {
-        return { mode: IDLE, action: playAction(mode.play, chosen) }
+        return { mode: IDLE, action: playAction(mode.play, chosen, mode.sacrifice) }
       }
       return { mode: { ...mode, chosen }, action: null }
     }
@@ -180,7 +200,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (mode.kind === "targeting") {
         // "Up to" spells are the only ones that can be sent with fewer targets than they want.
         if (mode.chosen.length < targetsRequired(mode.play)) return { mode, action: null }
-        return { mode: IDLE, action: playAction(mode.play, mode.chosen) }
+        return { mode: IDLE, action: playAction(mode.play, mode.chosen, mode.sacrifice) }
       }
       if (mode.kind === "attackers") {
         return {

@@ -466,6 +466,28 @@ const LOTLETH_GIANT: CardDef = {
   colors: ['B'],
 };
 
+const VAMPIRE_ARISTOCRAT: CardDef = {
+  name: 'Vampire Aristocrat',
+  typeLine: 'Creature — Vampire Rogue',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Sacrifice a creature: Vampire Aristocrat gets +2/+2 until end of turn.',
+  colors: ['B'],
+};
+
+const BLOODTHRONE_VAMPIRE: CardDef = {
+  name: 'Bloodthrone Vampire',
+  typeLine: 'Creature — Vampire',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Sacrifice another creature: Bloodthrone Vampire gets +2/+2 until end of turn.',
+  colors: ['B'],
+};
+
 const IZONI: CardDef = {
   name: 'Izoni, Thousand-Eyed',
   typeLine: 'Legendary Creature — Elf Shaman',
@@ -556,8 +578,8 @@ export const ROT_HARVEST: DeckSpec = {
     { card: THORNWEALD_ARCHER, count: 4 },
     { card: WALL_OF_BLOSSOMS, count: 4 },
     { card: CENTAUR_COURSER, count: 3 },
-    { card: CHILD_OF_NIGHT, count: 3 },
-    { card: VAMPIRE_NIGHTHAWK, count: 3 },
+    { card: BLOODTHRONE_VAMPIRE, count: 3 },
+    { card: VAMPIRE_ARISTOCRAT, count: 3 },
     { card: GRAVEDIGGER, count: 4 },
     { card: RAISE_DEAD, count: 3 },
     { card: ZOMBIFY, count: 3 },

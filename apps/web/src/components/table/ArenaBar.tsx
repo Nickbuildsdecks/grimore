@@ -70,6 +70,16 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         </div>
       ) : null}
 
+      {mode.kind === "feeding" ? (
+        <div data-testid="feed-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-[var(--g-text-high)]">{mode.play.description}</span>
+          <span className="text-[var(--g-text-muted)]">tap a creature to sacrifice</span>
+          <Button size="sm" variant="ghost" className="ml-auto" data-testid="cancel-mode" onClick={() => dispatch({ kind: "cancel" })}>
+            <X className="size-3.5" /> Cancel
+          </Button>
+        </div>
+      ) : null}
+
       {mode.kind === "choosing" ? (
         <div data-testid="choose-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold text-[var(--g-text-high)]">{mode.description}</span>

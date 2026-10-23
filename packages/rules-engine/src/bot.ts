@@ -64,6 +64,18 @@ function chooseTargets(state: GameState, seat: SeatIndex, play: LegalPlay): Targ
   return chosen;
 }
 
+/** The least valuable of a set of creatures, for feeding to something hungry. */
+function cheapestCreature(state: GameState, ids: readonly string[]): string | null {
+  let best: { id: string; power: number } | null = null;
+  for (const id of ids) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const power = characteristicsOf(state, inst).power;
+    if (best === null || power < best.power) best = { id, power };
+  }
+  return best?.id ?? null;
+}
+
 /** Enemy players score highest, then enemy creatures by size, then anything else. */
 function rank(state: GameState, target: Target, foes: readonly SeatIndex[]): number {
   if (target.kind === 'player') return foes.includes(target.seat) ? 100 : -100;
@@ -216,6 +228,21 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
     if (play.kind === 'cast') {
       return {
         type: 'auto:cast', by: seat, card: play.card,
+        ...(targets.length > 0 ? { targets } : {}),
+      };
+    }
+    // An ability paid for by sacrificing something is only worth it when the thing eaten is worth
+    // less than the thing fed. A bot that pumped by eating its best creature every turn would
+    // play itself out of the game while passing every other test here.
+    if (play.sacrificeOptions.length > 0) {
+      const fodder = cheapestCreature(state, play.sacrificeOptions);
+      if (fodder === null) continue;
+      const self = state.instances[play.card];
+      const worth = self === undefined ? 0 : characteristicsOf(state, self).power;
+      if (characteristicsOf(state, state.instances[fodder]!).power >= worth) continue;
+      return {
+        type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+        sacrifice: fodder,
         ...(targets.length > 0 ? { targets } : {}),
       };
     }

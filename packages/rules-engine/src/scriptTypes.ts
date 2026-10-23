@@ -78,6 +78,13 @@ export interface AbilityCost {
   /** The `{T}` symbol: requires the permanent to be untapped and not summoning sick. */
   readonly tap?: boolean;
   readonly sacrificeSelf?: boolean;
+  /**
+   * "Sacrifice a creature:" — the player picks which, and it is gone before the ability is on the
+   * stack. A **cost**, not a target: it cannot be responded to, and an opponent cannot save the
+   * creature in reply. Modelling it as a target would be close enough to look right and wrong
+   * exactly where it matters.
+   */
+  readonly sacrifice?: 'creature' | 'another-creature';
 }
 
 export interface AbilityDef {

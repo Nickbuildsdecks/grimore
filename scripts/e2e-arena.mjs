@@ -132,6 +132,7 @@ async function expectEventually(page, label, predicate, timeout = 12000) {
 async function isMyMove(page) {
   if (await has(page, 'mulligan-prompt')) return true;
   if (await has(page, 'choose-prompt')) return true;
+  if (await has(page, 'feed-prompt')) return true;
   if (await has(page, 'bottom-prompt')) return true;
   if (await has(page, 'target-prompt')) return true;
   if (await has(page, 'attack-prompt')) return true;
@@ -177,6 +178,17 @@ async function makeMove(page, seat, { aggression = 0.6 } = {}) {
     }
     await tid(page, 'primary-move').click();
     return 'kept the opening hand';
+  }
+
+  if (await has(page, 'feed-prompt')) {
+    // An ability whose cost is a sacrifice: the creatures that can pay for it are lit.
+    const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
+    if ((await lit.count()) > 0) {
+      await lit.first().click();
+      return 'fed a sacrifice outlet';
+    }
+    await tid(page, 'cancel-mode').click();
+    return 'backed out of a sacrifice';
   }
 
   // A triggered ability waiting to be aimed blocks everything, so it is answered first. The board
