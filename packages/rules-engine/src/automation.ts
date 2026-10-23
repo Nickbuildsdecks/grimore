@@ -314,6 +314,7 @@ export function endTurnCleanup(state: GameState): GameState {
 
 function triggerMatches(
   event: TriggerEvent, want: TriggerEvent, sourceSeat: SeatIndex, actorSeat: SeatIndex | undefined,
+  isSubject = true,
 ): boolean {
   if (event.kind !== want.kind) return false;
   switch (want.kind) {
@@ -339,7 +340,22 @@ function triggerMatches(
       return (want.of ?? 'you') === 'any' || actorSeat === sourceSeat;
     }
     case 'etb':
-    case 'dies':
+    case 'dies': {
+      // `self` is the default, which is why every script written before this one still means what
+      // it meant: a trigger that says nothing about `who` watches only its own permanent.
+      const who = want.who ?? 'self';
+      if (who === 'self' && !isSubject) return false;
+      if (who === 'another' && isSubject) return false;
+      const e = event as { subjectSeat?: SeatIndex; subjectIsCreature?: boolean };
+      // "a *creature* you control enters" is what the board-watchers say, and an enchantment
+      // arriving is not that. Only asked for when the trigger asks for it, so a `self` trigger on
+      // a non-creature permanent still fires for its own arrival.
+      if ((want.what ?? 'permanent') === 'creature' && e.subjectIsCreature !== true) return false;
+      const of = want.of ?? 'any';
+      if (of === 'any') return true;
+      if (e.subjectSeat === undefined) return false;
+      return of === 'you' ? e.subjectSeat === sourceSeat : e.subjectSeat !== sourceSeat;
+    }
     case 'attacks':
     case 'becomes-tapped':
       return true;
@@ -359,21 +375,50 @@ function raise(
   state: GameState, event: TriggerEvent, actor?: SeatIndex, subject?: string,
 ): GameState {
   let next = state;
-  const selfEvents = new Set(['etb', 'dies', 'attacks', 'becomes-tapped']);
-  const candidates = selfEvents.has(event.kind)
-    ? subject === undefined ? [] : [subject]
-    : next.seats.flatMap((s) => [...listAt(next, zoneKey(s.index, 'battlefield'))]);
+  if (subject !== undefined && (event.kind === 'etb' || event.kind === 'dies')) {
+    // The event carries who controlled the permanent and whether it was a creature, so a watcher
+    // can ask. Read from the subject rather than from `actor`, which for an entry is whoever cast
+    // the spell and not always its controller.
+    const inst = next.instances[subject];
+    if (inst !== undefined) {
+      event = {
+        ...event,
+        subjectSeat: inst.zoneSeat,
+        subjectIsCreature: characteristicsOf(next, inst).isCreature,
+      };
+    }
+  }
+  // Which permanents could have a trigger for this event.
+  //
+  // `attacks` and `becomes-tapped` are about one object and only that object's own script can
+  // care. `etb` and `dies` are usually the same — but "~ or another creature dies" is one of the
+  // commonest black cards there is, so those two also offer the event to every permanent on the
+  // battlefield, and `triggerMatches` decides from the trigger's own `who` whether it wants it.
+  // The subject is always included: it may be the watcher, and for a death it is in a graveyard
+  // by now rather than on the battlefield.
+  const selfOnly = new Set(['attacks', 'becomes-tapped']);
+  const watchers = event.kind === 'etb' || event.kind === 'dies'
+    ? [
+        ...(subject === undefined ? [] : [subject]),
+        ...next.seats.flatMap((s) => [...listAt(next, zoneKey(s.index, 'battlefield'))])
+          .filter((id) => id !== subject),
+      ]
+    : selfOnly.has(event.kind)
+      ? subject === undefined ? [] : [subject]
+      : next.seats.flatMap((s) => [...listAt(next, zoneKey(s.index, 'battlefield'))]);
 
-  for (const id of candidates) {
+  for (const id of watchers) {
     const inst = next.instances[id];
     if (inst === undefined) continue;
-    // A `dies` trigger fires from the graveyard, so that one does not require the battlefield.
-    if (event.kind !== 'dies' && inst.zone !== 'battlefield') continue;
+    // A `dies` trigger fires from the graveyard, but only for the creature that died: any other
+    // watcher has to still be on the battlefield to be watching.
+    const fromGraveyard = event.kind === 'dies' && id === subject;
+    if (!fromGraveyard && inst.zone !== 'battlefield') continue;
     const script = scriptOf(next, id);
     if (script?.triggers === undefined) continue;
     for (let i = 0; i < script.triggers.length; i++) {
       const trigger = script.triggers[i]!;
-      if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor)) continue;
+      if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor, id === subject)) continue;
       const specs = trigger.targets ?? [];
       if (specs.length === 0) {
         next = pushAbility(next, id, inst.zoneSeat, i, [], 'triggered', trigger.description);
@@ -521,14 +566,21 @@ export function stateBasedActions(state: GameState): GameState {
  */
 function settle(state: GameState, before: GameState): GameState {
   let next = stateBasedActions(state);
-  // Deaths first, and in a loop: a creature dying can trigger something that kills another, and
-  // every one of those deaths has to reach its own trigger. `relocate` records them wherever they
-  // happen — lethal damage, a destroy spell, a sacrifice — and this is the only place they are
-  // announced, so no caller can forget to.
-  for (let pass = 0; pass < 32 && next.died.length > 0; pass++) {
+  // Deaths and arrivals, in a loop: a creature dying can trigger something that kills another or
+  // makes a token, and every one of those has to reach its own trigger. `relocate` and
+  // `createToken` record them wherever they happen — lethal damage, a destroy spell, a sacrifice,
+  // a reanimation, a token — and this is the only place they are announced, so no caller can
+  // forget to. Deaths before arrivals in each pass, because a creature that dies and leaves
+  // something behind should see the death trigger go on the stack first.
+  for (let pass = 0; pass < 32 && (next.died.length > 0 || next.entered.length > 0); pass++) {
     const dead = next.died;
-    next = { ...next, died: [] };
+    const arrived = next.entered;
+    next = { ...next, died: [], entered: [] };
     for (const id of dead) next = raise(next, { kind: 'dies' }, next.instances[id]?.zoneSeat, id);
+    for (const id of arrived) {
+      if (next.instances[id]?.zone !== 'battlefield') continue;
+      next = raise(next, { kind: 'etb' }, next.instances[id]?.zoneSeat, id);
+    }
     next = stateBasedActions(next);
   }
   for (const seat of next.seats) {
@@ -943,8 +995,8 @@ function completeResolution(
           next = addAuraEffect(next, inst.id, object.controller, host.id, script);
         }
       }
+      // `relocate` above recorded the arrival; `settle` announces it. See `AutomationState.entered`.
       next = applyStatics(next, inst.id, object.controller, script);
-      next = raise(next, { kind: 'etb' }, object.controller, inst.id);
     } else if (inst !== undefined) {
       next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
     }

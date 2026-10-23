@@ -123,6 +123,11 @@ export function relocate(
   if (state.automated && inst.zone === 'battlefield' && toZone === 'graveyard') {
     next = { ...next, died: [...next.died, inst.id] };
   }
+  // And arriving from anywhere else is *entering* the battlefield. Changing controller is not —
+  // it moves between two battlefields, and a creature that changed hands has not entered.
+  if (state.automated && inst.zone !== 'battlefield' && toZone === 'battlefield') {
+    next = { ...next, entered: [...next.entered, inst.id] };
+  }
 
   // A token that leaves the battlefield ceases to exist, as it does on a real table.
   if (inst.isToken && toZone !== 'battlefield') {
@@ -556,8 +561,11 @@ export function reduceCardAction(state: GameState, action: CardAction, ctx: Acti
         throw new EngineError('INVALID_ACTION', `a table may hold at most ${MAX_INSTANCES} cards`);
       }
       const bf = zoneKey(action.seat, 'battlefield');
+      // A token made by hand enters the battlefield like any other, and on an automated table its
+      // arrival is recorded for `settle` to announce. See `AutomationState.entered`.
+      const entered = state.automated ? [...state.entered, ...created] : state.entered;
       return {
-        state: withZones({ ...state, cardDefs, instances, instanceSeq: seq }, {
+        state: withZones({ ...state, cardDefs, instances, instanceSeq: seq, entered }, {
           [bf]: [...listAt(state, bf), ...created],
         }),
         message: `${seatName(state, action.seat)} created ${count} ${def.name} token(s)`,

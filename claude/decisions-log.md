@@ -987,3 +987,38 @@ held while no card had a death trigger: *entering* the combat damage step deals 
 dies, and its trigger goes on the stack inside the same action that changed the step — correctly.
 The claim worth asserting is narrower and now says so: a step never advances past something that
 was *already* waiting to resolve.
+
+## D34 — A trigger may watch the board, and `etb` had the same bug `dies` did
+
+D33 named two limits and said each was "a change to `raise` rather than to a script". This is that
+change, and making it found the second half of the bug D33 fixed.
+
+**Decided: `dies` and `etb` carry `who`, `of` and `what`, all defaulting to today's behaviour.**
+`who` is self (the default), another, or any — the "~ **or another** creature" templating. `of`
+narrows to a controller. `what` narrows to creatures. Every script written before this means
+exactly what it meant, because a trigger that says nothing about `who` still watches only its own
+permanent. Blood Artist, Zulaport Cutthroat, Soul Warden and Impact Tremors follow, and they are
+what makes a sacrifice deck a deck rather than a pile.
+
+**`what` was not in the first draft, and the test is why it exists.** An Impact Tremors fired for
+its own arrival: `who`/`of` say *whose* and not *what*, and an enchantment entering the battlefield
+is not "a creature you control enters". Worth recording because the omission looked harmless —
+three of the four cards would have passed without it.
+
+**Decided: `etb` is recorded where the card moves, exactly as `dies` now is.** Writing these cards
+exposed the same bug one layer along: `etb` was raised at a single call site, a permanent *spell*
+finishing its resolution. So a creature put onto the battlefield by Zombify arrived silently, and a
+**token triggered nothing at all** — Krenko's Goblins, Izoni's Insects and Talrand's Drakes were
+mute, and so was anything watching for them. Entering means arriving from anywhere (CR 603.6a).
+`relocate` and the two token-creating paths record it; `settle` drains a list of deaths and a list
+of arrivals in one loop, deaths first, because a creature that dies can leave a token behind.
+
+That the same flaw appeared twice in two sessions is the actual lesson, and it is D28's rule being
+right: *an event announced by its callers is an event some caller will forget*. The two remaining
+events raised from call sites are `attacks` and `becomes-tapped`, and both are genuinely about one
+object doing one thing, which is why neither has been wrong.
+
+**A note for whoever writes the next test:** a *tabletop* action — `card:move`, `token:create` —
+never calls `settle`, so a death or arrival it causes is recorded and waits for the next engine
+action to announce it. A test that makes a token by hand and then looks at the stack sees an empty
+one. `testkit.drain` exists for that and says so.

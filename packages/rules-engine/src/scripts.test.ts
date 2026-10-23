@@ -15,7 +15,7 @@ import {
   STARTER_DECKS, characteristicsOf, legalActions, scriptFor, scriptedCardNames,
 } from './index.js';
 import {
-  advanceTo, apply, arena, choices, countOf, decide, find, ids, life, namesIn, nextTurn,
+  advanceTo, apply, arena, choices, countOf, decide, drain, find, ids, life, namesIn, nextTurn,
   passBoth, refusal, stackNames,
 } from './testkit.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -906,6 +906,216 @@ describe('the graveyard, which is a place cards come back from', () => {
     s = apply(s, { type: 'card:move', by: 1, card: izoni, toZone: 'battlefield' });
     expect(s.stackOrder).toEqual([]);
     expect(countOf(s, 1, 'battlefield', 'Insect')).toBe(0);
+  });
+});
+
+describe('triggers that watch the board rather than themselves', () => {
+  it('Blood Artist drains for a creature dying anywhere, including itself', () => {
+    let s = arena({
+      decks: { 0: 'rot-harvest', 1: 'ember-rush' },
+      hands: { 1: ['Lightning Bolt', 'Lightning Bolt'] },
+      battlefield: { 0: ['Blood Artist', 'Doomed Dissenter'], 1: ['Mountain', 'Mountain'] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    const started = [life(s, 0), life(s, 1)];
+
+    // Somebody else's creature dies: the Artist watches the whole board, so it drains.
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Doomed Dissenter') }],
+    }));
+    // Two triggers now: the Dissenter's Zombie and the Artist's drain, which needs a target.
+    s = passBoth(s);
+    while (s.pendingChoice !== null) {
+      s = apply(s, { type: 'auto:choose', by: s.pendingChoice.seat, targets: [{ kind: 'player', seat: 1 }] });
+      s = passBoth(s);
+    }
+    s = passBoth(s);
+    expect(life(s, 0)).toBe(started[0]! + 1);
+    expect(life(s, 1)).toBe(started[1]! - 1);
+    expect(countOf(s, 0, 'battlefield', 'Zombie')).toBe(1);
+
+    // And for its own death: "Blood Artist **or** another creature" includes itself, and the
+    // trigger fires from the graveyard it is already in.
+    const before = [life(s, 0), life(s, 1)];
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Blood Artist') }],
+    }));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Blood Artist');
+    while (s.pendingChoice !== null) {
+      s = apply(s, { type: 'auto:choose', by: s.pendingChoice.seat, targets: [{ kind: 'player', seat: 1 }] });
+      s = passBoth(s);
+    }
+    s = passBoth(s);
+    expect(life(s, 0)).toBe(before[0]! + 1);
+    expect(life(s, 1)).toBe(before[1]! - 1);
+  });
+
+  it('Zulaport Cutthroat watches only its own side', () => {
+    let s = arena({
+      decks: { 0: 'rot-harvest', 1: 'ember-rush' },
+      hands: { 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Zulaport Cutthroat'], 1: ['Mountain', 'Raging Goblin'] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    const started = [life(s, 0), life(s, 1)];
+
+    // The opponent's own creature dying is nothing to do with it (`of: 'you'`).
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Raging Goblin') }],
+    }));
+    s = passBoth(s);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Raging Goblin');
+    expect(life(s, 0)).toBe(started[0]!);
+    expect(life(s, 1)).toBe(started[1]!);
+  });
+
+  it('Soul Warden gains life for another creature, and not for itself', () => {
+    let s = arena({
+      decks: { 1: 'verdant-guard' }, hands: { 1: ['Soul Warden', 'Grizzly Bears'] },
+      battlefield: { 1: ['Plains', 'Forest', 'Forest'] }, turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    const started = life(s, 1);
+
+    // Its own arrival gains nothing: "another" creature, not any.
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Soul Warden') }));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Soul Warden');
+    expect(life(s, 1)).toBe(started);
+
+    // The next creature does.
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Grizzly Bears') }));
+    s = passBoth(s);
+    expect(life(s, 1)).toBe(started + 1);
+  });
+
+  it('Soul Warden gains life for an opponent’s creature too', () => {
+    // `of: 'any'`: it watches every creature that enters, whoever controls it. Getting this wrong
+    // is the difference between a lifegain card and a much worse one.
+    let s = arena({
+      decks: { 1: 'verdant-guard' }, hands: { 0: ['Hill Giant'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Soul Warden'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const started = life(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Hill Giant') }));
+    s = passBoth(s);
+    expect(life(s, 1)).toBe(started + 1);
+  });
+
+  it('Impact Tremors fires for a token as well as a creature spell', () => {
+    // Tokens enter the battlefield, so they trigger it — which is the whole reason the card is
+    // played with Krenko rather than on its own.
+    let s = arena({
+      decks: { 0: 'ember-rush' }, hands: { 0: ['Impact Tremors', 'Monastery Swiftspear'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'] }, turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Impact Tremors') }));
+    const started = life(s, 1);
+
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Monastery Swiftspear') }));
+    s = passBoth(s);
+    expect(life(s, 1)).toBe(started - 1);
+
+    const after = life(s, 1);
+    s = apply(s, { type: 'token:create', by: 0, seat: 0, count: 2, card: {
+      name: 'Goblin', typeLine: 'Token Creature — Goblin', manaCost: '', cmc: 0,
+      power: '1', toughness: '1', oracleText: '', colors: ['R'],
+    } });
+    // Two tokens, two triggers. `token:create` is a tabletop action and never settles, so the
+    // arrivals sit recorded until an engine action announces them — which is what `drain` does.
+    s = drain(s);
+    expect(life(s, 1)).toBe(after - 2);
+  });
+
+  it('enters the battlefield from anywhere, not only off the stack (CR 603.6a)', () => {
+    // The second regression test of the same shape as the `dies` one, and the same root cause:
+    // `etb` was raised at exactly one call site — a permanent *spell* finishing its resolution —
+    // so a creature put onto the battlefield by Zombify arrived silently and a token triggered
+    // nothing at all. Krenko's Goblins, Izoni's Insects and Talrand's Drakes were all mute.
+    let s = arena({
+      decks: { 1: 'rot-harvest' }, hands: { 1: ['Zombify'] },
+      battlefield: { 1: ['Swamp', 'Swamp', 'Swamp', 'Swamp'] }, turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    for (const name of ['Gravedigger', 'Centaur Courser']) {
+      s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', name), toZone: 'graveyard' });
+    }
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Zombify'),
+      targets: [{ kind: 'card', id: find(s, 1, 'graveyard', 'Gravedigger') }],
+    }));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Gravedigger');
+    // Reanimated, so it entered, so its own trigger is waiting — and it has a creature card in
+    // the graveyard to point at, which is the only one left.
+    expect(stackNames(s).join()).toContain('return target creature card');
+    s = passBoth(s);
+    expect(namesIn(s, 1, 'hand')).toContain('Centaur Courser');
+  });
+
+  it('fires once for each creature when several die at the same time', () => {
+    // Two attackers trading with two blockers is the ordinary way a game kills more than one
+    // creature at once, and a drain that fired once for it would be a quietly much worse card.
+    // `settle` drains the list of deaths one at a time for exactly this.
+    let s = arena({
+      decks: { 0: 'rot-harvest', 1: 'verdant-guard' },
+      battlefield: {
+        0: ['Zulaport Cutthroat', 'Doomed Dissenter', 'Llanowar Elves'],
+        1: ['Centaur Courser', 'Grizzly Bears'],
+      },
+      turn: 2, firstSeat: 0,
+    });
+    const started = [life(s, 0), life(s, 1)];
+    s = advanceTo(s, 'declare-attackers');
+    const dissenter = find(s, 0, 'battlefield', 'Doomed Dissenter');
+    const elves = find(s, 0, 'battlefield', 'Llanowar Elves');
+    s = apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: dissenter, defender: 1 }, { attacker: elves, defender: 1 }],
+    });
+    // Declaring attackers gives priority inside the declare-attackers step; passing moves on to
+    // blockers, which is where the defender is asked.
+    s = passBoth(s);
+    s = apply(s, {
+      type: 'auto:block', by: 1,
+      blocks: [
+        { blocker: find(s, 1, 'battlefield', 'Centaur Courser'), attacker: dissenter },
+        { blocker: find(s, 1, 'battlefield', 'Grizzly Bears'), attacker: elves },
+      ],
+    });
+    // Damage is dealt entering the combat damage step: both 1/1s die in the same action.
+    for (let i = 0; i < 10 && (s.stackOrder.length > 0 || s.step !== 'postcombat-main'); i++) {
+      if (s.priority === null) break;
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+    }
+    expect(namesIn(s, 0, 'graveyard')).toContain('Doomed Dissenter');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Llanowar Elves');
+    // Two of its own creatures died, so two drains — and the Zombie from the Dissenter arrived.
+    expect(life(s, 1)).toBe(started[1]! - 2);
+    expect(life(s, 0)).toBe(started[0]! + 2);
+    expect(countOf(s, 0, 'battlefield', 'Zombie')).toBe(1);
   });
 });
 

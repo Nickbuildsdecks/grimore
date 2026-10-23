@@ -168,6 +168,40 @@ describe('a whole automated game', () => {
     expect(sacrifices).toBeGreaterThan(0);
   });
 
+  it('fires entry triggers for a token and for a creature that was reanimated', () => {
+    // The companion to the death-trigger test, and the same bug: `etb` was announced at one call
+    // site, so only a permanent *spell* finishing its resolution ever triggered. Asserted from
+    // real games because the question is whether an arrival reaches its trigger from every
+    // direction a game puts something on the battlefield.
+    let tokens = 0;
+    let reanimated = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      let s = table(seed * 1493, (seed % 2) as SeatIndex, ['rot-harvest', 'verdant-guard']);
+      for (let i = 0; i < 6000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const before = s.stateVersion;
+        const previous = s;
+        s = stepOnce(s, seat);
+        if (s.stateVersion === before) break;
+        // A token that arrived this action, and a card that went from a graveyard straight to a
+        // battlefield — the two routes that used to be silent.
+        for (const [id, inst] of Object.entries(s.instances)) {
+          if (inst.zone !== 'battlefield') continue;
+          const was = previous.instances[id];
+          if (was === undefined && inst.isToken) tokens += 1;
+          if (was?.zone === 'graveyard') reanimated += 1;
+        }
+        expect(s.died).toEqual([]);
+        expect(s.entered).toEqual([]);
+      }
+      expect(s.finished).toBe(true);
+    }
+    // Both routes come up in a Rot Harvest game: Izoni and Lotleth make tokens, Zombify
+    // reanimates. If either stopped happening the claim above would be about nothing.
+    expect(tokens + reanimated).toBeGreaterThan(0);
+  });
+
   it('fires death triggers in real games, whatever did the killing', () => {
     // The bug this guards was silent for the whole life of the engine: "dies" meant "noticed by
     // state-based actions", so lethal damage triggered and a destroy spell did not. A playout
@@ -185,9 +219,10 @@ describe('a whole automated game', () => {
         for (const object of Object.values(s.stackObjects)) {
           if (/create a 1\/1 white Spirit|deals 1 damage to any target/.test(object.description)) fired += 1;
         }
-        // And nothing is ever left queued: a death recorded and never announced would sit in the
-        // state for the rest of the game.
+        // And nothing is ever left queued: a death or an arrival recorded and never announced
+        // would sit in the state for the rest of the game.
         expect(s.died).toEqual([]);
+        expect(s.entered).toEqual([]);
       }
       expect(s.finished).toBe(true);
     }

@@ -161,6 +161,20 @@ export interface AutomationState {
    */
   readonly died: readonly string[];
   /**
+   * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
+   * Drained by `settle` alongside `died`.
+   *
+   * The same story as `died`, and found the same way. `etb` was raised at exactly one call site —
+   * a permanent spell finishing its resolution — so a creature put onto the battlefield by
+   * Zombify never triggered, and a token never triggered at all. Krenko's Goblins, Izoni's
+   * Insects and Talrand's Drakes all arrived silently. Recorded where the card actually moves,
+   * announced in one place.
+   *
+   * A permanent changing controller is **not** entering the battlefield, so only a move from
+   * somewhere else counts.
+   */
+  readonly entered: readonly string[];
+  /**
    * A cleanup-step discard that is blocking the turn from ending. Hand size is a real decision a
    * player has to make, so the engine stops and waits rather than discarding for them.
    */

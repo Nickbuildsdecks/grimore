@@ -509,15 +509,86 @@ const IZONI: CardScript = {
   ],
 };
 
+// ── Watching the board rather than itself ────────────────────────────────────────────────────────
+
+/**
+ * "Whenever ~ or another creature dies", and the three cards shaped like it.
+ *
+ * These were the family the engine could not express: `dies` and `etb` only ever reached the
+ * permanent the event happened to, so a card that watches the *board* had nothing to watch with.
+ * `who` says which — `self` (the default, and what every other script means), `another`, or `any`
+ * for the "~ or another" templating — and `of` narrows it to a controller.
+ *
+ * They are also the cards that make a sacrifice deck a deck rather than a pile: Fleshbag Marauder
+ * with a Blood Artist out is a drain, and Doomed Dissenter dying twice over is two.
+ */
+const BLOOD_ARTIST: CardScript = {
+  name: 'Blood Artist',
+  triggers: [
+    {
+      on: { kind: 'dies', who: 'any', what: 'creature' },
+      targets: [TARGET_PLAYER],
+      description: 'target player loses 1 life and you gain 1 life',
+      effect: (c) => {
+        const seat = firstPlayerTarget(c);
+        if (seat === null) return c.state;
+        return gainLife(loseLife(c.state, seat, 1), c.controller, 1);
+      },
+    },
+  ],
+};
+
+const ZULAPORT_CUTTHROAT: CardScript = {
+  name: 'Zulaport Cutthroat',
+  triggers: [
+    {
+      // Only its controller's creatures, which is the difference from Blood Artist — and the
+      // reason it needs no target: "each opponent" is not a choice.
+      on: { kind: 'dies', who: 'any', of: 'you', what: 'creature' },
+      description: 'each opponent loses 1 life and you gain 1 life',
+      effect: (c) => gainLife(
+        opponentsOf(c.state, c.controller).reduce((state, seat) => loseLife(state, seat, 1), c.state),
+        c.controller,
+        1,
+      ),
+    },
+  ],
+};
+
+const SOUL_WARDEN: CardScript = {
+  name: 'Soul Warden',
+  triggers: [
+    {
+      // "Another" and not "any": a Soul Warden does not gain you life for itself.
+      on: { kind: 'etb', who: 'another', of: 'any', what: 'creature' },
+      description: 'you gain 1 life',
+      effect: (c) => gainLife(c.state, c.controller, 1),
+    },
+  ],
+};
+
+const IMPACT_TREMORS: CardScript = {
+  name: 'Impact Tremors',
+  triggers: [
+    {
+      on: { kind: 'etb', who: 'any', of: 'you', what: 'creature' },
+      description: 'deals 1 damage to each opponent',
+      effect: (c) => opponentsOf(c.state, c.controller).reduce(
+        (state, seat) => dealDamage(state, { kind: 'player', seat }, 1, { controller: c.controller }),
+        c.state,
+      ),
+    },
+  ],
+};
+
 // ── Dying, upkeep, and a static effect: the engine paths no card reached ─────────────────────────
 
 /**
- * A `dies` trigger fires from the graveyard, for the creature that died and no other.
+ * A `dies` trigger fires from the graveyard, for the creature that died.
  *
- * Worth stating because it rules out a whole family of cards: "whenever **another** creature dies"
- * (Blood Artist, Zulaport Cutthroat) cannot be scripted, since the engine only offers the event to
- * the dying permanent's own script. The same is true of `etb` — "whenever another creature enters"
- * is out for the same reason. These three are the self-only shape, which is most of them.
+ * These three are the self-only shape, which is most of them and the default: a trigger that says
+ * nothing about `who` watches its own permanent and nothing else. See `BLOOD_ARTIST` above for the
+ * shape that watches the board.
  */
 const DOOMED_TRAVELER: CardScript = {
   name: 'Doomed Traveler',
@@ -869,6 +940,7 @@ const ALL: readonly CardScript[] = [
   SELESNYA_CHARM, SOUL_MANIPULATION, GRIM_DISCOVERY,
   DOOMED_TRAVELER, DOOMED_DISSENTER, GOBLIN_ARSONIST, PHYREXIAN_ARENA, GLORIOUS_ANTHEM,
   THERMO_ALCHEMIST,
+  BLOOD_ARTIST, ZULAPORT_CUTTHROAT, SOUL_WARDEN, IMPACT_TREMORS,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

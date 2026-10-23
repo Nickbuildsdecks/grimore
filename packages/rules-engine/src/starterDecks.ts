@@ -64,6 +64,15 @@ const FIREBRAND_ARCHER: CardDef = {
   colors: ['R'],
 };
 
+const IMPACT_TREMORS: CardDef = {
+  name: 'Impact Tremors',
+  typeLine: 'Enchantment',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  oracleText: 'Whenever a creature you control enters the battlefield, Impact Tremors deals 1 damage to each opponent.',
+  colors: ['R'],
+};
+
 const GOBLIN_ARSONIST: CardDef = {
   name: 'Goblin Arsonist',
   typeLine: 'Creature — Goblin Shaman',
@@ -227,6 +236,17 @@ const DOOMED_TRAVELER: CardDef = {
   power: '1',
   toughness: '1',
   oracleText: 'When Doomed Traveler dies, create a 1/1 white Spirit creature token with flying.',
+  colors: ['W'],
+};
+
+const SOUL_WARDEN: CardDef = {
+  name: 'Soul Warden',
+  typeLine: 'Creature — Human Cleric',
+  manaCost: '{W}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Whenever another creature enters the battlefield, you gain 1 life.',
   colors: ['W'],
 };
 
@@ -571,6 +591,28 @@ const WALL_OF_BLOSSOMS: CardDef = {
   colors: ['G'],
 };
 
+const BLOOD_ARTIST: CardDef = {
+  name: 'Blood Artist',
+  typeLine: 'Creature — Vampire',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '0',
+  toughness: '1',
+  oracleText: 'Whenever Blood Artist or another creature dies, target player loses 1 life and you gain 1 life.',
+  colors: ['B'],
+};
+
+const ZULAPORT_CUTTHROAT: CardDef = {
+  name: 'Zulaport Cutthroat',
+  typeLine: 'Creature — Human Rogue',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Whenever Zulaport Cutthroat or another creature you control dies, each opponent loses 1 life and you gain 1 life.',
+  colors: ['B'],
+};
+
 const DOOMED_DISSENTER: CardDef = {
   name: 'Doomed Dissenter',
   typeLine: 'Creature — Human',
@@ -653,8 +695,9 @@ export const EMBER_RUSH: DeckSpec = {
     { card: FLAMETONGUE_KAVU, count: 2 },
     { card: SHIVAN_DRAGON, count: 3 },
     { card: LIGHTNING_BOLT, count: 4 },
-    { card: SHOCK, count: 3 },
-    { card: LAVA_SPIKE, count: 3 },
+    { card: SHOCK, count: 2 },
+    { card: LAVA_SPIKE, count: 2 },
+    { card: IMPACT_TREMORS, count: 2 },
     { card: FAITHLESS_LOOTING, count: 2 },
     { card: FLAME_SLASH, count: 4 },
     { card: ACT_OF_TREASON, count: 1 },
@@ -671,16 +714,20 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: PLAINS, count: 10 },
     { card: LLANOWAR_ELVES, count: 4 },
     { card: RAMPANT_GROWTH, count: 4 },
-    { card: GRIZZLY_BEARS, count: 1 },
+    { card: SOUL_WARDEN, count: 2 },
     { card: DOOMED_TRAVELER, count: 3 },
+    // A plain 2/2 with no text, kept at one copy on purpose: `testkit.ts` builds its boards by
+    // pulling named cards out of a real deck, so the vanilla creature two dozen tests use as
+    // their fixture has to be *in* a deck to be reachable. Cutting it breaks them all at once.
+    { card: GRIZZLY_BEARS, count: 1 },
     { card: GLORIOUS_ANTHEM, count: 2 },
     { card: CENTAUR_COURSER, count: 3 },
     { card: AJANIS_PRIDEMATE, count: 3 },
     { card: SERRA_ANGEL, count: 3 },
-    { card: GIANT_GROWTH, count: 3 },
+    { card: GIANT_GROWTH, count: 2 },
     { card: SELESNYA_CHARM, count: 3 },
     { card: PACIFISM, count: 2 },
-    { card: SWORDS_TO_PLOWSHARES, count: 3 },
+    { card: SWORDS_TO_PLOWSHARES, count: 2 },
     { card: HARMONIZE, count: 2 },
     { card: OVERRUN, count: 2 },
   ],
@@ -722,19 +769,23 @@ export const ROT_HARVEST: DeckSpec = {
     { card: FOREST, count: 11 },
     { card: SWAMP, count: 12 },
     { card: LLANOWAR_ELVES, count: 4 },
-    { card: THORNWEALD_ARCHER, count: 2 },
+    { card: THORNWEALD_ARCHER, count: 1 },
+    { card: BLOOD_ARTIST, count: 3 },
+    { card: ZULAPORT_CUTTHROAT, count: 2 },
     { card: DOOMED_DISSENTER, count: 3 },
     { card: WALL_OF_BLOSSOMS, count: 3 },
     { card: FLESHBAG_MARAUDER, count: 3 },
-    { card: CENTAUR_COURSER, count: 1 },
-    { card: BLOODTHRONE_VAMPIRE, count: 3 },
+    { card: BLOODTHRONE_VAMPIRE, count: 2 },
     { card: VAMPIRE_ARISTOCRAT, count: 3 },
     { card: GRAVEDIGGER, count: 4 },
-    { card: RAISE_DEAD, count: 2 },
+    { card: RAISE_DEAD, count: 1 },
     { card: GRIM_DISCOVERY, count: 2 },
-    { card: ZOMBIFY, count: 2 },
-    { card: DOOM_BLADE, count: 3 },
+    { card: ZOMBIFY, count: 1 },
+    { card: DOOM_BLADE, count: 2 },
     { card: LOTLETH_GIANT, count: 2 },
+    // One copy, for the same reason as the Grizzly Bears in Verdant Guard: the graveyard tests
+    // build their boards out of this deck and need a plain creature to bury.
+    { card: CENTAUR_COURSER, count: 1 },
   ],
 };
 

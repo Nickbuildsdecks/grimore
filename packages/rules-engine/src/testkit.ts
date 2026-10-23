@@ -266,6 +266,25 @@ export function choices(s: GameState): string[] {
   return pending.candidates.map((c) => nameOf(s, c)).sort();
 }
 
+/**
+ * Passes priority until the stack is empty and nothing is queued.
+ *
+ * Needed because a *tabletop* action — `card:move`, `token:create` — never calls `settle`, so a
+ * death or an arrival it causes is recorded and sits there until the next engine action announces
+ * it. A test that creates a token by hand and then looks at the stack sees an empty one, which is
+ * the trap this exists to avoid.
+ */
+export function drain(s: GameState, limit = 16): GameState {
+  let next = s;
+  for (let i = 0; i < limit; i++) {
+    if (next.stackOrder.length === 0 && next.died.length === 0 && next.entered.length === 0) return next;
+    if (next.pendingChoice !== null || next.pendingDecision !== null) return next;
+    if (next.priority === null) return next;
+    next = apply(next, { type: 'auto:pass', by: next.priority });
+  }
+  return next;
+}
+
 /** The names on the stack, bottom first. */
 export const stackNames = (s: GameState): string[] =>
   [...s.stackOrder].map((id) => s.stackObjects[id]!.description);

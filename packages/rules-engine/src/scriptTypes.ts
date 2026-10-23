@@ -50,8 +50,36 @@ export interface TargetSpec {
  * deliberate friction: a trigger nothing fires is worse than no trigger at all.
  */
 export type TriggerEvent =
-  | { readonly kind: 'etb' }
-  | { readonly kind: 'dies' }
+  | {
+      readonly kind: 'etb';
+      /**
+       * Whose entry it watches. `self` — the default, and what most cards do — is the permanent's
+       * own arrival. `another` is every creature *but* this one, and `any` is both, which is the
+       * "~ or another creature" templating.
+       */
+      readonly who?: 'self' | 'another' | 'any';
+      /** Who controls the permanent entering. Ignored for `who: 'self'`. */
+      readonly of?: 'you' | 'opponent' | 'any';
+      /**
+       * What kind of permanent. `permanent` is the default because a `who: 'self'` trigger already
+       * knows what its own card is — but a trigger watching the *board* almost always says
+       * "creature", and without this an Impact Tremors fires for its own arrival as an enchantment.
+       */
+      readonly what?: 'creature' | 'permanent';
+      /** Set by the engine when it raises the event. */
+      readonly subjectSeat?: SeatIndex;
+      /** Set by the engine when it raises the event: whether the subject is a creature. */
+      readonly subjectIsCreature?: boolean;
+    }
+  | {
+      readonly kind: 'dies';
+      /** As `etb`: `self` is this creature dying, `another` is any other, `any` is both. */
+      readonly who?: 'self' | 'another' | 'any';
+      readonly of?: 'you' | 'opponent' | 'any';
+      readonly what?: 'creature' | 'permanent';
+      readonly subjectSeat?: SeatIndex;
+      readonly subjectIsCreature?: boolean;
+    }
   | { readonly kind: 'attacks' }
   | { readonly kind: 'becomes-tapped' }
   | {

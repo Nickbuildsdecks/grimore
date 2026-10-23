@@ -42,7 +42,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 59 scripted cards |
+| `scripts.ts` | All 63 scripted cards |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -126,6 +126,7 @@ found by executing the code, not by reading it.
 
 | Bug | Mechanism |
 | --- | --- |
+| **A reanimated creature and a token entered the battlefield silently** | `etb` was raised at exactly one call site — a permanent *spell* finishing its resolution. So Zombify put a Gravedigger onto the battlefield and its trigger never fired, and a **token triggered nothing at all**: Krenko's Goblins, Izoni's Insects and Talrand's Drakes were all mute, as was anything watching for them. Entering means arriving from anywhere (CR 603.6a). The same fix as `dies` — recorded where the card moves, announced in one place — which is itself the evidence the architecture wanted it that way. |
 | **"When this dies" never fired for a creature killed by a spell** | `dies` meant "noticed by state-based actions", which only sees *lethal damage* and a toughness at zero. A creature **destroyed** by Doom Blade is already in the graveyard by the time those run, so nothing announced it — and the two call sites that did care had each been patched to announce their own deaths by hand, which is the shape of a rule nobody owns. "Dies" means put into a graveyard from the battlefield (CR 700.4), so `relocate` — the one place a card changes zone — records the fact and `settle` raises it. Found by writing the first card with a death trigger: the engine had gone its whole life without one. |
 | **The other player's table offered Pass forever** | A suspended resolution left `state.priority` naming whoever last passed. That seat's table offered Pass, the engine refused it because a question was outstanding, and the two disagreed for as long as the question stood — on turn ten of a real game, with a red banner and no way forward. Nobody holds priority in the middle of a resolution, and the state now says so; `legalActions` also refuses to report `hasPriority` while anything is blocking, because one of the two has to be hard to get wrong and that is the field the table keys its one button on. |
 | **Nothing castable was ever cast** | `legalActions` offered spells against potential mana; `auto:cast` required mana already floating. Every cast was refused. With no creatures there was then no combat and no damage — a whole half of the game missing, from one absent function. Fixed by `solveTap`. |
@@ -139,7 +140,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**346 tests in the rules engine, 95 in the web app, 936 across the workspace.**
+**354 tests in the rules engine, 95 in the web app, 944 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -203,7 +204,7 @@ nothing else — `viewFor` is unchanged, the client unpacks once in `lib/table.t
 
 ## Added after the first checkpoint
 
-Ten things, in the order they mattered.
+Eleven things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -346,9 +347,30 @@ creature dies" (Blood Artist, Zulaport Cutthroat) is not scriptable; the same is
 Plowshares fires nothing, which is the whole point of the card and is now asserted in both
 directions, because getting the second half wrong is how the first half comes back.
 
+**Triggers that watch the board rather than themselves.** `dies` and `etb` only ever reached the
+permanent the event happened to, which ruled out a whole family: "whenever ~ **or another** creature
+dies" is one of the commonest black cards there is. The events now carry `who` (self, another, any),
+`of` (you, opponent, any) and `what` (creature, permanent), all defaulting to what every existing
+script already meant, so nothing written before this changed behaviour.
+
+Blood Artist, Zulaport Cutthroat, Soul Warden and Impact Tremors, to 63. They are also the cards
+that make a sacrifice deck a deck rather than a pile: a Fleshbag Marauder with a Blood Artist out
+is a drain, and a Doomed Dissenter dying is two triggers rather than one.
+
+`what` was not in the first draft and the test caught why: an Impact Tremors fired for *its own
+arrival*, because `who`/`of` say whose and not what, and an enchantment entering is not "a creature
+you control enters". The default is `permanent`, since a `who: 'self'` trigger already knows what
+its own card is.
+
+Writing them also found the **second** bug of the same shape as the `dies` one, which is the part
+worth remembering: `etb` was announced at a single call site too, so a creature put onto the
+battlefield by Zombify arrived silently and a token triggered nothing at all. Both are now recorded
+where the card actually moves and announced in one place — `settle` drains a list of deaths and a
+list of arrivals, in a loop, because a creature dying can leave a token behind.
+
 ## Next
 
-1. More scripts. The vocabulary in `effects.ts` covers far more than the 59 cards currently using
+1. More scripts. The vocabulary in `effects.ts` covers far more than the 63 cards currently using
    it, and the four ways a card can ask a player something — a mode, targets, a cost, a
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. The
    `becomes-tapped` trigger and the `all-creatures` static scope are still unused: both exist,

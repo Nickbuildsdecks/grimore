@@ -269,7 +269,12 @@ export function createToken(state: GameState, seat: SeatIndex, card: CardDef, co
     created.push(id);
   }
   const bf = zoneKey(seat, 'battlefield');
-  return withZones({ ...state, cardDefs, instances, instanceSeq: seq }, {
+  // A token enters the battlefield like anything else, and its entry is recorded for `settle` to
+  // announce. Without this a token triggered nothing at all — not its own ability, and not an
+  // Impact Tremors watching for it. `createToken` writes the zone directly rather than going
+  // through `relocate`, which is why it has to say so here.
+  const entered = state.automated ? [...state.entered, ...created] : state.entered;
+  return withZones({ ...state, cardDefs, instances, instanceSeq: seq, entered }, {
     [bf]: [...listAt(state, bf), ...created],
   });
 }
