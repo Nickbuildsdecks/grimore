@@ -280,6 +280,40 @@ async function main() {
     await expectEventually(friend, 'and the other player sees it immediately', async () =>
       (await readNumber(friend, 'life-0')) === lifeBefore - 1);
 
+    // ── Auras: attach, and detach when the host leaves ──────────────────────────────────────────
+    // Two permanents are needed, so another card is played first.
+    await cardAction(nick, cardsIn(nick, 'zone-hand-0').first(), 'act-play');
+    await expectEventually(nick, 'a second permanent for the attach flow', async () =>
+      (await cardsIn(nick, 'zone-battlefield-0').count()) >= 2);
+    const board2 = cardsIn(nick, 'zone-battlefield-0');
+    await board2.nth(0).click();
+    await waitFor(nick, 'card-sheet');
+    await tid(nick, 'act-attach').click();
+    await waitFor(nick, 'attach-hint');
+    await board2.nth(1).click();
+    await expectEventually(nick, 'an aura attaches to the permanent you pick next', async () =>
+      (await nick.locator('[data-testid="zone-battlefield-0"] [data-testid^="card-"]').first().textContent())?.includes('ATT'));
+    await expectEventually(friend, 'and the other player sees it attached', async () =>
+      (await friend.locator('[data-testid="zone-battlefield-0"] [data-testid^="card-"]').first().textContent())?.includes('ATT'));
+
+    // ── A refresh mid-game must not lose the seat ───────────────────────────────────────────────
+    // Somebody's phone locks or the wifi blips; the game has to survive it. The server holds a seat
+    // for two minutes and the client replays its seat token on connect.
+    const handBeforeReload = await cardsIn(friend, 'zone-hand-1').count();
+    const lifeBeforeReload = await readNumber(friend, 'life-1');
+    await friend.reload();
+    await expectEventually(friend, 'a mid-game refresh rejoins the same seat and the same game', async () => {
+      if ((await friend.locator('[data-testid="table"]').count()) === 0) return false;
+      const hand = await cardsIn(friend, 'zone-hand-1').count();
+      return hand === handBeforeReload && (await readNumber(friend, 'life-1')) === lifeBeforeReload;
+    }, 20000);
+    await expectEventually(friend, 'and the reclaimed seat can still act', async () => {
+      await tid(friend, 'life-down-1').click();
+      return (await readNumber(friend, 'life-1')) === lifeBeforeReload - 1;
+    });
+    await tid(friend, 'life-up-1').click();
+    await shot(friend, 'after-reload');
+
     // Search the deck, which is the only time a player may look at their own library.
     await tid(friend, 'search').click();
     await expectEventually(friend, 'searching opens your own library to you', async () =>

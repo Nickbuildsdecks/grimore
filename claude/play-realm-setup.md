@@ -119,8 +119,9 @@ node scripts/e2e-table.mjs      # two real browsers play a whole game; screensho
 
 Needs the stack running and Playwright available (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`).
 It plays a complete game through the real UI — lobby, decks, opening hands, card movement across
-every zone, tokens, searching, turns, a winner — and checks that neither browser ever receives the
-other's hand. 37 checks.
+every zone, tokens, auras, searching, turns, a winner — and checks that neither browser ever
+receives the other's hand. It also reloads one player mid-game to prove a refresh rejoins the same
+seat rather than losing the game. 42 checks.
 
 The layers under it have their own suites: `packages/rules-engine` (78 tests, including a full game
 and a Commander game ending on 21 commander damage) and `apps/realtime` (20 tests, including two
