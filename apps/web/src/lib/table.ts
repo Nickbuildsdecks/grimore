@@ -183,8 +183,8 @@ export function useTable(playerName: string): UseTable {
       })
     })
     socket.on("pod:error", (err: PodErrorEvent) => {
-      // A conflict is retried in `send` and is not worth showing.
-      if (err.code === "version_conflict") return
+      // Both of these are retried in `send`, so they are not worth showing the player.
+      if (err.code === "version_conflict" || err.code === "rate_limited") return
       setState((s) => ({ ...s, error: err.message }))
     })
     socket.on("pod:chat", (line: ChatLine) => {
@@ -263,11 +263,20 @@ export function useTable(playerName: string): UseTable {
         const attempt = async (): Promise<AckResult> =>
           emit("pod:action", { action, expectedVersion: versionRef.current })
         let res = await attempt()
-        // Both players act at once at a real table. The loser of that race is simply one version
-        // behind, so re-send against the version the server has just broadcast. Serialisation
-        // handles our own bursts; this handles the other player's.
-        for (let retry = 0; retry < 3 && !res.ok && res.error.code === "version_conflict"; retry++) {
-          await new Promise((r) => setTimeout(r, 40))
+        // Two reasons an action bounces, and both are worth simply retrying rather than showing
+        // the player an error for something they did nothing wrong to cause:
+        //
+        //  - `version_conflict`: both players acted at once, as they do at a real table, and this
+        //    one is a version behind. Serialisation handles our own bursts; this handles theirs.
+        //  - `rate_limited`: the server allows 20 events a second with a burst of 40, and a
+        //    Commander player tapping 40 life down to zero sends exactly that many. Backing off
+        //    and re-sending is the difference between the taps landing and the player watching
+        //    half of them vanish behind an error.
+        for (let retry = 0; retry < 6; retry++) {
+          if (res.ok) break
+          const code = res.error.code
+          if (code !== "version_conflict" && code !== "rate_limited") break
+          await new Promise((r) => setTimeout(r, code === "rate_limited" ? 120 : 40))
           res = await attempt()
         }
         // Take the version from the ack rather than waiting for the broadcast. The ack is the

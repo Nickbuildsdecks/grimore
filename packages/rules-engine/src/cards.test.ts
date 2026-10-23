@@ -549,6 +549,30 @@ describe('a complete two-player game', () => {
         for (const id of ids(s, other, 'hand')) expect(view.cards[id]!.card).toBeUndefined();
       }
     }
+    // Redaction is not only a privacy measure — it is what makes a pod fit on the wire at all.
+    // Play it out and the full state is well past STATE_MAX_BYTES while a single seat's view is a
+    // fraction of it. Broadcasting the raw state, as the socket layer used to, could not have
+    // carried a four-player Commander game however private anyone was willing to be.
+    let played = s;
+    for (let turn = 0; turn < 40; turn++) {
+      const seat = (turn % 4) as SeatIndex;
+      if (count(played, seat, 'library') > 0) {
+        played = applyAction(played, { type: 'zone:draw', by: seat, seat, count: 1 });
+      }
+      for (const card of [...ids(played, seat, 'hand')].slice(0, 3)) {
+        played = applyAction(played, { type: 'card:move', by: seat, card, toZone: 'battlefield' });
+      }
+      const board = ids(played, seat, 'battlefield');
+      if (board.length > 6) {
+        played = applyAction(played, { type: 'card:move', by: seat, card: board[0]!, toZone: 'graveyard' });
+      }
+      played = applyAction(played, { type: 'turn:pass', by: seat });
+    }
+    const size = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length;
+    const CAP = 64 * 1024;
+    expect(size(played)).toBeGreaterThan(CAP);
+    for (const seat of [0, 1, 2, 3] as const) expect(size(viewFor(played, seat))).toBeLessThan(CAP);
+
     // The turn passes round all four, and an eliminated seat is skipped.
     expect(s.activeSeat).toBe(0);
     s = applyAction(s, { type: 'turn:pass', by: 0 });
@@ -557,6 +581,55 @@ describe('a complete two-player game', () => {
     s = applyAction(s, { type: 'turn:pass', by: 1 });
     expect(s.activeSeat).toBe(3);
     expect(s.finished).toBe(false);
+  });
+
+  it('survives a long game: 40 turns, full boards and graveyards, still inside the wire limit', () => {
+    // The short game above proves the mechanics. This asks the other question: does a game that
+    // actually runs its course stay inside STATE_MAX_BYTES, which is what a view has to fit in to
+    // reach the other player at all. A board and two graveyards full of real cards is the worst
+    // realistic case, and the log is the part that grows without bound.
+    let s = applyMany(newTable('edh'), [
+      { type: 'deck:load', by: 0, seat: 0, deckId: 'ember-rush' },
+      { type: 'deck:load', by: 1, seat: 1, deckId: 'verdant-guard' },
+      { type: 'game:start', by: 0 },
+    ]);
+
+    for (let turn = 0; turn < 40; turn++) {
+      const seat = (turn % 2) as SeatIndex;
+      s = applyAction(s, { type: 'turn:untapAll', by: seat, seat });
+      if (count(s, seat, 'library') > 0) s = applyAction(s, { type: 'zone:draw', by: seat, seat, count: 1 });
+      // Play everything in hand, tap it, and send a third of the board to the graveyard.
+      for (const card of [...ids(s, seat, 'hand')].slice(0, 3)) {
+        s = applyAction(s, { type: 'card:move', by: seat, card, toZone: 'battlefield' });
+        s = applyAction(s, { type: 'card:tap', by: seat, card, tapped: true });
+        s = applyAction(s, { type: 'card:counter', by: seat, card, key: '+1/+1', delta: 1 });
+      }
+      const board = ids(s, seat, 'battlefield');
+      if (board.length > 6) {
+        s = applyAction(s, { type: 'card:move', by: seat, card: board[0]!, toZone: 'graveyard' });
+        s = applyAction(s, { type: 'card:move', by: seat, card: board[1]!, toZone: 'exile' });
+      }
+      s = applyAction(s, { type: 'life:adjust', by: seat, seat, delta: -1 });
+      s = applyAction(s, { type: 'turn:pass', by: seat });
+    }
+
+    expect(s.turn).toBeGreaterThan(20);
+    expect(s.finished).toBe(false);
+    // The log is bounded, so a long game cannot grow it without limit.
+    expect(s.log.length).toBeLessThanOrEqual(200);
+
+    const bytes = (seat: SeatIndex): number =>
+      new TextEncoder().encode(JSON.stringify(viewFor(s, seat))).length;
+    // 64KB is STATE_MAX_BYTES in the realtime contract; a view that exceeds it cannot be sent.
+    expect(bytes(0)).toBeLessThan(64 * 1024);
+    expect(bytes(1)).toBeLessThan(64 * 1024);
+    // And a spectator, who sees both boards and neither hand.
+    expect(new TextEncoder().encode(JSON.stringify(viewFor(s, null))).length).toBeLessThan(64 * 1024);
+
+    // Redaction still holds this far in, which is the thing most likely to quietly regress.
+    const view = viewFor(s, 0);
+    for (const id of ids(s, 1, 'hand')) expect(view.cards[id]?.card).toBeUndefined();
+    expect(view.zones[zoneKey(1, 'library')]).toBeUndefined();
   });
 
   it('defines a key for a card the same way whoever asks', () => {

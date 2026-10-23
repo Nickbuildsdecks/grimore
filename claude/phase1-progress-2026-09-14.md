@@ -1429,6 +1429,20 @@ hidden information enforced server-side per socket (including hiding your own li
 definitions separate from instances so a view fits inside `STATE_MAX_BYTES`; the table outside the
 login gate so a friend needs no account and the only dependency is Redis.
 
+### Redaction turned out to be load-bearing, not just a privacy fix
+
+Measured rather than guessed, at turn 41 with full boards and graveyards:
+
+| | full `GameState` | one seat's view | cap |
+| --- | --- | --- | --- |
+| 1v1 Commander | 62,097 bytes | 30,129 bytes | 65,536 |
+| 4-player pod | **89,969 bytes** | 36,431 bytes | 65,536 |
+
+So the old behaviour — broadcasting the whole game state to the room — would have outgrown
+`STATE_MAX_BYTES` partway through a two-player game and could never have carried a Commander pod at
+all, however relaxed anyone was about privacy. The four-seat test asserts both halves of that: the
+full state over the cap, every seat's view under it.
+
 ### Verified, not asserted
 
 - `packages/rules-engine` 78 tests, including a complete two-player game from shuffled decks to a
