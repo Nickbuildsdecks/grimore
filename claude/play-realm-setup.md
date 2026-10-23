@@ -2,29 +2,38 @@
 
 Two people, two devices, one game of Magic. This is what to run and what to expect.
 
-## What it is, and what it deliberately is not
+## Two ways to play
 
-It is a **shared digital tabletop**, the same idea as Cockatrice or a webcam pointed at a kitchen
-table: the server owns the zones, the life totals and the turn counter, and both players see the
-same board live. Every card can be moved anywhere, because **the players apply the rules**, not the
-computer.
+**Arena mode** is a rules engine. It runs the turn, tracks priority, resolves the stack, declares
+combat and refuses a play that is not legal — the computer plays Magic with you. Spells do what
+they say, creatures die when they should, and the mana for a spell is tapped for you. Start it with
+**Play with the rules engine**.
 
-It is **not** a rules engine. It does not know that Lightning Bolt deals three damage, it will not
-stop you attacking with a creature that has summoning sickness, and it will not put a trigger on the
-stack for you. That is a choice, not a gap: a rules engine has to be written card by card, so it
-only works for the few dozen cards somebody has implemented, and your actual decks would mostly not
-function. A tabletop works with every card ever printed on day one. The action model is shaped so
-per-card automation can be layered on later without redoing any of this.
+**Tabletop mode** is the same board with no rules at all: every card in every zone can be moved
+anywhere, exactly as it can with cardboard, and the players apply the rules themselves. Start it
+with **Play as a tabletop**.
 
-What it *does* do is the bookkeeping that is tedious and easy to get wrong: shuffling, drawing,
-untapping, counters, tokens, commander damage, the turn counter, and a complete log you can scroll
-back through when you disagree about what happened. There is a chat panel too, for the things a
-tabletop cannot decide for you — whether you are responding, what a trigger did, taking something
-back.
+Neither replaces the other. A rules engine has to be written card by card, so it only knows the
+cards somebody has scripted — thirty-four, today, across three starter decks. A tabletop works with
+every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
+one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
+normally, and the log says it was not automated rather than pretending.
+
+You can also start a tabletop game and hand it to the engine later, with the **Rules engine**
+button in the control bar.
+
+**You can play on your own.** The lobby has a *Play on your own* section: one seat for you, one the
+server plays. No code to share and nobody to wait for. The opponent mulligans, plays lands, casts
+spells, attacks and blocks; it is not a strong player, but it is a real one.
+
+What both modes do is the bookkeeping that is tedious and easy to get wrong: shuffling, drawing,
+untapping, counters, tokens, commander damage, and a complete log you can scroll back through when
+you disagree about what happened. There is a chat panel too.
 
 **Nobody can see your hand.** That is enforced on the server, not in the browser — the identity of a
 card in your opponent's hand is never sent to your machine at all. Same for both libraries,
-including your own, except while you are searching it.
+including your own, except while you are searching it. This holds in Arena mode, where the server
+also computes each player's legal moves separately, so one seat's options never travel to the other.
 
 ## Running it at home
 
@@ -51,7 +60,10 @@ It prints the address to open:
 
 Open that on both devices — your laptop and your friend's laptop, or a laptop and a phone. One of
 you presses **Create table** and reads out the code (`GOBLIN-VAULT-51`); the other types it into
-**Join**. Ready up, pick a deck each, and the host presses **Start the game**.
+**Join**. Ready up, pick a deck each, and the host presses **Play with the rules engine** (or
+**Play as a tabletop**).
+
+To play on your own, open it on one device and press one of the buttons under *Play on your own*.
 
 Ctrl-C stops both servers.
 
@@ -64,7 +76,25 @@ PLAY_HOST=127.0.0.1    node scripts/play.mjs     # both players on this one mach
 REALTIME_PORT=4101 WEB_PORT=5101 node scripts/play.mjs
 ```
 
-### How to do the usual things
+### Playing in Arena mode
+
+Almost all of it is one button. The control bar at the bottom always shows the one thing the game
+is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declare attackers**,
+**Keep** — and the phase bar at the top says which step it is and who is holding things up.
+
+| What you want to do | How |
+| --- | --- |
+| Play a land, cast a spell, use an ability | Tap the card. Everything you can legally do with it is listed; everything else is not. A card you can play right now says **playable**. |
+| Pay for it | Nothing. The engine taps what the spell costs. Tap lands yourself first if you want particular ones spent. |
+| Choose a target | The legal ones light up. Tap one. A spell on the stack is targeted by tapping its row in the stack panel. |
+| Respond to their spell | While it is on the stack you hold priority — cast your instant, then pass. |
+| Attack | **Declare attackers**, tap the creatures, confirm. One that cannot attack is not tappable, and says why. |
+| Block | **Declare blockers**, tap your creature, then tap the attacker it blocks. Only attackers it may legally block light up. |
+| Mulligan | At the start, **Mulligan** draws a fresh seven; keeping then asks which card goes to the bottom. |
+| Something the engine does not know | Tap the card → **Move by hand**, and the tabletop's full move list is underneath. |
+| Be asked at every step | The **skipping** toggle in the control bar. On by default, it passes for you whenever passing is your only legal move — which is most of a game. |
+
+### Playing in tabletop mode
 
 The table never decides anything for you, so a few actions are idioms rather than buttons. Tap any
 card to see what you can do with it. The same list is in the game behind the **?** in the top bar,
@@ -89,11 +119,12 @@ so neither of you needs this page open while playing.
 The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
 anybody's turn, which is what makes instants and responses work at all.
 
-### Two starter decks
+### Three starter decks
 
-**Ember Rush** (mono-red aggro) and **Verdant Guard** (green-white midrange), 60 cards each plus a
-commander, so a table can start with no setup at all. They are also the only decks right now — see
-*What is not done* below.
+**Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange) and **Tidal Mind**
+(blue-black control, with counterspells), 60 cards each plus a commander, so a table can start with
+no setup at all. Any pairing works, including a deck against itself. They are also the only decks
+right now — see *What is not done* below.
 
 Cards are drawn as text, not pictures. That is deliberate: there is no card artwork available (the
 card table on the server has never been populated, and this environment cannot reach Scryfall), so
@@ -140,25 +171,45 @@ run end to end.
 
 ## Proving it works
 
+Three browser suites, one per way of playing. All need the stack running and Playwright available
+(`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
+
 ```bash
-node scripts/e2e-table.mjs      # two real browsers play a whole game; screenshots in e2e-shots/
+node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 47 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 32 checks
+node scripts/e2e-solo.mjs       # one browser, against the computer    — 13 checks
 ```
 
-Needs the stack running and Playwright available (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`).
-It plays a complete game through the real UI — lobby, decks, opening hands, card movement across
-every zone, tokens, auras, searching, turns, chat, a winner — and checks that neither browser ever
-receives the other's hand. It also reloads one player mid-game to prove a refresh rejoins the same
-seat rather than losing the game. 47 checks.
+The tabletop suite plays a complete game through the real UI — lobby, decks, opening hands, card
+movement across every zone, tokens, auras, searching, turns, chat, a winner — and checks that
+neither browser ever receives the other's hand. The Arena suite does the same with the engine
+running, taking whatever the UI offers rather than a fixed sequence, so it plays whatever the
+shuffle deals; it checks that the engine never refuses something the table offered, and has modes
+for the cases the shuffle makes rare:
 
-The layers under it have their own suites: `packages/rules-engine` (78 tests, including a full game
-and a Commander game ending on 21 commander damage) and `apps/realtime` (20 tests, including two
-socket clients playing a game to a finish against live Redis).
+```bash
+DECK_B=tidal-mind node scripts/e2e-arena.mjs     # counterspells, so the stack gets targeted
+FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatever they drew
+```
+
+The layers under them have their own suites: `packages/rules-engine` (295 tests, including whole
+games played out by bots that only ever send moves the engine offered them) and `apps/realtime`
+(22 tests against live Redis, including two socket clients playing to a finish and one person
+playing the server).
 
 ## What is not done
 
-- **Only the two starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is a
-  small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so it
-  is a deck-source function and a picker in the lobby, not a redesign.
+- **Only the three starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
+  a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
+  it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
+  unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
+- **The engine knows thirty-four cards.** Everything in the three starter decks. A card that needs
+  a decision *while it is resolving* — searching a library, "choose one", an opponent discarding a
+  card of their choice — is deliberately not scripted rather than approximated, because the engine
+  has no way to stop and ask. Those resolve by hand.
+- **The computer opponent is not a strong player.** It attacks with everything, blocks when the
+  trade is good, casts the biggest thing it can afford and mulligans a hand with no land in it. It
+  plays a real game; it does not plan one.
 - **No card images**, for the reason above.
 - **Up to four seats** is supported by the engine and the server, but only two-player tables have
   been played end to end. A Commander pod should work; it has not been sat at.

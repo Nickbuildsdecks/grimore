@@ -135,7 +135,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**257 tests in the rules engine, 69 in the web app, 819 across the workspace.**
+**295 tests in the rules engine, 77 in the web app, 858 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -146,10 +146,14 @@ The ones that carry the most weight:
   refuses, never reaches a state where nobody can act, and keeps every seat's view inside the 64KB
   socket budget for the whole game.
 - **`scripts/e2e-arena.mjs`** does the same through two real browsers, taking whatever the UI offers
-  rather than a fixed sequence, so it plays whatever the shuffle deals. Thirty checks, including
+  rather than a fixed sequence, so it plays whatever the shuffle deals. Thirty-two checks, including
   that the opponent's hand is still unreadable with the engine running, that the engine never
   refused anything the table offered, that a mid-game refresh rejoins the same automated game, and
-  that the whole thing fits a phone.
+  that the whole thing fits a phone. `DECK_B=tidal-mind` brings counterspells into it and
+  `FORCE_MULLIGAN=1` makes both players mulligan, because at one hand in nine the flow after a
+  mulligan would otherwise almost never run.
+- **`scripts/e2e-solo.mjs`** plays a whole game in one browser against the server — thirteen checks,
+  and a game takes thirty-three moves.
 - **`combat.test.ts`** asserts each combat rule on a board built to need it, with the CR reference
   in the test name — so a failure says which rule broke rather than which line did.
 - **`scripts.test.ts`** plays every scripted card the way a player would, and checks that no card in
@@ -177,11 +181,51 @@ what keeps the game on the wire.
 - **Anything touching production.** No VM, no DNS, no deploy. Everything here runs on localhost and
   on the branch.
 
+---
+
+## Added after the first checkpoint
+
+Four things, in the order they mattered.
+
+**A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
+counterspells, and with them the first spells that target something on the stack — so the stack
+panel had to become targetable, since in Arena mode it is drawn as a list and had no card face to
+tap. Twelve more scripted cards: countering, destroy, mill, card draw, random discard, and the
+flying / deathtouch / lifelink keywords. "Discards a card at random" is scripted and "discards a
+card" of the player's choosing is not, for the reason in the table above.
+
+**Passing for a player who has nothing to do.** The measurement that justifies it: 21.6 actions per
+turn before, 3.2 after — a whole game from 359 decisions to 56. It only ever acts when passing is
+the *only* legal move, a mana ability does not count as something to do, and four things always
+stop it: a combat declaration, a discard, any play including a land, and the start of somebody's
+turn. It is a table setting (`auto:stops`) with a toggle in the control bar, because a player who
+is bluffing or learning the turn structure wants every priority.
+
+**Opening hands.** Roughly one hand in nine opens with nought or one land, and until this the game
+was over before it started. Mulligans sit between the engine taking over and the first turn
+(CR 103.4): nobody holds priority, no step has begun, both players decide at once. The London
+mulligan is a redraw plus a debt — a fresh seven, one card owed to the bottom per mulligan — and
+`auto:keep` collects it. Which cards go back is the player's call, always.
+
+**Playing on your own.** A pod can seat the server. It readies itself, loads its own deck, settles
+its own opening hand and plays its turns, and it does all of that *inside the same pod write as the
+action that provoked it* — a reply in a separate write would show the player their own move, then a
+gap, then the answer, and would race another node against a state the opponent had not finished
+moving in.
+
+Two more bugs, both of which had been waiting for a second player who was never going to arrive:
+"which seat is the engine waiting on" returned one seat, which is wrong during opening hands (every
+seat decides at once) and wrong in a pod (every defender declares); and leaving a table left the
+server playing alone until the pod expired.
+
 ## Next
 
-1. A one-player table against `bot.ts`, which is the shortest path to the engine being useful alone.
-2. More scripts. The vocabulary in `effects.ts` covers far more than the 22 cards currently using
+1. More scripts. The vocabulary in `effects.ts` covers far more than the 34 cards currently using
    it; adding a card is a few declarative lines.
+2. A way to stop and ask during resolution. It is the one missing capability behind most of the
+   cards that cannot be scripted — a tutor, "choose one", a targeted trigger. The shape already
+   exists twice over in `pendingDiscard` and the opening-hand phase.
 3. Loading a real Grimore deck into an automated table. `deck:load` already resolves any deck handed
    to it; the gap is that unscripted cards are common in a real list, which the "move by hand"
    escape hatch covers but has not been played against at volume.
+4. A stronger opponent. The current one plays a real game but does not plan one.
