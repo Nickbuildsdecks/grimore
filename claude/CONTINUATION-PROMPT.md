@@ -22,7 +22,7 @@ CONTEXT — read these first, in this order:
   5. PRODUCT.md + DESIGN.md                 — product intent and the design system.
   6. CLAUDE.md                              — architecture, optics rules, the 14 legacy test suites.
 
-WHERE WE ARE: 101 of 126 legacy API routes ported into apps/api. See the progress doc's
+WHERE WE ARE: 103 of 126 legacy API routes ported into apps/api. See the progress doc's
 "Port status" table for the current wave and what remains.
 
 THE CENTRAL FINDING, which every wave has confirmed so far:

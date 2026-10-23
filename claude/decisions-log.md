@@ -589,3 +589,47 @@ rider on a route port.
 it was given, so any signed-in caller could learn the commander of anyone's private deck. The only
 entry point is `public/app.js` sending the owner to `/suggestions.html?deckId=<their own deck>`, so
 enforcing ownership breaks no caller.
+
+## D25 — The remaining long tail: one alias ported, one route that is dead, one that is blocked and mis-authorized
+
+Four legacy routes were left after the suggestions slice that are neither externally blocked by a
+card service nor already declared out of scope. Each gets a different answer, and two of them are
+"not ported", deliberately.
+
+**`GET /health` and `GET /api/health` — ported as aliases.** Legacy's handler is
+`{ status: 'ok', uptime }` with no database access, which is byte-for-byte what `apps/api`'s own
+`/healthz` already returns. The reason to alias rather than shrug is that these two paths are wired
+into things outside this repo: `docker-compose.yml`'s healthcheck for the legacy service, and
+whatever external uptime monitor is pointed at the domain. Both 404 against `apps/api` the moment a
+reverse proxy sends `/api` there, and a monitor that reads 404 as "down" pages for a service that is
+fine. One handler, three paths, one test per legacy path.
+
+**`GET /api/jobs/:jobId` — not ported. It is dead code and should be deleted.** The route reads
+`asyncJobsMap`, a module-level `Map`. That Map has **four references in the entire repository**: the
+declaration, a 5-minute sweep interval that deletes entries older than 30 minutes, the sweep's
+iteration, and this route's `.get()`. **Nothing anywhere calls `.set()`**, so the Map is empty for
+the life of the process and the route answers `404 {"error":"Job not found or expired."}` to every
+possible input, forever. There is nothing to port: a faithful port is a 404 handler, and a useful
+port would be inventing an async-job system no caller asks for. The sweep interval should go with
+it — it is a timer that wakes every five minutes to iterate an empty Map. Same posture as D13's dev
+git routes (raise rather than port), though this one is merely dead rather than dangerous.
+
+**`POST /api/admin/sync-mtgjson` and `GET /api/admin/sync-mtgjson/status` — not ported yet, and they
+need two fixes when they are.** mtgjson.com is denied by the egress proxy (verified:
+`CONNECT tunnel failed, response 403`), so the work they exist to do cannot run here and porting the
+shape would add two endpoints that can only fail. Two things must change at that point rather than be
+carried across:
+
+1. **Authorization is a hard-coded username.** Both routes gate on
+   `req.session.player.username.toLowerCase() !== 'nickbuildsdecks'`. The `players` table has an
+   admin role and `apps/api` has `isAdmin()`; D12 already moved the Google admin allow list out of
+   source and into configuration. A username string in a conditional is neither, and it silently
+   grants the sync to anyone who registers that username on a fresh database.
+2. **The sync status lives in `global.mtgjsonSyncStatus`.** Process-local, so with two API instances
+   the status endpoint reports on whichever instance the request landed on rather than on the sync
+   that is running — the D11/D23 objection again. It belongs in Redis, which `apps/api` already has.
+
+**`GET *`, `GET /react*`, `GET /sandbox` — not API routes.** These serve HTML: the SPA shell, the
+sandbox page, and the catch-all for the legacy pages in `public/`. `apps/web` serves the SPA and the
+legacy pages stay with `server.js` until the Wave 7 cutover moves them. There is nothing for
+`apps/api` to answer here, and adding a static-file handler to a JSON API would be the wrong shape.

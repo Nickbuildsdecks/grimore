@@ -1231,3 +1231,50 @@ categories changes stored tags on already-tagged decks. See D24.
   actually runs on the VM. An empty card table gives an empty suggestions page rather than an error,
   which is the right failure, but it is still empty.
 - Nothing here touches legacy `server.js` or `public/`. The legacy route and page are unchanged.
+
+## Checkpoint — the long tail decided (`/health`, `/api/health`; D25)
+
+Small slice, mostly a decision. `apps/api` now answers legacy's two liveness paths, and the three
+other routes that were left unaccounted for are settled in **D25** rather than left ambiguous. api
+suite 297 -> 299; workspace 551 -> 553. Port status: **103 of 126 legacy routes.**
+
+### `/api/jobs/:jobId` can only ever 404
+
+`asyncJobsMap` has four references in the whole repository: its declaration, a 5-minute sweep
+interval, the sweep's iteration, and this route's `.get()`. **Nothing calls `.set()`.** So the Map is
+empty for the life of the process and the route returns `{"error":"Job not found or expired."}` for
+every input, always. A faithful port is a 404 handler; a useful one would be inventing an async-job
+system nothing asks for. Not ported, and it should be deleted from `server.js` along with the timer
+that wakes every five minutes to iterate an empty Map.
+
+Third piece of dead code found by grepping for a caller rather than reading the handler —
+`loadActiveMatch()`, `window.handleGuestLogin`, and now this. The check that finds them is cheap and
+keeps earning: before porting a route, grep for what produces the state it reads.
+
+### The MTGJSON sync is gated on a hard-coded username
+
+Both `sync-mtgjson` routes gate on
+`req.session.player.username.toLowerCase() !== 'nickbuildsdecks'`. The `players` table has an admin
+role, `apps/api` has `isAdmin()`, and D12 already moved the Google admin allow list into
+configuration — a username string in a conditional is neither of those, and on a fresh database it
+hands the sync to whoever registers that name. mtgjson.com is also denied by the proxy (verified:
+`CONNECT 403`), and the sync status lives in a `global`, which two API instances cannot share. Not
+ported; D25 records what has to change when it is.
+
+### Why the health aliases are worth two lines
+
+Legacy's handler returns exactly what `/healthz` returns, so this is an alias and not a second
+implementation. It matters because those paths are referenced outside this repo —
+`docker-compose.yml`'s healthcheck for the legacy service, and any external uptime monitor pointed at
+the domain. Both would 404 against `apps/api` as soon as a reverse proxy routes `/api` there, and a
+monitor that reads 404 as "down" pages for a healthy service.
+
+### What is actually left
+
+Nothing portable on local data. The remainder is: the Scryfall-, Moxfield- and EDHREC-blocked routes
+(`/api/cards/versions`, `/api/cards/rulings` fallbacks, `/api/decks/:id/share`,
+`/api/decks/import-account`, `/api/moxfield/import-account`, `/api/decks/:deckId/suggestions`'s remote
+lists), Gemini's `/api/sandbox/ai-advisor`, the four sandbox room routes (D11), the dev git routes
+(D13), `/api/jobs/:jobId` and the MTGJSON sync (D25), and the static page handlers. Then **Wave 7**:
+the web cutover — 5 `legacyUrl()` callers, `CardSearch.tsx`'s duplicated interfaces, and the
+~40 places in the legacy `public/*.js` client that read `data.error` as a string.
