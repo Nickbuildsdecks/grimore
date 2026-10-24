@@ -4804,6 +4804,146 @@ describe('unscripted cards', () => {
   Asserted on the effect rather than on a card's behaviour on purpose — the bug was not that any
   one card was wrong, it was that the next card to use a flag would be.
 */
+/*
+  A replacement effect one permanent contributes for another (CR 614).
+
+  Everything the engine replaced before this was a shield on the card it affected — regeneration,
+  "enters tapped" — and both are printed on the permanent they change. Kalitas is written on a
+  creature across the table from the one it is talking about, which is why it needed a *pass*: the
+  engine has to ask every permanent on the board whether it wants to replace what is about to
+  happen.
+
+  The sharpest assertion in here is the Blood Artist one. A replaced death is **not a death**, so
+  nothing that watches for a creature dying may see it — if the drain happens, the engine has
+  implemented a trigger rather than a replacement.
+*/
+describe('a replacement effect from across the table', () => {
+  /** Seat 0 on Kalitas, seat 1 with a creature of its own and a Mountain to kill it with. */
+  const withKalitas = (hand: readonly string[] = [], theirs: readonly string[] = ['Centaur Courser']): GameState => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'rot-harvest' },
+      hands: { 1: hand },
+      battlefield: { 0: ['Kalitas, Traitor of Ghet'], 1: [...theirs, 'Swamp', 'Swamp', 'Swamp', 'Swamp'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      if (nameOf(s, id) !== 'Swamp') continue;
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  it('exiles an opponent creature killed by a spell, and leaves a Zombie behind', () => {
+    let s = withKalitas(['Doom Blade'], ['Centaur Courser']);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: courser }],
+    }));
+    // Exiled rather than buried, and the Zombie belongs to Kalitas's controller.
+    expect(s.instances[courser]!.zone).toBe('exile');
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Centaur Courser');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Zombie');
+  });
+
+  it('exiles one killed in combat, which is the other way a creature dies', () => {
+    // Lethal damage is a state-based action rather than an effect, so it reaches the graveyard by
+    // a different path — and the replacement has to be on that path too.
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'rot-harvest' },
+      battlefield: { 0: ['Kalitas, Traitor of Ghet'], 1: ['Llanowar Elves'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const elves = find(s, 1, 'battlefield', 'Llanowar Elves');
+    const kalitas = find(s, 0, 'battlefield', 'Kalitas, Traitor of Ghet');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: kalitas, defender: 1 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: elves, attacker: kalitas }] });
+    for (let i = 0; i < 8 && s.instances[elves]!.zone === 'battlefield'; i += 1) s = passBoth(s);
+    expect(s.instances[elves]!.zone).toBe('exile');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Zombie');
+  });
+
+  it('exiles one its owner sacrificed as a cost, which is the third', () => {
+    // A sacrifice is paid before the ability is even on the stack, so this is the earliest of the
+    // three paths — and `relocate` is the one place all three meet.
+    let s = withKalitas([], ['Centaur Courser', 'Vampire Aristocrat']);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const vamp = find(s, 1, 'battlefield', 'Vampire Aristocrat');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 1, card: vamp, abilityIndex: 0, sacrifice: courser,
+    }));
+    expect(s.instances[courser]!.zone).toBe('exile');
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Centaur Courser');
+  });
+
+  it('is a replacement and not a trigger: nothing sees the creature die', () => {
+    // The whole point. A Blood Artist drains for a creature dying *anywhere*, so if it drains
+    // here the engine has let the death happen and then tidied up after it.
+    let s = withKalitas(['Doom Blade'], ['Centaur Courser', 'Blood Artist']);
+    const before = [life(s, 0), life(s, 1)];
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Centaur Courser') }],
+    }));
+    expect(s.pendingChoice).toBeNull();
+    expect([life(s, 0), life(s, 1)]).toEqual(before);
+  });
+
+  it('says what it did, because a replaced death raises nothing to log', () => {
+    // Without this the card works invisibly: a creature dies to a Doom Blade and turns up in exile
+    // with a Zombie beside it, and nothing on screen says which permanent did that.
+    let s = withKalitas(['Doom Blade'], ['Centaur Courser']);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Centaur Courser') }],
+    }));
+    const said = s.log.map((entry) => entry.message).join(' | ');
+    expect(said).toContain('Kalitas, Traitor of Ghet');
+    expect(said).toContain('Centaur Courser');
+    expect(said).toContain('exile it instead');
+  });
+
+  it('leaves its own controller’s creatures where they always went', () => {
+    // "An opponent controls" — the half of the card that makes it a one-sided effect rather than a
+    // rule about the game. The same sacrifice outlet, pointed at its own board.
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'rot-harvest' },
+      hands: { 0: ['Lightning Bolt'] },
+      battlefield: {
+        0: ['Kalitas, Traitor of Ghet', 'Bloodthrone Vampire', 'Boggart Brute',
+          'Mountain', 'Mountain', 'Mountain'],
+        1: ['Doomed Dissenter'],
+      },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      if (nameOf(s, id) !== 'Mountain') continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const brute = find(s, 0, 'battlefield', 'Boggart Brute');
+    const dissenter = find(s, 1, 'battlefield', 'Doomed Dissenter');
+    // Kalitas's own controller eats their own creature: it is buried as it always was.
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Bloodthrone Vampire'),
+      abilityIndex: 0, sacrifice: brute,
+    }));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Boggart Brute');
+
+    // And the opponent's Dissenter is exiled instead, which leaves its own death trigger unfired:
+    // a replaced death triggers nothing, said this time about somebody else's card.
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: dissenter }],
+    }));
+    expect(s.instances[dissenter]!.zone).toBe('exile');
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Zombie');
+  });
+});
+
 describe('what a card says reaches the effect', () => {
   const everything = {
     power: 1, toughness: 2, keywords: ['flying'] as const, removeKeywords: ['trample'] as const,

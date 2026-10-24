@@ -464,6 +464,53 @@ export interface CardScript {
     readonly scope: 'self' | 'controller-creatures' | 'other-controller-creatures' | 'all-creatures';
     readonly effect: PumpOptions;
   }[];
+  /**
+   * Replacement effects this permanent contributes, for an event happening to *another* object
+   * (CR 614).
+   *
+   * The two replacement effects already in the engine — regeneration and "enters tapped" — are
+   * shields that sit on the card they affect, and they got away with it because that is where they
+   * are printed. "If a nontoken creature an opponent controls would die, exile it instead" cannot:
+   * the effect belongs to one permanent and changes what happens to a different one, so there has
+   * to be a *pass* that asks every permanent on the table whether it wants to replace what is
+   * about to happen. This is the declaration side of that pass.
+   *
+   * `applies` is a predicate rather than a scope enum for the same reason `TargetSpec.filter` is:
+   * every card words this differently — an opponent's, a nontoken one, a creature rather than a
+   * permanent — and an enum would either be short of what the next card needs or carry values no
+   * card uses, which D57 is the warning about.
+   *
+   * `instead` is handed the dying permanent and returns the state with it dealt with. It is run
+   * before the death event is raised, so a replaced death is not a death and nothing triggers off
+   * it — which is what the rules say and the whole reason this is a replacement rather than a
+   * trigger of its own.
+   */
+  readonly replaces?: readonly {
+    /** The only event this engine replaces. "Dies" is a permanent going to a graveyard from the
+     *  battlefield (CR 700.4). */
+    readonly on: 'dies';
+    readonly description: string;
+    readonly applies: (ctx: ReplacementContext) => boolean;
+    readonly instead: (ctx: ReplacementContext) => GameState;
+  }[];
+}
+
+/**
+ * What a replacement effect is asked about: the permanent it is replacing the event for, and the
+ * permanent whose effect this is.
+ *
+ * `dying` is already in its owner's graveyard when this runs, which is the shape of the engine's
+ * answer to replacement effects generally — see `settle`. Read it for what the card *was*, not for
+ * where it is.
+ */
+export interface ReplacementContext {
+  readonly state: GameState;
+  /** The permanent the event is happening to. */
+  readonly dying: string;
+  /** The permanent whose replacement effect this is. */
+  readonly source: string;
+  /** Who controls `source`. */
+  readonly controller: SeatIndex;
 }
 
 export const targetCount = (spec: TargetSpec): number => Math.max(1, spec.count ?? 1);

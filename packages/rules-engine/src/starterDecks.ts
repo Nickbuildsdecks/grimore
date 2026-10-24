@@ -1296,6 +1296,31 @@ const DISRUPT_DECORUM: CardDef = {
   colors: ['R'],
 };
 
+/*
+  The first card here whose effect belongs to one permanent and changes what happens to a different
+  one (CR 614) — which is the thing the engine had no answer for at all.
+
+  Regeneration and "enters the battlefield tapped" are both replacement effects and both got away
+  with being a shield sitting on the card they affect, because that is where they are printed. "If
+  a nontoken creature an opponent controls would die, exile it instead" cannot: it is written on a
+  vampire across the table from the creature it is talking about.
+
+  Kalitas is also the plainest possible test of the pass, because it hits every way a creature can
+  die — lethal damage, a Doom Blade, a sacrifice paid as a cost — and all three have to reach it.
+*/
+const KALITAS: CardDef = {
+  name: 'Kalitas, Traitor of Ghet',
+  typeLine: 'Legendary Creature — Vampire Warrior',
+  manaCost: '{2}{B}{B}',
+  cmc: 4,
+  power: '3',
+  toughness: '4',
+  oracleText:
+    'Lifelink\nIf a nontoken creature an opponent controls would die, instead exile that card and '
+    + 'create a 2/2 black Zombie creature token.',
+  colors: ['B'],
+};
+
 const NATURALIZE: CardDef = {
   name: 'Naturalize',
   typeLine: 'Instant',
@@ -1898,7 +1923,11 @@ export const ASHEN_RITE: DeckSpec = {
     // because a second one in a game would do nothing a first one had not already done.
     { card: NIGHT_OF_SOULS_BETRAYAL, count: 1 },
     // And the spells that spend them.
-    { card: BONE_SPLINTERS, count: 3 },
+    // Two Splinters rather than three, because the deck already has more ways to spend a creature
+    // than creatures to spend, and the slot bought the first replacement effect in the pool: a
+    // vampire who denies the other side its graveyard, in the deck that lives off its own.
+    { card: KALITAS, count: 1 },
+    { card: BONE_SPLINTERS, count: 2 },
     { card: VILLAGE_RITES, count: 1 },
     { card: AGONIZING_DEMISE, count: 2 },
     { card: BURST_LIGHTNING, count: 2 },

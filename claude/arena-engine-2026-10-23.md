@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 151 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 152 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -213,12 +213,15 @@ bug rather than a board.
 
 ## What is deliberately not done
 
-- **Most replacement effects.** Two are in — regeneration (CR 701.15) and "enters with counters"
-  (CR 614.1c) — and they are the two the card pool wanted, which is how Golgari Charm came to be
-  scripted after two checkpoints of being the standing example of what could not be. What is still
-  missing is a replacement *layer*: "if it would die, exile it instead", damage prevention and
-  protection all need an effect that other permanents contribute, rather than a shield sitting on
-  the one card. Cards needing those are left unscripted rather than approximated.
+- **Most replacement effects.** Three are in now — regeneration (CR 701.15), "enters with counters"
+  (CR 614.1c) and, from the increment below, **"if it would die, exile it instead" (CR 614)**, which
+  is the first one that belongs to a permanent and changes what happens to a *different* one. The
+  shape it needed — a pass that asks every permanent whether it wants to replace what is about to
+  happen — now exists and is what the next one should use. What is still missing is damage
+  prevention with a quantity ("prevent the next 3 damage": a shield that is spent, survives partial
+  use, and has to interact with every source of damage) and protection from a colour, which is four
+  rules wearing one keyword. Cards needing those are still left unscripted rather than
+  approximated.
 - **Copy effects** and **characteristic-setting effects**: still no vocabulary for either.
 - **True layer interaction** (CR 613). What is here is a fixed order — printed, then effects, then
   counters — which is right for every effect the card pool produces. Characteristic-setting and copy
@@ -1949,6 +1952,48 @@ One thing it did surface, recorded rather than fixed: Forge Alliance now carries
 should cast in a duel. That is one dead slot in sixty as a duel deck and a live one in a pod, and
 there is no pod-only deck to move it to — the alternative was keeping goad out of the pool, which
 costs more than the slot.
+
+### A replacement effect from across the table
+
+The project's own biggest named gap, closed in the smallest honest way. Two replacement effects were
+already here — regeneration and "enters the battlefield tapped" — and both got away with being a
+shield on the card they affect, because that is where they are printed. "If a nontoken creature an
+opponent controls would die, exile it instead" cannot: it is written on a vampire across the table
+from the creature it is talking about, so there has to be a *pass* that asks every permanent on the
+board whether it wants to replace what is about to happen.
+
+**Where that pass lives is the whole design, and the engine had already answered it once.** `relocate`
+is the one place a card changes zone, and it *records* what happened rather than announcing it, so
+`settle` holds the single list of what just died — and `settle` is where "enters tapped" is already
+applied, with a comment saying it is as close to a replacement as a state the engine computes in
+one action can be. The death replacement went in beside it, which is why the dying permanent touches
+its graveyard for the length of one function call.
+
+What that costs is said rather than glossed: a true replacement means the card was never in the
+graveyard at all, and the only thing that could tell the difference is something reading a graveyard
+*between* the move and the pass. Nothing does — the death event is raised after, so a replaced death
+is correctly not a death and triggers nothing. A card that counted creature cards in graveyards as
+it resolved would be the one to break it, and the reason to move this upstream into `relocate`.
+
+**`replaces` is a predicate, not a scope enum**, for the reason `TargetSpec.filter` is: every printed
+version of this words it differently — an opponent's, a nontoken one, a creature rather than a
+permanent — and an enum would be either short of what the next card needs or carrying values no card
+uses, which is D57's warning.
+
+Kalitas, Traitor of Ghet is the card, and it is the plainest possible test of the pass because it
+hits every way a creature can die: lethal damage in combat, a Doom Blade, and a sacrifice paid as an
+ability cost. All three reach it, and the sharpest test is the Blood Artist one — **a replaced death
+is not a death, so nothing that watches for a creature dying may see it.** If the drain happens, the
+engine has implemented a trigger wearing a replacement's name.
+
+**And it says what it did.** A replaced death raises no event, so nothing logs it: without a note the
+card works invisibly, and a creature dies to a Doom Blade and turns up in exile with a Zombie beside
+it for no reason on screen. Replacements are recorded the way deaths are and drained onto the
+message of the action that provoked them.
+
+**Measured over 60 four-seat pods:** Kalitas cast 19 times, 1155 creature deaths, and **48 creatures
+exiled while an opposing Kalitas was out** against 76 exiled by the pool's other exile effects — so
+the pass fires about two and a half times a game it is in, with no action refused.
 
 ## Next
 

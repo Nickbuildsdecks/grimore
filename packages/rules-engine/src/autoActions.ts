@@ -997,6 +997,29 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
 export function reduceAutoAction(state: GameState, action: AutoAction, _ctx: ActionContext): Outcome {
   const outcome = dispatch(state, action);
   const auto = autoPass(outcome.state);
+  /*
+    What replacement effects did, said on the message of the action that provoked them.
+
+    A replaced death raises no event, so there is nothing for a trigger to log and nothing for the
+    feed to pick up — the card would do its work invisibly, and a creature would turn up in exile
+    with a Zombie beside it for no reason a player could see. Drained here because this is where
+    every automated action passes on its way to a log entry.
+  */
+  const notes = auto.state.replacements;
+  if (notes.length > 0) {
+    const cleared = { ...auto.state, replacements: [] };
+    const base = auto.passes === 0 ? outcome.message : `${outcome.message} — ${stepLabel(auto.state.step)}`;
+    return {
+      state: cleared,
+      message: `${base} — ${notes.join('; ')}`,
+      data: {
+        ...(outcome.data ?? {}),
+        ...(auto.passes === 0 ? {} : { autoPassed: auto.passes }),
+        step: auto.state.step,
+        replacements: [...notes],
+      },
+    };
+  }
   if (auto.passes === 0) return outcome;
   // The log says where play ended up, because several steps may have gone by without anybody
   // being asked anything, and a log that said only "Nick passes" would be baffling.

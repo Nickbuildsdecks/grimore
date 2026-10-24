@@ -3381,3 +3381,65 @@ costs more than the slot does.
 
 The audit is written down because a result of "nothing is dead" is only worth anything with the
 number behind it, and because the next card added to a deck can be checked the same way.
+
+## D95 — A replacement effect one permanent contributes for another
+
+The engine had two replacement effects and no replacement *pass*. Regeneration (CR 701.15) and
+"enters the battlefield tapped" (CR 614.1c) are both shields sitting on the card they affect, which
+is where they are printed and why they got away with it. "If a nontoken creature an opponent
+controls would die, exile it instead" cannot: the effect belongs to one permanent and changes what
+happens to a different one, so something has to ask every permanent on the table whether it wants
+to replace what is about to happen.
+
+**Where to ask was the whole decision, and the engine had already answered it once.** `relocate` is
+the one place a card changes zone, and it *records* a death rather than announcing it — so `settle`
+holds the single list of what just died, and `settle` is already where "enters tapped" is applied,
+under a comment saying it is as close to a replacement as a state computed in one action can be. The
+death replacement went in beside it. The alternative was a hook inside `relocate`, which means
+`cardActions` reaching scripts and a dependency cycle, or patching fifteen call sites — the second
+of which is the exact mistake `died` was introduced to stop.
+
+**The cost, named rather than glossed.** The dying permanent touches its graveyard for the length of
+one function call. A true replacement means it was never there, and the only thing that could tell
+the difference is something reading a graveyard between the move and the pass. Nothing does: the
+death event is raised after, so a replaced death correctly is not a death and triggers nothing;
+state-based actions do not read graveyards; no card in the pool asks. A card that counted creature
+cards in graveyards while resolving would be the one to break it, and the reason to move this
+upstream.
+
+**`replaces` carries a predicate rather than a scope enum**, which is `TargetSpec.filter`'s reason
+exactly: every printed version words it differently — an opponent's, a nontoken one, a creature
+rather than a permanent — and an enum would either fall short of the next card or carry values no
+card uses, which is what D57 warns about. Several applicable replacements are not offered as a
+choice (CR 616.1 says the affected player picks); the first in APNAP order wins, and nothing in this
+pool can produce two.
+
+**Kalitas, Traitor of Ghet is the card**, chosen because it is the plainest possible test of the
+pass: it has to catch every way a creature can die, and the three ways reach the graveyard by three
+different routes — lethal damage as a state-based action, a Doom Blade as an effect, and a sacrifice
+paid as a cost before the ability is even on the stack. All three are tested, and the sharpest test
+is the Blood Artist: **a replaced death is not a death, so a drain that watches for any creature
+dying must not fire.** If it fires, the engine has built a trigger and called it a replacement.
+
+**And the engine says what it did.** A replaced death raises no event, so there is nothing to log and
+nothing for the feed to pick up: the card would work invisibly, and a creature would die to a Doom
+Blade and turn up in exile with a Zombie beside it for no reason a player could see. Replacement
+notes are recorded the way deaths are and drained in `reduceAutoAction` onto the message of the
+action that provoked them — which is the one place every automated action passes on its way to a log
+entry.
+
+**Measured over 60 four-seat pods:**
+
+| | |
+| --- | --- |
+| Kalitas cast | 19 |
+| creature deaths | 1155 |
+| creatures exiled while an opposing Kalitas was out | **48** |
+| creatures exiled by the pool's other exile effects | 76 |
+| actions the engine refused | 0 |
+
+About two and a half firings a game it is in. The 48 is attributed by asking whether a Kalitas was on
+an opposing battlefield at the moment, so a Swords to Plowshares cast in the same breath would be
+counted with it — the 76 is the baseline that makes the attribution worth anything.
+
+All six tests go red with the pass removed.

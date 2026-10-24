@@ -697,6 +697,71 @@ export function stateBasedActions(state: GameState): GameState {
  * Life gain is detected by comparing totals rather than being announced by whatever caused it,
  * which is the only way lifelink, a spell and an ability all reach the same trigger.
  */
+/**
+ * "If it would die, exile it instead", and anything else shaped like it (CR 614).
+ *
+ * The first replacement effect here that one permanent contributes for *another*. The two before it
+ * — regeneration and "enters the battlefield tapped" — are shields sitting on the card they affect,
+ * which is where they are printed; this one belongs to a permanent across the table.
+ *
+ * **Applied at the point the engine detects the death rather than before it happens, which is the
+ * same answer `settle` already gives for "enters tapped" and for the same reason.** `relocate` is
+ * the one place a card changes zone, and it *records* what happened rather than announcing it, so
+ * the single list of what just died is here. The dying permanent therefore touches its graveyard
+ * for the length of one function call before being moved on.
+ *
+ * What that costs, stated rather than glossed: a true replacement would mean the card was never in
+ * the graveyard at all, and the only thing that could tell the difference is something reading a
+ * graveyard *between* the move and this pass. Nothing does — the death event is raised below, after
+ * this, so a replaced death is correctly not a death and triggers nothing; state-based actions do
+ * not read graveyards; and no card in the pool asks. A card that counted creature cards in
+ * graveyards as it resolved would be the one to break it, and would be the reason to move this
+ * upstream into `relocate` with a hook, which is a bigger change than any card here earns.
+ *
+ * Several applicable replacements are not a choice the affected player is offered (CR 616.1); the
+ * first in APNAP order wins. Nothing in this pool can produce two.
+ */
+function replaceDeaths(
+  state: GameState, dying: readonly string[],
+): { state: GameState; died: readonly string[] } {
+  if (dying.length === 0) return { state, died: dying };
+  const sources: { id: string; controller: SeatIndex }[] = [];
+  for (const seat of apnapSeats(state)) {
+    for (const id of listAt(state, zoneKey(seat, 'battlefield'))) sources.push({ id, controller: seat });
+  }
+  let next = state;
+  const survived: string[] = [];
+  for (const id of dying) {
+    // A token has already ceased to exist by the time this runs, and every printed version of this
+    // effect says "nontoken" anyway — so there is nothing to replace and nothing to look at.
+    const inst = next.instances[id];
+    if (inst === undefined) {
+      survived.push(id);
+      continue;
+    }
+    let handled = false;
+    for (const source of sources) {
+      if (next.instances[source.id]?.zone !== 'battlefield') continue;
+      for (const rule of scriptOf(next, source.id)?.replaces ?? []) {
+        if (rule.on !== 'dies') continue;
+        const ctx = { state: next, dying: id, source: source.id, controller: source.controller };
+        if (!rule.applies(ctx)) continue;
+        const named = (of: string): string => next.cardDefs[next.instances[of]?.defKey ?? '']?.name ?? 'a card';
+        const note = `${named(source.id)}: ${named(id)} — ${rule.description}`;
+        next = rule.instead(ctx);
+        // Said in words, because a replaced death raises no event and a creature that silently
+        // turns up in exile is a card the player cannot see working. See `replacements`.
+        next = { ...next, replacements: [...next.replacements, note] };
+        handled = true;
+        break;
+      }
+      if (handled) break;
+    }
+    if (!handled) survived.push(id);
+  }
+  return { state: next, died: survived };
+}
+
 function settle(state: GameState, before: GameState): GameState {
   let next = stateBasedActions(state);
   // Deaths and arrivals, in a loop: a creature dying can trigger something that kills another or
@@ -710,7 +775,9 @@ function settle(state: GameState, before: GameState): GameState {
     pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0);
     pass++
   ) {
-    const dead = next.died;
+    const replaced = replaceDeaths(next, next.died);
+    next = replaced.state;
+    const dead = replaced.died;
     const gone = next.left;
     const arrived = next.entered;
     next = { ...next, died: [], left: [], entered: [] };

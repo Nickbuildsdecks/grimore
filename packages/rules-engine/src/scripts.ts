@@ -2295,6 +2295,36 @@ const FOG_BANK: CardScript = {
 };
 
 /**
+ * "If a nontoken creature an opponent controls would die, instead exile that card and create a 2/2
+ * black Zombie creature token."
+ *
+ * The first card in the pool with a `replaces`: an effect that belongs to this permanent and
+ * changes what happens to a *different* one (CR 614). Lifelink is printed and needs no script.
+ *
+ * `applies` reads the dying permanent for what it was, not where it is — by the time a replacement
+ * is asked, the engine has already detected the death, which is explained at `replaceDeaths`. The
+ * creature question is asked of its characteristics because a Bear that was animated is still a
+ * creature for this; "an opponent controls" is read off the graveyard it went to, which is the
+ * same approximation the death event itself makes.
+ */
+const KALITAS: CardScript = {
+  name: 'Kalitas, Traitor of Ghet',
+  replaces: [
+    {
+      on: 'dies',
+      description: 'exile it instead and create a 2/2 black Zombie creature token',
+      applies: (c) => {
+        const dying = c.state.instances[c.dying];
+        if (dying === undefined || dying.isToken === true) return false;
+        if (dying.zoneSeat === c.controller) return false;
+        return characteristicsOf(c.state, dying).isCreature;
+      },
+      instead: (c) => createToken(exileCard(c.state, c.dying), c.controller, ZOMBIE_TOKEN, 1),
+    },
+  ],
+};
+
+/**
  * Goad all creatures you don't control (CR 701.38).
  *
  * The only card in the pool whose worth depends on how many people are playing, and the first one
@@ -2358,7 +2388,7 @@ const ALL: readonly CardScript[] = [
   cyclingLand('Tranquil Thicket', 'G'),
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
-  NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT, DISRUPT_DECORUM,
+  NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT, DISRUPT_DECORUM, KALITAS,
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,

@@ -245,6 +245,16 @@ export interface AutomationState {
    */
   readonly left: readonly string[];
   /**
+   * What replacement effects did since the last action was announced, in words.
+   *
+   * Recorded and drained the way `died` is, and for a reason that is about the *player* rather than
+   * about triggers: a replaced death produces no event anybody can log, so without this a creature
+   * dies to a Doom Blade and silently turns up in exile with a Zombie beside it, and the card that
+   * did it is nowhere on screen. `reduceAutoAction` drains the notes onto the message of the action
+   * that provoked them, which is where a player is already looking.
+   */
+  readonly replacements: readonly string[];
+  /**
    * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
    * Drained by `settle` alongside `died`.
    *
