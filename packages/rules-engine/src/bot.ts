@@ -17,7 +17,7 @@ import { legalActions, type LegalActions, type LegalPlay } from './legalActions.
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { bottomOwed, pendingDeclaration, stillDeciding } from './automation.js';
-import { characteristicsOf, hasType } from './characteristics.js';
+import { characteristicsOf, hasType, type Keyword } from './characteristics.js';
 import { canAttack, canBlock } from './combat.js';
 import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
@@ -155,11 +155,36 @@ function rank(state: GameState, target: Target, foes: readonly SeatIndex[]): num
 }
 
 /** What a creature is worth to the board, crudely: how much it can do and how hard it is to kill. */
+/**
+ * What a keyword is worth on top of a body, in the same units as power and toughness.
+ *
+ * A 2/2 flier is not a 2/2: it gets through, and the 2/2 opposite it cannot stop it. The numbers
+ * are small and deliberately so — this is the difference between two creatures of the same size,
+ * not between a creature and a spell — and they are read by the *combat* heuristics as well as by
+ * the evaluation, so a deathtouch blocker is correctly worth more than its body when the bot is
+ * deciding whether a trade is good.
+ */
+const KEYWORD_VALUE: Readonly<Partial<Record<Keyword, number>>> = {
+  flying: 1.5,
+  deathtouch: 1.5,
+  indestructible: 2,
+  'double strike': 1.5,
+  'first strike': 0.75,
+  lifelink: 0.5,
+  trample: 0.5,
+  menace: 0.5,
+  vigilance: 0.5,
+  hexproof: 1,
+  reach: 0.25,
+};
+
 const creatureValue = (state: GameState, id: string): number => {
   const inst = state.instances[id];
   if (inst === undefined) return 0;
   const ch = characteristicsOf(state, inst);
-  return ch.power + ch.toughness;
+  let value = ch.power + ch.toughness;
+  for (const keyword of ch.keywords) value += KEYWORD_VALUE[keyword] ?? 0;
+  return value;
 };
 
 /** Whether `attacker` would die to `blocker` in combat, and whether it would take it with it. */
@@ -758,7 +783,15 @@ function throughCombat(state: GameState): GameState {
   return next;
 }
 
-/** One declaration, and what the board looks like once the dust settles. */
+/**
+ * One declaration, and what the board looks like once the dust settles.
+ *
+ * "Once the dust settles" is the end of *this* combat. Projecting the opponent's next attack as
+ * well was built, measured twice — for every play, and for attack declarations alone — and changed
+ * nothing: 276 wins in 400 games with it and 276 without, at twice the time. The depth is not what
+ * is holding this bot back; the evaluation is, and the honest place for that finding is here rather
+ * than in dead code. See `claude/decisions-log.md`, D62.
+ */
 function scoreDeclaration(state: GameState, seat: SeatIndex, action: Action): number | null {
   let after: GameState;
   try {

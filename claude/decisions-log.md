@@ -2001,3 +2001,40 @@ plays.
 Two more browser-driver flakes closed while this was going in, both of the same shape as the clicks
 and the text reads: a play sheet that does not open is a card this move does not play, not a run
 that ends with a stack trace; and a press on a panel that is re-rendering gets three tries.
+
+## D62 — Three things tried on the opponent, one of them worth keeping
+
+The search looks one move ahead. The obvious next step is two, so this round was spent finding out
+whether depth or judgement is what limits it. The answer was judgement, and the measurements are
+worth keeping because each one is an idea somebody will have again.
+
+**Looking one swing ahead: no difference.** A full second ply means modelling every reply to every
+play; the cheap version is to model the only reply that matters — the opponent's next attack — and
+score the position after it. Built as a two-stage search (score every candidate cheaply, then
+project the swing for the closest few), measured on 400 paired games: **276 wins with it, 276
+without**, at twice the time. Then aimed at the one decision where it should matter most, the attack
+declaration, where "should I send the last untapped creature" is explicitly a question about the
+opponent's turn: **276 again.** Removed. The comment in `scoreDeclaration` carries the number, so
+the next person to reach for depth starts from the finding rather than from the intuition.
+
+The reason, as far as it can be read off the games: in a pool this size a lot of games are decided
+by what was drawn, and a bot that already plays each option out one move captures most of what
+there is to capture against a bot that plays the most expensive card. The ceiling is the
+evaluation.
+
+**A keyword is worth something: eight games.** `creatureValue` was power plus toughness, which made
+a 2/2 flier the same creature as a 2/2 Grizzly Bears — not only to the evaluation, but to the
+combat heuristics that use the same function to decide whether a trade is good. Keywords now carry
+a small value each, in the same units as a body: flying and deathtouch 1.5, indestructible 2, down
+to reach at a quarter. **284 wins to 116, up from 276 to 124** on the same seeds. It is the first
+piece of actual Magic knowledge in the evaluator, and the cheapest.
+
+**A non-linear life total: nothing.** Two life is worse than twenty minus eighteen, which is true
+and did not show up: 285 against 284 over 400 games, with sweeps over where "nearly dead" starts
+and how fast it bites. Removed, with this paragraph in its place.
+
+**And a flake fixed with the number that found it.** The assertion added in D50 — that an action
+after the game is over comes back as `game_finished` — fired at the end of a burst of several
+hundred sends and read `rate_limited` once in six runs. It backs off like every other send in that
+test now. Six consecutive green runs, which is the only kind of evidence an intermittent failure
+accepts.

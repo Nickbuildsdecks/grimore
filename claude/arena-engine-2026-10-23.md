@@ -890,6 +890,27 @@ control bar goes through one dispatch, and that dispatch was the one path still 
 rendered version — so a Pass pressed as blockers became owed read to the client as an illegal
 action rather than a late one. Same bug as D58, one path further along, found by the same suite.
 
+**A keyword is worth something, and depth is not what was holding the bot back.** Two things were
+tried on the opponent this round and only one of them worked.
+
+**Looking one swing ahead did nothing.** The search stops at the end of its own move, so the swing
+back is invisible to it — the obvious next step is to project the opponent's next attack and score
+*that*. Built, and measured twice on the same 400 games: for every candidate play, and then for
+attack declarations alone, where it should matter most. **276 wins either way, with it and without,
+at twice the time.** The code is gone and the finding is in the comment where the next person will
+look for it: one more ply is not the limit, the evaluation is. In a pool this size a lot of games
+are decided by what was drawn, and better decisions have a ceiling.
+
+**Knowing that a flier is not a 2/2 was worth eight games.** `creatureValue` was power plus
+toughness, so a 2/2 flier and a 2/2 ground creature were the same creature — to the evaluation
+*and* to the combat heuristics that decide whether a trade is good. Keywords are now worth a little
+each (flying and deathtouch most, reach least), in the same units as a body: **284 wins to 116,
+from 276 to 124**, on the same seeds.
+
+**And a non-linear life total was not worth anything.** Being at two life is worse than being at
+twenty minus eighteen, which is true and made no measurable difference in 400 games (285 against
+284), so that one is gone too — along with a note, because it is the kind of idea that comes back.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the 63 cards currently using

@@ -746,9 +746,18 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       // assertion is the engine's answer, and sending a version behind would ask the store's
       // concurrency check instead, which answers first and says something else.
       const latest = saw.reduce((top, e) => Math.max(top, e.stateVersion), version);
-      const afterwards = await emitAck(solo, 'pod:action', {
+      // Backing off on `rate_limited` like every other send in this test: a whole game is several
+      // hundred actions from one socket, and this one arrives at the end of that burst. It failed
+      // that way once in six runs, reading `rate_limited` where the engine's answer was wanted.
+      let afterwards = await emitAck(solo, 'pod:action', {
         action: { type: 'auto:pass' }, expectedVersion: latest,
       });
+      for (let retry = 0; retry < 10 && !afterwards.ok && afterwards.error.code === 'rate_limited'; retry += 1) {
+        await new Promise((r) => setTimeout(r, 120 * (retry + 1)));
+        afterwards = await emitAck(solo, 'pod:action', {
+          action: { type: 'auto:pass' }, expectedVersion: latest,
+        });
+      }
       expect(afterwards).toMatchObject({ ok: false, error: { code: 'game_finished' } });
     }, 60_000);
 
