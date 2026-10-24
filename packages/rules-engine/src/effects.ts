@@ -40,6 +40,8 @@ export interface EffectContext {
    * `decisions` asked them. Empty for everything that asks nothing — which is almost everything.
    */
   readonly decisions: readonly DecisionAnswer[];
+  /** Whether this spell's kicker was paid (CR 702.32a). False for everything without one. */
+  readonly kicked: boolean;
 }
 
 export type EffectFn = (ctx: EffectContext) => GameState;

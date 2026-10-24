@@ -86,8 +86,16 @@ export type TriggerEvent =
       readonly who?: 'self' | 'another' | 'any';
       readonly of?: 'you' | 'opponent' | 'any';
       readonly what?: 'creature' | 'permanent';
+      /**
+       * "a **nontoken** creature you control dies", which is how nearly every death payoff is
+       * printed — and the clause that stops a deck of 1/1 tokens draining the table to zero by
+       * accident. A token dying is still a creature dying; it is just not this trigger's business.
+       */
+      readonly nontoken?: boolean;
       readonly subjectSeat?: SeatIndex;
       readonly subjectIsCreature?: boolean;
+      /** Set by the engine when it raises the event. */
+      readonly subjectIsToken?: boolean;
     }
   | { readonly kind: 'attacks' }
   | { readonly kind: 'becomes-tapped' }
@@ -184,6 +192,16 @@ export interface AbilityCost {
    * than asked for separately: every loyalty ability in the game has both restrictions.
    */
   readonly loyalty?: number;
+  /**
+   * "Discard this card:" — the card itself is the cost, which is what makes cycling work.
+   *
+   * It carries its own restrictions, the way `loyalty` does: an ability that discards the card to
+   * pay for it is used **from the hand**, and nowhere else. Nothing in Magic discards itself from
+   * the battlefield to pay for something, and a script that had to say "from hand" separately
+   * would be one more thing to forget. The card is in the graveyard by the time the ability
+   * resolves (CR 702.29a), which is why the ability's effect must not read its own source.
+   */
+  readonly discardSelf?: boolean;
 }
 
 export interface AbilityDef {
@@ -288,11 +306,38 @@ export interface CardScript {
    * with X of zero, which is the rule and not a shortcut.
    */
   readonly entersWith?: { readonly counter: string; readonly amount: number | 'x' };
+  /**
+   * Kicker: an optional additional cost, announced as the spell is cast (CR 702.32a).
+   *
+   * The third member of the family that already holds X and modes, and for the same reason: it is
+   * chosen at cast time, both players can see it on the stack, and what it does cannot be decided
+   * on resolution without letting a player counter a spell they could not read. The effect reads
+   * `ctx.kicked` and branches — one effect function per card rather than two, because a kicked
+   * spell is usually the same spell with a number changed.
+   */
+  readonly kicker?: {
+    /** The extra mana, in the printed `{3}` form, on top of the card's own cost. */
+    readonly cost: string;
+    /** As printed: "Kicker {3}". */
+    readonly description: string;
+  };
+  /**
+   * An additional cost that is not optional: "As an additional cost to cast this spell, sacrifice
+   * a creature."
+   *
+   * A **cost**, like the sacrifice on an activated ability: paid as the spell is cast, so it
+   * cannot be responded to and the creature cannot be saved in reply. A spell whose additional
+   * cost cannot be paid is not castable at all (CR 601.2h), which is why it is not offered rather
+   * than offered and refused.
+   */
+  readonly additionalCost?: {
+    readonly sacrifice: 'creature' | 'another-creature';
+  };
   readonly triggers?: readonly TriggerDef[];
   readonly abilities?: readonly AbilityDef[];
   /** Static effects the permanent creates while it is on the battlefield. */
   readonly statics?: readonly {
-    readonly scope: 'self' | 'controller-creatures' | 'all-creatures';
+    readonly scope: 'self' | 'controller-creatures' | 'other-controller-creatures' | 'all-creatures';
     readonly effect: PumpOptions;
   }[];
 }

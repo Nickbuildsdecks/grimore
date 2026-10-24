@@ -1653,3 +1653,56 @@ what four seats acting on one table do — ended a whole run with a stack trace 
 Two tries at two seconds, then the press is reported as not having landed, which the callers'
 own idle detectors already know what to do with. One `tap`/`press` pair for every click in the
 driver, rather than the three different ad-hoc timeouts that had accumulated.
+
+## D52 — A cost that is a decision, three times
+
+Everything the engine could cast until now cost what was printed in the corner. Three shapes of
+cost it could not express, and each one needed a different part of the engine to grow.
+
+**Cycling: the zone comes from the cost.** An ability paid for by discarding the card is used from
+the hand, and nothing in Magic discards itself from the battlefield to pay for something. So
+`discardSelf` in the cost is what decides where the ability may be used, and `legalActions` walks
+the hand as well as the battlefield and skips each ability unless it is in the zone its own cost
+implies. The alternative was a `fromHand` flag sitting beside the cost that could disagree with
+it — and the same reasoning already decides sorcery speed for a loyalty ability, so this is the
+second rule of its kind rather than a new idea.
+
+The card is discarded *as the cost is paid*, so it is in the graveyard while its own ability is
+still on the stack (CR 702.29a). That is not a detail to be tidied away: it is why a cycled land
+can be pulled back out of the graveyard before the draw has happened.
+
+**Kicker: a second play, not a second question.** The engine already offers a modal spell once per
+combination of modes, so a kicker is one more play on the same card with a bigger cost — the
+table needed no new control, and the player pays it by choosing it. Two decisions inside that:
+the kicker's symbols are *appended to the printed cost* and paid as one cost, so a player who can
+afford the card but not all of a coloured kicker is offered the plain version only and never ends
+up having paid half; and the kicked-ness travels on the stack object, like X and the modes, because
+whether it was paid changes what the spell does and the player deciding whether to respond reads
+the stack to find out.
+
+The effect reads `ctx.kicked` and branches, rather than the script carrying two effect functions.
+A kicked spell is almost always the same spell with a number changed, and two functions would have
+meant two places to fix a bug in one card.
+
+**An additional cost that is not optional.** The sacrifice machinery has existed since activated
+abilities got costs; a cast could not ask for one. Paid as the spell is cast, which means the
+creature is dead before anybody holds priority and its death trigger goes on the stack *above* the
+spell that killed it (CR 603.3b) — the difference between Bone Splinters and "destroy target
+creature, then sacrifice one", which is a much worse card. And a spell whose additional cost cannot
+be paid is not castable at all (CR 601.2h), so it is not offered rather than offered and refused.
+
+**Two engine gaps closed on the way, because the cards needed them.** A static effect that skips
+its own source, for "*other* creatures you control get +1/+0" — a 2/2 lord that pumped itself would
+attack as a 3/2, which is a different card. And "a **nontoken** creature you control dies", which
+is how nearly every death payoff is printed, and the clause that keeps a deck of 1/1 tokens from
+draining the table to zero by accident.
+
+**And the bot had to be taught both of the new cast-time choices**, because the engine would
+otherwise have refused what the table offered it: it sent a kicked play without the kicker — which
+is not a refusal but something worse, the cheap half of a card offered as the expensive one — and a
+Bone Splinters with nothing named to feed it. Its judgement about *whether* to feed one is shallow
+in the same way as everything else in that file and says so: the cheapest creature it has, and only
+when that creature is worth less than what the spell is aimed at.
+
+Measured over 24 unsteered games on the new deck: 21 kicked, 38 cast by sacrificing a creature, 6
+lands cycled out of 46 chances, every game finished, 22.5 turns on average.

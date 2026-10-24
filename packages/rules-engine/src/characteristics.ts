@@ -108,6 +108,14 @@ export interface ContinuousEffect {
   readonly scope:
     | { readonly kind: 'cards'; readonly ids: readonly string[] }
     | { readonly kind: 'controller-creatures' }
+    /**
+     * Every creature its controller has **except the one that made it**.
+     *
+     * The usual templating on a creature that buffs a team — "*other* creatures you control get
+     * +1/+0" — and the difference matters in combat: a 2/2 lord that pumped itself attacks as a
+     * 3/2. `source` is what it excludes, which is why a continuous effect keeps it.
+     */
+    | { readonly kind: 'other-controller-creatures' }
     | { readonly kind: 'all-creatures' };
   readonly power?: number;
   readonly toughness?: number;
@@ -153,6 +161,8 @@ function effectApplies(effect: ContinuousEffect, instance: CardInstance, creatur
       return effect.scope.ids.includes(instance.id);
     case 'controller-creatures':
       return creature && instance.zoneSeat === effect.controller;
+    case 'other-controller-creatures':
+      return creature && instance.zoneSeat === effect.controller && instance.id !== effect.source;
     case 'all-creatures':
       return creature;
     default:

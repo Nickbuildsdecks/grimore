@@ -56,6 +56,14 @@ export interface LegalPlay {
   readonly xMax?: number;
   readonly abilityIndex?: number;
   /**
+   * Set on an ability used from the hand rather than from the battlefield — cycling, and nothing
+   * else so far. The table needs it because a card in hand is drawn in a different row and a play
+   * on it is not "use this permanent".
+   */
+  readonly fromHand?: boolean;
+  /** Set on the second of the two plays a kicker offers: this one pays it (CR 702.32a). */
+  readonly kicked?: boolean;
+  /**
    * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
    *
    * One play per legal combination, which is why the table needed no new interface for modal
@@ -273,6 +281,16 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
 
     const printed = parseManaCost(def?.manaCost);
     if (printed.unsupported !== undefined) continue;
+    /*
+      An additional cost that is not optional (CR 601.2h): a spell asking for a creature to
+      sacrifice is not castable with no creature to sacrifice, so it is not offered at all. The
+      victims travel on the play, the way they already do for an activated ability's cost — the
+      choice is part of casting it, not a question asked afterwards.
+    */
+    const victims = script?.additionalCost === undefined
+      ? []
+      : sacrificeOptions(state, seat, id, { sacrifice: script.additionalCost.sacrifice });
+    if (script?.additionalCost !== undefined && victims.length === 0) continue;
     // The tax is generic mana on top of the printed cost (CR 903.8), and it only applies to a
     // cast from the command zone.
     const cost: ManaCost = fromCommand && tax > 0
@@ -298,7 +316,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           kind: 'cast', card: id, name: ch.name,
           description: `Cast ${ch.name} — ${chosen.map((m) => m.description).join('; and ')}`,
           manaCost: def?.manaCost ?? '', ...taxOn, ...xOn, modes, targetSpecs: specs, candidates,
-          isManaAbility: false, sacrificeOptions: [],
+          isManaAbility: false, sacrificeOptions: victims,
         });
       }
       continue;
@@ -312,8 +330,34 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       kind: 'cast', card: id, name: ch.name,
       description: fromCommand && tax > 0 ? `Cast ${ch.name} (+{${tax}} tax)` : `Cast ${ch.name}`,
       manaCost: def?.manaCost ?? '', ...taxOn, ...xOn, targetSpecs: specs, candidates,
-      isManaAbility: false, sacrificeOptions: [],
+      isManaAbility: false, sacrificeOptions: victims,
     });
+
+    /*
+      Kicker: a second play, offered only when the whole thing can be paid for.
+
+      One play per option, which is why a kicker needed no new interface — the same shape that
+      offers a modal spell once per combination of modes offers this card twice, and a player who
+      cannot afford the kicker simply never sees the second one. The kicker's symbols are appended
+      to the printed cost rather than paid separately, so a coloured kicker is checked as part of
+      one cost and a player who could pay half of it is offered neither half.
+    */
+    const kicker = script?.kicker;
+    if (kicker !== undefined) {
+      const withKicker = parseManaCost(`${def?.manaCost ?? ''}${kicker.cost}`);
+      const kickedCost: ManaCost = fromCommand && tax > 0
+        ? { ...withKicker, generic: withKicker.generic + tax }
+        : withKicker;
+      if (withKicker.unsupported === undefined && canAfford(poolOf(state, seat), kickedCost, sources)) {
+        out.push({
+          kind: 'cast', card: id, name: ch.name, kicked: true,
+          description: `Cast ${ch.name} with ${kicker.description.toLowerCase()}`,
+          manaCost: `${def?.manaCost ?? ''}${kicker.cost}`, ...taxOn,
+          ...(kickedCost.x ? { xMax: maxAffordableX(poolOf(state, seat), kickedCost, sources) } : {}),
+          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims,
+        });
+      }
+    }
   }
   return out;
 }
@@ -322,7 +366,21 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
   const out: LegalPlay[] = [];
   const sorcerySpeed = atSorcerySpeed(state, seat);
 
-  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+  /*
+    The battlefield, and the hand.
+
+    Almost every activated ability is used from the battlefield; cycling is used from the hand and
+    pays for itself by being discarded (CR 702.29a). Rather than a second loop that would drift
+    from this one, both zones are walked and each ability is skipped unless it is in the zone its
+    own cost implies — so a land's `{T}: add {B}` is not offered while the land is in hand, and its
+    cycling is not offered once the land is on the battlefield.
+  */
+  const reachable = [
+    ...listAt(state, zoneKey(seat, 'battlefield')).map((id) => ({ id, inHand: false })),
+    ...listAt(state, zoneKey(seat, 'hand')).map((id) => ({ id, inHand: true })),
+  ];
+
+  for (const { id, inHand } of reachable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     const script = scriptFor(state.cardDefs[inst.defKey]?.name);
@@ -331,6 +389,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
 
     for (let i = 0; i < abilities.length; i++) {
       const ability = abilities[i]!;
+      if ((ability.cost.discardSelf === true) !== inHand) continue;
       if (ability.sorcerySpeed && !sorcerySpeed) continue;
       /*
         A loyalty ability: sorcery speed, one per planeswalker per turn (CR 606.3), and a minus
@@ -361,6 +420,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       out.push({
         kind: 'activate', card: id, name: ch.name, description: ability.description,
         manaCost: ability.cost.mana ?? '', abilityIndex: i,
+        ...(inHand ? { fromHand: true } : {}),
         targetSpecs: specs, candidates, isManaAbility: ability.produces !== undefined,
         sacrificeOptions: victims,
       });

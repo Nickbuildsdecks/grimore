@@ -167,7 +167,17 @@ function playAction(
   // cost has an {X} in it, including zero — the engine refuses an x on a cost without one, and a
   // missing x on a cost with one would silently cast it for nothing.
   const withX = play.xMax === undefined ? {} : { x: Math.max(0, Math.min(x ?? 0, play.xMax)) }
-  if (play.kind === "cast") return { type: "auto:cast", card: play.card, ...withModes, ...withX, ...withTargets }
+  // The kicker is part of the cost, and the player paid it by choosing this play rather than the
+  // one beside it — the same gesture that chooses a mode.
+  const withKicker = play.kicked === true ? { kicked: true } : {}
+  if (play.kind === "cast") {
+    // A cast can have a cost of its own to pay now: "sacrifice a creature" is an additional cost,
+    // not something the spell asks for on resolution, so it travels with the cast.
+    return {
+      type: "auto:cast", card: play.card,
+      ...withModes, ...withX, ...withKicker, ...withSacrifice, ...withTargets,
+    }
+  }
   return {
     type: "auto:activate", card: play.card, abilityIndex: play.abilityIndex ?? 0,
     ...withTargets, ...withSacrifice,

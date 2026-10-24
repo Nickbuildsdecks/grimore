@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**414 tests in the rules engine, 106 in the web app, 1,016 across the workspace.**
+**430 tests in the rules engine, 110 in the web app, 1,036 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -686,6 +686,37 @@ cannot come up again. The browser driver's clicks are bounded for the same reaso
 a press used to wait Playwright's default thirty seconds for a button to hold still, so a control
 bar re-rendering under the cursor — which is what four seats on one table do — ended a whole run
 with a stack trace instead of a move.
+
+**Costs that are choices.** Every deck before this one paid what was printed in the corner. Three
+things it could not express, all of them a cost that is a decision:
+
+- **Cycling**, which is the first ability in the pool used from the *hand*. The cost says so —
+  `discardSelf` — and the zone follows from the cost rather than from a flag beside it that could
+  disagree with it, exactly as a loyalty cost already implies sorcery speed. Five cycling lands, one
+  per colour, and four of the six starter decks now run a pair: a land early, a card late.
+- **Kicker**, the third member of the family that already holds X and modes, and chosen the same
+  way — the engine offers the kicked spell as a *second play* beside the plain one, so paying it is
+  one tap and the table needed no new interface. It is offered only when the whole cost can be paid,
+  because the kicker's symbols are appended to the printed cost rather than paid separately: a
+  player who can afford half of a coloured kicker is offered neither half.
+- **An additional cost that is not optional**: "sacrifice a creature" on a *cast*. The sacrifice
+  machinery has existed since activated abilities; a spell could not ask for one. A spell whose
+  additional cost cannot be paid is not castable at all (CR 601.2h), so it is not offered — and the
+  creature is in the graveyard before anybody holds priority, which is the whole point of Bone
+  Splinters.
+
+Six cards for them (Burst Lightning, Breath of Darigaaz, Agonizing Demise, Bone Splinters, Village
+Rites, and Judith) and a sixth deck, **Ashen Rite**, built out of all three. Two small engine gaps
+turned up on the way and were worth closing in themselves: a static that skips its own source
+("*other* creatures you control get +1/+0" — a lord that pumped itself would attack as a 3/2), and
+"a **nontoken** creature you control dies", which is how nearly every death payoff is printed and
+the clause that stops a deck of tokens draining a table by accident.
+
+Measured over 24 unsteered games on the new deck: 21 spells kicked, 38 cast by sacrificing a
+creature, 6 lands cycled out of 46 chances, every game finished, 22.5 turns on average. The bot
+needed teaching for two of those — it would have sent a kicked play without the kicker (casting the
+cheap half of a card the table offered as the expensive one) and a Bone Splinters with nothing
+named to feed it, which the engine would have refused.
 
 ## Next
 

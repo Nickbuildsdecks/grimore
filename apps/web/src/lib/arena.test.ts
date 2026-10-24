@@ -237,6 +237,52 @@ describe("paying for an ability by sacrificing something", () => {
   })
 })
 
+describe("costs that are choices", () => {
+  it("sends the kicker when the player chose the kicked play", () => {
+    // The engine offers a kicked spell as a second play beside the plain one, so paying the kicker
+    // is the same gesture as choosing a mode: there is nothing extra to tap.
+    const kicked = play({ name: "Burst Lightning", description: "Cast Burst Lightning with kicker {4}", kicked: true, manaCost: "{R}{4}" })
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: kicked }).mode
+    expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({
+      type: "auto:cast", card: "c1", kicked: true, targets: [player(1)],
+    })
+  })
+
+  it("and never sends one on the play beside it", () => {
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: play({ name: "Burst Lightning" }) }).mode
+    expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({
+      type: "auto:cast", card: "c1", targets: [player(1)],
+    })
+  })
+
+  it("asks for a spell's additional cost before its target, because that is the order it is paid", () => {
+    const splinters = play({
+      name: "Bone Splinters", description: "Cast Bone Splinters", manaCost: "{B}",
+      targetSpecs: [{ kind: "creature", description: "target creature" }],
+      candidates: [[card("theirs")]],
+      sacrificeOptions: ["fodder"],
+    })
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: splinters }).mode
+    expect(mode.kind).toBe("feeding")
+    mode = arenaReducer(mode, { kind: "feed", card: "fodder" }).mode
+    const result = arenaReducer(mode, { kind: "pickTarget", target: card("theirs") })
+    expect(result.action).toEqual({
+      type: "auto:cast", card: "c1", sacrifice: "fodder", targets: [card("theirs")],
+    })
+  })
+
+  it("sends a spell whose additional cost is all it asks for", () => {
+    const rites = play({
+      name: "Village Rites", description: "Cast Village Rites", manaCost: "{B}",
+      targetSpecs: [], candidates: [], sacrificeOptions: ["fodder"],
+    })
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: rites }).mode
+    expect(arenaReducer(mode, { kind: "feed", card: "fodder" }).action).toEqual({
+      type: "auto:cast", card: "c1", sacrifice: "fodder",
+    })
+  })
+})
+
 describe("aiming a triggered ability", () => {
   const specs = [{ kind: "creature" as const, description: "target creature" }]
   const candidates = [[card("bear"), card("giant")]]

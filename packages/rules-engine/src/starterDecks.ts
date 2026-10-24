@@ -935,6 +935,92 @@ const BALAN: CardDef = {
 
 // ── The decks ────────────────────────────────────────────────────────────────────────────────────
 
+// ── Costs that are choices: cycling, kicker, and a creature on the altar ─────────────────────────
+
+/**
+ * The cycling lands: a land that is never a dead draw, because the late-game version of it is a
+ * cantrip. One per colour, and the first cards in the pool with an ability used from the hand.
+ */
+const cyclingLand = (name: string, symbol: string, type: string): CardDef => ({
+  name,
+  typeLine: `Land — ${type}`,
+  manaCost: '',
+  cmc: 0,
+  oracleText: `${name} enters the battlefield tapped.\n{T}: Add {${symbol}}.\nCycling {2} ({2}, Discard this card: Draw a card.)`,
+  colors: [],
+});
+
+const BARREN_MOOR = cyclingLand('Barren Moor', 'B', 'Swamp');
+const FORGOTTEN_CAVE = cyclingLand('Forgotten Cave', 'R', 'Mountain');
+const LONELY_SANDBAR = cyclingLand('Lonely Sandbar', 'U', 'Island');
+const SECLUDED_STEPPE = cyclingLand('Secluded Steppe', 'W', 'Plains');
+const TRANQUIL_THICKET = cyclingLand('Tranquil Thicket', 'G', 'Forest');
+
+const RAKDOS_GUILDGATE: CardDef = {
+  name: 'Rakdos Guildgate',
+  typeLine: 'Land — Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Rakdos Guildgate enters the battlefield tapped.\n{T}: Add {B} or {R}.',
+  colors: [],
+};
+
+const BURST_LIGHTNING: CardDef = {
+  name: 'Burst Lightning',
+  typeLine: 'Instant',
+  manaCost: '{R}',
+  cmc: 1,
+  oracleText: 'Kicker {4}\nBurst Lightning deals 2 damage to any target. If this spell was kicked, it deals 4 damage instead.',
+  colors: ['R'],
+};
+
+const BREATH_OF_DARIGAAZ: CardDef = {
+  name: 'Breath of Darigaaz',
+  typeLine: 'Sorcery',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  oracleText: 'Kicker {3}\nBreath of Darigaaz deals 1 damage to each creature without flying and each player. If this spell was kicked, it deals 4 damage instead.',
+  colors: ['R'],
+};
+
+const AGONIZING_DEMISE: CardDef = {
+  name: 'Agonizing Demise',
+  typeLine: 'Instant',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  oracleText: 'Kicker {1}{R}\nDestroy target nonblack creature. If this spell was kicked, it deals damage equal to that creature\u2019s power to the creature\u2019s controller.',
+  colors: ['B'],
+};
+
+const BONE_SPLINTERS: CardDef = {
+  name: 'Bone Splinters',
+  typeLine: 'Sorcery',
+  manaCost: '{B}',
+  cmc: 1,
+  oracleText: 'As an additional cost to cast this spell, sacrifice a creature.\nDestroy target creature.',
+  colors: ['B'],
+};
+
+const VILLAGE_RITES: CardDef = {
+  name: 'Village Rites',
+  typeLine: 'Instant',
+  manaCost: '{B}',
+  cmc: 1,
+  oracleText: 'As an additional cost to cast this spell, sacrifice a creature.\nDraw two cards.',
+  colors: ['B'],
+};
+
+const JUDITH: CardDef = {
+  name: 'Judith, the Scourge Diva',
+  typeLine: 'Legendary Creature \u2014 Human Shaman',
+  manaCost: '{1}{B}{R}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Other creatures you control get +1/+0.\nWhenever a nontoken creature you control dies, Judith, the Scourge Diva deals 1 damage to any target.',
+  colors: ['B', 'R'],
+};
+
 export const EMBER_RUSH: DeckSpec = {
   id: 'ember-rush',
   name: 'Ember Rush',
@@ -973,9 +1059,11 @@ export const VERDANT_GUARD: DeckSpec = {
   description: 'Green-white midrange. Bigger creatures, auras, exile removal and a fliers finish.',
   commander: SIGARDA_HOST_OF_HERONS,
   cards: [
-    { card: FOREST, count: 11 },
+    { card: FOREST, count: 9 },
     { card: PLAINS, count: 9 },
     { card: SELESNYA_GUILDGATE, count: 2 },
+    // Two of its Forests are cycling lands, which is the one decision this deck's mana base has.
+    { card: TRANQUIL_THICKET, count: 2 },
     { card: LLANOWAR_ELVES, count: 4 },
     { card: RAMPANT_GROWTH, count: 3 },
     { card: GARRUK_WILDSPEAKER, count: 1 },
@@ -1006,9 +1094,10 @@ export const TIDAL_MIND: DeckSpec = {
   description: 'Blue-black control. Counter what matters, kill what lands, and win in the air.',
   commander: TALRAND,
   cards: [
-    { card: ISLAND, count: 11 },
+    { card: ISLAND, count: 9 },
     { card: SWAMP, count: 10 },
     { card: DIMIR_GUILDGATE, count: 2 },
+    { card: LONELY_SANDBAR, count: 2 },
     { card: COUNTERSPELL, count: 3 },
     { card: NEGATE, count: 2 },
     { card: DOOM_BLADE, count: 2 },
@@ -1084,9 +1173,10 @@ export const FORGE_ALLIANCE: DeckSpec = {
   description: 'Red-white equipment. A board of small creatures, and a sword for one of them.',
   commander: BALAN,
   cards: [
-    { card: PLAINS, count: 10 },
+    { card: PLAINS, count: 8 },
     { card: MOUNTAIN, count: 9 },
     { card: BOROS_GUILDGATE, count: 3 },
+    { card: SECLUDED_STEPPE, count: 2 },
     { card: ELITE_VANGUARD, count: 3 },
     { card: MONASTERY_SWIFTSPEAR, count: 3 },
     { card: DOOMED_TRAVELER, count: 3 },
@@ -1107,12 +1197,59 @@ export const FORGE_ALLIANCE: DeckSpec = {
   ],
 };
 
+/**
+ * The sixth deck, and the first whose costs are decisions.
+ *
+ * Every other starter deck pays what is printed in the corner. This one asks three questions a
+ * turn: is this land worth two mana and a card, is this Burst Lightning worth four more, is this
+ * creature worth more dead than alive. Judith is the commander because she answers the third one
+ * for you — every nontoken creature you control is a Shock on the way out, which turns Bone
+ * Splinters from removal that costs a creature into removal that kills two.
+ */
+export const ASHEN_RITE: DeckSpec = {
+  id: 'ashen-rite',
+  name: 'Ashen Rite',
+  description: 'Black-red sacrifice. Every creature is a resource, and every land is a card.',
+  commander: JUDITH,
+  cards: [
+    { card: SWAMP, count: 9 },
+    { card: MOUNTAIN, count: 9 },
+    { card: RAKDOS_GUILDGATE, count: 2 },
+    // The cycling lands are the mana base's own decision: a land early, a card late. Two of each
+    // rather than four, because a deck that cycled every land would never cast anything.
+    { card: BARREN_MOOR, count: 2 },
+    { card: FORGOTTEN_CAVE, count: 2 },
+    // Creatures that want to die: a token on the way out, a drain on the way out, or a body that
+    // was only ever fuel.
+    { card: GOBLIN_ARSONIST, count: 2 },
+    { card: DOOMED_DISSENTER, count: 2 },
+    { card: BLOOD_ARTIST, count: 3 },
+    { card: ZULAPORT_CUTTHROAT, count: 2 },
+    { card: VAMPIRE_ARISTOCRAT, count: 2 },
+    { card: BLOODTHRONE_VAMPIRE, count: 2 },
+    { card: FLESHBAG_MARAUDER, count: 2 },
+    { card: VAMPIRE_NIGHTHAWK, count: 2 },
+    { card: FLAMETONGUE_KAVU, count: 2 },
+    { card: GRAVEDIGGER, count: 2 },
+    { card: IMPACT_TREMORS, count: 1 },
+    // And the spells that spend them.
+    { card: BONE_SPLINTERS, count: 3 },
+    { card: VILLAGE_RITES, count: 2 },
+    { card: AGONIZING_DEMISE, count: 2 },
+    { card: BURST_LIGHTNING, count: 2 },
+    { card: BREATH_OF_DARIGAAZ, count: 1 },
+    { card: LIGHTNING_BOLT, count: 2 },
+    { card: FAITHLESS_LOOTING, count: 2 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
   [TIDAL_MIND.id]: TIDAL_MIND,
   [ROT_HARVEST.id]: ROT_HARVEST,
   [FORGE_ALLIANCE.id]: FORGE_ALLIANCE,
+  [ASHEN_RITE.id]: ASHEN_RITE,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

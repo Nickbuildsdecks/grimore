@@ -65,6 +65,27 @@ const basicLand = (name: string, type: 'W' | 'U' | 'B' | 'R' | 'G'): CardScript 
  * ability listing both would be two mana off one land, and the engine would offer two-drops that
  * cannot be cast.
  */
+/**
+ * A cycling land: taps for one colour, comes in tapped, and can be thrown away for a card.
+ *
+ * The first ability in the pool that is used from the **hand** — `discardSelf` in the cost says so,
+ * and `legalActions` offers it only while the card is there, the way `{T}: Add {B}` is offered only
+ * while it is on the battlefield. Which is the whole card: a land that is never a dead draw,
+ * because the late-game version of it is a cantrip.
+ */
+const cyclingLand = (name: string, type: 'W' | 'U' | 'B' | 'R' | 'G'): CardScript => ({
+  name,
+  entersTapped: true,
+  abilities: [
+    { cost: { tap: true }, description: `{T}: Add {${type}}.`, produces: [type] },
+    {
+      cost: { mana: '{2}', discardSelf: true },
+      description: 'Cycling {2} ({2}, Discard this card: Draw a card.)',
+      effect: (c) => draw(c.state, c.controller, 1),
+    },
+  ],
+});
+
 const guildgate = (name: string, a: 'W' | 'U' | 'B' | 'R' | 'G', b: 'W' | 'U' | 'B' | 'R' | 'G'): CardScript => ({
   name,
   entersTapped: true,
@@ -1314,6 +1335,130 @@ function goblinCount(state: GameState, seat: SeatIndex): number {
   return n;
 }
 
+// ── Kicker, and costs paid with a creature ───────────────────────────────────────────────────────
+
+/**
+ * Burst Lightning: two damage, or four if you paid the kicker.
+ *
+ * The simplest shape a kicker comes in, and the reason `kicked` is a flag on the context rather
+ * than a second effect function: the card is one spell whose number changes.
+ */
+const BURST_LIGHTNING: CardScript = {
+  name: 'Burst Lightning',
+  kicker: { cost: '{4}', description: 'Kicker {4}' },
+  targets: [ANY_TARGET],
+  onResolve: (c) => damageFirstTarget(c, c.kicked ? 4 : 2),
+};
+
+/**
+ * Breath of Darigaaz: a sweeper that spares fliers, and spares nobody when it is kicked.
+ *
+ * No targets at all, which makes it the clean test that a kicker is not a targeting feature: the
+ * only thing the extra mana changes is a number read on resolution.
+ */
+const BREATH_OF_DARIGAAZ: CardScript = {
+  name: 'Breath of Darigaaz',
+  kicker: { cost: '{3}', description: 'Kicker {3}' },
+  onResolve: (c) => {
+    const amount = c.kicked ? 4 : 1;
+    let state = c.state;
+    for (const id of battlefield(state, (cardId) => {
+      const inst = state.instances[cardId];
+      if (inst === undefined) return false;
+      const ch = characteristicsOf(state, inst);
+      return ch.isCreature && !ch.keywords.has('flying');
+    })) {
+      state = dealDamage(state, { kind: 'card', id }, amount, { controller: c.controller });
+    }
+    for (const seat of state.seats) {
+      if (seat.eliminated) continue;
+      state = dealDamage(state, { kind: 'player', seat: seat.index }, amount, { controller: c.controller });
+    }
+    return state;
+  },
+};
+
+/**
+ * Agonizing Demise: removal, and the corpse thrown at its controller if you paid the kicker.
+ *
+ * The kicked half reads the creature it killed, which it can still do — the damage is dealt in the
+ * same resolution, before the creature has gone anywhere.
+ */
+const AGONIZING_DEMISE: CardScript = {
+  name: 'Agonizing Demise',
+  kicker: { cost: '{1}{R}', description: 'Kicker {1}{R}' },
+  targets: [{
+    kind: 'creature',
+    description: 'target nonblack creature',
+    filter: (state, candidate) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined) return false;
+      return !(state.cardDefs[inst.defKey]?.colors ?? []).includes('B');
+    },
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    if (id === null) return c.state;
+    const inst = c.state.instances[id];
+    if (inst === undefined) return c.state;
+    // "Damage equal to its power" is read from the creature as it stood, which is why both are
+    // taken before it is destroyed rather than after.
+    const power = characteristicsOf(c.state, inst).power;
+    const owner = inst.zoneSeat;
+    let state = destroy(c.state, id);
+    if (c.kicked && power > 0 && owner !== null) {
+      state = dealDamage(state, { kind: 'player', seat: owner }, power, { controller: c.controller });
+    }
+    return state;
+  },
+};
+
+/**
+ * Bone Splinters: removal that costs a creature.
+ *
+ * The additional cost is paid as the spell is cast, so by the time anybody may respond the
+ * creature is already in the graveyard — which is the card: it is removal you cannot be punished
+ * for in response, and a sacrifice outlet that an opponent cannot deny by killing the creature.
+ */
+const BONE_SPLINTERS: CardScript = {
+  name: 'Bone Splinters',
+  additionalCost: { sacrifice: 'creature' },
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : destroy(c.state, id);
+  },
+};
+
+/** Village Rites: a creature about to die anyway, turned into two cards. */
+const VILLAGE_RITES: CardScript = {
+  name: 'Village Rites',
+  additionalCost: { sacrifice: 'creature' },
+  onResolve: (c) => draw(c.state, c.controller, 2),
+};
+
+/**
+ * Judith, the Scourge Diva: the team is bigger, and every death is a Shock.
+ *
+ * Two clauses, and the engine could express neither until this card: "*other* creatures you
+ * control" is a static that has to skip its own source, and "a **nontoken** creature you control
+ * dies" is the clause that keeps a deck of tokens from draining the table by accident. She
+ * triggers on her own death too, which is the card — she was a nontoken creature you controlled.
+ */
+const JUDITH: CardScript = {
+  name: 'Judith, the Scourge Diva',
+  statics: [{ scope: 'other-controller-creatures', effect: { power: 1 } }],
+  triggers: [
+    {
+      on: { kind: 'dies', who: 'any', of: 'you', what: 'creature', nontoken: true },
+      targets: [ANY_TARGET],
+      description: 'Judith deals 1 damage to any target',
+      effect: (c) => damageFirstTarget(c, 1),
+    },
+  ],
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 const ALL: readonly CardScript[] = [
@@ -1349,6 +1494,13 @@ const ALL: readonly CardScript[] = [
     'equipped creature gets +3/+0 and has trample and lifelink'),
   equipment('Basilisk Collar', '{2}', { keywords: ['deathtouch', 'lifelink'] },
     'equipped creature has deathtouch and lifelink'),
+  cyclingLand('Barren Moor', 'B'),
+  cyclingLand('Forgotten Cave', 'R'),
+  cyclingLand('Lonely Sandbar', 'U'),
+  cyclingLand('Secluded Steppe', 'W'),
+  cyclingLand('Tranquil Thicket', 'G'),
+  BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
+  guildgate('Rakdos Guildgate', 'B', 'R'),
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

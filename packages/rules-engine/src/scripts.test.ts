@@ -15,8 +15,8 @@ import {
   STARTER_DECKS, characteristicsOf, legalActions, scriptFor, scriptedCardNames, viewFor,
 } from './index.js';
 import {
-  advanceTo, apply, arena, choices, countOf, decide, drain, find, ids, life, namesIn, nextTurn,
-  passBoth, refusal, stackNames,
+  advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, namesIn,
+  nextTurn, passBoth, refusal, stackNames,
 } from './testkit.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
@@ -2723,6 +2723,326 @@ describe('spells with {X} in the cost, chosen as the spell is cast', () => {
     expect(s.instances[courser]!.damage).toBe(0);
     // And both players took it, the caster included.
     expect([life(s, 0), life(s, 1)]).toEqual([18, 18]);
+  });
+});
+
+describe('costs that are choices: cycling, kicker, and a creature on the altar', () => {
+  /**
+   * Seat 0 on the sixth deck, which is where every card in this section lives, with `lands` in
+   * play and tapped for mana.
+   *
+   * The colours are given by name rather than counted: this deck is black *and* red, and a Burst
+   * Lightning needs the Mountain.
+   */
+  const ashen = (hand: readonly string[], lands: readonly string[], extra: readonly string[] = []): GameState =>
+    withMana(0, hand, lands, extra, 'ashen-rite');
+
+  const swamps = (n: number): string[] => Array.from({ length: n }, () => 'Swamp');
+  const mountains = (n: number): string[] => Array.from({ length: n }, () => 'Mountain');
+
+  const playsFor = (s: GameState, seat: SeatIndex, name: string): string[] =>
+    legalActions(s, seat).plays.filter((p) => p.name === name).map((p) => p.description);
+
+  it('offers cycling on a land in your hand, and the mana ability only once it is on the battlefield', () => {
+    let s = ashen(['Barren Moor'], swamps(2));
+    const inHand = legalActions(s, 0).plays.filter((p) => p.name === 'Barren Moor');
+    // A land in hand: it can be played, and it can be cycled. What it cannot do is make mana.
+    expect(inHand.map((p) => p.kind).sort()).toEqual(['activate', 'land']);
+    expect(inHand.find((p) => p.kind === 'activate')?.description).toMatch(/Cycling \{2\}/);
+    expect(inHand.find((p) => p.kind === 'activate')?.fromHand).toBe(true);
+
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Barren Moor') });
+    // On the battlefield there is no cycling to be found: the card is not in hand any more, so the
+    // cost that pays for itself cannot be paid. (Nor is there a mana ability yet — it arrived
+    // tapped, which the next test is about.)
+    const onBoard = legalActions(s, 0).plays.filter((p) => p.name === 'Barren Moor');
+    expect(onBoard.map((p) => p.description)).toEqual([]);
+    s = apply(s, { type: 'card:tap', by: 0, card: find(s, 0, 'battlefield', 'Barren Moor'), tapped: false });
+    expect(legalActions(s, 0).plays.filter((p) => p.name === 'Barren Moor').map((p) => p.description))
+      .toEqual(['{T}: Add {B}.']);
+  });
+
+  it('cycling draws a card and leaves the land in the graveyard', () => {
+    let s = ashen(['Barren Moor'], swamps(2));
+    const before = ids(s, 0, 'hand').length;
+    const land = find(s, 0, 'hand', 'Barren Moor');
+    const index = legalActions(s, 0).plays.find((p) => p.name === 'Barren Moor' && p.kind === 'activate')!.abilityIndex!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: index });
+    // The cost is paid as the ability is activated, so the land is already gone while its own
+    // ability is still waiting on the stack (CR 702.29a).
+    expect(s.instances[land]!.zone).toBe('graveyard');
+    expect(s.stackOrder).toHaveLength(1);
+    s = passBoth(s);
+    // One card in, one card out, and the hand is back where it started.
+    expect(ids(s, 0, 'hand').length).toBe(before);
+    expect(countOf(s, 0, 'graveyard', 'Barren Moor')).toBe(1);
+  });
+
+  it('a cycling land comes in tapped, like every other land that is worth more than a Swamp', () => {
+    let s = ashen(['Forgotten Cave'], swamps(1));
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forgotten Cave') });
+    expect(s.instances[find(s, 0, 'battlefield', 'Forgotten Cave')]!.tapped).toBe(true);
+  });
+
+  it('offers the kicker only when the whole cost can be paid', () => {
+    // One land: the spell is castable, the kicker is not, so there is one play.
+    expect(playsFor(ashen(['Burst Lightning'], mountains(1)), 0, 'Burst Lightning'))
+      .toEqual(['Cast Burst Lightning']);
+    // Five: both, and the kicked one says so in words the player can read.
+    expect(playsFor(ashen(['Burst Lightning'], mountains(5)), 0, 'Burst Lightning'))
+      .toEqual(['Cast Burst Lightning', 'Cast Burst Lightning with kicker {4}']);
+  });
+
+  it('Burst Lightning deals 2, or 4 for the kicker', () => {
+    let s = ashen(['Burst Lightning'], mountains(1));
+    s = cast(s, 0, 'Burst Lightning', [{ kind: 'player', seat: 1 }]);
+    expect(life(s, 1)).toBe(18);
+
+    let kicked = ashen(['Burst Lightning'], mountains(5));
+    kicked = passBoth(apply(kicked, {
+      type: 'auto:cast', by: 0, card: find(kicked, 0, 'hand', 'Burst Lightning'),
+      kicked: true, targets: [{ kind: 'player', seat: 1 }],
+    }));
+    expect(life(kicked, 1)).toBe(16);
+    // Five mana spent, not one: the kicker is part of the cost rather than a free upgrade.
+    expect(Object.values(kicked.pools[0] ?? {}).reduce((a, b) => a + b, 0)).toBe(0);
+  });
+
+  it('says so on the stack, so the player deciding whether to respond can read it', () => {
+    let s = ashen(['Burst Lightning'], mountains(5));
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Burst Lightning'),
+      kicked: true, targets: [{ kind: 'player', seat: 1 }],
+    });
+    expect(stackNames(s)).toEqual(['Burst Lightning (kicked)']);
+  });
+
+  it('refuses a kicker on a card that has none, rather than ignoring it', () => {
+    const s = ashen(['Lightning Bolt'], mountains(1));
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      kicked: true, targets: [{ kind: 'player', seat: 1 }],
+    })).toMatch(/no kicker/);
+  });
+
+  it('Breath of Darigaaz spares fliers and hits everybody else, for 1 or for 4', () => {
+    const board = (hand: readonly string[], lands: readonly string[]): GameState => {
+      let s = arena({
+        hands: { 0: hand },
+        battlefield: { 0: lands, 1: ['Serra Angel', 'Grizzly Bears'] },
+        turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+      });
+      s = advanceTo(s, 'precombat-main');
+      for (const id of ids(s, 0, 'battlefield')) {
+        s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+      }
+      return s;
+    };
+
+    let s = board(['Breath of Darigaaz'], ['Mountain', 'Mountain']);
+    const flier = find(s, 1, 'battlefield', 'Serra Angel');
+    const ground = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = cast(s, 0, 'Breath of Darigaaz');
+    expect(damageOn(s, flier)).toBe(0);
+    expect(damageOn(s, ground)).toBe(1);
+    // "each player" is each player, including the one who cast it.
+    expect(life(s, 0)).toBe(19);
+    expect(life(s, 1)).toBe(19);
+
+    // Kicked, the same spell is a sweeper: the 2/2 on the ground dies and the 4/4 in the air
+    // still has not been touched.
+    let kicked = board(['Breath of Darigaaz'], ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain']);
+    const highFlier = find(kicked, 1, 'battlefield', 'Serra Angel');
+    kicked = passBoth(apply(kicked, {
+      type: 'auto:cast', by: 0, card: find(kicked, 0, 'hand', 'Breath of Darigaaz'), kicked: true,
+    }));
+    expect(damageOn(kicked, highFlier)).toBe(0);
+    expect(countOf(kicked, 1, 'graveyard', 'Grizzly Bears')).toBe(1);
+    expect(life(kicked, 0)).toBe(16);
+    expect(life(kicked, 1)).toBe(16);
+  });
+
+  it('Agonizing Demise kills a creature, and kicked throws the body at its controller', () => {
+    let s = arena({
+      hands: { 0: ['Agonizing Demise', 'Agonizing Demise'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Mountain', 'Mountain'], 1: ['Centaur Courser'] },
+      turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Agonizing Demise'),
+      kicked: true, targets: [{ kind: 'card', id: courser }],
+    }));
+    expect(countOf(s, 1, 'graveyard', 'Centaur Courser')).toBe(1);
+    // A 3/3 died, so its controller takes three.
+    expect(life(s, 1)).toBe(17);
+  });
+
+  it('Agonizing Demise will not point at a black creature', () => {
+    let s = arena({
+      hands: { 0: ['Agonizing Demise'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'], 1: ['Vampire Nighthawk'] },
+      turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const nighthawk = find(s, 1, 'battlefield', 'Vampire Nighthawk');
+    // Not offered, and refused if a client sends it anyway.
+    expect(playsFor(s, 0, 'Agonizing Demise')).toEqual([]);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Agonizing Demise'),
+      targets: [{ kind: 'card', id: nighthawk }],
+    })).toMatch(/nonblack/);
+  });
+
+  it('Bone Splinters is not castable with nothing to sacrifice', () => {
+    // A creature to kill and nothing of your own to pay with, which is the case the rule is about
+    // (CR 601.2h): the spell is not offered, and a client that sends it anyway is told why.
+    let s = arena({
+      hands: { 0: ['Bone Splinters'] },
+      battlefield: { 0: ['Swamp'], 1: ['Centaur Courser'] },
+      turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Swamp'), abilityIndex: 0 });
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    expect(playsFor(s, 0, 'Bone Splinters')).toEqual([]);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bone Splinters'),
+      targets: [{ kind: 'card', id: courser }],
+    })).toMatch(/no creature to sacrifice/);
+  });
+
+  it('Bone Splinters eats a creature as it is cast, before anybody may respond', () => {
+    let s = arena({
+      hands: { 0: ['Bone Splinters'] },
+      battlefield: { 0: ['Swamp', 'Doomed Dissenter'], 1: ['Centaur Courser'] },
+      turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Swamp'), abilityIndex: 0 });
+    const fodder = find(s, 0, 'battlefield', 'Doomed Dissenter');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const play = legalActions(s, 0).plays.find((p) => p.name === 'Bone Splinters')!;
+    expect(play.sacrificeOptions).toEqual([fodder]);
+
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bone Splinters'),
+      sacrifice: fodder, targets: [{ kind: 'card', id: courser }],
+    });
+    // Already dead while the spell is still on the stack — which is the card: the creature cannot
+    // be saved in response, and the death trigger is on the stack above the spell that caused it.
+    expect(s.instances[fodder]!.zone).toBe('graveyard');
+    s = drain(s);
+    expect(countOf(s, 1, 'graveyard', 'Centaur Courser')).toBe(1);
+    // Doomed Dissenter's own death made a Zombie, because a sacrifice is a death like any other.
+    expect(countOf(s, 0, 'battlefield', 'Zombie')).toBe(1);
+  });
+
+  it('refuses a cast that skips its additional cost, and one that invents one', () => {
+    let s = arena({
+      hands: { 0: ['Bone Splinters', 'Lightning Bolt'] },
+      battlefield: { 0: ['Swamp', 'Mountain', 'Doomed Dissenter'], 1: ['Centaur Courser'] },
+      turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const name of ['Swamp', 'Mountain']) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', name), abilityIndex: 0 });
+    }
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bone Splinters'),
+      targets: [{ kind: 'card', id: courser }],
+    })).toMatch(/choose a creature to sacrifice/);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      sacrifice: find(s, 0, 'battlefield', 'Doomed Dissenter'),
+      targets: [{ kind: 'card', id: courser }],
+    })).toMatch(/no additional cost/);
+  });
+
+  it('Village Rites turns a creature into two cards', () => {
+    let s = arena({
+      hands: { 0: ['Village Rites'] },
+      battlefield: { 0: ['Swamp', 'Doomed Dissenter'] },
+      turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite' },
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Swamp'), abilityIndex: 0 });
+    const fodder = find(s, 0, 'battlefield', 'Doomed Dissenter');
+    const before = ids(s, 0, 'hand').length;
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Village Rites'), sacrifice: fodder,
+    }));
+    // Two drawn, one spent: a card up on the exchange, and a creature down.
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+    expect(s.instances[fodder]!.zone).toBe('graveyard');
+  });
+
+  it('Judith pumps the others and not herself, and pings for every nontoken death', () => {
+    // Cast from the command zone rather than placed, because a static effect is created as the
+    // permanent arrives: a Judith put straight onto the battlefield by the tabletop actions has
+    // no anthem, exactly as a Glorious Anthem placed that way has none.
+    let s = arena({
+      hands: { 0: [] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Mountain', 'Doomed Dissenter'] },
+      turn: 2, firstSeat: 0, format: 'pod', decks: { 0: 'ashen-rite' },
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const name of ['Swamp', 'Swamp', 'Mountain']) {
+      const land = ids(s, 0, 'battlefield').find((id) =>
+        s.cardDefs[s.instances[id]!.defKey]!.name === name && !s.instances[id]!.tapped)!;
+      s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: 0 });
+    }
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'command', 'Judith, the Scourge Diva'),
+    }));
+    const judith = find(s, 0, 'battlefield', 'Judith, the Scourge Diva');
+    const dissenter = find(s, 0, 'battlefield', 'Doomed Dissenter');
+    // "Other creatures you control get +1/+0": a 1/1 is a 2/1, and Judith is still a 2/2.
+    expect([power(s, dissenter), toughness(s, dissenter)]).toEqual([2, 1]);
+    expect([power(s, judith), toughness(s, judith)]).toEqual([2, 2]);
+
+    // A nontoken creature dies, and the trigger wants a target.
+    s = apply(s, { type: 'card:move', by: 0, card: dissenter, toZone: 'graveyard' });
+    s = drain(s);
+    expect(s.pendingChoice).not.toBeNull();
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] });
+    s = drain(s);
+    expect(life(s, 1)).toBe(39);
+  });
+
+  it('and a token dying is not a nontoken creature dying', () => {
+    let s = arena({
+      hands: { 0: [] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Mountain'] },
+      turn: 2, firstSeat: 0, format: 'pod', decks: { 0: 'ashen-rite' },
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'command', 'Judith, the Scourge Diva'),
+    }));
+    s = apply(s, {
+      type: 'token:create', by: 0, seat: 0, count: 1,
+      card: {
+        name: 'Zombie', typeLine: 'Token Creature \u2014 Zombie', manaCost: '', cmc: 0,
+        power: '2', toughness: '2', oracleText: '', colors: ['B'],
+      },
+    });
+    const token = find(s, 0, 'battlefield', 'Zombie');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: token, toZone: 'graveyard' }));
+    // Nothing to aim, and nothing to answer: the clause on the trigger is doing its job.
+    expect(s.pendingChoice).toBeNull();
+    expect(life(s, 1)).toBe(40);
   });
 });
 

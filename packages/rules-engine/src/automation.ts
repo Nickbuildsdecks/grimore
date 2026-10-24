@@ -354,7 +354,8 @@ function triggerMatches(
       const who = want.who ?? 'self';
       if (who === 'self' && !isSubject) return false;
       if (who === 'another' && isSubject) return false;
-      const e = event as { subjectSeat?: SeatIndex; subjectIsCreature?: boolean };
+      const e = event as { subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean };
+      if (want.kind === 'dies' && want.nontoken === true && e.subjectIsToken === true) return false;
       // "a *creature* you control enters" is what the board-watchers say, and an enchantment
       // arriving is not that. Only asked for when the trigger asks for it, so a `self` trigger on
       // a non-creature permanent still fires for its own arrival.
@@ -393,6 +394,7 @@ function raise(
         ...event,
         subjectSeat: inst.zoneSeat,
         subjectIsCreature: characteristicsOf(next, inst).isCreature,
+        ...(event.kind === 'dies' ? { subjectIsToken: inst.isToken } : {}),
       };
     }
   }
@@ -1010,6 +1012,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     const ready = first === undefined ? state : first({
       state, source: object.kind === 'spell' ? object.id : object.source,
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
+      kicked: object.kicked === true,
     });
     return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
   }
@@ -1030,6 +1033,7 @@ function completeResolution(
     targets: object.targets,
     x: object.x ?? 0,
     decisions: answers,
+    kicked: object.kicked === true,
   };
 
   if (object.kind === 'spell') {
@@ -1122,6 +1126,7 @@ function applyStatics(
     const scope: ContinuousEffect['scope'] =
       entry.scope === 'self' ? { kind: 'cards', ids: [id] }
       : entry.scope === 'controller-creatures' ? { kind: 'controller-creatures' }
+      : entry.scope === 'other-controller-creatures' ? { kind: 'other-controller-creatures' }
       : { kind: 'all-creatures' };
     next = {
       ...next,

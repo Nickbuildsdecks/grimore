@@ -17,7 +17,7 @@ import { PLAYERS, POD_PLAYERS, HOST, WIRE_CAP } from './testkit.js';
 
 /** A four-seat Commander pod, every seat on a different deck, handed to the rules engine. */
 function pod(seed: number, firstSeat: SeatIndex = 0): GameState {
-  const decks = ['ember-rush', 'rot-harvest', 'tidal-mind', 'verdant-guard'];
+  const decks = ['ember-rush', 'rot-harvest', 'ashen-rite', 'verdant-guard'];
   let s = createGame({ id: `pod-${seed}`, format: 'pod', players: POD_PLAYERS, seed });
   for (const action of [
     ...decks.map((deckId, seat) => ({ type: 'deck:load' as const, by: seat, seat, deckId })),
@@ -48,7 +48,7 @@ function table(
 
 /** Every pairing of the built-in decks, which is what a matchup test should cover. */
 /** Every deck, for tests that want a spread of matchups rather than a named pairing. */
-const DECK_IDS = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance'] as const;
+const DECK_IDS = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance', 'ashen-rite'] as const;
 
 const MATCHUPS: readonly (readonly [string, string])[] = [
   ['ember-rush', 'verdant-guard'],
@@ -65,6 +65,12 @@ const MATCHUPS: readonly (readonly [string, string])[] = [
   ['forge-alliance', 'rot-harvest'],
   ['forge-alliance', 'verdant-guard'],
   ['forge-alliance', 'forge-alliance'],
+  ['ashen-rite', 'ember-rush'],
+  ['ashen-rite', 'tidal-mind'],
+  ['ashen-rite', 'verdant-guard'],
+  ['ashen-rite', 'rot-harvest'],
+  ['ashen-rite', 'forge-alliance'],
+  ['ashen-rite', 'ashen-rite'],
 ];
 
 describe('a whole automated game', () => {

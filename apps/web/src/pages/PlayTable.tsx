@@ -68,6 +68,7 @@ const HOW_TO_ARENA: [string, string][] = [
   ["Cast something", "Tap the card. Everything you can legally do with it is listed and nothing else is; a card you can play right now says playable. The mana is tapped for you — tap lands yourself first only if you want particular ones spent."],
   ["Choose a target", "The legal ones light up, wherever they are: a creature, a player's row, a card in a graveyard, or a spell waiting on the stack."],
   ["How big is it?", "A spell with {X} in its cost asks for X before it asks for a target, because that is when the rules choose it. The numbers offered are the ones your mana covers."],
+  ["Paying more, or paying with a creature", "A kicker is its own play — \"with kicker {4}\" — offered only when you can pay all of it. A land in your hand may offer cycling: the mana and the card, for a new card. A spell whose cost is one of your creatures asks which before it asks for a target, and that creature is gone before anybody can respond to the spell."],
   ["Attack", "Declare attackers, pick who each creature is going at — a player, or one of their planeswalkers — then tap the creatures. Lines on the board show what is attacking what."],
   ["Block", "Declare blockers, tap your creature, then tap the attacker it blocks. Only the attackers it may legally block light up."],
   ["A planeswalker", "Tap it and take one of its loyalty abilities: one a turn each, your main phase only, and a minus you cannot pay for is not offered."],

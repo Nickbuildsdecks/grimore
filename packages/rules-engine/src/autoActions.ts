@@ -111,16 +111,64 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     }
   }
 
+  // The kicker is announced with the spell (CR 702.32a), so it arrives on the action like X and
+  // the modes do. Refused on a card without one rather than ignored: a client sending it has
+  // misread the card, and silently dropping it would put a `kicked` on the stack object that the
+  // card's own effect reads.
+  const kicked = action.kicked === true;
+  if (kicked && script?.kicker === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no kicker`);
+  }
+
   const specs = modes === undefined ? spellTargets(script) : modeTargetSpecs(modesOf(script, modes));
   const chosen = action.targets ?? [];
   const check = checkTargets(state, specs, chosen, action.by, inst.id);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
+  /*
+    An additional cost that is not optional, chosen and checked before anything is spent.
+
+    A cost, not a target: it is paid as the spell is cast, so the creature is in the graveyard
+    before anybody may respond and cannot be saved in reply. And a spell whose additional cost
+    cannot be paid is not castable at all (CR 601.2h) — "you have no creature to sacrifice" rather
+    than a spell that sits on the stack waiting for one.
+  */
+  let sacrificed: string | null = null;
+  let sacrificedName = '';
+  if (script?.additionalCost !== undefined) {
+    const options = sacrificeOptions(state, action.by, inst.id, { sacrifice: script.additionalCost.sacrifice });
+    if (options.length === 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `you have no creature to sacrifice for ${characteristics.name}`);
+    }
+    if (action.sacrifice === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `choose a creature to sacrifice for ${characteristics.name}`);
+    }
+    if (!options.includes(action.sacrifice)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that creature cannot be sacrificed for this');
+    }
+    sacrificed = action.sacrifice;
+  } else if (action.sacrifice !== undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no additional cost to pay`);
+  }
+
   // The tax is generic mana on top of the printed cost, and it only applies to a cast from the
   // command zone. It goes up by two *after* the cast, so the first one is free of it.
   const tax = fromCommand ? (state.seats[action.by]?.commanderTax ?? 0) : 0;
-  const paid = payFrom(state, action.by, def?.manaCost, action.x ?? 0, tax);
+  // The kicker is paid as part of the spell's total cost, so it goes to `payFrom` as more symbols
+  // on the same cost rather than as a second payment: a kicked spell either gets cast or does not,
+  // and a player who could pay the printed cost but not the kicker must not end up having paid
+  // half of it.
+  const costText = kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
+  const paid = payFrom(state, action.by, costText, action.x ?? 0, tax);
   let next = paid.state;
+  if (sacrificed !== null) {
+    const victim = requireInstance(next, sacrificed);
+    sacrificedName = characteristicsOf(next, victim).name;
+    // It dies now, as the cost is paid — not when the spell resolves. `relocate` records the
+    // death and `settle` raises it, which also puts a death trigger on the stack *above* the
+    // spell that paid for it, so the trigger resolves first (CR 603.3b).
+    next = relocate(next, victim, 'graveyard', victim.owner, 'bottom');
+  }
   if (fromCommand) {
     next = replaceSeat(next, action.by, { commanderTax: tax + 2 });
   }
@@ -134,12 +182,16 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // X is in the description for the same reason the modes are: the player deciding whether to
   // respond has to know how big the Fireball is, and the stack is where both players read it.
   const xText = printedCost.x ? ` (X=${action.x ?? 0})` : '';
+  // And the kicker, for the same reason again: whether it was paid changes what the spell does,
+  // and the player deciding whether to respond reads the stack to find out.
+  const kickedText = kicked ? ' (kicked)' : '';
   const object: StackObject = {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
     cardKey: inst.defKey, targets: [...chosen],
     ...(action.x === undefined ? {} : { x: action.x }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
-    description: `${characteristics.name}${xText}${modeText}`,
+    ...(kicked ? { kicked: true } : {}),
+    description: `${characteristics.name}${xText}${kickedText}${modeText}`,
   };
   next = {
     ...next,
@@ -159,9 +211,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The lands tapped for it are named, because they turn sideways on screen and a player who
     // did not tap them should be able to see why.
     message: paid.tapped.length === 0
-      ? `${seatName(state, action.by)} casts ${characteristics.name}${tax > 0 ? ` (+{${tax}} tax)` : ''}`
-      : `${seatName(state, action.by)} taps ${paid.tapped.length} for ${characteristics.name} and casts it`,
-    data: { card: inst.id, name: characteristics.name, tapped: [...paid.tapped] },
+      ? `${seatName(state, action.by)} casts ${characteristics.name}${kickedText}${tax > 0 ? ` (+{${tax}} tax)` : ''}`
+      : `${seatName(state, action.by)} taps ${paid.tapped.length} for ${characteristics.name}${kickedText} and casts it`,
+    data: {
+      card: inst.id, name: characteristics.name, tapped: [...paid.tapped],
+      ...(kicked ? { kicked: true } : {}),
+      ...(sacrificed === null ? {} : { sacrificed, sacrificedName }),
+    },
   };
 }
 
@@ -203,11 +259,22 @@ function activate(
   requireAutomated(state);
   requirePriority(state, action.by);
   const inst = requireInstance(state, action.card);
-  if (inst.zone !== 'battlefield' || inst.zoneSeat !== action.by) {
-    throw new EngineError('RULE_NOT_APPLICABLE', 'you do not control that permanent');
-  }
   const script = scriptOf(state, inst.id);
   const ability = script?.abilities?.[action.abilityIndex];
+  /*
+    Which zone this ability is used from, decided by its cost.
+
+    An ability that pays for itself by being discarded — cycling (CR 702.29a) — is used from the
+    hand, and every other ability in the pool is used from the battlefield. The cost says which, so
+    a script never has to: the alternative was a `fromHand` flag that could disagree with the cost
+    beside it, and the same reasoning already decides sorcery speed for a loyalty ability.
+  */
+  const fromHand = ability?.cost.discardSelf === true;
+  const wantedZone = fromHand ? 'hand' : 'battlefield';
+  if (inst.zone !== wantedZone || inst.zoneSeat !== action.by) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      fromHand ? 'that card is not in your hand' : 'you do not control that permanent');
+  }
   if (ability === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'that permanent has no such ability');
   const ch = characteristicsOf(state, inst);
 
@@ -286,6 +353,10 @@ function activate(
     sacrificedName = name;
   }
   if (ability.cost.sacrificeSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
+  // Discarded as the cost is paid, so the card is in the graveyard while its own ability is still
+  // on the stack (CR 702.29a) — which is why a cycling land can be cycled and then returned from
+  // the graveyard by something else before the draw has even happened.
+  if (ability.cost.discardSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
 
   if (ability.produces !== undefined) {
     // A mana ability resolves immediately and never uses the stack (CR 605.3a) — which is what

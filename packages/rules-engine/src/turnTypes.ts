@@ -83,6 +83,14 @@ export interface StackObject {
   readonly targets: readonly Target[];
   readonly x?: number;
   /**
+   * Whether this spell's kicker was paid.
+   *
+   * On the stack object for the same reason X is: it was chosen as the spell was cast, both
+   * players can read it before deciding whether to respond, and the effect needs it on
+   * resolution. Absent on everything without a kicker.
+   */
+  readonly kicked?: boolean;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.
@@ -284,6 +292,10 @@ export interface AutoCastAction {
   readonly targets?: readonly Target[]; readonly x?: number;
   /** For a modal spell: which modes, as indices into its script's `modal.modes`. */
   readonly modes?: readonly number[];
+  /** Pay the kicker (CR 702.32a). Refused on a spell that has none. */
+  readonly kicked?: boolean;
+  /** The creature sacrificed for an additional cost, when the spell asks for one. */
+  readonly sacrifice?: string;
 }
 export interface AutoActivateAction {
   readonly type: 'auto:activate'; readonly by: SeatIndex; readonly card: string;

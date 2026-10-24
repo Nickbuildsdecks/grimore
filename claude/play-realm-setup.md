@@ -108,6 +108,9 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Block | **Declare blockers**, tap your creature, then tap the attacker it blocks. Only attackers it may legally block light up. |
 | See who is attacking whom | Lines on the board: gold from each attacker to the player it is aimed at, dashed from each blocker to what it blocked. In a pod that is how you know an attack is yours to answer. |
 | Cast a spell with {X} in its cost | Tap it and pick X from the numbers offered — the list stops at what your mana covers, and it opens on the largest. X is chosen before the target, because that is when the rules choose it. |
+| Pay a kicker | The kicked version is listed as its own play — "Cast Burst Lightning with kicker {4}" — and it only appears when you can pay for the whole thing. Choosing it *is* paying it. |
+| Cycle a land from your hand | Tap it in hand: beside **Play**, it offers its cycling ability. It costs the mana and the card, and draws you another. |
+| Cast a spell that costs a creature | Tap it, then tap the creature to feed it. The creature is gone before the spell is on the stack, which is the rules and not a shortcut — nobody can save it in response. |
 | Equip something | Tap the Equipment → **Equip**, then tap one of your creatures. Only on your own turn, and the creature it is already on is not offered. It stays on the battlefield when that creature dies. |
 | Scry | The top cards appear in a row of their own, visible to you alone. Tap the ones to put on the bottom and confirm; what you leave stays on top. |
 | Mulligan | At the start, **Mulligan** draws a fresh seven; keeping then asks which card goes to the bottom. |
@@ -139,16 +142,21 @@ so neither of you needs this page open while playing.
 The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
 anybody's turn, which is what makes instants and responses work at all.
 
-### Five starter decks
+### Six starter decks
 
 **Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange), **Tidal Mind**
 (blue-black control, with counterspells) and **Rot Harvest** (green-black, built on getting
 creatures back out of the graveyard and on feeding them to sacrifice outlets), 60 cards each plus a
-commander, so a table can start with no setup at all. **Forge Alliance** (red-white) is the fifth
-and the newest: a board of small creatures and a sword for one of them, with Balan — who pulls
-every Equipment you control onto himself — as its commander. Each two-colour deck runs a pair of
-Guildgates: one mana of either colour, and they come in tapped. Any pairing works, including a
-deck against itself. They are also the only decks right now — see *What is not done* below.
+commander, so a table can start with no setup at all. **Forge Alliance** (red-white) is the fifth:
+a board of small creatures and a sword for one of them, with Balan — who pulls every Equipment you
+control onto himself — as its commander. **Ashen Rite** (black-red) is the newest, and the first
+deck whose costs are decisions: cycling lands that are a land early and a card late, spells with a
+kicker you may pay for a bigger version of the same card, and removal whose cost is one of your own
+creatures. Judith leads it, and makes every creature you lose a Shock on the way out.
+
+Each two-colour deck runs a pair of Guildgates: one mana of either colour, and they come in tapped,
+and four of the six also run a pair of cycling lands. Any pairing works, including a deck against
+itself. They are also the only decks right now — see *What is not done* below.
 
 Cards are drawn as text, not pictures. That is deliberate: there is no card artwork available (the
 card table on the server has never been populated, and this environment cannot reach Scryfall), so

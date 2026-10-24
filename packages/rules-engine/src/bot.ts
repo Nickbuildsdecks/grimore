@@ -462,8 +462,35 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
     // Only offer the play if the mana for it can actually be produced; `legalActions` judges
     // affordability against untapped sources, and the tapping happens in `botTurn`.
     if (play.kind === 'cast') {
+      /*
+        A spell with an additional cost: something has to be fed to it before it can be cast at
+        all, and the bot has to decide whether that is worth doing.
+
+        Shallow in the same way as every other judgement in this file, and deliberately so: it
+        feeds the cheapest creature it has, and it will not do it unless that creature is worth
+        less than what the spell is aimed at — or, for a spell with no target, unless the creature
+        is nearly free anyway. Without this it was happy to eat its best creature to draw two
+        cards, which loses games while passing every test that only checks one finished.
+      */
+      let fodder: string | null = null;
+      if (play.sacrificeOptions.length > 0) {
+        fodder = cheapestCreature(state, play.sacrificeOptions);
+        if (fodder === null) continue;
+        const cost = characteristicsOf(state, state.instances[fodder]!).power;
+        const gain = targets.reduce((best, target) => {
+          if (target.kind !== 'card') return best;
+          const inst = state.instances[target.id];
+          return inst === undefined ? best : Math.max(best, characteristicsOf(state, inst).power);
+        }, 0);
+        if (cost >= Math.max(gain, 2)) continue;
+      }
       return {
         type: 'auto:cast', by: seat, card: play.card,
+        // The kicker was chosen by choosing this play — `legalActions` offers the kicked version
+        // as a separate one — so it has to be said, or the engine casts the cheap half of a card
+        // the table offered as the expensive one.
+        ...(play.kicked === true ? { kicked: true } : {}),
+        ...(fodder === null ? {} : { sacrifice: fodder }),
         // X as large as the mana allows. The shallowness here is the same as everywhere else in
         // this file — it does not know what the card does, so it does not know that a Hurricane
         // hits its own controller too, and it will occasionally kill itself with one. That is the
