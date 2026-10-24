@@ -1068,6 +1068,31 @@ pricing untapped mana does not fix that, because the board the mana bought is wo
 answer kept for it. Beating an aggressive deck with a control one needs the bot to know *which*
 spell is worth answering — a judgement about the opponent, not a price on a land.
 
+**And the ceiling, named rather than walked into again.** D69's diagnostic found what the search
+actually gets wrong: over sixty games it never declined to counter a spell it could pay for, so
+Counterspells go on Rampant Growths. Pricing an answer in hand above a generic card is the obvious
+fix and it was measured over 84 paired games per value:
+
+| answer in hand | control decks | counterspells cast |
+| --- | --- | --- |
+| 1.5 (as any card) | 23-61 | 75 |
+| 2.5 | 22-62 | 82 |
+| 3.5 | 21-63 | 83 |
+| 5.0 | 21-63 | 83 |
+
+Worse, and the second column goes the wrong way: valuing an answer more made it cast *more*
+counterspells, because holding answers made its games longer and the extra turns spent them. Four
+ideas have now been measured against this ceiling and all four deleted — a second ply, a swing
+projection, untapped mana, and this.
+
+The wall is the shape of the evaluation, not a weight in it: **a sum of material cannot say "this is
+worth more later than now"**, so every weight that makes holding a card attractive also makes doing
+nothing attractive. What is missing is which of the opponent's spells is the one that beats you — a
+judgement that depends on their deck, board, hand and the race, none of which the sum reads. The two
+things that would move it are written down in `claude/decisions-log.md` (D70), along with the note
+that the one bot change in this series that *did* win games was Magic knowledge rather than a
+weight: knowing that a flier is not a 2/2.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

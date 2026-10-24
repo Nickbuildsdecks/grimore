@@ -447,6 +447,37 @@ function settleOpeningHand(state: GameState, seat: SeatIndex): Action {
 */
 const LIFE_WEIGHT = 1.0;
 const CARD_IN_HAND = 1.5;
+/*
+  An answer in hand priced above a generic card: measured, and worth nothing.
+
+  The diagnostic in D69 found the one thing this search demonstrably gets wrong: over sixty games
+  it never once declined to counter a spell it could pay for, because by this evaluation countering
+  anything is a gain while the counterspell in hand is priced as any other card — so spending it is
+  nearly free, and Counterspells go on Rampant Growths.
+
+  Pricing an answer above a generic card is the cheapest way to say "do not spend this on nothing".
+  It did not work. Eighty-four paired games per value, the same seeds and pairings as D68:
+
+  | answer in hand | control decks | counterspells cast |
+  | --- | --- | --- |
+  | 1.5 (as any card) | 23-61 | 75 |
+  | 2.5 | 22-62 | 82 |
+  | 3.5 | 21-63 | 83 |
+  | 5.0 | 21-63 | 83 |
+
+  Note the direction of the second column: valuing the answer *more* made it cast **more**
+  counterspells, not fewer. Holding answers made its hands bigger and its games longer, and more
+  counters were spent across the extra turns — the term changed how long it lived, not what it
+  spent the answer on.
+
+  **The conclusion is about the shape of the evaluation rather than any weight in it.** A sum of
+  material cannot express "this card is worth more later than now": the sum is the same whether the
+  card is spent well or badly, and every weight that makes holding it attractive also makes doing
+  nothing attractive. Four ideas have now been measured against this ceiling and all four were
+  deleted — a second ply (D62), a swing projection (D62), untapped mana (D68) and this. What would
+  actually move it is knowledge of a kind the evaluation has no place for: which of the opponent's
+  spells is the one that beats you.
+*/
 const LAND_ON_BOARD = 2.5;
 const PERMANENT_ON_BOARD = 3;
 /*

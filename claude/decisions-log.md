@@ -2350,3 +2350,51 @@ That is a specific, testable hypothesis rather than another weight on a feeling,
 thing a one-ply search structurally cannot see: what an answer is worth depends on what it will be
 pointed at later. The experiment is to price an answer in hand above a generic card, and it is
 measured in the next entry.
+
+## D70 — Pricing the answer: measured, worth nothing, and the ceiling named
+
+D69's diagnostic found the one thing this search demonstrably gets wrong: over sixty games it never
+once declined to counter a spell it could pay for. By the evaluation it should not — countering
+anything is a gain, and the counterspell in hand is priced as any other card, so spending it is
+nearly free. Hence Counterspells on Rampant Growths.
+
+So an answer in hand (anything castable at instant speed) was priced above a generic card.
+**Eighty-four paired games per value, the same seeds and pairings as D68:**
+
+| answer in hand | control decks | counterspells cast |
+| --- | --- | --- |
+| 1.5 (as any card) | 23-61 | 75 |
+| 2.5 | 22-62 | 82 |
+| 3.5 | 21-63 | 83 |
+| 5.0 | 21-63 | 83 |
+
+The 1.5 row reproduces D68's baseline exactly, which is how a paired measurement says it is paired.
+And the second column goes the wrong way: valuing an answer *more* made the bot cast **more**
+counterspells, not fewer. Holding answers made its hands bigger and its games longer, and more
+counters were spent across the extra turns — the term changed how long it lived, not what it spent
+the answer on. Removed.
+
+**Four ideas have now been measured against this ceiling and all four deleted**: a second ply and a
+swing projection (D62), pricing untapped mana (D68), and pricing the answer itself (D70). That is
+enough to name the wall rather than keep walking into it.
+
+**A sum of material cannot express "this is worth more later than now."** The sum is identical
+whether a card is spent well or badly, so every weight that makes holding a card attractive also
+makes doing nothing attractive — which is exactly what the sweep shows: longer games, the same
+losses. The missing thing is not a number in the sum. It is a judgement the sum has no slot for:
+*which of the opponent's spells is the one that beats you*, which depends on their deck, their
+board, their hand and the race — none of which the evaluation reads.
+
+What would actually move it, stated so the next person does not re-run these four experiments:
+
+- A real second player in the search (the opponent choosing against the bot rather than passing),
+  which is what makes "they will have a better spell next turn" visible at all. D62 measured the
+  *cheap* version of this — projecting one attack — and it was worth nothing; the full version is a
+  different and much larger piece of work.
+- Or a threat classifier: a per-card judgement of what beats this deck, written as Magic knowledge
+  rather than derived from the position. That is the kind of thing `creatureValue`'s keyword values
+  turned out to be, and those were the one bot change in this whole series that *did* win games
+  (D62: 284-116, up from 276-124).
+
+The second is the cheaper bet and the first is the honest one. Either way, the next bot change
+should start from the diagnostic, as D69 did, and not from a story about what the bot is doing.
