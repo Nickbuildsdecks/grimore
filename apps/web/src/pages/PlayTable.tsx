@@ -756,40 +756,53 @@ function ZoneRow({
   badgesOf?: (c: VisibleCard) => readonly string[]
   empty?: string
 }) {
+  /*
+    An empty zone is one line, label and all.
+
+    It used to be two — a label above a 34px strip — which is fifty-odd pixels to say "no
+    creatures". A fresh four-seat pod has sixteen such zones on it before anybody has played a
+    card, and the solo suite's own phone screenshot is most of a thousand pixels of them. The
+    label moves inside the strip and the zone keeps its `data-testid`, so a graveyard a player
+    expects to find is still exactly where it was, just not shouting about being empty.
+  */
+  if (cards.length === 0) {
+    return (
+      <div
+        data-testid={testId}
+        className="flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-white/5 bg-black/20 px-2 py-1"
+      >
+        <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--g-text-muted)]">
+          {label}
+        </span>
+        <span className="truncate text-[11px] text-[var(--g-text-muted)]">{empty ?? "empty"}</span>
+      </div>
+    )
+  }
   return (
     // `min-w-0` matters: as a flex or grid item this box defaults to `min-width: auto`, so it sizes
     // to its content — seven cards is 430px — and refuses to shrink, which pushes the whole table
     // sideways on a phone and stops the inner `overflow-x-auto` ever taking effect.
     <div className="flex min-w-0 flex-col gap-1">
       <span className="px-1 text-[10px] font-medium uppercase tracking-wide text-[var(--g-text-muted)]">
-        {label} {cards.length > 0 ? `(${cards.length})` : ""}
+        {label} ({cards.length})
       </span>
       <div
         data-testid={testId}
-        className={cn(
-          "flex items-end gap-1 overflow-x-auto rounded-md border border-white/5 bg-black/20 p-1.5",
-          // An empty zone collapses to a thin strip. Reserving full card height for every empty
-          // zone pushed the hand off the bottom of a laptop screen before a card had been played.
-          // A zone with cards in it is sized by them: each card now occupies a slot of its own
-          // size, so a fixed minimum here would only ever clip the bottom of a row.
-          cards.length === 0 ? "min-h-[34px] items-center" : "",
-        )}
+        // A zone with cards in it is sized by them: each card occupies a slot of its own size, so
+        // a fixed minimum here would only ever clip the bottom of a row.
+        className="flex items-end gap-1 overflow-x-auto rounded-md border border-white/5 bg-black/20 p-1.5"
       >
-        {cards.length === 0 ? (
-          <span className="px-2 text-[11px] text-[var(--g-text-muted)]">{empty ?? "empty"}</span>
-        ) : (
-          cards.map((c) => (
-            <CardFace
-              key={c.id}
-              card={c}
-              size={size}
-              onSelect={onSelect}
-              selected={selectedId === c.id || selectedIds?.has(c.id) === true}
-              highlight={highlightOf?.(c) ?? null}
-              badges={badgesOf?.(c)}
-            />
-          ))
-        )}
+        {cards.map((c) => (
+          <CardFace
+            key={c.id}
+            card={c}
+            size={size}
+            onSelect={onSelect}
+            selected={selectedId === c.id || selectedIds?.has(c.id) === true}
+            highlight={highlightOf?.(c) ?? null}
+            badges={badgesOf?.(c)}
+          />
+        ))}
       </div>
     </div>
   )
@@ -857,10 +870,19 @@ function Board({ table }: { table: UseTable }) {
     intercepts pointer events"*, which is what the suite started recording after the last time it
     happened. An instrument that keeps the whole call log rather than its first line is worth the
     two lines it costs.
+
+    Nor a card that is no longer there. The first version watched only `finished`, and a card
+    tapped *after* the game ended left `picked` set — the render guard below hid it, and then the
+    rematch dealt a new game, `finished` went false, and a sheet for a Wind Drake from the last
+    game appeared over the new one's mulligan prompt. A screenshot caught that too. Asking whether
+    the card is still in the view covers both: a rematch renumbers every instance, and so does a
+    creature leaving for a zone this seat cannot see.
   */
+  const pickedGone = picked !== null && view !== null
+    && (view.finished || view.cards[picked.id] === undefined)
   useEffect(() => {
-    if (view?.finished === true) setPicked(null)
-  }, [view?.finished])
+    if (pickedGone) setPicked(null)
+  }, [pickedGone])
   const [attachFrom, setAttachFrom] = useState<VisibleCard | null>(null)
   /**
    * What the player is halfway through — choosing targets, picking attackers, pairing blockers.

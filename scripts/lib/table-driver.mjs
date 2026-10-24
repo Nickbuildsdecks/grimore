@@ -396,8 +396,20 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
       }
       await tap(mine.nth(i));
     }
+    /*
+      How many actually went, which matters to whoever reads this back.
+
+      Every creature in the row is tapped, and the ones the engine did not light do nothing — so a
+      declare-attackers step with nothing able to attack still ends in a confirm, and used to
+      report the same "declared attackers" as a real swing. The arena suite demands an attack arrow
+      whenever that string comes back, and an empty declaration cannot draw one: a check that can
+      only fail, waiting three seconds to do it. The prompt counts them out loud ("3 attacking"),
+      so the driver reads the number rather than inventing one.
+    */
+    const prompt = await text(page, 'attack-prompt');
+    const chosen = Number.parseInt(/(\d+) attacking/.exec(prompt)?.[1] ?? '0', 10);
     await press(page, 'confirm-attackers');
-    return 'declared attackers';
+    return chosen > 0 ? `declared ${chosen} attackers` : 'declared no attackers';
   }
 
   if (await has(page, 'block-prompt')) {
@@ -494,7 +506,8 @@ export async function noteMove(seen, page, did) {
     next turn before anybody looks. That is a sampled observation reported as a fact about the
     game, which is how a run came back saying no attack was ever drawn in a game full of attacks.
   */
-  if (did === 'declared attackers' && seen.arrows !== true) {
+  if (/^declared \d+ attackers$/.test(did)) seen.swung = true;
+  if (/^declared \d+ attackers$/.test(did) && seen.arrows !== true) {
     /*
       Waited for, briefly, rather than read the instant the action returns.
 

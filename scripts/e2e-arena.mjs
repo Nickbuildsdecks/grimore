@@ -340,7 +340,7 @@ async function main() {
     const seen = {
       land: false, mana: false, stack: false, attackers: false, blockers: false,
       lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
-      decided: false, searched: false, scried: false, arrows: false, modal: false, x: false, xCast: null,
+      decided: false, searched: false, scried: false, arrows: false, swung: false, modal: false, x: false, xCast: null,
       /** Whether the host was offered an undo, and whether the other player was not. */
       undoOffered: false, undoGuestClean: true,
       /** What the table said out loud, and whether it ever got in the way of a tap. */
@@ -544,7 +544,16 @@ async function main() {
         + 'with a creature able to block; combat.test.ts covers that path on a fixed board)');
     }
     check('life totals move because the rules moved them', seen.lifeChanged);
-    if (seen.attackers) {
+    /*
+      Only when a creature actually attacked.
+
+      `seen.attackers` says the table *asked* for a declaration, which it does on every turn with
+      a creature on the board — including one where everything is summoning-sick and the answer is
+      an empty attack. An empty attack draws no arrow, so demanding one there is a check that
+      cannot pass, three seconds of patience and then a red line in a game that was fine. The
+      driver now reports how many went.
+    */
+    if (seen.swung) {
       check('an attack is drawn on the board, from the creature to who it is attacking', seen.arrows);
     }
     await shot(nick, 'mid-game-nick');

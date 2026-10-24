@@ -184,17 +184,29 @@ async function main() {
         make, over "Nick wins" and the button for another game, is a dead end whether it was
         opened a moment before the last damage or a moment after.
       */
-      // Any card on the table, not one in hand: the loser's hand is often empty by then, and a
-      // check that quietly does not run is the thing this whole exercise is about.
-      const anyCard = page.locator('[data-testid^="card-"]');
-      const cards = await anyCard.count();
+      /*
+        One of *this* player's own cards, and loudly if there is none.
+
+        Two earlier versions of this tap chose badly. A card in hand: the loser's hand is often
+        empty by then, so 16/16 passed with the check never running. The first card in the
+        document: sometimes an opponent's face-down hand, which is not wired to open anything, so
+        the check passed by tapping something that could never have failed. Your own graveyard is
+        full by the time a game ends, and every card in it opens a sheet.
+      */
+      const mine = page.locator(
+        '[data-testid="zone-graveyard-0"] [data-testid^="card-"], '
+        + '[data-testid="zone-creatures-0"] [data-testid^="card-"], '
+        + '[data-testid="zone-lands-0"] [data-testid^="card-"]',
+      );
+      const cards = await mine.count();
       if (cards === 0) {
-        check('tapping a card over a finished game opens nothing', false, 'no card on screen to tap');
+        check('tapping a card over a finished game opens nothing', false,
+          'this seat had no card of its own to tap');
       } else {
-        await tap(anyCard.first());
+        await tap(mine.first());
         await page.waitForTimeout(150);
         check('tapping a card over a finished game opens nothing', !(await has(page, 'play-sheet')),
-          `tapped 1 of ${cards} cards, sheet: ${await has(page, 'play-sheet')}`);
+          `tapped 1 of ${cards} of this seat's cards, sheet: ${await has(page, 'play-sheet')}`);
       }
       const turnBefore = (await readNumber(page, 'turn').catch(() => null)) ?? 0;
       // Pressed up to three times rather than once: the game-over panel re-renders as the last
@@ -233,6 +245,10 @@ async function main() {
         check('the new game starts from turn one with the engine still running',
           turnAfter === 1 && turnBefore >= turnAfter && await has(page, 'arena-bar'),
           `turn ${turnBefore} -> ${turnAfter}`);
+        // And nothing from the last game came with it. A card tapped while the old game was
+        // over leaves a sheet that the new game's first render puts straight back on screen.
+        check('and the new game starts with nothing left open from the last one',
+          !(await has(page, 'play-sheet')), `sheet: ${await has(page, 'play-sheet')}`);
         await shot(page, 'rematch');
       }
     }
@@ -247,6 +263,48 @@ async function main() {
     const overflow = await page.evaluate(() =>
       document.documentElement.scrollWidth - document.documentElement.clientWidth);
     check('a solo table fits a phone', overflow <= 1, `overflow ${overflow}px`);
+
+    /*
+      And fits it in a number of screens a person will actually scroll.
+
+      Measured rather than eyeballed, because "it fits" was already true and said nothing: the
+      table scrolled sideways not at all and downwards for two thousand pixels, almost all of it
+      empty rows reading "no creatures" and "no lands" for seats that had not played a card yet.
+      A fresh pod is the worst case and the first thing anybody sees.
+
+      The bound is a budget, not a measurement. A fresh pod was 2.51 screens and is 2.23 now that
+      an empty zone is one line instead of two; a duel was 1.37 and is 1.18. The budgets are set
+      just above those, so the next thing added to a seat has to be paid for out of them rather
+      than quietly doubling the scroll on the format this product is named for.
+
+      What is left is almost all the opponents' face-down hands — seven identical card backs, a
+      hundred pixels a seat, saying only a number the seat header already shows. Worth revisiting,
+      and not worth changing on my own: it is the tabletop metaphor, and style is the player's call.
+    */
+    const screens = await page.evaluate(() =>
+      document.documentElement.scrollHeight / window.innerHeight);
+    const budget = SOLO_POD ? 2.35 : 1.3;
+    // Printed whether it passes or not: a budget nobody can see the balance of is one that gets
+    // spent without anybody noticing.
+    console.log(`      the table is ${screens.toFixed(2)} screens tall (budget ${budget})`);
+    check('and does not run to more screens than anybody will scroll',
+      screens <= budget, `${screens.toFixed(2)} screens, budget ${budget}`);
+
+    // Whatever the table is asking for has to be readable while it asks. The feed sits at the
+    // bottom of the board and the prompt sits in the control bar, and on a phone they were the
+    // same place: three lines of "Opponent III mulliganed to 6" straight over "Keep or mulligan?".
+    const clash = await page.evaluate(() => {
+      const feed = document.querySelector('[data-testid="table-feed"]');
+      const bar = document.querySelector('[data-testid="arena-bar"]');
+      if (!feed || !bar) return 'nothing to compare';
+      const a = feed.getBoundingClientRect();
+      const b = bar.getBoundingClientRect();
+      if (a.height === 0 || b.height === 0) return 'ok';
+      const over = a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right;
+      return over ? `feed ${Math.round(a.top)}..${Math.round(a.bottom)} over bar ${Math.round(b.top)}..${Math.round(b.bottom)}` : 'ok';
+    });
+    check('the feed does not sit on top of what the table is asking for',
+      clash === 'ok' || clash === 'nothing to compare', String(clash));
     await shot(page, 'phone');
   } catch (err) {
     check('the run completed without throwing', false, err.message);

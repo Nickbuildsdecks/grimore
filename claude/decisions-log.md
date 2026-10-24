@@ -2985,3 +2985,41 @@ One bug on the way, worth the line: the first version of the sorcery clause aske
 `legalActions(state, seat).attackers`, which is only filled in while a declaration is owed and so
 is always empty in a main phase. Overrun went from 23 casts to **zero** — a rule that reads as
 "never cast this card". `legalAttackers` is the function that answers the question anywhere.
+
+## D87 — Three constants that should have been measurements
+
+Opened the solo-pod suite's own phone screenshot, which is what D76 says to do, and found three
+numbers written down where a measurement belonged.
+
+**The feed's offset.** `bottom-[6.5rem]` — 104 pixels, chosen to clear a control bar that is one
+row on a manual table and two with the engine running. On a phone the engine's bar is 111, and the
+feed sat across the bottom of it: three lines of *"Opponent III mulliganed to 6"* over the top of
+*"Keep this hand, or mulligan?"*. The check written to catch exactly that had been measuring the
+two rectangles at desktop width, where the numbers happen to work. The component now asks the bar
+where it is, the way the combat overlay asks the board — idempotent `setState`, because the same
+component already taught this project what a measuring effect costs when it is not (D73).
+
+**An empty zone's height.** Two rows — a label and a 34px strip — to say "no creatures". A fresh
+four-seat pod carries sixteen of them before anybody has played a card. The label moves inside the
+strip, the `data-testid` stays, and the table goes from **2.51 screens to 2.23** on a phone; a duel
+from 1.37 to 1.18. The suite prints the number every run and fails over a budget, because a budget
+nobody can see the balance of is one that gets spent without anybody noticing.
+
+**"Declared attackers".** The driver taps every creature in the row — the ones the engine did not
+light do nothing — and then confirms, so a declare step with everything summoning-sick reported the
+same string as a real swing. The arena suite demands an attack arrow whenever that string comes
+back, and an empty attack cannot draw one: a check that can only fail, taking three seconds to do
+it. It had been read as the overlay's old race (D76) and waited out with more patience. The driver
+now reads the count out of the prompt — the table says "3 attacking" — and the suites ask for an
+arrow only when something actually attacked.
+
+The common shape: each was a number that was right when it was written, in the one configuration it
+was written against. The fix each time is the same one this project keeps arriving at — **ask the
+thing rather than remember it** — and the tell is a check that passes for a reason other than the
+claim being true.
+
+One more, found by the same screenshot: a card tapped while the game was over left its sheet set,
+hidden by the finished-game guard, and then the rematch dealt a new game and a Wind Drake from the
+last one appeared over the new mulligan prompt. Clearing the pick when the card is no longer in the
+view covers both — a rematch renumbers every instance, and so does a creature leaving for a zone
+this seat cannot see.

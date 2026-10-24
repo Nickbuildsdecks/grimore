@@ -162,7 +162,7 @@ async function main() {
     // ── Play it out ─────────────────────────────────────────────────────────────────────────────
     const seen = {
       land: false, stack: false, attackers: false, blockers: false, lifeChanged: false,
-      decided: false, searched: false, scried: false, arrows: false, modal: false, turnsPassed: 0, x: false, xCast: null,
+      decided: false, searched: false, scried: false, arrows: false, swung: false, modal: false, turnsPassed: 0, x: false, xCast: null,
       /** A commander cast through the UI from the command zone. */
       commanderCast: false,
       /** A commander that died and was back in its command zone afterwards (CR 903.9). */
@@ -344,7 +344,9 @@ async function main() {
     check('a spell or ability goes on the stack and resolves', seen.stack);
     check('life totals move because the rules moved them', seen.lifeChanged);
     check('combat asks the attacking player to declare', seen.attackers);
-    if (seen.attackers) {
+    // Only when a creature actually attacked: an empty declaration draws no arrow, and the table
+    // asks for one on every turn somebody has a creature. See the arena suite for the long version.
+    if (seen.swung) {
       check('an attack is drawn on the board, from the creature to whichever seat it is aimed at',
         seen.arrows);
     }

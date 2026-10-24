@@ -1666,6 +1666,38 @@ more across the table from a human than against the reference bot. And an oppone
 Giant Growth in its own upkeep is the most obvious way a table can feel like it is being played by
 a program.
 
+### A pod you can read on a phone
+
+Opened the solo-pod suite's own phone screenshot — D76's rule, applied again — and a fresh
+four-seat Commander pod on a 390px screen was two and a half screens tall at **turn one with
+nothing on any board**. Almost all of it was empty: every seat spent two rows apiece on "no
+creatures", "no lands", "empty" and "empty", sixteen of them before anybody had played a card.
+
+The same screenshot showed the feed sitting across the mulligan prompt — three lines of *"Opponent
+III mulliganed to 6"* over *"Keep this hand, or mulligan?"* — and a card sheet from the **previous**
+game open over the new one.
+
+| | before | after |
+| --- | --- | --- |
+| a fresh four-seat pod, on a phone | 2.51 screens | **2.23** |
+| a fresh duel, on a phone | 1.37 screens | **1.18** |
+
+An empty zone is now one line with its label inside it, and keeps its `data-testid`, so a graveyard
+a player goes looking for is where it was — just not shouting about being empty. The number is
+printed by the suite on every run and fails over a budget, so the next thing added to a seat has to
+be paid for out of it.
+
+What is left is almost all the opponents' face-down hands: seven identical card backs a seat, a
+hundred pixels, saying only a number the seat header already shows. Worth revisiting and
+deliberately not changed here — it is the tabletop metaphor, and style is the player's call.
+
+**Three constants that should have been measurements.** The feed's offset was 104px against a bar
+that is 111 on a phone; it asks the bar where it is now. An empty zone's height was two rows
+because that is what a row costs. And "declared attackers" was reported for a declaration with
+nothing in it, so the arena suite demanded an attack arrow after a turn where everything was
+summoning-sick — a check that could only fail, taking three seconds to do it, which had been read
+as the overlay's old race and waited out with more patience. Written up as D87.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
