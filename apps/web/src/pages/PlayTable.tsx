@@ -33,6 +33,7 @@ import {
 import { CardFace, type CardHighlight } from "@/components/table/CardFace"
 import { ArenaBar } from "@/components/table/ArenaBar"
 import { CombatArrows } from "@/components/table/CombatArrows"
+import { TableFeed } from "@/components/table/TableFeed"
 import { PhaseBar } from "@/components/table/PhaseBar"
 import { PlaySheet } from "@/components/table/PlaySheet"
 import { StackPanel } from "@/components/table/StackPanel"
@@ -46,6 +47,8 @@ import {
 } from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
 import { useTableSound } from "@/lib/useTableSound"
+import { useTableFeed } from "@/lib/useTableFeed"
+import { isBarePass } from "@/lib/feed"
 
 const NAME_KEY = "grimore.table.name"
 const FORMATS = [
@@ -861,6 +864,12 @@ function Board({ table }: { table: UseTable }) {
     which is where most of what you need to hear happens.
   */
   const sound = useTableSound(view)
+  /*
+    And what the table says. The engine has written a line for every action since the log was
+    rewritten to say what happened rather than what was played; this puts the newest of them where
+    a player is already looking instead of behind the Log button.
+  */
+  const feed = useTableFeed(view)
   const [draft, setDraft] = useState("")
   // Unread count, so a message that arrives while the panel is closed is not missed.
   const [seenChat, setSeenChat] = useState(0)
@@ -1111,6 +1120,7 @@ function Board({ table }: { table: UseTable }) {
         nothing knows what an attack is, and the players point at each other themselves.
       */}
       {automated ? <CombatArrows view={view} /> : null}
+      <TableFeed lines={feed} />
       {/* Top bar */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="font-semibold text-[var(--g-text-high)]">
@@ -1593,7 +1603,7 @@ function Board({ table }: { table: UseTable }) {
               — it is the action that caused all of that, and the engine says so on the same line.
             */}
             {[...view.log]
-              .filter((entry) => entry.type !== "auto:pass" || /[—;]/.test(entry.message))
+              .filter((entry) => !isBarePass(entry))
               .reverse()
               .map((entry, i) => (
                 <p key={`${entry.version}-${i}`} className="border-b border-white/5 pb-1 text-xs text-[var(--g-text-muted)]">
@@ -1698,7 +1708,7 @@ function Watching({ table }: { table: UseTable }) {
           <div className="flex w-full max-w-sm flex-col gap-2 overflow-y-auto border-l border-white/15 bg-[var(--g-surface-2)] p-4" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-sm font-semibold text-[var(--g-text-high)]">What happened</h2>
             {[...view.log]
-              .filter((entry) => entry.type !== "auto:pass" || /[—;]/.test(entry.message))
+              .filter((entry) => !isBarePass(entry))
               .reverse()
               .map((entry, i) => (
                 <p key={`${entry.version}-${i}`} className="border-b border-white/5 pb-1 text-xs text-[var(--g-text-muted)]">

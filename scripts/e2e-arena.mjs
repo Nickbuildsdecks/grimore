@@ -312,6 +312,8 @@ async function main() {
       decided: false, searched: false, scried: false, arrows: false, modal: false, x: false, xCast: null,
       /** Whether the host was offered an undo, and whether the other player was not. */
       undoOffered: false, undoGuestClean: true,
+      /** What the table said out loud, and whether it ever got in the way of a tap. */
+      feedSaid: '', feedBlockedTaps: false, feedGeometry: 'not seen',
     };
     const startLifeNick = await readNumber(nick, 'life-0');
     const startLifeFriend = await readNumber(friend, 'life-1');
@@ -349,6 +351,32 @@ async function main() {
         suite presses it, where the whole state is one number, and `realtime.test.ts` holds the
         semantics: one step, host only, announced in the chat.
       */
+      /*
+        Sampled rather than waited for: a feed line is up for a few seconds and then gone, so a
+        check that looked for one at a fixed moment would be a check on timing. What matters is
+        that the table says *something* over the course of a game, and that saying it never costs
+        the player a tap on the card underneath — the mistake the combat overlay had to fix once.
+      */
+      if (seen.feedSaid === '' && (await has(nick, 'feed-line'))) {
+        seen.feedSaid = (await nick.locator('[data-testid="feed-line"]').first().textContent())?.trim() ?? '';
+        const events = await nick.locator('[data-testid="table-feed"]').evaluate((el) =>
+          window.getComputedStyle(el).pointerEvents);
+        if (events !== 'none') seen.feedBlockedTaps = true;
+        // Measured rather than eyeballed. The first version of this was positioned against the
+        // board, which is a column taller than the screen, so every line landed several hundred
+        // pixels below the bottom of the viewport where nobody would ever see it.
+        seen.feedGeometry = await nick.evaluate(() => {
+          const feed = document.querySelector('[data-testid="table-feed"]');
+          const bar = document.querySelector('[data-testid="arena-bar"]');
+          if (!feed || !bar) return 'missing';
+          const f = feed.getBoundingClientRect();
+          const b = bar.getBoundingClientRect();
+          if (f.top < 0 || f.bottom > window.innerHeight) return `off screen (${Math.round(f.top)}..${Math.round(f.bottom)} of ${window.innerHeight})`;
+          if (f.bottom > b.top) return `over the control bar (feed ends ${Math.round(f.bottom)}, bar starts ${Math.round(b.top)})`;
+          return 'ok';
+        });
+        await shot(nick, 'feed');
+      }
       if (!seen.undoOffered && (await nick.locator('[data-testid="undo"]').count()) === 1) {
         seen.undoOffered = true;
         await shot(nick, 'undo-offered');
@@ -464,6 +492,10 @@ async function main() {
     } else if (DECK_A === 'tidal-mind' || DECK_B === 'tidal-mind') {
       console.log('      (no counterspell was castable in this game — nothing to aim at the stack)');
     }
+    check('the table says what just happened without the log being opened',
+      seen.feedSaid.length > 0, `said: ${JSON.stringify(seen.feedSaid)}`);
+    check('and saying it never takes a tap away from the board', !seen.feedBlockedTaps);
+    check('and it is on the screen, clear of the control bar', seen.feedGeometry === 'ok', seen.feedGeometry);
     check('the host can take back the last move with the engine running', seen.undoOffered);
     check('and the other player is never offered it', seen.undoGuestClean);
     check('a land played from hand reaches the battlefield', seen.land);

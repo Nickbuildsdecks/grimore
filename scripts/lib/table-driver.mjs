@@ -494,10 +494,28 @@ export async function noteMove(seen, page, did) {
     next turn before anybody looks. That is a sampled observation reported as a fact about the
     game, which is how a run came back saying no attack was ever drawn in a game full of attacks.
   */
-  if (did === 'declared attackers' && seen.arrows !== true
-    && (await page.locator('[data-testid^="arrow-a-"]').count()) > 0) {
-    seen.arrows = true;
-    await shot(page, 'combat-arrows');
+  if (did === 'declared attackers' && seen.arrows !== true) {
+    /*
+      Waited for, briefly, rather than read the instant the action returns.
+
+      The overlay measures the board from the DOM, so an arrow appears a render *after* the view
+      carrying the attack: React renders the new board, an effect measures where the cards landed,
+      and that measurement is what draws the line. Reading immediately is a race.
+
+      It used to be a race this always won, for a bad reason. `CombatArrows` re-measured on every
+      render and set state each time, which was an infinite render loop (see D73) — so the arrow
+      was being redrawn continuously and was always there a moment later. Fixing the loop made the
+      overlay measure once, which is correct, and turned this line into a coin flip: it passed four
+      runs and then failed one. A second of patience is what the claim actually needs.
+    */
+    for (let i = 0; i < 10 && seen.arrows !== true; i += 1) {
+      if ((await page.locator('[data-testid^="arrow-a-"]').count()) > 0) {
+        seen.arrows = true;
+        await shot(page, 'combat-arrows');
+        break;
+      }
+      await page.waitForTimeout(100);
+    }
   }
   if (/^chose X = \d+$/.test(did)) seen.xCast = did;
   // A modal spell's play is labelled "Cast X — <the mode>", the only play label with an em dash.

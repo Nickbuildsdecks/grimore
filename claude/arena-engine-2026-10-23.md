@@ -56,8 +56,9 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `view.ts` | Per-seat redaction, the automation block, and the wire form |
 
 In the web app: `lib/arena.ts` (the interaction reducer), `lib/sound.ts` (which cue a view change
-is worth, and the oscillators that play it) with `lib/useTableSound.ts` holding them together,
-`components/table/{PhaseBar, StackPanel, ArenaBar, PlaySheet, CombatArrows}.tsx`, and
+is worth, and the oscillators that play it) and `lib/feed.ts` (which of the engine's log lines is
+worth saying out loud), each with a hook beside it holding the timers,
+`components/table/{PhaseBar, StackPanel, ArenaBar, PlaySheet, CombatArrows, TableFeed}.tsx`, and
 `pages/PlayTable.tsx` branching on `view.automation`.
 
 ---
@@ -1263,6 +1264,48 @@ the preference would persist, and nothing would ever make a noise. A headless br
 speaker, so what is proved is that the cue was reached and the oscillators were created. It also now
 proves something no other check did: a reloaded table reclaims its seat, which is what `table.ts`
 keeps the code and player id in `localStorage` for.
+
+**And it says what just happened.** The engine has written a line for every action since the log was
+rewritten to say what *happened* rather than what was played — and the only way to read it was to
+open a panel. A player whose creature was destroyed on somebody else's turn should not have to go
+looking for that.
+
+The same split as the cues, for the same reason: `newEntries(before, after)` is a pure function with
+its own tests, the timers are in a hook, and the markup knows nothing. The three silent cases are
+the three `cuesFor` has — the first view, a stateVersion that does not advance, a different table.
+
+**The filter is the feature.** Three things are dropped, each structurally rather than by matching
+on wording:
+
+- a **mana ability**, which carries `produced` in its data and happens three times before every
+  spell;
+- a **bare pass**, which the engine makes for a seat with nothing to do several times a turn — but
+  not a pass that resolved something, because the engine appends the consequence to the same
+  message after a semicolon;
+- a **step beginning**, which carries `step` in its data and which the phase bar has been saying in
+  bigger letters since long before this existed.
+
+The last of those was found by looking at a screenshot of the feature working. The first line the
+feed ever put on a real table was *"Nick passes — postcombat main"*, which is where the game is
+rather than what happened. Two more came from the same screenshot: the lines were landing at the
+bottom of the **document** rather than the screen, because the board is a column taller than the
+viewport and `absolute bottom-*` means something different there; and left-aligned they sat across
+the first card's name, when the right end of the hand row is the emptiest place on the board. The
+browser suite now measures the rectangles — on screen, clear of the control bar — rather than
+trusting the offset.
+
+A duplicated rule went with it: the log panel's own "a pass with no consequence is noise" regex now
+reads `isBarePass` from the same module. The two filters stay different in the one way that matters
+— the log keeps the mana taps, because *"why is that Mountain tapped"* is a question a record should
+answer and a headline should not.
+
+**And one test was fixed by the render-loop fix, which is worth recording.** The arena suite checks
+that an attack is drawn on the board by looking for an arrow immediately after the declaration. The
+overlay measures the DOM, so the arrow appears a render *later* — a race the suite used to win every
+time, because `CombatArrows` was re-measuring continuously in the infinite loop described above.
+Fixing the loop made the overlay measure once, correctly, and turned that line into a coin flip: it
+passed four runs and failed the fifth. It waits up to a second now, which is what the claim always
+needed.
 
 ## Next
 

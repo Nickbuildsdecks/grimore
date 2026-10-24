@@ -2584,3 +2584,36 @@ It also proved something nothing else had: the sound preference is checked acros
 the reloaded table reclaims its seat — which is what `table.ts` has been keeping the table code and
 player id in `localStorage` for since the Play Realm was built.
 
+## D76 — A screenshot is a test the suites cannot write
+
+The feed — the engine's own log lines, said on the board for a few seconds instead of behind a
+panel — passed every check it had on its first run. Three things were still wrong with it, and all
+three were obvious the moment somebody looked at the screenshot the suite had just taken.
+
+1. **Every line was off the bottom of the screen.** `absolute bottom-2` against a board that is a
+   column taller than the viewport puts the element at the bottom of the *document*. The suite's
+   checks — a line exists, it has text, it does not steal taps — were all true of an element nobody
+   could see.
+2. **The first line it ever showed was "Nick passes — postcombat main"**, which is where the game is
+   rather than what happened, and which the phase bar says across the top in bigger letters.
+3. **Left-aligned, it sat across the first card's name.** The hand fills from the left on every
+   screen size, so the right end of that row is the emptiest place on the board.
+
+Each fix came with a check that would have caught it, which is the part that lasts: the suite now
+measures the feed's rectangle against the viewport and against the control bar, and the step-change
+filter has a test naming the exact string that prompted it. But none of those checks would have been
+*written* without looking — the failure mode was "correct element, wrong place", and the suite had
+no reason to ask where it was.
+
+**The practice this names:** when an increment adds something a player looks at, read the screenshot
+the suite already took. The browser suites take dozens per run and they cost nothing to open. Every
+other kind of defect in this project has been found by a measurement or a test; these three were
+found by looking at a picture, and would not have been found any other way.
+
+A fourth thing came out of the same increment and is the inverse lesson. The arena suite's "an
+attack is drawn on the board" check reads for an arrow the instant the declaration returns, and the
+overlay measures the DOM a render later — a race. It had been passing for weeks because the render
+loop in D73 was re-measuring continuously; fixing that bug made the check a coin flip, which it had
+always really been. **A test that passes because of a bug is a test that will fail when the bug is
+fixed**, and the fix for the test (wait up to a second) is what the claim always needed.
+
