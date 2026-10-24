@@ -2541,3 +2541,46 @@ own main phase, so a pump spell is a permanent +4/+4 on an empty board rather th
 block. That is a judgement about when to hold an instant, which is D70's wall again — not a card
 spent on nothing.
 
+## D75 — Sound belongs to the view diff, not to the log or the tap
+
+The Play Realm spec has named eight cues since before the rules engine existed, and the React table
+had none of them. Three ways to wire them were available and two are wrong.
+
+**From the taps** — play a sound in the click handler — is the obvious one and it is silent for
+everything that matters. Most of what a player needs to hear is the *other* seat's turn, or three
+bots' turns in a solo pod, and none of that passes through a handler on this client.
+
+**From `view.log`** is the tempting one, because the log already says what happened in words. But it
+says it in *prose written for a player to read* — "Nick casts Lightning Bolt targeting Friend" — so
+matching on it is matching on wording that is free to change, and the log has been deliberately
+rewritten once already (D42). A life total that went down is a life total that went down.
+
+**From the view diff** is what it does: `cuesFor(before, after)` over two consecutive `GameView`s,
+which is a pure function with no browser, no AudioContext and no timers in it, tested the way
+`arena.ts` is tested. The oscillators live beside it with no rules in them at all, so there is
+nothing in the untestable half to get wrong.
+
+Four rules in it exist because the obvious version is worse than silence, and each has a test:
+
+| rule | what it prevents |
+| --- | --- |
+| the first view is silent | reconnecting to a game in progress announcing a hand, a board and a life total at once |
+| a stateVersion that does not advance is silent | an undo (an older state restored) or a rematch reading as a draw step and a spell |
+| only this seat's own draws | telling you about a card the opponent drew, which a real table does not |
+| triggered abilities are silent, spells are not | a sacrifice deck putting three abilities on the stack for one death |
+
+Plus: at most two cues per update, loudest first, and the step tick dropped whenever anything else
+fired — because one action can be a cast, three lands tapping, a draw and a step change at once, and
+all five together is a rattle rather than a cue.
+
+**And the check without which none of the above means anything.** The arena suite patches
+`window.AudioContext` before the page loads and counts the oscillators the table builds. Every other
+check — the toggle flips, the preference persists, nothing throws — passes just as happily when the
+feature is completely dead. A headless browser has no speaker, so what can be proved is that the cue
+was reached and the nodes were created, and that is the part that can regress. It is the same
+principle as the React-warning check in D73: *a check that cannot fail is not evidence.*
+
+It also proved something nothing else had: the sound preference is checked across a **reload**, and
+the reloaded table reclaims its seat — which is what `table.ts` has been keeping the table code and
+player id in `localStorage` for since the Play Realm was built.
+

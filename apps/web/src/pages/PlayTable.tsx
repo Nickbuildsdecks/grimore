@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowDownToLine, ArrowUpToLine, Dices, Hand, Layers, Link2, LogOut, MessageSquare, Minus, Plus,
   HelpCircle, RotateCcw, Search, Send, Shuffle, Skull, Sparkles, SquareStack, Swords, Undo2,
+  Volume2, VolumeX,
 } from "lucide-react"
 import {
   COMMON_TOKENS, STARTER_DECKS,
@@ -44,6 +45,7 @@ import {
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
+import { useTableSound } from "@/lib/useTableSound"
 
 const NAME_KEY = "grimore.table.name"
 const FORMATS = [
@@ -853,6 +855,12 @@ function Board({ table }: { table: UseTable }) {
   const [showTokens, setShowTokens] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  /*
+    What the table sounds like. Driven by the views themselves rather than by the taps that caused
+    them, which is the only way it can also speak for the other player's turn — and for the bots',
+    which is where most of what you need to hear happens.
+  */
+  const sound = useTableSound(view)
   const [draft, setDraft] = useState("")
   // Unread count, so a message that arrives while the panel is closed is not missed.
   const [seenChat, setSeenChat] = useState(0)
@@ -1159,6 +1167,22 @@ function Board({ table }: { table: UseTable }) {
         </Button>
         <Button size="sm" variant="ghost" className="h-7" data-testid="toggle-log" onClick={() => setShowLog((v) => !v)}>
           <Layers className="size-3.5" /> Log
+        </Button>
+        {/*
+          The state is on the element rather than only in the icon, because a test cannot read an
+          icon and a screen reader should not have to.
+        */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7"
+          data-testid="toggle-sound"
+          data-sound={sound.on ? "on" : "off"}
+          aria-pressed={sound.on}
+          aria-label={sound.on ? "Sound on" : "Sound off"}
+          onClick={sound.toggle}
+        >
+          {sound.on ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
         </Button>
         <Button size="sm" variant="ghost" className="h-7" data-testid="toggle-help" onClick={() => setShowHelp(true)} aria-label="How to play">
           <HelpCircle className="size-3.5" />

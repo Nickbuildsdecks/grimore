@@ -246,11 +246,15 @@ Four browser suites, one per way of playing. All need the stack running and Play
 
 ```bash
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 54 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 42 checks
-node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 38 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 46 checks
+node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 39 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 16 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 19 checks
 ```
+
+Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
+situation they are about (a block being called for, a counterspell being castable), and those are
+reported rather than asserted when it did not. A failure is a failure; a different total is not.
 
 Run them one at a time. They are real browsers playing real games, and three of them at once on one
 machine starves the others — a suite that times out under that load looks exactly like a suite that

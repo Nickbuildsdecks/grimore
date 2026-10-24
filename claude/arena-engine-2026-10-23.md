@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 90 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 138 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -55,8 +55,10 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `bot.ts` | A player that only ever does what the engine offers |
 | `view.ts` | Per-seat redaction, the automation block, and the wire form |
 
-In the web app: `lib/arena.ts` (the interaction reducer), `components/table/{PhaseBar, StackPanel,
-ArenaBar, PlaySheet, CombatArrows}.tsx`, and `pages/PlayTable.tsx` branching on `view.automation`.
+In the web app: `lib/arena.ts` (the interaction reducer), `lib/sound.ts` (which cue a view change
+is worth, and the oscillators that play it) with `lib/useTableSound.ts` holding them together,
+`components/table/{PhaseBar, StackPanel, ArenaBar, PlaySheet, CombatArrows}.tsx`, and
+`pages/PlayTable.tsx` branching on `view.automation`.
 
 ---
 
@@ -1220,6 +1222,47 @@ was never a result. And one hypothesis about the three games measured and **refu
 written up as a cause: that a hand full of unspendable rituals would discard real cards at cleanup,
 since the discard rule pitches the most expensive card. Over those 240 games there were 18 cleanup
 discards, 12 with a ritual in hand, and not one ritual discarded.
+
+**The table has a voice.** The Play Realm spec has named eight sound cues since before the rules
+engine existed — `card_draw`, `land_play`, `spell_cast`, `creature_cast`, `combat_hit`, `tap_mana`,
+`phase_step`, `game_over` — and the React table had none of them. A game where the only way to know
+the opponent did something is to read a log is a game you play with your eyes on the wrong thing.
+
+Split the way `arena.ts` is split, for the same reason. `cuesFor(before, after)` is a pure function
+over two consecutive views with eighteen tests and no browser in sight; `createSoundEngine` is a few
+oscillators with no rules in it at all. Nothing is fetched: eight short recipes synthesised on the
+spot, every gain between 0.03 and 0.12, and the longest one is the one that plays when the game is
+over.
+
+The cues come from the **view diff**, not from `view.log`. The log is prose written for a player to
+read, so matching on it would be matching on wording that is free to change; a life total that went
+down is a life total that went down. And they come from the views rather than from the taps that
+caused them, which is the only way the table can also speak for the other player's turn — and for
+the bots', which is where most of what a solo player needs to hear happens.
+
+Four rules in it are there because the obvious version is worse than silence:
+
+- **The first view makes no sound.** Sitting down at a table, or reconnecting to one in progress, is
+  a hand, a board and a life total arriving at once.
+- **A stateVersion that does not advance makes no sound.** The host taking the last move back
+  restores an older engine state and a rematch starts a new one; neither is a draw step, and the
+  difference between those two views reads as both.
+- **Only your own draws.** A card the opponent drew is a card you cannot see, and a table that
+  announced it would be telling you something a real table does not.
+- **Triggered abilities are silent, unlike spells.** A sacrifice deck puts two or three abilities on
+  the stack for one creature dying. At most two cues survive any one update, loudest first, and the
+  step tick — the quietest and by far the most frequent — is dropped whenever anything else fired.
+
+The toggle is in the table's own toolbar, remembered in `localStorage`, an SVG icon rather than an
+emoji, and the state is on the element (`data-sound`) rather than only in the icon, because a test
+cannot read an icon and a screen reader should not have to.
+
+And the check that matters most: **the arena suite counts the audio nodes the page builds.** Without
+it the whole feature could be dead and every other check would still pass — the toggle would flip,
+the preference would persist, and nothing would ever make a noise. A headless browser has no
+speaker, so what is proved is that the cue was reached and the oscillators were created. It also now
+proves something no other check did: a reloaded table reclaims its seat, which is what `table.ts`
+keeps the code and player id in `localStorage` for.
 
 ## Next
 

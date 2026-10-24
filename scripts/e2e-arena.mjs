@@ -92,6 +92,37 @@ async function main() {
 
   try {
     // ── Sit down ────────────────────────────────────────────────────────────────────────────────
+    /*
+      Counts the audio nodes the table actually builds, before anything on the page runs.
+
+      Without this the whole sound feature could be dead and every other check here would still
+      pass: the toggle would flip, the preference would persist, and nothing would ever make a
+      noise. A headless browser has no speaker, so what can be proved is that the oscillators were
+      created — the cue was reached, the engine was built, the call was made. Whether it sounds
+      right is a question for ears.
+    */
+    await nick.addInitScript(() => {
+      const real = window.AudioContext;
+      window.__audio = { contexts: 0, nodes: 0 };
+      if (real === undefined) return;
+      window.AudioContext = class extends real {
+        constructor() {
+          super();
+          window.__audio.contexts += 1;
+        }
+
+        createOscillator() {
+          window.__audio.nodes += 1;
+          return super.createOscillator();
+        }
+
+        createBufferSource() {
+          window.__audio.nodes += 1;
+          return super.createBufferSource();
+        }
+      };
+    });
+
     await nick.goto(BASE);
     await waitFor(nick, 'lobby');
     await tid(nick, 'player-name').fill('Nick');
@@ -155,6 +186,38 @@ async function main() {
     await expectEventually(nick, 'the manual control bar is replaced by the engine’s own', async () =>
       (await has(nick, 'arena-bar')) && !(await has(nick, 'controls')));
     await shot(nick, 'engine-started');
+
+    // ── The table has a voice, and a way to turn it off ─────────────────────────────────────────
+    /*
+      Checked here rather than at the end, because the honest check for "the choice is remembered"
+      is a reload, and a reload is less disruptive before the game has been played than after. It
+      also exercises something no other check does: the table comes back after the page is thrown
+      away, which is what `table.ts` keeps the code and player id in `localStorage` for.
+
+      What is not checked is whether a noise came out. That needs ears, not a browser — and it is
+      why every rule about *when* a cue fires is a pure function with its own tests in
+      `apps/web/src/lib/sound.test.ts` instead of being buried in the component.
+    */
+    const soundState = async (page) => await tid(page, 'toggle-sound').getAttribute('data-sound');
+    const stored = async (page) => await page.evaluate(() => {
+      try {
+        return window.localStorage.getItem('grimore.table.sound');
+      } catch {
+        return 'unreadable';
+      }
+    });
+    check('the table offers a sound control, and starts with it on', await soundState(nick) === 'on');
+    await press(nick, 'toggle-sound');
+    await expectEventually(nick, 'turning the sound off says so on the control itself', async () =>
+      (await soundState(nick)) === 'off');
+    check('and writes the choice down', await stored(nick) === 'off');
+    await nick.reload();
+    await waitFor(nick, 'table');
+    await expectEventually(nick, 'a reloaded table reclaims its seat and remembers the choice', async () =>
+      (await has(nick, 'toggle-sound')) && (await soundState(nick)) === 'off');
+    await press(nick, 'toggle-sound');
+    await expectEventually(nick, 'and it can be turned back on', async () =>
+      (await soundState(nick)) === 'on' && (await stored(nick)) === 'on');
 
     // The engine begins the first turn at its upkeep, with the active player holding priority.
     await expectEventually(nick, 'the step is named rather than left to be guessed at', async () => {
@@ -555,6 +618,10 @@ async function main() {
     for (const [who, page] of [['Nick', nick], ['Friend', friend]]) {
       if (await has(page, 'table-error')) refusals.push(`${who}: ${await text(page, 'table-error')}`);
     }
+    const audio = await nick.evaluate(() => window.__audio ?? { contexts: 0, nodes: 0 });
+    check('the table actually made a noise: the cues reached the oscillators', audio.nodes > 0,
+      `${audio.contexts} audio contexts, ${audio.nodes} nodes`);
+
     check('the engine never refused anything the table offered', refusals.length === 0, refusals.join(' | '));
 
     check('no uncaught errors in either browser', pageErrors.length === 0, pageErrors.join(' | '));
