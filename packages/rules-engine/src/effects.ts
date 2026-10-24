@@ -14,14 +14,15 @@
  * be a tutor that chooses your card for you, which is worse than one you resolve by hand.
  */
 import {
-  characteristicsOf, hasType, type ContinuousEffect, type EffectDuration, type Keyword,
+  characteristicsOf, hasType, protectedFrom, type ContinuousEffect, type EffectDuration,
+  type Keyword,
 } from './characteristics.js';
 import { defKeyFor, zoneKey, type CardDef } from './cards.js';
 import {
   drawFromLibrary, listAt, normaliseDef, relocate, requireInstance, withInstance, withZones,
 } from './cardActions.js';
 import { actionSeed, clampValue, mulberry32, replaceSeat } from './internal.js';
-import type { ManaType } from './mana.js';
+import type { Color, ManaType } from './mana.js';
 import { addMana, EMPTY_POOL } from './mana.js';
 import type { AttackedTarget, DecisionAnswer, Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -110,10 +111,23 @@ export function dealDamage(
      * single `source` option would have been quietly wrong for exactly that case.
      */
     readonly combatFrom?: string;
-  } = {},
+    /**
+     * What is dealing the damage: a permanent, or a spell on the stack whose id is its own card.
+     *
+     * **Required, and required on purpose.** Protection from a colour (CR 702.16) is a fact about
+     * the *source*, so the only way to apply it is to know what dealt the damage — and the only
+     * way to be sure twenty-one call sites all say is to make the compiler ask. `null` is the
+     * honest answer for damage with no source a colour can be read from, and the rules agree with
+     * it: protection is from colours, so a colourless source gets through.
+     */
+    readonly source: string | null;
+  },
 ): GameState {
   if (amount <= 0) return state;
   let next = state;
+  // Protection from the source's colour prevents the damage entirely (CR 702.16b). Asked before
+  // anything is marked, because prevention is not something that can be undone afterwards.
+  if (target.kind === 'card' && protectedFrom(next, target.id, opts.source)) return next;
   if (target.kind === 'player') {
     const seat = next.seats[target.seat];
     if (seat === undefined) return next;
@@ -455,6 +469,10 @@ export function equipTo(
   const host = state.instances[hostId];
   if (equipment === undefined || host === undefined || host.zone !== 'battlefield') return state;
   if (host.zoneSeat !== controller) return state;
+  // Protection from a colour stops an Equipment of that colour attaching (CR 702.16e). Almost
+  // every Equipment is colourless and gets straight past it, which is the point of checking rather
+  // than assuming: the one that is not would otherwise attach and nobody would notice.
+  if (protectedFrom(state, hostId, equipId)) return state;
   const moved = withInstance(removeEffectsFrom(state, equipId), equipId, { attachedTo: hostId });
   return staticEffect(moved, equipId, controller, { kind: 'cards', ids: [hostId] }, bonus);
 }
@@ -476,6 +494,8 @@ export interface PumpOptions {
   readonly cantBeBlockedByWalls?: boolean;
   /** See `ContinuousEffect.mustAttackAnotherPlayer` — goad's second half (CR 701.38a). */
   readonly mustAttackAnotherPlayer?: boolean;
+  /** See `ContinuousEffect.protectionFrom` — protection from a colour (CR 702.16). */
+  readonly protectionFrom?: readonly Color[];
   readonly duration?: EffectDuration;
 }
 
@@ -508,6 +528,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.mustAttack ? { mustAttack: true } : {}),
     ...(opts.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
     ...(opts.mustAttackAnotherPlayer ? { mustAttackAnotherPlayer: true } : {}),
+    ...(opts.protectionFrom ? { protectionFrom: opts.protectionFrom } : {}),
   };
 }
 

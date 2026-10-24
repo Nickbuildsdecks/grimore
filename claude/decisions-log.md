@@ -3501,3 +3501,83 @@ board the game never built says nothing about the code.
 
 Which leaves the honest statement: the damage order works end to end through a real browser, and it
 has been seen to, about one solo-pod run in four.
+
+## D98 — Protection, and a required argument instead of a silent hole
+
+Protection from a colour (CR 702.16) is four rules under one keyword: a creature with protection
+from black cannot be **d**amaged, **e**nchanted or equipped, **b**locked, or **t**argeted by
+anything black. A keyword that did three of them would be worse than none, because a player would
+trust it — so all four are in, each in the place that already answers that question: target
+legality, `canBlock`, `equipTo`, and `dealDamage`.
+
+**The damage one is why this took a refactor.** Protection is a fact about the *source*, and
+`dealDamage` had no idea what was dealing the damage — twenty-one call sites, not one of them
+saying. The options now carry `source: string | null`, and it is **required**.
+
+Required is the whole point. An optional `source` would have been a silent hole: the eighteenth call
+site to forget it would let protection quietly fail for whatever that spell was, with nothing
+anywhere to say so — which is the shape of bug `died` (D-era: deaths announced by hand at two call
+sites and silently wrong at every other) and `modsFrom` (D95's five disagreeing lists) were both
+introduced to end. Making it required turned the question into twenty-one compile errors, each
+answered where the caller already had the answer: the attacking creature, the blocking creature, the
+spell's own `c.source`, and — in the one card that makes two creatures fight — each of them as the
+other's source.
+
+`protectedFrom(state, target, source)` is one function for all four rules, so the four cannot
+disagree about what "red" means. Paladin en-Vec is the card: protection from black and from red,
+which in this pool is most of the removal. Three of the four tests fail with that function
+short-circuited. The fourth, equipping, is correct and unreachable — every Equipment in the pool is
+colourless, so the test asserts the fact the clause rests on and the gap is named rather than
+hidden, which is what D57 asks for.
+
+One test had to be sharpened before it meant anything. "Takes no combat damage from a red creature"
+originally read the damage marked on the Paladin, and passed with the rule removed: a creature that
+*died* has nothing useful to say about what hit it. Asserting it is still on the battlefield is the
+claim — a 2/2 in front of a 3/3 survives only if the damage never happened.
+
+## D99 — Static abilities were installed in one of the four ways onto the battlefield
+
+The Paladin's protection did not work on a test board. Neither had a Fog Bank's damage prevention,
+nor a Juggernaut's "attacks each combat if able" — and both of those were worked around at the time
+by installing the effect by hand in the test, twice, as though it were a quirk of the test helper.
+The third time it was read properly.
+
+**Statics were applied where a permanent *spell* resolved.** That is one way onto the battlefield.
+The others:
+
+- **reanimation** — `putOntoBattlefield` from a graveyard. A reanimated Fog Bank prevented no
+  damage; a reanimated Juggernaut did not have to attack.
+- **a token** — nothing in the pool has a static, so this one was latent.
+- **a card moved there by hand** — which is the entire tabletop half of this application, the host
+  fixing a misclick, and how every test in the engine builds a board.
+
+Fixed the way everything of this shape is fixed here: arrivals are **detected** rather than
+announced (`AutomationState.entered`), so the arrivals pass in `settle` is the one place that sees
+every way a permanent reaches the battlefield, and that is where its statics are installed now. The
+call at spell resolution is gone, so there is one place rather than two that could disagree.
+
+And `auto:start` does the same for whatever is already in play, because taking over a table mid-game
+is a real feature: a board of permanents the engine never saw arrive is exactly what the handover
+from the tabletop half produces, and before this it was a board of permanents with no printed
+abilities.
+
+Guarded on the permanent having no effect of its own already, which is what keeps a resolving aura —
+which installs its own effect with its own id as the source — from being handed a second one.
+
+## D100 — Two suite checks that asserted more than their names
+
+Both turned up as single failures in an arena run that was otherwise fine, and both were the check
+being wrong rather than the code.
+
+**"The step is named rather than left to be guessed at"** insisted the label matched upkeep, draw or
+a main phase, on the reasoning that the engine begins the first turn at its upkeep. True of the
+first moment of a game and not of the moment this looks: the loop before it opens and closes a play
+sheet for every card in hand, and a hand with nothing playable in it is one auto-pass walks straight
+past — so the game can legitimately be in a combat step by then. It is asserted against the engine's
+own step labels now, which is what the name claims.
+
+**"A card it will not let you play says why"** reads the reason off the first unplayable card in
+hand on turn one. Usually there is one; a hand of lands has none, and then there is no reason to
+show and nothing wrong. Conditional now, with a line saying so when the hand had nothing blocked in
+it — the same treatment the scry and the library search already get, and for the same reason: a
+check that fails for a game that was fine says nothing about the code and trains you to ignore it.

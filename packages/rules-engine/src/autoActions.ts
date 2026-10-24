@@ -13,8 +13,8 @@ import { zoneKey } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
 import { characteristicsOf, hasType } from './characteristics.js';
 import {
-  advanceStep, aliveSeats, atSorcerySpeed, attackAimIssue, autoPassFor, bottomOwed, canAttack,
-  canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, forcedAttackers, legalAttackers,
+  advanceStep, aliveSeats, applyStatics, atSorcerySpeed, attackAimIssue, autoPassFor, bottomOwed,
+  canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, forcedAttackers, legalAttackers,
   legalBlockers, menaceSatisfied, payFrom, pendingDeclaration,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop, stateBasedActions,
@@ -901,8 +901,27 @@ function startAutomation(
   if (!state.started) throw new EngineError('NOT_STARTED', 'deal the table first');
   const first = action.firstSeat ?? state.activeSeat;
   assertSeatIndex(state, first, 'firstSeat');
+  /*
+    Whatever is already on the battlefield gets its static abilities.
+
+    A table can be switched into automated mode mid-game — that is the whole point of the tabletop
+    half — and a board laid out by hand is a board of permanents the engine has never seen arrive.
+    Without this, a Juggernaut already in play does not have to attack, a Fog Bank prevents nothing
+    and a Paladin has no protection: printed abilities that simply are not there, with nothing to
+    say so. The guard is the same one the arrivals pass uses, so a permanent whose effect is
+    already installed is left alone.
+  */
+  let withStatics = state;
+  for (const seat of state.seats) {
+    for (const id of listAt(withStatics, zoneKey(seat.index, 'battlefield'))) {
+      if (withStatics.effects.some((effect) => effect.source === id)) continue;
+      const inst = withStatics.instances[id];
+      if (inst === undefined) continue;
+      withStatics = applyStatics(withStatics, id, inst.zoneSeat, scriptOf(withStatics, id));
+    }
+  }
   const next: GameState = {
-    ...state,
+    ...withStatics,
     automated: true,
     // `false` here means "nobody", which is what a test walking a game in lock-step asks for.
     autoPassOff: action.autoPass === false ? state.seats.map((seat) => seat.index) : [],

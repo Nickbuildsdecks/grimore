@@ -1321,6 +1321,28 @@ const KALITAS: CardDef = {
   colors: ['B'],
 };
 
+/*
+  Protection, which is the only keyword in Magic that is four rules at once (CR 702.16): a creature
+  with protection from black cannot be **d**amaged, **e**nchanted or equipped, **b**locked, or
+  **t**argeted by anything black. Three of the four were a line each; the damage one is what cost
+  something, because it is a fact about the *source* and nothing was telling `dealDamage` what had
+  dealt it.
+
+  The Paladin is the plainest version of the card: two fixed colours, no choice to make, and in this
+  pool those two colours are most of the removal — a Doom Blade and a Lightning Bolt both bounce off
+  it, and neither a black nor a red creature can block it.
+*/
+const PALADIN_EN_VEC: CardDef = {
+  name: 'Paladin en-Vec',
+  typeLine: 'Creature — Human Knight',
+  manaCost: '{1}{W}{W}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'First strike\nProtection from black and from red',
+  colors: ['W'],
+};
+
 const NATURALIZE: CardDef = {
   name: 'Naturalize',
   typeLine: 'Instant',
@@ -1959,7 +1981,7 @@ export const SKYWARD_WRIT: DeckSpec = {
   commander: HANNA_SHIPS_NAVIGATOR,
   cards: [
     { card: PLAINS, count: 7 },
-    { card: ISLAND, count: 8 },
+    { card: ISLAND, count: 7 },
     { card: AZORIUS_GUILDGATE, count: 3 },
     // The painland that charges rather than triggers, in the deck most likely to be at one life
     // and have to decide whether it can afford its own mana. It cost a Plains.
@@ -1985,7 +2007,11 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: RAISE_THE_ALARM, count: 2 },
     // And the air, which it does intend to win.
     { card: LEONIN_SKYHUNTER, count: 3 },
-    { card: WIND_DRAKE, count: 2 },
+    // Two Skyhunters' worth of white two-drops already fly; this one does not and does not need
+    // to. Against the two colours that hold this pool's removal it simply cannot be answered, and
+    // it is the only card here that proves protection does all four of its jobs.
+    { card: PALADIN_EN_VEC, count: 2 },
+    { card: WIND_DRAKE, count: 1 },
     { card: MAN_O_WAR, count: 2 },
     { card: AIR_ELEMENTAL, count: 1 },
     { card: SERRA_ANGEL, count: 2 },

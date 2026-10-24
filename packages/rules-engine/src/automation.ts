@@ -799,6 +799,25 @@ function settle(state: GameState, before: GameState): GameState {
       if (!arrival.tapped && scriptFor(next.cardDefs[arrival.defKey]?.name)?.entersTapped === true) {
         next = withInstance(next, id, { tapped: true });
       }
+      /*
+        And its own static abilities, here rather than where the spell resolved.
+
+        This used to live in the resolution of a permanent *spell*, which meant a permanent that
+        arrived any other way had none of its printed statics: a reanimated Fog Bank prevented no
+        damage, a Juggernaut put onto the battlefield by an effect did not have to attack, and a
+        card moved onto the battlefield by hand — which is how every test builds a board — simply
+        had no abilities. The trap caught three cards in a row before it was read as a bug.
+
+        Arrivals are detected here, which makes this the one place that sees *every* way onto the
+        battlefield. Installed before the entry trigger, like "enters tapped", because a static is
+        true from the moment the permanent is there and a trigger may ask about it.
+
+        Guarded on having no effect of its own already, which is what keeps it from doubling up on
+        the aura effect a resolving aura installs with its own id as the source.
+      */
+      if (!next.effects.some((effect) => effect.source === id)) {
+        next = applyStatics(next, id, arrival.zoneSeat, scriptFor(next.cardDefs[arrival.defKey]?.name));
+      }
       next = raise(next, { kind: 'etb' }, next.instances[id]?.zoneSeat, id);
     }
     next = stateBasedActions(next);
@@ -1270,8 +1289,10 @@ function completeResolution(
           next = addAuraEffect(next, inst.id, object.controller, host.id, script);
         }
       }
-      // `relocate` above recorded the arrival; `settle` announces it. See `AutomationState.entered`.
-      next = applyStatics(next, inst.id, object.controller, script);
+      // `relocate` above recorded the arrival; `settle` announces it, and `settle` is also where
+      // this permanent's own statics are installed — see the arrivals loop there. Applying them
+      // here as well was the bug: a permanent that arrived any *other* way got none.
+
     } else if (inst !== undefined) {
       next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
     }
@@ -1342,4 +1363,4 @@ function applyStatics(
   return next;
 }
 
-export { legalTargets, hasAnyLegalTargets, checkTargets, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, STEP_LABELS };
+export { legalTargets, hasAnyLegalTargets, checkTargets, applyStatics, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, STEP_LABELS };

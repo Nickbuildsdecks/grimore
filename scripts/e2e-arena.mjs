@@ -239,13 +239,34 @@ async function main() {
         await press(page, 'play-sheet-close');
         if (reason !== '') break;
       }
-      check('a card it will not let you play says why', /: .+\./.test(reason), `said: ${JSON.stringify(reason)}`);
+      /*
+        Reported when the hand had one, explained when it did not.
+
+        On turn one a hand is usually full of cards there is no mana for — but not always: a hand of
+        lands, or one dealt to the seat that has already untapped, can have nothing blocked in it at
+        all, and then there is no reason to show and nothing wrong. The suite said FAIL for that
+        game until it was read properly. `scripts.test.ts` asserts the wording on a fixed board.
+      */
+      if (reason === '') {
+        console.log('      (every card in that hand was playable — no reason to show)');
+      } else {
+        check('a card it will not let you play says why', /: .+\./.test(reason), `said: ${JSON.stringify(reason)}`);
+      }
     }
 
-    // The engine begins the first turn at its upkeep, with the active player holding priority.
+    /*
+      The step has a name on it, whichever step the game has reached.
+
+      This used to insist on an upkeep, a draw or a main phase, on the reasoning that the engine
+      begins the first turn at its upkeep. True of the first moment of the game and not of this
+      one: the loop above opens and closes a play sheet for every card in hand, and a hand with
+      nothing playable in it is a hand auto-pass walks straight past — so the game can legitimately
+      be in a combat step by the time this looks, and the check failed for a game that was fine.
+      The claim is that the step is *named*, so it is now asserted against the engine's own labels.
+    */
     await expectEventually(nick, 'the step is named rather than left to be guessed at', async () => {
       const label = await text(nick, 'step-label');
-      return label.length > 0 && /upkeep|main|draw/i.test(label);
+      return /untap|upkeep|draw|main phase|combat|damage|end step|cleanup/i.test(label);
     });
     await expectEventually(nick, 'the bar says who the game is waiting for', async () =>
       /priority|waiting/i.test(await text(nick, 'waiting-on')));

@@ -648,6 +648,36 @@ describe('state-based actions', () => {
   });
 
   /*
+    A permanent gets its printed static abilities however it arrived.
+
+    They used to be installed where a permanent *spell* resolved, which is one of several ways onto
+    the battlefield: a reanimated Fog Bank prevented no damage, a Juggernaut put there by an effect
+    did not have to attack, and a board laid out by hand — which is how the tabletop half of this
+    app works, and how every test here builds a board — had no abilities at all. It was read as a
+    quirk of the test helper three cards in a row before it was read as a bug.
+
+    Arrivals are *detected* rather than announced (see `AutomationState.entered`), which makes that
+    detection the one place that sees every way onto the battlefield; and the engine taking over a
+    table computes the statics of whatever is already in play.
+  */
+  it('gives a permanent its statics however it got onto the battlefield', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'tidal-mind' },
+      hands: { 0: ['Fog Bank'] },
+      turn: 2, firstSeat: 0,
+    }), 'precombat-main');
+    // Moved onto the battlefield rather than cast, which is the path that had no statics.
+    const bank = find(s, 0, 'hand', 'Fog Bank');
+    s = apply(s, { type: 'card:move', by: 0, card: bank, toZone: 'battlefield' });
+    expect(s.entered).toContain(bank);
+    // Any automated action drains the arrival, and the static is installed before anything could
+    // have read the board without it.
+    s = passBoth(s);
+    expect(s.effects.some((effect) => effect.source === bank && effect.preventsCombatDamage === true))
+      .toBe(true);
+  });
+
+  /*
     APNAP (CR 101.4, CR 603.3b): the active player's simultaneous triggers go on the stack first,
     so they resolve *last*.
 

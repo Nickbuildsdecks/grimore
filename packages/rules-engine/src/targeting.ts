@@ -6,7 +6,7 @@
  * makes killing the creature in response to a bolt work. Doing the check in one place means both
  * moments agree about what "legal" means, which is the only way that rule stays correct.
  */
-import { characteristicsOf, hasType, parseTypeLine } from './characteristics.js';
+import { characteristicsOf, hasType, parseTypeLine, protectedFrom } from './characteristics.js';
 import { listAt } from './cardActions.js';
 import { zoneKey } from './cards.js';
 import type { TargetSpec } from './scriptTypes.js';
@@ -78,6 +78,10 @@ export function isLegalTarget(
   // Hexproof stops opponents targeting it; shroud stops everyone.
   if (ch.keywords.has('shroud')) return false;
   if (ch.keywords.has('hexproof') && inst.zoneSeat !== controller) return false;
+  // And protection stops anything of that colour, whoever controls it (CR 702.16c) — which is the
+  // difference from hexproof: a white creature with protection from black cannot be Doom Bladed by
+  // its own controller either, and a black creature with protection from black cannot target it.
+  if (protectedFrom(state, candidate.id, source ?? null)) return false;
   return spec.filter ? spec.filter(state, candidate, controller, source) : true;
 }
 

@@ -12,8 +12,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STARTER_DECKS, characteristicsOf, legalActions, pump, pumpAll, pumpTeam, scriptFor,
-  scriptedCardNames, staticEffect, viewFor, type ContinuousEffect,
+  STARTER_DECKS, canBlock, characteristicsOf, legalActions, pendingDeclaration, protectedFrom,
+  pump, pumpAll, pumpTeam, scriptFor, scriptedCardNames, staticEffect, viewFor,
+  type ContinuousEffect,
 } from './index.js';
 import {
   advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
@@ -58,6 +59,9 @@ function cast(s: GameState, by: SeatIndex, name: string, targets?: readonly Targ
   };
   return passBoth(apply(s, action));
 }
+
+/** Gets to the declare-attackers step, for the protection tests that need a combat. */
+const toAttackers = (s: GameState): GameState => advanceTo(s, 'declare-attackers');
 
 const power = (s: GameState, id: string): number => characteristicsOf(s, s.instances[id]!).power;
 const toughness = (s: GameState, id: string): number => characteristicsOf(s, s.instances[id]!).toughness;
@@ -4817,6 +4821,150 @@ describe('unscripted cards', () => {
   nothing that watches for a creature dying may see it — if the drain happens, the engine has
   implemented a trigger rather than a replacement.
 */
+/*
+  Protection from a colour (CR 702.16), which is the only keyword in Magic that is four rules at
+  once: a creature with protection from black cannot be **d**amaged, **e**nchanted or equipped,
+  **b**locked, or **t**argeted by anything black. Each of the four is asserted on its own below,
+  because a keyword that did three of them would be worse than no keyword at all — a player would
+  trust it.
+
+  Paladin en-Vec has protection from black and from red, which in this pool is most of the removal.
+*/
+describe('protection from a colour', () => {
+  /** Seat 1 holds the Paladin; seat 0 is the black-red deck with the answers that bounce off it. */
+  const paladin = (theirHand: readonly string[] = [], theirBoard: readonly string[] = []): GameState => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'skyward-writ' },
+      hands: { 0: theirHand },
+      battlefield: {
+        0: [...theirBoard, 'Mountain', 'Mountain', 'Swamp', 'Swamp'],
+        1: ['Paladin en-Vec'],
+      },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      if (!BASICS.has(nameOf(s, id))) continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  it('cannot be targeted by a spell of that colour, by anybody', () => {
+    const s = paladin(['Agonizing Demise']);
+    const pal = find(s, 1, 'battlefield', 'Paladin en-Vec');
+    // The engine never offers it, and refuses a hand-built action that names it anyway.
+    const play = legalActions(s, 0).plays.find((p) => p.name === 'Agonizing Demise');
+    expect(play?.candidates?.[0]?.some((t) => t.kind === 'card' && t.id === pal)).toBeFalsy();
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Agonizing Demise'),
+      targets: [{ kind: 'card', id: pal }],
+    })).not.toBeNull();
+  });
+
+  it('can still be targeted by a colour it has no protection from', () => {
+    // The half that makes it a card rather than a rule: white and blue answers work normally, and
+    // this deck's own Swords would kill it. Protection is from colours, not from everything.
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'skyward-writ' },
+      hands: { 0: ['Swords to Plowshares'] },
+      battlefield: { 0: ['Plains'], 1: ['Paladin en-Vec'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Plains'), abilityIndex: 0 });
+    const pal = find(s, 1, 'battlefield', 'Paladin en-Vec');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Swords to Plowshares'),
+      targets: [{ kind: 'card', id: pal }],
+    }));
+    expect(s.instances[pal]!.zone).toBe('exile');
+  });
+
+  it('takes no combat damage from a creature of that colour, and still deals its own', () => {
+    // Protection does not stop it *blocking*: only being blocked. So the Paladin can stand in
+    // front of a red creature, take nothing, and hit back — which is the damage rule on its own.
+    let s = toAttackers(arena({
+      decks: { 0: 'ember-rush', 1: 'skyward-writ' },
+      battlefield: { 0: ['Hill Giant'], 1: ['Paladin en-Vec'] },
+      turn: 3, firstSeat: 0,
+    }));
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    const pal = find(s, 1, 'battlefield', 'Paladin en-Vec');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: giant, defender: 1 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: pal, attacker: giant }] });
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i += 1) s = passBoth(s);
+    // Alive is the assertion that matters: a 2/2 in front of a 3/3 dies unless the damage never
+    // happened. Reading the damage alone passes whether or not the rule is there, because a
+    // creature in a graveyard answers nothing useful about what hit it.
+    expect(s.instances[pal]!.zone).toBe('battlefield');
+    expect(damageOn(s, pal)).toBe(0);
+    expect(damageOn(s, giant)).toBe(2);
+    expect(life(s, 1)).toBe(20);
+  });
+
+  it('cannot be blocked by a creature of that colour', () => {
+    // A board of nothing but black and red creatures has no legal block against it at all — so the
+    // engine does not even ask the defender, which is the strongest form of "cannot be blocked".
+    let s = toAttackers(arena({
+      decks: { 0: 'skyward-writ', 1: 'ashen-rite' },
+      battlefield: { 0: ['Paladin en-Vec'], 1: ['Vampire Nighthawk', 'Boggart Brute'] },
+      turn: 3, firstSeat: 0,
+    }));
+    const pal = find(s, 0, 'battlefield', 'Paladin en-Vec');
+    const hawk = find(s, 1, 'battlefield', 'Vampire Nighthawk');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: pal, defender: 1 }] });
+    s = passBoth(s);
+    expect(legalActions(s, 1).blockers.some((o) => o.canBlock.includes(pal))).toBe(false);
+    expect(canBlock(s, hawk, pal, 1)?.reason).toContain('protection');
+    // Nobody was asked, and the attack goes through for its two.
+    expect(pendingDeclaration(s)).toBeNull();
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i += 1) s = passBoth(s);
+    expect(life(s, 1)).toBe(18);
+  });
+
+  it('can be blocked by a creature of any other colour', () => {
+    // The other half, and the reason the first one is a card rather than a rule: a green creature
+    // blocks it perfectly well, and the Paladin's first strike is what decides the fight.
+    let s = toAttackers(arena({
+      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      battlefield: { 0: ['Paladin en-Vec'], 1: ['Grizzly Bears'] },
+      turn: 3, firstSeat: 0,
+    }));
+    const pal = find(s, 0, 'battlefield', 'Paladin en-Vec');
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: pal, defender: 1 }] });
+    s = passBoth(s);
+    expect(canBlock(s, bear, pal, 1)).toBeNull();
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bear, attacker: pal }] });
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i += 1) s = passBoth(s);
+    // Two first-strike damage kills the 2/2 before it hits back, so both survive on this side.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(damageOn(s, pal)).toBe(0);
+  });
+
+  it('is left alone by a colourless source, which is what the equip rule rests on', () => {
+    /*
+      The fourth rule, and the one no card in this pool can break.
+
+      Protection stops an Equipment of that colour attaching (CR 702.16e), and every Equipment here
+      is colourless — so the clause in `equipTo` is correct and unreachable at the same time, which
+      is D57's warning. What *can* be asserted is the fact it rests on: a colourless permanent is
+      never anything protection applies to. A coloured Equipment would be the card that exercises
+      the refusal, and there is not one.
+    */
+    const s = paladin([], ['Sol Ring']);
+    const pal = find(s, 1, 'battlefield', 'Paladin en-Vec');
+    const ring = find(s, 0, 'battlefield', 'Sol Ring');
+    expect(characteristicsOf(s, s.instances[pal]!).protectionFrom).toEqual(['B', 'R']);
+    expect(protectedFrom(s, pal, ring)).toBe(false);
+    // And from something black it is the other answer, which is what makes the first one mean
+    // anything.
+    expect(protectedFrom(s, pal, find(s, 0, 'battlefield', 'Swamp'))).toBe(false);
+  });
+});
+
 describe('a replacement effect from across the table', () => {
   /** Seat 0 on Kalitas, seat 1 with a creature of its own and a Mountain to kill it with. */
   const withKalitas = (hand: readonly string[] = [], theirs: readonly string[] = ['Centaur Courser']): GameState => {

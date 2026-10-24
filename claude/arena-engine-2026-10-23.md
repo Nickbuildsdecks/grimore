@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 152 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 153 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -217,10 +217,10 @@ bug rather than a board.
   (CR 614.1c) and, from the increment below, **"if it would die, exile it instead" (CR 614)**, which
   is the first one that belongs to a permanent and changes what happens to a *different* one. The
   shape it needed — a pass that asks every permanent whether it wants to replace what is about to
-  happen — now exists and is what the next one should use. What is still missing is damage
-  prevention with a quantity ("prevent the next 3 damage": a shield that is spent, survives partial
-  use, and has to interact with every source of damage) and protection from a colour, which is four
-  rules wearing one keyword. Cards needing those are still left unscripted rather than
+  happen — now exists and is what the next one should use. **Protection from a colour (CR 702.16) is
+  in as well**, all four of its rules. What is still missing is damage prevention with a quantity
+  ("prevent the next 3 damage": a shield that is spent, survives partial use, and has to interact
+  with every source of damage). Cards needing that are still left unscripted rather than
   approximated.
 - **Copy effects** and **characteristic-setting effects**: still no vocabulary for either.
 - **True layer interaction** (CR 613). What is here is a fixed order — printed, then effects, then
@@ -2020,6 +2020,41 @@ the board. The solo-pod suite can, because the player attacks into three bots th
 one run of three it happened: the driver tapped the blockers in order and the engine took it. The
 suite records it and reports it when it happens, with a line saying why not when it does not —
 sampled rather than required, the way the scry and the library search already are.
+
+### Protection, and three cards' abilities that were never there
+
+Protection from a colour (CR 702.16) is the only keyword in Magic that is four rules at once: a
+creature with protection from black cannot be **d**amaged, **e**nchanted or equipped, **b**locked,
+or **t**argeted by anything black. Three of the four were a line each, in the place that already
+answers that question — target legality, `canBlock`, `equipTo`.
+
+**The damage one cost something, and what it cost is the interesting part.** Protection is a fact
+about the *source*, and `dealDamage` did not know what had dealt the damage: twenty-one call sites,
+none of them saying. So `source` is now a **required** option — `string | null`, where null is the
+honest answer for damage with no source a colour can be read from. Required rather than optional
+because an optional one is a silent hole: a site that forgot it would quietly let protection fail,
+and nothing would say so. Making it required turned the question into twenty-one compile errors,
+each answered where the caller already had the answer in hand.
+
+Paladin en-Vec is the card — protection from black and from red, which in this pool is most of the
+removal. A Lightning Bolt and an Agonizing Demise both bounce off it, neither a black nor a red
+creature can block it, and a 3/3 red creature it blocks deals it nothing. Each of the four rules is
+tested on its own, and three of them fail with the shared check short-circuited. The fourth —
+equipping — is correct and unreachable: every Equipment in the pool is colourless, so what is
+asserted is the fact it rests on, and the gap is named rather than hidden.
+
+**And the bug it uncovered, which was worth more than the keyword.** The Paladin's protection did
+not work in a test board, for the same reason a Fog Bank's and a Juggernaut's had not: **static
+abilities were installed where a permanent *spell* resolved**, which is one of several ways onto the
+battlefield. A reanimated Fog Bank prevented no damage. A Juggernaut put onto the battlefield by an
+effect did not have to attack. A board laid out by hand — which is the whole tabletop half of this
+app, and how every test here builds a board — had no abilities at all. The trap caught three cards
+in a row and was read each time as a quirk of the test helper.
+
+It is fixed where everything else of this shape is fixed: arrivals are *detected* rather than
+announced, so the arrivals pass in `settle` is the one place that sees every way onto the
+battlefield, and that is where statics are installed now. The engine taking over a table does the
+same for whatever is already in play — which is what a handover from the tabletop half means.
 
 ## Next
 

@@ -12,7 +12,7 @@
  * survive combat damage if it is pumped in response.
  */
 import {
-  characteristicsOf, combatDamagePrevented, hasSubtype, type Characteristics,
+  characteristicsOf, combatDamagePrevented, hasSubtype, protectedFrom, type Characteristics,
 } from './characteristics.js';
 import { listAt } from './cardActions.js';
 import { dealDamage, gainLife } from './effects.js';
@@ -185,6 +185,12 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
   // The one piece of evasion in this pool that is not a keyword, so it is read off the attacker
   // rather than compared keyword to keyword. Wall is a creature type, not an ability: a Wall of
   // Air stopped by this is stopped for what it *is*.
+  // Protection from a colour stops a creature of that colour blocking it (CR 702.16b) — read off
+  // the *attacker*, like the Wall clause below: protection is a fact about the creature that has
+  // it, and here it is the attacking creature that cannot be blocked.
+  if (protectedFrom(state, attackerId, blockerId)) {
+    return { card: blockerId, reason: `${attacker.ch.name} has protection from ${blocker.ch.name}'s colour` };
+  }
   if (attacker.ch.cantBeBlockedByWalls && hasSubtype(blocker.ch.typeLine, 'wall')) {
     return { card: blockerId, reason: `${attacker.ch.name} can't be blocked by Walls` };
   }
@@ -296,7 +302,7 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
       if (attack.blockers.length === 0) {
         // `combatFrom` is what makes commander damage accumulate; see `dealDamage`.
         next = dealDamage(next, defenderTarget(next, attack), attacker.ch.power, {
-          deathtouch, lifelink, controller, combatFrom: attack.attacker,
+          deathtouch, lifelink, controller, combatFrom: attack.attacker, source: attack.attacker,
         });
       } else {
         let remaining = attacker.ch.power;
@@ -318,7 +324,9 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
           // Lethal is what is left of its toughness; deathtouch makes one point lethal.
           const lethal = deathtouch ? 1 : Math.max(1, blocker.ch.toughness - blocker.inst.damage);
           const assigned = Math.min(remaining, lethal);
-          next = dealDamage(next, { kind: 'card', id: blockerId }, assigned, { deathtouch, lifelink, controller });
+          next = dealDamage(next, { kind: 'card', id: blockerId }, assigned, {
+            deathtouch, lifelink, controller, source: attack.attacker,
+          });
           remaining -= assigned;
         }
         if (remaining > 0 && attacker.ch.keywords.has('trample')) {
@@ -326,7 +334,7 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
           // commander counts towards twenty-one just as an unblocked one does. Trampling over a
           // blocker in front of a planeswalker hits the planeswalker, for the same reason.
           next = dealDamage(next, defenderTarget(next, attack), remaining, {
-            deathtouch, lifelink, controller, combatFrom: attack.attacker,
+            deathtouch, lifelink, controller, combatFrom: attack.attacker, source: attack.attacker,
           });
         }
       }
@@ -343,6 +351,7 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
         deathtouch: blocker.ch.keywords.has('deathtouch'),
         lifelink: blocker.ch.keywords.has('lifelink'),
         controller: blocker.inst.zoneSeat,
+        source: blockerId,
       });
     }
   }

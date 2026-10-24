@@ -127,7 +127,7 @@ const FIREBRAND_ARCHER: CardScript = {
       description: 'deals 1 damage to each opponent',
       effect: (c) =>
         opponentsOf(c.state, c.controller).reduce(
-          (state, seat) => dealDamage(state, { kind: 'player', seat }, 1, { controller: c.controller }),
+          (state, seat) => dealDamage(state, { kind: 'player', seat }, 1, { controller: c.controller, source: c.source }),
           c.state,
         ),
     },
@@ -163,7 +163,7 @@ const LAVA_SPIKE: CardScript = {
   targets: [TARGET_PLAYER],
   onResolve: (c) => {
     const seat = firstPlayerTarget(c);
-    return seat === null ? c.state : dealDamage(c.state, { kind: 'player', seat }, 3, { controller: c.controller });
+    return seat === null ? c.state : dealDamage(c.state, { kind: 'player', seat }, 3, { controller: c.controller, source: c.source });
   },
 };
 
@@ -255,7 +255,7 @@ const FLAME_SLASH: CardScript = {
   targets: [TARGET_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
-    return id === null ? c.state : dealDamage(c.state, { kind: 'card', id }, 4, { controller: c.controller });
+    return id === null ? c.state : dealDamage(c.state, { kind: 'card', id }, 4, { controller: c.controller, source: c.source });
   },
 };
 
@@ -297,7 +297,7 @@ const FLAMETONGUE_KAVU: CardScript = {
       description: 'deals 4 damage to target creature',
       effect: (c) => {
         const id = firstCardTarget(c);
-        return id === null ? c.state : dealDamage(c.state, { kind: 'card', id }, 4, { controller: c.controller });
+        return id === null ? c.state : dealDamage(c.state, { kind: 'card', id }, 4, { controller: c.controller, source: c.source });
       },
     },
   ],
@@ -628,11 +628,11 @@ const HURRICANE: CardScript = {
       const ch = characteristicsOf(state, inst);
       return ch.isCreature && ch.keywords.has('flying');
     })) {
-      state = dealDamage(state, { kind: 'card', id }, c.x, { controller: c.controller });
+      state = dealDamage(state, { kind: 'card', id }, c.x, { controller: c.controller, source: c.source });
     }
     for (const seat of state.seats) {
       if (seat.eliminated) continue;
-      state = dealDamage(state, { kind: 'player', seat: seat.index }, c.x, { controller: c.controller });
+      state = dealDamage(state, { kind: 'player', seat: seat.index }, c.x, { controller: c.controller, source: c.source });
     }
     return state;
   },
@@ -1001,7 +1001,7 @@ const IMPACT_TREMORS: CardScript = {
       on: { kind: 'etb', who: 'any', of: 'you', what: 'creature' },
       description: 'deals 1 damage to each opponent',
       effect: (c) => opponentsOf(c.state, c.controller).reduce(
-        (state, seat) => dealDamage(state, { kind: 'player', seat }, 1, { controller: c.controller }),
+        (state, seat) => dealDamage(state, { kind: 'player', seat }, 1, { controller: c.controller, source: c.source }),
         c.state,
       ),
     },
@@ -1103,7 +1103,7 @@ const THERMO_ALCHEMIST: CardScript = {
       cost: { tap: true },
       description: '{T}: deals 1 damage to each opponent.',
       effect: (c) => opponentsOf(c.state, c.controller).reduce(
-        (state, seat) => dealDamage(state, { kind: 'player', seat }, 1, { controller: c.controller }),
+        (state, seat) => dealDamage(state, { kind: 'player', seat }, 1, { controller: c.controller, source: c.source }),
         c.state,
       ),
     },
@@ -1324,7 +1324,7 @@ const FLESHBAG_MARAUDER: CardScript = {
 function damageFirstTarget(c: EffectContext, amount: number): GameState {
   const target = c.targets[0];
   if (target === undefined) return c.state;
-  return dealDamage(c.state, target, amount, { controller: c.controller });
+  return dealDamage(c.state, target, amount, { controller: c.controller, source: c.source });
 }
 
 /** Creature cards in a seat's own graveyard, which several cards in Rot Harvest count. */
@@ -1704,11 +1704,11 @@ const BREATH_OF_DARIGAAZ: CardScript = {
       const ch = characteristicsOf(state, inst);
       return ch.isCreature && !ch.keywords.has('flying');
     })) {
-      state = dealDamage(state, { kind: 'card', id }, amount, { controller: c.controller });
+      state = dealDamage(state, { kind: 'card', id }, amount, { controller: c.controller, source: c.source });
     }
     for (const seat of state.seats) {
       if (seat.eliminated) continue;
-      state = dealDamage(state, { kind: 'player', seat: seat.index }, amount, { controller: c.controller });
+      state = dealDamage(state, { kind: 'player', seat: seat.index }, amount, { controller: c.controller, source: c.source });
     }
     return state;
   },
@@ -1744,7 +1744,7 @@ const AGONIZING_DEMISE: CardScript = {
     const owner = inst.zoneSeat;
     let state = destroy(c.state, id);
     if (c.kicked && power > 0 && owner !== null) {
-      state = dealDamage(state, { kind: 'player', seat: owner }, power, { controller: c.controller });
+      state = dealDamage(state, { kind: 'player', seat: owner }, power, { controller: c.controller, source: c.source });
     }
     return state;
   },
@@ -1821,7 +1821,7 @@ const HELLRIDER: CardScript = {
         const hit: Target = c.attacked.planeswalker === undefined
           ? { kind: 'player', seat: c.attacked.defender }
           : { kind: 'card', id: c.attacked.planeswalker };
-        return dealDamage(c.state, hit, 1, { controller: c.controller });
+        return dealDamage(c.state, hit, 1, { controller: c.controller, source: c.source });
       },
     },
   ],
@@ -2029,7 +2029,7 @@ const LAVA_AXE: CardScript = {
   targets: [TARGET_PLAYER],
   onResolve: (c) => {
     const seat = firstPlayerTarget(c);
-    return seat === null ? c.state : dealDamage(c.state, { kind: 'player', seat }, 5, { controller: c.controller });
+    return seat === null ? c.state : dealDamage(c.state, { kind: 'player', seat }, 5, { controller: c.controller, source: c.source });
   },
 };
 
@@ -2099,10 +2099,14 @@ const PREY_UPON: CardScript = {
     const theirsPower = characteristicsOf(c.state, theirsInst).power;
     let state = c.state;
     if (minePower > 0) {
-      state = dealDamage(state, { kind: 'card', id: theirs }, minePower, { controller: c.controller });
+      state = dealDamage(state, { kind: 'card', id: theirs }, minePower, {
+        controller: c.controller, source: mine,
+      });
     }
     if (theirsPower > 0) {
-      state = dealDamage(state, { kind: 'card', id: mine }, theirsPower, { controller: theirsInst.zoneSeat });
+      state = dealDamage(state, { kind: 'card', id: mine }, theirsPower, {
+        controller: theirsInst.zoneSeat, source: theirs,
+      });
     }
     return state;
   },
@@ -2221,7 +2225,7 @@ const CITY_OF_BRASS: CardScript = {
   triggers: [{
     on: { kind: 'becomes-tapped' },
     description: 'City of Brass deals 1 damage to you',
-    effect: (c) => dealDamage(c.state, { kind: 'player', seat: c.controller }, 1),
+    effect: (c) => dealDamage(c.state, { kind: 'player', seat: c.controller }, 1, { source: c.source }),
   }],
 };
 
@@ -2287,6 +2291,18 @@ const DARK_CONFIDANT: CardScript = {
 const JUGGERNAUT: CardScript = {
   name: 'Juggernaut',
   statics: [{ scope: 'self', effect: { mustAttack: true, cantBeBlockedByWalls: true } }],
+};
+
+/**
+ * First strike is printed and needs no script; protection from black and from red is the static.
+ *
+ * The one card in the pool with protection (CR 702.16), which is four rules under one keyword —
+ * cannot be damaged, enchanted or equipped, blocked, or targeted by anything of those colours. The
+ * engine applies all four, each in the one place that already answers that question.
+ */
+const PALADIN_EN_VEC: CardScript = {
+  name: 'Paladin en-Vec',
+  statics: [{ scope: 'self', effect: { protectionFrom: ['B', 'R'] } }],
 };
 
 const FOG_BANK: CardScript = {
@@ -2389,6 +2405,7 @@ const ALL: readonly CardScript[] = [
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
   NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT, DISRUPT_DECORUM, KALITAS,
+  PALADIN_EN_VEC,
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,

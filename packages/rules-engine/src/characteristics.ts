@@ -170,6 +170,19 @@ export interface ContinuousEffect {
    */
   readonly mustAttackAnotherPlayer?: boolean;
   /**
+   * Protection from each of these colours (CR 702.16).
+   *
+   * One flag for four rules, which is what makes protection the awkward keyword it is: a creature
+   * with protection from red cannot be **d**amaged, **e**nchanted or equipped, **b**locked or
+   * **t**argeted by anything red. Each of those four lives somewhere different in this engine —
+   * `dealDamage`, `equipTo`, `canBlock`, and target legality — and a keyword that only did three of
+   * them would be worse than none, because a player would trust it.
+   *
+   * Carried as colours rather than as a predicate because that is how every printed version reads,
+   * and because the thing it is compared against — a source's colours — is itself a list.
+   */
+  readonly protectionFrom?: readonly Color[];
+  /**
    * Combat damage involving the permanents in scope does not happen — dealt **by** them and dealt
    * **to** them. A Fog is this with an all-creatures scope; a Maze of Ith is it scoped to one card.
    *
@@ -211,6 +224,8 @@ export interface Characteristics {
   readonly mustAttack: boolean;
   /** "Can't be blocked by Walls", read from the attacker when a block is offered. */
   readonly cantBeBlockedByWalls: boolean;
+  /** Protection from these colours (CR 702.16). Empty for almost everything. */
+  readonly protectionFrom: readonly Color[];
   /**
    * The seats that have goaded this creature: the controllers of every `mustAttackAnotherPlayer`
    * effect applying to it.
@@ -264,6 +279,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let mustAttack = false;
   let cantBeBlockedByWalls = false;
   const goadedBy = new Set<SeatIndex>();
+  const protectionFrom = new Set<Color>();
 
   for (const effect of state.effects ?? []) {
     if (!effectApplies(effect, instance, creature)) continue;
@@ -276,6 +292,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.mustAttack) mustAttack = true;
     if (effect.cantBeBlockedByWalls) cantBeBlockedByWalls = true;
     if (effect.mustAttackAnotherPlayer) goadedBy.add(effect.controller);
+    for (const colour of effect.protectionFrom ?? []) protectionFrom.add(colour);
   }
 
   const plus = instance.counters['+1/+1'] ?? 0;
@@ -301,6 +318,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     mustAttack: mustAttack && !cantAttack,
     cantBeBlockedByWalls,
     goadedBy: [...goadedBy],
+    protectionFrom: [...protectionFrom],
   };
 }
 
@@ -317,6 +335,27 @@ export function combatDamagePrevented(state: GameState, instance: CardInstance):
   return (state.effects ?? []).some(
     (effect) => effect.preventsCombatDamage === true && effectApplies(effect, instance, creature),
   );
+}
+
+/**
+ * Whether `target` has protection from anything `source` is (CR 702.16).
+ *
+ * One answer for all four of protection's rules — damage, equipping, blocking and targeting — so
+ * that the four cannot disagree about what "red" means. `source` is an instance id: a permanent, or
+ * a spell on the stack, whose id *is* its card instance. A source with no instance (a game rule, or
+ * damage from nowhere) is colourless and so gets past protection, which is correct: protection is
+ * from colours, not from everything.
+ */
+export function protectedFrom(state: GameState, targetId: string, source: string | null): boolean {
+  if (source === null) return false;
+  const target = state.instances[targetId];
+  if (target === undefined) return false;
+  const protection = characteristicsOf(state, target).protectionFrom;
+  if (protection.length === 0) return false;
+  const inst = state.instances[source];
+  if (inst === undefined) return false;
+  const colours = printedColors(state.cardDefs[inst.defKey]);
+  return colours.some((colour) => protection.includes(colour));
 }
 
 /** Convenience for the many places that only need to ask about one keyword. */
