@@ -3125,3 +3125,86 @@ turn* — a duration this engine has no way to express. End-of-turn would make a
 before the combat it is meant to force, which is worse than not having it. It needs a fourth
 duration keyed to a seat's turn, not a card, and that is a change to how effects expire rather than
 a card to script.
+
+## D90 — A duration that names a seat, and five lists that disagreed
+
+Goad was written up as blocked in D89: `EffectDuration` was `end-of-turn | end-of-combat |
+permanent`, and goad lasts *until your next turn*. The gap was real and the fix is one variant —
+`until-controllers-next-turn`, expired in the untap step of the turn it names, which is the first
+thing a turn does and therefore before anybody can read a board the effect was still changing.
+
+**It is the first duration here anchored to a player rather than to a moment.** That is the whole
+difficulty: an effect made on somebody else's turn has to survive the end of that turn, and the two
+turns after it, and then end — so the expiry pass had to learn to ask *whose* turn has begun, which
+is what the `seat` argument is for. Leaving it out can never expire one, which is exactly what the
+end-of-turn and end-of-combat passes want.
+
+**And `end-of-combat` turned out to be a variant nothing expired.** It was declared, no card used
+it, and no pass dropped it — so the first card to say "until end of combat" would have had an
+effect lasting the rest of the game. One line in the step the name points at.
+
+**Goad itself is two rules on one creature, and the second one is new in kind.** "Attacks each
+combat if able" is D89's requirement, checked against the declaration. "Attacks a player other than
+you if able" (CR 701.38a) is checked against a *single attack's aim*, which nothing here had asked
+before — every previous rule was about whether a creature may attack at all. So `attackAimIssue`
+sits beside `canAttack` rather than inside it, and "if able" is the subtlety: the requirement lifts
+when the goader is the last opponent, and it lifts when *every* remaining opponent has goaded the
+creature, because then no choice satisfies anybody. Both fall out of one question — is a non-goader
+left — rather than being two special cases.
+
+**What that cost everywhere else, which is the honest part.** A restriction on the aim means three
+other places had to learn it, or they would offer moves the engine refuses:
+
+- the bot's declaration builder, renamed `legalDeclaration`, because three of the four plans it
+  compares send everything at whoever has the least life, which is precisely what goad forbids;
+- `legalActions`, which now carries `attackAims` — per creature, the defenders it may be sent at,
+  listed only for the creatures that are actually restricted;
+- the table, where a goaded creature is pre-selected at a seat it may attack, "all at them" moves
+  everything except it, and the bar names the card and the player it may not be sent at.
+
+That last one matters more than it looks. A goaded creature is also a forced one, so the table had
+to combine D89's "cannot be dropped" with "cannot be aimed there", and a tap that silently moves an
+arrow somewhere else reads as a bug unless the reason is on screen.
+
+**Measured over 160 four-seat pods and 160 duels**, counted off the board rather than off the
+action:
+
+| | four-seat pods | duels |
+| --- | --- | --- |
+| Disrupt Decorums cast | 5 | **0** |
+| creatures goaded | 9 | 0 |
+| declare-steps with a goaded creature in the declaration | 8 | 0 |
+| …aimed away from the goader | **8** | 0 |
+| …aimed at the goader anyway | 0 | 0 |
+| actions the engine refused | 0 | 0 |
+
+The duel column is the fifth member of the "spent on nothing" family doing its job, and its negative
+control is the clearest of the five: **with the rule removed the bot cast it 10 times in those same
+160 duels, goaded 10 creatures, and 7 of them attacked the goader.** That is four mana spent to be
+attacked, and no weight in `evaluate` can see it — `simulate` ends with this combat, and the attack
+goad forces arrives on somebody else's turn, which is the same horizon that hid the pumps in D86.
+
+Five casts in 160 pods is thin, and is said rather than dressed up: one copy, in one of four decks,
+needing four mana and an opponent with a board. The rule is unit-tested five ways for that reason.
+
+**Five hand-copied lists, found while wiring one flag through.** `PumpOptions` becomes a
+`ContinuousEffect` in five places — a targeted pump, a team pump, a board pump, a permanent's
+static, an aura — and each copied the subset of options it happened to know about. They disagreed:
+`pump` dropped `mustAttack`; `staticEffect` dropped that *and* `preventsCombatDamage`, and an
+Equipment's bonus goes through it; `pumpTeam` and `pumpAll` carried only a body and keywords; the
+aura builder had four of ten; and the statics builder dropped `cantAttack` and `cantBlock`, so a
+card whose printed static was "this creature can't attack" would have done nothing at all. No card
+in the pool was wrong — the next one to use a flag would have been, silently, depending on which
+builder its script reached for. One `modsFrom`, read by all five, and a test that every option in
+is every flag out. It is the same move as `manaSources` answering both `legalActions` and payment.
+
+**And the realtime flake, finally named and measured.** "Plays a whole game on its own against the
+server" failed once weeks ago and never reproduced; it failed again here, and the message the
+earlier instrumenting added said why: *stopped after 400 moves on turn 48*. Every pod seeds its
+shuffle from an id carrying a timestamp, so each run is a different game, and the client that test
+drives casts nothing — the game is the bot grinding a do-nothing opponent from twenty to zero.
+Played out over 200 random shuffles with the same decks and the same loop: **median 137 moves, p90
+216, p99 307, longest 488, and one game in two hundred over 400.** The cap was 400. Nothing was
+flaky but the shuffle, and the constant is now 1200 — two and a half times the worst of two hundred
+games, with the measurement in the comment beside it. D87's rule, applied to the constant that
+broke it.

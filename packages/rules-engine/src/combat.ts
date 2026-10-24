@@ -74,6 +74,50 @@ export function forcedAttackers(state: GameState, seat: SeatIndex): string[] {
 }
 
 /**
+ * Whether this creature may be aimed at *that* defender — goad's second half (CR 701.38a).
+ *
+ * Separate from `canAttack` because it is a different question: `canAttack` asks whether a creature
+ * may attack at all, and this asks whether a particular aim is legal. Only goad makes the two
+ * differ today, and only goad should: an attack has exactly one defender, and the one thing a
+ * goaded creature may not do is point at the player who goaded it.
+ *
+ * "If able" is the whole subtlety. The requirement only binds while there is somebody else to
+ * attack, so it lifts when the goader is the last opponent standing — and it lifts when *every*
+ * remaining opponent has goaded this creature, because then no choice satisfies anybody and all of
+ * them are legal. Both fall out of asking whether a non-goader is left.
+ */
+export function attackAimIssue(
+  state: GameState, id: string, seat: SeatIndex, defender: SeatIndex,
+): CombatIssue | null {
+  const found = creatureOf(state, id, seat);
+  if (found === null) return null;
+  const { ch } = found;
+  if (!ch.goadedBy.includes(defender)) return null;
+  const elsewhere = state.seats.some((s) => (
+    s.index !== seat && !s.eliminated && !ch.goadedBy.includes(s.index)
+  ));
+  if (!elsewhere) return null;
+  return {
+    card: id,
+    reason: `${ch.name} was goaded and must attack another player if able`,
+  };
+}
+
+/**
+ * The defenders a creature this seat controls may legally be aimed at, in seat order.
+ *
+ * The table's half of `attackAimIssue`: a player should never be able to build an attack the
+ * engine then throws out, so the aim it may not choose has to travel with the declaration rather
+ * than be discovered by pressing confirm.
+ */
+export function legalDefenders(state: GameState, id: string, seat: SeatIndex): SeatIndex[] {
+  return state.seats
+    .filter((s) => s.index !== seat && !s.eliminated)
+    .filter((s) => attackAimIssue(state, id, seat, s.index) === null)
+    .map((s) => s.index);
+}
+
+/**
  * Whether `blocker` may block `attacker`.
  *
  * Evasion is checked from the attacker's keywords against the blocker's: flying can only be blocked

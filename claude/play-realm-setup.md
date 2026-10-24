@@ -178,7 +178,7 @@ slower decks comfortably and losing to the fastest ones — and a good part of t
 rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
 A person plays it better.
 
-The decks share a pool of a hundred and fifty scripted cards, which now includes a wrath, a
+The decks share a pool of a hundred and fifty-one scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves

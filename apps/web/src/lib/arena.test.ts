@@ -681,6 +681,70 @@ describe("declaring attackers", () => {
     })
   })
 
+  it("aims a goaded creature somewhere it is allowed to go", () => {
+    // The table's half of goad. Seat 1 goaded it, so pre-selecting it at seat 1 — which is where
+    // the rest of the swing is pointing — would be the table building the declaration the engine
+    // refuses, which is the one thing it must never do.
+    const mode = arenaReducer(IDLE, {
+      kind: "declareAttackers", defender: 1, forced: ["jug"],
+      aims: [{ card: "jug", defenders: [2, 3] }],
+    }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack", attackers: [{ attacker: "jug", defender: 2 }],
+    })
+  })
+
+  it("will not let a goaded creature be re-aimed at the player who goaded it", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, {
+      kind: "declareAttackers", defender: 2,
+      aims: [{ card: "bear", defenders: [2, 3] }],
+    }).mode
+    // Tapped while the aim is on seat 2, which is allowed: it goes there.
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "bear" }).mode
+    expect(mode).toMatchObject({ chosen: [{ attacker: "bear", defender: 2 }] })
+    // Re-aimed at seat 1, which goaded it. Everything else would move; this one stays.
+    mode = arenaReducer(mode, { kind: "aimAll", seat: 1 }).mode
+    expect(mode).toMatchObject({ chosen: [{ attacker: "bear", defender: 2 }] })
+    // Tapping it now cannot move it anywhere new, so the tap means what a second tap always
+    // means — take it out. (Goad also makes a creature attack, so in a real game the forced
+    // guard keeps it in; the test below is that combination.)
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "bear" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack", attackers: [],
+    })
+  })
+
+  it("keeps a goaded creature in the attack, because goad also makes it attack", () => {
+    // Both halves of the real card at once (CR 701.38): it has to attack, and not at seat 1. So
+    // the declaration starts with it aimed at seat 2, a tap cannot drop it, and "all at seat 1"
+    // moves everything except it.
+    let mode: ArenaMode = arenaReducer(IDLE, {
+      kind: "declareAttackers", defender: 1,
+      forced: ["bear"], aims: [{ card: "bear", defenders: [2, 3] }],
+    }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "knight" }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "bear" }).mode
+    mode = arenaReducer(mode, { kind: "aimAll", seat: 1 }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack",
+      attackers: [{ attacker: "bear", defender: 2 }, { attacker: "knight", defender: 1 }],
+    })
+  })
+
+  it("drops the planeswalker when a goaded creature has to be aimed elsewhere", () => {
+    // A planeswalker belongs to the seat it was picked on, so an attack moved to another seat
+    // cannot keep it — that would send the damage at a permanent of somebody else's.
+    let mode: ArenaMode = arenaReducer(IDLE, {
+      kind: "declareAttackers", defender: 1,
+      aims: [{ card: "bear", defenders: [2] }],
+    }).mode
+    mode = arenaReducer(mode, { kind: "aimAttacks", seat: 1, planeswalker: "pw1" }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "bear" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack", attackers: [{ attacker: "bear", defender: 2 }],
+    })
+  })
+
   it("leaves a creature that is merely able to attack droppable", () => {
     let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1, forced: ["jug"] }).mode
     mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
@@ -772,8 +836,8 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
     awaiting: null,
     you: {
       seat: 0, step: "precombat-main", hasPriority: true, isActivePlayer: true, canPass: true,
-      passLabel: "Pass", plays: [], attackers: [], mustAttack: [], blockers: [], mustDiscard: 0,
-      mustDeclare: null,
+      passLabel: "Pass", plays: [], attackers: [], mustAttack: [], attackAims: [], blockers: [],
+      mustDiscard: 0, mustDeclare: null,
       mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null, blocked: [],
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     },
@@ -831,6 +895,17 @@ describe("primaryMove", () => {
     })
     const move = primaryMove(view({ automation: auto, seats }))
     expect(move?.event).toEqual({ kind: "declareAttackers", defender: 2 })
+  })
+
+  it("carries the aims a goaded creature is restricted to", () => {
+    const aims = [{ card: "bear", defenders: [2 as const] }]
+    const auto = automation({
+      awaiting: { kind: "attackers", seats: [0] },
+      you: {
+        ...automation()!.you!, mustDeclare: "attackers", attackers: ["bear"], attackAims: aims,
+      },
+    })
+    expect(primaryMove(view({ automation: auto }))?.event).toMatchObject({ aims })
   })
 
   it("carries the creatures that must attack into the declaration", () => {

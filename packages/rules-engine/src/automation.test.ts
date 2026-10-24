@@ -648,6 +648,43 @@ describe('state-based actions', () => {
   });
 
   /*
+    "Until your next turn", which is the first duration here anchored to a seat rather than to a
+    moment in the current turn.
+
+    Goad is why it exists: cast on somebody else's turn, it has to survive the end of that turn and
+    every turn in between, and end when the goading player's own turn begins. `end-of-turn` would
+    have expired it before the combat it exists to force, which is no card at all.
+  */
+  it('keeps an until-your-next-turn effect until that seat untaps again', () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 4,
+      decks: { 0: 'forge-alliance', 1: 'skyward-writ' },
+      hands: { 0: ['Disrupt Decorum'] },
+      // A Wall, so the turns in between can be walked through without declaring its attack: a
+      // goaded creature that cannot attack is not required to, which is the restriction beating
+      // the requirement and is asserted on its own in `combat.test.ts`.
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Wall of Air'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Disrupt Decorum') });
+    s = passBoth(s);
+    expect(s.effects.length).toBe(1);
+    expect(s.effects[0]!.duration).toBe('until-controllers-next-turn');
+
+    // Through the goader's own cleanup, and through all three other turns.
+    for (const seat of [1, 2, 3]) {
+      s = nextTurn(s);
+      expect(s.activeSeat).toBe(seat);
+      expect(s.effects.length).toBe(1);
+    }
+    // And gone the moment the turn it was keyed to begins.
+    s = nextTurn(s);
+    expect(s.activeSeat).toBe(0);
+    expect(s.effects.length).toBe(0);
+  });
+
+  /*
     A player who leaves the game takes the attacks aimed at them with them (CR 800.4a) — and
     somebody holds priority afterwards.
 

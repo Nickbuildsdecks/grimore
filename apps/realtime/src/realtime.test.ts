@@ -699,7 +699,22 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       */
       let stopped = 'the move cap';
       let moves = 0;
-      for (let move = 0; move < 400 && !view.finished; move++) {
+      /*
+        The cap, measured rather than guessed — which is D87's rule, and this is the constant that
+        had been breaking it.
+
+        Every pod seeds its shuffle from an id carrying a timestamp, so each run of this test is a
+        different game; and the client below casts nothing, so the game is the bot grinding a
+        do-nothing opponent from twenty to zero. Played out over 200 random shuffles with the same
+        two decks and this same loop: **median 137 moves, p90 216, p99 307, longest 488 — and one
+        game in two hundred over 400.** The old cap was 400, which is why this test failed once in
+        a parallel run and then passed twelve times in a row: nothing was flaky but the shuffle.
+
+        1200 is two and a half times the worst of those two hundred games, and still catches what
+        the cap is for — a genuine stall hits it with the game nowhere near finished, and the
+        assertion below prints the turn and step it stopped on.
+      */
+      for (let move = 0; move < 1200 && !view.finished; move++) {
         moves = move + 1;
         const you = view.automation?.you;
         if (you === undefined || you === null) {

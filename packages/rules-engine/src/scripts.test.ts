@@ -12,7 +12,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STARTER_DECKS, characteristicsOf, legalActions, scriptFor, scriptedCardNames, viewFor,
+  STARTER_DECKS, characteristicsOf, legalActions, pump, pumpAll, pumpTeam, scriptFor,
+  scriptedCardNames, staticEffect, viewFor, type ContinuousEffect,
 } from './index.js';
 import {
   advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
@@ -4786,6 +4787,66 @@ describe('unscripted cards', () => {
       .filter((card) => scriptFor(card.name) === undefined)
       .filter((card) => !/creature|land|artifact|enchantment/i.test(card.typeLine));
     expect(unscripted).toEqual([]);
+  });
+});
+
+/*
+  Whatever a card says reaches the effect, whichever builder it goes through.
+
+  Five builders turn a `PumpOptions` into a continuous effect — one for a targeted pump, one for a
+  team, one for the whole board, one for a permanent's static, one for an aura — and each of them
+  used to copy by hand the subset of options it happened to know about. They disagreed: `pump` had
+  no `mustAttack`, `staticEffect` had neither that nor `preventsCombatDamage` (and an Equipment's
+  bonus goes through it), the statics builder had no `cantAttack`, and the aura builder had four of
+  the ten. A flag worked or silently vanished depending on which builder the script reached for.
+
+  This is the invariant that replaces those five lists with one: every option in, every flag out.
+  Asserted on the effect rather than on a card's behaviour on purpose — the bug was not that any
+  one card was wrong, it was that the next card to use a flag would be.
+*/
+describe('what a card says reaches the effect', () => {
+  const everything = {
+    power: 1, toughness: 2, keywords: ['flying'] as const, removeKeywords: ['trample'] as const,
+    cantAttack: true, cantBlock: true, preventsCombatDamage: true,
+    mustAttack: true, cantBeBlockedByWalls: true, mustAttackAnotherPlayer: true,
+  };
+  const carried = (effect: ContinuousEffect): Record<string, unknown> => ({
+    power: effect.power, toughness: effect.toughness,
+    keywords: effect.keywords, removeKeywords: effect.removeKeywords,
+    cantAttack: effect.cantAttack, cantBlock: effect.cantBlock,
+    preventsCombatDamage: effect.preventsCombatDamage,
+    mustAttack: effect.mustAttack, cantBeBlockedByWalls: effect.cantBeBlockedByWalls,
+    mustAttackAnotherPlayer: effect.mustAttackAnotherPlayer,
+  });
+  const expected = {
+    power: 1, toughness: 2, keywords: ['flying'], removeKeywords: ['trample'],
+    cantAttack: true, cantBlock: true, preventsCombatDamage: true,
+    mustAttack: true, cantBeBlockedByWalls: true, mustAttackAnotherPlayer: true,
+  };
+
+  it('carries every option through every builder', () => {
+    const s = arena();
+    const bear = [...ids(s, 0, 'library')][0]!;
+    for (const built of [
+      pump(s, [bear], bear, 0, everything),
+      pumpTeam(s, bear, 0, everything),
+      pumpAll(s, bear, 0, everything),
+      staticEffect(s, bear, 0, { kind: 'cards', ids: [bear] }, everything),
+    ]) {
+      expect(built.effects.length).toBe(1);
+      expect(carried(built.effects[0]!)).toEqual(expected);
+    }
+  });
+
+  it('leaves out what the card did not say, rather than saying false', () => {
+    // An absent flag has to be absent: `cantAttack: false` on an effect would read as a card that
+    // says a creature cannot attack, and `characteristicsOf` only ever checks for truth.
+    const s = arena();
+    const bear = [...ids(s, 0, 'library')][0]!;
+    const built = pump(s, [bear], bear, 0, { power: 1 });
+    expect(Object.keys(built.effects[0]!).sort()).toEqual(
+      ['controller', 'createdTurn', 'duration', 'id', 'power', 'scope', 'source'],
+    );
   });
 });
 

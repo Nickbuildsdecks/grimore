@@ -474,7 +474,41 @@ export interface PumpOptions {
   readonly mustAttack?: boolean;
   /** See `ContinuousEffect.cantBeBlockedByWalls`. */
   readonly cantBeBlockedByWalls?: boolean;
+  /** See `ContinuousEffect.mustAttackAnotherPlayer` — goad's second half (CR 701.38a). */
+  readonly mustAttackAnotherPlayer?: boolean;
   readonly duration?: EffectDuration;
+}
+
+/**
+ * One translation from "what a card says" to "what an effect carries", for every builder there is.
+ *
+ * Each of them used to copy the subset of `PumpOptions` it happened to know about — five
+ * near-identical lists that quietly disagreed. `pump` dropped `mustAttack`; `staticEffect` dropped
+ * that *and* `preventsCombatDamage`, which is the path an Equipment's bonus takes; `pumpTeam` and
+ * `pumpAll` carried only a body and keywords; the aura builder dropped four; and the statics
+ * builder dropped `cantAttack` and `cantBlock`, so a card whose printed static was "this creature
+ * can't attack" would have done nothing at all. A flag therefore worked or vanished depending on
+ * which builder a script happened to reach for, with nothing anywhere to say so.
+ *
+ * One list, read by everything, is the only version of this that stays true — and it is the same
+ * move as `manaSources` serving both `legalActions` and payment: one answer to one question.
+ *
+ * `duration` is not here on purpose: each builder decides its own, and a static effect that
+ * accepted one would be a static effect that is not static.
+ */
+export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'createdTurn' | 'source' | 'controller' | 'scope' | 'duration'> {
+  return {
+    ...(opts.power === undefined ? {} : { power: opts.power }),
+    ...(opts.toughness === undefined ? {} : { toughness: opts.toughness }),
+    ...(opts.keywords ? { keywords: opts.keywords } : {}),
+    ...(opts.removeKeywords ? { removeKeywords: opts.removeKeywords } : {}),
+    ...(opts.cantAttack ? { cantAttack: true } : {}),
+    ...(opts.cantBlock ? { cantBlock: true } : {}),
+    ...(opts.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
+    ...(opts.mustAttack ? { mustAttack: true } : {}),
+    ...(opts.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
+    ...(opts.mustAttackAnotherPlayer ? { mustAttackAnotherPlayer: true } : {}),
+  };
 }
 
 function pushEffect(state: GameState, effect: Omit<ContinuousEffect, 'id' | 'createdTurn'>): GameState {
@@ -491,14 +525,26 @@ export function pump(
   return pushEffect(state, {
     source, controller,
     scope: { kind: 'cards', ids: [...ids] },
-    ...(opts.power === undefined ? {} : { power: opts.power }),
-    ...(opts.toughness === undefined ? {} : { toughness: opts.toughness }),
-    ...(opts.keywords ? { keywords: opts.keywords } : {}),
-    ...(opts.removeKeywords ? { removeKeywords: opts.removeKeywords } : {}),
-    ...(opts.cantAttack ? { cantAttack: true } : {}),
-    ...(opts.cantBlock ? { cantBlock: true } : {}),
-    ...(opts.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
+    ...modsFrom(opts),
     duration: opts.duration ?? 'end-of-turn',
+  });
+}
+
+/**
+ * Goad: "until your next turn, that creature attacks each combat if able and attacks a player
+ * other than you if able" (CR 701.38).
+ *
+ * Both halves and the duration, because all three are the card — a goad that wore off at end of
+ * turn, or that forced an attack without sending it elsewhere, would be a different and much worse
+ * card. `controller` is the goading player, and every part of the effect is read relative to them.
+ */
+export function goad(
+  state: GameState, ids: readonly string[], source: string, controller: SeatIndex,
+): GameState {
+  return pump(state, ids, source, controller, {
+    mustAttack: true,
+    mustAttackAnotherPlayer: true,
+    duration: 'until-controllers-next-turn',
   });
 }
 
@@ -528,9 +574,7 @@ export function pumpTeam(
   return pushEffect(state, {
     source, controller,
     scope: { kind: 'controller-creatures' },
-    ...(opts.power === undefined ? {} : { power: opts.power }),
-    ...(opts.toughness === undefined ? {} : { toughness: opts.toughness }),
-    ...(opts.keywords ? { keywords: opts.keywords } : {}),
+    ...modsFrom(opts),
     duration: opts.duration ?? 'end-of-turn',
   });
 }
@@ -547,9 +591,7 @@ export function pumpAll(
   return pushEffect(state, {
     source, controller,
     scope: { kind: 'all-creatures' },
-    ...(opts.power === undefined ? {} : { power: opts.power }),
-    ...(opts.toughness === undefined ? {} : { toughness: opts.toughness }),
-    ...(opts.keywords ? { keywords: opts.keywords } : {}),
+    ...modsFrom(opts),
     duration: opts.duration ?? 'end-of-turn',
   });
 }
@@ -559,16 +601,7 @@ export function staticEffect(
   state: GameState, source: string, controller: SeatIndex,
   scope: ContinuousEffect['scope'], opts: PumpOptions,
 ): GameState {
-  return pushEffect(state, {
-    source, controller, scope,
-    ...(opts.power === undefined ? {} : { power: opts.power }),
-    ...(opts.toughness === undefined ? {} : { toughness: opts.toughness }),
-    ...(opts.keywords ? { keywords: opts.keywords } : {}),
-    ...(opts.removeKeywords ? { removeKeywords: opts.removeKeywords } : {}),
-    ...(opts.cantAttack ? { cantAttack: true } : {}),
-    ...(opts.cantBlock ? { cantBlock: true } : {}),
-    duration: 'permanent',
-  });
+  return pushEffect(state, { source, controller, scope, ...modsFrom(opts), duration: 'permanent' });
 }
 
 /** Removes every effect a given permanent is the source of. Used when an aura leaves. */

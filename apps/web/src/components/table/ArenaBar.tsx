@@ -214,6 +214,29 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             </span>
           ) : null}
           {/*
+            And who a goaded creature may not be sent at, named both ways round. Without it the
+            player taps a creature expecting it to join the swing and watches its arrow go
+            somewhere else — the table moved it because the aim it was given was refused, and a
+            reason that is not on screen reads as a bug.
+          */}
+          {(mode.aims ?? []).map((entry) => {
+            const barred = view.seats
+              .filter((s) => s.index !== view.seat && !s.eliminated)
+              .filter((s) => !entry.defenders.includes(s.index))
+            if (barred.length === 0) return null
+            return (
+              <span
+                key={`aim-${entry.card}`}
+                data-testid={`attack-goaded-${entry.card}`}
+                className="text-[var(--g-text-muted)]"
+              >
+                {view.cards[entry.card]?.card?.name ?? "a creature"}
+                {" was goaded — it cannot attack "}
+                {barred.map((s) => s.name).join(" or ")}
+              </span>
+            )
+          })}
+          {/*
             Who you are attacking, when there is more than one answer. With two players there is
             nothing to choose and the row would be a button that does nothing; in a pod it is the
             whole decision, and without it every attack went at the lowest-numbered opponent.

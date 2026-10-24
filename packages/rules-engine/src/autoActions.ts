@@ -13,8 +13,9 @@ import { zoneKey } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
 import { characteristicsOf, hasType } from './characteristics.js';
 import {
-  advanceStep, aliveSeats, atSorcerySpeed, bottomOwed, canAttack, canBlock, checkTargets,
-  endTurnCleanup, forcedAttackers, legalAttackers, legalBlockers, menaceSatisfied, payFrom,
+  advanceStep, aliveSeats, atSorcerySpeed, attackAimIssue, bottomOwed, canAttack, canBlock,
+  checkTargets, endTurnCleanup, forcedAttackers, legalAttackers, legalBlockers, menaceSatisfied,
+  payFrom,
   pendingDeclaration,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop, stateBasedActions,
@@ -468,6 +469,10 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     if (issue !== null) throw new EngineError('RULE_NOT_APPLICABLE', issue.reason);
     assertSeatIndex(state, entry.defender, 'defender');
     if (entry.defender === action.by) throw new EngineError('RULE_NOT_APPLICABLE', 'you cannot attack yourself');
+    // Goad: the creature has to attack, and it has to attack somebody else (CR 701.38a). Checked
+    // per attack rather than with the requirement below, because this one is about the aim.
+    const aim = attackAimIssue(state, entry.attacker, action.by, entry.defender);
+    if (aim !== null) throw new EngineError('RULE_NOT_APPLICABLE', aim.reason);
     // A planeswalker is attacked instead of its controller (CR 506.2), so the seat still says
     // who declares blockers and the planeswalker says where the damage goes. It has to be a
     // planeswalker, and it has to be *theirs* — attacking your own is not a thing, and nor is

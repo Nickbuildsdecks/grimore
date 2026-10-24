@@ -404,6 +404,19 @@ export interface CardScript {
    */
   readonly expiresAtEndOfTurn?: boolean;
   /**
+   * "This spell's whole effect is to goad other people's creatures" — Disrupt Decorum.
+   *
+   * The fifth of the family and the only one that is about the *table* rather than the board: goad
+   * makes a creature attack somebody other than you, so with one opponent there is nobody else and
+   * the card does the opposite of what it is for. Paying four mana to be attacked is not a line a
+   * search can find its way out of either, because `simulate` stops at the end of this combat and
+   * the attack goad forces comes on somebody else's turn — the same horizon that hid the pumps.
+   *
+   * Declared rather than inferred for the usual reason: "it goads" is a fact about the card, while
+   * "there is more than one opponent" is a fact about the board, and the bot asks the board.
+   */
+  readonly goadsOpponents?: boolean;
+  /**
    * What this Equipment gives the creature it is attached to.
    *
    * Declared rather than left inside the equip ability's own effect, because other cards read it:

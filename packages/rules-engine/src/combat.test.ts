@@ -353,6 +353,86 @@ describe('evasion', () => {
     expect(s.combat.attacks[0]!.blockers).toEqual([knight]);
   });
 
+  /*
+    Goad (CR 701.38): a requirement *and* a restriction on the same creature, which no other card
+    in the pool is.
+
+    The requirement half is the Juggernaut's — it attacks each combat if able — and lives in the
+    declaration. The restriction half is new: it may not be aimed at the player who goaded it,
+    *while there is somebody else to aim it at*. That "while" is the whole rule, and the two cases
+    where it lifts are the two tests below it.
+  */
+  it('makes a goaded creature attack, and attack somebody other than the goader', () => {
+    let s = toAttackers(arena({
+      format: 'pod', seats: 4,
+      decks: { 1: 'verdant-guard' },
+      battlefield: { 1: ['Grizzly Bears'] },
+      turn: 3, firstSeat: 1,
+    }));
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = { ...s, effects: [goadedBy(bear, 0)] };
+    // It has to attack: leaving it at home is the Juggernaut's refusal.
+    expect(refusal(s, { type: 'auto:attack', by: 1, attackers: [] })).toContain('each combat');
+    // And it may not be sent at seat 0, who goaded it, while seats 2 and 3 are there to attack.
+    expect(refusal(s, {
+      type: 'auto:attack', by: 1, attackers: [{ attacker: bear, defender: 0 }],
+    })).toContain('goaded');
+    // The table is told the same thing rather than left to find out by pressing confirm.
+    expect(legalActions(s, 1).attackAims).toEqual([{ card: bear, defenders: [2, 3] }]);
+    // Any other player is fine, and which one is still the attacking player's choice.
+    s = attack(s, 1, [bear], 3);
+    expect(s.combat.attacks[0]!.defender).toBe(3);
+  });
+
+  it('lets a goaded creature attack the goader when there is nobody else left', () => {
+    // "If able" (CR 701.38a). With one opponent the requirement cannot be met by anybody, so it
+    // stops binding — and a duel is this case from the first turn, which is why goad is a pod card.
+    let s = toAttackers(arena({
+      decks: { 1: 'verdant-guard' },
+      battlefield: { 1: ['Grizzly Bears'] },
+      turn: 3, firstSeat: 1,
+    }));
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = { ...s, effects: [goadedBy(bear, 0)] };
+    expect(legalActions(s, 1).attackAims).toEqual([]);
+    s = attack(s, 1, [bear], 0);
+    expect(s.combat.attacks[0]!.defender).toBe(0);
+  });
+
+  it('lets a creature every opponent has goaded attack any of them', () => {
+    // Two requirements that contradict each other are both unmeetable, so neither binds: the
+    // creature attacks one of its goaders and the declaration is legal. Worked out by asking
+    // whether a non-goader is left rather than by counting goaders, which is the same question.
+    let s = toAttackers(arena({
+      format: 'pod', seats: 3,
+      decks: { 1: 'verdant-guard' },
+      battlefield: { 1: ['Grizzly Bears'] },
+      turn: 3, firstSeat: 1,
+    }));
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = { ...s, effects: [goadedBy(bear, 0), goadedBy(bear, 2)] };
+    expect(legalActions(s, 1).attackAims).toEqual([]);
+    expect(refusal(s, {
+      type: 'auto:attack', by: 1, attackers: [{ attacker: bear, defender: 0 }],
+    })).toBeNull();
+  });
+
+  it('does not require a goaded Wall to attack, because it cannot', () => {
+    // A restriction beats a requirement: `defender` means the creature cannot attack at all, so
+    // "attacks each combat if able" asks nothing of it. The same line covers a goaded Pacifism.
+    let s = toAttackers(arena({
+      format: 'pod', seats: 4,
+      decks: { 1: 'skyward-writ' },
+      // The knight is there so the step happens at all: a board whose only creature cannot attack
+      // skips declare-attackers outright, which is a different (and also correct) answer.
+      battlefield: { 1: ['Wall of Air', 'Leonin Skyhunter'] },
+      turn: 3, firstSeat: 1,
+    }));
+    const wall = find(s, 1, 'battlefield', 'Wall of Air');
+    s = { ...s, effects: [goadedBy(wall, 0)] };
+    expect(refusal(s, { type: 'auto:attack', by: 1, attackers: [] })).toBeNull();
+  });
+
   it('lets creatures gang up on one attacker, and assigns damage down the line', () => {
     let s = toAttackers(arena({
       decks: { 0: 'rot-harvest', 1: 'verdant-guard' },
@@ -649,6 +729,13 @@ const juggernautStatics = (id: string) => ({
   scope: { kind: 'cards' as const, ids: [id] },
   mustAttack: true, cantBeBlockedByWalls: true,
   duration: 'permanent' as const, createdTurn: 0,
+});
+/** Goad, as the card leaves it: both halves, keyed to the goading seat's next turn. */
+const goadedBy = (id: string, by: SeatIndex) => ({
+  id: `fx-goad-${by}`, source: 'spell-goad', controller: by,
+  scope: { kind: 'cards' as const, ids: [id] },
+  mustAttack: true, mustAttackAnotherPlayer: true,
+  duration: 'until-controllers-next-turn' as const, createdTurn: 0,
 });
 const pump = (id: string, power: number, toughness: number) => ({
   id: 'fx-pump', source: id, controller: 0 as SeatIndex,

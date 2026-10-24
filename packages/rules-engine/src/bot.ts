@@ -18,7 +18,9 @@ import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { bottomOwed, modesOf, pendingDeclaration, stillDeciding } from './automation.js';
 import { characteristicsOf, hasType, parseTypeLine, type Keyword } from './characteristics.js';
-import { canAttack, canBlock, forcedAttackers, legalAttackers } from './combat.js';
+import {
+  attackAimIssue, canAttack, canBlock, forcedAttackers, legalAttackers, legalDefenders,
+} from './combat.js';
 import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
 import { costValue, parseManaCost } from './mana.js';
@@ -833,7 +835,10 @@ function throughCombat(state: GameState): GameState {
       // simulated turn with a Juggernaut on the board is refused and the playout stops short of
       // the combat it was looking at. See `attackPlans`.
       const action: Action = owed.kind === 'attackers'
-        ? { type: 'auto:attack', by: seat, attackers: withForced(next, seat, chooseAttackers(next, seat)) }
+        ? {
+            type: 'auto:attack', by: seat,
+            attackers: legalDeclaration(next, seat, chooseAttackers(next, seat)),
+          }
         : { type: 'auto:block', by: seat, blocks: chooseBlocks(next, seat) };
       try {
         next = applyAction(next, action, HOST);
@@ -931,20 +936,51 @@ function attackPlans(state: GameState, seat: SeatIndex): AttackPlan[] {
     "attack with nothing", which is the plan a player picks when the swing back would kill them —
     so the forced creatures are folded into each plan instead, aimed at whoever is weakest.
   */
-  return plans.map((plan) => withForced(state, seat, plan));
+  return plans.map((plan) => legalDeclaration(state, seat, plan));
 }
 
-/** A declaration with everything that had to attack in it, aimed at whoever is weakest. */
-function withForced(state: GameState, seat: SeatIndex, plan: AttackPlan): AttackPlan {
-  const foes = foesOf(state, seat)
+/**
+ * A plan the engine will accept: everything that had to attack is in it, and nothing is pointed
+ * somewhere it may not go.
+ *
+ * Both halves are here because both are ways a *plan* can be illegal while every creature in it is
+ * fine, which is the one class of mistake a search over plans makes by accident. Leaving a forced
+ * attacker at home is the first (CR 508.1d); aiming a goaded creature back at the player who
+ * goaded it is the second (CR 701.38a), and the plans above can do it without trying — three of
+ * the four send everything at whoever has the least life, and goad exists to stop exactly that.
+ *
+ * Every aim picks the weakest *legal* defender for that creature rather than the weakest outright,
+ * which is the same heuristic the plans use, asked per creature instead of once.
+ */
+function legalDeclaration(state: GameState, seat: SeatIndex, plan: AttackPlan): AttackPlan {
+  const byLife = foesOf(state, seat)
     .map((index) => ({ index, life: state.seats[index]?.life ?? 0 }))
-    .sort((a, b) => a.life - b.life);
-  const nearest = foes[0];
-  if (nearest === undefined) return plan;
-  const already = new Set(plan.map((entry) => entry.attacker));
-  const missing = forcedAttackers(state, seat).filter((id) => !already.has(id));
-  if (missing.length === 0) return plan;
-  return [...plan, ...missing.map((attacker) => ({ attacker, defender: nearest.index }))];
+    .sort((a, b) => a.life - b.life)
+    .map((foe) => foe.index);
+  const weakestLegal = (attacker: string): SeatIndex | null => {
+    const allowed = new Set(legalDefenders(state, attacker, seat));
+    return byLife.find((index) => allowed.has(index)) ?? null;
+  };
+
+  const fixed: AttackPlan = [];
+  for (const entry of plan) {
+    if (attackAimIssue(state, entry.attacker, seat, entry.defender) === null) {
+      fixed.push(entry);
+      continue;
+    }
+    // Re-pointed rather than dropped: it may well be a creature that has to attack, and the
+    // planeswalker goes with the player it belonged to.
+    const moved = weakestLegal(entry.attacker);
+    if (moved !== null) fixed.push({ attacker: entry.attacker, defender: moved });
+  }
+
+  const already = new Set(fixed.map((entry) => entry.attacker));
+  for (const attacker of forcedAttackers(state, seat)) {
+    if (already.has(attacker)) continue;
+    const defender = weakestLegal(attacker);
+    if (defender !== null) fixed.push({ attacker, defender });
+  }
+  return fixed;
 }
 
 /**
@@ -1209,6 +1245,24 @@ function expiringPumpCanMatter(state: GameState, seat: SeatIndex, action: Action
   return legalAttackers(state, seat).some((id) => canAttack(state, id, seat) === null);
 }
 
+/**
+ * Whether this action casts a spell whose whole effect is goading other people's creatures.
+ *
+ * The fifth of the "spent on nothing" family, and the only one whose answer is about the number of
+ * seats. Goad sends a creature at somebody *other than you*; with one opponent there is nobody
+ * else, so the whole card becomes "their creatures now have to attack me".
+ */
+function castsAGoad(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return name !== undefined && scriptFor(name)?.goadsOpponents === true;
+}
+
+/** Whether goading could send anything anywhere but back at this seat. */
+function goadHasSomewhereToSend(state: GameState, seat: SeatIndex): boolean {
+  return state.seats.filter((s) => s.index !== seat && !s.eliminated).length > 1;
+}
+
 /** Whether this action casts a spell whose whole effect is mana. */
 function castsARitual(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -1419,6 +1473,18 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     */
     if (castsAnExpiringPump(state, option.action)
       && !expiringPumpCanMatter(state, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And a goad with nowhere to send anything.
+
+      The fifth, and the only one that is a fact about the table rather than the board: goad is
+      "attacks somebody other than me", so in a duel it is four mana to make their creatures
+      attack me. The search cannot see that either — `simulate` ends with this combat, and the
+      attack goad forces comes round on their turn.
+    */
+    if (castsAGoad(state, option.action) && !goadHasSomewhereToSend(state, seat)) {
       dropped += 1;
       continue;
     }

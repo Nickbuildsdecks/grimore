@@ -1276,6 +1276,26 @@ const JUGGERNAUT: CardDef = {
   colors: [],
 };
 
+/*
+  Goad, which is the one mechanic in Magic that only exists because there are more than two players.
+
+  "Attacks each combat if able, and attacks somebody other than me" is a coherent card in a pod and
+  nearly a blank in a duel — with one opponent there is nobody else for the creature to attack, so
+  goading is paying three mana to be attacked. That makes it the first card here whose worth depends
+  on the number of seats, which the bot has to be told rather than shown (see `goadsOpponents`).
+
+  All creatures you don't control rather than one, because the sweeping version is the one that
+  reads as politics: every other player's board turns on each other for a turn.
+*/
+const DISRUPT_DECORUM: CardDef = {
+  name: 'Disrupt Decorum',
+  typeLine: 'Sorcery',
+  manaCost: '{3}{R}',
+  cmc: 4,
+  oracleText: "Goad all creatures you don't control.",
+  colors: ['R'],
+};
+
 const NATURALIZE: CardDef = {
   name: 'Naturalize',
   typeLine: 'Instant',
@@ -1810,7 +1830,12 @@ export const FORGE_ALLIANCE: DeckSpec = {
     { card: RAISE_THE_ALARM, count: 2 },
     { card: SECURE_THE_WASTES, count: 1 },
     { card: ANGELIC_GIFT, count: 1 },
-    { card: INSPIRED_CHARGE, count: 2 },
+    // One Charge rather than two, and the slot went to the Decorum. The pump rule (D86) measured
+    // this deck's Inspired Charges down to two casts across 160 games — a card that is only right
+    // on a wide board in a precombat main — while goad is a card this deck has no other version
+    // of: every answer in here kills something, and this one turns a pod's boards on each other.
+    { card: INSPIRED_CHARGE, count: 1 },
+    { card: DISRUPT_DECORUM, count: 1 },
     { card: LIGHTNING_BOLT, count: 2 },
     { card: MAGMA_JET, count: 1 },
     { card: FIREBALL, count: 1 },

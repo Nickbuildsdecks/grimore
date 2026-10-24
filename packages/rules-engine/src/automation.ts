@@ -27,12 +27,12 @@ import {
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance, withZones } from './cardActions.js';
 import {
-  canAttack, canBlock, dealCombatDamage, forcedAttackers, legalAttackers, legalBlockers,
-  menaceSatisfied, needsFirstStrikeStep, tapAttackers,
+  attackAimIssue, canAttack, canBlock, dealCombatDamage, forcedAttackers, legalAttackers,
+  legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  REGENERATION, addCounters, destroy, draw, loseLife, poolOf, removeEffectsFrom, setPool,
-  spendRegeneration, untapAll, type EffectContext, type EffectFn,
+  REGENERATION, addCounters, destroy, draw, loseLife, modsFrom, poolOf, removeEffectsFrom,
+  setPool, spendRegeneration, untapAll, type EffectContext, type EffectFn,
 } from './effects.js';
 import { manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -240,6 +240,12 @@ function onEnterStep(state: GameState, step: Step): GameState {
     case 'untap':
       next = untapAll(next, next.activeSeat);
       next = { ...next, landsPlayed: { ...next.landsPlayed, [String(next.activeSeat)]: 0 } };
+      // "Until your next turn" ends here, before anybody can read the board it was changing —
+      // which is the whole reason that duration exists. See `EffectDuration`.
+      next = {
+        ...next,
+        effects: expireEffects(next, 'until-controllers-next-turn', next.activeSeat),
+      };
       return next;
 
     case 'upkeep':
@@ -270,7 +276,10 @@ function onEnterStep(state: GameState, step: Step): GameState {
       return dealCombatDamage(next, false);
 
     case 'end-combat':
-      return { ...next, combat: EMPTY_COMBAT };
+      // "Until end of combat" is a duration the engine declared and nothing expired, which meant
+      // an effect using it would have lasted the rest of the game. The step the name points at is
+      // the only place it could ever have been dropped.
+      return { ...next, combat: EMPTY_COMBAT, effects: expireEffects(next, 'end-of-combat') };
 
     case 'end':
       return raise(next, { kind: 'step', step: 'end' }, next.activeSeat);
@@ -1187,11 +1196,7 @@ function addAuraEffect(
     id: `fx${seq}`, source: auraId, controller,
     scope: { kind: 'cards', ids: [hostId] },
     duration: 'permanent', createdTurn: state.turn,
-    ...(script.aura.effect.power === undefined ? {} : { power: script.aura.effect.power }),
-    ...(script.aura.effect.toughness === undefined ? {} : { toughness: script.aura.effect.toughness }),
-    ...(script.aura.effect.keywords ? { keywords: script.aura.effect.keywords } : {}),
-    ...(script.aura.effect.cantAttack ? { cantAttack: true } : {}),
-    ...(script.aura.effect.cantBlock ? { cantBlock: true } : {}),
+    ...modsFrom(script.aura.effect),
   };
   return { ...state, autoSeq: seq, effects: [...state.effects, effect] };
 }
@@ -1212,16 +1217,11 @@ function applyStatics(
       autoSeq: seq,
       effects: [...next.effects, {
         id: `fx${seq}`, source: id, controller, scope, duration: 'permanent', createdTurn: next.turn,
-        ...(entry.effect.power === undefined ? {} : { power: entry.effect.power }),
-        ...(entry.effect.toughness === undefined ? {} : { toughness: entry.effect.toughness }),
-        ...(entry.effect.keywords ? { keywords: entry.effect.keywords } : {}),
-        ...(entry.effect.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
-        ...(entry.effect.mustAttack ? { mustAttack: true } : {}),
-        ...(entry.effect.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
+        ...modsFrom(entry.effect),
       }],
     };
   }
   return next;
 }
 
-export { legalTargets, hasAnyLegalTargets, checkTargets, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, canAttack, canBlock, forcedAttackers, legalAttackers, legalBlockers, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, STEP_LABELS };
+export { legalTargets, hasAnyLegalTargets, checkTargets, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, attackAimIssue, canAttack, canBlock, forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, STEP_LABELS };

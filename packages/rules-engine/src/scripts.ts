@@ -23,7 +23,8 @@ import { listAt } from './cardActions.js';
 import {
   addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
-  gainControl, gainLife, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump, pumpTeam,
+  gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
+  pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage,
   type EffectContext, type PumpOptions,
@@ -2293,6 +2294,28 @@ const FOG_BANK: CardScript = {
   statics: [{ scope: 'self', effect: { preventsCombatDamage: true } }],
 };
 
+/**
+ * Goad all creatures you don't control (CR 701.38).
+ *
+ * The only card in the pool whose worth depends on how many people are playing, and the first one
+ * to need a duration anchored to a seat: goad lasts *until your next turn*, so it has to outlive
+ * the turn it was cast in and every turn in between. See `EffectDuration`.
+ *
+ * `goadsOpponents` is what stops the bot casting it in a duel, where the second half of the card
+ * can never be satisfied and goading is paying four mana to be attacked.
+ */
+const DISRUPT_DECORUM: CardScript = {
+  name: 'Disrupt Decorum',
+  goadsOpponents: true,
+  onResolve: (c) => {
+    // Resolved against the board as it is now, which is what "all creatures you don't control"
+    // means: a creature that arrives afterwards was not there to be goaded.
+    const theirs = opponentsOf(c.state, c.controller)
+      .flatMap((seat) => creaturesControlledBy(c.state, seat));
+    return goad(c.state, theirs, c.source, c.controller);
+  },
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 const ALL: readonly CardScript[] = [
@@ -2335,7 +2358,7 @@ const ALL: readonly CardScript[] = [
   cyclingLand('Tranquil Thicket', 'G'),
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
-  NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT,
+  NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT, DISRUPT_DECORUM,
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,

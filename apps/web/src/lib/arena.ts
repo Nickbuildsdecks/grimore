@@ -61,6 +61,14 @@ export type ArenaMode =
        * refuses. Absent, rather than empty, in the ordinary combat where nothing is forced.
        */
       forced?: readonly string[]
+      /**
+       * Per creature, the players it may legally be sent at — goad, as the engine worked it out.
+       *
+       * Only the creatures that are restricted appear, so an absent card means "anybody". The
+       * reducer never decides this for itself: it is `legalActions`'s answer, carried in so that
+       * re-aiming can move a creature somewhere legal instead of somewhere refused.
+       */
+      aims?: readonly AttackAims[]
     }
   | { kind: "blockers"; chosen: Block[]; holding: string | null }
 
@@ -68,6 +76,9 @@ export interface Block {
   blocker: string
   attacker: string
 }
+
+/** One creature's legal defenders, as `legalActions.attackAims` reports them. */
+export type AttackAims = LegalActions["attackAims"][number]
 
 export interface Attack {
   attacker: string
@@ -93,7 +104,12 @@ export type ArenaEvent =
   | { kind: "setX"; amount: number }
   | { kind: "undoTarget" }
   | { kind: "confirm" }
-  | { kind: "declareAttackers"; defender: SeatIndex; forced?: readonly string[] }
+  | {
+      kind: "declareAttackers"
+      defender: SeatIndex
+      forced?: readonly string[]
+      aims?: readonly AttackAims[]
+    }
   | { kind: "toggleAttacker"; card: string }
   /** Points the creatures tapped from now on at a different player, or at a planeswalker. */
   | { kind: "aimAttacks"; seat: SeatIndex; planeswalker?: string }
@@ -110,6 +126,21 @@ export interface ArenaResult {
 }
 
 export const IDLE: ArenaMode = { kind: "idle" }
+
+/**
+ * Where a creature may actually be sent, given where the player is aiming.
+ *
+ * `want` unless the engine said that seat is not allowed for this creature, in which case the
+ * first seat it did allow. Nothing here works out *why* — goad is the only reason today, and the
+ * client deciding for itself which aims are legal would be a second, worse copy of the rules.
+ */
+export function allowedAim(
+  aims: readonly AttackAims[] | undefined, card: string, want: SeatIndex,
+): SeatIndex {
+  const entry = aims?.find((a) => a.card === card)
+  if (entry === undefined || entry.defenders.includes(want)) return want
+  return entry.defenders[0] ?? want
+}
 
 /** Total targets a play wants, counting a `count: 2` spec twice. */
 export function targetsWanted(play: LegalPlay): number {
@@ -323,12 +354,20 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       // Leaving the player to find it is leaving them to hit confirm on a declaration the engine
       // throws out, with no way to tell which creature was the problem.
       const forced = event.forced ?? []
+      const aims = event.aims ?? []
       return {
         mode: {
           kind: "attackers",
-          chosen: forced.map((attacker) => ({ attacker, defender: event.defender })),
+          // Aimed where it is allowed to go rather than where the rest of the swing is pointing: a
+          // goaded creature pre-selected at the player who goaded it is the illegal declaration
+          // this is here to prevent, built by the table itself.
+          chosen: forced.map((attacker) => ({
+            attacker,
+            defender: allowedAim(aims, attacker, event.defender),
+          })),
           defender: event.defender,
           ...(forced.length > 0 ? { forced } : {}),
+          ...(aims.length > 0 ? { aims } : {}),
         },
         action: null,
       }
@@ -337,9 +376,14 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
     case "toggleAttacker": {
       if (mode.kind !== "attackers") return { mode, action: null }
       const already = mode.chosen.find((a) => a.attacker === event.card)
-      const aim = { defender: mode.defender, ...(mode.planeswalker === undefined ? {} : { planeswalker: mode.planeswalker }) }
+      // Where this creature would go, which is where the player is aiming unless it may not be
+      // aimed there. A planeswalker belongs to the seat it was chosen on, so moving the seat
+      // drops it rather than sending the attack at a permanent of somebody else's.
+      const defender = allowedAim(mode.aims, event.card, mode.defender)
+      const walker = defender === mode.defender ? mode.planeswalker : undefined
+      const aim = { defender, ...(walker === undefined ? {} : { planeswalker: walker }) }
       const sameAim = already !== undefined
-        && already.defender === mode.defender && already.planeswalker === mode.planeswalker
+        && already.defender === defender && already.planeswalker === walker
       // Which player it is sent at is still the attacking player's choice; whether it attacks at
       // all is not. So a second tap on a forced attacker does nothing rather than dropping it.
       if (sameAim && (mode.forced ?? []).includes(event.card)) return { mode, action: null }
@@ -373,13 +417,22 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
     */
     case "aimAll": {
       if (mode.kind !== "attackers") return { mode, action: null }
-      const aim = { defender: event.seat, ...(event.planeswalker === undefined ? {} : { planeswalker: event.planeswalker }) }
       return {
         mode: {
           ...mode,
           defender: event.seat,
           planeswalker: event.planeswalker,
-          chosen: mode.chosen.map((a) => ({ attacker: a.attacker, ...aim })),
+          // "All at them" moves everything it can. A goaded creature that may not go there stays
+          // where it is rather than making the whole press refuse.
+          chosen: mode.chosen.map((a) => {
+            const defender = allowedAim(mode.aims, a.attacker, event.seat)
+            if (defender !== event.seat) return a
+            return {
+              attacker: a.attacker,
+              defender,
+              ...(event.planeswalker === undefined ? {} : { planeswalker: event.planeswalker }),
+            }
+          }),
         },
         action: null,
       }
@@ -696,6 +749,7 @@ export function primaryMove(view: GameView): { label: string; event: ArenaEvent 
         kind: "declareAttackers",
         defender: firstOpponent(view),
         ...(you.mustAttack.length > 0 ? { forced: you.mustAttack } : {}),
+        ...(you.attackAims.length > 0 ? { aims: you.attackAims } : {}),
       },
       action: null,
     }

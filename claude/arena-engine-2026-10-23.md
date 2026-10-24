@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 150 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 151 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -228,9 +228,9 @@ bug rather than a board.
   evaluator, and neither was worth writing before the rules underneath them were trustworthy.
 - **Multiplayer combat nuance.** Pods work — declarations are per defender, a seat can only block
   what attacks it, and an attack can be aimed at a planeswalker — but there is no "each opponent"
-  combat maths beyond what the scripts do. Forced attacks are in — "attacks each combat if able",
-  enforced and pre-selected at the table — but **goad is not, and is blocked rather than skipped**:
-  it lasts until your next turn, and `EffectDuration` has no duration keyed to a seat's turn.
+  combat maths beyond what the scripts do. Forced attacks and goad are both in now — "attacks each
+  combat if able" and "attacks a player other than you if able", enforced, pre-selected at the
+  table, and kept out of the bot's hands in a duel where goad does the opposite of what it is for.
 - **Anything touching production.** No VM, no DNS, no deploy. Everything here runs on localhost and
   on the branch.
 
@@ -1778,6 +1778,67 @@ reached, which is more than D57's warning could say about several rules before i
 `end-of-combat` or `permanent`, and goad lasts *until your next turn*. End-of-turn would make a goad
 expire before the combat it is meant to force, so it needs a fourth duration keyed to a seat's turn
 rather than to a card — a change to how effects expire, not a card to script.
+
+### A duration that names a seat
+
+D89 wrote goad up as blocked: it lasts *until your next turn*, and the engine's durations were
+`end-of-turn`, `end-of-combat` and `permanent`. That gap is closed with one variant,
+`until-controllers-next-turn`, expired in the untap step of the turn it names — the first thing a
+turn does, so the effect is gone before anybody can read a board it was still changing.
+
+It is the first duration here keyed to a *player* rather than to a moment, which is the whole
+difficulty: an effect made on somebody else's turn has to outlive that turn and the ones after it,
+so the expiry pass had to learn to ask whose turn has begun. Writing it also turned up
+**`end-of-combat`, a duration that was declared and that nothing ever expired** — the first card to
+use it would have had an effect lasting the rest of the game.
+
+**Goad is two rules on one creature, and the second is new in kind.** "Attacks each combat if able"
+is D89's requirement, checked against the declaration. "Attacks a player other than you if able"
+(CR 701.38a) is checked against one attack's *aim*, which nothing had asked before — every rule
+until now was about whether a creature may attack at all. "If able" is where the care goes: the
+requirement lifts when the goader is the last opponent, and lifts again when every remaining
+opponent has goaded the creature, since then no choice satisfies anybody. One question answers
+both — is a non-goader left.
+
+Which made three other things learn about aims, or they would have offered moves the engine
+refuses: the bot's declaration builder (three of its four plans send everything at whoever has the
+least life, exactly what goad forbids), `legalActions` (which now carries the defenders each
+restricted creature may be sent at), and the table — where a goaded creature is pre-selected
+somewhere legal, "all at them" moves everything except it, and the bar names the card and the
+player it may not be sent at. A tap that silently moves an arrow reads as a bug unless the reason
+is on screen.
+
+**Measured over 160 four-seat pods and 160 duels:**
+
+| | pods | duels |
+| --- | --- | --- |
+| Disrupt Decorums cast | 5 | **0** |
+| creatures goaded | 9 | 0 |
+| declare-steps with a goaded creature in the declaration | 8 | 0 |
+| …aimed away from the goader | **8** | 0 |
+| actions the engine refused | 0 | 0 |
+
+The duel column is the fifth "spent on nothing" rule working, and its negative control is the
+clearest of the five: **with the rule removed the bot cast it 10 times in those same 160 duels and
+7 of the goaded creatures attacked the goader** — four mana to be attacked. Five casts in 160 pods
+is thin, and is said rather than dressed up: one copy, one of four decks, four mana and a board
+needed. The rule is unit-tested five ways for that reason.
+
+**Five hand-copied lists, found on the way.** A card's options become a continuous effect in five
+places, and each copied the subset it knew about: `pump` had no `mustAttack`, `staticEffect` had
+neither that nor `preventsCombatDamage` (and an Equipment's bonus goes through it), the aura builder
+had four of ten, and the statics builder had no `cantAttack` — so a card whose printed static was
+"this creature can't attack" would have done nothing. No card in the pool was wrong; the next one
+would have been. One translator now, with a test that every option in is every flag out.
+
+**And the realtime flake, named and measured.** "Plays a whole game on its own against the server"
+failed once weeks ago, never reproduced, and failed again here — this time the instrument added
+earlier said why: *stopped after 400 moves on turn 48*. Each pod seeds its shuffle from an id
+carrying a timestamp, so every run is a different game, and that test's client casts nothing: the
+game is the bot grinding a do-nothing opponent from twenty to zero. Over 200 random shuffles with
+the same decks and the same loop: **median 137 moves, p99 307, longest 488, and one game in two
+hundred over 400.** The cap was 400. Nothing was flaky but the shuffle; it is 1200 now, with the
+measurement beside it.
 
 ## Next
 

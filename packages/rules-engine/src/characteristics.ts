@@ -93,7 +93,22 @@ export function printedColors(def: CardDef | undefined): Color[] {
   return (['W', 'U', 'B', 'R', 'G'] as Color[]).filter((c) => declared.includes(c));
 }
 
-export type EffectDuration = 'end-of-turn' | 'end-of-combat' | 'permanent';
+export type EffectDuration =
+  | 'end-of-turn'
+  | 'end-of-combat'
+  /**
+   * "Until your next turn", where *you* is the effect's own `controller`.
+   *
+   * The first duration here anchored to a seat rather than to a point in the current turn, and goad
+   * is why: a goad cast on somebody else's turn has to survive the end of that turn and every turn
+   * in between, then end when the goading player's own turn begins. `end-of-turn` would expire it
+   * before the combat it exists to force, which is worse than not having the card.
+   *
+   * Expired in the untap step, which is the first thing a turn does — so the effect is gone before
+   * anybody could read it, rather than lingering through the turn that ends it.
+   */
+  | 'until-controllers-next-turn'
+  | 'permanent';
 
 /**
  * A continuous effect currently modifying the battlefield.
@@ -140,6 +155,21 @@ export interface ContinuousEffect {
    */
   readonly cantBeBlockedByWalls?: boolean;
   /**
+   * "Attacks a player other than you if able" (CR 701.38a) — goad's second half, where *you* is
+   * this effect's `controller`.
+   *
+   * The Comprehensive Rules call this a requirement, like `mustAttack`, but it is enforced as a
+   * conditional restriction: the creature may not be aimed at the goading player *while there is
+   * another player it could attack instead*. Those are the same rule from two directions, and the
+   * restriction is the half a declaration can actually be checked against — and the half a table
+   * can keep a player from building.
+   *
+   * Two goaders cancel out rather than stacking into an impossible demand: if every player the
+   * creature could attack has goaded it, no requirement can be met and all of them are legal,
+   * which is what "if able" means and what `attackAimIssue` works out.
+   */
+  readonly mustAttackAnotherPlayer?: boolean;
+  /**
    * Combat damage involving the permanents in scope does not happen — dealt **by** them and dealt
    * **to** them. A Fog is this with an all-creatures scope; a Maze of Ith is it scoped to one card.
    *
@@ -181,6 +211,15 @@ export interface Characteristics {
   readonly mustAttack: boolean;
   /** "Can't be blocked by Walls", read from the attacker when a block is offered. */
   readonly cantBeBlockedByWalls: boolean;
+  /**
+   * The seats that have goaded this creature: the controllers of every `mustAttackAnotherPlayer`
+   * effect applying to it.
+   *
+   * A list rather than a flag because the rule is about *who* — "a player other than you" is a
+   * different demand from each goader, and the answer to "may this attack seat 2" depends on which
+   * of them did it. `attackAimIssue` is the only thing that should read it.
+   */
+  readonly goadedBy: readonly SeatIndex[];
 }
 
 const numeric = (value: string | undefined): number => {
@@ -224,6 +263,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let cantBlock = false;
   let mustAttack = false;
   let cantBeBlockedByWalls = false;
+  const goadedBy = new Set<SeatIndex>();
 
   for (const effect of state.effects ?? []) {
     if (!effectApplies(effect, instance, creature)) continue;
@@ -235,6 +275,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.cantBlock) cantBlock = true;
     if (effect.mustAttack) mustAttack = true;
     if (effect.cantBeBlockedByWalls) cantBeBlockedByWalls = true;
+    if (effect.mustAttackAnotherPlayer) goadedBy.add(effect.controller);
   }
 
   const plus = instance.counters['+1/+1'] ?? 0;
@@ -259,6 +300,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     // (CR 509.1a is the blocking half of the same idea, and 508.1d says "if able").
     mustAttack: mustAttack && !cantAttack,
     cantBeBlockedByWalls,
+    goadedBy: [...goadedBy],
   };
 }
 
@@ -282,9 +324,25 @@ export function hasKeyword(state: GameState, instance: CardInstance, keyword: Ke
   return characteristicsOf(state, instance).keywords.has(keyword);
 }
 
-/** Drops effects whose duration has run out, and those whose source has left the battlefield. */
-export function expireEffects(state: GameState, when: EffectDuration): ContinuousEffect[] {
+/**
+ * Drops effects whose duration has run out, and those whose source has left the battlefield.
+ *
+ * `seat` is only read for `until-controllers-next-turn`, where the duration names a seat rather
+ * than a moment: that effect ends on its own controller's turn and nobody else's, so the untap
+ * step passes the seat whose turn has just begun. Leaving it out can never expire one, which is
+ * what the end-of-turn and end-of-combat passes want.
+ */
+export function expireEffects(
+  state: GameState, when: EffectDuration, seat?: SeatIndex,
+): ContinuousEffect[] {
   return (state.effects ?? []).filter((effect) => {
+    if (effect.duration === 'until-controllers-next-turn') {
+      // Not on the turn it was made in: a goad cast in a player's own turn lasts until their
+      // *next* one, and the untap it was created after has already gone by.
+      const ends = when === 'until-controllers-next-turn'
+        && effect.controller === seat && effect.createdTurn < state.turn;
+      return !ends;
+    }
     if (effect.duration === when) return false;
     // A static effect only exists while its source is on the battlefield.
     if (effect.duration === 'permanent') {
