@@ -182,6 +182,25 @@ export interface ManaPick {
   readonly types: readonly ManaType[];
 }
 
+/**
+ * How much of a cost is still unpaid once every colour requirement is met from the pool.
+ *
+ * Only used to decide how big a source to tap for the generic part, so it counts what is left
+ * over rather than trying to be a second payment: the coloured symbols are taken out of the pool
+ * first, exactly as `payCost` takes them, and whatever the remainder cannot cover is the number.
+ */
+function remainingGeneric(pool: ManaPool, cost: ManaCost, xAmount: number): number {
+  const remaining: Record<ManaType, number> = { ...pool };
+  for (const type of MANA_TYPES) {
+    const needed = cost.colors[type];
+    if (needed === 0) continue;
+    remaining[type] = Math.max(0, (remaining[type] ?? 0) - needed);
+  }
+  const generic = cost.generic + (cost.x ? Math.max(0, xAmount) : 0);
+  const spare = MANA_TYPES.reduce((n, t) => n + (remaining[t] ?? 0), 0);
+  return Math.max(0, generic - spare);
+}
+
 /** Colours a cost needs more of than the pool holds. */
 export function shortColors(pool: ManaPool, cost: ManaCost): ManaType[] {
   return MANA_TYPES.filter((t) => cost.colors[t] > (pool[t] ?? 0));
@@ -238,8 +257,32 @@ export function solveTap(
       // untapped. Stopping here rather than tapping on is what keeps lands from being wasted.
       if (index < 0) return null;
     } else {
-      // Only the generic part is left, which anything can pay.
-      index = left.length > 0 ? 0 : -1;
+      /*
+        Only the generic part is left, which anything can pay — so pay it with as few permanents as
+        possible, without overshooting.
+
+        The first version took whatever was first in the list, which was right while every source
+        made exactly one mana. A Sol Ring makes two, and taking the list in order meant tapping a
+        Swamp for one, finding the cost still short, and then tapping the Ring as well: three
+        permanents spent on a cost that two could pay, and a land that could have cast something
+        else left face down for nothing. The largest source that still fits is the tap a player
+        would make; when nothing fits, the smallest overshoot is the cheapest mistake.
+      */
+      const short = remainingGeneric(working, cost, xAmount);
+      let best = -1;
+      let bestSize = 0;
+      for (let i = 0; i < left.length; i++) {
+        const size = left[i]!.choose === true ? 1 : left[i]!.produces.length;
+        const fits = size <= short;
+        const better = best < 0
+          || (fits && (bestSize > short || size > bestSize))
+          || (!fits && bestSize > short && size < bestSize);
+        if (better) {
+          best = i;
+          bestSize = size;
+        }
+      }
+      index = best;
       if (index < 0) return null;
     }
     const source = left.splice(index, 1)[0]!;

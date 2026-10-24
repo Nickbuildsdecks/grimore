@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**440 tests in the rules engine, 111 in the web app, 1,047 across the workspace.**
+**448 tests in the rules engine, 111 in the web app, 1,055 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -800,6 +800,20 @@ prevent, and nothing had shown it because no card until now needed the word.
 Measured over 30 unsteered games: 25 of these cards cast, 18 of them finding a legal target and
 exiling something (the rest correctly doing nothing, by CR 603.3c). No game destroyed the exiler,
 so the giving-back half is proved by tests — one per way of leaving: destroyed, exiled, bounced.
+
+**Mana that is not a land**, which was a live code path with no card behind it. The mana solver has
+distinguished a *sum* of mana from a *choice* of mana since it was written — the comment on the
+Guildgates names Sol Ring as the thing a dual land is not — and nothing in the pool had ever made
+two mana off one tap, or offered five colours instead of two. Sol Ring, Mind Stone and Birds of
+Paradise now do, in the decks that want them.
+
+**And the first card to make two mana found the solver tapping one permanent too many.** For the
+generic part of a cost it took whatever was first in the list: a Swamp for one, still short, then
+the Ring as well — three permanents spent on a cost two could pay, and a land left face down for
+nothing. It now takes the largest source that still fits, and the smallest overshoot when nothing
+does, which is the tap a player would make. Two tests, because "fewest taps" and "do not overshoot"
+pull in opposite directions and the second is the one that keeps a Sol Ring from paying for a
+one-drop.
 
 ## Next
 

@@ -103,7 +103,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | What you want to do | How |
 | --- | --- |
 | Play a land, cast a spell, use an ability | Tap the card. Everything you can legally do with it is listed; everything else is not. A card you can play right now says **playable**. |
-| Pay for it | Nothing. The engine taps what the spell costs — including picking which colour a dual land makes. Tap lands yourself first if you want particular ones spent. |
+| Pay for it | Nothing. The engine taps what the spell costs — including picking which colour a dual land makes, and spending a Sol Ring's two mana before it taps a second land. Tap lands yourself first if you want particular ones spent. |
 | Choose a target | The legal ones light up. Tap one. A spell on the stack is targeted by tapping its row in the stack panel. |
 | Respond to their spell | While it is on the stack you hold priority — cast your instant, then pass. |
 | Attack | **Declare attackers**, tap the creatures, confirm. One that cannot attack is not tappable, and says why. |

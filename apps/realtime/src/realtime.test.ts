@@ -627,11 +627,20 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       expect(viewOf(first).seats[1]!.libraryCount).toBe(61);
 
       const act = async (action: Record<string, unknown>): Promise<View> => {
-        // Backs off on `rate_limited` exactly as the browser client does: a solo game is a burst
-        // of actions from one socket, which is precisely what the limiter is there to shape.
+        /*
+          Backs off on `rate_limited` exactly as the browser client does: a solo game is a burst of
+          actions from one socket, which is precisely what the limiter is there to shape.
+
+          The wait grows with each attempt, which the fixed 120ms version did not. This test plays
+          a whole game — several hundred actions — through a limiter that allows twenty a second,
+          and when the suite runs beside five other packages' tests the window moves slowly enough
+          that eight equal waits can all land inside it. It failed once that way, passed alone, and
+          a flake in the test that proves a person can play a game on their own is worse than the
+          second it costs to back off properly.
+        */
         let ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
-        for (let retry = 0; retry < 8 && !ack.ok && ack.error.code === 'rate_limited'; retry += 1) {
-          await new Promise((r) => setTimeout(r, 120));
+        for (let retry = 0; retry < 10 && !ack.ok && ack.error.code === 'rate_limited'; retry += 1) {
+          await new Promise((r) => setTimeout(r, 120 * (retry + 1)));
           ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
         }
         const res = okAck(ack);

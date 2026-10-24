@@ -935,6 +935,38 @@ const BALAN: CardDef = {
 
 // ── The decks ────────────────────────────────────────────────────────────────────────────────────
 
+// ── Mana that is not a land ──────────────────────────────────────────────────────────────────────
+
+const SOL_RING: CardDef = {
+  name: 'Sol Ring',
+  typeLine: 'Artifact',
+  manaCost: '{1}',
+  cmc: 1,
+  oracleText: '{T}: Add {C}{C}.',
+  colors: [],
+};
+
+const MIND_STONE: CardDef = {
+  name: 'Mind Stone',
+  typeLine: 'Artifact',
+  manaCost: '{2}',
+  cmc: 2,
+  oracleText: '{T}: Add {C}.\n{1}, {T}, Sacrifice Mind Stone: Draw a card.',
+  colors: [],
+};
+
+const BIRDS_OF_PARADISE: CardDef = {
+  name: 'Birds of Paradise',
+  typeLine: 'Creature \u2014 Bird',
+  manaCost: '{G}',
+  cmc: 1,
+  power: '0',
+  toughness: '1',
+  oracleText: 'Flying\n{T}: Add one mana of any color.',
+  colors: ['G'],
+};
+
+
 // ── Exile until this leaves the battlefield ──────────────────────────────────────────────────────
 
 const BANISHER_PRIEST: CardDef = {
@@ -1099,12 +1131,15 @@ export const VERDANT_GUARD: DeckSpec = {
   description: 'Green-white midrange. Bigger creatures, auras, exile removal and a fliers finish.',
   commander: SIGARDA_HOST_OF_HERONS,
   cards: [
-    { card: FOREST, count: 9 },
+    { card: FOREST, count: 8 },
     { card: PLAINS, count: 9 },
     { card: SELESNYA_GUILDGATE, count: 2 },
     // Two of its Forests are cycling lands, which is the one decision this deck's mana base has.
     { card: TRANQUIL_THICKET, count: 2 },
-    { card: LLANOWAR_ELVES, count: 3 },
+    { card: LLANOWAR_ELVES, count: 2 },
+    // The same mana a turn early as the Elves, in either colour, with flying attached — which is
+    // what a two-colour deck actually wants from a one-drop.
+    { card: BIRDS_OF_PARADISE, count: 2 },
     { card: RAMPANT_GROWTH, count: 3 },
     { card: GARRUK_WILDSPEAKER, count: 1 },
     { card: SOUL_WARDEN, count: 2 },
@@ -1259,9 +1294,13 @@ export const ASHEN_RITE: DeckSpec = {
   description: 'Black-red sacrifice. Every creature is a resource, and every land is a card.',
   commander: JUDITH,
   cards: [
-    { card: SWAMP, count: 9 },
-    { card: MOUNTAIN, count: 9 },
+    { card: SWAMP, count: 8 },
+    { card: MOUNTAIN, count: 8 },
     { card: RAKDOS_GUILDGATE, count: 2 },
+    // Two mana off one tap on turn two is the most-played card in Commander for a reason, and it
+    // is the first thing in this pool that makes more mana than it costs to use.
+    { card: SOL_RING, count: 1 },
+    { card: MIND_STONE, count: 2 },
     // The cycling lands are the mana base's own decision: a land early, a card late. Two of each
     // rather than four, because a deck that cycled every land would never cast anything.
     { card: BARREN_MOOR, count: 2 },
@@ -1281,7 +1320,7 @@ export const ASHEN_RITE: DeckSpec = {
     { card: IMPACT_TREMORS, count: 1 },
     // And the spells that spend them.
     { card: BONE_SPLINTERS, count: 3 },
-    { card: VILLAGE_RITES, count: 2 },
+    { card: VILLAGE_RITES, count: 1 },
     { card: AGONIZING_DEMISE, count: 2 },
     { card: BURST_LIGHTNING, count: 2 },
     { card: BREATH_OF_DARIGAAZ, count: 1 },

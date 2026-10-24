@@ -152,6 +152,23 @@ describe('solveTap', () => {
     expect(solveTap(EMPTY_POOL, parseManaCost('{3}{R}'), sources)).toHaveLength(4);
   });
 
+  it('taps the fewest permanents it can for the generic part', () => {
+    // A source that makes two mana is what a Sol Ring is, and taking the list in order meant
+    // tapping a land for one, finding the cost still short, and tapping the Ring as well — three
+    // permanents for a cost two could pay, and a land left face down for nothing.
+    const ring = { key: 'ring', produces: ['C', 'C'] as const };
+    const sources = [land('s1', 'B'), land('m1', 'R'), ring];
+    expect(keys(solveTap(EMPTY_POOL, parseManaCost('{2}{B}'), sources))).toEqual(['s1', 'ring']);
+  });
+
+  it('and takes a smaller source when the big one would overshoot', () => {
+    // One generic left and a choice between a land and a two-mana rock: the land, because the
+    // rock's second mana would be floating and the rock might be wanted later.
+    const ring = { key: 'ring', produces: ['C', 'C'] as const };
+    expect(keys(solveTap(EMPTY_POOL, parseManaCost('{1}{B}'), [land('s1', 'B'), ring, land('m1', 'R')])))
+      .toEqual(['s1', 'm1']);
+  });
+
   it('gives up rather than tapping lands that cannot make the colour', () => {
     // Five Forests do not cast a white spell, and tapping them all first would be worse than
     // refusing: the player loses their mana for nothing.

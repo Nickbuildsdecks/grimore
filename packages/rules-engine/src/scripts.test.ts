@@ -2726,6 +2726,106 @@ describe('spells with {X} in the cost, chosen as the spell is cast', () => {
   });
 });
 
+describe('mana that is not a land', () => {
+  it('Sol Ring makes two off one tap, and the engine taps it for a cost it offered', () => {
+    // A Mountain, a Swamp and a Sol Ring: four mana from three permanents, so a three-drop leaves
+    // a land up. The point is not the arithmetic — it is that `legalActions` offers the spell and
+    // the engine then pays for it, because both read the same solver, and that the Ring counts as
+    // the two mana it makes.
+    let s = arena({
+      decks: { 0: 'ashen-rite' }, hands: { 0: ['Agonizing Demise'] },
+      battlefield: { 0: ['Mountain', 'Swamp', 'Sol Ring'], 1: ['Grizzly Bears'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    expect(legalActions(s, 0).plays.some((p) => p.name === 'Agonizing Demise')).toBe(true);
+
+    // Nothing is tapped yet: the engine works out what to tap when the spell is cast.
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Agonizing Demise'),
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }] });
+    // {2}{B} off the Swamp and the Ring, so the Mountain is still up for an instant — a solver
+    // that treated the Ring as one mana would have tapped everything for a three-mana spell.
+    expect(s.instances[find(s, 0, 'battlefield', 'Sol Ring')]!.tapped).toBe(true);
+    expect(s.instances[find(s, 0, 'battlefield', 'Swamp')]!.tapped).toBe(true);
+    expect(s.instances[find(s, 0, 'battlefield', 'Mountain')]!.tapped).toBe(false);
+  });
+
+  it('and tapping it by hand puts two colourless in the pool', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite' }, battlefield: { 0: ['Sol Ring'] }, turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Sol Ring'), abilityIndex: 0 });
+    expect(s.pools['0']!.C).toBe(2);
+  });
+
+  it('Mind Stone trades itself for a card once the mana is no longer needed', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite' }, battlefield: { 0: ['Swamp', 'Mind Stone'] }, turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Swamp'), abilityIndex: 0 });
+    const stone = find(s, 0, 'battlefield', 'Mind Stone');
+    const before = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: stone, abilityIndex: 1 }));
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+    expect(s.instances[stone]!.zone).toBe('graveyard');
+  });
+
+  it('Birds of Paradise makes whichever colour the spell needs', () => {
+    // A white spell with no Plains in play: the only white mana on the board is the bird, and the
+    // engine has to work out that the bird is what pays for it.
+    let s = arena({
+      decks: { 0: 'verdant-guard' }, hands: { 0: ['Swords to Plowshares'] },
+      battlefield: { 0: ['Birds of Paradise'], 1: ['Grizzly Bears'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const bird = find(s, 0, 'battlefield', 'Birds of Paradise');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    expect(legalActions(s, 0).plays.some((p) => p.name === 'Swords to Plowshares')).toBe(true);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Swords to Plowshares'),
+      targets: [{ kind: 'card', id: bears }],
+    }));
+    expect(s.instances[bird]!.tapped).toBe(true);
+    expect(s.instances[bears]!.zone).toBe('exile');
+  });
+
+  it('and it is one mana, not five', () => {
+    // The whole reason several tap abilities on one permanent are a choice rather than a sum: a
+    // bird is not a Sol Ring, and a table that thought otherwise would offer spells nobody can pay
+    // for. Two one-mana spells, one bird, one Forest: the second is not castable.
+    let s = arena({
+      decks: { 0: 'verdant-guard' }, hands: { 0: ['Giant Growth'] },
+      battlefield: { 0: ['Birds of Paradise'], 1: ['Grizzly Bears'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const bird = find(s, 0, 'battlefield', 'Birds of Paradise');
+    s = apply(s, { type: 'auto:activate', by: 0, card: bird, abilityIndex: 4 });
+    expect(s.pools['0']!.G).toBe(1);
+    // One mana off one tap, and the bird is spent.
+    expect(s.instances[bird]!.tapped).toBe(true);
+    expect(legalActions(s, 0).plays.filter((p) => p.name === 'Birds of Paradise')).toEqual([]);
+  });
+
+  it('a bird that arrived this turn cannot be tapped for mana', () => {
+    let s = arena({
+      decks: { 0: 'verdant-guard' }, hands: { 0: ['Birds of Paradise'] },
+      battlefield: { 0: ['Forest'] }, turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Birds of Paradise') }));
+    const bird = find(s, 0, 'battlefield', 'Birds of Paradise');
+    // Summoning sickness applies to a mana creature like any other (CR 302.6), so the table does
+    // not offer the tap and the engine would refuse it.
+    expect(legalActions(s, 0).plays.filter((p) => p.name === 'Birds of Paradise')).toEqual([]);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: bird, abilityIndex: 0 }))
+      .toMatch(/summoning sickness/);
+  });
+});
+
 describe('exile until this leaves the battlefield', () => {
   /** Seat 1 on a white deck, with `lands` tapped for mana, `hand` in hand and `theirs` opposite. */
   const white = (

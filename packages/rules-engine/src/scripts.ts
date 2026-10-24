@@ -33,6 +33,9 @@ import type { Target } from './turnTypes.js';
 
 // ── Target specs used by more than one card ──────────────────────────────────────────────────────
 
+/** The five colours, for a card that offers one of each. */
+const COLOURS = ['W', 'U', 'B', 'R', 'G'] as const;
+
 const ANY_TARGET: TargetSpec = { kind: 'any', description: 'any target' };
 const TARGET_CREATURE: TargetSpec = { kind: 'creature', description: 'target creature' };
 const TARGET_PLAYER: TargetSpec = { kind: 'player', description: 'target player' };
@@ -1336,6 +1339,52 @@ function goblinCount(state: GameState, seat: SeatIndex): number {
   return n;
 }
 
+// ── Mana that is not a land ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Sol Ring: one tap, two mana, and the first card in the pool to do it.
+ *
+ * `produces: ['C', 'C']` has been the documented difference between a dual land and a Sol Ring
+ * since the mana solver was written — a Guildgate's two abilities are a *choice* of one mana, and
+ * this is a *sum* of two — and until now nothing in the pool exercised the second half of that
+ * sentence. A live code path with no card behind it is the same risk as an untested one.
+ */
+const SOL_RING: CardScript = {
+  name: 'Sol Ring',
+  abilities: [{ cost: { tap: true }, description: '{T}: Add {C}{C}.', produces: ['C', 'C'] }],
+};
+
+/** Mind Stone: a rock early, a card late — and the late half is an ability that eats itself. */
+const MIND_STONE: CardScript = {
+  name: 'Mind Stone',
+  abilities: [
+    { cost: { tap: true }, description: '{T}: Add {C}.', produces: ['C'] },
+    {
+      cost: { mana: '{1}', tap: true, sacrificeSelf: true },
+      description: '{1}, {T}, Sacrifice Mind Stone: Draw a card.',
+      effect: (c) => draw(c.state, c.controller, 1),
+    },
+  ],
+};
+
+/**
+ * Birds of Paradise: any colour, which is five abilities and one tap.
+ *
+ * The Guildgate shape taken as far as it goes — `manaSources` collapses several free tap-for-mana
+ * abilities on one permanent into a single source that makes *one of* their colours, so a bird is
+ * a five-colour dual land with a 0/1 body. It is also a creature, which means it cannot be tapped
+ * the turn it arrives (CR 302.6), and the engine already knew that about creatures.
+ */
+const BIRDS_OF_PARADISE: CardScript = {
+  name: 'Birds of Paradise',
+  keywords: ['flying'],
+  abilities: COLOURS.map((colour) => ({
+    cost: { tap: true },
+    description: `{T}: Add {${colour}}.`,
+    produces: [colour],
+  })),
+};
+
 // ── Exile until this leaves the battlefield ──────────────────────────────────────────────────────
 
 /**
@@ -1570,6 +1619,7 @@ const ALL: readonly CardScript[] = [
   cyclingLand('Tranquil Thicket', 'G'),
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
+  SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   guildgate('Rakdos Guildgate', 'B', 'R'),
 ];
 

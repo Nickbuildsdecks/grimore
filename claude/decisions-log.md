@@ -1846,3 +1846,24 @@ and exiling something; the other seven correctly did nothing, since a trigger wi
 never goes on the stack (CR 603.3c). No game destroyed the exiler, so the giving-back half is held
 by tests rather than by a measurement — one test per way of leaving, because "it works when it
 dies" is the easy third of the rule.
+
+## D56 — Two mana off one tap, and the land it stopped wasting
+
+The mana solver has always had two shapes for a source: a *sum* (`produces: ['C','C']` adds two)
+and a *choice* (`choose: true` over `['U','B']` adds one of them). The distinction is the whole
+difference between a Sol Ring and a Guildgate, and it has been in the comments since the solver was
+written — with nothing in the pool exercising the first half of it. A live path with no card behind
+it is the same risk as an untested one, so: Sol Ring, Mind Stone, and Birds of Paradise, which is
+the choice shape taken as far as it goes (five abilities, one tap, one mana of any colour).
+
+**And the first card that makes two mana immediately found a bug.** For the generic part of a cost
+the solver took whatever was first in its list of untapped sources. With every source making one
+mana that was fine. With a Sol Ring in play it tapped a Swamp for one, found the cost still short,
+and tapped the Ring as well: three permanents spent on a cost that two could pay, and a land left
+face down that could have cast something else. It now picks the largest source that still *fits*
+what is owed, and the smallest overshoot when nothing fits — which is the tap a player would make,
+and the reason both halves are tested: "fewest taps" alone would pay a one-drop with a Sol Ring.
+
+Nothing about this is visible in a win rate; it is visible as a land still untapped when the
+opponent casts something. That is the kind of thing a person notices in the first ten minutes of
+playing and would not report as a bug.
