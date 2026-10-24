@@ -785,7 +785,67 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       }
     }, 30_000);
 
-    it('closes a table when the last person leaves, rather than leaving the server playing alone', async () => {
+    /**
+     * A third person watching, which is a different kind of client: no seat, no moves, no hands.
+     *
+     * The spectator view has existed since redaction went in and nothing could ask for one. The
+     * property worth testing is the one that matters — a watcher is a *third party*, and the
+     * redaction that keeps two players honest has to keep a watcher honest too.
+     */
+    it('lets somebody watch a game in progress without seeing either hand', async () => {
+      const { a, b, state } = await seatedPair();
+      // Deal both decks so there are hands to hide and a board to see.
+      let version = state.stateVersion;
+      for (const [seat, deckId] of [[0, 'ember-rush'], [1, 'tidal-mind']] as const) {
+        version = okAck(await emitAck(a, 'pod:action', {
+          action: { type: 'deck:load', seat, deckId }, expectedVersion: version,
+        })).stateVersion!;
+      }
+      version = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'game:start', firstSeat: 0 }, expectedVersion: version,
+      })).stateVersion!;
+
+      const watcher = await client('Watcher');
+      const first = waitFor<PodStateEvent>(watcher, 'pod:state', (e) => e.state !== null);
+      okAck(await emitAck(watcher, 'pod:watch', { code: state.pod.code }));
+      const seen = await first;
+
+      // It is the spectator view: no seat, no legal moves, and the table's public zones.
+      const view = viewOf(seen);
+      expect(view.seat).toBeNull();
+      expect(view.automation?.you ?? null).toBeNull();
+      expect(seen.pod.seats).toHaveLength(2);
+
+      // And neither hand is readable, which is the whole point of a third party.
+      for (const seat of [0, 1] as const) {
+        const hand = view.zones[`${seat}:hand`] ?? [];
+        expect(hand.length).toBe(7);
+        for (const id of hand) expect(view.cards[id]?.card).toBeUndefined();
+        expect(view.zones[`${seat}:library`]).toBeUndefined();
+      }
+
+      // A watcher cannot do anything: every handler that changes the table wants a seat.
+      const tried = await emitAck(watcher, 'pod:action', {
+        action: { type: 'life:adjust', seat: 0, delta: -5 }, expectedVersion: seen.stateVersion,
+      });
+      expect(tried).toMatchObject({ ok: false, error: { code: 'not_in_pod' } });
+      expect(await emitAck(watcher, 'pod:ready', { ready: true })).toMatchObject({ ok: false });
+
+      // It keeps up: the next thing the players do reaches the watcher too.
+      const next = waitFor<PodStateEvent>(watcher, 'pod:state', (e) => e.stateVersion > seen.stateVersion);
+      okAck(await emitAck(b, 'pod:action', {
+        action: { type: 'life:adjust', seat: 1, delta: -3 }, expectedVersion: seen.stateVersion,
+      }));
+      expect(viewOf(await next).seats[1]!.life).toBe(37);
+    }, 20_000);
+
+    it('refuses to watch a table that does not exist', async () => {
+      const watcher = await client('Watcher');
+      expect(await emitAck(watcher, 'pod:watch', { code: 'nobody-home-12' }))
+        .toMatchObject({ ok: false, error: { code: 'not_found' } });
+    });
+
+        it('closes a table when the last person leaves, rather than leaving the server playing alone', async () => {
       const solo = await client('Solo');
       const created = okAck(await emitAck(solo, 'pod:create', {
         name: 'Just me', format: 'modern', visibility: 'private', bots: 1,

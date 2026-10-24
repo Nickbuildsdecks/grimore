@@ -35,7 +35,7 @@
 import path from 'node:path';
 import {
   chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
-  readNumber, expectEventually, isMyMove, makeMove as drive, notePrompts, noteMove,
+  readNumber, expectEventually, isMyMove, makeMove as drive, notePrompts, noteMove, press,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -186,6 +186,44 @@ async function main() {
       leaked !== 'missing' && !/[a-z]{4}/.test(leaked.replace(/GRIMORE/gi, '')),
       leaked.slice(0, 120),
     );
+
+    // ── A third person watching ─────────────────────────────────────────────────────────────────
+    /*
+      The same claim as above, made against a *third party*.
+
+      A watcher is the case where redaction has to be right for a reason that is not symmetry:
+      the two players can at least see their own hands, and a watcher may see neither. It is also
+      the one client that is never offered a move, so the arena bar must not be there at all.
+    */
+    {
+      const watcherCtx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+      const watcher = await watcherCtx.newPage();
+      watcher.on('pageerror', (err) => pageErrors.push(`Watcher: ${err.message}`));
+      await watcher.goto(BASE);
+      await waitFor(watcher, 'lobby');
+      await tid(watcher, 'join-code').fill(code);
+      await press(watcher, 'watch-table');
+      await waitFor(watcher, 'watching-code');
+
+      // It sees the board: both battlefields and both hands as counts.
+      const boards = await watcher.locator('[data-testid^="zone-battlefield-"]').count();
+      check('a watcher sees every seat\u2019s board', boards >= 2, `battlefield rows: ${boards}`);
+      const hands = [];
+      for (const seat of [0, 1]) {
+        hands.push(await cardsIn(watcher, `zone-hand-${seat}`).evaluateAll((els) =>
+          els.map((e) => ({ hidden: e.getAttribute('data-hidden'), name: e.getAttribute('data-card-name') }))));
+      }
+      check('and neither hand, which is the whole point of a third party',
+        hands.every((hand) => hand.length >= 4 && hand.every((c) => c.hidden === 'true' && !c.name)),
+        JSON.stringify(hands).slice(0, 160));
+
+      // And it is offered nothing: no control bar, no play sheet, no prompt.
+      check('a watcher is never offered a move',
+        !(await has(watcher, 'arena-bar')) && !(await has(watcher, 'primary-move')),
+        `arena-bar ${await has(watcher, 'arena-bar')}, primary-move ${await has(watcher, 'primary-move')}`);
+      await shot(watcher, 'watching');
+      await watcherCtx.close();
+    }
 
     // ── Only one player is asked to act at a time ───────────────────────────────────────────────
     const nickMoves = await isMyMove(nick);

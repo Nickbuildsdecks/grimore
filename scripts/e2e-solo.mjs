@@ -169,11 +169,19 @@ async function main() {
     */
     if (await has(page, 'game-over')) {
       const turnBefore = (await readNumber(page, 'turn').catch(() => null)) ?? 0;
-      await press(page, 'rematch');
+      // Pressed up to three times rather than once: the game-over panel re-renders as the last
+      // state events land, and a press that misses is not a feature that failed.
+      let pressed = false;
+      for (let i = 0; i < 3 && !pressed; i += 1) {
+        pressed = await press(page, 'rematch');
+        if (!pressed) await page.waitForTimeout(250);
+      }
       const dealt = await expectEventuallyTrue(page, async () =>
         !(await has(page, 'game-over')) && (await cardsIn(page, 'zone-hand-0').count()) === 7);
       check('and “play again” deals another game at the same table', dealt,
-        `game-over still up: ${await has(page, 'game-over')}, hand ${await cardsIn(page, 'zone-hand-0').count()}`);
+        `pressed: ${pressed}, game-over still up: ${await has(page, 'game-over')}, `
+        + `hand ${await cardsIn(page, 'zone-hand-0').count()}, `
+        + `error: ${(await has(page, 'table-error')) ? await text(page, 'table-error') : 'none'}`);
       if (dealt) {
         const turnAfter = (await readNumber(page, 'turn').catch(() => null)) ?? 0;
         check('the new game starts from turn one with the engine still running',

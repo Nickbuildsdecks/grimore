@@ -486,7 +486,15 @@ export async function tryToPlayFromHand(page, seat) {
     const badges = await textOf(card);
     if (!/playable/i.test(badges)) continue;
     await tap(card);
-    await waitFor(page, 'play-sheet', 5000);
+    /*
+      The sheet may not open, and that is not a failure.
+
+      The tap can land on a card the table has just re-rendered away — a creature that died, a
+      hand that shrank — and the whole run used to end there with "timed out waiting for
+      play-sheet" on a game that was going fine. A card that cannot be opened is a card this move
+      does not play.
+    */
+    if ((await waitFor(page, 'play-sheet', 2500).then(() => true, () => false)) === false) return null;
     const options = page.locator('[data-testid^="play-"]:not([data-testid="play-sheet"]):not([data-testid="play-sheet-close"])');
     const choices = await options.count();
     if (choices > 0) {

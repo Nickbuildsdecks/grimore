@@ -40,8 +40,16 @@ export interface TableState {
   pod: Pod | null
   view: GameView | null
   stateVersion: number
-  /** This client's seat, or null before sitting down. */
+  /** This client's seat, or null before sitting down — and for a watcher, for good. */
   seat: number | null
+  /**
+   * Watching rather than playing.
+   *
+   * Distinct from `seat === null`, which is also true of somebody who has not sat down yet: this
+   * says the client asked to watch, and it is what tells the table to render read-only instead of
+   * showing a lobby.
+   */
+  watching: boolean
   code: string | null
   chat: ChatLine[]
   error: string | null
@@ -95,6 +103,8 @@ export interface UseTable extends TableState {
     botDecks?: readonly string[]
   }) => Promise<void>
   joinTable: (input: { code: string; name: string }) => Promise<void>
+  /** Joins a table's room without taking a seat; the server sends the spectator view. */
+  watchTable: (code: string) => Promise<void>
   leaveTable: () => Promise<void>
   setReady: (ready: boolean) => Promise<void>
   /**
@@ -113,11 +123,19 @@ export function useTable(playerName: string): UseTable {
     view: null,
     stateVersion: 0,
     seat: null,
+    watching: false,
     code: null,
     chat: [],
     error: null,
   })
   const socketRef = useRef<Socket | null>(null)
+  /**
+   * The newest state, for the callbacks that must not read a captured copy.
+   *
+   * `leaveTable` is the one that matters: whether this client is watching decides whether there is
+   * a seat to give up, and a stale `false` would send a `pod:leave` that the server refuses.
+   */
+  const stateRef = useRef<TableState | null>(null)
   /** Read inside `send`, which must use the newest version rather than one captured by a closure. */
   const versionRef = useRef(0)
   /**
@@ -269,6 +287,18 @@ export function useTable(playerName: string): UseTable {
     [emit],
   )
 
+  const watchTable = useCallback<UseTable["watchTable"]>(
+    async (raw) => {
+      const code = raw.trim().toUpperCase()
+      const res = await emit("pod:watch", { code })
+      if (!res.ok) return setState((s) => ({ ...s, error: res.error.message }))
+      // No seat token stored: a watcher holds nothing, so there is nothing to reclaim on a reload
+      // and nothing to leave behind on somebody else's machine.
+      setState((s) => ({ ...s, seat: null, watching: true, code, error: null }))
+    },
+    [emit],
+  )
+
   const joinTable = useCallback<UseTable["joinTable"]>(
     async (input) => {
       const code = input.code.trim().toUpperCase()
@@ -282,10 +312,18 @@ export function useTable(playerName: string): UseTable {
   )
 
   const leaveTable = useCallback<UseTable["leaveTable"]>(async () => {
-    await emit("pod:leave", {})
-    writeStored(null)
+    // A watcher has no seat to give up, and `pod:leave` wants one — so it is not sent. Dropping
+    // the local state is the whole of stopping watching; the socket leaves the room on the next
+    // join or on disconnect, and until then it is one more listener on a broadcast nobody pays
+    // for. Said plainly here because the asymmetry looks like a missing call.
+    if (!stateRef.current?.watching) {
+      await emit("pod:leave", {})
+      writeStored(null)
+    }
     seatRef.current = null
-    setState((s) => ({ ...s, pod: null, view: null, seat: null, code: null, chat: [], error: null }))
+    setState((s) => ({
+      ...s, pod: null, view: null, seat: null, watching: false, code: null, chat: [], error: null,
+    }))
   }, [emit])
 
   const setReady = useCallback<UseTable["setReady"]>(
@@ -388,11 +426,15 @@ export function useTable(playerName: string): UseTable {
     [emit],
   )
 
+  stateRef.current = state
+
   const clearError = useCallback(() => setState((s) => ({ ...s, error: null })), [])
 
   return useMemo(
-    () => ({ ...state, createTable, joinTable, leaveTable, setReady, send, say, clearError }),
-    [state, createTable, joinTable, leaveTable, setReady, send, say, clearError],
+    () => ({
+      ...state, createTable, joinTable, watchTable, leaveTable, setReady, send, say, clearError,
+    }),
+    [state, createTable, joinTable, watchTable, leaveTable, setReady, send, say, clearError],
   )
 }
 

@@ -112,6 +112,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Block | **Declare blockers**, tap your creature, then tap the attacker it blocks. Only attackers it may legally block light up. |
 | See who is attacking whom | Lines on the board: gold from each attacker to the player it is aimed at, dashed from each blocker to what it blocked. In a pod that is how you know an attack is yours to answer. |
 | Work out who the threat is | Every seat strip says `board N` — the total power of that seat's creatures — and `(M up)` when some of them are tapped. The first number is what can kill you on their turn; the second is what can stop you on yours. |
+| Watch somebody else's game | Put their code in the **Join a table** box and press **Watch** instead of **Join**. You take no seat, it works mid-game, and you see both boards and neither hand. |
 | Play another game | **Play again** on the game-over banner deals a fresh game at the same table, with the same decks and the engine still running — the winner of the last one goes second. **New game** beside it empties the table instead, for when somebody is changing decks. |
 | Cast a spell with {X} in its cost | Tap it and pick X from the numbers offered — the list stops at what your mana covers, and it opens on the largest. X is chosen before the target, because that is when the rules choose it. |
 | Pay a kicker | The kicked version is listed as its own play — "Cast Burst Lightning with kicker {4}" — and it only appears when you can pay for the whole thing. Choosing it *is* paying it. |
@@ -285,8 +286,9 @@ playing the server).
   you choose, a conceding seat skipped by everything. What is missing is everything a pod is
   socially: three opponents are three strips above your own board, whose turn it is reads as a gold
   border rather than a layout, and there is no politics anywhere beyond the chat panel.
-- **No spectators in the UI.** The server already builds a spectator view that hides both hands;
-  nothing in the lobby joins as one yet.
+- **Watching is read-only, and that is all it is.** A watcher sees both boards, both graveyards,
+  the stack and the log, with both hands as face-down counts — and is offered no moves at all.
+  There is no spectator chat and no way to watch a *list* of tables: you need the code.
 - **No undo.** The log records everything, but putting a card back is a manual move.
 - **Websocket only.** A network that blocks WebSockets cannot play, because the server has polling
   disabled. Rare, but it would look like a table that never connects.

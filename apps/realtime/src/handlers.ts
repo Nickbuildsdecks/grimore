@@ -44,6 +44,7 @@ export const podRoom = (code: string): string => `pod:${code}`;
 const RAW_CAPS: Record<ClientEventName, number> = {
   'pod:create': 512,
   'pod:join': 512,
+  'pod:watch': 128,
   'pod:leave': 64,
   'pod:ready': 64,
   'pod:chat': CHAT_MAX_BYTES + 64,
@@ -176,6 +177,33 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       ack?.({ ok: true, code: input.code, seat: result.seat, seatToken: result.seatToken, playerId: result.playerId, stateVersion: result.stateVersion });
       await broadcast(input.code, result);
       log.info({ code: input.code, seat: result.seat, reclaimed: result.reclaimed }, 'player joined');
+    });
+
+    /*
+      Watching: in the room, out of the game.
+
+      No seat, so `broadcast` sends this socket the spectator view — both hands hidden, no legal
+      moves — and every handler that calls `requireSeat` refuses it, which is every handler that
+      changes anything. The pod's status is not checked: a watcher arriving mid-game is the usual
+      case, and a table that only admitted watchers in the lobby would be useless for the thing
+      people actually want to watch.
+    */
+    on('pod:watch', async (input, ack) => {
+      if (socket.data.podCode && socket.data.podCode !== input.code) {
+        throw new PodError('already_in_pod', 'leave your current pod first');
+      }
+      if (socket.data.seat !== undefined) {
+        throw new PodError('already_in_pod', 'you are seated at this table; leave your seat to watch');
+      }
+      const snapshot = await store.get(input.code);
+      if (!snapshot) throw new PodError('not_found', 'no table with that code');
+      socket.data.podCode = input.code;
+      void socket.join(podRoom(input.code));
+      ack?.({ ok: true, code: input.code, stateVersion: snapshot.stateVersion });
+      // Only this socket needs the state: nobody at the table has to be told somebody is watching,
+      // and a broadcast would be one view per seat for no reason.
+      socket.emit('pod:state', toSeatSnapshot(snapshot, null));
+      log.info({ code: input.code, playerId: socket.data.playerId }, 'watcher joined');
     });
 
     const leavePod = async (): Promise<void> => {

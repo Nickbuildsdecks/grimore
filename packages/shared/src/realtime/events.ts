@@ -113,6 +113,16 @@ export const PodJoinInput = z.object({
 });
 export type PodJoinInput = z.infer<typeof PodJoinInput>;
 
+/**
+ * Watching a table without taking a seat.
+ *
+ * No name and no seat token: a watcher is not a player, holds nothing and is owed nothing. The
+ * only thing it needs is the code, and the only thing it gets back is the spectator view — which
+ * the server has been able to build since redaction went in, and nothing could ask for.
+ */
+export const PodWatchInput = z.object({ code: PodCode });
+export type PodWatchInput = z.infer<typeof PodWatchInput>;
+
 export const PodLeaveInput = z.object({}).strict();
 export type PodLeaveInput = z.infer<typeof PodLeaveInput>;
 
@@ -145,6 +155,7 @@ export type PodListInput = z.infer<typeof PodListInput>;
 export const ClientEvents = {
   "pod:create": PodCreateInput,
   "pod:join": PodJoinInput,
+  "pod:watch": PodWatchInput,
   "pod:leave": PodLeaveInput,
   "pod:ready": PodReadyInput,
   "pod:chat": PodChatInput,

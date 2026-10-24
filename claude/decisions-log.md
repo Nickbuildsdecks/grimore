@@ -1970,3 +1970,34 @@ event — mutual combat damage on empty life totals — and the engine ended the
 which is correct (CR 104.4b). The suite failed, because it asserted that somebody wins. It now
 asserts that the table says what happened and that both screens say the same thing, which is what
 the test was always about.
+
+## D61 — A watcher is a third party, and gets its own component
+
+The spectator view has existed since redaction went in: public zones, both hands as face-down
+counts, no legal moves. Nothing could ask for one, because `pod:join` always takes a seat and
+refuses once a game has started — so a friend who wanted to watch had to be handed somebody's
+screen, which is also the only way to cheat at this game.
+
+**Decided: `pod:watch`, in the room and out of the game.** No name and no seat token, because a
+watcher is not a player: it holds nothing and is owed nothing. `broadcast` already sends a seatless
+socket the spectator view, and every handler that changes anything already calls `requireSeat`, so
+the server side is one handler and no new rules. The pod's status is deliberately not checked: a
+watcher arriving mid-game is the normal case, and a table that only admitted watchers in the lobby
+would be useless for the thing people actually want to watch.
+
+**Decided: a separate component rather than `Board` in read-only mode.** `Board` is a thousand
+lines of "what may I do with this card" and a watcher may do nothing with any of them. A `readOnly`
+flag would be a branch on every tap handler in the file, and the branch that got forgotten would be
+a watcher playing somebody else's turn. The duplication is a few zone rows; the alternative is a
+security property maintained by vigilance.
+
+**And the suite found the last send that was not saying which view it came from.** D58 gave every
+action the version of the view it was composed from — through `act`. Every button on the *control
+bar* goes through `dispatchArena` instead, which was still sending without it, so a Pass pressed as
+blockers became owed read to the client as an illegal action rather than a late one. One path
+further along, the same bug, found by the same kind of test: a suite that taps as fast as the server
+plays.
+
+Two more browser-driver flakes closed while this was going in, both of the same shape as the clicks
+and the text reads: a play sheet that does not open is a card this move does not play, not a run
+that ends with a stack trace; and a press on a panel that is re-rendering gets three tries.

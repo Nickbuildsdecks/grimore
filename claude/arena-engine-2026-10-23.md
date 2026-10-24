@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**461 tests in the rules engine, 114 in the web app, 1,071 across the workspace.**
+**461 tests in the rules engine, 114 in the web app, 1,073 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -869,6 +869,26 @@ cost of the bot having no "do nothing" option (D53), stated here rather than hid
 event and the game ended with no winner, which is the rule (CR 104.4b) — and the suite failed,
 because it asserted somebody wins. It now checks that the table *says* what happened and that both
 screens say the same thing.
+
+**Watching a table.** The server has built a spectator view since redaction went in — public zones,
+both hands as face-down counts, no legal moves — and nothing could ask for one. `pod:watch` joins a
+table's room without taking a seat, at any point in a game, and the client renders a read-only
+table for it.
+
+A **separate component**, not `Board` with the interaction switched off: `Board` is a thousand lines
+of "what may I do with this card", a watcher may do nothing with any of them, and a `readOnly` flag
+threaded through all of it would be a branch on every tap handler in the file — where the one
+forgotten branch is a watcher who can play somebody else's turn. There is nothing to redact in the
+watching view either, because the hidden cards never left the server.
+
+The arena suite now opens a third browser mid-game and checks the property that matters: a watcher
+is a *third party*, so the redaction that keeps two players honest has to keep it honest too — both
+boards visible, neither hand, and no control bar at all.
+
+**And it found the last send that was not saying which view it came from.** Every button on the
+control bar goes through one dispatch, and that dispatch was the one path still sending without the
+rendered version — so a Pass pressed as blockers became owed read to the client as an illegal
+action rather than a late one. Same bug as D58, one path further along, found by the same suite.
 
 ## Next
 

@@ -205,14 +205,29 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           autoCapitalize="characters"
         />
-        <Button
-          data-testid="join-table"
-          variant="secondary"
-          disabled={code.trim().length < 5}
-          onClick={() => void table.joinTable({ code, name })}
-        >
-          Join
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            data-testid="join-table"
+            variant="secondary"
+            className="flex-1"
+            disabled={code.trim().length < 5}
+            onClick={() => void table.joinTable({ code, name })}
+          >
+            Join
+          </Button>
+          {/*
+            Watching takes no seat, works mid-game, and needs no name — so it is the same code box
+            and a quieter button beside it, rather than a second form.
+          */}
+          <Button
+            data-testid="watch-table"
+            variant="ghost"
+            disabled={code.trim().length < 5}
+            onClick={() => void table.watchTable(code)}
+          >
+            Watch
+          </Button>
+        </div>
       </section>
     </div>
   )
@@ -839,7 +854,12 @@ function Board({ table }: { table: UseTable }) {
       const result = arenaReducer(arenaRef.current, event)
       arenaRef.current = result.mode
       setArenaMode(result.mode)
-      if (result.action !== null) void table.send(result.action)
+      // With the version it was composed against, exactly as `act` does. The interaction machine
+      // reads the rendered view — which play, which targets, whose turn — so an action that comes
+      // out of it is as stale as that view is, and the one path that did not say so was the one
+      // every button on the control bar goes through: a Pass pressed as blockers became owed read
+      // to the client as an illegal action rather than a late one.
+      if (result.action !== null) void table.send(result.action, table.stateVersion)
     },
     [table],
   )
@@ -1499,6 +1519,111 @@ function Board({ table }: { table: UseTable }) {
   )
 }
 
+/**
+ * The table as somebody watching it sees it.
+ *
+ * A separate component rather than `Board` with the interaction turned off, and deliberately so:
+ * `Board` is a thousand lines of "what may I do with this card", and a watcher may do nothing with
+ * any of them. Threading a `readOnly` flag through all of it would put a branch on every tap
+ * handler in the file, and the one that was forgotten would be a watcher who could play somebody
+ * else's turn.
+ *
+ * What is shown is exactly what the server sent, which for a watcher is the spectator view: public
+ * zones, both hands as face-down counts, no legal moves. There is nothing to redact here, because
+ * there is nothing to redact *from* — the hidden cards never left the server.
+ */
+function Watching({ table }: { table: UseTable }) {
+  const { view } = table
+  const [showLog, setShowLog] = useState(false)
+  if (!view) {
+    return (
+      <div className="mx-auto flex max-w-md flex-col gap-3 p-4">
+        <h1 className="text-lg font-semibold text-[var(--g-text-high)]">Watching</h1>
+        <p className="text-sm text-[var(--g-text-muted)]">
+          Waiting for the table to deal. Nothing is being hidden from you that the players can see.
+        </p>
+        <Button variant="secondary" onClick={() => void table.leaveTable()}>Stop watching</Button>
+      </div>
+    )
+  }
+  const cards = (seat: number, zone: ZoneId): VisibleCard[] => cardsIn(view, zoneAt(view, seat, zone))
+  return (
+    <div className="flex flex-col gap-2 p-2 sm:p-4">
+      <header className="flex flex-wrap items-center gap-2">
+        <h1 className="text-sm font-semibold text-[var(--g-text-high)]">Watching</h1>
+        <span data-testid="watching-code" className="font-mono text-xs text-[var(--g-text-muted)]">
+          {table.code}
+        </span>
+        <span className="text-xs text-[var(--g-text-muted)]">
+          turn <span data-testid="turn">{view.turn}</span>
+          {view.automation === null ? "" : ` · ${view.automation.stepLabel}`}
+        </span>
+        <Button size="sm" variant="ghost" className="ml-auto h-7" data-testid="toggle-log" onClick={() => setShowLog(true)}>
+          What happened
+        </Button>
+        <Button size="sm" variant="secondary" className="h-7" data-testid="stop-watching" onClick={() => void table.leaveTable()}>
+          Stop watching
+        </Button>
+      </header>
+
+      {view.finished ? (
+        <div data-testid="game-over" className="rounded-md border border-[var(--g-gold-400)]/50 bg-[var(--g-gold-400)]/10 px-3 py-2 text-sm font-semibold text-[var(--g-text-high)]">
+          {view.winnerSeat === null ? "The game is over." : `${view.seats[view.winnerSeat]?.name} wins.`}
+        </div>
+      ) : null}
+
+      <div className={cn("grid gap-1.5", view.seats.length > 2 ? "lg:grid-cols-2" : "")}>
+        {view.seats.map((s) => (
+          <div key={s.index} className="flex min-w-0 flex-col gap-1.5">
+            <SeatStrip
+              seat={s}
+              isMe={false}
+              isActive={view.activeSeat === s.index}
+              commanderFormat={view.format === "pod" || view.format === "edh"}
+              mySeat={s.index}
+              onAct={() => undefined}
+              manualLife={false}
+              seats={view.seats}
+              board={view.automation === null ? undefined : boardRead(view, s.index)}
+            />
+            <div className="flex gap-1.5">
+              <ZoneRow label={`${s.name}'s hand`} testId={`zone-hand-${s.index}`} size="pile" cards={cards(s.index, "hand")} />
+              <ZoneRow label="Graveyard" testId={`zone-graveyard-${s.index}`} size="pile" cards={cards(s.index, "graveyard")} />
+              <ZoneRow label="Exile" testId={`zone-exile-${s.index}`} size="pile" cards={cards(s.index, "exile")} />
+            </div>
+            <Battlefield
+              label={`${s.name}'s`}
+              seat={s.index}
+              cards={cards(s.index, "battlefield")}
+              split={view.automation !== null}
+              badgesOf={(c) => cardBadges(view, c)}
+            />
+          </div>
+        ))}
+      </div>
+
+      <ZoneRow label="Stack" testId="zone-stack" size="board" cards={cardsIn(view, stackOf(view))} />
+
+      {showLog ? (
+        <div data-testid="log-panel" className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setShowLog(false)}>
+          <div className="flex w-full max-w-sm flex-col gap-2 overflow-y-auto border-l border-white/15 bg-[var(--g-surface-2)] p-4" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-sm font-semibold text-[var(--g-text-high)]">What happened</h2>
+            {[...view.log]
+              .filter((entry) => entry.type !== "auto:pass" || /[—;]/.test(entry.message))
+              .reverse()
+              .map((entry, i) => (
+                <p key={`${entry.version}-${i}`} className="border-b border-white/5 pb-1 text-xs text-[var(--g-text-muted)]">
+                  <span className="font-mono text-[10px] text-white/40">T{entry.turn}</span> {entry.message}
+                </p>
+              ))}
+            <Button variant="ghost" onClick={() => setShowLog(false)}>Close</Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 export default function PlayTable() {
@@ -1537,7 +1662,9 @@ export default function PlayTable() {
   return (
     <>
       {banner}
-      {!seated ? (
+      {table.watching ? (
+        <Watching table={table} />
+      ) : !seated ? (
         <Lobby table={table} name={name} setName={setName} />
       ) : playing ? (
         <Board table={table} />
