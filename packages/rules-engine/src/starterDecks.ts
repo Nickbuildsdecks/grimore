@@ -1099,6 +1099,40 @@ const NIGHT_OF_SOULS_BETRAYAL: CardDef = {
 };
 
 
+// ── White-blue fliers and answers ────────────────────────────────────────────────────────────────
+
+const AZORIUS_GUILDGATE: CardDef = {
+  name: 'Azorius Guildgate',
+  typeLine: 'Land \u2014 Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Azorius Guildgate enters the battlefield tapped.\n{T}: Add {W} or {U}.',
+  colors: [],
+};
+
+const HANNA_SHIPS_NAVIGATOR: CardDef = {
+  name: "Hanna, Ship's Navigator",
+  typeLine: 'Legendary Creature \u2014 Human Artificer',
+  manaCost: '{1}{W}{U}',
+  cmc: 3,
+  power: '1',
+  toughness: '3',
+  oracleText: '{1}{W}{U}, {T}: Return target artifact or enchantment card from your graveyard to your hand.',
+  colors: ['W', 'U'],
+};
+
+const WALL_OF_AIR: CardDef = {
+  name: 'Wall of Air',
+  typeLine: 'Creature \u2014 Wall',
+  manaCost: '{1}{U}{U}',
+  cmc: 3,
+  power: '1',
+  toughness: '5',
+  oracleText: 'Defender, flying',
+  colors: ['U'],
+};
+
+
 // ── Mana that is not a land ──────────────────────────────────────────────────────────────────────
 
 const SOL_RING: CardDef = {
@@ -1538,6 +1572,66 @@ export const ASHEN_RITE: DeckSpec = {
   ],
 };
 
+/**
+ * The seventh deck, and the pairing the pool had never put together.
+ *
+ * Every counterspell in it was in a deck beside black removal, and every flier but the Drakes was
+ * in a green-white deck that wants to attack on the ground. White-blue is what the pool was
+ * missing: hold the ground, win in the air, and answer the one spell that matters. It is also the
+ * only deck whose plan is *not* to have the best board — the Walls do not attack and the fliers go
+ * over whatever is in the way.
+ *
+ * Hanna is the commander because her ability is the deck said twice: the Pacifism, the Journey, the
+ * Mind Stone and the Icy Manipulator are all worth drawing again, and she is the first commander in
+ * the pool whose text is an activated ability pointing at a card in a graveyard.
+ */
+export const SKYWARD_WRIT: DeckSpec = {
+  id: 'skyward-writ',
+  name: 'Skyward Writ',
+  description: 'White-blue fliers. Hold the ground, answer the spell that matters, and win in the air.',
+  commander: HANNA_SHIPS_NAVIGATOR,
+  cards: [
+    { card: PLAINS, count: 8 },
+    { card: ISLAND, count: 8 },
+    { card: AZORIUS_GUILDGATE, count: 3 },
+    { card: LONELY_SANDBAR, count: 2 },
+    { card: SECLUDED_STEPPE, count: 2 },
+    /*
+      The ground, which this deck does not intend to win — and which the first version of it lost
+      on, 1-9 against both aggro decks over sixty measured games.
+
+      What fixed it was bodies that block rather than more answers: a 1/5 flier that stops anything
+      the air can throw and attacks nowhere, a first striker that wins the fight it is in, two
+      blockers for two mana at instant speed, and a one-drop that gains a life for every creature
+      anybody plays. The answers were never the problem; having nothing alive to answer *with* was.
+    */
+    { card: SOUL_WARDEN, count: 2 },
+    { card: YOUTHFUL_KNIGHT, count: 3 },
+    { card: OMENSPEAKER, count: 2 },
+    { card: WALL_OF_AIR, count: 4 },
+    { card: RAISE_THE_ALARM, count: 2 },
+    // And the air, which it does intend to win.
+    { card: LEONIN_SKYHUNTER, count: 3 },
+    { card: WIND_DRAKE, count: 2 },
+    { card: MAN_O_WAR, count: 2 },
+    { card: AIR_ELEMENTAL, count: 1 },
+    { card: SERRA_ANGEL, count: 2 },
+    // The answers. Three different counters rather than four of one, because what needs countering
+    // changes: Essence Scatter is for the creature decks and Negate for everything else.
+    { card: COUNTERSPELL, count: 2 },
+    { card: ESSENCE_SCATTER, count: 1 },
+    { card: NEGATE, count: 1 },
+    { card: UNSUMMON, count: 1 },
+    { card: SWORDS_TO_PLOWSHARES, count: 3 },
+    { card: PACIFISM, count: 2 },
+    { card: JOURNEY_TO_NOWHERE, count: 1 },
+    // Cards, and the two artifacts Hanna is happy to buy back.
+    { card: DIVINATION, count: 1 },
+    { card: MIND_STONE, count: 1 },
+    { card: ICY_MANIPULATOR, count: 1 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
@@ -1545,6 +1639,7 @@ export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [ROT_HARVEST.id]: ROT_HARVEST,
   [FORGE_ALLIANCE.id]: FORGE_ALLIANCE,
   [ASHEN_RITE.id]: ASHEN_RITE,
+  [SKYWARD_WRIT.id]: SKYWARD_WRIT,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

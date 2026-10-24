@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — a hundred and twenty-four, today, across six starter decks. A
+cards somebody has scripted — a hundred and twenty-seven, today, across seven starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -163,12 +163,22 @@ control onto himself — as its commander. **Ashen Rite** (black-red) is the new
 deck whose costs are decisions: cycling lands that are a land early and a card late, spells with a
 kicker you may pay for a bigger version of the same card, and removal whose cost is one of your own
 creatures. Judith leads it, and makes every creature you lose a Shock on the way out.
+**Skyward Writ** (white-blue) is the newest and the first deck whose plan is not to have the best
+board: Walls that hold the ground and attack nowhere, three different counterspells because what
+needs countering changes, and fliers to win over the top. Hanna leads it and buys an artifact or
+enchantment back out of your graveyard once a turn.
 
-Each two-colour deck runs a pair of Guildgates: one mana of either colour, and they come in tapped,
-and four of the six also run a pair of cycling lands. Any pairing works, including a deck against
-itself. They are also the only decks right now — see *What is not done* below.
+Each two-colour deck runs a pair or three of Guildgates: one mana of either colour, and they come in
+tapped, and five of the seven also run a pair of cycling lands. Any pairing works, including a deck
+against itself. They are also the only decks right now — see *What is not done* below.
 
-The decks share a pool of a hundred and twenty-four scripted cards, which now includes a wrath, a
+A note on what to expect from each: played against each other by the engine's own opponent, the
+aggressive decks win more. Skyward Writ in particular wins 42% against the field — beating the
+slower decks comfortably and losing to the fastest ones — and a good part of that is the opponent
+rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
+A person plays it better.
+
+The decks share a pool of a hundred and twenty-seven scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -276,7 +286,7 @@ playing the server).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows a hundred and twenty-four cards.** Everything in the six starter decks. It
+- **The engine knows a hundred and twenty-seven cards.** Everything in the seven starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

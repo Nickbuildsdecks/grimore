@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**475 tests in the rules engine, 119 in the web app, 1,097 across the workspace.**
+**478 tests in the rules engine, 119 in the web app, 1,100 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -1018,6 +1018,31 @@ that somebody took something back — an undo nobody can see is indistinguishabl
 losing a move. The limit is stated rather than hidden: the previous state is exactly the previous
 state, so a card drawn and then taken back has still been seen by whoever drew it, which is true
 across a kitchen table too.
+
+**A seventh deck, and the measurement rewrote it twice.** The two colours with the most answers in
+the pool had never been played together: every counterspell was in a deck beside black removal, and
+every flier but the Drakes was in a green-white deck that wants to attack on the ground.
+**Skyward Writ** is white-blue tempo, and the first deck whose plan is not to have the best board.
+
+Three new cards: Azorius Guildgate (one line through the gate helper), **Wall of Air** — the first
+card in the pool carrying `defender` and flying at once — and **Hanna, Ship's Navigator** as the
+commander, the first whose text is an activated ability pointing into a graveyard, which needed no
+new vocabulary at all.
+
+Then it was played against all six other decks with the searching bot on both sides. The first
+version lost 19-41, including **1-9 against both aggro decks**, while casting everything it was
+supposed to — so nothing was broken; it simply had nothing alive to answer with. Four Walls instead
+of two, a third first striker, instant-speed blockers, a lifegain one-drop and a land fewer took it
+to 29-31. The current version is **50-70 over 120 games — 42% against the field**, with the spread a
+tempo deck should have: 16-4 against Tidal Mind, 13-7 against Rot Harvest, 9-11 against Ashen Rite,
+and 5-15, 5-15, 2-18 against the three decks that attack fastest.
+
+A card was cut by the same numbers: Moon Heron, a 3/2 flier for five, was written, scripted, played
+sixty games across two versions and deleted, because it never earned the slot.
+
+And the honest half of the win rate: **holding mana for a counterspell is this deck's whole plan and
+the bot cannot do it** — it counters what is counterable, not what matters. That is the limitation
+D62 measured, and it means a person plays this deck better than the opponent can.
 
 ## Next
 

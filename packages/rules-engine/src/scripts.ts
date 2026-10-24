@@ -1842,6 +1842,54 @@ const NIGHT_OF_SOULS_BETRAYAL: CardScript = {
   statics: [{ scope: 'all-creatures', effect: { power: -1, toughness: -1 } }],
 };
 
+/*
+  White-blue: the seventh deck's own cards.
+
+  Two cards: a keyword and a body, and a commander. The deck is otherwise built out of what the pool
+  already had, which is the point — and a third card, a 3/2 flier for five, was written, played
+  sixty games in two versions of the deck, and cut, because it never earned the slot. The measuring
+  is the part worth keeping.
+*/
+
+/** Wall of Air: the first card in the pool with `defender` and flying at once. */
+const WALL_OF_AIR: CardScript = { name: 'Wall of Air', keywords: ['defender', 'flying'] };
+
+/**
+ * Hanna, Ship's Navigator: an artifact or enchantment, bought back once a turn.
+ *
+ * The first commander in the pool whose text is an activated ability pointing into a graveyard, and
+ * it needed no new vocabulary: `graveyard-card` has always taken any card with a filter, and the
+ * filter is the card's printed type line — which is the right test, because a card in a graveyard
+ * has no continuous effects applied to it and its printed type is what it is.
+ *
+ * Her own graveyard only, which is what the card says and also what keeps her honest: she is a
+ * 1/3 for three that rebuys *your* Pacifism, not a way into somebody else's.
+ */
+const HANNA: CardScript = {
+  name: "Hanna, Ship's Navigator",
+  abilities: [
+    {
+      cost: { mana: '{1}{W}{U}', tap: true },
+      description: "{1}{W}{U}, {T}: Return target artifact or enchantment card from your graveyard to your hand",
+      targets: [{
+        kind: 'graveyard-card',
+        description: 'target artifact or enchantment card in your graveyard',
+        filter: (state, candidate, controller) => {
+          if (candidate.kind !== 'card') return false;
+          const inst = state.instances[candidate.id];
+          if (inst === undefined || inst.zoneSeat !== controller) return false;
+          const line = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+          return hasType(line, 'artifact') || hasType(line, 'enchantment');
+        },
+      }],
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : moveToHand(c.state, [id]);
+      },
+    },
+  ],
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 const ALL: readonly CardScript[] = [
@@ -1889,6 +1937,8 @@ const ALL: readonly CardScript[] = [
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
   HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT,
   YOUTHFUL_KNIGHT, BOGGART_BRUTE, ROBE_OF_MIRRORS, NIGHT_OF_SOULS_BETRAYAL,
+  WALL_OF_AIR, HANNA,
+  guildgate('Azorius Guildgate', 'W', 'U'),
   equipment('Darksteel Plate', '{2}', { keywords: ['indestructible'] },
     'equipped creature is indestructible'),
   guildgate('Rakdos Guildgate', 'B', 'R'),

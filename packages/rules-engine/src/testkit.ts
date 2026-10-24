@@ -83,6 +83,14 @@ export interface Setup {
   readonly hands?: Readonly<Record<number, readonly string[]>>;
   /** Cards to put onto each seat's battlefield, by name. */
   readonly battlefield?: Readonly<Record<number, readonly string[]>>;
+  /**
+   * Cards to put into each seat's graveyard, by name.
+   *
+   * Through the hand rather than straight from the library, because a card in a graveyard has been
+   * *put* there — which is also how a test gets one there by hand, and what the cards that read a
+   * graveyard are written against.
+   */
+  readonly graveyard?: Readonly<Record<number, readonly string[]>>;
   /** Which seat takes the first turn. */
   readonly firstSeat?: SeatIndex;
   /** Turn to pretend we have reached, so battlefield creatures are not summoning sick. */
@@ -151,6 +159,13 @@ export function arena(setup: Setup = {}): GameState {
   for (const [seat, names] of Object.entries(setup.hands ?? {})) place(Number(seat) as SeatIndex, names, 'hand');
   for (const [seat, names] of Object.entries(setup.battlefield ?? {})) {
     place(Number(seat) as SeatIndex, names, 'battlefield');
+  }
+  for (const [seat, names] of Object.entries(setup.graveyard ?? {})) {
+    const index = Number(seat) as SeatIndex;
+    place(index, names, 'hand');
+    for (const name of names) {
+      s = apply(s, { type: 'card:move', by: index, card: find(s, index, 'hand', name), toZone: 'graveyard' });
+    }
   }
 
   // Fast-forward the turn counter with repeated `turn:pass`, which is the tabletop's own action, so

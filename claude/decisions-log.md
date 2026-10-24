@@ -2228,3 +2228,45 @@ kitchen table too, and it is the reason this is one step, host-only and announce
 The announcement is a chat message rather than a line in the game log on purpose. The log is the
 engine's, and the restored state carries the log it had — the undone move's own line is gone from
 it, which is correct, because it did not happen.
+
+## D67 — The seventh deck, and what measuring it changed
+
+Six decks, and the two colours with the most answers in the pool had never been played together:
+every counterspell sat in a deck beside black removal, and every flier but the Drakes sat in a
+green-white deck that wants to attack on the ground. **Skyward Writ** is white-blue tempo — hold the
+ground, answer the one spell that matters, win in the air — and it is the first deck whose plan is
+*not* to have the best board.
+
+It needed three cards. **Azorius Guildgate**, one line through the `guildgate()` helper.
+**Wall of Air**, the first card in the pool with `defender` and flying at once. And
+**Hanna, Ship's Navigator** as the commander, the first in the pool whose text is an activated
+ability pointing into a graveyard — which needed no new vocabulary: `graveyard-card` has always
+taken any card with a filter, and the filter is the card's printed type line, which is the right
+test because a card in a graveyard has no continuous effects applied to it.
+
+**Then it was measured, and the measurement rewrote it twice.**
+
+- **First version: 19 wins, 41 losses over sixty games**, including 1-9 against both aggro decks. It
+  cast everything — 38 Counterspells, 16 Hanna activations — so nothing was broken. What was wrong
+  was that it had nothing alive to answer *with*: 24 lands, a 5-mana 3/2 flier, and two blockers.
+- **Second version: 29-31.** The fix was bodies rather than answers: four Walls instead of two, a
+  third first striker, two blockers for two mana at instant speed, and a one-drop that gains life
+  for every creature anybody plays. Lands down to 23.
+- **Third and current: 50-70 over 120 games**, which is 42% against the whole field, with the
+  spread a tempo deck should have: **16-4 against Tidal Mind, 13-7 against Rot Harvest, 9-11 against
+  Ashen Rite, and 5-15, 5-15, 2-18 against the three decks that attack fastest.**
+
+**And a card was cut by the numbers.** Moon Heron — a 3/2 flier for five — was written, scripted,
+played sixty games across two versions of the deck, and deleted, because it never earned the slot.
+The def and the script are gone with it; what is kept is the fact that it was measured.
+
+**Two honest reasons the overall number is under half**, and only one of them is the deck. The deck
+loses to go-wide green-white because its blockers are 1/5 Walls and its removal is one-for-one, which
+is a real matchup. The other reason is the bot: **holding mana for a counterspell is this deck's
+whole plan and the search cannot do it** — it casts a counter when a counter is castable, not when
+it matters. That limitation is written up in D62 and the ceiling it describes is the evaluation, not
+the depth. A person playing Skyward Writ plays it better than the bot can, which is not a claim
+about this deck so much as about the one thing the opponent still cannot do.
+
+The testkit also gained a `graveyard` option for `arena()`, because the three new tests needed cards
+in a graveyard and every earlier graveyard test had been putting them there by hand.

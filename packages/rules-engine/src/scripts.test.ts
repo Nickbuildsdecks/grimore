@@ -3873,6 +3873,92 @@ describe('the keywords nothing in the pool carried', () => {
   });
 });
 
+/**
+ * The seventh deck's own cards.
+ *
+ * Three of the four are a keyword and a body, which is the point of including them here anyway:
+ * `defender` had never been on a flier, and the commander is the first in the pool whose text is an
+ * activated ability pointing into a graveyard.
+ */
+describe('white-blue: the seventh deck', () => {
+  it('Wall of Air blocks a flier and cannot attack', () => {
+    let s = arena({
+      decks: { 0: 'tidal-mind', 1: 'skyward-writ' },
+      battlefield: { 0: ['Air Elemental'], 1: ['Wall of Air'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const elemental = find(s, 0, 'battlefield', 'Air Elemental');
+    const wall = find(s, 1, 'battlefield', 'Wall of Air');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: elemental, defender: 1 }] }));
+    // A 1/5 flier stops a 4/4 flier dead: that is what the card is for, and nothing in the pool
+    // could block a flier without being one.
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: wall, attacker: elemental }] }));
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(life(s, 1)).toBe(20);
+    expect(s.instances[wall]!.zone).toBe('battlefield');
+
+    // And on its own turn it is not offered as an attacker at all (CR 702.3b).
+    s = advanceTo(nextTurn(s), 'declare-attackers');
+    expect(legalActions(s, 1).attackers).not.toContain(wall);
+  });
+
+  it("Hanna buys back an enchantment from her controller's graveyard, once a turn", () => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'rot-harvest' },
+      hands: { 0: [] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Island', "Hanna, Ship's Navigator"],
+      },
+      graveyard: { 0: ['Pacifism', 'Serra Angel'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const hanna = find(s, 0, 'battlefield', "Hanna, Ship's Navigator");
+    const pacifism = find(s, 0, 'graveyard', 'Pacifism');
+    const angel = find(s, 0, 'graveyard', 'Serra Angel');
+    // The creature in the same graveyard is not a legal target: the filter is the printed type
+    // line, which is the right test for a card that has no continuous effects on it.
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: hanna, abilityIndex: 0,
+      targets: [{ kind: 'card', id: angel }],
+    })).not.toBeNull();
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: hanna, abilityIndex: 0,
+      targets: [{ kind: 'card', id: pacifism }],
+    })));
+    expect(namesIn(s, 0, 'hand')).toContain('Pacifism');
+    // Tapped for it, so it is once a turn and she is not blocking this turn either.
+    expect(s.instances[hanna]!.tapped).toBe(true);
+  });
+
+  it('and not out of somebody else’s graveyard', () => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      battlefield: { 0: ['Plains', 'Plains', 'Island', "Hanna, Ship's Navigator"] },
+      graveyard: { 1: ['Pacifism'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const hanna = find(s, 0, 'battlefield', "Hanna, Ship's Navigator");
+    const theirs = find(s, 1, 'graveyard', 'Pacifism');
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: hanna, abilityIndex: 0,
+      targets: [{ kind: 'card', id: theirs }],
+    })).not.toBeNull();
+    // With nothing of her own to take back, the ability is not offered at all (CR 603.3c applies to
+    // triggers; for an activated ability it is `legalActions` refusing to offer an unanswerable one).
+    const offered = legalActions(s, 0).plays.some((play) => play.card === hanna);
+    expect(offered).toBe(false);
+  });
+});
+
 describe('unscripted cards', () => {
   it('casts, resolves and fights normally, and says in the log that it is not automated', () => {
     // Hill Giant has no script: no triggers, no abilities, nothing printed but a body.
