@@ -13,7 +13,9 @@ import {
   unpackView, viewFor,
   type Action, type GameState, type SeatIndex,
 } from './index.js';
-import { PLAYERS, POD_PLAYERS, HOST, WIRE_CAP, advanceTo, apply, arena, find, ids } from './testkit.js';
+import {
+  PLAYERS, POD_PLAYERS, HOST, WIRE_CAP, advanceTo, apply, arena, find, ids, tapAllLands,
+} from './testkit.js';
 
 /** A four-seat Commander pod, every seat on a different deck, handed to the rules engine. */
 function pod(seed: number, firstSeat: SeatIndex = 0): GameState {
@@ -822,6 +824,79 @@ describe('what looking a move ahead buys', () => {
     const answer = botAction(swung, 0);
     expect(answer?.type).toBe('auto:cast');
     expect(nameOfCard(swung, answer?.type === 'auto:cast' ? answer.card : undefined)).toBe('Fog');
+  });
+
+  it('will not pump a creature in its own upkeep, and will pump an attacker', () => {
+    /*
+      The fourth and last of the "spent on nothing" family, and the widest measurement behind any
+      of them: five pumps, 95 casts across 160 unsteered games, **none of them during a combat**
+      and 59 in the caster's own upkeep or draw step, before a land had been played.
+
+      It is the search's horizon rather than its judgement. A cast is scored with `simulate`, which
+      stops when the stack empties, so "+3/+3 until end of turn" reads as a creature that is bigger
+      *now*; the combat it was printed for is past where the simulation looks.
+    */
+    let idle = arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      hands: { 0: ['Giant Growth'] },
+      battlefield: { 0: ['Forest', 'Centaur Courser'] },
+      turn: 4, firstSeat: 0,
+    });
+    idle = advanceTo(idle, 'upkeep');
+    idle = apply(idle, {
+      type: 'auto:activate', by: 0, card: find(idle, 0, 'battlefield', 'Forest'), abilityIndex: 0,
+    });
+    // The shallow bot takes it, which is what makes this a measurement of the rule rather than of
+    // the board: both bots are offered the same cast and only one of them declines.
+    expect(botAction(idle, 0, BREADTH)?.type).toBe('auto:cast');
+    expect(botAction(idle, 0)?.type).toBe('auto:pass');
+
+    // And with the same creature attacking, the same card is the play.
+    let swinging = arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      hands: { 0: ['Giant Growth'] },
+      battlefield: { 0: ['Forest', 'Centaur Courser'], 1: ['Hill Giant'] },
+      turn: 4, firstSeat: 0,
+    });
+    swinging = advanceTo(swinging, 'declare-attackers');
+    swinging = apply(swinging, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: find(swinging, 0, 'battlefield', 'Centaur Courser'), defender: 1 }],
+    });
+    swinging = apply(swinging, {
+      type: 'auto:activate', by: 0, card: find(swinging, 0, 'battlefield', 'Forest'), abilityIndex: 0,
+    });
+    const answer = botAction(swinging, 0);
+    expect(answer?.type).toBe('auto:cast');
+    expect(nameOfCard(swinging, answer?.type === 'auto:cast' ? answer.card : undefined)).toBe('Giant Growth');
+  });
+
+  it('and a sorcery pump is cast before the attack, because it cannot wait for blockers', () => {
+    // The rule is "do not spend now what you can spend better later", and for a sorcery there is
+    // no later this turn. Overrun in a precombat main with something to attack with is the play;
+    // the same card with an empty board is not.
+    let ready = arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      hands: { 0: ['Overrun'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Centaur Courser'] },
+      turn: 4, firstSeat: 0,
+    });
+    ready = advanceTo(ready, 'precombat-main');
+    ready = tapAllLands(ready, 0);
+    const play = botAction(ready, 0);
+    expect(play?.type).toBe('auto:cast');
+    expect(nameOfCard(ready, play?.type === 'auto:cast' ? play.card : undefined)).toBe('Overrun');
+
+    // With nothing on the board it is held, because +3/+3 to no creatures is a card in the bin.
+    let empty = arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      hands: { 0: ['Overrun'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest'] },
+      turn: 4, firstSeat: 0,
+    });
+    empty = advanceTo(empty, 'precombat-main');
+    empty = tapAllLands(empty, 0);
+    expect(botAction(empty, 0)?.type).not.toBe('auto:cast');
   });
 
   it('will not cast a ritual with nothing to spend it on, and will when there is', () => {

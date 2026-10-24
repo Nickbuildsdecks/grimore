@@ -274,6 +274,12 @@ export interface ModeDef {
   /** Questions asked while this mode resolves. See `DecisionSpec`. */
   readonly decisions?: readonly DecisionSpec[];
   readonly effect: EffectFn;
+  /**
+   * See `CardScript.expiresAtEndOfTurn`. On the mode rather than the card, because a charm's other
+   * modes are not pumps: Selesnya Charm exiles a big creature or makes a token, and holding it
+   * back for a combat would be wrong for either.
+   */
+  readonly expiresAtEndOfTurn?: boolean;
 }
 
 /**
@@ -377,6 +383,26 @@ export interface CardScript {
    * is on the stack, because then "cast it" and "pass" play out to different boards.
    */
   readonly protectsACreature?: boolean;
+  /**
+   * "This spell's whole effect wears off at end of turn" — a pump.
+   *
+   * The fourth and last of the family, and the one with the widest measurement behind it. Across
+   * 160 unsteered games the five pumps in the pool were cast 95 times and **not once during a
+   * combat**: 59 of them in the caster's own upkeep or draw step, before a land had been played,
+   * on a board where nothing could possibly be attacking.
+   *
+   * It is the search's horizon rather than its judgement. A cast is scored with `simulate`, which
+   * stops when the stack empties, so "+3/+3 until end of turn" is read as a creature that is
+   * bigger *now*; the combat it was printed for is past where the simulation looks.
+   * `scoreDeclaration` does play through combat, which is why the same bot blocks and attacks
+   * well — the gap is only on the cast.
+   *
+   * So the rule is not "a pump is bad" but **"do not spend now what you can spend better later"**.
+   * An instant can wait for blockers; a sorcery cannot wait past this main phase, so one is
+   * allowed precombat when there is something to attack with. The bot held nothing back before
+   * this and has no other way to learn it: the card is gone two steps before the question.
+   */
+  readonly expiresAtEndOfTurn?: boolean;
   /**
    * What this Equipment gives the creature it is attached to.
    *

@@ -16,9 +16,9 @@
 import { legalActions, type LegalActions, type LegalPlay } from './legalActions.js';
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
-import { bottomOwed, pendingDeclaration, stillDeciding } from './automation.js';
-import { characteristicsOf, hasType, type Keyword } from './characteristics.js';
-import { canAttack, canBlock } from './combat.js';
+import { bottomOwed, modesOf, pendingDeclaration, stillDeciding } from './automation.js';
+import { characteristicsOf, hasType, parseTypeLine, type Keyword } from './characteristics.js';
+import { canAttack, canBlock, legalAttackers } from './combat.js';
 import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
 import { costValue, parseManaCost } from './mana.js';
@@ -1062,6 +1062,50 @@ function creatureOfYoursIsThreatened(state: GameState, seat: SeatIndex): boolean
   );
 }
 
+/**
+ * Whether this action casts a spell whose whole effect wears off at end of turn.
+ *
+ * Per mode as well as per card: a charm's pump mode wears off and its removal mode does not, and
+ * holding a Selesnya Charm back for a combat you are not in would be wrong for the other two
+ * thirds of the card.
+ */
+function castsAnExpiringPump(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  const script = name === undefined ? undefined : scriptFor(name);
+  if (script === undefined) return false;
+  if (script.expiresAtEndOfTurn === true) return true;
+  return modesOf(script, action.modes).some((mode) => mode.expiresAtEndOfTurn === true);
+}
+
+/**
+ * Whether a bonus that wears off tonight can still earn its keep today.
+ *
+ * Not "is a pump good" — "is there anything better to do with it than cast it right now". Three
+ * ways there is not:
+ *
+ *  - something on the stack is pointing at one of my creatures, so the pump may save it;
+ *  - a combat is happening that one of my creatures is in, which is what the card is printed for;
+ *  - it is a **sorcery** in my precombat main with something that can attack, because a sorcery
+ *    cannot wait for blockers — there is no later this turn, and the Overrun line is exactly this.
+ *
+ * Everything else — an upkeep, a draw step, a main phase with an instant in hand — is a card spent
+ * two steps before the question it answers. 59 of 95 measured casts were in an upkeep or a draw
+ * step, before the caster had played a land.
+ */
+function expiringPumpCanMatter(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (creatureOfYoursIsThreatened(state, seat)) return true;
+  if (state.step !== 'precombat-main' || state.activeSeat !== seat) return false;
+  const inst = action.type === 'auto:cast' ? state.instances[action.card] : undefined;
+  const types = parseTypeLine(state.cardDefs[inst?.defKey ?? '']?.typeLine);
+  // An instant can wait for blockers; only a sorcery has to be cast before the attack it helps.
+  if (!hasType(types, 'sorcery')) return false;
+  // `legalAttackers`, not `legalActions(...).attackers`: that field is only filled in while a
+  // declaration is owed, so in a main phase it is always empty — which is how the first version
+  // of this clause took Overrun from 23 casts a hundred-and-sixty games to none at all.
+  return legalAttackers(state, seat).some((id) => canAttack(state, id, seat) === null);
+}
+
 /** Whether this action casts a spell whose whole effect is mana. */
 function castsARitual(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -1257,6 +1301,21 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       from "pass".
     */
     if (castsAProtection(state, option.action) && !creatureOfYoursIsThreatened(state, seat)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And the last of the family: a bonus that wears off tonight, spent this morning.
+
+      The widest of the four measurements. Five pumps, 95 casts across 160 games, **none of them
+      during a combat** and 59 in the caster's own upkeep or draw step. The search cannot see it —
+      `simulate` stops when the stack empties, so "+3/+3 until end of turn" is a creature that is
+      bigger *now* and the combat is past the horizon — and no weight fixes that, because the
+      creature really is bigger. What the board can say is whether there is a better moment
+      coming, which is a fact.
+    */
+    if (castsAnExpiringPump(state, option.action)
+      && !expiringPumpCanMatter(state, seat, option.action)) {
       dropped += 1;
       continue;
     }

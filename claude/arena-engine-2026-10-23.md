@@ -1628,6 +1628,44 @@ over, and nothing may open — and it took three attempts to write, because the 
 concede (the sheet was covering it) and the second quietly never ran (the losing hand is usually
 empty). Written up as D85.
 
+### The pump cast at the wrong time
+
+The protection spells showed the shape of this: before the rule that held them back, they were
+cast 64 times and **never once during a combat**. The pool has five more cards shaped exactly the
+same way, and an earlier increment had already noticed one of them — *"Titanic Growth cast 17
+times and never in combat"* — and filed it as something the bot could not do.
+
+Measured properly, it was worse than that. Across 160 unsteered games the five pumps were cast 95
+times, none of them in a combat, and **59 of those in the caster's own upkeep or draw step** —
+before a land had been played, on a board where nothing could be attacking.
+
+The cause is the search's horizon rather than its judgement. A cast is scored with `simulate`,
+which stops once the stack is empty, so "+3/+3 until end of turn" reads as a creature that is
+bigger *now*. The combat is past where the simulation looks, and no weight fixes that, because the
+creature really is bigger.
+
+So: **do not spend now what you can spend better later** — which is the first time the
+instant/sorcery line has done real work here. An instant can wait for blockers, so it is held
+unless a combat is happening or something on the stack is pointing at one of this seat's
+creatures. A sorcery cannot wait past this main phase, so it is allowed precombat when there is
+something to attack with, which is the Overrun line and the only reason that card is playable.
+
+| card | before: cast / in combat / wasted | after: cast / in combat / wasted |
+| --- | --- | --- |
+| Giant Growth | 17 / 0 / 16 | 15 / 12 / 0 |
+| Titanic Growth | 25 / 0 / 24 | 21 / 15 / 0 |
+| Inspired Charge | 23 / 0 / 23 | 2 / 2 / 0 |
+| Overrun (sorcery) | 23 / 0 / 23 | 22, all precombat with an attack to make |
+| Selesnya Charm (pump mode) | 7 / 0 / 7 | 0 |
+
+**It wins no more games, and that is recorded rather than buried.** Against a fixed shallow-bot
+opponent over 240 paired games on two seed sets: 182-58 against 181-59, then 184-56 against
+185-55 — one game either way, against a noise floor of eighteen. It is kept for two reasons that
+are not win rate. A card thrown away is a card a *person* would have used, so the rule is worth
+more across the table from a human than against the reference bot. And an opponent that casts
+Giant Growth in its own upkeep is the most obvious way a table can feel like it is being played by
+a program.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -1644,8 +1682,10 @@ empty). Written up as D85.
 3. A stronger opponent still. It plays each option out — plays, attacks and blocks — and keeps the
    position it likes best, which is worth better than two games in three against the bot it
    replaced. But one ply is one ply: the simulation stops at the end of the current combat, so it
-   cannot see the swing back on the opponent's next turn, keep mana up for the counterspell in its
-   hand, or tell that a spell is worth more next turn than this one. All three need the *reply*,
+   cannot see the swing back on the opponent's next turn or keep mana up for the counterspell in
+   its hand. "A spell is worth more later than now" has been taught four times by hand instead —
+   the ritual, the Fog, the protection trick and the pump — and each time it was a fact about the
+   board rather than a weight, because the weight cannot be made to work. All three need the *reply*,
    which is this same function recursing with the opponent choosing against it — and the cheap
    substitute for the first of them (scoring an untapped creature above a tapped one) was tried and
    measurably lost games, which is written up in `claude/decisions-log.md`.

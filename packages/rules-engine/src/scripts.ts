@@ -353,6 +353,8 @@ const SERRA_ANGEL: CardScript = { name: 'Serra Angel', keywords: ['flying', 'vig
 
 const GIANT_GROWTH: CardScript = {
   name: 'Giant Growth',
+  // Wears off at end of turn, so it is held for the combat. See `expiresAtEndOfTurn`.
+  expiresAtEndOfTurn: true,
   targets: [TARGET_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -397,6 +399,8 @@ const HARMONIZE: CardScript = {
 
 const OVERRUN: CardScript = {
   name: 'Overrun',
+  // Wears off at end of turn, so it is held for the combat. See `expiresAtEndOfTurn`.
+  expiresAtEndOfTurn: true,
   onResolve: (c) => pumpTeam(c.state, c.source, c.controller, { power: 3, toughness: 3, keywords: ['trample'] }),
 };
 
@@ -733,6 +737,8 @@ const ANGELIC_GIFT: CardScript = {
 
 const INSPIRED_CHARGE: CardScript = {
   name: 'Inspired Charge',
+  // Wears off at end of turn, so it is held for the combat. See `expiresAtEndOfTurn`.
+  expiresAtEndOfTurn: true,
   onResolve: (c) => pumpTeam(c.state, c.source, c.controller, { power: 2, toughness: 1 }),
 };
 
@@ -1118,6 +1124,8 @@ const SELESNYA_CHARM: CardScript = {
     modes: [
       {
         description: 'Target creature gets +2/+2 and gains trample until end of turn',
+        // Only this mode of the three wears off; the other two exile and make a token.
+        expiresAtEndOfTurn: true,
         targets: [TARGET_CREATURE],
         effect: (c) => {
           const id = firstCardTarget(c);
@@ -2004,6 +2012,8 @@ const GIANT_SPIDER: CardScript = { name: 'Giant Spider', keywords: ['reach'] };
 
 const TITANIC_GROWTH: CardScript = {
   name: 'Titanic Growth',
+  // Wears off at end of turn, so it is held for the combat. See `expiresAtEndOfTurn`.
+  expiresAtEndOfTurn: true,
   targets: [TARGET_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);

@@ -2941,3 +2941,47 @@ Three lessons, in the order they were learned the hard way:
 - A check that can silently not run is worse than no check: it reports a pass it never made.
 - The fix that stops the state being *entered* beats the one that cleans it up afterwards, and
   the way to tell them apart is a test that fails first.
+
+## D86 — Do not spend now what you can spend better later
+
+The fourth and last card in the "spent on nothing" family, and the one with the widest measurement
+behind it. Five pumps in the pool — Giant Growth, Titanic Growth, Inspired Charge, Overrun and
+Selesnya Charm's pump mode — cast **95 times across 160 unsteered games and not once during a
+combat**. 59 of those were in the caster's own upkeep or draw step, before a land had been played,
+on a board where nothing could possibly be attacking.
+
+It is the search's horizon, not its judgement. A cast is scored with `simulate`, which stops when
+the stack empties, so "+3/+3 until end of turn" is read as a creature that is bigger *now*; the
+combat it was printed for is past where the simulation looks. `scoreDeclaration` does play through
+combat, which is why the same bot attacks and blocks well — the gap is only on the cast, and no
+weight closes it, because the creature really is bigger.
+
+So the rule is not "a pump is bad". It is **"do not spend now what you can spend better later"**,
+which makes the instant/sorcery line do real work for the first time in this project:
+
+- an instant can wait for blockers, so it is held unless a combat is happening or something on the
+  stack is pointing at one of this seat's creatures;
+- a sorcery cannot wait past this main phase, so it is allowed in a precombat main with something
+  that can attack — which is the Overrun line, and the only reason that card is playable at all.
+
+**Measured on the same 160 games, before and after:**
+
+| card | before: cast / in combat / wasted | after: cast / in combat / wasted |
+| --- | --- | --- |
+| Giant Growth | 17 / 0 / 16 | 15 / 12 / 0 |
+| Titanic Growth | 25 / 0 / 24 | 21 / 15 / 0 |
+| Inspired Charge | 23 / 0 / 23 | 2 / 2 / 0 |
+| Overrun (sorcery) | 23 / 0 / 23 | 22, all precombat with an attack to make |
+| Selesnya Charm (pump mode) | 7 / 0 / 7 | 0 |
+
+**And it wins no more games, which is the honest half.** Against a fixed shallow-bot opponent over
+240 paired games on two seed sets: 182-58 against 181-59, and 184-56 against 185-55. One game
+either way, against a documented noise floor of eighteen. Kept anyway, for two reasons that are
+not win rate: a card thrown away is a card a *human* opponent would have used, so the rule is worth
+more against a person than against the reference bot; and an opponent that casts Giant Growth in
+its own upkeep is the single most obvious way a table feels like it is being played by a program.
+
+One bug on the way, worth the line: the first version of the sorcery clause asked
+`legalActions(state, seat).attackers`, which is only filled in while a declaration is owed and so
+is always empty in a main phase. Overrun went from 23 casts to **zero** — a rule that reads as
+"never cast this card". `legalAttackers` is the function that answers the question anywhere.
