@@ -20,5 +20,27 @@ export default defineConfig({
     */
     testTimeout: 60_000,
     hookTimeout: 60_000,
+    /*
+      Two workers, not one per core.
+
+      This suite is dominated by one file — `playout.test.ts` plays whole games and takes most of
+      the minute — so capping the pool costs nothing: measured on four cores, 56.8s with the
+      default and 53.5s with two workers, which is to say the difference is noise and the extra
+      threads were never doing much. (`user` time is 1m03 against 55s of wall time: barely
+      parallel, because one file cannot be split.) What it buys is a run that does not starve its
+      own main thread.
+
+      What prompted it: a `turbo run test --force` across all ten packages on this four-core box
+      failed with `[vitest-worker]: Timeout calling "onTaskUpdate"` — all 487 tests passed and the
+      process still exited 1, because a worker could not reach the reporter inside its RPC timeout
+      while the machine was saturated. It repeated about one run in two with every package's suite
+      rebuilt at once.
+
+      It is a local-load artefact and is not stated here as a CI risk: CI has run this workflow 175
+      times on this branch and every one of the last ten is green, this flake among the things that
+      never happened there. The cap is kept because it costs nothing, not because it was shown to
+      fix anything.
+    */
+    maxWorkers: 2,
   },
 });

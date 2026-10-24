@@ -321,6 +321,21 @@ export interface CardScript {
    */
   readonly entersTapped?: boolean;
   /**
+   * "This spell's whole effect is mana": a ritual, and Dark Ritual is the only one in the pool.
+   *
+   * Nothing in the engine reads it — the mana goes in the pool through `addToPool` like any other
+   * mana, and the solver never needs to know where it came from. It is here for the *bot*, which
+   * does: mana empties at the end of the step (CR 500.4), so a ritual cast with nothing to spend
+   * it on is a card put in the graveyard for nothing, and the search has no other way to tell a
+   * spell that did nothing from a spell whose effect it cannot see. Measured before the bot knew:
+   * cast 35 times in 120 unsteered games, followed by a spell in the same step 3 times.
+   *
+   * Declared rather than inferred because inferring it is wrong twice over: the pool in a
+   * simulated line can be empty because the step ended, and a permanent that makes mana is a
+   * different card that the evaluation already prices correctly.
+   */
+  readonly makesMana?: boolean;
+  /**
    * What this Equipment gives the creature it is attached to.
    *
    * Declared rather than left inside the equip ability's own effect, because other cards read it:

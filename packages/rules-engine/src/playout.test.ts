@@ -685,6 +685,28 @@ describe('what looking a move ahead buys', () => {
     expect(searched?.type).toBe('auto:cast');
     expect(searched?.type === 'auto:cast' && searched.kicked === true).toBe(false);
   });
+
+  it('will not cast a ritual with nothing to spend it on, and will when there is', () => {
+    // Mana empties at the end of the step (CR 500.4), so a Dark Ritual cast into an empty hand is
+    // a card in the graveyard for nothing — and the evaluation cannot see that, because all it can
+    // see is a card leaving the hand. Measured over 240 unsteered games before the bot knew: cast
+    // 164 times, followed by a spell in the same step 17 times.
+    const alone = position(['Dark Ritual'], ['Swamp'], [], 'ashen-rite');
+    // The shallow bot takes the only play it has. That it is the only play is the point: the
+    // search has to be able to answer "none of these", which it could not until this test existed.
+    expect(botAction(alone, 0, BREADTH)?.type).toBe('auto:cast');
+    expect(botAction(alone, 0)?.type).toBe('auto:pass');
+
+    // And the line the card is in the deck for: a Swamp and a Mountain is two mana, a Flametongue
+    // Kavu costs four, and three black mana makes up the difference. The {R} is why the Mountain
+    // is not spare change — a ritual that made black only could not pay for the Kavu alone.
+    const useful = position(
+      ['Dark Ritual', 'Flametongue Kavu'], ['Swamp', 'Mountain'], ['Grizzly Bears'], 'ashen-rite',
+    );
+    const play = botAction(useful, 0);
+    expect(play?.type).toBe('auto:cast');
+    expect(nameOfCard(useful, play?.type === 'auto:cast' ? play.card : undefined)).toBe('Dark Ritual');
+  });
 });
 
 describe('a four-player Commander pod', () => {

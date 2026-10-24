@@ -2472,3 +2472,72 @@ missing keys, and anything prefixed `Warning:` — and fail on the first distinc
 the only way a check can be: the bug was put back, the suite went red naming it, and the fix was
 restored. A check that has never been seen to fail is not evidence of anything.
 
+## D74 — A card spent on nothing is a rule, not a weight
+
+Measured over 120 unsteered games: **Dark Ritual cast 35 times, followed by a spell in the same step
+3 times.** The other 32 were a card put in the graveyard for mana that emptied at the end of the
+step (CR 500.4).
+
+The cause is structural. `candidateActions` never offers `auto:pass` as an option — D46 measured
+that and it is right in general, because the evaluation cannot see what holding a card buys (28 wins
+of 60 with a margin, 40 of 60 without) — so whenever a ritual is the only affordable play, it is
+cast. By the evaluation, all that happened is that a card left the hand.
+
+**Why this is not another D70 experiment.** D70's four deleted ideas all tried to make a sum of
+material express "worth more later than now", which it cannot. This is not that judgement. "A spell
+whose only effect is mana, with nothing in hand that mana can pay for" is a fact about the line, in
+the same family as the two rules already in the search: no X spell for X=0, and no sacrifice of a
+better creature than the one being fed. Those are not weights either.
+
+So: `makesMana` is declared on the script (the engine never reads it — the mana goes through
+`addToPool` like any other), and the search drops such a cast unless the simulated line contains a
+cast that was not legal before.
+
+**Both of the first two versions were wrong, and instrumenting found both while reasoning had been
+happy with each.**
+
+1. It compared the **mana pool** before and after, and changed *nothing at all*: identical records,
+   casts and follow-ups across 84 paired games. A simulated line does not stop where the action
+   does — with auto-pass on the engine keeps passing for any seat with nothing to do, so the state
+   `simulate` returns can be a step or a turn later with the pool long since emptied. The condition
+   was false exactly when it mattered.
+2. Fixed to check the step and compare *plays*, it then fired on precisely the right lines and
+   **still** changed nothing, because `best` was initialised to `options[0]`: a loop that `continue`d
+   past every option returned the first one regardless. The search had no way to express "none of
+   these". **A filter is only as good as the default it falls back to**, and that is the lasting
+   lesson here — the rule is three lines and the bug was in the twenty lines around it.
+
+**Measured, paired on seeds, Ashen Rite against the other six decks, 240 games per arm, then 240
+more on a fresh seed set:**
+
+| | casts | followed by a spell | left in hand | record |
+| --- | --- | --- | --- | --- |
+| without | 164 | 17 (10%) | 7 | 92-148 |
+| with | 124 | **115 (93%)** | 44 | 89-151 |
+| without, fresh seeds | 148 | 20 (14%) | 5 | 110-130 |
+| with, fresh seeds | 107 | **102 (95%)** | 45 | 118-122 |
+
+**Kept, and on a different ground from the four deleted experiments.** Those were kept-or-deleted on
+the record because that is all they were for. This one is about the engine playing Magic correctly:
+the card does its job nine times in ten instead of one, and the record moves by three games one way
+and eight the other, which is nothing for two cards in sixty. A bot that casts a ritual and then
+does nothing with it looks broken to the person across the table, and that matters more here than a
+win rate that did not move.
+
+**And the calibration note, which is worth more than the rule.** The same configuration scored
+92-148 and 110-130 on two seed sets — an **18-game swing on 240 games**. The sweeps in D68 and D70
+were read at 84 games, where that scale of noise is larger than every difference they reported. Any
+future bot measurement should be at least this size, on at least two seed sets, before a number is
+called a result.
+
+One hypothesis about the three games was measured and **refuted** rather than written up: that a
+hand holding unspendable rituals would discard real cards at cleanup, since the discard rule pitches
+the most expensive card. Over those 240 games there were 18 cleanup discards, 12 of them with a
+ritual in hand, and **not one ritual discarded.**
+
+Still open, from the same measurement and deliberately not fixed here: **Titanic Growth was cast 17
+times in 120 games and never once during a combat.** The bot plays instants at sorcery speed in its
+own main phase, so a pump spell is a permanent +4/+4 on an empty board rather than a blowout on a
+block. That is a judgement about when to hold an instant, which is D70's wall again — not a card
+spent on nothing.
+

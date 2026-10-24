@@ -1955,6 +1955,8 @@ const LAVA_AXE: CardScript = {
  */
 const DARK_RITUAL: CardScript = {
   name: 'Dark Ritual',
+  // Nothing in the engine reads this; the bot does. See `makesMana` in `scriptTypes.ts`.
+  makesMana: true,
   onResolve: (c) => addToPool(c.state, c.controller, 'B', 3),
 };
 

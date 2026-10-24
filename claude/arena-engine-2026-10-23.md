@@ -1172,6 +1172,55 @@ logs a render loop to the console and carries on. All five browser suites now wa
 React's own complaints and fail on them, and the check was verified the only way a check can be —
 by putting the bug back and watching it go red, then taking it out again.
 
+**The bot stops casting Dark Ritual into nothing — and the two ways a rule like this goes wrong.**
+The 120-game measurement above found it: cast 35 times, followed by a spell in the same step 3
+times. The cause is structural rather than a bad weight. `candidateActions` never offers "pass" as
+an option — that was measured and is right in general, because the search cannot see what holding a
+card buys — so whenever a ritual is the only affordable play, it gets cast. Mana empties at the end
+of the step (CR 500.4), and by the evaluation all that happened is a card left the hand.
+
+The rule is the same shape as the two already in the search ("do not cast an X spell for X=0", "do
+not eat a better creature than the one you are feeding it to"): a card spent on nothing is a fact
+about the line, not an opinion about the position, which is why it does not run into D70's ceiling.
+A ritual is declared on the card (`makesMana` on the script, which the engine itself never reads)
+and dropped from the options unless the line it opens contains a cast that was not legal before.
+
+Both of its first two versions were wrong, and both were found by instrumenting rather than
+reasoning:
+
+- It compared **pool sizes** before and after — and changed nothing at all. Identical records,
+  casts and follow-ups over 84 paired games, because a simulated line does not stop where the
+  action does: with auto-pass on, the engine keeps passing for any seat with nothing to do, so the
+  state `simulate` returns can be a step later with the pool long since emptied. Half the time the
+  pool had not grown at all.
+- Then it fired on exactly the right lines and *still* changed nothing, because `best` was seeded
+  with `options[0]` — a loop that skipped every option returned the first one anyway. The search
+  had no way to say "none of these". It does now, and that is the piece worth keeping: a filter is
+  only as good as the default it falls back to.
+
+**Measured, paired on seeds, Ashen Rite against the other six decks, 240 games per arm and then 240
+more on a fresh seed set:**
+
+| | casts | followed by a spell | left in hand | record |
+| --- | --- | --- | --- | --- |
+| without | 164 | 17 (10%) | 7 | 92-148 |
+| with | 124 | **115 (93%)** | 44 | 89-151 |
+| without, fresh seeds | 148 | 20 (14%) | 5 | 110-130 |
+| with, fresh seeds | 107 | **102 (95%)** | 45 | 118-122 |
+
+The card does its job nine times in ten instead of one, and the record moves three games one way
+and eight the other — nothing, which is the honest answer for two cards out of sixty. Kept for the
+first column rather than the last: a bot that casts a Dark Ritual and then does nothing with it
+looks broken to the person sitting opposite, and that is worth more here than a win rate.
+
+Two things that came with the measurement and are worth more than the rule. **An 18-game swing
+between two seed sets of the same configuration** — 92-148 and 110-130 — which is the scale the
+earlier 84-game sweeps in `claude/decisions-log.md` were being read at, so a 3-game difference there
+was never a result. And one hypothesis about the three games measured and **refuted** rather than
+written up as a cause: that a hand full of unspendable rituals would discard real cards at cleanup,
+since the discard rule pitches the most expensive card. Over those 240 games there were 18 cleanup
+discards, 12 with a ritual in hand, and not one ritual discarded.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

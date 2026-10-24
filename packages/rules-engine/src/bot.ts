@@ -974,6 +974,78 @@ function bestPlan(state: GameState, seat: SeatIndex, actions: readonly Action[])
 }
 
 /** The single action this seat would take now, or null when it has nothing to do. */
+/** Whether this action casts a spell whose whole effect is mana. */
+function castsARitual(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return name !== undefined && scriptFor(name)?.makesMana === true;
+}
+
+/** One play, identified well enough to tell "this is new" from "this was already on offer". */
+const playKey = (play: LegalPlay): string =>
+  `${play.kind}|${play.card}|${play.abilityIndex ?? ''}|${play.kicked === true ? 'k' : ''}`
+  + `|${(play.modes ?? []).join(',')}`;
+
+/**
+ * Whether casting a ritual actually bought this seat a spell.
+ *
+ * The question a ritual asks, and the only thing it can be for. Dark Ritual's whole effect is
+ * mana, mana empties at the end of the step (CR 500.4), and the search cannot see any of that: by
+ * the evaluation the card simply left the hand. Measured over 120 unsteered games before the bot
+ * knew — **cast 35 times, followed by a spell in the same step 3 times.**
+ *
+ * Asked as "is there a new cast" rather than priced as a weight, deliberately. Four attempts to
+ * express a judgement like this as a number in `evaluate` have been measured and deleted (see
+ * `claude/decisions-log.md`, D70): a sum of material cannot say "worth more later than now". This
+ * is not that judgement. It is the same kind of rule as "do not cast an X spell for X=0" and "do
+ * not eat a better creature than the one you are feeding it to" — a card spent on nothing, which
+ * is a fact about the line rather than an opinion about the position.
+ *
+ * Two things it has to get right, both found by instrumenting a version that got them wrong.
+ *
+ * The step is checked first, because **a simulated line does not stop where the action does.**
+ * With auto-pass on, a spell nobody can respond to resolves inside the same action and the engine
+ * keeps passing for any seat with nothing to do — so the state `simulate` returns can be a step or
+ * a turn later, with the pool long since emptied. A line that has left the step is precisely the
+ * case this rule is for: nothing was done with the mana, which is why the step was allowed to end.
+ *
+ * And the comparison is between *plays*, not pools, because within the step the pool is exactly as
+ * big as the ritual made it whether or not anything in hand can use it. The first version of this
+ * compared pool sizes, and changed nothing at all — identical records, casts and follow-ups over
+ * 84 paired games, because the two conditions it tested were the two that are always true.
+ *
+ * **Measured, paired on seeds, Ashen Rite against the other six decks, 240 games per arm and then
+ * 240 more on a fresh seed set:**
+ *
+ * | | casts | followed by a spell | left in hand | Ashen Rite's record |
+ * | --- | --- | --- | --- | --- |
+ * | without | 164 | 17 (10%) | 7 | 92-148 |
+ * | with | 124 | **115 (93%)** | 44 | 89-151 |
+ * | without, fresh seeds | 148 | 20 (14%) | 5 | 110-130 |
+ * | with, fresh seeds | 107 | **102 (95%)** | 45 | 118-122 |
+ *
+ * So: the card does its job nine times in ten instead of one, and the record moves by three games
+ * one way and eight the other — nothing, which is the honest answer for two cards out of sixty.
+ * Kept for the first column, not the last: a bot that casts a Dark Ritual and then does nothing
+ * with it looks broken to the person sitting opposite, and that is worth more here than a win rate.
+ *
+ * The 18-game swing between two seed sets of the *same* configuration is worth remembering on its
+ * own — the earlier sweeps in `claude/decisions-log.md` ran 84 games, where a 3-game difference is
+ * indistinguishable from nothing.
+ *
+ * One hypothesis about the three games was measured and refuted rather than written up as a cause:
+ * that a hand holding unspendable rituals would discard real cards at cleanup, because the discard
+ * rule pitches the most expensive card. Over those 240 games there were 18 cleanup discards, 12 of
+ * them with a ritual in hand, and **not one ritual discarded** — far too few to matter either way.
+ */
+function ritualBoughtSomething(before: GameState, after: GameState, seat: SeatIndex): boolean {
+  if (after.step !== before.step || after.turn !== before.turn) return false;
+  const had = new Set(
+    legalActions(before, seat).plays.filter((p) => p.kind === 'cast').map(playKey),
+  );
+  return legalActions(after, seat).plays.some((p) => p.kind === 'cast' && !had.has(playKey(p)));
+}
+
 export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = {}): Action | null {
   if (!state.automated || state.finished) return null;
   if (state.openingHands) {
@@ -1055,21 +1127,46 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     What the search is for, then, is *which* play rather than *whether* to play: the best creature,
     the right target, the mode that does something. That it finds, and the measurement says so.
   */
-  let best = options[0]!.action;
+  /*
+    `null` rather than `options[0]` to begin with, which is the whole point of the rule below.
+
+    The first version of the ritual rule `continue`d past a ritual that bought nothing and changed
+    *nothing at all* — identical records, casts and follow-ups over 84 paired games — because
+    `best` was seeded with the first option and a loop that skipped every option returned it
+    anyway. The filter fired on exactly the lines it was meant to; it just had no way to say "none
+    of these".
+  */
+  let best: Action | null = null;
   let bestScore = -Infinity;
+  let dropped = 0;
   for (const option of options) {
     const after = simulate(state, option.action);
     if (after === null) continue;
+    /*
+      A ritual with nothing to spend it on is not a play.
+
+      The one case this still gets wrong is a chain: the spell it buys may be a second copy of the
+      ritual, which the next decision then drops on its own terms — so the first was cast on a
+      promise that is not kept. Rare, and cheaper than teaching the search to look two plays deep.
+    */
+    if (castsARitual(state, option.action) && !ritualBoughtSomething(state, after, seat)) {
+      dropped += 1;
+      continue;
+    }
     const score = evaluate(after, seat);
     // `>` rather than `>=` keeps the heuristic order as the tie-break: the options arrive
     // best-first by the old shallow ranking, so two plays that look identical one move out are
     // separated by the cheaper judgement rather than by whichever happened to be enumerated last.
-    if (score > bestScore) {
+    if (best === null || score > bestScore) {
       bestScore = score;
       best = option.action;
     }
   }
-  return best;
+  if (best !== null) return best;
+  // Nothing survived. If the rule above is why, pass — that is it working. If it is because every
+  // simulation was refused, which should not happen, fall back to the shallow ranking rather than
+  // silently doing nothing.
+  return dropped > 0 ? { type: 'auto:pass', by: seat } : options[0]!.action;
 }
 
 /**
