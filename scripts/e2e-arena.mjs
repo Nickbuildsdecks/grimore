@@ -243,6 +243,8 @@ async function main() {
       land: false, mana: false, stack: false, attackers: false, blockers: false,
       lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
       decided: false, searched: false, scried: false, arrows: false, modal: false, x: false, xCast: null,
+      /** Whether the host was offered an undo, and whether the other player was not. */
+      undoOffered: false, undoGuestClean: true,
     };
     const startLifeNick = await readNumber(nick, 'life-0');
     const startLifeFriend = await readNumber(friend, 'life-1');
@@ -270,6 +272,21 @@ async function main() {
         }
         continue;
       }
+
+      /*
+        Taking a move back, with the engine running.
+
+        Only observed here — whether the host's button is offered, and whether the other player's
+        is correctly absent — because actually pressing it mid-game would take back whatever the
+        engine had just done and the rest of this run is a real game being played. The tabletop
+        suite presses it, where the whole state is one number, and `realtime.test.ts` holds the
+        semantics: one step, host only, announced in the chat.
+      */
+      if (!seen.undoOffered && (await nick.locator('[data-testid="undo"]').count()) === 1) {
+        seen.undoOffered = true;
+        await shot(nick, 'undo-offered');
+      }
+      if ((await friend.locator('[data-testid="undo"]').count()) !== 0) seen.undoGuestClean = false;
 
       // Milestones, read before the move so the prompt that is on screen is the one recorded.
       // Being *asked* counts, which is what the primary button says before the declaration screen
@@ -380,6 +397,8 @@ async function main() {
     } else if (DECK_A === 'tidal-mind' || DECK_B === 'tidal-mind') {
       console.log('      (no counterspell was castable in this game — nothing to aim at the stack)');
     }
+    check('the host can take back the last move with the engine running', seen.undoOffered);
+    check('and the other player is never offered it', seen.undoGuestClean);
     check('a land played from hand reaches the battlefield', seen.land);
     check('the bar shows the mana available to spend', seen.mana);
     check('a spell or ability goes on the stack and resolves', seen.stack);

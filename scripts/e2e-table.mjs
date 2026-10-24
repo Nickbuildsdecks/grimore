@@ -280,6 +280,33 @@ async function main() {
     await expectEventually(friend, 'and the other player sees it immediately', async () =>
       (await readNumber(friend, 'life-0')) === lifeBefore - 1);
 
+    /*
+      ── Taking the last move back ────────────────────────────────────────────────────────────────
+
+      The misclick is the one failure at a real table that nothing here could recover from. Checked
+      on the tabletop because the state is simple enough to read in one number, and checked from
+      both sides because the whole rule is that it is the host's button: a guest who could rewrite
+      what happened would be a different feature.
+    */
+    await expectEventually(nick, 'the host is offered an undo once something has happened',
+      async () => (await nick.locator('[data-testid="undo"]').count()) === 1);
+    check('and the other player is not', (await friend.locator('[data-testid="undo"]').count()) === 0);
+    await tid(nick, 'undo').click();
+    await expectEventually(nick, 'undo puts the table back to before the last move',
+      async () => (await readNumber(nick, 'life-0')) === lifeBefore);
+    await expectEventually(friend, 'and the other player sees it go back too',
+      async () => (await readNumber(friend, 'life-0')) === lifeBefore);
+    await expectEventually(friend, 'who is told in the chat that it happened', async () => {
+      if ((await friend.locator('[data-testid="chat-panel"]').count()) === 0) {
+        await tid(friend, 'toggle-chat').click();
+      }
+      return ((await tid(friend, 'chat-panel').textContent()) ?? '').includes('took back');
+    });
+    // One step and no more: with nothing left to take back the button is gone rather than
+    // showing the player an error.
+    await expectEventually(nick, 'and with nothing left to take back the button goes away',
+      async () => (await nick.locator('[data-testid="undo"]').count()) === 0);
+
     // ── Auras: attach, and detach when the host leaves ──────────────────────────────────────────
     // Two permanents are needed, so another card is played first.
     await cardAction(nick, cardsIn(nick, 'zone-hand-0').first(), 'act-play');

@@ -147,7 +147,7 @@ so neither of you needs this page open while playing.
 | Equip or enchant | Tap the aura or equipment → **Attach to…**, then tap what it goes on. It shows **ATT** and detaches by itself if that creature leaves. |
 | Search your library | **Search deck** opens it to you and nobody else; **Shuffle** closes it again |
 | Make tokens | **Token** has the common ones. A token that leaves the battlefield disappears, as it should. |
-| Take something back | There is no undo. Move the card back by hand, and the log shows what actually happened. |
+| Take something back | **Undo** in the top bar puts the table back to just before the last move — one step, and only the host sees the button. It takes back whatever the engine or the computer's seats did in answer to that move as well, because that is what happened, and everybody is told in the chat that it was used. With nothing left to take back the button is simply gone. It restores the state exactly, so a card that was drawn and then taken back has still been seen by whoever drew it — the same as at a kitchen table, and the reason it is one step and the host's call. For anything further back, move the cards by hand; the log shows what actually happened. |
 
 The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
 anybody's turn, which is what makes instants and responses work at all.
@@ -303,6 +303,13 @@ playing the server).
 - **Watching is read-only, and that is all it is.** A watcher sees both boards, both graveyards,
   the stack and the log, with both hands as face-down counts — and is offered no moves at all.
   There is no spectator chat and no way to watch a *list* of tables: you need the code.
-- **No undo.** The log records everything, but putting a card back is a manual move.
+- **Undo is one step, and the host's.** It puts the table back to before the last move, including
+  anything the engine or the computer's seats did in answer to it, and the chat says it was used.
+  What it is not is a rewind: there is no second step back, no undoing an undo, and no taking back
+  something three moves ago — for that, move the cards by hand and read the log. It also cannot
+  unsee: the state it restores is exact, so a card drawn and taken back has still been looked at.
+- **Pod politics is still the pod's own business.** The table now says what going at each player
+  is walking into, and sends the whole swing at one of them in a press, but a deal struck out loud
+  is between the people at the table.
 - **Websocket only.** A network that blocks WebSockets cannot play, because the server has polling
   disabled. Rare, but it would look like a table that never connects.

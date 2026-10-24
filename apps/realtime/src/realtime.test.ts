@@ -875,6 +875,83 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       // The losing client re-sends against the version it now holds and succeeds.
       okAck(await emitAck(b, 'pod:action', { action: { type: 'life:adjust', seat: 1, delta: -1 }, expectedVersion: after.stateVersion }));
     });
+
+    /*
+      Taking back the last thing that happened.
+
+      The misclick is the one failure at a real table that nothing here could recover from — an
+      unscripted card has Move by hand, a dropped phone reclaims its seat, a stuck game has never
+      happened — and it is also the easiest, because the engine is an immutable reducer and the
+      previous state is simply the previous state.
+    */
+    it('lets the host take back the last move, and shows everybody the table it went back to', async () => {
+      const { a, b, state } = await seatedPair();
+      const played = waitFor<PodStateEvent>(b, 'pod:state', (s) => s.stateVersion > state.stateVersion);
+      okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'life:adjust', seat: 0, delta: -7 }, expectedVersion: state.stateVersion,
+      }));
+      const after = await played;
+      expect(viewOf(after).seats[0]!.life).toBe(33);
+
+      // The host puts it back. Both sockets are told, at a *new* version — an undo is something
+      // that happened, not a rewind of the version counter, which is what keeps every client's
+      // optimistic concurrency honest.
+      const undone = waitFor<PodStateEvent>(b, 'pod:state', (s) => s.stateVersion > after.stateVersion);
+      okAck(await emitAck(a, 'pod:undo', {}));
+      const back = await undone;
+      expect(viewOf(back).seats[0]!.life).toBe(40);
+      expect(back.stateVersion).toBeGreaterThan(after.stateVersion);
+
+      // One step, and only one: a second press has nothing to take back.
+      expect(await emitAck(a, 'pod:undo', {}))
+        .toMatchObject({ ok: false, error: { code: 'nothing_to_undo' } });
+    }, 20_000);
+
+    it('tells the whole table that a move was taken back', async () => {
+      const { a, b, state } = await seatedPair();
+      const played = waitFor<PodStateEvent>(b, 'pod:state', (s) => s.stateVersion > state.stateVersion);
+      okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'life:adjust', seat: 0, delta: -4 }, expectedVersion: state.stateVersion,
+      }));
+      await played;
+      // The other player hears about it, which is the whole reason it is announced: an undo
+      // nobody can see is indistinguishable from the server losing a move.
+      const told = waitFor<{ name: string; text: string }>(b, 'pod:chat', (m) => /took back/.test(m.text));
+      okAck(await emitAck(a, 'pod:undo', {}));
+      const message = await told;
+      expect(message.name).toBe('Table');
+    }, 20_000);
+
+    it('says on the pod whether there is anything to take back', async () => {
+      const { a, b, state } = await seatedPair();
+      // Nothing yet, so the table has nothing to show a host.
+      expect(state.pod.undoable).toBe(false);
+      const played = waitFor<PodStateEvent>(b, 'pod:state', (s) => s.stateVersion > state.stateVersion);
+      okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'life:adjust', seat: 0, delta: -1 }, expectedVersion: state.stateVersion,
+      }));
+      expect((await played).pod.undoable).toBe(true);
+      const undone = waitFor<PodStateEvent>(b, 'pod:state', (s) => s.pod.undoable === false);
+      okAck(await emitAck(a, 'pod:undo', {}));
+      await undone;
+    }, 20_000);
+
+    it('and nobody but the host may', async () => {
+      const { a, b, state } = await seatedPair();
+      const played = waitFor<PodStateEvent>(b, 'pod:state', (s) => s.stateVersion > state.stateVersion);
+      okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'life:adjust', seat: 0, delta: -2 }, expectedVersion: state.stateVersion,
+      }));
+      await played;
+      expect(await emitAck(b, 'pod:undo', {}))
+        .toMatchObject({ ok: false, error: { code: 'not_host' } });
+    }, 20_000);
+
+    it('has nothing to take back before anybody has done anything', async () => {
+      const { a } = await seatedPair();
+      expect(await emitAck(a, 'pod:undo', {}))
+        .toMatchObject({ ok: false, error: { code: 'nothing_to_undo' } });
+    }, 20_000);
   });
 
 });

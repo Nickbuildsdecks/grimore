@@ -68,6 +68,15 @@ export const Pod = z.object({
   hostPlayerId: Id.nullable(),
   seats: z.array(PodSeat).max(POD_MAX_SEATS),
   createdAt: z.number().int(),
+  /**
+   * Whether the table is holding a move that could be taken back (see `pod:undo`).
+   *
+   * On the pod rather than inferred by the client, because the client cannot know: the server
+   * records a step for the bots' replies as well as for people, and the host — who is the only one
+   * who may press it — is often not the player who moved. Optional so a client built against the
+   * older shape still parses a state from a newer server.
+   */
+  undoable: z.boolean().optional(),
 });
 export type Pod = z.infer<typeof Pod>;
 
@@ -149,6 +158,16 @@ export const PodActionInput = z
   });
 export type PodActionInput = z.infer<typeof PodActionInput>;
 
+/**
+ * Taking back the last thing that happened at the table.
+ *
+ * No payload at all: the server knows which table this socket is at and holds exactly one step of
+ * history, so there is nothing for the client to name — and nothing it could name that would let
+ * it reach further back than one action.
+ */
+export const PodUndoInput = z.object({}).strict();
+export type PodUndoInput = z.infer<typeof PodUndoInput>;
+
 export const PodListInput = z.object({ format: Format.optional() }).default({});
 export type PodListInput = z.infer<typeof PodListInput>;
 
@@ -160,6 +179,7 @@ export const ClientEvents = {
   "pod:ready": PodReadyInput,
   "pod:chat": PodChatInput,
   "pod:action": PodActionInput,
+  "pod:undo": PodUndoInput,
   "pod:list": PodListInput,
 } as const;
 export type ClientEventName = keyof typeof ClientEvents;
@@ -200,6 +220,14 @@ export const PodErrorCode = z.enum([
    * has already said what happened.
    */
   "game_finished",
+  /**
+   * There is nothing to take back.
+   *
+   * One step of history is kept, and only for actions that changed the game — so this is the
+   * answer at the start of a game, and the answer to a second press of Undo. Its own code because
+   * the table hides the button on it rather than showing the player an error.
+   */
+  "nothing_to_undo",
   "rate_limited",
   "internal",
 ]);

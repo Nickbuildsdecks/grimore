@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**475 tests in the rules engine, 119 in the web app, 1,092 across the workspace.**
+**475 tests in the rules engine, 119 in the web app, 1,097 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -999,6 +999,25 @@ deterministic test is for.
 the bare template is not on a card this pool would carry, and the cards that look like it ("whenever
 enchanted land is tapped for mana") are triggers on an *Aura* about the permanent it is attached to,
 which a self-only event cannot express.
+
+**And the misclick, which was the last thing at a real table nothing here could recover from.**
+An unscripted card has Move by hand, a dropped phone reclaims its seat, a game that cannot continue
+has never happened in thousands of playouts — but a creature tapped into the wrong attack, a land
+played before the Guildgate, or a Pass pressed a beat early was permanent.
+
+`pod:undo` puts the table back to before the last move. It belongs to the table rather than to the
+rules: the engine is an immutable reducer, so the previous state *is* the previous state — there is
+nothing to invert and `packages/rules-engine` does not know the feature exists. The store keeps one
+step, written inside the same compare-and-set that applies the action so the history cannot tear
+away from the state it belongs to, and only for actions that changed the game.
+
+Three things keep it honest. Only the host may press it, because rewriting what already happened in
+a hidden-information game is not a power to hand round. The pod says whether there is anything to
+take back, so the button is simply absent rather than erroring. And the table announces in chat
+that somebody took something back — an undo nobody can see is indistinguishable from the server
+losing a move. The limit is stated rather than hidden: the previous state is exactly the previous
+state, so a card drawn and then taken back has still been seen by whoever drew it, which is true
+across a kitchen table too.
 
 ## Next
 

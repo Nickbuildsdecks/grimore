@@ -860,6 +860,15 @@ function Board({ table }: { table: UseTable }) {
     if (showChat) setSeenChat(table.chat.length)
   }, [showChat, table.chat.length])
   const unread = table.chat.length - seenChat
+  /**
+   * Whether this client is the host, which is who may take a move back.
+   *
+   * Computed here rather than passed down because the lobby's copy of the same question is in a
+   * different component, and a prop threaded through `Board` for one button would be the third
+   * place this is worked out.
+   */
+  const amHost = table.pod?.hostPlayerId != null
+    && table.pod.seats.find((s) => s.seat === seat)?.playerId === table.pod.hostPlayerId
 
   /*
     Every action carries the version of the view it was composed from.
@@ -1109,6 +1118,30 @@ function Board({ table }: { table: UseTable }) {
           <span data-testid="connection" className="rounded bg-[var(--g-mana-r)]/20 px-1.5 py-0.5 text-[var(--g-mana-r)]">
             {table.connection}
           </span>
+        ) : null}
+        {/*
+          Take back the last thing that happened — the misclick, which is the one failure at a real
+          table that nothing here could recover from.
+
+          Shown only to the host, and only while the server is holding a step to give back: the pod
+          says `undoable`, because the client cannot work it out for itself (the step covers the
+          server's own replies too, and the host is often not whoever moved).
+
+          It takes back the whole of the last move, including anything the engine or a bot did in
+          answer to it, because that is what happened — and the table says in chat that somebody
+          took something back, so nobody can quietly rewrite a game.
+        */}
+        {amHost && table.pod?.undoable === true ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7"
+            data-testid="undo"
+            title="Take back the last move at this table"
+            onClick={() => void table.undo()}
+          >
+            <Undo2 className="size-3.5" /> Undo
+          </Button>
         ) : null}
         <Button
           size="sm"

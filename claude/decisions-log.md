@@ -2185,3 +2185,46 @@ self-only event cannot express. Inventing a card for the path would be worse tha
 packs and unpacks four views after every action of a whole pod and ran at 2.7s against a 5s default,
 which timed out twice in a day beside five other packages' suites. It takes the same 60s the other
 whole-game tests take now. A timeout that fails on a slow afternoon is not a test of the payload.
+
+## D66 — Taking the last move back, one step, the host's call
+
+The misclick was the one failure at a real table that nothing here could recover from. An
+unscripted card has Move by hand, a dropped phone reclaims its seat, a game that cannot continue
+has never happened in thousands of playouts — but a creature tapped into the wrong attack, a land
+played before the Guildgate, or a Pass pressed a beat early was permanent. On a kitchen table you
+say "hang on" and put it back.
+
+**It belongs to the table, not to the rules.** The engine is an immutable reducer, so the previous
+state *is* the previous state: there is nothing to invert and no rule to write. `pod:undo` restores
+the pod record the store held before the last game action, and `packages/rules-engine` does not know
+the feature exists.
+
+**One step, written inside the same compare-and-set as the action.** `PodRecord.previous` is the
+prior record serialized, set by `mutate` only for `applyAction` — a join, a ready-up or a heartbeat
+must never be undoable — and stripped of its own `previous` so nothing nests. Keeping it in the same
+CAS is the whole reason it can be trusted: a history written in a second round trip can tear away
+from the state it belongs to. The cost is honest and worth naming: the stored record is about twice
+the size while a step is held, and each action pays one `JSON.stringify` of the prior record.
+
+**One step rather than a stack**, because that is what "put it back" means. A chain of undos is a
+different feature — rewinding a game — and it would hold a copy of a whole game state in Redis per
+step for something nobody asked for.
+
+**It takes back the server's replies with it.** A move against the bots and the three answers it
+provoked land in one pod version by design (D-something ago: `runBots` runs inside the same
+mutation), so one undo is one thing that happened, which is also what the player means.
+
+**The host's button and nobody else's.** It is the one affordance at this table that rewrites what
+has already happened, and in a hidden-information game that is not a power to hand round. Three
+things keep it honest: only the host may press it, the pod says `undoable` so the button is simply
+absent when there is nothing to take back (rather than erroring), and the table announces in chat
+that somebody took something back — an undo nobody can see is indistinguishable from the server
+losing a move.
+
+**And the limit is stated rather than hidden:** the previous state is exactly the previous state,
+so a card drawn and then taken back has still been seen by whoever drew it. That is true across a
+kitchen table too, and it is the reason this is one step, host-only and announced.
+
+The announcement is a chat message rather than a line in the game log on purpose. The log is the
+engine's, and the restored state carries the log it had — the undone move's own line is gone from
+it, which is correct, because it did not happen.

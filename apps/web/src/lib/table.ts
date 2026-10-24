@@ -112,6 +112,13 @@ export interface UseTable extends TableState {
    * what tells a stale action apart from an illegal one — see the refusal handling in `send`.
    */
   send: (action: TableAction, basedOn?: number) => Promise<void>
+  /**
+   * Asks the server to put the table back to before the last move. Host only, one step.
+   *
+   * Queued behind the actions like everything else, because an undo pressed while a tap is still
+   * in flight has to mean "take back whichever of these landed last" rather than racing it.
+   */
+  undo: () => Promise<void>
   say: (text: string) => Promise<void>
   clearError: () => void
 }
@@ -417,6 +424,23 @@ export function useTable(playerName: string): UseTable {
     [emit],
   )
 
+  const undo = useCallback<UseTable["undo"]>(() => {
+    const run = async (): Promise<void> => {
+      const res = await emit("pod:undo", {})
+      if (res.ok) {
+        if (typeof res.stateVersion === "number") versionRef.current = res.stateVersion
+        return
+      }
+      // Nothing to take back is not worth a banner: the button is gone the moment the pod says
+      // so, and a press that crossed with somebody else's move has simply lost the race.
+      if (res.error.code === "nothing_to_undo") return
+      setState((s) => ({ ...s, error: res.error.message }))
+    }
+    const queued = queueRef.current.then(run, run)
+    queueRef.current = queued.catch(() => undefined)
+    return queued
+  }, [emit])
+
   const say = useCallback<UseTable["say"]>(
     async (text) => {
       const trimmed = text.trim()
@@ -432,9 +456,9 @@ export function useTable(playerName: string): UseTable {
 
   return useMemo(
     () => ({
-      ...state, createTable, joinTable, watchTable, leaveTable, setReady, send, say, clearError,
+      ...state, createTable, joinTable, watchTable, leaveTable, setReady, send, undo, say, clearError,
     }),
-    [state, createTable, joinTable, watchTable, leaveTable, setReady, send, say, clearError],
+    [state, createTable, joinTable, watchTable, leaveTable, setReady, send, undo, say, clearError],
   )
 }
 

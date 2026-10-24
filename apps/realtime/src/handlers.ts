@@ -49,6 +49,7 @@ const RAW_CAPS: Record<ClientEventName, number> = {
   'pod:ready': 64,
   'pod:chat': CHAT_MAX_BYTES + 64,
   'pod:action': ACTION_MAX_BYTES + 128,
+  'pod:undo': 64,
   'pod:list': 128,
 };
 
@@ -232,6 +233,34 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       const { code, playerId } = requireSeat();
       const snap = await store.applyAction(code, playerId, input.action, input.expectedVersion);
       ack?.({ ok: true, stateVersion: snap.stateVersion });
+      await broadcast(code, snap);
+    });
+
+    /*
+      Taking back the last thing that happened at the table.
+
+      The host's call and nobody else's: it is the one affordance here that rewrites what has
+      already happened, and in a hidden-information game that is not a power to hand round. The
+      store holds exactly one step, so there is nothing to say in the payload — and `nothing_to_undo`
+      comes back when there is nothing there, which the table reads as "hide the button" rather
+      than as an error worth showing anybody.
+
+      Announced in the table's chat rather than written into the game's log, because the log is the
+      engine's and the restored state carries the log it had — the undone move's own line is gone
+      from it, which is correct, since it did not happen. What everybody at the table does need to
+      see is that somebody took something back, and that is a message, not a rule.
+    */
+    on('pod:undo', async (_input, ack) => {
+      const { code, playerId } = requireSeat();
+      const snap = await store.undo(code, playerId);
+      ack?.({ ok: true, stateVersion: snap.stateVersion });
+      io.to(podRoom(code)).emit('pod:chat', {
+        id: randomUUID(),
+        seat: null,
+        name: 'Table',
+        text: `${socket.data.name ?? 'The host'} took back the last move.`,
+        at: Date.now(),
+      });
       await broadcast(code, snap);
     });
 

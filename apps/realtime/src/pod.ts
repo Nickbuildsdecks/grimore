@@ -67,6 +67,20 @@ export interface PodRecord {
   seats: SeatRecord[];
   game: GameState | null;
   lastActivity: number;
+  /**
+   * The whole record as it stood before the last **game action**, serialized: one step of undo.
+   *
+   * Here rather than in the rules engine because taking a move back is a fact about the table and
+   * not a rule of Magic — the engine is an immutable reducer, so the previous state is simply the
+   * previous state, and nothing in it needs to know it is being kept.
+   *
+   * Written inside the same compare-and-set that applies the action, so the history cannot tear
+   * away from the state it belongs to. One step deep on purpose: it covers the misclick, which is
+   * what people actually need, and it cannot be walked back through a whole game. Only
+   * `applyAction` records one — a join, a ready-up or a heartbeat must never be undoable — and it
+   * is stripped from the copy it stores, so nothing nests.
+   */
+  previous?: string;
 }
 
 export interface PodSnapshot {
@@ -145,7 +159,14 @@ const publicSeat = (s: SeatRecord): PodSeat => ({
 
 export function toSnapshot(record: PodRecord, version: number): PodSnapshot {
   return {
-    pod: { ...record.pod, seats: record.seats.map(publicSeat) },
+    pod: {
+      ...record.pod,
+      seats: record.seats.map(publicSeat),
+      // Whether there is a move to take back, rather than the move itself: the client needs to
+      // know the button is live, and the stored record is a whole game state that nobody but this
+      // server may see.
+      undoable: record.previous !== undefined,
+    },
     state: record.game,
     stateVersion: version,
   };
@@ -266,6 +287,7 @@ export class PodStore {
   private async mutate<T>(
     code: string,
     fn: (record: PodRecord, version: number) => { record: PodRecord | null; result: T },
+    opts: { undoable?: boolean } = {},
   ): Promise<{ snapshot: PodSnapshot | null; result: T }> {
     for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt++) {
       if (attempt > 0) await sleep(randomInt(1, 4 * attempt)); // jittered backoff on a lost race
@@ -273,6 +295,17 @@ export class PodStore {
       if (!stored) throw new PodError('not_found', `pod ${code} does not exist`);
       const before = stored.record;
       const { record, result } = fn(structuredClone(before), stored.version);
+      /*
+        One step of history, taken here because this is the one place the record changes.
+
+        `before` without its own `previous`, so the stored copy is a record and not a chain: two
+        steps of undo would be two copies of a whole game state in Redis for a feature nobody asked
+        for, and a chain is also how an undo stops being the thing people mean by "put it back".
+      */
+      if (record !== null && opts.undoable === true) {
+        const { previous: _dropped, ...priorWithoutHistory } = before;
+        record.previous = JSON.stringify(priorWithoutHistory);
+      }
       if (record === null) {
         // Deletion: only safe if nobody has advanced the version since we read it.
         const ok = await this.cas(code, stored.version, before);
@@ -565,6 +598,38 @@ export class PodStore {
       if (record.game.finished) record.pod.status = 'finished';
       else if (record.pod.status === 'finished') record.pod.status = 'in_progress';
       return { record, result: undefined };
+    }, { undoable: true });
+    return snapshot!;
+  }
+
+  /**
+   * Puts the table back to where it was before the last game action.
+   *
+   * The host's call, because it is the one affordance at this table that can rewrite what already
+   * happened — and announced in the table's chat by the handler, because an undo nobody can see is
+   * indistinguishable from the server losing a move.
+   *
+   * What it restores is the *whole* record, including the seats and the pod's status, since an
+   * action can end a game and a game that is un-ended has to be in progress again. And it restores
+   * the bots' replies with it: a move against the server and the three answers it provoked are one
+   * thing that happened, which is also what the player means by "take that back".
+   *
+   * It is honest rather than complete: the previous state is exactly the previous state, so a card
+   * drawn and then taken back has still been seen by whoever drew it. That is true on a kitchen
+   * table too, and it is the reason this is the host's button and not everybody's.
+   */
+  async undo(code: string, playerId: string): Promise<PodSnapshot> {
+    const { snapshot } = await this.mutate(code, (record) => {
+      if (record.pod.hostPlayerId !== playerId) {
+        throw new PodError('not_host', 'only the host can take back a move');
+      }
+      if (record.previous === undefined) {
+        throw new PodError('nothing_to_undo', 'there is nothing to take back');
+      }
+      const restored = JSON.parse(record.previous) as PodRecord;
+      // Cleared, so a second press is refused rather than bouncing between two states.
+      delete restored.previous;
+      return { record: restored, result: undefined };
     });
     return snapshot!;
   }
