@@ -449,23 +449,69 @@ const LIFE_WEIGHT = 1.0;
 const CARD_IN_HAND = 1.5;
 const LAND_ON_BOARD = 2.5;
 const PERMANENT_ON_BOARD = 3;
+/**
+ * What a land left untapped is worth *while the hand holds an instant*, per point of mana, up to
+ * the cost of the cheapest one.
+ *
+ * The one thing the search could not do, and the reason the two control decks lose to the three
+ * aggressive ones: a land is worth `LAND_ON_BOARD` whether it is tapped or not, so spending mana
+ * costs the evaluation nothing and the bot taps out every turn — and then holds a counterspell with
+ * no mana when the spell worth answering arrives.
+ *
+ * Only while an instant is held, because mana up with nothing to do with it is worth exactly
+ * nothing, and capped at the cheapest answer's cost, because that is all the mana the answer needs.
+ * The weight is a measurement, not a preference; the numbers are in `claude/decisions-log.md`.
+ */
+const MANA_UP_WITH_ANSWER = 1.0;
+
+/**
+ * The cost of the cheapest card in hand that can be cast at instant speed, or null for none.
+ *
+ * The same test `legalActions` uses — a printed instant, or anything with flash — because the two
+ * have to agree: valuing mana for an answer the engine would not let this seat cast at that moment
+ * is valuing nothing.
+ */
+function cheapestAnswerHeld(state: GameState, seat: SeatIndex): number | null {
+  let cheapest: number | null = null;
+  for (const id of state.zones[`${seat}:hand`] ?? []) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const def = state.cardDefs[inst.defKey];
+    if (def === undefined) continue;
+    const ch = characteristicsOf(state, inst);
+    const instantSpeed = ch.typeLine.types.some((t) => t.toLowerCase() === 'instant')
+      || ch.keywords.has('flash');
+    if (!instantSpeed) continue;
+    const cost = parseManaCost(def.manaCost);
+    if (cost.unsupported !== undefined) continue;
+    const total = costValue(cost);
+    if (cheapest === null || total < cheapest) cheapest = total;
+  }
+  return cheapest;
+}
 
 /** Everything one seat has, from that seat's point of view. */
 function seatValue(state: GameState, seat: SeatIndex): number {
   let total = (state.seats[seat]?.life ?? 0) * LIFE_WEIGHT;
   total += (state.zones[`${seat}:hand`] ?? []).length * CARD_IN_HAND;
+  // Mana left up, worth something only while there is an answer in hand to spend it on.
+  const answer = cheapestAnswerHeld(state, seat);
+  let untappedLands = 0;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     const ch = characteristicsOf(state, inst);
-    if (ch.isLand) total += LAND_ON_BOARD;
-    else if (ch.isCreature) total += creatureValue(state, id);
+    if (ch.isLand) {
+      total += LAND_ON_BOARD;
+      if (!inst.tapped) untappedLands += 1;
+    } else if (ch.isCreature) total += creatureValue(state, id);
     // A planeswalker's loyalty is its life *and* its spell-per-turn, so a counter on one is worth
     // about what a point of life is worth. Without this the search could not see what a plus
     // ability bought and stopped using them — three activations across sixteen games, where the
     // bot it replaced managed more than one per planeswalker it cast.
     else total += PERMANENT_ON_BOARD + (inst.counters['loyalty'] ?? 0) * LIFE_WEIGHT;
   }
+  if (answer !== null) total += Math.min(untappedLands, answer) * MANA_UP_WITH_ANSWER;
   return total;
 }
 
