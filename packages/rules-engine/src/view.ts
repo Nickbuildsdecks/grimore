@@ -27,7 +27,7 @@
  */
 import { zoneKey, type CardDef, type CardInstance, type ZoneId } from './cards.js';
 import type { FormatId } from './formats.js';
-import { characteristicsOf, type Keyword } from './characteristics.js';
+import { characteristicsOf, combatDamagePrevented, type Keyword } from './characteristics.js';
 import { legalActions, type LegalActions } from './legalActions.js';
 import { pendingDeclaration, stillDeciding } from './automation.js';
 import { STEP_LABELS } from './turnTypes.js';
@@ -76,6 +76,14 @@ export interface VisibleCard {
   readonly keywords?: readonly Keyword[];
   readonly cantAttack?: boolean;
   readonly cantBlock?: boolean;
+  /**
+   * Combat damage involving this permanent is prevented this turn.
+   *
+   * Computed and sent for the same reason power and toughness are: a Fog changes nothing about any
+   * card the client can see, so a table left to work it out would show a board about to trade and
+   * a player about to make the wrong block.
+   */
+  readonly damagePrevented?: boolean;
 }
 
 /** One object waiting to resolve, as the table sees it. The stack is public. */
@@ -204,6 +212,7 @@ export interface PackedCard {
   readonly keywords?: readonly Keyword[];
   readonly cantAttack?: true;
   readonly cantBlock?: true;
+  readonly damagePrevented?: true;
 }
 
 /** A view as it travels: the same thing, with each card definition said once. */
@@ -266,6 +275,7 @@ export function packView(view: GameView): PackedView {
     if (card.keywords !== undefined && card.keywords.length > 0) packed.keywords = card.keywords;
     if (card.cantAttack === true) packed.cantAttack = true;
     if (card.cantBlock === true) packed.cantBlock = true;
+    if (card.damagePrevented === true) packed.damagePrevented = true;
     cards[id] = packed as unknown as PackedCard;
   }
   const { cards: _dropped, ...view_ } = view;
@@ -300,6 +310,7 @@ export function unpackView(packed: PackedView): GameView {
         : card.zone === 'battlefield' && card.def !== undefined ? { keywords: [] } : {}),
       ...(card.cantAttack === true ? { cantAttack: true } : {}),
       ...(card.cantBlock === true ? { cantBlock: true } : {}),
+      ...(card.damagePrevented === true ? { damagePrevented: true } : {}),
     };
   }
   const { defs: _defs, cards: _packedCards, ...view } = packed;
@@ -371,6 +382,7 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     keywords: [...ch.keywords],
     ...(ch.cantAttack ? { cantAttack: true } : {}),
     ...(ch.cantBlock ? { cantBlock: true } : {}),
+    ...(combatDamagePrevented(state, inst) ? { damagePrevented: true } : {}),
   };
 }
 

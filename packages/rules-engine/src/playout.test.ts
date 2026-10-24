@@ -129,12 +129,33 @@ describe('a whole automated game', () => {
   });
 
   it('counters spells when it has the mana for it, rather than ignoring the stack', () => {
-    // A game where nothing was ever countered would pass every other test here while leaving the
-    // whole interaction untested, so this one asserts a counterspell actually resolved.
+    /*
+      A game where nothing was ever countered would pass every other test here while leaving the
+      whole interaction untested, so this one asserts a counterspell actually resolved.
+
+      The pairing is the test. It used to be Ember Rush against Tidal Mind, and that is the one
+      matchup in the pool where a counterspell essentially never resolves: measured over sixteen
+      games, eight with each bot, **not one** — the fastest aggro deck kills the control deck
+      before it is holding two mana and a Counterspell at the same time, which is also why that
+      matchup is 0-15. It had been passing on luck, and a deck-list change that reshuffled the
+      seeds took the luck away.
+
+      Against the slower decks the same deck counters something in half the games it plays. Three
+      pairings and four shuffles each, stopping at the first one, so a run that finds nothing has
+      found a real regression rather than a bad afternoon.
+    */
+    const pairings: readonly (readonly [string, string])[] = [
+      ['verdant-guard', 'tidal-mind'],
+      ['rot-harvest', 'tidal-mind'],
+      ['verdant-guard', 'skyward-writ'],
+    ];
     let countered = 0;
-    for (let seed = 1; seed <= 6 && countered === 0; seed++) {
-      const result = playOut(table(seed * 7723, 0, ['ember-rush', 'tidal-mind']), 6000, BREADTH);
-      countered += result.state.log.filter((e) => /counter/i.test(e.message)).length;
+    for (const decks of pairings) {
+      for (let seed = 1; seed <= 4 && countered === 0; seed++) {
+        const result = playOut(table(seed * 7723, 0, decks), 6000, BREADTH);
+        countered += result.state.log.filter((e) => /counter/i.test(e.message)).length;
+      }
+      if (countered > 0) break;
     }
     expect(countered).toBeGreaterThan(0);
   });
@@ -684,6 +705,35 @@ describe('what looking a move ahead buys', () => {
     const searched = botAction(s, 0);
     expect(searched?.type).toBe('auto:cast');
     expect(searched?.type === 'auto:cast' && searched.kicked === true).toBe(false);
+  });
+
+  it('will not Fog an empty board, and will Fog a swing', () => {
+    // The second card in the "spent on nothing" family. A Fog prevents combat damage until end of
+    // turn, so cast in your own main phase it is a card in the graveyard — and the evaluation sees
+    // a card leaving the hand either way, which is the same blind spot the rituals sat in.
+    const idle = position(['Fog'], ['Forest'], [], 'verdant-guard');
+    expect(botAction(idle, 0, BREADTH)?.type).toBe('auto:cast');
+    expect(botAction(idle, 0)?.type).toBe('auto:pass');
+
+    // And with three power pointed at its face, the same card is the play.
+    let swung = arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      hands: { 0: ['Fog'] },
+      battlefield: { 0: ['Forest'], 1: ['Hill Giant'] },
+      turn: 4, firstSeat: 1,
+    });
+    swung = advanceTo(swung, 'declare-attackers');
+    swung = apply(swung, {
+      type: 'auto:attack', by: 1,
+      attackers: [{ attacker: find(swung, 1, 'battlefield', 'Hill Giant'), defender: 0 }],
+    });
+    swung = apply(swung, { type: 'auto:pass', by: 1 });
+    swung = apply(swung, {
+      type: 'auto:activate', by: 0, card: find(swung, 0, 'battlefield', 'Forest'), abilityIndex: 0,
+    });
+    const answer = botAction(swung, 0);
+    expect(answer?.type).toBe('auto:cast');
+    expect(nameOfCard(swung, answer?.type === 'auto:cast' ? answer.card : undefined)).toBe('Fog');
   });
 
   it('will not cast a ritual with nothing to spend it on, and will when there is', () => {

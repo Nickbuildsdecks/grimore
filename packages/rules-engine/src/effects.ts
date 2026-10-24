@@ -468,6 +468,8 @@ export interface PumpOptions {
   readonly removeKeywords?: readonly Keyword[];
   readonly cantAttack?: boolean;
   readonly cantBlock?: boolean;
+  /** See `ContinuousEffect.preventsCombatDamage`. A Fog Bank is this, printed on a 0/2. */
+  readonly preventsCombatDamage?: boolean;
   readonly duration?: EffectDuration;
 }
 
@@ -491,7 +493,27 @@ export function pump(
     ...(opts.removeKeywords ? { removeKeywords: opts.removeKeywords } : {}),
     ...(opts.cantAttack ? { cantAttack: true } : {}),
     ...(opts.cantBlock ? { cantBlock: true } : {}),
+    ...(opts.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
     duration: opts.duration ?? 'end-of-turn',
+  });
+}
+
+/**
+ * "Prevent all combat damage that would be dealt this turn" — a Fog, and the one-creature version.
+ *
+ * `ids` names the creatures whose combat damage is prevented; leaving it out covers every creature
+ * on the table, which is what a Fog does and is symmetrical on purpose: it stops the swing coming
+ * back as well as the swing going out.
+ */
+export function preventCombatDamage(
+  state: GameState, source: string, controller: SeatIndex, ids?: readonly string[],
+): GameState {
+  return pushEffect(state, {
+    source,
+    controller,
+    scope: ids === undefined ? { kind: 'all-creatures' } : { kind: 'cards', ids: [...ids] },
+    preventsCombatDamage: true,
+    duration: 'end-of-turn',
   });
 }
 

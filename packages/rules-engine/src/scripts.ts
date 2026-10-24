@@ -25,7 +25,7 @@ import {
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
   gainControl, gainLife, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump, pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
-  exileUntilLeaves, returnExiledBy,
+  exileUntilLeaves, returnExiledBy, preventCombatDamage,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type { CardScript, DecisionSpec, TargetSpec } from './scriptTypes.js';
@@ -2049,6 +2049,82 @@ const DIVINE_VERDICT: CardScript = {
   },
 };
 
+// ── Damage that does not happen ──────────────────────────────────────────────────────────────────
+
+/*
+  The first cards in the pool that prevent damage rather than deal, absorb or redirect it.
+
+  Nothing here is new vocabulary so much as a new *kind* of answer. Every other way this pool stops
+  an attack removes something — kill the creature, exile it, bounce it, stop it attacking at all —
+  and all of them are permanent and all of them cost a card for a card. A Fog costs a card and
+  changes nothing about the board, which is why it is the cheapest card in the game that beats an
+  alpha strike and the worst one to draw on an empty table.
+*/
+
+const FOG: CardScript = {
+  name: 'Fog',
+  // Nothing in the engine reads this; the bot does. See `preventsDamage` in `scriptTypes.ts`.
+  preventsDamage: true,
+  onResolve: (c) => preventCombatDamage(c.state, c.source, c.controller),
+};
+
+/** The same card in white, which is also the only way the white-blue deck survives a wide board. */
+const HOLY_DAY: CardScript = {
+  name: 'Holy Day',
+  preventsDamage: true,
+  onResolve: (c) => preventCombatDamage(c.state, c.source, c.controller),
+};
+
+/**
+ * Maze of Ith: a land that answers one attacker a turn, for ever, and never taps for mana.
+ *
+ * The printed card is exactly what the engine now does — "prevent all combat damage that would be
+ * dealt to and dealt by that creature this turn" — which it could not express at all until the
+ * prevention flag existed. The untap is not decoration either: an attacking creature stays tapped
+ * through its own turn, so untapping it is what lets a Maze of Ith attack *and* block in the same
+ * round of a Commander game.
+ *
+ * It does not remove the creature from combat, and that is the printed card rather than an
+ * approximation: a blocked attacker whose damage is prevented is still blocked, and a Maze aimed
+ * at a creature with trample still stops every point of it.
+ */
+const MAZE_OF_ITH: CardScript = {
+  name: 'Maze of Ith',
+  abilities: [{
+    cost: { tap: true },
+    description: '{T}: Untap target attacking creature. Prevent all combat damage it would deal or be dealt this turn.',
+    targets: [{
+      kind: 'creature',
+      description: 'target attacking creature',
+      filter: (state, candidate) => candidate.kind === 'card'
+        && state.combat.attacks.some((a) => a.attacker === candidate.id),
+    }],
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      if (id === null) return c.state;
+      return preventCombatDamage(tap(c.state, id, false), c.source, c.controller, [id]);
+    },
+  }],
+};
+
+/**
+ * Fog Bank: the prevention printed on a permanent rather than cast from hand.
+ *
+ * A 0/2 that blocks anything in the pool for ever and survives it, which is the one thing a control
+ * deck full of answers could not do before — every other blocker here trades, and trading is what a
+ * deck with no creatures cannot afford.
+ *
+ * It is also the only card that reaches one branch of combat: a blocker whose damage is prevented
+ * while the attacker's is not. A Ball Lightning blocked by a Fog Bank still has to *assign* lethal
+ * damage to it before it may trample past (CR 702.19b), so four of its six get through rather than
+ * six. A Fog, which covers the whole table, never produces that case — the attacker is prevented
+ * too, and the question never gets as far as the blocker.
+ */
+const FOG_BANK: CardScript = {
+  name: 'Fog Bank',
+  statics: [{ scope: 'self', effect: { preventsCombatDamage: true } }],
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 const ALL: readonly CardScript[] = [
@@ -2099,6 +2175,7 @@ const ALL: readonly CardScript[] = [
   WALL_OF_AIR, HANNA,
   LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,
   DARK_RITUAL, BORDERLAND_MARAUDER, PREY_UPON, DIVINE_VERDICT,
+  FOG, HOLY_DAY, MAZE_OF_ITH, FOG_BANK,
   guildgate('Azorius Guildgate', 'W', 'U'),
   equipment('Darksteel Plate', '{2}', { keywords: ['indestructible'] },
     'equipped creature is indestructible'),

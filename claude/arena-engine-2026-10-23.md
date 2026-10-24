@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 138 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 142 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -1306,6 +1306,65 @@ time, because `CombatArrows` was re-measuring continuously in the infinite loop 
 Fixing the loop made the overlay measure once, correctly, and turned that line into a coin flip: it
 passed four runs and failed the fifth. It waits up to a second now, which is what the claim always
 needed.
+
+**Damage that does not happen.** Every answer in the pool removed something — kill it, exile it,
+bounce it, stop it attacking — and all of them are permanent and all of them cost a card for a card.
+Nothing could prevent damage, which rules out the family a casual player expects first: a Fog is the
+cheapest card in the game that beats an alpha strike.
+
+Built as a flag on the continuous effects rather than as a prevention subsystem, because everything
+such an effect needs was already there: a scope that can name one card or every creature, a
+duration, an expiry pass and a source. `preventsCombatDamage` says "combat damage involving these
+permanents does not happen — dealt by them *and* dealt to them", which is the sentence both printed
+cards use, and the engine reads it in exactly one place, `dealCombatDamage`. It is combat-only and
+named so: "prevent the next 3 damage" is a shield with a quantity that is spent, a different shape
+that no card here needs.
+
+Four cards, and each one is a different shape of the same flag:
+
+| card | what it is |
+| --- | --- |
+| **Fog** {G} | the effect with an all-creatures scope, until end of turn |
+| **Holy Day** {1}{W} | the same card in white, for the deck that holds the ground |
+| **Maze of Ith** | a land that answers one attacker every turn and never taps for mana — the scope is one card, and the untap is what lets it attack *and* block in a Commander game |
+| **Fog Bank** {1}{U} | a 0/2 that blocks anything in the pool and survives it: the same effect as a permanent static on itself |
+
+Fog Bank is also the only card that reaches one branch of combat — a blocker whose damage is
+prevented while the attacker's is not. A Ball Lightning blocked by one still has to *assign* lethal
+damage to it before it may trample past (CR 702.19b), so four of its six get through rather than
+six. A Fog never produces that case, because it covers the attacker too.
+
+**The player has to be able to see it**, and this is the one effect in the pool that changes nothing
+on any card: no power, no toughness, no keyword. So `VisibleCard` carries a computed
+`damagePrevented` the way it already carries power and keywords, and the badge says "damage
+prevented" — because the block you make under a Fog is the opposite of the block you would make
+without one.
+
+**And the bot had to be taught, twice.** A Fog cast with nothing attacking is a card in the
+graveyard, and the evaluation sees a card leaving the hand either way — the same blind spot the
+rituals sat in. The first version of the rule asked the state *after* the cast whether a prevention
+effect had appeared, and let every pointless Fog through: **21 cast across 160 games, 11 of them
+into an empty board.** With auto-pass on, a spell nobody can respond to resolves inside the same
+action and the engine keeps passing, so a simulated line can end the turn — by which point an
+end-of-turn effect is gone. (The ritual rule's own comment says this. Reading your own notes is the
+lesson.)
+
+Declared on the card instead, like `makesMana`, and asked of the board before the cast. Then the
+first measurement of the working rule found the second mistake: a Fog is symmetric, so fogging your
+*own* alpha strike prevents your damage and nobody else's — nine Holy Days had stopped eight points
+of attacking power between them. The question is now "is there an attack **aimed at this seat**".
+
+**Measured over 160 unsteered games, across eight pairings:**
+
+| card | used | attacking power stopped |
+| --- | --- | --- |
+| Maze of Ith | 76 | 202 |
+| Fog Bank | 23 cast, 24 blocks | 49 |
+| Fog | 14 | 53 |
+| Holy Day | 9 | 41 |
+
+Every one of them gets used and every one of them stops real damage — and nothing is cast into an
+empty board any more.
 
 ## Next
 

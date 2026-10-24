@@ -246,7 +246,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 
 ```bash
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 54 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 50 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 51 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 39 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 16 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 19 checks
@@ -259,6 +259,13 @@ reported rather than asserted when it did not. A failure is a failure; a differe
 Run them one at a time. They are real browsers playing real games, and three of them at once on one
 machine starves the others — a suite that times out under that load looks exactly like a suite that
 found something.
+
+The same caution applies to `pnpm run v2:test`. On a small machine a full-workspace run sometimes
+exits 1 with `[vitest-worker]: Timeout calling "onTaskUpdate"` while reporting every test passed:
+that is the runner failing to reach its own reporter, not a failure. Read the test counts, and if
+in doubt run the changed package's suite on its own (`pnpm --filter @grimore/rules-engine test`),
+which has never shown it. Four mitigations were measured and none fixed it — the details are in
+`packages/rules-engine/vitest.config.ts`.
 
 Every suite also watches the browser console for React's own complaints and fails on them, which is
 not the same check as "no uncaught errors": `pageerror` only fires for an exception nobody caught,

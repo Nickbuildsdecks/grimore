@@ -125,6 +125,22 @@ export interface ContinuousEffect {
   /** Blanket "can't attack or block", which is Pacifism and friends. */
   readonly cantAttack?: boolean;
   readonly cantBlock?: boolean;
+  /**
+   * Combat damage involving the permanents in scope does not happen — dealt **by** them and dealt
+   * **to** them. A Fog is this with an all-creatures scope; a Maze of Ith is it scoped to one card.
+   *
+   * Carried on a continuous effect rather than built as a prevention subsystem, because everything
+   * such an effect needs already exists here: a scope that can name one card or every creature, a
+   * duration, an expiry pass, and a source. The engine applies it in exactly one place —
+   * `dealCombatDamage` — which is also what keeps the name honest.
+   *
+   * **Combat damage only, and deliberately so.** "Prevent the next 3 damage" is a different shape:
+   * a shield with a quantity that is spent, which has to survive partial use and interact with
+   * every source of damage rather than one. Nothing in this pool needs it, and a flag that claimed
+   * to prevent damage in general while only covering combat would be worse than one that says what
+   * it does.
+   */
+  readonly preventsCombatDamage?: boolean;
   readonly duration: EffectDuration;
   readonly createdTurn: number;
   /**
@@ -218,6 +234,21 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     cantAttack,
     cantBlock,
   };
+}
+
+/**
+ * Whether this permanent's combat damage is prevented, in either direction.
+ *
+ * Asked of the *creature*, not of the attack, because both cards in a fight ask it: an attacker
+ * under a Fog deals none, and a blocker under the same Fog deals none back. One question, both
+ * directions, which is also how the printed cards read.
+ */
+export function combatDamagePrevented(state: GameState, instance: CardInstance): boolean {
+  const def = state.cardDefs[instance.defKey];
+  const creature = hasType(parseTypeLine(def?.typeLine), 'creature');
+  return (state.effects ?? []).some(
+    (effect) => effect.preventsCombatDamage === true && effectApplies(effect, instance, creature),
+  );
 }
 
 /** Convenience for the many places that only need to ask about one keyword. */

@@ -11,7 +11,7 @@
  * makes "it died because it was already damaged, then got blocked" work, and what lets a creature
  * survive combat damage if it is pumped in response.
  */
-import { characteristicsOf, type Characteristics } from './characteristics.js';
+import { characteristicsOf, combatDamagePrevented, type Characteristics } from './characteristics.js';
 import { listAt } from './cardActions.js';
 import { dealDamage, gainLife } from './effects.js';
 import { zoneKey, type CardInstance } from './cards.js';
@@ -143,6 +143,16 @@ const sameObject = (state: GameState, id: string, seq: number | undefined): bool
 
 export function dealCombatDamage(state: GameState, firstStrike: boolean): GameState {
   let next = state;
+  /*
+    Asked per creature rather than per attack, because prevention is written on the creature: a
+    Fog covers every creature on the table, a Maze of Ith covers one, and either way the question
+    "does this creature's combat damage happen" answers for the damage it deals and the damage it
+    takes. A creature that is both prevented and prevented against is simply asked twice.
+  */
+  const prevented = (id: string): boolean => {
+    const inst = next.instances[id];
+    return inst !== undefined && combatDamagePrevented(next, inst);
+  };
   for (const attack of next.combat.attacks) {
     const attacker = sameObject(next, attack.attacker, attack.attackerSeq)
       ? creatureOf(next, attack.attacker)
@@ -152,7 +162,8 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
     const livingBlockers = attack.blockers.filter((id) =>
       creatureOf(next, id) !== null && sameObject(next, id, attack.blockerSeqs?.[id]));
 
-    if (attacker !== null && dealsInStep(attacker.ch, firstStrike) && attacker.ch.power > 0) {
+    if (attacker !== null && dealsInStep(attacker.ch, firstStrike) && attacker.ch.power > 0
+      && !prevented(attack.attacker)) {
       const deathtouch = attacker.ch.keywords.has('deathtouch');
       const lifelink = attacker.ch.keywords.has('lifelink');
       const controller = attacker.inst.zoneSeat;
@@ -168,6 +179,17 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
           if (remaining <= 0) break;
           const blocker = creatureOf(next, blockerId);
           if (blocker === null) continue;
+          /*
+            Assigned and then not dealt, rather than skipped.
+
+            A blocker whose damage is prevented still has to be assigned lethal damage before the
+            attacker may trample past it (CR 702.19b): the rule is about what is *assigned*, and an
+            attacker under a Maze of Ith's blocker does not get to send its whole power through.
+          */
+          if (prevented(blockerId)) {
+            remaining -= deathtouch ? 1 : Math.max(1, blocker.ch.toughness - blocker.inst.damage);
+            continue;
+          }
           // Lethal is what is left of its toughness; deathtouch makes one point lethal.
           const lethal = deathtouch ? 1 : Math.max(1, blocker.ch.toughness - blocker.inst.damage);
           const assigned = Math.min(remaining, lethal);
@@ -191,6 +213,7 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
       // The attacker may already be gone; blockers deal damage only to something still there,
       // and not to a new permanent wearing the same id.
       if (attacker === null || creatureOf(next, attack.attacker) === null) continue;
+      if (prevented(blockerId) || prevented(attack.attacker)) continue;
       next = dealDamage(next, { kind: 'card', id: attack.attacker }, blocker.ch.power, {
         deathtouch: blocker.ch.keywords.has('deathtouch'),
         lifelink: blocker.ch.keywords.has('lifelink'),

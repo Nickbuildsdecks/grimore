@@ -30,16 +30,30 @@ export default defineConfig({
       parallel, because one file cannot be split.) What it buys is a run that does not starve its
       own main thread.
 
-      What prompted it: a `turbo run test --force` across all ten packages on this four-core box
-      failed with `[vitest-worker]: Timeout calling "onTaskUpdate"` — all 487 tests passed and the
-      process still exited 1, because a worker could not reach the reporter inside its RPC timeout
-      while the machine was saturated. It repeated about one run in two with every package's suite
-      rebuilt at once.
+      What prompted it — and did not fix it, which is the part worth writing down. A
+      `turbo run test --force` across all ten packages on this four-core box fails about one run in
+      two with `[vitest-worker]: Timeout calling "onTaskUpdate"`: every test passes and the process
+      exits 1 anyway, because a worker cannot reach the reporter inside its RPC timeout while the
+      machine is saturated. Four mitigations were measured and none of them fixed it: this cap, the
+      `dot` reporter (a tenth of the reporter traffic), `turbo --concurrency=3`, and `singleFork`
+      (one process for the whole package, which costs nothing — 54.6s against 53.5s — and still
+      flaked). Under `--force` the api and realtime suites began failing the same way, which rules
+      out anything specific to this package.
 
-      It is a local-load artefact and is not stated here as a CI risk: CI has run this workflow 175
-      times on this branch and every one of the last ten is green, this flake among the things that
-      never happened there. The cap is kept because it costs nothing, not because it was shown to
-      fix anything.
+      The likeliest remaining cause is this suite's own shape rather than the box: a `playout` test
+      is ten seconds of *synchronous* game-playing in one test body, and a worker that never yields
+      cannot answer the reporter inside its timeout. What would follow from that is a yield between
+      games — `await` something that defers, once per seed — which is a real change to thirty tests
+      for a runner's benefit and has not been made. It is written here so the next person starts
+      from the measurement rather than from the four things that did not work.
+
+      So it is a local-load artefact and is deliberately not stated as a CI risk. CI has run this
+      workflow 175 times on this branch and every one of the last ten is green. The working
+      practice is in `claude/play-realm-setup.md`: verify without `--force`, because turbo re-runs
+      exactly the packages whose inputs changed, and that is what verification is for.
+
+      The cap stays because it is marginally *faster* and leaves the main thread a core, not
+      because it was shown to fix anything.
     */
     maxWorkers: 2,
   },

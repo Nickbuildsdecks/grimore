@@ -2617,3 +2617,53 @@ loop in D73 was re-measuring continuously; fixing that bug made the check a coin
 always really been. **A test that passes because of a bug is a test that will fail when the bug is
 fixed**, and the fix for the test (wait up to a second) is what the claim always needed.
 
+## D77 — Prevention is a flag on an effect, not a subsystem
+
+Nothing in the engine could prevent damage, which rules out the first family a casual player reaches
+for. The obvious design is a prevention layer — shields with quantities, applied before damage, spent
+as they absorb — and it is the wrong size for what the cards need.
+
+`ContinuousEffect` already had a scope that can name one card or every creature, a duration, an
+expiry pass and a source. `preventsCombatDamage` on it says exactly what the printed cards say:
+*combat damage involving these permanents does not happen, dealt by them and dealt to them.* The
+engine reads it in one place, `dealCombatDamage`. Fog is the effect with an all-creatures scope;
+Maze of Ith is it scoped to one card; Fog Bank is it as a permanent static on itself.
+
+**It is combat-only and the field is named so.** "Prevent the next 3 damage" is a shield with a
+quantity that survives partial use and has to meet every source of damage, not just combat. Nothing
+in this pool needs it, and a flag that claimed to prevent damage in general while only covering
+combat would be worse than one that says what it does.
+
+One branch of combat is reachable by exactly one card, which is why that card exists. A blocker whose
+damage is prevented while the attacker's is not — a Fog Bank in front of a Ball Lightning — still has
+to be *assigned* lethal damage before the trampler may send the rest through (CR 702.19b): four of
+six, not six. A Fog never produces that case, because it covers the attacker too. Writing the branch
+without a card to reach it would have been the same risk D57 named for the keywords.
+
+**The player can see it, which this effect makes unusually hard.** It changes no power, no toughness
+and no keyword, so a board under a Fog looks exactly like a board about to trade. `VisibleCard` now
+carries a computed `damagePrevented`, the way it already carries the power the engine computed rather
+than the one printed, and the badge says so.
+
+**And the "card spent on nothing" family grew to two — with two mistakes worth keeping.**
+
+1. The first rule asked the state *after* the cast whether a prevention effect had appeared. It let
+   every pointless Fog through: **21 cast across 160 games, 11 with nothing attacking at all.** With
+   auto-pass on, a spell nobody can respond to resolves inside the same action and the engine keeps
+   passing for any seat with nothing to do — so a simulated line can end the turn, and an
+   end-of-turn effect is gone by the time the question is asked. **D74 records this exact trap, in a
+   comment two hundred lines away in the same file.** Declared on the card instead (`preventsDamage`,
+   beside `makesMana`) and asked of the board before the cast.
+2. The working rule's first measurement found the next one: a Fog is symmetric, so fogging your own
+   alpha strike prevents your own damage and nobody else's. Nine Holy Days had stopped eight points
+   of attacking power between them. The question is now "is there an attack **aimed at this seat**",
+   and the same nine casts stop forty-one.
+
+Measured over 160 unsteered games after both fixes: Maze of Ith used 76 times for 202 power stopped,
+Fog Bank 23 cast and 24 blocks for 49, Fog 14 for 53, Holy Day 9 for 41 — and nothing cast into an
+empty board.
+
+**The general lesson, now that it has cost two increments:** a question about *what a spell did* may
+not be askable from the state after it, because the state after it is wherever the engine's auto-pass
+stopped. Ask the card, or ask the board before.
+

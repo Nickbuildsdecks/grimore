@@ -336,6 +336,20 @@ export interface CardScript {
    */
   readonly makesMana?: boolean;
   /**
+   * "This spell's whole effect is to prevent combat damage" — a Fog, and its white reprint.
+   *
+   * Declared for the bot, like `makesMana`, and for the same reason twice over. A Fog cast with
+   * nothing attacking is a card in the graveyard, and the evaluation sees a card leaving the hand
+   * either way; and the state *after* the cast cannot be asked, because with auto-pass on a spell
+   * nobody can respond to resolves inside the same action and the engine keeps passing — a line
+   * that ends the turn has already expired the effect the question was about. That mistake was
+   * made first, measured (21 Fogs cast, 11 of them into an empty board) and replaced by this.
+   *
+   * Not on Maze of Ith, which needs no flag: its ability can only target an attacking creature, so
+   * the engine does not offer it when there is nothing to prevent.
+   */
+  readonly preventsDamage?: boolean;
+  /**
    * What this Equipment gives the creature it is attached to.
    *
    * Declared rather than left inside the equip ability's own effect, because other cards read it:

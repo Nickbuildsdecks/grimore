@@ -4180,6 +4180,165 @@ describe('eleven more cards', () => {
   });
 });
 
+describe('damage that does not happen', () => {
+  /** Two attackers, one blocker, and the defender holding the card in hand. */
+  const swingInto = (hand: readonly string[], mine: readonly string[], deck: string): GameState => {
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: deck },
+      hands: { 1: hand },
+      battlefield: { 0: ['Hill Giant', 'Raging Goblin'], 1: mine },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const attackers = ['Hill Giant', 'Raging Goblin'].map((name) => ({
+      attacker: find(s, 0, 'battlefield', name), defender: 1 as SeatIndex,
+    }));
+    s = apply(s, { type: 'auto:attack', by: 0, attackers });
+    // The attacking player holds priority in the step the attack was declared in.
+    return apply(s, { type: 'auto:pass', by: 0 });
+  };
+
+  /** Blocks the Giant with the named creature and plays the combat out. */
+  const blockAndFight = (state: GameState, blocker: string): GameState => {
+    let s = advanceTo(state, 'declare-blockers');
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1,
+      blocks: [{ blocker: find(s, 1, 'battlefield', blocker), attacker: find(s, 0, 'battlefield', 'Hill Giant') }],
+    }));
+    return advanceTo(s, 'postcombat-main', 120);
+  };
+
+  it('Fog stops the whole swing, in both directions', () => {
+    let s = swingInto(['Fog'], ['Forest', 'Grizzly Bears'], 'verdant-guard');
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Forest'), abilityIndex: 0 });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Fog') })));
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = blockAndFight(s, 'Grizzly Bears');
+    // Nothing through to the player from the unblocked Goblin, nothing to the blocker from the
+    // Giant, and — the half a one-directional version would get wrong — nothing back from the
+    // blocker either.
+    expect(life(s, 1)).toBe(20);
+    expect(s.instances[bears]!.zone).toBe('battlefield');
+    expect(damageOn(s, bears)).toBe(0);
+    expect(damageOn(s, giant)).toBe(0);
+  });
+
+  it('Holy Day is the same card in white, and wears off at end of turn', () => {
+    // Soul Warden rather than Grizzly Bears: `arena` pulls every named card out of that seat's
+    // *own* deck, so a blocker has to be one this deck actually plays.
+    let s = swingInto(['Holy Day'], ['Plains', 'Plains', 'Soul Warden'], 'skyward-writ');
+    for (const id of [...ids(s, 1, 'battlefield')].filter((i) => nameOf(s, i) === 'Plains')) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Holy Day') })));
+    const warden = find(s, 1, 'battlefield', 'Soul Warden');
+    s = blockAndFight(s, 'Soul Warden');
+    expect(life(s, 1)).toBe(20);
+    expect(s.instances[warden]!.zone).toBe('battlefield');
+
+    // And the next attack goes through, which is the whole difference between a Fog and a Wall.
+    s = advanceTo(nextTurn(s), 'declare-attackers');
+    expect(s.effects.length).toBe(0);
+  });
+
+  it('Maze of Ith untaps the attacker and stops its damage both ways', () => {
+    let s = swingInto([], ['Maze of Ith', 'Omenspeaker'], 'tidal-mind');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    expect(s.instances[giant]!.tapped).toBe(true);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Maze of Ith'), abilityIndex: 0,
+      targets: [{ kind: 'card', id: giant }],
+    })));
+    // Untapped, and still attacking: the printed card does not remove it from combat.
+    expect(s.instances[giant]!.tapped).toBe(false);
+    expect(s.combat.attacks.some((a) => a.attacker === giant)).toBe(true);
+
+    const omen = find(s, 1, 'battlefield', 'Omenspeaker');
+    s = blockAndFight(s, 'Omenspeaker');
+    // The Goblin's one damage still gets through — a Maze answers one creature, not the swing.
+    expect(life(s, 1)).toBe(19);
+    expect(s.instances[omen]!.zone).toBe('battlefield');
+    expect(damageOn(s, omen)).toBe(0);
+    expect(damageOn(s, giant)).toBe(0);
+  });
+
+  /**
+   * Casts Fog Bank for real and hands the turn to the attacker.
+   *
+   * It has to be *cast*: a static effect is installed when the permanent arrives through the
+   * engine, and `arena`'s battlefield setup puts cards down with the tabletop's own `card:move`,
+   * which is not an arrival. A Fog Bank placed by hand is a 0/2 Wall with no text — which is also
+   * true at a real table, and the reason **Move by hand** is an escape hatch rather than a way to
+   * play a permanent.
+   */
+  const castFogBank = (theirs: readonly string[], theirHand: readonly string[] = []): GameState => {
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: theirHand.length === 0
+        ? { 1: ['Fog Bank'] }
+        : { 0: [...theirHand], 1: ['Fog Bank'] },
+      battlefield: { 0: [...theirs], 1: ['Island', 'Island'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')].filter((i) => nameOf(s, i) === 'Island')) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Fog Bank') })));
+    return nextTurn(s);
+  };
+
+  it('Fog Bank blocks anything and survives it, for ever', () => {
+    let s = advanceTo(castFogBank(['Shivan Dragon']), 'declare-attackers');
+    const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+    const bank = find(s, 1, 'battlefield', 'Fog Bank');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: dragon, defender: 1 }] }));
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bank, attacker: dragon }] }));
+    s = advanceTo(s, 'postcombat-main', 120);
+    // A 0/2 in front of a 5/5 flier, and nothing happens to either of them. It blocks the flier at
+    // all because it has flying printed on it, which is the rest of the card.
+    expect(life(s, 1)).toBe(20);
+    expect(s.instances[bank]!.zone).toBe('battlefield');
+    expect(damageOn(s, bank)).toBe(0);
+    expect(damageOn(s, dragon)).toBe(0);
+  });
+
+  it('and a trampler still has to assign lethal to it before trampling past', () => {
+    // The branch no other card in the pool reaches: the blocker's damage is prevented and the
+    // attacker's is not. Ball Lightning is 6/6 trample, Fog Bank is 0/2, so two points are
+    // assigned to the Bank and never dealt, and four get through — not six (CR 702.19b).
+    // Cast from hand on the turn it attacks, because a Ball Lightning sacrifices itself at the end
+    // of every turn it is on the battlefield — which is also the only way anybody ever plays one.
+    let s = castFogBank(['Mountain', 'Mountain', 'Mountain'], ['Ball Lightning']);
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')].filter((i) => nameOf(s, i) === 'Mountain')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ball Lightning') })));
+    s = advanceTo(s, 'declare-attackers');
+    const ball = find(s, 0, 'battlefield', 'Ball Lightning');
+    const bank = find(s, 1, 'battlefield', 'Fog Bank');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: ball, defender: 1 }] }));
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bank, attacker: ball }] }));
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(life(s, 1)).toBe(16);
+    expect(damageOn(s, bank)).toBe(0);
+    expect(s.instances[bank]!.zone).toBe('battlefield');
+  });
+
+  it('and is not offered at all when nothing is attacking', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      battlefield: { 0: ['Hill Giant'], 1: ['Maze of Ith'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const maze = find(s, 1, 'battlefield', 'Maze of Ith');
+    expect(legalActions(s, 1).plays.some((play) => play.card === maze)).toBe(false);
+  });
+});
+
 describe('unscripted cards', () => {
   it('casts, resolves and fights normally, and says in the log that it is not automated', () => {
     // Hill Giant has no script: no triggers, no abilities, nothing printed but a body.

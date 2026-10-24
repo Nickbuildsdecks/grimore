@@ -977,6 +977,15 @@ describe("cardBadges", () => {
     expect(cardBadges(v, permanent({ damage: 2 }))).toContain("2 dmg")
   })
 
+  it("says when a creature's combat damage is prevented, which nothing else on the card shows", () => {
+    // A Fog changes no power, no toughness and no keyword: without this the board looks exactly
+    // like a board about to trade, and the block you make under one is the opposite of the block
+    // you would make without it.
+    const v = view({ automation: automation() })
+    expect(cardBadges(v, permanent({ damagePrevented: true }))).toContain("damage prevented")
+    expect(cardBadges(v, permanent())).not.toContain("damage prevented")
+  })
+
   it("says when a creature cannot fight, which is what an Aura like Pacifism does", () => {
     const v = view({ automation: automation() })
     expect(cardBadges(v, permanent({ cantAttack: true, cantBlock: true }))).toContain("can't fight")

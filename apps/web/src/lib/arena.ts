@@ -581,6 +581,10 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     out.push(`${card.power}/${card.toughness}`)
   }
   if ((card.damage ?? 0) > 0) out.push(`${card.damage} dmg`)
+  // A Fog changes nothing a player can see on any card, so without this the board looks exactly
+  // like a board about to trade — and the block you make under one is the opposite of the block
+  // you would make without it.
+  if (card.damagePrevented === true) out.push("damage prevented")
   /*
     Who this creature is attacking, and who is in its way.
 

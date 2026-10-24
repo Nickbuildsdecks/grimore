@@ -974,6 +974,41 @@ function bestPlan(state: GameState, seat: SeatIndex, actions: readonly Action[])
 }
 
 /** The single action this seat would take now, or null when it has nothing to do. */
+/**
+ * Whether there is combat damage left for a Fog to prevent.
+ *
+ * The second card in the "spent on nothing" family. A Fog cast on an empty board is a card in the
+ * graveyard, and the evaluation sees a card leaving the hand either way — so the question is asked
+ * of the *board*: is there an attack **aimed at this seat**, and is its damage still to come.
+ *
+ * Asked of the board **before** the cast rather than of the state after it, which is the mistake
+ * this started as: with auto-pass on, a spell nobody can respond to resolves inside the same
+ * action and the engine keeps passing, so a simulated line can end the turn — and an end-of-turn
+ * effect is gone by then. The first version looked for the prevention effect in the state after
+ * the cast, found nothing, and let every pointless Fog through: **21 cast across 160 games, 11 of
+ * them with nothing attacking at all.**
+ *
+ * `first-strike-damage` counts, because a Fog cast after the first-strike damage still prevents
+ * the regular damage. `postcombat-main` does not, which is the case this exists to stop.
+ */
+function damageStillToCome(state: GameState, seat: SeatIndex): boolean {
+  // Aimed at *this* seat, which the first measurement after the rule went in showed is not the
+  // same question: a Fog is symmetric, so fogging your own alpha strike prevents your damage and
+  // nobody else's. Eleven Holy Days stopped eight points of attacking power between them, because
+  // some of them were cast over the caster's own attack.
+  if (!state.combat.attacks.some((attack) => attack.defender === seat)) return false;
+  return state.step === 'declare-attackers'
+    || state.step === 'declare-blockers'
+    || state.step === 'first-strike-damage';
+}
+
+/** Whether this action casts a spell whose whole effect is to prevent combat damage. */
+function castsAPrevention(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return name !== undefined && scriptFor(name)?.preventsDamage === true;
+}
+
 /** Whether this action casts a spell whose whole effect is mana. */
 function castsARitual(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -1150,6 +1185,12 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       promise that is not kept. Rare, and cheaper than teaching the search to look two plays deep.
     */
     if (castsARitual(state, option.action) && !ritualBoughtSomething(state, after, seat)) {
+      dropped += 1;
+      continue;
+    }
+    // And the same judgement for a Fog with nothing attacking. Not a weight: a card that prevents
+    // damage nobody is dealing has done nothing at all, which is a fact about the board.
+    if (castsAPrevention(state, option.action) && !damageStillToCome(state, seat)) {
       dropped += 1;
       continue;
     }

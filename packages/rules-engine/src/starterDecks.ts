@@ -1231,6 +1231,49 @@ const PREY_UPON: CardDef = {
   colors: ['G'],
 };
 
+const FOG: CardDef = {
+  name: 'Fog',
+  typeLine: 'Instant',
+  manaCost: '{G}',
+  cmc: 1,
+  oracleText: 'Prevent all combat damage that would be dealt this turn.',
+  colors: ['G'],
+};
+
+const HOLY_DAY: CardDef = {
+  name: 'Holy Day',
+  typeLine: 'Instant',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  oracleText: 'Prevent all combat damage that would be dealt this turn.',
+  colors: ['W'],
+};
+
+const FOG_BANK: CardDef = {
+  name: 'Fog Bank',
+  typeLine: 'Creature \u2014 Wall',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  power: '0',
+  toughness: '2',
+  // The keywords on their own line, as a printed card has them: `printedKeywords` only reads a
+  // line that is nothing *but* keywords, which is what stops it finding "flying" in a sentence.
+  oracleText:
+    'Defender, flying\nPrevent all combat damage that would be dealt to and dealt by Fog Bank.',
+  colors: ['U'],
+};
+
+const MAZE_OF_ITH: CardDef = {
+  name: 'Maze of Ith',
+  typeLine: 'Land',
+  manaCost: '',
+  cmc: 0,
+  oracleText:
+    '{T}: Untap target attacking creature. Prevent all combat damage that would be dealt to and '
+    + 'dealt by that creature this turn.',
+  colors: [],
+};
+
 const DIVINE_VERDICT: CardDef = {
   name: 'Divine Verdict',
   typeLine: 'Instant',
@@ -1485,7 +1528,7 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: SERRA_ANGEL, count: 2 },
     // Removal that gives the creature back if you kill the thing holding it, which is the deck's
     // answer to a creature it cannot block rather than a second Pacifism.
-    { card: BANISHER_PRIEST, count: 2 },
+    { card: BANISHER_PRIEST, count: 1 },
     { card: JOURNEY_TO_NOWHERE, count: 2 },
     // A Plains and a Pacifism paid for these. Cloudshift is one mana that saves a creature from
     // removal, draws a card off the Visionary, and re-aims a Banisher Priest at something newer —
@@ -1494,6 +1537,9 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: CLOUDSHIFT, count: 2 },
     { card: GIANT_GROWTH, count: 1 },
     { card: TITANIC_GROWTH, count: 1 },
+    // One mana that beats an alpha strike, and the cheapest card in the game that does. It cost a
+    // second Banisher Priest, in a deck already holding five other ways to answer one creature.
+    { card: FOG, count: 1 },
     // Removal a green deck is actually allowed: the biggest creature on the table eats something.
     { card: PREY_UPON, count: 2 },
     { card: LOXODON_WARHAMMER, count: 1 },
@@ -1517,10 +1563,14 @@ export const TIDAL_MIND: DeckSpec = {
   description: 'Blue-black control. Counter what matters, kill what lands, and win in the air.',
   commander: TALRAND,
   cards: [
-    { card: ISLAND, count: 9 },
+    { card: ISLAND, count: 8 },
     { card: SWAMP, count: 8 },
     { card: DIMIR_GUILDGATE, count: 2 },
     { card: LONELY_SANDBAR, count: 2 },
+    // A land that answers an attacker every turn and never taps for mana, which is a trade a
+    // control deck is happy to make and nothing else in this pool is. It cost an Island, so the
+    // deck is on twenty sources rather than twenty-one.
+    { card: MAZE_OF_ITH, count: 1 },
     { card: COUNTERSPELL, count: 2 },
     // A third counter that is not a fourth Counterspell: a hand of answers should not be three
     // copies of one card.
@@ -1545,7 +1595,11 @@ export const TIDAL_MIND: DeckSpec = {
     // One mana that makes a creature untouchable by anybody, its own controller included — the
     // deck's way of protecting a flier it intends to win with, at the cost of never touching it
     // again.
-    { card: ROBE_OF_MIRRORS, count: 2 },
+    { card: ROBE_OF_MIRRORS, count: 1 },
+    // A 0/2 that blocks anything in the pool for ever and survives it. The deck that loses 0-15 to
+    // the fastest red deck has no creature that can stand in front of one twice; this one does it
+    // every turn, and it cost the second Robe.
+    { card: FOG_BANK, count: 1 },
     { card: JACE_BELEREN, count: 1 },
     { card: OMENSPEAKER, count: 2 },
     { card: PHYREXIAN_ARENA, count: 1 },
@@ -1767,9 +1821,12 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: ESSENCE_SCATTER, count: 1 },
     { card: NEGATE, count: 1 },
     { card: UNSUMMON, count: 1 },
-    { card: SWORDS_TO_PLOWSHARES, count: 3 },
+    { card: SWORDS_TO_PLOWSHARES, count: 2 },
     { card: PACIFISM, count: 1 },
     { card: JOURNEY_TO_NOWHERE, count: 1 },
+    // The deck that loses to a wide board, holding the card that answers a wide board for two
+    // mana. The third Swords paid for it: this deck's problem was never the one big creature.
+    { card: HOLY_DAY, count: 1 },
     // Four mana that is dead on your own turn and kills anything that attacks into it. The engine
     // will not even offer it outside combat, which is the card.
     { card: DIVINE_VERDICT, count: 2 },

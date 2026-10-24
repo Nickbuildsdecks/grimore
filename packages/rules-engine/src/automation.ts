@@ -1185,6 +1185,7 @@ function applyStatics(
         ...(entry.effect.power === undefined ? {} : { power: entry.effect.power }),
         ...(entry.effect.toughness === undefined ? {} : { toughness: entry.effect.toughness }),
         ...(entry.effect.keywords ? { keywords: entry.effect.keywords } : {}),
+        ...(entry.effect.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
       }],
     };
   }
