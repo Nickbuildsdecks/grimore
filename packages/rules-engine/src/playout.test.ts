@@ -742,7 +742,11 @@ describe('a four-player Commander pod', () => {
     expect(s.finished).toBe(true);
     expect(worst).toBeGreaterThan(0);
     expect(worst).toBeLessThan(WIRE_CAP);
-  });
+    // A whole four-seat pod, packed and unpacked four ways after every single action, next to five
+    // other packages' suites. It came in at 2.7s alone and timed out at the 5s default twice in a
+    // day, which is a measurement of this machine rather than of the payload — the same 60s the
+    // other whole-game tests take.
+  }, 60_000);
 
   it('never offers a play it then refuses, with four seats in the game', () => {
     // The same claim the two-player games make, re-made where turn order has to skip eliminated

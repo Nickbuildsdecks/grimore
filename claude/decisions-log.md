@@ -2137,3 +2137,51 @@ that had one, because "all at them" means the player.
 strips already, so "who is ahead" is on screen; a composite score of life and board and cards
 would be a guess dressed as a fact, which is the one thing a table must not do with a number. The
 numbers it shows are the ones it can compute exactly.
+
+## D65 — Four keywords the engine enforced for nobody, and the scope nothing used
+
+First strike, menace, indestructible and shroud were all written, all checked in the rules —
+`dealsInStep`, `menaceSatisfied`, `destroy` and the lethal-damage state-based action,
+`isLegalTarget` — and **no card in the pool had any of them.** `all-creatures` was the same story
+one layer up: a static scope with no card behind it. A live path with no card behind it is the same
+risk as an untested one, which is the argument that put the mana rocks in; these five cards are
+that argument applied to combat and targeting.
+
+- **Youthful Knight** {1}{W} 2/2 first strike. The whole claim is the *step*:
+  `needsFirstStrikeStep` only inserts a first-strike damage step when something in combat has the
+  keyword, so until this card the step had never happened in a game.
+- **Boggart Brute** {2}{R} 3/2 menace. A single-blocker declaration is refused whole (CR 702.110a)
+  rather than accepted and undone, and the table only lights blocks the engine would take, so the
+  rule shows up as "that creature cannot block this alone" rather than as a surprise.
+- **Darksteel Plate**, equip {2}, equipped creature is indestructible. Written with the existing
+  `equipment()` helper's keyword grant, so the card is four lines and the keyword does the work: a
+  2/1 with three damage marked on it stays on the battlefield, and Doom Blade resolves and
+  accomplishes nothing.
+- **Robe of Mirrors** {U} Aura, enchanted creature has shroud. Shroud rather than hexproof on
+  purpose: hexproof is the keyword players expect and shroud is the one that tests the rule, because
+  it stops the *controller* targeting it too — no Giant Growth, no targeted equip, no Cloudshift.
+  The engine already made that distinction and nothing had ever asked it to.
+- **Night of Souls' Betrayal** {2}{B}{B}{B}, all creatures get -1/-1. The first `all-creatures`
+  static, and the hardest thing in the pool for the state-based actions: every 1/1 on the table
+  dies at once when it lands, and every 1/1 token afterwards arrives dead (CR 704.5f) — a loop
+  `stateBasedActions` has to settle before anybody gets priority back. One copy in one deck, which
+  also sidesteps the legend rule on a non-creature permanent.
+
+**Measured over thirty unsteered games across three pairings**, because a card that is in a deck and
+never cast has not been tested: Boggart Brute cast 20 times and attacked, Robe of Mirrors cast 17,
+Youthful Knight cast 11, Darksteel Plate cast twice (one copy, one deck) and held a creature up
+with lethal damage marked on it twice, Night of Souls' Betrayal cast 3 times and killed a creature
+as it landed. **The first-strike damage step happened once in thirty games** — not because the card
+does not work, but because the step only exists when a first striker is actually *in* combat and the
+searching bot blocks rarely; the deterministic test is the one that holds that claim.
+
+**`becomes-tapped` is left unused, deliberately.** It is the last trigger in `scriptTypes.ts` with
+no card behind it, and the honest reason is that the bare "whenever ~ becomes tapped" template is
+not on a card this pool would carry. The cards that look like it — "whenever enchanted land is
+tapped for mana" — are triggers on an *Aura* about the permanent it is attached to, which a
+self-only event cannot express. Inventing a card for the path would be worse than saying that.
+
+**And a test whose timeout was a measurement of this machine.** The four-seat payload-budget test
+packs and unpacks four views after every action of a whole pod and ran at 2.7s against a 5s default,
+which timed out twice in a day beside five other packages' suites. It takes the same 60s the other
+whole-game tests take now. A timeout that fails on a slow afternoon is not a test of the payload.

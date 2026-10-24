@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**468 tests in the rules engine, 119 in the web app, 1,085 across the workspace.**
+**475 tests in the rules engine, 119 in the web app, 1,092 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -974,13 +974,39 @@ and four retaps with the aim changed in between, which is long enough for the mo
 What this deliberately does *not* add is a verdict on who is winning. Four life totals sit side by
 side already, and a composite score of life and board and cards would be a guess dressed as a fact.
 
+**Four keywords the engine enforced for nobody.** First strike, menace, indestructible and shroud
+were all written and all checked in the rules, and no card in the pool had any of them;
+`all-creatures` was a static scope with nothing behind it. A live path with no card behind it is the
+same risk as an untested one, so five cards now carry them: **Youthful Knight** (the first-strike
+damage step had never happened in a game), **Boggart Brute** (a single-blocker declaration is
+refused whole, and the table only lights blocks the engine would take), **Darksteel Plate** (four
+lines using the Equipment helper's keyword grant: a 2/1 with three damage marked on it stays on the
+battlefield and Doom Blade accomplishes nothing), **Robe of Mirrors** (shroud rather than hexproof
+on purpose — it stops the *controller* targeting it too, which is the rule hexproof would not test),
+and **Night of Souls' Betrayal** (-1/-1 to every creature on the table, which is also the hardest
+thing in the pool for the state-based actions: every 1/1 dies at once, and every 1/1 token
+afterwards arrives dead).
+
+Measured over thirty unsteered games, because a card in a deck that is never cast has not been
+tested: Boggart Brute cast 20 and attacked, Robe of Mirrors 17, Youthful Knight 11, Darksteel Plate
+twice (one copy in one deck) holding a creature up with lethal damage on it twice, and Night of
+Souls' Betrayal three times, killing a creature as it landed. The first-strike damage step happened
+*once* in thirty games — not because the card is broken but because the step only exists when a
+first striker is actually in combat and the searching bot rarely blocks, which is what the
+deterministic test is for.
+
+`becomes-tapped` is the one trigger left with no card behind it, and it stays that way on purpose:
+the bare template is not on a card this pool would carry, and the cards that look like it ("whenever
+enchanted land is tapped for mana") are triggers on an *Aura* about the permanent it is attached to,
+which a self-only event cannot express.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
    it, and the four ways a card can ask a player something — a mode, targets, a cost, a
-   mid-resolution decision — are all in place. Adding a card is a few declarative lines. The
-   `becomes-tapped` trigger and the `all-creatures` static scope are still unused: both exist,
-   and the clean cards for them need something else the engine lacks.
+   mid-resolution decision — are all in place. Adding a card is a few declarative lines. Every
+   keyword and every static scope now has a card behind it; `becomes-tapped` is the one trigger
+   left without one, and deliberately so (see the entry above).
 2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
    `deck:load` already resolves any deck handed to it, but a real list needs card data — type
    lines, mana costs, oracle text — and the `cards` table has never been populated while this

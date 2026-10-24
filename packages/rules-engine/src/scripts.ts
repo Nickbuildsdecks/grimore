@@ -1788,6 +1788,60 @@ const CLOUDSHIFT: CardScript = {
   },
 };
 
+/*
+  The keywords the engine enforced for nobody.
+
+  First strike, menace, indestructible and shroud were all written, all checked in the rules —
+  `dealsInStep`, `menaceSatisfied`, `destroy` and the lethal-damage state-based action,
+  `isLegalTarget` — and no card in the pool had any of them. A live path with no card behind it is
+  the same risk as an untested one, which is why the mana rocks got written; these five are the
+  same increment for combat and targeting.
+*/
+
+/** Youthful Knight: the first creature in the pool that hits before it is hit. */
+const YOUTHFUL_KNIGHT: CardScript = { name: 'Youthful Knight', keywords: ['first strike'] };
+
+/**
+ * Boggart Brute: a 3/2 that one creature cannot stop.
+ *
+ * Menace has been enforced since combat was written — a declaration that blocks it with one
+ * creature is refused, and the table only lights the blocks the engine would accept — and this is
+ * the first card that makes the rule do anything.
+ */
+const BOGGART_BRUTE: CardScript = { name: 'Boggart Brute', keywords: ['menace'] };
+
+/**
+ * Robe of Mirrors: the creature nobody can touch, including you.
+ *
+ * Shroud rather than hexproof on purpose: hexproof is the keyword players expect and shroud is the
+ * one that tests the rule, because it stops the *controller* targeting it too. A creature wearing
+ * this cannot be given a Giant Growth, equipped by a targeted equip, or saved by a Cloudshift —
+ * which is the trade the card asks you to make, and the engine makes it without the card saying so.
+ */
+const ROBE_OF_MIRRORS: CardScript = {
+  name: 'Robe of Mirrors',
+  aura: {
+    target: { kind: 'creature', description: 'enchant creature' },
+    effect: { keywords: ['shroud'] },
+  },
+};
+
+/**
+ * Night of Souls' Betrayal: the first static that is about *every* creature.
+ *
+ * `all-creatures` existed as a scope and nothing used it, so the one thing it does differently
+ * from an anthem — reaching across the table rather than down one side — had never run in a game.
+ * It is also the hardest thing in the pool for the state-based actions: every 1/1 on the table
+ * dies at once when it arrives, and every 1/1 token afterwards arrives dead (CR 704.5f), which is
+ * a loop `stateBasedActions` has to settle before anybody gets priority back.
+ *
+ * One copy in one deck, which also sidesteps the legend rule on a non-creature permanent.
+ */
+const NIGHT_OF_SOULS_BETRAYAL: CardScript = {
+  name: "Night of Souls' Betrayal",
+  statics: [{ scope: 'all-creatures', effect: { power: -1, toughness: -1 } }],
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 const ALL: readonly CardScript[] = [
@@ -1834,6 +1888,9 @@ const ALL: readonly CardScript[] = [
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
   HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT,
+  YOUTHFUL_KNIGHT, BOGGART_BRUTE, ROBE_OF_MIRRORS, NIGHT_OF_SOULS_BETRAYAL,
+  equipment('Darksteel Plate', '{2}', { keywords: ['indestructible'] },
+    'equipped creature is indestructible'),
   guildgate('Rakdos Guildgate', 'B', 'R'),
 ];
 

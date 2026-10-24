@@ -3656,6 +3656,223 @@ describe('attacks that trigger off the board', () => {
   });
 });
 
+/**
+ * The four keywords the engine enforced for nobody, and the static scope nothing used.
+ *
+ * Every one of them was written, checked in the rules and never carried by a card: first strike in
+ * `dealsInStep`, menace in `menaceSatisfied`, indestructible in `destroy` and in the lethal-damage
+ * state-based action, shroud in `isLegalTarget`, and `all-creatures` in the static layer. A live
+ * path with no card behind it is the same risk as an untested one, so these five cards exist to
+ * make each of them do something in a real game.
+ */
+describe('the keywords nothing in the pool carried', () => {
+  it('Youthful Knight deals its damage in a step that only exists because of the keyword', () => {
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'rot-harvest' },
+      battlefield: { 0: ['Youthful Knight'], 1: ['Centaur Courser'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const knight = find(s, 0, 'battlefield', 'Youthful Knight');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: knight, defender: 1 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: courser, attacker: knight }] });
+    // Walk the rest of combat and write down the steps it went through. The claim is the step
+    // itself: `needsFirstStrikeStep` only inserts a first-strike damage step when something in
+    // combat has the keyword, and until this card nothing in the pool ever did.
+    const steps: string[] = [];
+    for (let i = 0; i < 8 && s.step !== 'postcombat-main'; i++) {
+      steps.push(s.step);
+      s = passBoth(s);
+    }
+    expect(steps).toContain('first-strike-damage');
+    // Two damage on the 3/3, which survives — and the 2/2 dies to the regular damage it was
+    // always going to take. First strike is not protection; it is an order.
+    expect(damageOn(s, courser)).toBe(2);
+    expect(s.instances[knight]!.zone).toBe('graveyard');
+    expect(s.instances[courser]!.zone).toBe('battlefield');
+  });
+
+  it('Boggart Brute cannot be blocked by one creature, and can be by two', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'rot-harvest' },
+      battlefield: { 0: ['Boggart Brute'], 1: ['Centaur Courser', 'Llanowar Elves'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const brute = find(s, 0, 'battlefield', 'Boggart Brute');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const elves = find(s, 1, 'battlefield', 'Llanowar Elves');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: brute, defender: 1 }] }));
+    // One blocker is not a legal declaration at all (CR 702.110a) — the whole declaration is
+    // refused rather than accepted and then undone, which is also what keeps the table honest:
+    // it only lights the blocks the engine would take.
+    expect(refusal(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: courser, attacker: brute }],
+    })).toContain('menace');
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1,
+      blocks: [{ blocker: courser, attacker: brute }, { blocker: elves, attacker: brute }],
+    }));
+    expect(s.combat.attacks[0]!.blockers).toHaveLength(2);
+  });
+
+  it('Darksteel Plate saves its creature from lethal damage and from a destroy spell', () => {
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      hands: { 0: ['Lightning Bolt'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Mountain', 'Elite Vanguard', 'Darksteel Plate'],
+        1: ['Swamp', 'Swamp'],
+      },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const body = find(s, 0, 'battlefield', 'Elite Vanguard');
+    const plate = find(s, 0, 'battlefield', 'Darksteel Plate');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: plate, abilityIndex: 0,
+      targets: [{ kind: 'card', id: body }],
+    }));
+    expect(s.instances[plate]!.attachedTo).toBe(body);
+    // Three damage on a 2/1 is lethal, and the state-based action that notices lethal damage has
+    // to leave an indestructible creature alone (CR 704.5g). The damage stays marked on it.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: body }],
+    })));
+    expect(s.instances[body]!.zone).toBe('battlefield');
+    expect(damageOn(s, body)).toBe(3);
+  });
+
+  it('and the word destroy does nothing to it', () => {
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      hands: { 1: ['Doom Blade'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Elite Vanguard', 'Darksteel Plate'],
+        1: ['Swamp', 'Swamp'],
+      },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const body = find(s, 0, 'battlefield', 'Elite Vanguard');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Darksteel Plate'), abilityIndex: 0,
+      targets: [{ kind: 'card', id: body }],
+    }));
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: body }],
+    })));
+    // The spell resolved rather than being countered for having no legal target, and did nothing.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Doom Blade');
+    expect(s.instances[body]!.zone).toBe('battlefield');
+  });
+
+  it('Robe of Mirrors stops everybody targeting it, its own controller included', () => {
+    let s = arena({
+      decks: { 0: 'tidal-mind', 1: 'rot-harvest' },
+      hands: { 0: ['Robe of Mirrors', 'Unsummon'], 1: ['Doom Blade'] },
+      battlefield: { 0: ['Island', 'Island', 'Child of Night'], 1: ['Swamp', 'Swamp'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const body = find(s, 0, 'battlefield', 'Child of Night');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Robe of Mirrors'),
+      targets: [{ kind: 'card', id: body }],
+    }));
+    expect(characteristicsOf(s, s.instances[body]!).keywords.has('shroud')).toBe(true);
+    // Shroud is not hexproof, which is the whole reason this card is in the pool and a hexproof
+    // one is not: its own controller cannot target it either.
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Unsummon'),
+      targets: [{ kind: 'card', id: body }],
+    })).not.toBeNull();
+    // And the removal across the table cannot be aimed at it — refused by the engine, and never
+    // offered by the table, because `legalActions` asks the same question.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    expect(refusal(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: body }],
+    })).not.toBeNull();
+    expect(legalActions(s, 1).plays.some((play) => play.name === 'Doom Blade')).toBe(false);
+  });
+
+  it("Night of Souls' Betrayal shrinks every creature on the table, and kills the small ones", () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'rot-harvest' },
+      hands: { 0: ["Night of Souls' Betrayal"] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'],
+        1: ['Centaur Courser', 'Llanowar Elves'],
+      },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const elves = find(s, 1, 'battlefield', 'Llanowar Elves');
+    // Cast rather than placed, because a static effect is created as the permanent arrives — the
+    // same trap the anthems set, one scope wider.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Night of Souls' Betrayal"),
+    })));
+    // Across the table, which is what `all-creatures` means and what no card had ever asked for:
+    // a 3/3 is a 2/2, and the 1/1 has nothing left and is swept up (CR 704.5f).
+    expect([power(s, courser), toughness(s, courser)]).toEqual([2, 2]);
+    expect(s.instances[elves]!.zone).toBe('graveyard');
+  });
+
+  it('and a 1/1 token that arrives afterwards arrives dead', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'rot-harvest' },
+      hands: { 0: ["Night of Souls' Betrayal"] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Night of Souls' Betrayal"),
+    })));
+    s = apply(s, {
+      type: 'token:create', by: 0, seat: 0, count: 2,
+      card: {
+        name: 'Goblin', typeLine: 'Token Creature \u2014 Goblin', manaCost: '', cmc: 0,
+        power: '1', toughness: '1', oracleText: '', colors: ['R'],
+      },
+    });
+    s = drain(s);
+    // Both are gone, and a token that leaves the battlefield ceases to exist — so neither zone
+    // has them rather than the graveyard having two.
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Goblin');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Goblin');
+  });
+});
+
 describe('unscripted cards', () => {
   it('casts, resolves and fights normally, and says in the log that it is not automated', () => {
     // Hill Giant has no script: no triggers, no abilities, nothing printed but a body.

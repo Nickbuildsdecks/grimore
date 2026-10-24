@@ -1047,6 +1047,58 @@ const CLOUDSHIFT: CardDef = {
 };
 
 
+// ── The keywords nothing in the pool carried ─────────────────────────────────────────────────────
+
+const YOUTHFUL_KNIGHT: CardDef = {
+  name: 'Youthful Knight',
+  typeLine: 'Creature \u2014 Human Knight',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'First strike',
+  colors: ['W'],
+};
+
+const BOGGART_BRUTE: CardDef = {
+  name: 'Boggart Brute',
+  typeLine: 'Creature \u2014 Goblin Berserker',
+  manaCost: '{2}{R}',
+  cmc: 3,
+  power: '3',
+  toughness: '2',
+  oracleText: 'Menace',
+  colors: ['R'],
+};
+
+const DARKSTEEL_PLATE: CardDef = {
+  name: 'Darksteel Plate',
+  typeLine: 'Artifact \u2014 Equipment',
+  manaCost: '{3}',
+  cmc: 3,
+  oracleText: 'Equipped creature is indestructible.\nEquip {2}',
+  colors: [],
+};
+
+const ROBE_OF_MIRRORS: CardDef = {
+  name: 'Robe of Mirrors',
+  typeLine: 'Enchantment \u2014 Aura',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: 'Enchant creature\nEnchanted creature has shroud.',
+  colors: ['U'],
+};
+
+const NIGHT_OF_SOULS_BETRAYAL: CardDef = {
+  name: "Night of Souls' Betrayal",
+  typeLine: 'Legendary Enchantment',
+  manaCost: '{2}{B}{B}{B}',
+  cmc: 5,
+  oracleText: 'All creatures get -1/-1.',
+  colors: ['B'],
+};
+
+
 // ── Mana that is not a land ──────────────────────────────────────────────────────────────────────
 
 const SOL_RING: CardDef = {
@@ -1302,7 +1354,7 @@ export const TIDAL_MIND: DeckSpec = {
   commander: TALRAND,
   cards: [
     { card: ISLAND, count: 9 },
-    { card: SWAMP, count: 10 },
+    { card: SWAMP, count: 9 },
     { card: DIMIR_GUILDGATE, count: 2 },
     { card: LONELY_SANDBAR, count: 2 },
     { card: COUNTERSPELL, count: 2 },
@@ -1316,9 +1368,13 @@ export const TIDAL_MIND: DeckSpec = {
     { card: ICY_MANIPULATOR, count: 1 },
     { card: TORMODS_CRYPT, count: 2 },
     { card: PREORDAIN, count: 2 },
+    // One mana that makes a creature untouchable by anybody, its own controller included — the
+    // deck's way of protecting a flier it intends to win with, at the cost of never touching it
+    // again.
+    { card: ROBE_OF_MIRRORS, count: 2 },
     { card: JACE_BELEREN, count: 1 },
     { card: OMENSPEAKER, count: 2 },
-    { card: PHYREXIAN_ARENA, count: 2 },
+    { card: PHYREXIAN_ARENA, count: 1 },
     { card: DIVINATION, count: 1 },
     { card: MIND_SPRING, count: 1 },
     { card: EXSANGUINATE, count: 1 },
@@ -1394,7 +1450,10 @@ export const FORGE_ALLIANCE: DeckSpec = {
     { card: ELITE_VANGUARD, count: 2 },
     { card: MONASTERY_SWIFTSPEAR, count: 3 },
     { card: DOOMED_TRAVELER, count: 2 },
-    { card: LEONIN_SKYHUNTER, count: 3 },
+    { card: LEONIN_SKYHUNTER, count: 2 },
+    // A two-drop that wins the fight it is in rather than trading, which is what a board of small
+    // creatures is short of — and the first first-striker in the pool.
+    { card: YOUTHFUL_KNIGHT, count: 2 },
     { card: FIREBRAND_ARCHER, count: 2 },
     { card: AJANIS_PRIDEMATE, count: 2 },
     { card: SERRA_ANGEL, count: 2 },
@@ -1407,12 +1466,15 @@ export const FORGE_ALLIANCE: DeckSpec = {
     // is most afraid of.
     { card: BANISHING_LIGHT, count: 2 },
     { card: BASILISK_COLLAR, count: 2 },
+    // And the Equipment that answers removal rather than adding power: whatever is holding the
+    // swords stops dying to a Doom Blade or a Day of Judgment.
+    { card: DARKSTEEL_PLATE, count: 1 },
     { card: RAISE_THE_ALARM, count: 2 },
-    { card: SECURE_THE_WASTES, count: 2 },
+    { card: SECURE_THE_WASTES, count: 1 },
     { card: ANGELIC_GIFT, count: 2 },
     { card: INSPIRED_CHARGE, count: 2 },
     { card: LIGHTNING_BOLT, count: 2 },
-    { card: MAGMA_JET, count: 2 },
+    { card: MAGMA_JET, count: 1 },
     { card: FIREBALL, count: 1 },
   ],
 };
@@ -1433,7 +1495,7 @@ export const ASHEN_RITE: DeckSpec = {
   commander: JUDITH,
   cards: [
     { card: SWAMP, count: 8 },
-    { card: MOUNTAIN, count: 8 },
+    { card: MOUNTAIN, count: 7 },
     { card: RAKDOS_GUILDGATE, count: 2 },
     // Two mana off one tap on turn two is the most-played card in Commander for a reason, and it
     // is the first thing in this pool that makes more mana than it costs to use.
@@ -1447,15 +1509,22 @@ export const ASHEN_RITE: DeckSpec = {
     // was only ever fuel.
     { card: GOBLIN_ARSONIST, count: 2 },
     { card: DOOMED_DISSENTER, count: 2 },
+    // A body one blocker cannot stop, in the deck that is happy either way: it gets through, or it
+    // eats two creatures and feeds the drains on the way out.
+    { card: BOGGART_BRUTE, count: 2 },
     { card: BLOOD_ARTIST, count: 3 },
     { card: ZULAPORT_CUTTHROAT, count: 2 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },
     { card: BLOODTHRONE_VAMPIRE, count: 2 },
-    { card: FLESHBAG_MARAUDER, count: 2 },
-    { card: VAMPIRE_NIGHTHAWK, count: 2 },
+    { card: FLESHBAG_MARAUDER, count: 1 },
+    { card: VAMPIRE_NIGHTHAWK, count: 1 },
     { card: FLAMETONGUE_KAVU, count: 2 },
     { card: GRAVEDIGGER, count: 2 },
     { card: IMPACT_TREMORS, count: 1 },
+    // -1/-1 to every creature on the table, which this deck minds least: its own one-power bodies
+    // were only ever fuel, and every death is a drain. One copy, because it is a legend and
+    // because a second one in a game would do nothing a first one had not already done.
+    { card: NIGHT_OF_SOULS_BETRAYAL, count: 1 },
     // And the spells that spend them.
     { card: BONE_SPLINTERS, count: 3 },
     { card: VILLAGE_RITES, count: 1 },
