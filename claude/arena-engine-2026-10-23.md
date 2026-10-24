@@ -1698,6 +1698,42 @@ nothing in it, so the arena suite demanded an attack arrow after a turn where ev
 summoning-sick — a check that could only fail, taking three seconds to do it, which had been read
 as the overlay's old race and waited out with more patience. Written up as D87.
 
+### Two on one
+
+`chooseBlocks` pairs each blocker with one attacker and marks that attacker taken, and has said so
+in its own comment since it was written: *"menace needs two blockers, which this bot does not
+coordinate."* The engine never had that problem — blockers are collected per attacker, menace is
+enforced, and combat damage assigns lethal to each of them in order before anything tramples past.
+Only the opponent could not ask the question, so a creature too big for anything on the board was
+either chump-blocked by one creature that died for nothing, or waved through.
+
+**Measured over 160 unsteered games, paired on the same seeds:**
+
+| | before | after |
+| --- | --- | --- |
+| blocks with one blocker | 471 | 393 |
+| blocks with two or more | 50 | **134** |
+| the attacker survived the block | 235 | 171 |
+| …where a second blocker was there and would have killed it | **53** | **12** |
+| a blocker died and the attacker lived | 116 | 93 |
+
+A tenth of every block the bot made had been leaving a kill on the table. Against the fixed
+shallow-bot reference it is worth three games in 240, in the same direction on both seed sets —
+inside the noise floor, so the table above is what this is justified by, not the win rate.
+
+The plan is offered rather than taken: gang the most valuable attacker two or more creatures can
+block, cheapest blockers first until they add up to lethal, then let the heuristic place the rest
+of the blockers on the rest of the attack. Whether two creatures are worth one is answered where
+every other combat question is — by playing it out.
+
+**A rule the engine had and nothing reached, and a simplification now named.** The only test that
+touched multiple blockers was the menace one, the card that makes ganging compulsory, which is
+D57's warning exactly; there is an ordinary one now. Writing it surfaced this: **CR 509.2 gives
+the attacking player the damage assignment order, and this engine uses the order the blocks were
+declared in, which is the defending player's.** It only matters when the attacker would choose to
+kill a different blocker, and nothing in this pool makes it worth a second question in the middle
+of combat — so it is written down here rather than asserted as correct in a test.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

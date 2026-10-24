@@ -253,6 +253,55 @@ describe('evasion', () => {
     s = block(s, 1, [{ blocker: bear, attacker: giant }, { blocker: courser, attacker: giant }]);
     expect(s.combat.attacks[0]!.blockers.length).toBe(2);
   });
+
+  /*
+    Several creatures on one attacker, with no menace forcing it.
+
+    The engine has always collected blockers per attacker and assigned damage to them in order,
+    but the only test that reached more than one of them was the menace one above — which is D57's
+    warning exactly: a rule exercised only through the card that makes it compulsory. This is the
+    ordinary case, the one a player makes by choice, and it is now also one the bot can offer
+    itself (see `gangBlock`).
+
+    Seven power between the three of them against six toughness, so the big creature dies. Its own
+    five is spent down the line: two to kill the 2/2, three into the 2/4 — not enough — and nothing
+    left for the third.
+
+    **A simplification, named rather than asserted as a rule.** CR 509.2 gives the *attacking*
+    player the damage assignment order; this engine uses the order the blocks were declared in,
+    which is the defending player's. It matters when the attacker could choose to kill a different
+    blocker, and nothing in this pool makes it matter enough to ask a second question in the middle
+    of combat. Recorded in `claude/arena-engine-2026-10-23.md` with the other known gaps.
+  */
+  it('lets creatures gang up on one attacker, and assigns damage down the line', () => {
+    let s = toAttackers(arena({
+      decks: { 0: 'rot-harvest', 1: 'verdant-guard' },
+      battlefield: { 0: ['Lotleth Giant'], 1: ['Grizzly Bears', 'Giant Spider', 'Centaur Courser'] },
+      turn: 3, firstSeat: 0,
+    }));
+    const giant = find(s, 0, 'battlefield', 'Lotleth Giant');
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const spider = find(s, 1, 'battlefield', 'Giant Spider');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = attack(s, 0, [giant], 1);
+    s = passBoth(s);
+    s = block(s, 1, [
+      { blocker: bear, attacker: giant },
+      { blocker: spider, attacker: giant },
+      { blocker: courser, attacker: giant },
+    ]);
+    expect(s.combat.attacks[0]!.blockers).toEqual([bear, spider, courser]);
+
+    s = resolveCombat(s);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Lotleth Giant');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    // Three damage on a 2/4 is not lethal, and the third blocker was never reached at all.
+    expect(namesIn(s, 1, 'battlefield')).toContain('Giant Spider');
+    expect(damageOn(s, spider)).toBe(3);
+    expect(damageOn(s, courser)).toBe(0);
+    // Nobody was hit: a blocked attacker without trample deals nothing to the player.
+    expect(life(s, 1)).toBe(20);
+  });
 });
 
 describe('combat damage', () => {

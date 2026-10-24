@@ -14,7 +14,7 @@ import {
   type Action, type GameState, type SeatIndex,
 } from './index.js';
 import {
-  PLAYERS, POD_PLAYERS, HOST, WIRE_CAP, advanceTo, apply, arena, find, ids, tapAllLands,
+  PLAYERS, POD_PLAYERS, HOST, WIRE_CAP, advanceTo, apply, arena, find, ids, passBoth, tapAllLands,
 } from './testkit.js';
 
 /** A four-seat Commander pod, every seat on a different deck, handed to the rules engine. */
@@ -824,6 +824,52 @@ describe('what looking a move ahead buys', () => {
     const answer = botAction(swung, 0);
     expect(answer?.type).toBe('auto:cast');
     expect(nameOfCard(swung, answer?.type === 'auto:cast' ? answer.card : undefined)).toBe('Fog');
+  });
+
+  it('gangs up on an attacker no single blocker can kill', () => {
+    /*
+      `chooseBlocks` pairs one blocker with one attacker and says so in its own comment —
+      "menace needs two blockers, which this bot does not coordinate". So a creature too big for
+      anything on the board was either chump-blocked by one creature, which dies for nothing, or
+      let through.
+
+      Measured over 160 unsteered games before this plan existed: 521 blocks, 235 of them leaving
+      the attacker alive, and **53 where a second creature was standing right there, legally able
+      to block, and the two together would have killed it**. A tenth of every block the bot made.
+
+      Five power between the two of them against four toughness, and the attacker's four is spent
+      killing the 2/2 and bouncing off the 3/3 behind it. The shallow bot blocks with neither,
+      because one at a time each block is a creature thrown away.
+    */
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'skyward-writ' },
+      battlefield: { 0: ['Grizzly Bears', 'Centaur Courser'], 1: ['Air Elemental'] },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const elemental = find(s, 1, 'battlefield', 'Air Elemental');
+    // Reach on both blockers, so the flier is a legal target for either: the claim is about
+    // ganging up, not about who can see a flier.
+    s = {
+      ...s,
+      effects: [0, 1].map((i) => ({
+        id: `reach${i}`, createdTurn: s.turn, source: 'test', controller: 0 as SeatIndex,
+        scope: { kind: 'cards' as const, ids: [find(s, 0, 'battlefield', i === 0 ? 'Grizzly Bears' : 'Centaur Courser')] },
+        keywords: ['reach' as const],
+      })),
+    };
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: elemental, defender: 0 }] });
+    // Both players pass out of declare-attackers, which is what puts the block on the clock.
+    s = passBoth(s);
+
+    const blocksOf = (action: Action | null): number =>
+      action !== null && action.type === 'auto:block' ? action.blocks.length : -1;
+    expect(blocksOf(botAction(s, 0, BREADTH))).toBeLessThan(2);
+    const searched = botAction(s, 0);
+    expect(blocksOf(searched)).toBe(2);
+    // Both on the same attacker, which is the whole point.
+    const blocks = searched?.type === 'auto:block' ? searched.blocks : [];
+    expect(new Set(blocks.map((b) => b.attacker)).size).toBe(1);
   });
 
   it('will not pump a creature in its own upkeep, and will pump an attacker', () => {

@@ -3023,3 +3023,48 @@ hidden by the finished-game guard, and then the rematch dealt a new game and a W
 last one appeared over the new mulligan prompt. Clearing the pick when the card is no longer in the
 view covers both — a rematch renumbers every instance, and so does a creature leaving for a zone
 this seat cannot see.
+
+## D88 — Two on one, and a rule the engine had but nobody could reach
+
+`chooseBlocks` pairs each blocker with one attacker and marks that attacker taken, and says so in
+its own comment: *"menace needs two blockers, which this bot does not coordinate, so it leaves them
+alone."* The engine never had that problem — `auto:block` collects blockers per attacker, menace is
+enforced, and combat damage assigns lethal to each in order before anything tramples past. Only the
+bot could not ask the question.
+
+Measured over 160 unsteered games before anything changed: **521 blocks, 471 of them with a single
+blocker, 235 leaving the attacker alive — and in 53 of those a second creature was standing there,
+legally able to block, where the two together would have killed it.** A tenth of every block the
+bot made left a kill on the table.
+
+The plan added is one more for `bestPlan` to weigh, not a new rule: pick the attacker worth ganging
+— the most valuable one two or more creatures can block — add blockers cheapest-first until they
+add up to lethal, then let the heuristic place whatever is left on the rest of the attack. So it is
+"the usual block, plus a gang", and whether two creatures are worth one is answered where every
+other combat question is, by playing it out.
+
+**The same 160 games, paired:**
+
+| | before | after |
+| --- | --- | --- |
+| blocks with one blocker | 471 | 393 |
+| blocks with two or more | 50 | **134** |
+| attacker survived the block | 235 | 171 |
+| …where a second blocker would have killed it | **53** | **12** |
+| blocker died with the attacker surviving | 116 | 93 |
+
+Against the fixed shallow-bot reference over 240 games: **185-55 against 182-58** on one seed set
+and **187-53 against 184-56** on the other. Three games each way, in the same direction in both —
+inside the eighteen-game noise floor, so suggestive rather than proof, and the behaviour table is
+what the change is actually justified by.
+
+**And one rule the engine implements that nothing exercised on its own terms.** The only test that
+reached more than one blocker was the menace one — the card that makes ganging *compulsory* — which
+is D57's warning exactly. There is now an ordinary one: three creatures on a 5/6, the damage spent
+down the line, the third blocker never reached.
+
+Writing it surfaced a simplification worth naming rather than papering over. **CR 509.2 gives the
+attacking player the damage assignment order; this engine uses the order the blocks were declared
+in, which is the defending player's.** It matters only when the attacker would choose to kill a
+different blocker, and nothing in this pool makes it matter enough to ask a second question in the
+middle of combat. It is in the known-gaps list now instead of being quietly asserted as correct.
