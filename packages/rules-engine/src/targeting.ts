@@ -168,6 +168,41 @@ export function checkTargets(
   return { ok: true };
 }
 
+/**
+ * Records which object each card target is right now, to be stored on the stack object.
+ *
+ * Called wherever targets are written onto a stack object — a cast, an activation, a trigger, and
+ * the answer to a trigger's "choose a target". See `StackObject.targetSeqs`.
+ */
+export function targetSeqsFor(
+  state: GameState, targets: readonly Target[],
+): Readonly<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const target of targets) {
+    if (target.kind !== 'card') continue;
+    out[target.id] = state.instances[target.id]?.objectSeq ?? 0;
+  }
+  return out;
+}
+
+/**
+ * The chosen targets that are still the objects they were chosen as.
+ *
+ * A card that has changed zones since — exiled and returned by a Cloudshift, bounced and replayed
+ * — is a new object and no longer a target of anything (CR 400.7, CR 608.2b), so it is dropped
+ * here rather than checked for legality: it may well still *look* legal.
+ */
+export function liveTargets(
+  state: GameState, targets: readonly Target[], seqs: Readonly<Record<string, number>> | undefined,
+): readonly Target[] {
+  if (seqs === undefined) return targets;
+  return targets.filter((target) => {
+    if (target.kind !== 'card') return true;
+    const was = seqs[target.id];
+    return was === undefined || (state.instances[target.id]?.objectSeq ?? 0) === was;
+  });
+}
+
 /** Whether a spell on the stack still has at least one legal target, for the fizzle rule. */
 export function stillHasLegalTarget(
   state: GameState, specs: readonly TargetSpec[], chosen: readonly Target[], controller: SeatIndex,

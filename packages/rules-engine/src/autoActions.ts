@@ -25,7 +25,7 @@ import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
 import type { CardScript, TargetSpec } from './scriptTypes.js';
-import { hasAnyLegalTargets } from './targeting.js';
+import { hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { legalActions } from './legalActions.js';
 import { EMPTY_COMBAT, MAIN_STEPS, type CombatAttack, type StackObject, type Target } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -187,7 +187,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const kickedText = kicked ? ' (kicked)' : '';
   const object: StackObject = {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
-    cardKey: inst.defKey, targets: [...chosen],
+    cardKey: inst.defKey, targets: [...chosen], targetSeqs: targetSeqsFor(state, chosen),
     ...(action.x === undefined ? {} : { x: action.x }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
     ...(kicked ? { kicked: true } : {}),
@@ -469,6 +469,7 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     }
     attacks.push({
       attacker: entry.attacker, defender: entry.defender, blockers: [],
+      attackerSeq: state.instances[entry.attacker]?.objectSeq ?? 0,
       ...(entry.planeswalker === undefined ? {} : { planeswalker: entry.planeswalker }),
     });
   }
@@ -478,7 +479,29 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     combat: { attacks, firstStrikeDealt: false, attackersDeclared: true, blockersDeclaredBy: [] },
   };
   next = tapAttackers(next, next.combat);
-  for (const attack of attacks) next = raise(next, { kind: 'attacks' }, action.by, attack.attacker);
+  /*
+    One event per attack, carrying who declared it and what it is aimed at.
+
+    What it is aimed at travels on the event because the trigger that wants it — "whenever a
+    creature you control attacks, deal 1 damage to the player or planeswalker it's attacking" —
+    resolves *after* the declaration, by which time the creature may be dead and the attack gone
+    from combat. Looking it up then would be reading a board that no longer says so.
+  */
+  for (const attack of attacks) {
+    next = raise(
+      next,
+      {
+        kind: 'attacks',
+        subjectSeat: action.by,
+        attacked: {
+          defender: attack.defender,
+          ...(attack.planeswalker === undefined ? {} : { planeswalker: attack.planeswalker }),
+        },
+      },
+      action.by,
+      attack.attacker,
+    );
+  }
   next = resetPriority(settle(next, state));
   return {
     state: next,
@@ -521,9 +544,13 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
 
   // Only this seat's own attacks are rewritten: in a pod another defender may have blocked already,
   // and replacing every attack's blockers would throw their declaration away.
-  const attacks = state.combat.attacks.map((a) =>
-    a.defender === action.by ? { ...a, blockers: assigned.get(a.attacker) ?? [] } : a,
-  );
+  const attacks = state.combat.attacks.map((a) => {
+    if (a.defender !== action.by) return a;
+    const blockers = assigned.get(a.attacker) ?? [];
+    const blockerSeqs: Record<string, number> = {};
+    for (const id of blockers) blockerSeqs[id] = state.instances[id]?.objectSeq ?? 0;
+    return { ...a, blockers, ...(blockers.length === 0 ? {} : { blockerSeqs }) };
+  });
   for (const attack of attacks) {
     if (attack.defender !== action.by) continue;
     if (!menaceSatisfied({ ...state, combat: { ...state.combat, attacks } }, attack)) {
@@ -676,7 +703,14 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
 
   let next: GameState = {
     ...state,
-    stackObjects: { ...state.stackObjects, [object.id]: { ...object, targets: [...action.targets] } },
+    stackObjects: {
+      ...state.stackObjects,
+      [object.id]: {
+        ...object,
+        targets: [...action.targets],
+        targetSeqs: targetSeqsFor(state, action.targets),
+      },
+    },
     pendingChoice: null,
   };
   next = resetPriority(settle(next, state));

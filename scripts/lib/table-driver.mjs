@@ -456,6 +456,19 @@ export async function notePrompts(seen, page, seat) {
 /** Records what the move just made proves. `did` is whatever `makeMove` reported. */
 export async function noteMove(seen, page, did) {
   if (did === null) return;
+  /*
+    The attack arrows, sampled the one moment they are certainly on screen.
+
+    `notePrompts` also looks for them, but only when some page is being asked for something — and a
+    defender with no legal block is never asked, so the engine can be through combat and into the
+    next turn before anybody looks. That is a sampled observation reported as a fact about the
+    game, which is how a run came back saying no attack was ever drawn in a game full of attacks.
+  */
+  if (did === 'declared attackers' && seen.arrows !== true
+    && (await page.locator('[data-testid^="arrow-a-"]').count()) > 0) {
+    seen.arrows = true;
+    await shot(page, 'combat-arrows');
+  }
   if (/^chose X = \d+$/.test(did)) seen.xCast = did;
   // A modal spell's play is labelled "Cast X — <the mode>", the only play label with an em dash.
   if (/chose a play: Cast .+ — /.test(did)) {

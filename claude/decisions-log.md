@@ -2038,3 +2038,59 @@ after the game is over comes back as `game_finished` — fired at the end of a b
 hundred sends and read `rate_limited` once in six runs. It backs off like every other send in that
 test now. Six consecutive green runs, which is the only kind of evidence an intermittent failure
 accepts.
+
+## D63 — An attack is an event the whole board can watch, and a card that changes zones is a new object
+
+Hellrider is one line of printed text — "whenever a creature you control attacks" — and the engine
+could not express it. The `attacks` event was raised for the attacking creature and offered to that
+creature's script alone — right for an attack trigger that talks about itself, and wrong for every
+one that watches the board. (Nothing in the pool used the event at all, which is how it stayed
+self-only: Hellrider is the first card scripted that attacks are a *table* event for.) It now takes the same `who`/`of` pair that `etb` and
+`dies` already took, is offered to every permanent on the battlefield, and each trigger's own
+filter decides whether it wants it. A trigger that says nothing about `who` still means `self`, so
+nothing written before this changed meaning.
+
+**And it needed one thing the other board-watchers do not: what the attack was aimed at.** "Deals 1
+damage to the player or planeswalker it's attacking" is about *that* attack, and by the time the
+trigger resolves the attacker may be dead and the attack gone from combat — so the board can no
+longer answer. The declaration copies it onto the event, `raise` copies it onto the stack object,
+and `EffectContext.attacked` is where the script reads it. In a pod three creatures attacking three
+players produce three triggers that each hit the right one, which is the case that makes this worth
+a field rather than a lookup.
+
+**Then Cloudshift found a rule the engine had never needed.** One white mana, "exile target creature
+you control, then return it to the battlefield" — two `relocate` calls and no new vocabulary, which
+is the whole reason it was worth scripting. It re-triggered the Elvish Visionary's draw and cleared
+the damage on the way through, both for free. What it did *not* do was the thing players actually
+cast it for: blinking a creature in response to a Doom Blade left the Doom Blade resolving happily,
+because the engine keeps one id per physical card and the removal found its target exactly where it
+left it.
+
+A card that changes zones becomes a **new object** (CR 400.7), and a spell does not resolve against
+an object that is not the one it targeted (CR 608.2b). Rather than churn ids — which is what the
+table, the tests and the animations all read as card identity — each instance now carries an
+`objectSeq` that `relocate` bumps on every zone change, and a stack object records which object
+each of its card targets *was* in `targetSeqs`. `resolveTop` drops the targets that have since
+become something else, before the fizzle check, so a spell that lost one of two targets resolves
+against the one it still has and never sees the other. Four lines of comparison, one new field, no
+change to `Target` and nothing new on the wire.
+
+**And the same question was being got wrong in combat.** A permanent that leaves the battlefield is
+removed from combat (CR 506.4), so a creature blinked out and back mid-combat is not an attacking
+creature — but the engine found the attack entry's id back on the battlefield and swung with it. A
+Cloudshift on your own blocked attacker got its damage through, which is a free win nobody printed.
+Each attack now records which object its attacker and blockers were when they were declared, and
+`dealCombatDamage` ignores the ones that are something else now. The *blockers* are compared rather
+than removed from the list on purpose: that list is also what says the attacker is blocked at all,
+and a chump blocker that dies still stops the damage (CR 509.1h).
+
+The fizzle check needed one distinction it had not needed before: "chose nothing" and "lost
+everything it chose" are not the same. A spell with an optional target that was pointed at nothing
+resolves; one whose only target is gone is countered. The count it started with decides, which is
+the bug the existing Counterspell and Lightning Bolt tests caught within a minute of the change.
+
+**And a sampled observation in the browser suite, reported as a fact.** The arena run came back
+once saying no attack was ever drawn on the board, in a game full of attacks: the arrows exist only
+while the attack stands, and a defender with no legal block is never asked for one, so the engine
+can be through combat before any page is looked at again. It is sampled at the one moment it is
+certainly true now — immediately after the declaration — on top of the old opportunistic check.

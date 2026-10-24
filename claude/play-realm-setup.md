@@ -14,8 +14,8 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — ninety, today, across five starter decks. A tabletop works with
-every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
+cards somebody has scripted — a hundred and nineteen, today, across six starter decks. A tabletop
+works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
 
@@ -166,10 +166,14 @@ Each two-colour deck runs a pair of Guildgates: one mana of either colour, and t
 and four of the six also run a pair of cycling lands. Any pairing works, including a deck against
 itself. They are also the only decks right now — see *What is not done* below.
 
-The decks share a pool of just over a hundred scripted cards, which now includes a wrath, a
+The decks share a pool of a hundred and nineteen scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
-declarative lines rather than new rules.
+declarative lines rather than new rules. The newest three are the clearest example of both halves
+of that: Hellrider ("whenever a creature you control attacks") needed the attack event widened so a
+trigger can watch the whole board, while Ball Lightning and Cloudshift needed nothing new at all —
+and Cloudshift blinking a creature in response to removal makes the spell miss, because a card that
+leaves and comes back is a new object (CR 400.7).
 
 Cards are drawn as text, not pictures. That is deliberate: there is no card artwork available (the
 card table on the server has never been populated, and this environment cannot reach Scryfall), so
@@ -262,8 +266,8 @@ playing the server).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows ninety cards.** Everything in the five starter decks. It stops and asks
-  for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
+- **The engine knows a hundred and nineteen cards.** Everything in the six starter decks. It stops
+  and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your
   library to you and nobody else, Mind Rot is answered by the player discarding rather than by

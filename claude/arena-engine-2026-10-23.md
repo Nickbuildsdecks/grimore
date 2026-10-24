@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**461 tests in the rules engine, 114 in the web app, 1,073 across the workspace.**
+**468 tests in the rules engine, 114 in the web app, 1,080 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -911,9 +911,46 @@ from 276 to 124**, on the same seeds.
 twenty minus eighteen, which is true and made no measurable difference in 400 games (285 against
 284), so that one is gone too — along with a note, because it is the kind of idea that comes back.
 
+**An attack is now an event the whole board can watch.** Hellrider is one line of printed text —
+"whenever a creature you control attacks" — and the engine had no way to say it: the `attacks` event
+went to the attacking creature's own script and nowhere else, which is right for the triggers that
+talk about themselves and wrong for every one that watches the board. It takes the same `who`/`of`
+pair `etb` and `dies` already took now, and a trigger that says nothing about `who` still means
+itself, so nothing written before this changed meaning.
+
+It needed one thing the other board-watchers do not: **what the attack was aimed at.** "Deals 1
+damage to the player or planeswalker it's attacking" is about that attack, and by the time the
+trigger resolves the attacker may be dead and the attack gone from combat — so the declaration
+copies it onto the event and the stack object, and the script reads it off `EffectContext.attacked`.
+Three creatures attacking three players in a pod produce three triggers that each hit the right one.
+
+**Ball Lightning needed nothing at all**, which is the better half of the increment: six power with
+haste and trample, and an end-step trigger that sacrifices it, written in the vocabulary that was
+already there.
+
+**And Cloudshift found a rule the engine had never needed.** One mana, exile your own creature and
+return it — two `relocate` calls, no new vocabulary, and it re-triggered an Elvish Visionary's draw
+and cleared the damage for free. What it did *not* do was the thing players cast it for: blinking a
+creature in response to a Doom Blade left the Doom Blade resolving happily, because the engine keeps
+one id per physical card and the removal found its target where it left it. A card that changes
+zones becomes a new object (CR 400.7), and a spell does not resolve against an object it did not
+target (CR 608.2b). Each instance carries an `objectSeq` that the one place a card changes zone
+bumps, each stack object records which object its card targets *were*, and a resolution drops the
+ones that have since become something else — so a spell that lost one of two targets resolves
+against the one it still has and never sees the other. Ids stay stable, nothing new goes on the
+wire, and the fizzle rule finally distinguishes "chose nothing" from "lost everything it chose".
+
+The same question turned out to be wrong in combat too: a permanent that leaves the battlefield is
+removed from combat (CR 506.4), and the engine found the attack's id back on the battlefield and
+swung with it — so blinking your own blocked attacker got its damage through. Each attack records
+which objects its attacker and blockers were when they were declared, and the damage step ignores
+the ones that are something else now. The blockers are compared rather than dropped from the list,
+because that list is also what says the attacker is blocked: a chump blocker that dies still stops
+the damage.
+
 ## Next
 
-1. More scripts. The vocabulary in `effects.ts` covers far more than the 63 cards currently using
+1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
    it, and the four ways a card can ask a player something — a mode, targets, a cost, a
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. The
    `becomes-tapped` trigger and the `all-creatures` static scope are still unused: both exist,

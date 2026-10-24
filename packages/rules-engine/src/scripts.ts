@@ -1709,6 +1709,85 @@ const JUDITH: CardScript = {
   ],
 };
 
+/**
+ * Hellrider: the first card that watches the board attack.
+ *
+ * "Whenever a creature you control attacks" is not a trigger about Hellrider — it is a trigger
+ * about every other creature too, which is why the `attacks` event had to be offered to the whole
+ * battlefield rather than only the attacker (see `raise`). `who: 'any'` includes Hellrider's own
+ * attack, because it is a creature you control and the card means it.
+ *
+ * The damage goes to `c.attacked` — what *that* attack was declared against — and not to "the
+ * opponent": in a pod three creatures can attack three different players and this card has to hit
+ * each of them once. It is carried on the stack object because by the time the trigger resolves
+ * the attacker may be dead and combat may no longer say what it was aimed at. A planeswalker that
+ * was attacked takes the damage instead of its controller, which is the printed card and also the
+ * reason the whole attack travels rather than only the seat.
+ */
+const HELLRIDER: CardScript = {
+  name: 'Hellrider',
+  triggers: [
+    {
+      on: { kind: 'attacks', who: 'any', of: 'you' },
+      description: "Hellrider deals 1 damage to the player or planeswalker it's attacking",
+      effect: (c) => {
+        if (c.attacked === undefined) return c.state;
+        const hit: Target = c.attacked.planeswalker === undefined
+          ? { kind: 'player', seat: c.attacked.defender }
+          : { kind: 'card', id: c.attacked.planeswalker };
+        return dealDamage(c.state, hit, 1, { controller: c.controller });
+      },
+    },
+  ],
+};
+
+/**
+ * Ball Lightning: six damage, once, and then it is gone.
+ *
+ * The sacrifice is the whole card and it needs no new vocabulary — `step: 'end'` with `of: 'any'`
+ * because the printed trigger is "at the beginning of the end step", not "your end step": a Ball
+ * Lightning somehow still around on an opponent's turn dies there too. It goes through
+ * `moveToGraveyard` rather than `destroy`, because a sacrifice is not a destruction: indestructible
+ * does not save it and regeneration cannot replace it.
+ */
+const BALL_LIGHTNING: CardScript = {
+  name: 'Ball Lightning',
+  triggers: [
+    {
+      on: { kind: 'step', step: 'end', of: 'any' },
+      description: 'sacrifice Ball Lightning',
+      effect: (c) => moveToGraveyard(c.state, [c.source]),
+    },
+  ],
+};
+
+/**
+ * Cloudshift: a creature blinked out and straight back.
+ *
+ * Nothing here is new engine work and that is the point of including it: the exile and the return
+ * are two `relocate` calls, and the arrival raises `etb` through `settle` exactly as a cast
+ * creature's would — so Cloudshift re-triggers an enter-the-battlefield ability, saves a creature
+ * from a targeted kill, and unblocks an attacker, without a single line about any of those.
+ *
+ * The returned permanent is a **new object** (CR 400.7): it arrives untapped, with no damage, no
+ * counters and no auras, it is not what a spell on the stack targeted, and it is not the creature
+ * that was declared as an attacker or a blocker (CR 506.4). The last two are the plays people
+ * actually cast this for, and neither of them was true until this card was written.
+ */
+const CLOUDSHIFT: CardScript = {
+  name: 'Cloudshift',
+  targets: [{
+    kind: 'creature',
+    description: 'target creature you control',
+    filter: (state, candidate, controller) => creatureYouControl(state, candidate, controller),
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    if (id === null) return c.state;
+    return putOntoBattlefield(exileCard(c.state, id), id, c.controller);
+  },
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 const ALL: readonly CardScript[] = [
@@ -1754,6 +1833,7 @@ const ALL: readonly CardScript[] = [
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
+  HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT,
   guildgate('Rakdos Guildgate', 'B', 'R'),
 ];
 

@@ -3493,6 +3493,169 @@ describe('costs that are choices: cycling, kicker, and a creature on the altar',
   });
 });
 
+/**
+ * The three cards that needed the attack event to watch the board rather than one creature.
+ *
+ * Hellrider is the reason the widening happened: "whenever a creature you control attacks" is not
+ * a trigger about Hellrider at all, and before this the engine only offered an attack to the
+ * creature that made it. Ball Lightning and Cloudshift are here because they are the two halves of
+ * the same increment that needed *no* new vocabulary, and a test that proves it is worth more than
+ * a comment claiming it.
+ */
+describe('attacks that trigger off the board', () => {
+  /** Ember Rush on seat 0 with `board` already down, at declare-attackers. */
+  const swing = (board: readonly string[]) =>
+    advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      battlefield: { 0: [...board] },
+      turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+
+  it('Hellrider pings the defending player once per attacker, before any damage', () => {
+    let s = swing(['Hellrider', 'Raging Goblin', 'Monastery Swiftspear']);
+    const attackers = ['Hellrider', 'Raging Goblin', 'Monastery Swiftspear']
+      .map((name) => find(s, 0, 'battlefield', name));
+    s = apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: attackers.map((attacker) => ({ attacker, defender: 1 as SeatIndex })),
+    });
+    // Three attacks, three triggers — Hellrider's own included, because it is a creature you
+    // control and `who: 'any'` means it.
+    expect(s.stackOrder.length).toBe(3);
+    s = drain(s);
+    // Three damage, and still in declare-attackers: this all happens before blockers, which is
+    // the half of the card that wins races.
+    expect(life(s, 1)).toBe(17);
+    expect(s.step).toBe('declare-attackers');
+  });
+
+  it("and an opponent's attack is not a creature you control attacking", () => {
+    // Hellrider on seat 0, and seat 1 does the attacking. `of: 'you'` is the whole difference
+    // between a card that rewards your attacks and one that punishes everybody's.
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'rot-harvest' },
+      battlefield: { 0: ['Hellrider'], 1: ['Centaur Courser'] },
+      turn: 4, firstSeat: 1,
+    }), 'declare-attackers');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = drain(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: courser, defender: 0 }] }));
+    expect(s.stackOrder.length).toBe(0);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('Hellrider hits the planeswalker when that is what the attack was aimed at', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      battlefield: { 0: ['Hellrider'], 1: ['Jace Beleren'] },
+      turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const hellrider = find(s, 0, 'battlefield', 'Hellrider');
+    const jace = find(s, 1, 'battlefield', 'Jace Beleren');
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: hellrider, defender: 1, planeswalker: jace }],
+    }));
+    // "The player or planeswalker it's attacking": one loyalty gone, and the player untouched.
+    expect(s.instances[jace]!.counters['loyalty']).toBe(2);
+    expect(life(s, 1)).toBe(20);
+  });
+
+  it('Ball Lightning attacks the turn it lands and sacrifices itself at end of turn', () => {
+    let s = withMana(0, ['Ball Lightning'], 3);
+    s = cast(s, 0, 'Ball Lightning');
+    const ball = find(s, 0, 'battlefield', 'Ball Lightning');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: ball, defender: 1 }] });
+    // Haste, trample, six power, and nothing on the other side.
+    s = advanceTo(drain(s), 'end');
+    expect(life(s, 1)).toBe(14);
+    // The end step trigger is the card's price, and it is a sacrifice rather than a destruction:
+    // nothing about the board can save it.
+    s = drain(s);
+    expect(s.instances[ball]!.zone).toBe('graveyard');
+  });
+
+  it('Cloudshift makes the creature arrive again, which fires its arrival trigger again', () => {
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
+      hands: { 0: ['Cloudshift'] },
+      battlefield: { 0: ['Plains', 'Elvish Visionary'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Plains'), abilityIndex: 0 });
+    const visionary = find(s, 0, 'battlefield', 'Elvish Visionary');
+    const handBefore = ids(s, 0, 'hand').length;
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cloudshift'),
+      targets: [{ kind: 'card', id: visionary }],
+    }));
+    // The Cloudshift left the hand and a card was drawn by the second arrival: one fewer card for
+    // the spell, one more for the trigger, so the hand is where it started.
+    expect(ids(s, 0, 'hand').length).toBe(handBefore);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Elvish Visionary');
+    // Same card, so the id survives — it is the *permanent* that is new, not the card.
+    expect(s.instances[visionary]!.zone).toBe('battlefield');
+  });
+
+  it('and an attacker blinked mid-combat is out of combat, so it deals no damage', () => {
+    // CR 506.4 with CR 400.7: a permanent that leaves the battlefield is removed from combat, and
+    // the card that comes back is a new object rather than an attacking creature. The engine keeps
+    // one id per card, so without the object check the returned creature swings anyway — which is
+    // what it did until this test was written.
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
+      hands: { 0: ['Cloudshift'] },
+      battlefield: { 0: ['Plains', 'Grizzly Bears'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] });
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Plains'), abilityIndex: 0 });
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cloudshift'),
+      targets: [{ kind: 'card', id: bears }],
+    }));
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(life(s, 1)).toBe(20);
+    // And it came back untapped, which is the half of the blink that is worth the mana: attacking
+    // with it cost nothing, because what attacked is gone.
+    expect(s.instances[bears]!.tapped).toBe(false);
+    expect(s.instances[bears]!.zone).toBe('battlefield');
+  });
+
+  it('and a creature blinked in response to removal is no longer what the removal targeted', () => {
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
+      hands: { 0: ['Cloudshift'], 1: ['Doom Blade'] },
+      battlefield: { 0: ['Plains', 'Grizzly Bears'], 1: ['Swamp', 'Swamp'] },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: bears }],
+    });
+    // The caster keeps priority after casting, so seat 0 only gets to respond once it is passed.
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Plains'), abilityIndex: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cloudshift'),
+      targets: [{ kind: 'card', id: bears }],
+    });
+    s = drain(s);
+    // The Doom Blade resolved against a permanent that no longer exists and was countered on
+    // resolution for having no legal target (CR 608.2b) — none of which Cloudshift's script says.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Grizzly Bears');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Doom Blade');
+  });
+});
+
 describe('unscripted cards', () => {
   it('casts, resolves and fights normally, and says in the log that it is not automated', () => {
     // Hill Giant has no script: no triggers, no abilities, nothing printed but a body.

@@ -1013,6 +1013,39 @@ const READ_THE_BONES: CardDef = {
   colors: ['B'],
 };
 
+// ── Attacks that trigger off the board ───────────────────────────────────────────────────────────
+
+const HELLRIDER: CardDef = {
+  name: 'Hellrider',
+  typeLine: 'Creature \u2014 Devil',
+  manaCost: '{2}{R}{R}',
+  cmc: 4,
+  power: '3',
+  toughness: '3',
+  oracleText: "Haste\nWhenever a creature you control attacks, Hellrider deals 1 damage to the player or planeswalker it's attacking.",
+  colors: ['R'],
+};
+
+const BALL_LIGHTNING: CardDef = {
+  name: 'Ball Lightning',
+  typeLine: 'Creature \u2014 Elemental',
+  manaCost: '{R}{R}{R}',
+  cmc: 3,
+  power: '6',
+  toughness: '1',
+  oracleText: 'Trample, haste\nAt the beginning of the end step, sacrifice Ball Lightning.',
+  colors: ['R'],
+};
+
+const CLOUDSHIFT: CardDef = {
+  name: 'Cloudshift',
+  typeLine: 'Instant',
+  manaCost: '{W}',
+  cmc: 1,
+  oracleText: 'Exile target creature you control, then return that card to the battlefield under your control.',
+  colors: ['W'],
+};
+
 
 // ── Mana that is not a land ──────────────────────────────────────────────────────────────────────
 
@@ -1178,9 +1211,9 @@ export const EMBER_RUSH: DeckSpec = {
   description: 'Mono-red aggro. Cheap hasty creatures, burn to the face, and a dragon to finish.',
   commander: KRENKO_MOB_BOSS,
   cards: [
-    // Twenty-one rather than twenty-two: the Equipment and the X spell had to come from
-    // somewhere, and a land is the only thing in here no test reaches for by name.
-    { card: MOUNTAIN, count: 21 },
+    // Twenty rather than twenty-two: the Equipment, the X spell and then Hellrider had to come
+    // from somewhere, and a land is the only thing in here no test reaches for by name.
+    { card: MOUNTAIN, count: 20 },
     { card: MONASTERY_SWIFTSPEAR, count: 4 },
     { card: RAGING_GOBLIN, count: 2 },
     { card: GOBLIN_ARSONIST, count: 3 },
@@ -1189,15 +1222,21 @@ export const EMBER_RUSH: DeckSpec = {
     { card: THERMO_ALCHEMIST, count: 2 },
     { card: HILL_GIANT, count: 1 },
     { card: FLAMETONGUE_KAVU, count: 2 },
-    { card: SHIVAN_DRAGON, count: 3 },
+    { card: SHIVAN_DRAGON, count: 2 },
     { card: LIGHTNING_BOLT, count: 4 },
     { card: SHOCK, count: 2 },
     { card: BONESPLITTER, count: 2 },
     { card: LAVA_SPIKE, count: 1 },
+    // The deck's two best turn-four attacks, and the two cards it lost a Dragon, a Mountain, a
+    // Fireball and an Impact Tremors to make room for. Hellrider is the payoff for the three
+    // one-drops above it — a board of four creatures swings for four extra damage the blockers
+    // cannot touch — and Ball Lightning is six of it from an empty board, once.
+    { card: HELLRIDER, count: 2 },
+    { card: BALL_LIGHTNING, count: 2 },
     // The deck's X spell, and the reason the burn counts above came down by one each: a Fireball
     // is what a mana-flooded red deck does with a board it cannot get past.
-    { card: FIREBALL, count: 2 },
-    { card: IMPACT_TREMORS, count: 2 },
+    { card: FIREBALL, count: 1 },
+    { card: IMPACT_TREMORS, count: 1 },
     { card: FAITHLESS_LOOTING, count: 2 },
     { card: FLAME_SLASH, count: 2 },
     { card: ACT_OF_TREASON, count: 1 },
@@ -1211,7 +1250,7 @@ export const VERDANT_GUARD: DeckSpec = {
   commander: SIGARDA_HOST_OF_HERONS,
   cards: [
     { card: FOREST, count: 8 },
-    { card: PLAINS, count: 9 },
+    { card: PLAINS, count: 8 },
     { card: SELESNYA_GUILDGATE, count: 2 },
     // Two of its Forests are cycling lands, which is the one decision this deck's mana base has.
     { card: TRANQUIL_THICKET, count: 2 },
@@ -1238,11 +1277,16 @@ export const VERDANT_GUARD: DeckSpec = {
     // answer to a creature it cannot block rather than a second Pacifism.
     { card: BANISHER_PRIEST, count: 2 },
     { card: JOURNEY_TO_NOWHERE, count: 2 },
+    // A Plains and a Pacifism paid for these. Cloudshift is one mana that saves a creature from
+    // removal, draws a card off the Visionary, and re-aims a Banisher Priest at something newer —
+    // three cards' worth of work from one line of script, because the return is an arrival like
+    // any other and every enter-the-battlefield trigger here fires again on its own.
+    { card: CLOUDSHIFT, count: 2 },
     { card: GIANT_GROWTH, count: 1 },
     { card: LOXODON_WARHAMMER, count: 2 },
     { card: SELESNYA_CHARM, count: 2 },
     { card: SECURE_THE_WASTES, count: 2 },
-    { card: PACIFISM, count: 2 },
+    { card: PACIFISM, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
     { card: HARMONIZE, count: 1 },
     { card: OVERRUN, count: 1 },
@@ -1344,16 +1388,19 @@ export const FORGE_ALLIANCE: DeckSpec = {
   commander: BALAN,
   cards: [
     { card: PLAINS, count: 8 },
-    { card: MOUNTAIN, count: 9 },
+    { card: MOUNTAIN, count: 8 },
     { card: BOROS_GUILDGATE, count: 3 },
     { card: SECLUDED_STEPPE, count: 2 },
-    { card: ELITE_VANGUARD, count: 3 },
+    { card: ELITE_VANGUARD, count: 2 },
     { card: MONASTERY_SWIFTSPEAR, count: 3 },
     { card: DOOMED_TRAVELER, count: 2 },
     { card: LEONIN_SKYHUNTER, count: 3 },
     { card: FIREBRAND_ARCHER, count: 2 },
     { card: AJANIS_PRIDEMATE, count: 2 },
     { card: SERRA_ANGEL, count: 2 },
+    // The card this deck was already built for: every small creature it plays is another damage
+    // on the swing, and the tokens from Raise the Alarm and Secure the Wastes count too.
+    { card: HELLRIDER, count: 2 },
     { card: BONESPLITTER, count: 2 },
     { card: LOXODON_WARHAMMER, count: 2 },
     // The deck's only answer to an Equipment or an enchantment, which is what a board of swords

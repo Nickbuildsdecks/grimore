@@ -81,6 +81,16 @@ export interface StackObject {
   /** Which of the source's abilities, for activated and triggered objects. */
   readonly abilityIndex?: number;
   readonly targets: readonly Target[];
+  /**
+   * Which **object** each card target was when it was chosen, by instance id (CR 400.7).
+   *
+   * A separate map rather than a field on `Target` so that nothing downstream — the wire, the
+   * table, the bot — has to know this exists: a target is still `{kind, id}` everywhere it is
+   * read. The one reader is the fizzle check in `resolveTop`, which treats a card that has since
+   * changed zones as gone, so a creature exiled and returned is not the creature the removal was
+   * aimed at. See `CardInstance.objectSeq`.
+   */
+  readonly targetSeqs?: Readonly<Record<string, number>>;
   readonly x?: number;
   /**
    * Whether this spell's kicker was paid.
@@ -96,8 +106,27 @@ export interface StackObject {
    * lives on the stack object rather than anywhere private.
    */
   readonly modes?: readonly number[];
+  /**
+   * For a triggered ability that fired off an attack: what that attack was aimed at.
+   *
+   * Carried here because "deals 1 damage to the player or planeswalker it's attacking" is about
+   * the attack that caused the trigger, and by the time the ability resolves the board no longer
+   * says what it was aimed at — the attacker may be dead and the attack removed from combat.
+   */
+  readonly attacked?: AttackedTarget;
   /** What to show in the stack, written when the object was put there. */
   readonly description: string;
+}
+
+/**
+ * What one attack was declared against, kept small enough to copy onto a trigger.
+ *
+ * The seat is always there, because it is that player's planeswalker being attacked and that
+ * player who declares blockers; the planeswalker is only there when the attack was aimed at one.
+ */
+export interface AttackedTarget {
+  readonly defender: SeatIndex;
+  readonly planeswalker?: string;
 }
 
 export interface CombatAttack {
@@ -112,6 +141,20 @@ export interface CombatAttack {
   readonly planeswalker?: string;
   /** In damage-assignment order, which is the order the attacker's controller chose. */
   readonly blockers: readonly string[];
+  /**
+   * Which object the attacker was when it was declared, and which objects the blockers were.
+   *
+   * A permanent that leaves the battlefield is removed from combat (CR 506.4), and a card that
+   * comes back is a new object (CR 400.7) — so a creature blinked out and back mid-combat is not
+   * the creature that was declared, however much its id says otherwise. Compared in
+   * `dealCombatDamage`, which is the only place it changes an outcome.
+   *
+   * It is the blockers' *seqs* that are compared rather than their presence in the list, because
+   * the list is also what says the attacker is **blocked**: a chump blocker that dies still
+   * stops the damage (CR 509.1h), so nothing may be removed from it.
+   */
+  readonly attackerSeq?: number;
+  readonly blockerSeqs?: Readonly<Record<string, number>>;
 }
 
 export interface CombatState {

@@ -46,10 +46,12 @@ import type {
   AbilityCost, AbilityDef, CardScript, DecisionSpec, ModeDef, TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
 import { targetCount } from './scriptTypes.js';
-import { checkTargets, hasAnyLegalTargets, legalTargets, stillHasLegalTarget } from './targeting.js';
+import {
+  checkTargets, hasAnyLegalTargets, legalTargets, liveTargets, stillHasLegalTarget, targetSeqsFor,
+} from './targeting.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
-  type DecisionAnswer, type StackObject, type Step, type Target,
+  type AttackedTarget, type DecisionAnswer, type StackObject, type Step, type Target,
 } from './turnTypes.js';
 
 export const MAX_HAND_SIZE = 7;
@@ -347,8 +349,12 @@ function triggerMatches(
       if (e.step !== want.step) return false;
       return (want.of ?? 'you') === 'any' || actorSeat === sourceSeat;
     }
+    // The three events that are about one permanent and may still be watched by another. One
+    // branch rather than three, because `who` and `of` have to mean the same thing on all of
+    // them — a second copy of this filter is a second place for them to drift apart.
     case 'etb':
-    case 'dies': {
+    case 'dies':
+    case 'attacks': {
       // `self` is the default, which is why every script written before this one still means what
       // it meant: a trigger that says nothing about `who` watches only its own permanent.
       const who = want.who ?? 'self';
@@ -358,14 +364,15 @@ function triggerMatches(
       if (want.kind === 'dies' && want.nontoken === true && e.subjectIsToken === true) return false;
       // "a *creature* you control enters" is what the board-watchers say, and an enchantment
       // arriving is not that. Only asked for when the trigger asks for it, so a `self` trigger on
-      // a non-creature permanent still fires for its own arrival.
-      if ((want.what ?? 'permanent') === 'creature' && e.subjectIsCreature !== true) return false;
+      // a non-creature permanent still fires for its own arrival. An attacker is a creature by
+      // definition, which is why the attack event has no `what` to ask about.
+      if (want.kind !== 'attacks' && (want.what ?? 'permanent') === 'creature'
+        && e.subjectIsCreature !== true) return false;
       const of = want.of ?? 'any';
       if (of === 'any') return true;
       if (e.subjectSeat === undefined) return false;
       return of === 'you' ? e.subjectSeat === sourceSeat : e.subjectSeat !== sourceSeat;
     }
-    case 'attacks':
     case 'becomes-tapped':
     case 'leaves':
       return true;
@@ -401,14 +408,15 @@ function raise(
   }
   // Which permanents could have a trigger for this event.
   //
-  // `attacks` and `becomes-tapped` are about one object and only that object's own script can
-  // care. `etb` and `dies` are usually the same — but "~ or another creature dies" is one of the
-  // commonest black cards there is, so those two also offer the event to every permanent on the
-  // battlefield, and `triggerMatches` decides from the trigger's own `who` whether it wants it.
-  // The subject is always included: it may be the watcher, and for a death it is in a graveyard
-  // by now rather than on the battlefield.
-  const selfOnly = new Set(['attacks', 'becomes-tapped', 'leaves']);
-  const watchers = event.kind === 'etb' || event.kind === 'dies'
+  // `becomes-tapped` and `leaves` are about one object and only that object's own script can care.
+  // `etb`, `dies` and `attacks` usually are too — but "~ or another creature dies" is one of the
+  // commonest black cards there is, and "whenever a creature you control attacks" is the same shape
+  // one step along, so those three offer the event to every permanent on the battlefield and
+  // `triggerMatches` decides from each trigger's own `who` whether it wants it. The subject is
+  // always included: it may be the watcher, and for a death it is in a graveyard by now rather
+  // than on the battlefield.
+  const selfOnly = new Set(['becomes-tapped', 'leaves']);
+  const watchers = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
     ? [
         ...(subject === undefined ? [] : [subject]),
         ...next.seats.flatMap((s) => [...listAt(next, zoneKey(s.index, 'battlefield'))])
@@ -433,14 +441,18 @@ function raise(
       const trigger = script.triggers[i]!;
       if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor, id === subject)) continue;
       const specs = trigger.targets ?? [];
+      // Only an attack trigger has one, and only it needs one. See `StackObject.attacked`.
+      const attacked = event.kind === 'attacks' ? event.attacked : undefined;
       if (specs.length === 0) {
-        next = pushAbility(next, id, inst.zoneSeat, i, [], 'triggered', trigger.description);
+        next = pushAbility(next, id, inst.zoneSeat, i, [], 'triggered', trigger.description, attacked);
         continue;
       }
       // A trigger that needs targets and has none legal is never put on the stack (CR 603.3c).
       if (!hasAnyLegalTargets(next, specs, inst.zoneSeat, id)) continue;
       const auto = obviousTargets(next, specs, inst.zoneSeat, id);
-      next = pushAbility(next, id, inst.zoneSeat, i, auto ?? [], 'triggered', trigger.description);
+      next = pushAbility(
+        next, id, inst.zoneSeat, i, auto ?? [], 'triggered', trigger.description, attacked,
+      );
       if (auto !== null) continue;
       // Otherwise the controller chooses, and nothing happens until they do.
       const stackId = next.stackOrder[next.stackOrder.length - 1]!;
@@ -490,6 +502,7 @@ function obviousTargets(
 function pushAbility(
   state: GameState, source: string, controller: SeatIndex, abilityIndex: number,
   targets: readonly Target[], kind: 'activated' | 'triggered', description: string,
+  attacked?: AttackedTarget,
 ): GameState {
   const seq = state.autoSeq + 1;
   const id = `ab${seq}`;
@@ -498,6 +511,8 @@ function pushAbility(
     id, kind, source, controller,
     cardKey: inst?.defKey ?? '',
     abilityIndex, targets: [...targets], description,
+    ...(attacked === undefined ? {} : { attacked }),
+    targetSeqs: targetSeqsFor(state, targets),
   };
   return {
     ...state,
@@ -999,15 +1014,36 @@ export function targetSpecsFor(
  * resolves there and then, which is what almost everything does.
  */
 export function resolveTop(state: GameState): { state: GameState; message: string } {
-  const object = stackTop(state);
+  let object = stackTop(state);
   if (object === undefined) return { state, message: 'nothing to resolve' };
 
   const script = scriptFor(state.cardDefs[object.cardKey]?.name);
   const specs = targetSpecsFor(state, script, object);
 
-  // A spell or ability whose targets have all become illegal does not resolve at all (CR 608.2b).
-  if (specs.length > 0
-    && !stillHasLegalTarget(state, specs, object.targets, object.controller, object.source)) {
+  /*
+    A target that is no longer the object it was chosen as is gone, however legal it looks.
+
+    Dropped before the fizzle check rather than inside it, so that a spell with two targets that
+    lost one resolves against the one it still has and the effect never sees the other. This is
+    what makes a Cloudshift in response to a Doom Blade do what the card is for.
+  */
+  const chosen = object.targets;
+  const live = liveTargets(state, chosen, object.targetSeqs);
+  if (live.length !== chosen.length) {
+    object = { ...object, targets: live };
+    state = { ...state, stackObjects: { ...state.stackObjects, [object.id]: object } };
+  }
+
+  /*
+    A spell or ability whose targets have all become illegal does not resolve at all (CR 608.2b).
+
+    "Chose nothing" and "lost everything it chose" are different: a spell with an optional target
+    that was pointed at nothing resolves, and one whose only target is gone is countered — which is
+    why the count it started with decides, rather than the list that is left.
+  */
+  const hasTarget = chosen.length === 0
+    || (live.length > 0 && stillHasLegalTarget(state, specs, live, object.controller, object.source));
+  if (specs.length > 0 && !hasTarget) {
     let next = popStack(state, object.id);
     const name = next.cardDefs[object.cardKey]?.name ?? 'it';
     if (object.kind === 'spell') {
@@ -1024,7 +1060,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     const ready = first === undefined ? state : first({
       state, source: object.kind === 'spell' ? object.id : object.source,
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
-      kicked: object.kicked === true,
+      kicked: object.kicked === true, attacked: object.attacked,
     });
     return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
   }
@@ -1046,6 +1082,7 @@ function completeResolution(
     x: object.x ?? 0,
     decisions: answers,
     kicked: object.kicked === true,
+    attacked: object.attacked,
   };
 
   if (object.kind === 'spell') {

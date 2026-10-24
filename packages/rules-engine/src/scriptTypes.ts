@@ -18,7 +18,7 @@ import type { Keyword } from './characteristics.js';
 import type { EffectFn, PumpOptions } from './effects.js';
 import type { ManaType } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
-import type { DecisionZone, Step, Target } from './turnTypes.js';
+import type { AttackedTarget, DecisionZone, Step, Target } from './turnTypes.js';
 
 /** What a spell or ability needs pointed at it before it can be put on the stack. */
 export interface TargetSpec {
@@ -97,7 +97,28 @@ export type TriggerEvent =
       /** Set by the engine when it raises the event. */
       readonly subjectIsToken?: boolean;
     }
-  | { readonly kind: 'attacks' }
+  | {
+      readonly kind: 'attacks';
+      /**
+       * Whose attack it watches, exactly as `etb` and `dies`: `self` — the default, and what every
+       * script written before this meant — is this permanent attacking, `another` is any other
+       * creature, `any` is both.
+       */
+      readonly who?: 'self' | 'another' | 'any';
+      readonly of?: 'you' | 'opponent' | 'any';
+      /** Set by the engine: the seat that controls the attacking creature. */
+      readonly subjectSeat?: SeatIndex;
+      /**
+       * Set by the engine: what this attack was declared against.
+       *
+       * The one thing the other board-watching events do not need, and the reason it is on the
+       * event rather than looked up on resolution: "deals 1 damage to the player or planeswalker
+       * it's attacking" is about *that* attack, and by the time the trigger resolves the creature
+       * may be dead, the attack may have been removed from combat, and the board will not say
+       * what it was aimed at.
+       */
+      readonly attacked?: AttackedTarget;
+    }
   /**
    * This permanent has left the battlefield, however it left (CR 603.6c) — destroyed, exiled,
    * bounced or sacrificed. Only its own script can care, which is why it takes no `who`: a card

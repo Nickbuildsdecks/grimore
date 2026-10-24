@@ -23,7 +23,7 @@ import {
 import { actionSeed, clampValue, mulberry32, replaceSeat } from './internal.js';
 import type { ManaType } from './mana.js';
 import { addMana, EMPTY_POOL } from './mana.js';
-import type { DecisionAnswer, Target } from './turnTypes.js';
+import type { AttackedTarget, DecisionAnswer, Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 /** What an effect is given when it runs. */
@@ -42,6 +42,11 @@ export interface EffectContext {
   readonly decisions: readonly DecisionAnswer[];
   /** Whether this spell's kicker was paid (CR 702.32a). False for everything without one. */
   readonly kicked: boolean;
+  /**
+   * What the attack that caused this trigger was aimed at, for an attack trigger that has to say
+   * "the player or planeswalker it's attacking". Undefined for everything else.
+   */
+  readonly attacked?: AttackedTarget;
 }
 
 export type EffectFn = (ctx: EffectContext) => GameState;

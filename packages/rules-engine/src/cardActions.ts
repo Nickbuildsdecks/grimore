@@ -192,6 +192,9 @@ export function relocate(
   next = withInstance(next, inst.id, {
     zone: toZone,
     zoneSeat: toSeat,
+    // A card that changes zones becomes a new object (CR 400.7). See `CardInstance.objectSeq`:
+    // changing controller is not a zone change, and neither is a card that goes nowhere.
+    ...(inst.zone === toZone ? {} : { objectSeq: (inst.objectSeq ?? 0) + 1 }),
     // Entering the battlefield, or changing control, restarts summoning sickness and wipes damage.
     ...(arriving ? { enteredTurn: state.turn, damage: 0 } : {}),
     ...(toZone === 'battlefield' ? {} : { damage: 0 }),

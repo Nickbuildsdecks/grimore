@@ -92,6 +92,16 @@ export interface CardInstance {
   readonly isToken: boolean;
   readonly isCommander: boolean;
   /**
+   * How many times this card has changed zones: the same card, a different **object** (CR 400.7).
+   *
+   * The engine keeps one id per physical card, which is what lets the table animate a card from a
+   * hand to a graveyard and a test follow it. But the rules say a card that changes zones becomes
+   * a new object, and one rule depends on it: a spell that targeted a creature does not resolve
+   * against the creature that comes *back* (CR 608.2b). A Cloudshift in response to a Doom Blade
+   * is the whole point of the card and it cannot work without this counter. Absent means zero.
+   */
+  readonly objectSeq?: number;
+  /**
    * Damage marked on this permanent, which is wiped in the cleanup step. Separate from toughness
    * because toughness is computed and damage is not: a creature with 3 damage that gets +3/+3 stops
    * being dead, and that only works if the damage is remembered rather than subtracted at the time.

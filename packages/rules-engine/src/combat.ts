@@ -130,11 +130,27 @@ function defenderTarget(state: GameState, attack: CombatAttack): Target {
   return { kind: 'card', id: attack.planeswalker };
 }
 
+/**
+ * Whether the permanent named in combat is still the object that was declared.
+ *
+ * A permanent that leaves the battlefield is removed from combat (CR 506.4), and the card that
+ * comes back is a new object (CR 400.7) — so a creature blinked out and straight back is not an
+ * attacking creature any more, even though the engine keeps its id. Without this, a Cloudshift on
+ * your own blocked attacker would get its damage through.
+ */
+const sameObject = (state: GameState, id: string, seq: number | undefined): boolean =>
+  seq === undefined || (state.instances[id]?.objectSeq ?? 0) === seq;
+
 export function dealCombatDamage(state: GameState, firstStrike: boolean): GameState {
   let next = state;
   for (const attack of next.combat.attacks) {
-    const attacker = creatureOf(next, attack.attacker);
-    const livingBlockers = attack.blockers.filter((id) => creatureOf(next, id) !== null);
+    const attacker = sameObject(next, attack.attacker, attack.attackerSeq)
+      ? creatureOf(next, attack.attacker)
+      : null;
+    // A blocker that has left is out of combat too — but it stays in `attack.blockers`, because
+    // that list is what says the attacker is blocked at all (CR 509.1h).
+    const livingBlockers = attack.blockers.filter((id) =>
+      creatureOf(next, id) !== null && sameObject(next, id, attack.blockerSeqs?.[id]));
 
     if (attacker !== null && dealsInStep(attacker.ch, firstStrike) && attacker.ch.power > 0) {
       const deathtouch = attacker.ch.keywords.has('deathtouch');
@@ -172,8 +188,9 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
     for (const blockerId of livingBlockers) {
       const blocker = creatureOf(next, blockerId);
       if (blocker === null || !dealsInStep(blocker.ch, firstStrike) || blocker.ch.power <= 0) continue;
-      // The attacker may already be gone; blockers deal damage only to something still there.
-      if (creatureOf(next, attack.attacker) === null) continue;
+      // The attacker may already be gone; blockers deal damage only to something still there,
+      // and not to a new permanent wearing the same id.
+      if (attacker === null || creatureOf(next, attack.attacker) === null) continue;
       next = dealDamage(next, { kind: 'card', id: attack.attacker }, blocker.ch.power, {
         deathtouch: blocker.ch.keywords.has('deathtouch'),
         lifelink: blocker.ch.keywords.has('lifelink'),
