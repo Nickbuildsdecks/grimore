@@ -1073,24 +1073,85 @@ function gangBlock(state: GameState, seat: SeatIndex): { blocker: string; attack
 function blockPlans(state: GameState, seat: SeatIndex): { blocker: string; attacker: string }[][] {
   const heuristic = chooseBlocks(state, seat);
   const plans: { blocker: string; attacker: string }[][] = [heuristic, []];
-  const everything: { blocker: string; attacker: string }[] = [];
-  const taken = new Set<string>();
-  for (const option of legalActions(state, seat).blockers) {
-    let best: string | null = null;
-    for (const attackerId of option.canBlock) {
-      if (taken.has(attackerId)) continue;
-      const attacker = state.instances[attackerId];
-      if (attacker === undefined) continue;
-      if (characteristicsOf(state, attacker).keywords.has('menace')) continue;
-      if (best === null || creatureValue(state, attackerId) > creatureValue(state, best)) best = attackerId;
+  const options = legalActions(state, seat).blockers;
+
+  /**
+   * One blocker per attacker, each sent at the best attacker it can reach by some measure.
+   *
+   * Two measures, because they are two different plans and the difference is the difference
+   * between living and dying. By **value** it blocks the attackers worth killing, which is what
+   * you want on a board where you are not under pressure. By **power** it blocks the attackers
+   * that are about to kill you, which is the only thing that matters when they are.
+   *
+   * Measured over 120 duels before this: the bot faced a lethal attack 68 times, survived 7, and
+   * one of the deaths was a block it chose over a block it had available that would have lived — a
+   * seat on four life blocking a 1/1 and a 4/4 while a 3/3 went past, when blocking the 3/3 and the
+   * 4/4 survived. The 1/1 was an Elvish Visionary, which `creatureValue` prices above a Centaur
+   * Courser because it draws a card: by value it was the right block, and by power it was the
+   * losing one. After, none — over 77 lethal attacks faced, because the games diverge the moment
+   * the blocks do, so the counts are not comparable across the two runs, only the mistakes are.
+   */
+  const power = (id: string): number => {
+    const inst = state.instances[id];
+    return inst === undefined ? 0 : characteristicsOf(state, inst).power;
+  };
+  const spread = (by: (id: string) => number): { blocker: string; attacker: string }[] => {
+    const out: { blocker: string; attacker: string }[] = [];
+    const taken = new Set<string>();
+    for (const option of options) {
+      let best: string | null = null;
+      for (const attackerId of option.canBlock) {
+        if (taken.has(attackerId)) continue;
+        const attacker = state.instances[attackerId];
+        if (attacker === undefined) continue;
+        if (characteristicsOf(state, attacker).keywords.has('menace')) continue;
+        if (best === null || by(attackerId) > by(best)) best = attackerId;
+      }
+      if (best === null) continue;
+      taken.add(best);
+      out.push({ blocker: option.blocker, attacker: best });
     }
-    if (best === null) continue;
-    taken.add(best);
-    everything.push({ blocker: option.blocker, attacker: best });
+    return out;
+  };
+  const key = (plan: readonly { blocker: string; attacker: string }[]): string =>
+    [...plan].map((entry) => `${entry.blocker}>${entry.attacker}`).sort().join('|');
+  const seen = new Set([key(heuristic), key([])]);
+  const byValue = spread((id) => creatureValue(state, id));
+  if (byValue.length > heuristic.length && !seen.has(key(byValue))) {
+    seen.add(key(byValue));
+    plans.push(byValue);
   }
-  if (everything.length > heuristic.length) plans.push(everything);
+  /*
+    And, when this seat is about to die, the block that stops the most damage.
+
+    Offered even when it is the same *size* as the heuristic's plan, which is the part that was
+    missing. The old code offered its one alternative only when that alternative had *more* blocks
+    in it, and the heuristic had already blocked two attackers, so the plan that blocked the two
+    *right* ones was never put in front of the search at all.
+
+    Only when the seat is dying, though, because each plan is another combat played out and a block
+    happens in most turns of most games. Offering both spreads in every block put nineteen decisions
+    over half a second into a 60-pod soak, against baselines of zero and one at two commits with no
+    behaviour change — outside that spread, so something really was slower, even though a tail
+    cannot say by how much (D101). That is D71's bug coming back for a mistake that costs one game
+    in a hundred and twenty. Confined to the lethal attack, the instrument that can price it — the
+    mean per decision kind — puts it at 28.12ms -> 28.54ms on a block.
+  */
+  const life = state.seats[seat]?.life ?? 0;
+  let incoming = 0;
+  for (const attack of state.combat.attacks) {
+    if (attack.defender !== seat) continue;
+    incoming += Math.max(0, power(attack.attacker));
+  }
+  if (incoming >= life) {
+    const byPower = spread(power);
+    if (byPower.length > 0 && !seen.has(key(byPower))) {
+      seen.add(key(byPower));
+      plans.push(byPower);
+    }
+  }
   const gang = gangBlock(state, seat);
-  if (gang.length > 0) plans.push(gang);
+  if (gang.length > 0 && !seen.has(key(gang))) plans.push(gang);
   return plans;
 }
 

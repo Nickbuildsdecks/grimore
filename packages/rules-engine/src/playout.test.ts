@@ -14,7 +14,8 @@ import {
   type Action, type GameState, type SeatIndex,
 } from './index.js';
 import {
-  PLAYERS, POD_PLAYERS, HOST, WIRE_CAP, advanceTo, apply, arena, find, ids, passBoth, tapAllLands,
+  PLAYERS, POD_PLAYERS, HOST, WIRE_CAP, advanceTo, apply, arena, find, ids, life, passBoth,
+  tapAllLands,
 } from './testkit.js';
 
 /** A four-seat Commander pod, every seat on a different deck, handed to the rules engine. */
@@ -1148,6 +1149,63 @@ describe('what the engine tells a client', () => {
     }
     expect(stuck).toEqual([]);
     expect(s.finished).toBe(true);
+  });
+});
+
+describe('blocking when the attack is lethal', () => {
+  /*
+    The worst mistake a Magic opponent can make is dying to an attack it could have blocked.
+
+    Measured over 120 duels by playing out every block the seat had available at each
+    declare-blockers step where the incoming attack was lethal: it faced one 68 times, survived 7,
+    and **once chose a block that lost a game another block it had available would have survived.**
+    (The first version of that instrument said eleven, by counting damage instead of playing the
+    block out — every case it named had a Blood Artist in the attack, where each blocker that dies
+    drains the blocking player, so a block that stops all the combat damage still loses.)
+
+    The one real case was not a scoring problem. `blockPlans` offered its alternative plan only
+    when it had *more* blocks in it than the heuristic's, and the heuristic had already blocked two
+    attackers — so the plan that blocked the two *right* attackers was never put in front of the
+    search at all. Two plans of the same size can be entirely different blocks.
+  */
+  it('blocks the attacker that is about to kill it, not the one worth killing', () => {
+    // Three life, four damage coming: a 3/3 and a 1/1. One blocker, a 3/3, which can block either.
+    //
+    // Blocking the 1/1 is a free kill and a good trade, which is what the heuristic sees and what
+    // it chose; three damage then goes through and the game is over. Blocking the 3/3 trades, takes
+    // one, and lives. Both plans are one block long, which is why the old length test hid it.
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'rot-harvest' },
+      battlefield: { 0: ['Hill Giant'], 1: ['Centaur Courser', 'Llanowar Elves'] },
+      turn: 4, firstSeat: 1,
+    });
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 3 } : seat)) };
+    s = advanceTo(s, 'declare-attackers');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const elves = find(s, 1, 'battlefield', 'Llanowar Elves');
+    s = apply(s, {
+      type: 'auto:attack', by: 1,
+      attackers: [{ attacker: courser, defender: 0 }, { attacker: elves, defender: 0 }],
+    });
+    s = passBoth(s);
+
+    const chosen = botAction(s, 0);
+    expect(chosen?.type).toBe('auto:block');
+    expect(chosen?.type === 'auto:block' ? chosen.blocks : []).toEqual([
+      { blocker: find(s, 0, 'battlefield', 'Hill Giant'), attacker: courser },
+    ]);
+
+    // And played out, it is alive at the end of it.
+    s = applyAction(s, chosen!, HOST);
+    for (let i = 0; i < 20 && !s.finished && s.step !== 'postcombat-main'; i += 1) {
+      const seat = seatToAct(s);
+      if (seat === null) break;
+      const before = s.stateVersion;
+      s = stepOnce(s, seat);
+      if (s.stateVersion === before) break;
+    }
+    expect(s.seats[0]!.eliminated).toBe(false);
+    expect(life(s, 0)).toBe(2);
   });
 });
 

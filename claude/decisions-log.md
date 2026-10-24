@@ -3581,3 +3581,52 @@ hand on turn one. Usually there is one; a hand of lands has none, and then there
 show and nothing wrong. Conditional now, with a line saying so when the hand had nothing blocked in
 it — the same treatment the scry and the library search already get, and for the same reason: a
 check that fails for a game that was fine says nothing about the code and trains you to ignore it.
+
+## D101 — The block it was never shown
+
+The question was narrow: does the opponent ever lose a game it had a block available to survive?
+Answering it took three instruments, and two of them were wrong before the engine was.
+
+**The first instrument found eleven mistakes, and every one of them was false.** It reconstructed
+each lethal attack arithmetically — power faced against life, minus what the chosen blocks would
+absorb — and listed every position where some other assignment of blockers came out ahead. The
+position it flagged most often had a Blood Artist in the attack, so each blocker that died drained
+the blocking player: the "better" block killed its own controller. Arithmetic cannot see a trigger.
+The instrument was rewritten to *play each candidate block out* through the engine and ask only
+whether the seat was still alive at the end, which is the one question that has no counterexample.
+It found one real mistake in 120 duels: a seat on four life blocking a 1/1 and a 4/4 while a 3/3
+went past, where blocking the 3/3 and the 4/4 lived. The 1/1 was an Elvish Visionary, which
+`creatureValue` prices above a Centaur Courser because it draws a card — by value it was the right
+block, and by power it was the losing one.
+
+**The bug was a length test, not a weight.** `blockPlans` already built a one-blocker-per-attacker
+spread as an alternative to the heuristic's block, and already offered it to the search. It offered
+it only when the alternative had *more* blocks in it than the heuristic's plan. Here the heuristic
+had already blocked two attackers, and the plan that blocked the two *right* ones was the same
+size — so it was never put in front of the search at all. Two plans of equal size can be entirely
+different blocks, and choosing between them is the whole reason there is a search. The fix is a
+second spread ordered by power rather than value, offered when it is *different* rather than when it
+is longer.
+
+**Offered only when the seat is about to die, because the full version cost too much.** Two extra
+plans in every block is two more combats played out per block, and a block happens in most turns of
+most games: over 60 pods it took decisions over half a second from 1 to 19 and the slowest decision
+from 604ms to two and a half seconds, which is D71's bug beginning to come back — for a mistake
+that costs one game in 120. Confined to the attack that is actually lethal it costs 28.12ms →
+28.54ms on the mean block decision, and the real mistake goes from one to none.
+
+**And a measurement lesson, which is why the figure above is a mean and not a tail.** The first
+attempt to price the change compared the slow tail of a 60-pod soak before and after, and read
+`over500` going 0 → 19 as the cost. The direction was real — baselines at two adjacent commits with
+no behaviour change at all gave 0 and 1, so 19 is outside the noise — but the magnitude is not
+readable: the games diverge the moment behaviour changes, so a slow position in one run may simply
+not exist in the other, and a single pod's worst decision is one sample. A tail says *whether*; it
+cannot say *how much*. The **mean per decision kind** can, because every run has thousands of each
+kind, and that is what the 28.12 → 28.54 figure is. The corollary bit twice in one task: the same
+reasoning retired two cost claims in `characteristics.ts` comments that had been written off the
+same tail.
+
+The win rate against the fixed shallow reference moved 148-92 → 150-90 on one seed set and 149-91 →
+150-90 on the other. Both are inside the 18-game noise floor on 240, so the win rate is not the
+case for this change and is not claimed as one: the case is that a death the bot could have avoided
+no longer happens, at a cost of four tenths of a millisecond on a block.

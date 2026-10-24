@@ -12,7 +12,8 @@
  * survive combat damage if it is pumped in response.
  */
 import {
-  characteristicsOf, combatDamagePrevented, hasSubtype, protectedFrom, type Characteristics,
+  characteristicsOf, combatDamagePrevented, hasSubtype, protectionApplies,
+  type Characteristics,
 } from './characteristics.js';
 import { listAt } from './cardActions.js';
 import { dealDamage, gainLife } from './effects.js';
@@ -188,7 +189,7 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
   // Protection from a colour stops a creature of that colour blocking it (CR 702.16b) — read off
   // the *attacker*, like the Wall clause below: protection is a fact about the creature that has
   // it, and here it is the attacking creature that cannot be blocked.
-  if (protectedFrom(state, attackerId, blockerId)) {
+  if (protectionApplies(state, attacker.ch.protectionFrom, blockerId)) {
     return { card: blockerId, reason: `${attacker.ch.name} has protection from ${blocker.ch.name}'s colour` };
   }
   if (attacker.ch.cantBeBlockedByWalls && hasSubtype(blocker.ch.typeLine, 'wall')) {

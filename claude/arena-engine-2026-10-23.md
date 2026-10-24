@@ -2056,6 +2056,43 @@ announced, so the arrivals pass in `settle` is the one place that sees every way
 battlefield, and that is where statics are installed now. The engine taking over a table does the
 same for whatever is already in play — which is what a handover from the tabletop half means.
 
+### The block it was never shown
+
+Whether the opponent ever lets itself die with blockers up. It did, once in 120 duels, and finding
+that one took three instruments — two of which were wrong before the engine was.
+
+The first one did the arithmetic: power faced against life, minus what the chosen blocks absorb. It
+reported eleven mistakes and **every one of them was false.** The position it flagged most often had
+a Blood Artist in the attack, so each blocker that died drained the blocking player — the "better"
+block killed its own controller. Arithmetic cannot see a trigger. Rewritten to play each candidate
+block out through the engine and ask only whether the seat was still alive at the end, it found one
+real mistake: a seat on four life blocking a 1/1 and a 4/4 while a 3/3 went past, where blocking the
+3/3 and the 4/4 lived. The 1/1 was an Elvish Visionary, priced above a Centaur Courser because it
+draws a card.
+
+The cause was not a weight. `blockPlans` already built an alternative to the heuristic's block and
+already offered it to the search — but only when that alternative had *more* blocks in it. The
+heuristic had already blocked two attackers, so the plan that blocked the two *right* ones was the
+same size, and the search never saw it. There is now a second spread ordered by power rather than
+value, offered when it is *different* rather than when it is longer, and a test that sets the board
+up by hand: a seat on three life with one 3/3 blocker, facing a 3/3 and a 1/1, blocks the 3/3 and
+ends the turn on two life.
+
+It is offered only when the attack is actually lethal, because the unconditional version cost too
+much: over 60 pods, decisions above half a second went from 1 to 19 and the slowest from 604ms to
+two and a half seconds — the pod-stall bug beginning to come back, for a mistake that costs one game
+in 120. Confined to the lethal attack it costs 28.12ms → 28.54ms on the mean block decision.
+
+**The measurement lesson is the part worth keeping.** That tail comparison was the second wrong
+instrument. Baselines taken at two adjacent commits with no behaviour change gave `over500` of 0 and
+1, so 19 was outside the noise and the direction was real — but the games diverge the moment
+behaviour changes, so a slow position in one run may simply not exist in the other, and the
+magnitude is not readable. A tail says whether; it cannot say how much. The mean per decision kind
+can, because every run has thousands of each kind. The paired win rate against the fixed shallow
+reference moved 148-92 → 150-90 and 149-91 → 150-90 on the two seed sets, both inside the documented
+18-game noise floor, so the case for the change is the death that no longer happens rather than the
+win rate — which is written down that way rather than rounded up.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

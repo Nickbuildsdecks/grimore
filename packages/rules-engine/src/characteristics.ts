@@ -237,6 +237,10 @@ export interface Characteristics {
   readonly goadedBy: readonly SeatIndex[];
 }
 
+/** Shared empties, so the common case allocates nothing at all. */
+const NO_SEATS: readonly SeatIndex[] = Object.freeze([]);
+const NO_COLORS: readonly Color[] = Object.freeze([]);
+
 const numeric = (value: string | undefined): number => {
   if (value === undefined) return 0;
   const n = Number.parseInt(value, 10);
@@ -278,8 +282,19 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let cantBlock = false;
   let mustAttack = false;
   let cantBeBlockedByWalls = false;
-  const goadedBy = new Set<SeatIndex>();
-  const protectionFrom = new Set<Color>();
+  /*
+    Allocated only if something actually sets them, because this is the hottest function in the
+    engine: the search calls it for every candidate of every target of every play it plays out. Two
+    `Set`s and two array copies on every call, for two rules that one card in the pool has between
+    them, is work done for nothing.
+
+    Not justified by a measurement. The slow tail of a pod soak was what first pointed here, and
+    that tail turned out to be divergence noise rather than cost (D101) — the mean per decision
+    kind, which is the instrument that does work, puts this below its resolution. It stays because
+    allocating nothing is simpler than allocating something, not because a number says so.
+  */
+  let goadedBy: SeatIndex[] | null = null;
+  let protectionFrom: Color[] | null = null;
 
   for (const effect of state.effects ?? []) {
     if (!effectApplies(effect, instance, creature)) continue;
@@ -291,8 +306,14 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.cantBlock) cantBlock = true;
     if (effect.mustAttack) mustAttack = true;
     if (effect.cantBeBlockedByWalls) cantBeBlockedByWalls = true;
-    if (effect.mustAttackAnotherPlayer) goadedBy.add(effect.controller);
-    for (const colour of effect.protectionFrom ?? []) protectionFrom.add(colour);
+    if (effect.mustAttackAnotherPlayer) {
+      goadedBy ??= [];
+      if (!goadedBy.includes(effect.controller)) goadedBy.push(effect.controller);
+    }
+    for (const colour of effect.protectionFrom ?? []) {
+      protectionFrom ??= [];
+      if (!protectionFrom.includes(colour)) protectionFrom.push(colour);
+    }
   }
 
   const plus = instance.counters['+1/+1'] ?? 0;
@@ -317,8 +338,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     // (CR 509.1a is the blocking half of the same idea, and 508.1d says "if able").
     mustAttack: mustAttack && !cantAttack,
     cantBeBlockedByWalls,
-    goadedBy: [...goadedBy],
-    protectionFrom: [...protectionFrom],
+    goadedBy: goadedBy ?? NO_SEATS,
+    protectionFrom: protectionFrom ?? NO_COLORS,
   };
 }
 
@@ -350,12 +371,25 @@ export function protectedFrom(state: GameState, targetId: string, source: string
   if (source === null) return false;
   const target = state.instances[targetId];
   if (target === undefined) return false;
-  const protection = characteristicsOf(state, target).protectionFrom;
-  if (protection.length === 0) return false;
+  return protectionApplies(state, characteristicsOf(state, target).protectionFrom, source);
+}
+
+/**
+ * The same question for a caller that already has the characteristics in hand.
+ *
+ * Which is every caller in a hot loop: target legality computes the characteristics for each
+ * candidate, and `canBlock` for each blocker, so asking through `protectedFrom` would compute them
+ * a second time per candidate — the one measurable part of which is that it is twice the work for
+ * the same answer. The empty-list check first is what makes the whole rule free for the 152 cards
+ * in the pool that have no protection, which is the case that matters.
+ */
+export function protectionApplies(
+  state: GameState, protection: readonly Color[], source: string | null,
+): boolean {
+  if (protection.length === 0 || source === null) return false;
   const inst = state.instances[source];
   if (inst === undefined) return false;
-  const colours = printedColors(state.cardDefs[inst.defKey]);
-  return colours.some((colour) => protection.includes(colour));
+  return printedColors(state.cardDefs[inst.defKey]).some((colour) => protection.includes(colour));
 }
 
 /** Convenience for the many places that only need to ask about one keyword. */
