@@ -1022,6 +1022,46 @@ function castsAPrevention(state: GameState, action: Action): boolean {
   return name !== undefined && scriptFor(name)?.preventsDamage === true;
 }
 
+/** Whether this action casts a spell whose whole effect is keeping one of your creatures alive. */
+function castsAProtection(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return name !== undefined && scriptFor(name)?.protectsACreature === true;
+}
+
+/**
+ * Whether one of this seat's creatures is in any danger a trick could answer.
+ *
+ * Two shapes, because the cards have two uses. Something on the stack aimed at a creature of mine
+ * is the one the card is printed for — hexproof in response makes the removal miss. And a combat
+ * one of my creatures is in is the other: +2/+2 wins a fight, and the search can judge *that* for
+ * itself once the board says the fight exists.
+ *
+ * Asked of the board before the cast, not of the state after it. With auto-pass on, a spell
+ * nobody can respond to resolves inside the same action and the engine keeps passing, so the state
+ * after a cast can be a step or a turn later — which is the mistake the Fog rule made first and
+ * the ritual rule made before that.
+ */
+function creatureOfYoursIsThreatened(state: GameState, seat: SeatIndex): boolean {
+  for (const id of state.stackOrder) {
+    const object = state.stackObjects[id];
+    if (object === undefined || object.controller === seat) continue;
+    for (const target of object.targets) {
+      if (target.kind !== 'card') continue;
+      const inst = state.instances[target.id];
+      if (inst === undefined || inst.zone !== 'battlefield' || inst.zoneSeat !== seat) continue;
+      if (characteristicsOf(state, inst).isCreature) return true;
+    }
+  }
+  const fighting = state.step === 'declare-attackers'
+    || state.step === 'declare-blockers'
+    || state.step === 'first-strike-damage';
+  if (!fighting) return false;
+  return state.combat.attacks.some(
+    (attack) => attack.defender === seat || state.instances[attack.attacker]?.zoneSeat === seat,
+  );
+}
+
 /** Whether this action casts a spell whose whole effect is mana. */
 function castsARitual(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -1204,6 +1244,19 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     // And the same judgement for a Fog with nothing attacking. Not a weight: a card that prevents
     // damage nobody is dealing has done nothing at all, which is a fact about the board.
     if (castsAPrevention(state, option.action) && !damageStillToCome(state, seat)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And the same again for a protection trick with nothing to protect against.
+
+      The third card in the family, and the one the search was worst at: 64 cast across 160 games,
+      60 of them with an empty stack and no combat, each one a card spent to make a creature bigger
+      until end of turn for no reason. Dropping those does not only stop the waste — it leaves the
+      card in hand for the moment it is for, which is the only moment the search can tell "cast it"
+      from "pass".
+    */
+    if (castsAProtection(state, option.action) && !creatureOfYoursIsThreatened(state, seat)) {
       dropped += 1;
       continue;
     }

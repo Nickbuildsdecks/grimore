@@ -256,10 +256,16 @@ async function main() {
       els.map((e) => ({ hidden: e.getAttribute('data-hidden'), name: e.getAttribute('data-card-name') })));
     check(
       'with the engine running, the opponent’s hand is still unreadable',
-      // Four, not seven: a London mulligan settles at seven minus the number taken, so a hand of
-      // five is a player who mulliganed twice rather than a bug. The floor is only here to stop
-      // the claim going vacuous against an empty hand — the claim itself is the `every`.
-      friendHandAsNickSees.length >= 4 && friendHandAsNickSees.every((c) => c.hidden === 'true' && !c.name),
+      /*
+        One, not four, and not seven.
+
+        The floor is only here to stop the claim going vacuous against an empty hand — the claim
+        itself is the `every`. It was four, on the reasoning that a London mulligan settles at
+        seven minus the number taken, and it failed on a run where the opponent mulliganed to
+        three: a legal hand, a passing claim, and a red check. A floor that encodes a guess about
+        how many mulligans are plausible is a second claim nobody meant to make.
+      */
+      friendHandAsNickSees.length >= 1 && friendHandAsNickSees.every((c) => c.hidden === 'true' && !c.name),
       JSON.stringify(friendHandAsNickSees).slice(0, 160),
     );
     // Not merely hidden by a CSS rule: there is no card text inside those elements at all,
@@ -303,8 +309,10 @@ async function main() {
         hands.push(await cardsIn(watcher, `zone-hand-${seat}`).evaluateAll((els) =>
           els.map((e) => ({ hidden: e.getAttribute('data-hidden'), name: e.getAttribute('data-card-name') }))));
       }
+      // Same floor, same reason: non-empty is what keeps the claim from being vacuous, and
+      // anything above that is a guess about the shuffle.
       check('and neither hand, which is the whole point of a third party',
-        hands.every((hand) => hand.length >= 4 && hand.every((c) => c.hidden === 'true' && !c.name)),
+        hands.every((hand) => hand.length >= 1 && hand.every((c) => c.hidden === 'true' && !c.name)),
         JSON.stringify(hands).slice(0, 160));
 
       // And it is offered nothing: no control bar, no play sheet, no prompt.

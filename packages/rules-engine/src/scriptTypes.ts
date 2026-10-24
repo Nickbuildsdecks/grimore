@@ -360,6 +360,24 @@ export interface CardScript {
    */
   readonly preventsDamage?: boolean;
   /**
+   * "This spell's whole effect is to keep one of your own creatures alive" — a protection trick.
+   *
+   * The third of the family, and the one whose measurement was the most lopsided: 64 cast across
+   * 160 games and **60 of them with nothing on the stack and no combat in progress**, which is a
+   * card thrown away to give a creature +2/+2 until end of turn for no reason at all.
+   *
+   * It is not the search's fault. The evaluation sees a creature get bigger and a card leave the
+   * hand, and both of those are true; what it cannot see is that the bigger creature stops being
+   * bigger in a minute. The *board* can say whether the card could matter — is something pointing
+   * at one of my creatures, or is there a combat with one of my creatures in it — and that is a
+   * fact rather than a weight, which is the line D74 drew.
+   *
+   * The rule also does something the measurement did not predict: it leaves the card in hand for
+   * the moment it is for. Held rather than spent, the search finds it when an opponent's removal
+   * is on the stack, because then "cast it" and "pass" play out to different boards.
+   */
+  readonly protectsACreature?: boolean;
+  /**
    * What this Equipment gives the creature it is attached to.
    *
    * Declared rather than left inside the equip ability's own effect, because other cards read it:

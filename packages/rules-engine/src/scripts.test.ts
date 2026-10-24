@@ -4339,6 +4339,188 @@ describe('damage that does not happen', () => {
   });
 });
 
+describe('answering a permanent, and answering an answer', () => {
+  it('Naturalize destroys an artifact', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+      battlefield: { 0: ['Sol Ring'], 1: ['Forest', 'Forest'] },
+      hands: { 1: ['Naturalize'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 1);
+    const rock = find(s, 0, 'battlefield', 'Sol Ring');
+    s = drain(cast(s, 1, 'Naturalize', [{ kind: 'card', id: rock }]));
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Sol Ring');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Sol Ring');
+  });
+
+  it('and an enchantment, which is what a Pacifism on your commander needed', () => {
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      hands: { 0: ['Pacifism'], 1: ['Naturalize'] },
+      battlefield: { 0: ['Plains', 'Plains'], 1: ['Forest', 'Forest', 'Centaur Courser'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = drain(cast(s, 0, 'Pacifism', [{ kind: 'card', id: courser }]));
+    expect(characteristicsOf(s, s.instances[courser]!).cantAttack).toBe(true);
+
+    s = nextTurn(s);
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 1);
+    const aura = find(s, 0, 'battlefield', 'Pacifism');
+    s = drain(cast(s, 1, 'Naturalize', [{ kind: 'card', id: aura }]));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Pacifism');
+    // And the creature is free again, which is the point of casting it.
+    expect(characteristicsOf(s, s.instances[courser]!).cantAttack).toBe(false);
+  });
+
+  /*
+    The interaction worth knowing as a player, and it is not special-cased anywhere.
+
+    Journey to Nowhere exiles a creature "until Journey to Nowhere leaves the battlefield", and
+    `destroy` is one more way for it to leave. The creature comes back through the Journey's own
+    `leaves` trigger — the same machinery that already gives it back when the Journey is bounced.
+  */
+  it('and destroying a Journey to Nowhere gives the creature back', () => {
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      hands: { 0: ['Journey to Nowhere'], 1: ['Naturalize'] },
+      battlefield: { 0: ['Plains', 'Plains'], 1: ['Forest', 'Forest', 'Centaur Courser'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    // Aimed as it arrives rather than as it is cast: the exile is an entry trigger, so the
+    // choice comes back as a `pendingChoice` once the enchantment is already on the battlefield.
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Journey to Nowhere') }));
+    if (s.pendingChoice !== null) {
+      s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: courser }] }));
+    }
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Centaur Courser');
+
+    s = nextTurn(s);
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 1);
+    s = drain(cast(s, 1, 'Naturalize', [{ kind: 'card', id: find(s, 0, 'battlefield', 'Journey to Nowhere') }]));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Centaur Courser');
+  });
+
+  it('and nothing else is a legal target for it', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      hands: { 1: ['Naturalize'] },
+      battlefield: { 0: ['Centaur Courser', 'Forest'], 1: ['Forest', 'Forest'] },
+      turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    // A creature and a land are both permanents, and neither is what this card answers.
+    expect(refusal(tapAllLands(s, 1), {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Naturalize'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Centaur Courser') }],
+    })).toMatch(/target/i);
+  });
+
+  /*
+    And the half of the exchange this pool had none of: a response to removal.
+
+    Cast in answer to a Doom Blade, the creature becomes hexproof while the Doom Blade is still on
+    the stack, so the Doom Blade is countered on resolution for having no legal target
+    (CR 608.2b). The creature is the same object throughout — which is the opposite of how
+    Cloudshift makes removal miss, and the reason both are worth having in the pool.
+  */
+  it('Blossoming Defense makes the removal aimed at it miss', () => {
+    let s = arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      hands: { 0: ['Doom Blade'], 1: ['Blossoming Defense'] },
+      battlefield: { 0: ['Swamp', 'Swamp'], 1: ['Forest', 'Centaur Courser'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    // Only the active seat's lands are tapped by hand: a mana ability needs priority, which is
+    // the same reason a real player holds their mana up rather than floating it.
+    s = tapAllLands(s, 0);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    // The Doom Blade goes on the stack, aimed at a creature that is a legal target right now.
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: courser }],
+    });
+    expect(stackNames(s)).toContain('Doom Blade');
+    // And is answered in response, which is the only window this card has. The caster holds
+    // priority after casting, so the response comes after they pass it.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Blossoming Defense'),
+      targets: [{ kind: 'card', id: courser }],
+    });
+    s = drain(passBoth(passBoth(s)));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Centaur Courser');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Doom Blade');
+    // The pump is real as well as the protection: a 3/3 that is now a 5/5.
+    expect(power(s, courser)).toBe(5);
+    expect(toughness(s, courser)).toBe(5);
+  });
+
+  it('and the creature stops being untargetable when the turn ends', () => {
+    let s = arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      hands: { 1: ['Blossoming Defense'] },
+      battlefield: { 0: ['Swamp', 'Swamp'], 1: ['Forest', 'Centaur Courser'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 1);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = drain(cast(s, 1, 'Blossoming Defense', [{ kind: 'card', id: courser }]));
+    expect(characteristicsOf(s, s.instances[courser]!).keywords.has('hexproof')).toBe(true);
+    s = nextTurn(s);
+    expect(characteristicsOf(s, s.instances[courser]!).keywords.has('hexproof')).toBe(false);
+  });
+
+  it('and it only ever protects your own creature', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      hands: { 1: ['Blossoming Defense'] },
+      battlefield: { 0: ['Wind Drake'], 1: ['Forest'] },
+      turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    expect(refusal(tapAllLands(s, 1), {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Blossoming Defense'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Wind Drake') }],
+    })).toMatch(/target/i);
+  });
+
+  it('Dive Down is the same card in blue, and saves a flier from a burn spell', () => {
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: { 0: ['Lightning Bolt'], 1: ['Dive Down'] },
+      battlefield: { 0: ['Mountain'], 1: ['Island', 'Wind Drake'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const drake = find(s, 1, 'battlefield', 'Wind Drake');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: drake }],
+    });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Dive Down'),
+      targets: [{ kind: 'card', id: drake }],
+    });
+    s = drain(passBoth(passBoth(s)));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Wind Drake');
+    // +0/+3 rather than +2/+2: the toughness is what beats a burn spell that did resolve.
+    expect(power(s, drake)).toBe(2);
+    expect(toughness(s, drake)).toBe(5);
+  });
+});
+
 describe('the painlands, and a cost that is not mana', () => {
   it('City of Brass deals you a damage every time it is tapped, however it was tapped', () => {
     let s = arena({

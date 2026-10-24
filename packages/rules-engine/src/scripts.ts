@@ -1555,6 +1555,83 @@ const BANISHER_PRIEST: CardScript = exileUntilItLeaves('Banisher Priest', {
   filter: creatureYouDontControl,
 });
 
+/**
+ * Destroy target artifact or enchantment.
+ *
+ * The first answer in this pool for the half of the board nothing could touch. Fourteen permanents
+ * in it are artifacts or enchantments — a Pacifism, a Journey to Nowhere, a Loxodon Warhammer, an
+ * Icy Manipulator, a Night of Souls' Betrayal that shrinks everybody's creatures — and until now a
+ * Pacifism on your commander was permanent, for the rest of the game.
+ *
+ * `kind: 'permanent'` with a filter, which the targeting layer has expressed since Banishing Light:
+ * the type line is read from `characteristicsOf` rather than from the printed line, so a creature
+ * that is *also* an artifact is a legal target and an animated land is not.
+ *
+ * The interaction worth knowing as a player: destroying a Journey to Nowhere gives the creature
+ * back. That is not special-cased anywhere — the Journey's own `leaves` trigger returns what it
+ * exiled, and `destroy` is just one more way for it to leave.
+ */
+const destroyAnArtifactOrEnchantment = (name: string): CardScript => ({
+  name,
+  targets: [{
+    kind: 'permanent',
+    description: 'target artifact or enchantment',
+    filter: (state, candidate) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined) return false;
+      const types = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+      return hasType(types, 'artifact') || hasType(types, 'enchantment');
+    },
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : destroy(c.state, id);
+  },
+});
+
+const NATURALIZE: CardScript = destroyAnArtifactOrEnchantment('Naturalize');
+const DISENCHANT: CardScript = destroyAnArtifactOrEnchantment('Disenchant');
+
+/**
+ * The response to removal, which this pool had none of.
+ *
+ * Every answer in it pointed one way — destroy, exile, bounce, pacify — and nothing answered back.
+ * Holding one mana to save the creature somebody is pointing a Doom Blade at is one of the oldest
+ * shapes in the game, and the only card that granted untargetability was Robe of Mirrors, an aura
+ * cast at sorcery speed on a creature nobody was threatening yet.
+ *
+ * Hexproof rather than shroud, because the point is that *you* can still target it — and because
+ * the engine already draws that line: `targeting.ts` refuses a hexproof permanent to opponents and
+ * a shroud permanent to everybody, which is why Robe of Mirrors was written with the harsher of
+ * the two.
+ *
+ * What makes it a card rather than a trick is the timing: cast in response, the removal spell is
+ * still on the stack and its target has become illegal, so it is countered on resolution for
+ * having no legal targets (CR 608.2b). Cloudshift proves the same rule from the other side — a
+ * creature that left and came back is a new object — and this proves it without the card moving.
+ */
+const protectFromRemoval = (name: string, power: number, toughness: number): CardScript => ({
+  name,
+  // For the bot: a card whose whole effect expires at end of turn has done nothing unless
+  // something was threatening the creature. See `protectsACreature`.
+  protectsACreature: true,
+  targets: [{
+    kind: 'creature',
+    description: 'target creature you control',
+    filter: creatureYouControl,
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null
+      ? c.state
+      : pump(c.state, [id], c.source, c.controller, { power, toughness, keywords: ['hexproof'] });
+  },
+});
+
+const BLOSSOMING_DEFENSE: CardScript = protectFromRemoval('Blossoming Defense', 2, 2);
+const DIVE_DOWN: CardScript = protectFromRemoval('Dive Down', 0, 3);
+
 /** Journey to Nowhere: the same deal for one less mana, with no body attached. */
 const JOURNEY_TO_NOWHERE: CardScript = exileUntilItLeaves('Journey to Nowhere', TARGET_CREATURE);
 
@@ -2230,6 +2307,7 @@ const ALL: readonly CardScript[] = [
   cyclingLand('Tranquil Thicket', 'G'),
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
+  NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN,
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,

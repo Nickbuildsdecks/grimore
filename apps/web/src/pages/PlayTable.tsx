@@ -844,6 +844,23 @@ function Battlefield({
 function Board({ table }: { table: UseTable }) {
   const { view, seat } = table
   const [picked, setPicked] = useState<VisibleCard | null>(null)
+  /*
+    A card sheet does not outlive the game it is about.
+
+    Tapping a card opens a sheet of what you can do with it, and the game can end while it is open
+    — a pass that lets the last damage through, an opponent conceding, the computer's whole turn
+    landing in the same write. What is left is a modal full of plays nobody can make, over the top
+    of "Nick wins" and the button for another game.
+
+    Found in a browser suite that had been failing one run in a dozen for weeks with nothing to go
+    on but "pressed: false". The press was landing on the sheet: *"<div data-testid='play-sheet'>
+    intercepts pointer events"*, which is what the suite started recording after the last time it
+    happened. An instrument that keeps the whole call log rather than its first line is worth the
+    two lines it costs.
+  */
+  useEffect(() => {
+    if (view?.finished === true) setPicked(null)
+  }, [view?.finished])
   const [attachFrom, setAttachFrom] = useState<VisibleCard | null>(null)
   /**
    * What the player is halfway through — choosing targets, picking attackers, pairing blockers.
@@ -1461,7 +1478,13 @@ function Board({ table }: { table: UseTable }) {
       )}
 
       {/* Overlays */}
-      {picked !== null && automated ? (
+      {/*
+        Never over a finished game. The effect above clears a sheet the last damage landed under;
+        this stops a new one opening on a table where nothing in it can be played, which is the
+        half that a dependency on `view.finished` cannot catch — the flag has already changed by
+        the time the card is tapped.
+      */}
+      {picked !== null && automated && !view.finished ? (
         <PlaySheet
           card={picked}
           plays={playsForCard(view, picked.id)}

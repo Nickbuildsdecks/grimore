@@ -17,7 +17,7 @@
 import path from 'node:path';
 import {
   chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
-  isMyMove, makeMove, press, readNumber, expectEventuallyTrue, watchForReactWarnings,
+  isMyMove, makeMove, press, readNumber, expectEventuallyTrue, watchForReactWarnings, tap,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -170,6 +170,32 @@ async function main() {
       board every other one of them is reading.
     */
     if (await has(page, 'game-over')) {
+      /*
+        Nothing a player can tap leaves something open over the end of the game.
+
+        This suite spent weeks failing one run in a dozen on the rematch press below, with nothing
+        to go on but "pressed: false". What it was: a play sheet left open when the game ended,
+        covering the whole table — `<div data-testid="play-sheet"> intercepts pointer events`,
+        which only showed up once the press started keeping Playwright's whole call log instead of
+        its first line.
+
+        Driven rather than waited for, because waiting for it is what made it one in twelve: tap a
+        card now that the game is over, and no sheet may open. A sheet full of plays nobody can
+        make, over "Nick wins" and the button for another game, is a dead end whether it was
+        opened a moment before the last damage or a moment after.
+      */
+      // Any card on the table, not one in hand: the loser's hand is often empty by then, and a
+      // check that quietly does not run is the thing this whole exercise is about.
+      const anyCard = page.locator('[data-testid^="card-"]');
+      const cards = await anyCard.count();
+      if (cards === 0) {
+        check('tapping a card over a finished game opens nothing', false, 'no card on screen to tap');
+      } else {
+        await tap(anyCard.first());
+        await page.waitForTimeout(150);
+        check('tapping a card over a finished game opens nothing', !(await has(page, 'play-sheet')),
+          `tapped 1 of ${cards} cards, sheet: ${await has(page, 'play-sheet')}`);
+      }
       const turnBefore = (await readNumber(page, 'turn').catch(() => null)) ?? 0;
       // Pressed up to three times rather than once: the game-over panel re-renders as the last
       // state events land, and a press that misses is not a feature that failed.

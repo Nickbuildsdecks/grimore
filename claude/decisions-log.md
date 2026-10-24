@@ -2865,3 +2865,79 @@ declare-attackers, 2.8 seconds a call, 1859 creatures on the battlefield. None o
 search being expensive; it was the search *refusing to win*, so the board kept doubling until
 thinking about it got slow. The lesson is the one D70 keeps teaching from the other end: a cost
 that grows without bound is usually a decision that is never taken.
+
+## D84 — The third card spent on nothing, and the bucket the first measurement got wrong
+
+Two instant-speed protection tricks went into the pool — Blossoming Defense and Dive Down, +2/+2
+or +0/+3 and hexproof until end of turn — and the first measurement said the bot threw them away:
+**64 cast across 160 games, 60 of them with nothing on the stack.** The same shape as the ritual
+(D63) and the Fog (D77): the evaluation sees a creature get bigger and a card leave the hand, and
+both are true; what it cannot see is that the creature stops being bigger in a minute.
+
+So the same answer, with the condition the card actually wants. `protectsACreature` on the script,
+and a question asked of the board before the cast: is something on the stack aimed at one of my
+creatures, or is there a combat one of my creatures is in. Two shapes because the card has two
+uses — hexproof in response makes removal miss, and +2/+2 wins a fight — and the search can judge
+the second for itself once the board says the fight exists.
+
+**And the measurement was wrong in a way worth keeping.** It had two buckets, "in response" and
+"at nothing", so every cast made during a combat landed in the waste bucket. That is why the
+numbers after the rule looked like it had barely fired: 34 casts became 30, which reads as noise.
+Re-counted with three buckets — in response, in combat, neither — the same games say:
+
+| | cast | in response | in combat | at nothing |
+| --- | --- | --- | --- | --- |
+| Blossoming Defense, before | 34 | 1 | 0 | **33** |
+| Blossoming Defense, after | 30 | 5 | 25 | **0** |
+| Dive Down, before | 30 | 3 | 0 | **27** |
+| Dive Down, after | 29 | 1 | 28 | **0** |
+
+Two readings in those numbers. The obvious one: nothing is wasted any more. The one worth the
+entry: **before the rule, `inCombat` was zero** — the bot spent every copy on its own main phase,
+so the card was already in the graveyard by the time it could have mattered. The rule's real
+effect is not that it stops a bad cast; it is that holding the card is what lets the search find
+the good one, because only then do "cast it" and "pass" play out to different boards.
+
+A measurement whose buckets do not mean what the rule means by them cannot say whether the rule
+worked. That is the same lesson as D80, one level up: there, the thing counted was wrong; here,
+the categories were.
+
+## D85 — The instrument paid for itself: a modal over the end of the game
+
+The solo browser suites had been failing roughly one run in a dozen for weeks on the same check —
+*"and 'play again' deals another game at the same table"* — with nothing to go on but
+`pressed: false`. An earlier increment responded to that not with a fix but with an instrument: a
+last click whose failure keeps **Playwright's whole call log** rather than its first line, on the
+reasoning that "Timeout 2000ms exceeded" is one line short of a diagnosis.
+
+This run it fired, and the log said it outright:
+
+```
+<div data-testid="play-sheet" class="fixed inset-0 z-50 …"> intercepts pointer events
+```
+
+A play sheet — the "what can I do with this card" modal — left open over the end of the game,
+covering the whole table including the button for another one. Nothing in it could be played; the
+game was over.
+
+**Two fixes, and the second is the one that mattered.** An effect that clears the sheet when the
+game finishes handles a sheet the last damage landed under. It does *not* stop a sheet opening
+afterwards, because by then `view.finished` has already changed and nothing re-runs. The guard on
+the render is what closes that: no sheet over a finished game, however it got there. The first
+attempt shipped only the effect, and the new check below caught it immediately.
+
+**And the test for it had to be driven rather than waited for.** The first version opened a sheet
+and conceded — and could not, because the sheet it had just opened was covering the concede button
+too, which is the bug describing itself. The second version tapped a card in *hand* at game over
+and quietly did not run at all, because the losing player's hand is often empty by then: 16/16
+passed with the new check never executing. The third taps any card on the table, fails loudly when
+there is none to tap, and reproduces the original failure every run — red before the render guard,
+green after.
+
+Three lessons, in the order they were learned the hard way:
+
+- An intermittent failure deserves an instrument before it deserves a theory. This one cost two
+  lines and bought the whole diagnosis.
+- A check that can silently not run is worse than no check: it reports a pass it never made.
+- The fix that stops the state being *entered* beats the one that cleans it up afterwards, and
+  the way to tell them apart is a test that fails first.

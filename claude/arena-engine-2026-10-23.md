@@ -1556,6 +1556,78 @@ the command's output had been filtered down to its summary line before anything 
 mistake as reading one line of a Playwright timeout, and the reason the verification runs here now
 write their whole output to a file first. If it comes back, the log will say which test.
 
+### Answering a permanent, and answering an answer
+
+Two holes a pair of friends would hit in their first game.
+
+**Nothing in any deck could answer an artifact or an enchantment.** Fourteen of the pool's cards
+are one or the other — a Pacifism, a Journey to Nowhere, a Loxodon Warhammer, an Icy Manipulator,
+a Night of Souls' Betrayal that shrinks everybody — and not one card could remove either. A
+Pacifism on your commander was permanent, for the rest of the game.
+
+**And nothing protected a creature at instant speed.** Every answer in the pool pointed one way:
+destroy, exile, bounce, pacify. The only card that granted untargetability was Robe of Mirrors, an
+aura cast on your own main phase onto a creature nobody was threatening yet.
+
+Four cards, no new engine surface: Naturalize and Disenchant destroy target artifact or
+enchantment (`kind: 'permanent'` with a filter, which the targeting layer has expressed since
+Banishing Light), and Blossoming Defense and Dive Down give one of your creatures +2/+2 or +0/+3
+and hexproof until end of turn (a `pump` with a keyword, which is how Robe of Mirrors already
+grants shroud).
+
+**Measured over 160 unsteered games across eight pairings:**
+
+| card | drawn | cast | what it destroyed |
+| --- | --- | --- | --- |
+| Naturalize | 80 | 62 | 20 Journeys, 8 Bonesplitters, 7 Warhammers, 6 Pacifisms, 4 Icy Manipulators |
+| Disenchant | 31 | 20 | 5 Journeys, 4 Bonesplitters, 3 Warhammers, a Glorious Anthem |
+
+Seven of the 62 Naturalizes destroyed nothing, which is what a Darksteel Plate is for. Three
+destroyed a *creature* — removing a Loxodon Warhammer from a creature that had already taken three
+damage is lethal, and the engine worked that out without being told.
+
+The two interactions that make these cards feel like Magic are both free. Destroying a Journey to
+Nowhere gives the creature back, through the Journey's own `leaves` trigger — `destroy` is just one
+more way for it to leave. And hexproof cast in response to a Doom Blade makes the Doom Blade miss,
+because its target has become illegal and a spell with no legal targets is countered on resolution
+(CR 608.2b). Cloudshift proves that rule from the other side; this proves it without the card
+moving.
+
+**The bot had to be taught, and the measurement had to be taught first.** The protection spells
+were thrown away — 64 cast, 60 of them with an empty stack — which is the third card in the family
+D63 and D77 named, so it got the same treatment: a flag on the card, a question asked of the board
+before the cast. What was new is that the first measurement could not see whether the rule worked,
+because it had two buckets and a pump cast *during a combat* landed in the waste one. With three:
+
+| | cast | in response | in combat | at nothing |
+| --- | --- | --- | --- | --- |
+| Blossoming Defense, before | 34 | 1 | 0 | **33** |
+| Blossoming Defense, after | 30 | 5 | 25 | **0** |
+| Dive Down, before | 30 | 3 | 0 | **27** |
+| Dive Down, after | 29 | 1 | 28 | **0** |
+
+Before the rule, `inCombat` is **zero**: every copy was spent on the caster's own main phase, so
+the card was in the graveyard before it could matter. The rule's real effect is not that it stops
+a bad cast — it is that holding the card is what lets the search find the good one.
+
+Deck slots were paid for, not found: a Giant Spider, a Cloudshift, a Prey Upon, a Drudge
+Skeletons, a Lotleth Giant, a Wall of Air, a Divine Verdict, an Angelic Gift and a Ravenous Rats.
+Every deck is still exactly 60 plus a commander; 149 cards have scripts.
+
+**And the oldest open flake in the project closed itself along the way.** The solo suites had been
+failing about one run in twelve on *"and 'play again' deals another game at the same table"*, with
+nothing to go on but `pressed: false`. An earlier increment answered that with an instrument
+rather than a fix — a last click that keeps Playwright's whole call log instead of its first line.
+This run it fired: `<div data-testid="play-sheet"> intercepts pointer events`. A card sheet, left
+open over the end of the game, covering the button for the next one.
+
+The sheet now clears when the game finishes **and** cannot open on a finished table, which are two
+different bugs: the first version shipped only the clear, and a sheet opened *after* the game ended
+goes straight past it. The check that caught that is deterministic — tap any card once the game is
+over, and nothing may open — and it took three attempts to write, because the first could not press
+concede (the sheet was covering it) and the second quietly never ran (the losing hand is usually
+empty). Written up as D85.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

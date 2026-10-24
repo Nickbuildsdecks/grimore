@@ -178,7 +178,7 @@ slower decks comfortably and losing to the fastest ones — and a good part of t
 rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
 A person plays it better.
 
-The decks share a pool of a hundred and forty-five scripted cards, which now includes a wrath, a
+The decks share a pool of a hundred and forty-nine scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -194,6 +194,13 @@ nothing in the pool to trigger them, and Night of Souls' Betrayal is the first c
 effect reaches across the table rather than down one side. Shroud is the one worth knowing as a
 player: a creature with it cannot be targeted by **anybody**, you included — no pump, no targeted
 equip, no rescue.
+
+Four of them answer the half of the board nothing could touch, or answer an answer. **Naturalize**
+and **Disenchant** destroy target artifact or enchantment, which is what a Pacifism on your
+commander needed; destroying a Journey to Nowhere also gives the creature back. **Blossoming
+Defense** and **Dive Down** cost one mana and give one of your own creatures +2/+2 or +0/+3 and
+hexproof until end of turn — held up rather than cast, because the window they are for is while
+somebody else's removal is on the stack. Cast then, the removal misses entirely.
 
 Three of the newest are the ones that cost you something to play them. **City of Brass** deals you
 a damage every time it becomes tapped — including when an opponent's Icy Manipulator taps it, which

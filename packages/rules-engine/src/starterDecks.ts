@@ -1249,6 +1249,57 @@ const HOLY_DAY: CardDef = {
   colors: ['W'],
 };
 
+/*
+  The answers for the half of the board nothing could answer.
+
+  Eight artifacts and six enchantments had accumulated in this pool — a Pacifism, a Journey to
+  Nowhere, a Loxodon Warhammer, an Icy Manipulator — and not one card in any deck could remove
+  either. A Pacifism on your commander was permanent, for the rest of the game, which is not a
+  thing that happens in a game of Magic.
+*/
+const NATURALIZE: CardDef = {
+  name: 'Naturalize',
+  typeLine: 'Instant',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  oracleText: 'Destroy target artifact or enchantment.',
+  colors: ['G'],
+};
+
+const DISENCHANT: CardDef = {
+  name: 'Disenchant',
+  typeLine: 'Instant',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  oracleText: 'Destroy target artifact or enchantment.',
+  colors: ['W'],
+};
+
+/*
+  And the response to removal, which the pool had none of at all.
+
+  Every answer in it pointed one way: destroy, exile, bounce, pacify. Holding a single mana to save
+  the creature somebody is pointing a Doom Blade at is one of the oldest shapes in the game, and
+  the only card that granted untargetability was an aura cast on your own main phase.
+*/
+const BLOSSOMING_DEFENSE: CardDef = {
+  name: 'Blossoming Defense',
+  typeLine: 'Instant',
+  manaCost: '{G}',
+  cmc: 1,
+  oracleText: 'Target creature you control gets +2/+2 and gains hexproof until end of turn.',
+  colors: ['G'],
+};
+
+const DIVE_DOWN: CardDef = {
+  name: 'Dive Down',
+  typeLine: 'Instant',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: 'Target creature you control gets +0/+3 and gains hexproof until end of turn.',
+  colors: ['U'],
+};
+
 const CITY_OF_BRASS: CardDef = {
   name: 'City of Brass',
   typeLine: 'Land',
@@ -1556,7 +1607,7 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: AMBUSH_VIPER, count: 1 },
     { card: ELVISH_VISIONARY, count: 1 },
     // A 2/4 that stops a flier without being one, which is the one thing a green deck is short of.
-    { card: GIANT_SPIDER, count: 2 },
+    { card: GIANT_SPIDER, count: 1 },
     { card: SERRA_ANGEL, count: 2 },
     // Removal that gives the creature back if you kill the thing holding it, which is the deck's
     // answer to a creature it cannot block rather than a second Pacifism.
@@ -1566,18 +1617,21 @@ export const VERDANT_GUARD: DeckSpec = {
     // removal, draws a card off the Visionary, and re-aims a Banisher Priest at something newer —
     // three cards' worth of work from one line of script, because the return is an arrival like
     // any other and every enter-the-battlefield trigger here fires again on its own.
-    { card: CLOUDSHIFT, count: 2 },
+    { card: CLOUDSHIFT, count: 1 },
     { card: GIANT_GROWTH, count: 1 },
     { card: TITANIC_GROWTH, count: 1 },
     // One mana that beats an alpha strike, and the cheapest card in the game that does. It cost a
     // second Banisher Priest, in a deck already holding five other ways to answer one creature.
     { card: FOG, count: 1 },
     // Removal a green deck is actually allowed: the biggest creature on the table eats something.
-    { card: PREY_UPON, count: 2 },
+    { card: PREY_UPON, count: 1 },
     { card: LOXODON_WARHAMMER, count: 1 },
     { card: SELESNYA_CHARM, count: 1 },
     { card: PACIFISM, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
+    // The deck with the most to lose to an aura, and the one that can answer it.
+    { card: NATURALIZE, count: 2 },
+    { card: BLOSSOMING_DEFENSE, count: 1 },
     { card: HARMONIZE, count: 1 },
     { card: OVERRUN, count: 1 },
     // The deck's X spell, and the two slots above it that paid for the Spiders and the Prey Upons
@@ -1642,7 +1696,8 @@ export const TIDAL_MIND: DeckSpec = {
     { card: MIND_ROT, count: 1 },
     { card: DIABOLIC_TUTOR, count: 1 },
     { card: SOUL_MANIPULATION, count: 2 },
-    { card: RAVENOUS_RATS, count: 2 },
+    { card: DIVE_DOWN, count: 1 },
+    { card: RAVENOUS_RATS, count: 1 },
     { card: CHILD_OF_NIGHT, count: 1 },
     { card: WIND_DRAKE, count: 1 },
     { card: MAN_O_WAR, count: 2 },
@@ -1662,8 +1717,10 @@ export const ROT_HARVEST: DeckSpec = {
     { card: GOLGARI_GUILDGATE, count: 2 },
     { card: LLANOWAR_ELVES, count: 3 },
     { card: THORNWEALD_ARCHER, count: 1 },
-    { card: DRUDGE_SKELETONS, count: 2 },
+    { card: DRUDGE_SKELETONS, count: 1 },
     { card: GOLGARI_CHARM, count: 2 },
+    { card: NATURALIZE, count: 1 },
+    { card: BLOSSOMING_DEFENSE, count: 1 },
     { card: ENDLESS_ONE, count: 2 },
     { card: BLOOD_ARTIST, count: 3 },
     { card: ZULAPORT_CUTTHROAT, count: 2 },
@@ -1678,7 +1735,7 @@ export const ROT_HARVEST: DeckSpec = {
     { card: GRIM_DISCOVERY, count: 1 },
     { card: ZOMBIFY, count: 1 },
     { card: DOOM_BLADE, count: 1 },
-    { card: LOTLETH_GIANT, count: 2 },
+    { card: LOTLETH_GIANT, count: 1 },
     // Green's X spell. It hits its own controller too, which is the card: a deck of ground
     // creatures pays nothing and a table of fliers pays everything.
     { card: HURRICANE, count: 2 },
@@ -1724,13 +1781,14 @@ export const FORGE_ALLIANCE: DeckSpec = {
     // The deck's only answer to an Equipment or an enchantment, which is what a board of swords
     // is most afraid of.
     { card: BANISHING_LIGHT, count: 2 },
+    { card: DISENCHANT, count: 1 },
     { card: BASILISK_COLLAR, count: 2 },
     // And the Equipment that answers removal rather than adding power: whatever is holding the
     // swords stops dying to a Doom Blade or a Day of Judgment.
     { card: DARKSTEEL_PLATE, count: 1 },
     { card: RAISE_THE_ALARM, count: 2 },
     { card: SECURE_THE_WASTES, count: 1 },
-    { card: ANGELIC_GIFT, count: 2 },
+    { card: ANGELIC_GIFT, count: 1 },
     { card: INSPIRED_CHARGE, count: 2 },
     { card: LIGHTNING_BOLT, count: 2 },
     { card: MAGMA_JET, count: 1 },
@@ -1848,7 +1906,7 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: HEALERS_HAWK, count: 2 },
     { card: YOUTHFUL_KNIGHT, count: 2 },
     { card: OMENSPEAKER, count: 2 },
-    { card: WALL_OF_AIR, count: 3 },
+    { card: WALL_OF_AIR, count: 2 },
     { card: RAISE_THE_ALARM, count: 2 },
     // And the air, which it does intend to win.
     { card: LEONIN_SKYHUNTER, count: 3 },
@@ -1863,6 +1921,8 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: NEGATE, count: 1 },
     { card: UNSUMMON, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
+    { card: DISENCHANT, count: 1 },
+    { card: DIVE_DOWN, count: 1 },
     { card: PACIFISM, count: 1 },
     { card: JOURNEY_TO_NOWHERE, count: 1 },
     // The deck that loses to a wide board, holding the card that answers a wide board for two
@@ -1870,7 +1930,7 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: HOLY_DAY, count: 1 },
     // Four mana that is dead on your own turn and kills anything that attacks into it. The engine
     // will not even offer it outside combat, which is the card.
-    { card: DIVINE_VERDICT, count: 2 },
+    { card: DIVINE_VERDICT, count: 1 },
     // Cards, and the two artifacts Hanna is happy to buy back.
     { card: DIVINATION, count: 1 },
     { card: MIND_STONE, count: 1 },
