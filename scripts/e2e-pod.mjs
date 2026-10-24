@@ -30,6 +30,7 @@ import path from 'node:path';
 import {
   chromium, check, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text, textOf, tap,
   press, readNumber, expectEventually, isMyMove, makeMove, notePrompts, noteMove,
+  watchForReactWarnings,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -51,6 +52,7 @@ async function main() {
   await setShotDir(SHOT_DIR);
   const browser = await chromium.launch({ headless: !HEADED });
   const pageErrors = [];
+  const reactWarnings = [];
   const badRequests = [];
   const EXPECTED_FAILURES = [/\/api\//, /\/logo\.svg/];
 
@@ -61,6 +63,7 @@ async function main() {
     const page = await ctx.newPage();
     const who = NAMES[seat];
     page.on('pageerror', (err) => pageErrors.push(`${who}: ${err.message}`));
+    watchForReactWarnings(page, who, reactWarnings);
     page.on('response', (res) => {
       if (res.status() < 400) return;
       if (EXPECTED_FAILURES.some((re) => re.test(res.url()))) return;
@@ -509,6 +512,7 @@ async function main() {
     }
     check('the engine never refused anything a table offered', refusals.length === 0, refusals.join(' | '));
     check('no uncaught errors in any of the four browsers', pageErrors.length === 0, pageErrors.join(' | '));
+    check('no React warnings in any of the four browsers', reactWarnings.length === 0, reactWarnings.join(' | '));
     check('no failed requests other than the API this table does not need', badRequests.length === 0,
       badRequests.join(' | '));
   } catch (err) {

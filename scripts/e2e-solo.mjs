@@ -17,7 +17,7 @@
 import path from 'node:path';
 import {
   chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
-  isMyMove, makeMove, press, readNumber, expectEventuallyTrue,
+  isMyMove, makeMove, press, readNumber, expectEventuallyTrue, watchForReactWarnings,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -52,7 +52,9 @@ async function main() {
   const context = await browser.newContext({ viewport: { width: 1280, height: 950 } });
   const page = await context.newPage();
   const pageErrors = [];
+  const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
+  watchForReactWarnings(page, '', reactWarnings);
 
   try {
     await page.goto(BASE);
@@ -176,10 +178,25 @@ async function main() {
         pressed = await press(page, 'rematch');
         if (!pressed) await page.waitForTimeout(250);
       }
+      /*
+        Why the press did not land, kept rather than thrown away.
+
+        `press` returns a bare false, and a run of this suite failed with "pressed: false" and
+        nothing else to go on — the button was on screen, the game was over, and there was no table
+        error. One more click with the reason recorded turns the next occurrence into a diagnosis
+        instead of another coin flip: Playwright says in its own message whether the element was
+        covered by something, detached mid-click or simply not there.
+      */
+      const why = pressed
+        ? 'it landed'
+        : await tid(page, 'rematch').first().click({ timeout: 2000 }).then(
+          () => 'landed on the fourth try',
+          (err) => String(err.message).split('\n')[0],
+        );
       const dealt = await expectEventuallyTrue(page, async () =>
         !(await has(page, 'game-over')) && (await cardsIn(page, 'zone-hand-0').count()) === 7);
       check('and “play again” deals another game at the same table', dealt,
-        `pressed: ${pressed}, game-over still up: ${await has(page, 'game-over')}, `
+        `pressed: ${pressed} (${why}), game-over still up: ${await has(page, 'game-over')}, `
         + `hand ${await cardsIn(page, 'zone-hand-0').count()}, `
         + `error: ${(await has(page, 'table-error')) ? await text(page, 'table-error') : 'none'}`);
       if (dealt) {
@@ -194,6 +211,7 @@ async function main() {
     const refusal = (await has(page, 'table-error')) ? await text(page, 'table-error') : '';
     check('the engine never refused anything the table offered', refusal === '', refusal);
     check('no uncaught errors in the browser', pageErrors.length === 0, pageErrors.join(' | '));
+    check('no React warnings in the browser', reactWarnings.length === 0, reactWarnings.join(' | '));
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(400);

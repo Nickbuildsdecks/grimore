@@ -1093,6 +1093,85 @@ things that would move it are written down in `claude/decisions-log.md` (D70), a
 that the one bot change in this series that *did* win games was Magic knowledge rather than a
 weight: knowing that a flier is not a 2/2.
 
+**Eleven more cards, and the first filter that reads combat.** Lightning Strike, Lava Axe, Cancel,
+Murder, Giant Spider, Titanic Growth, Healer's Hawk, Dark Ritual, Borderland Marauder, Prey Upon and
+Divine Verdict, one test each, across five of the seven decks.
+
+Three of them needed something the pool had not had. **Divine Verdict** destroys an attacking or
+blocking creature, so its target filter asks the *combat state* whether the creature is in combat —
+the first script whose castability depends on the step rather than on the board. Outside combat it
+has no legal target and the engine does not offer the card at all, which is exactly what the printed
+card does on your own main phase (CR 601.2c). **Dark Ritual** is the first spell in the pool that
+makes mana instead of spending it, and it needed nothing at all: the mana goes in the pool and the
+next play asks the pool what it can afford. **Prey Upon** reads both creatures' power before dealing
+either (CR 701.12a), so two 3/3s fighting kill each other rather than the second one dying for free.
+
+Then they were measured the way the last three card increments were: **120 unsteered games** with the
+searching bot on both sides, across every pairing of the five decks that gained a card, counting
+what each card *did* rather than that its script ran.
+
+| card | cast | and what it did |
+| --- | --- | --- |
+| Dark Ritual | 35 | **3** were followed by a spell in the same step |
+| Giant Spider | 31 | 3 blocks, 1 of them a flier |
+| Borderland Marauder | 26 | 13 attacks, **all 13** as a 4/2 |
+| Prey Upon | 24 | 19 kills |
+| Healer's Hawk | 24 | 23 life gained off its own damage |
+| Lightning Strike | 21 | 13 at a player, 8 at a creature |
+| Murder | 20 | **9** on a black creature, which a Doom Blade cannot touch |
+| Cancel | 19 | 19 countered a spell on the stack |
+| Titanic Growth | 17 | **0** cast during a combat |
+| Divine Verdict | 11 | 7 killed the attacker outright |
+| Lava Axe | 3 | 15 damage to players |
+
+Every card gets cast, and two rows are findings rather than confirmations. **Dark Ritual is thrown
+away 32 times out of 35**: the bot casts it and then casts nothing with the mana, which empties at
+the end of the step. And **Titanic Growth is never cast in combat** — the bot plays instants at
+sorcery speed in its own main phase, so a pump spell is a permanent +4/+4 on an empty board instead
+of a blowout on a block. Both are bot behaviour rather than engine faults, and both are written down
+rather than fixed in passing.
+
+**A deck slot is not free, and the fallout proved it twice over.** Making room for eleven cards had
+quietly cut three others — the second Shock, Tome Scour and both Secure the Wastes — and every one
+of them was *pinned* by a test that places it by name out of a real deck. They are back, paid for
+out of a second Shivan Dragon in a deck whose curve tops at four, a second Tormod's Crypt that
+answered nothing the first had not, a third Rampant Growth and a second Selesnya Charm. Each pinned
+card now says so in the deck list beside it.
+
+Reshuffling those decks then turned two playout tests red, and **neither was really about the
+decks** — both had been passing on luck:
+
+- *"fires death triggers in real games"* looked for the trigger's description in `stackObjects`
+  after each bot action. With auto-pass on, a trigger nobody can respond to is put on the stack and
+  resolved inside the same action, so the snapshot almost always misses it. Measured over sixteen of
+  these games: six Doomed Travellers died, six Spirits arrived, and the stack was caught holding the
+  trigger **exactly once**. It now counts the consequence, which is the stronger claim anyway —
+  every Traveller that died left a Spirit behind, whatever killed it.
+- *"casts modal spells"* failed, passed and failed again on three consecutive runs of identical
+  code, which reads exactly like a nondeterministic engine. It is not: the same twelve games produce
+  the same seventeen modal casts and the same six mode combinations, byte-identical across
+  processes. The test was 4.5s of work against vitest's 5s default and failed whenever another
+  package's suite ran beside it. The package now sets the timeout once, in `vitest.config.ts`.
+
+**The render loop nothing was watching for.** The dev server's log from one run of the browser
+suites held **7,555** copies of React's "Maximum update depth exceeded". `CombatArrows` built a
+fresh array of attacks on every render, a `useCallback` depended on it by identity, the effect
+depended on the callback, and the effect's measurement set state — so while anything was attacking,
+the table re-rendered as fast as React would let it. The no-combat path already returned the
+existing state unchanged, which is why it only happened during combat, and why a four-player pod
+spent its declare-blockers step re-rendering instead of answering taps. That is how it was found at
+all: the pod suite stalled with nothing on screen to press.
+
+The fix is to depend on the combat *by value* — a string that changes when the attacks or the blocks
+do — to keep the measurement in a ref so the callback can be stable, and to return the existing
+state when a new measurement is identical, which also makes a scroll that moved nothing cost
+nothing.
+
+**And the reason no test caught it: `pageerror` only fires for an exception nobody caught.** React
+logs a render loop to the console and carries on. All five browser suites now watch the console for
+React's own complaints and fail on them, and the check was verified the only way a check can be —
+by putting the bug back and watching it go red, then taking it out again.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

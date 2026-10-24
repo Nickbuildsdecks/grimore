@@ -36,6 +36,7 @@ import path from 'node:path';
 import {
   chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
   readNumber, expectEventually, isMyMove, makeMove as drive, notePrompts, noteMove, press,
+  watchForReactWarnings,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -76,10 +77,12 @@ async function main() {
   const friend = await friendCtx.newPage();
 
   const pageErrors = [];
+  const reactWarnings = [];
   const badRequests = [];
   const EXPECTED_FAILURES = [/\/api\//, /\/logo\.svg/];
   for (const [who, page] of [['Nick', nick], ['Friend', friend]]) {
     page.on('pageerror', (err) => pageErrors.push(`${who}: ${err.message}`));
+    watchForReactWarnings(page, who, reactWarnings);
     page.on('response', (res) => {
       if (res.status() < 400) return;
       if (EXPECTED_FAILURES.some((re) => re.test(res.url()))) return;
@@ -199,6 +202,7 @@ async function main() {
       const watcherCtx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
       const watcher = await watcherCtx.newPage();
       watcher.on('pageerror', (err) => pageErrors.push(`Watcher: ${err.message}`));
+      watchForReactWarnings(watcher, 'Watcher', reactWarnings);
       await watcher.goto(BASE);
       await waitFor(watcher, 'lobby');
       await tid(watcher, 'join-code').fill(code);
@@ -554,6 +558,7 @@ async function main() {
     check('the engine never refused anything the table offered', refusals.length === 0, refusals.join(' | '));
 
     check('no uncaught errors in either browser', pageErrors.length === 0, pageErrors.join(' | '));
+    check('no React warnings in either browser', reactWarnings.length === 0, reactWarnings.join(' | '));
     check('no failed requests other than the API this table does not need', badRequests.length === 0, badRequests.join(' | '));
   } catch (err) {
     check('the run completed without throwing', false, err.message);

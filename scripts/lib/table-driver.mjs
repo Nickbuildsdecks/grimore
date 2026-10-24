@@ -75,6 +75,36 @@ export async function shot(page, name) {
   return file;
 }
 
+/**
+ * React's own complaints, which are not uncaught errors and so slipped past every suite.
+ *
+ * `pageerror` only fires for an exception nobody caught. A render loop is not that: React logs
+ * "Maximum update depth exceeded" to the console and carries on, so a table that spent its whole
+ * combat step re-rendering instead of answering taps passed "no uncaught errors" every time. It
+ * was found by reading the dev server's log by hand — 7,555 of them in one run of the suites —
+ * which is not a thing to rely on twice.
+ *
+ * Push into `sink`; assert it is empty at the end of the run.
+ */
+const REACT_COMPLAINTS = [
+  /Maximum update depth exceeded/,
+  /Cannot update a component/,
+  /change in the order of Hooks/,
+  /unique "key" prop/,
+  /^Warning:/,
+];
+
+export function watchForReactWarnings(page, who, sink) {
+  page.on('console', (message) => {
+    if (message.type() !== 'error' && message.type() !== 'warning') return;
+    const body = message.text();
+    if (!REACT_COMPLAINTS.some((re) => re.test(body))) return;
+    const line = who === '' ? body : `${who}: ${body}`;
+    // One line per distinct complaint: a render loop produces thousands of identical ones.
+    if (!sink.includes(line)) sink.push(line);
+  });
+}
+
 export async function waitFor(page, testId, timeout = 15000) {
   try {
     await page.waitForSelector(`[data-testid="${testId}"]`, { timeout, state: 'visible' });

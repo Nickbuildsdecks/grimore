@@ -245,12 +245,22 @@ Four browser suites, one per way of playing. All need the stack running and Play
 (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
 
 ```bash
-node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 47 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 35 checks
-node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 33 checks
-node scripts/e2e-solo.mjs       # one browser, against the computer    — 13 checks
-SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 16 checks
+node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 54 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 42 checks
+node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 38 checks
+node scripts/e2e-solo.mjs       # one browser, against the computer    — 16 checks
+SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 19 checks
 ```
+
+Run them one at a time. They are real browsers playing real games, and three of them at once on one
+machine starves the others — a suite that times out under that load looks exactly like a suite that
+found something.
+
+Every suite also watches the browser console for React's own complaints and fails on them, which is
+not the same check as "no uncaught errors": `pageerror` only fires for an exception nobody caught,
+and a render loop is something React logs before carrying on. One was found the hard way — 7,555
+copies of "Maximum update depth exceeded" in the dev server's log, and a pod that stopped answering
+taps during combat because the page was re-rendering instead (see `claude/decisions-log.md`, D73).
 
 The tabletop suite plays a complete game through the real UI — lobby, decks, opening hands, card
 movement across every zone, tokens, auras, searching, turns, chat, a winner — and checks that

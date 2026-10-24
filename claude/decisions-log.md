@@ -2398,3 +2398,77 @@ What would actually move it, stated so the next person does not re-run these fou
 
 The second is the cheaper bet and the first is the honest one. Either way, the next bot change
 should start from the diagnostic, as D69 did, and not from a story about what the bot is doing.
+
+## D71 — A card a test names is pinned to its deck
+
+`testkit.ts` builds a board by pulling named cards out of a real 60-card deck, which is what makes a
+test's setup reachable only through actions a player could take. The cost of that is invisible until
+you need a deck slot: cutting a card to make room for a new one silently breaks every test that
+names it, and the failure arrives as *"seat 0 has no Shock in library"* three increments later.
+
+Eleven new cards displaced the second Shock, Tome Scour and both Secure the Wastes. All three are
+back, paid for out of cards no test places twice, and each now carries the reason in the deck list:
+
+| restored | paid for by | why that card could go |
+| --- | --- | --- |
+| Shock ×2 (Ember Rush) | Shivan Dragon 2 → 1 | a deck whose curve tops at four wants one six-drop, not two |
+| Tome Scour ×1 (Tidal Mind) | Tormod's Crypt 2 → 1 | a second copy answers nothing the first had not |
+| Secure the Wastes ×2 (Verdant Guard) | Rampant Growth 3 → 2, Selesnya Charm 2 → 1 | four other mana sources on one and two; removal-saturated already |
+
+**The rule, stated so it is not rediscovered:** a deck list is test fixture as well as game content.
+Before cutting a slot, grep the suites for the card's name — and if it stays, say in the list that it
+is pinned, which is now done for Doomed Traveler, Grizzly Bears and the three above.
+
+## D72 — Two tests that were passing on luck, and how to tell
+
+Reshuffling those decks turned two playout tests red without touching a line of engine code. Both
+were measurement faults, and they fail in opposite directions worth being able to tell apart.
+
+**The instrument that looked at the wrong moment.** *"fires death triggers in real games"* searched
+`stackObjects` for the trigger's description after each bot action. With auto-pass on, a trigger
+nobody can respond to is put on the stack and resolved *inside the same action* — the stack is empty
+again by the next line. Measured over sixteen games: **six Doomed Travellers died, six Spirits
+arrived, the stack was caught holding the trigger once.** The test had a 1-in-7 chance of seeing what
+it claimed to assert, and eight seeds' worth of luck ran out when the shuffle changed. Rewritten to
+count the consequence — every Traveller that died left a Spirit behind, whatever killed it — which
+is both robust and a stronger claim. `playout.test.ts`'s own `stepWatching` already carried this
+warning in a comment; the fix is to read your own notes.
+
+**The timeout that looked like nondeterminism.** *"casts modal spells"* failed, passed and failed
+again on three consecutive runs of byte-identical code. That is the signature of a nondeterministic
+engine, and the engine has no clock and no RNG outside the seeded one in its own state — so it was
+measured before it was theorised: the same twelve games produce the same seventeen modal casts and
+the same six mode combinations, identical across processes and within one process twice over. The
+test was 4.5s of work against vitest's 5s default, and failed whenever another package's suite ran
+beside it under turbo. Four tests in the file had been given `}, 60_000)` by hand as they were
+written; the package now sets `testTimeout` once in `vitest.config.ts`, which fixes the class rather
+than the four.
+
+**What to check first, next time a test flakes with no code change:** whether the assertion samples
+a moment that may not exist (then fix the instrument), and what the test's wall time is against its
+timeout (then fix the limit). Neither needs a theory about the engine.
+
+## D73 — React's complaints are not uncaught errors
+
+One run of the browser suites left **7,555** copies of *"Maximum update depth exceeded"* in the dev
+server's log, and every suite passed. `page.on('pageerror')` fires for an exception nobody caught; a
+render loop is not that — React logs it and carries on.
+
+The loop was `CombatArrows`: `attackSummary(view)` returns a fresh array each render, a `useCallback`
+depended on it by identity, an effect depended on the callback, and the effect set state. It ran only
+while something was attacking, because the no-combat path already returned the existing state
+unchanged — so the table re-rendered as fast as React allowed for the whole of combat, and a
+four-player pod stopped answering taps at declare-blockers. **That stall is how it was found: not by
+a test, but by a browser suite giving up with nothing on screen to press, and then by reading the
+server log by hand.**
+
+Fixed by depending on the combat by value (a string over attackers, defenders and blockers), keeping
+the measurement in a ref so the callback is stable, and returning the existing arrows when a new
+measurement is identical — which also makes a scroll or resize that moved nothing free.
+
+**The lasting part is the check, not the fix.** All five browser suites now watch the console for
+React's own complaints — the update-depth loop, "Cannot update a component", hook-order changes,
+missing keys, and anything prefixed `Warning:` — and fail on the first distinct one. It was verified
+the only way a check can be: the bug was put back, the suite went red naming it, and the fix was
+restored. A check that has never been seen to fail is not evidence of anything.
+

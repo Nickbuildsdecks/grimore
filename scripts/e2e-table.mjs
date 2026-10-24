@@ -24,6 +24,7 @@
 import { createRequire } from 'node:module';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { watchForReactWarnings } from './lib/table-driver.mjs';
 
 /**
  * Playwright is not a dependency of this repository — it is a test tool, and it ships a browser.
@@ -134,10 +135,12 @@ async function main() {
   // /logo.svg at the server root while Vite serves it under /react/. Anything else failing — the
   // page bundle, the socket — is a real problem and is reported as one.
   const pageErrors = [];
+  const reactWarnings = [];
   const badRequests = [];
   const EXPECTED_FAILURES = [/\/api\//, /\/logo\.svg/];
   for (const [who, page] of [['Nick', nick], ['Friend', friend]]) {
     page.on('pageerror', (err) => pageErrors.push(`${who}: ${err.message}`));
+    watchForReactWarnings(page, who, reactWarnings);
     page.on('response', (res) => {
       if (res.status() < 400) return;
       if (EXPECTED_FAILURES.some((re) => re.test(res.url()))) return;
@@ -456,6 +459,7 @@ async function main() {
     await phone.close();
 
     check('no uncaught exceptions during the game', pageErrors.length === 0, pageErrors.slice(0, 4).join(' | '));
+    check('no React warnings during the game', reactWarnings.length === 0, reactWarnings.slice(0, 4).join(' | '));
     check('nothing the table depends on failed to load', badRequests.length === 0, badRequests.slice(0, 4).join(' | '));
   } finally {
     await browser.close();

@@ -49,10 +49,42 @@ const edgeOf = (el: Element, host: DOMRect, fromY: number): { x: number; y: numb
   return { x: box.left + box.width / 2 - host.left, y: fromY > centre ? bottom : top }
 }
 
+/** Whether two measurements are the same picture, to the pixel. */
+const same = (a: readonly Arrow[], b: readonly Arrow[]): boolean =>
+  a.length === b.length
+  && a.every((arrow, i) => {
+    const other = b[i]!
+    return arrow.key === other.key && arrow.kind === other.kind
+      && arrow.x1 === other.x1 && arrow.y1 === other.y1
+      && arrow.x2 === other.x2 && arrow.y2 === other.y2
+  })
+
 export function CombatArrows({ view }: { view: GameView }) {
   const host = useRef<HTMLDivElement | null>(null)
   const [arrows, setArrows] = useState<readonly Arrow[]>([])
   const attacks = attackSummary(view)
+  /*
+    Two guards against re-measuring forever, both of which this component needed.
+
+    `attackSummary` builds a fresh array on every render, so anything that depended on it by
+    identity — a `useCallback`, and then the effect that depends on the callback — was new on every
+    render too. The effect measured, `setArrows` got a new array, that re-rendered, and round it
+    went: React's "Maximum update depth exceeded" thousands of times per game, but *only while
+    something was attacking*, because the no-combat path already returned the existing state
+    unchanged. A four-player pod spent the rest of its combat step re-rendering instead of
+    answering taps, which is how it was found: the pod browser suite stalled at declare-blockers
+    with nothing on screen to press.
+
+    So the combat is depended on by value — a string that changes when the attacks or the blocks do
+    — and the measurement is kept in a ref so the callback can be stable. And `setArrows` returns
+    the state it was given when the new measurement is identical, which is also what makes a scroll
+    or a resize that moved nothing cost nothing.
+  */
+  const combatKey = attacks
+    .map((a) => `${a.attacker}>${a.defender}/${a.planeswalker ?? ""}:${[...a.blockers].join("+")}`)
+    .join(";")
+  const latest = useRef(attacks)
+  latest.current = attacks
 
   /**
    * Re-measures every arrow.
@@ -64,6 +96,7 @@ export function CombatArrows({ view }: { view: GameView }) {
   const measure = useCallback(() => {
     const node = host.current
     if (node === null) return
+    const attacks = latest.current
     if (attacks.length === 0) {
       setArrows((current) => (current.length === 0 ? current : []))
       return
@@ -95,8 +128,8 @@ export function CombatArrows({ view }: { view: GameView }) {
         })
       }
     }
-    setArrows(found)
-  }, [attacks])
+    setArrows((current) => (same(current, found) ? current : found))
+  }, [])
 
   useEffect(() => {
     measure()
@@ -113,7 +146,7 @@ export function CombatArrows({ view }: { view: GameView }) {
       window.removeEventListener("scroll", onMove, true)
       observer?.disconnect()
     }
-  }, [measure])
+  }, [measure, combatKey])
 
   return (
     <div
