@@ -165,6 +165,11 @@ Each two-colour deck runs a pair of Guildgates: one mana of either colour, and t
 and four of the six also run a pair of cycling lands. Any pairing works, including a deck against
 itself. They are also the only decks right now — see *What is not done* below.
 
+The decks share a pool of just over a hundred scripted cards, which now includes a wrath, a
+tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
+for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
+declarative lines rather than new rules.
+
 Cards are drawn as text, not pictures. That is deliberate: there is no card artwork available (the
 card table on the server has never been populated, and this environment cannot reach Scryfall), so
 every card face is fully legible from its name, cost, type line, oracle text and power/toughness. If

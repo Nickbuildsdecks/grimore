@@ -935,6 +935,85 @@ const BALAN: CardDef = {
 
 // ── The decks ────────────────────────────────────────────────────────────────────────────────────
 
+// ── Eight that needed nothing new ────────────────────────────────────────────────────────────────
+
+const DAY_OF_JUDGMENT: CardDef = {
+  name: 'Day of Judgment',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{W}{W}',
+  cmc: 4,
+  oracleText: 'Destroy all creatures.',
+  colors: ['W'],
+};
+
+const ESSENCE_SCATTER: CardDef = {
+  name: 'Essence Scatter',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  oracleText: 'Counter target creature spell.',
+  colors: ['U'],
+};
+
+const UNSUMMON: CardDef = {
+  name: 'Unsummon',
+  typeLine: 'Instant',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: "Return target creature to its owner's hand.",
+  colors: ['U'],
+};
+
+const ICY_MANIPULATOR: CardDef = {
+  name: 'Icy Manipulator',
+  typeLine: 'Artifact',
+  manaCost: '{4}',
+  cmc: 4,
+  oracleText: '{1}, {T}: Tap target artifact, creature, or land.',
+  colors: [],
+};
+
+const TORMODS_CRYPT: CardDef = {
+  name: "Tormod's Crypt",
+  typeLine: 'Artifact',
+  manaCost: '{0}',
+  cmc: 0,
+  oracleText: "{T}, Sacrifice Tormod's Crypt: Exile target player's graveyard.",
+  colors: [],
+};
+
+const AMBUSH_VIPER: CardDef = {
+  name: 'Ambush Viper',
+  typeLine: 'Creature \u2014 Snake',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'Flash\nDeathtouch',
+  colors: ['G'],
+};
+
+const ELVISH_VISIONARY: CardDef = {
+  name: 'Elvish Visionary',
+  typeLine: 'Creature \u2014 Elf Shaman',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'When Elvish Visionary enters the battlefield, draw a card.',
+  colors: ['G'],
+};
+
+const READ_THE_BONES: CardDef = {
+  name: 'Read the Bones',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  oracleText: 'Scry 2, then draw two cards. You lose 2 life.',
+  colors: ['B'],
+};
+
+
 // ── Mana that is not a land ──────────────────────────────────────────────────────────────────────
 
 const SOL_RING: CardDef = {
@@ -1149,8 +1228,11 @@ export const VERDANT_GUARD: DeckSpec = {
     // their fixture has to be *in* a deck to be reachable. Cutting it breaks them all at once.
     { card: GRIZZLY_BEARS, count: 1 },
     { card: GLORIOUS_ANTHEM, count: 2 },
-    { card: CENTAUR_COURSER, count: 2 },
-    { card: AJANIS_PRIDEMATE, count: 2 },
+    { card: CENTAUR_COURSER, count: 1 },
+    { card: AJANIS_PRIDEMATE, count: 1 },
+    // A blocker that arrives after the attack is declared, and a body that replaces itself.
+    { card: AMBUSH_VIPER, count: 1 },
+    { card: ELVISH_VISIONARY, count: 1 },
     { card: SERRA_ANGEL, count: 2 },
     // Removal that gives the creature back if you kill the thing holding it, which is the deck's
     // answer to a creature it cannot block rather than a second Pacifism.
@@ -1163,7 +1245,9 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: PACIFISM, count: 2 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
     { card: HARMONIZE, count: 1 },
-    { card: OVERRUN, count: 2 },
+    { card: OVERRUN, count: 1 },
+    // The deck's answer to a board it is behind on, which nothing in the pool could do before.
+    { card: DAY_OF_JUDGMENT, count: 1 },
   ],
 };
 
@@ -1177,20 +1261,27 @@ export const TIDAL_MIND: DeckSpec = {
     { card: SWAMP, count: 10 },
     { card: DIMIR_GUILDGATE, count: 2 },
     { card: LONELY_SANDBAR, count: 2 },
-    { card: COUNTERSPELL, count: 3 },
-    { card: NEGATE, count: 2 },
+    { card: COUNTERSPELL, count: 2 },
+    { card: NEGATE, count: 1 },
+    // The narrow counter, which answers the half of the format the Negates cannot.
+    { card: ESSENCE_SCATTER, count: 2 },
     { card: DOOM_BLADE, count: 2 },
+    // Not removal but time — and the only card here that answers something already resolved
+    // without killing it.
+    { card: UNSUMMON, count: 2 },
+    { card: ICY_MANIPULATOR, count: 1 },
+    { card: TORMODS_CRYPT, count: 2 },
     { card: PREORDAIN, count: 2 },
     { card: JACE_BELEREN, count: 1 },
     { card: OMENSPEAKER, count: 2 },
     { card: PHYREXIAN_ARENA, count: 2 },
     { card: DIVINATION, count: 1 },
-    { card: MIND_SPRING, count: 2 },
-    { card: EXSANGUINATE, count: 2 },
-    { card: SIGN_IN_BLOOD, count: 2 },
+    { card: MIND_SPRING, count: 1 },
+    { card: EXSANGUINATE, count: 1 },
+    { card: SIGN_IN_BLOOD, count: 1 },
     { card: TOME_SCOUR, count: 1 },
-    { card: MIND_ROT, count: 2 },
-    { card: DIABOLIC_TUTOR, count: 2 },
+    { card: MIND_ROT, count: 1 },
+    { card: DIABOLIC_TUTOR, count: 1 },
     { card: SOUL_MANIPULATION, count: 2 },
     { card: RAVENOUS_RATS, count: 2 },
     { card: CHILD_OF_NIGHT, count: 1 },
@@ -1325,7 +1416,9 @@ export const ASHEN_RITE: DeckSpec = {
     { card: BURST_LIGHTNING, count: 2 },
     { card: BREATH_OF_DARIGAAZ, count: 1 },
     { card: LIGHTNING_BOLT, count: 2 },
-    { card: FAITHLESS_LOOTING, count: 2 },
+    { card: FAITHLESS_LOOTING, count: 1 },
+    // Card advantage paid for in life, which is this deck's whole idea said twice.
+    { card: READ_THE_BONES, count: 1 },
   ],
 };
 

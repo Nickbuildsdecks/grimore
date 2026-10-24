@@ -18,7 +18,8 @@
  * unscripted and resolved by hand rather than approximated.
  */
 import { characteristicsOf, hasSubtype, hasType, parseTypeLine } from './characteristics.js';
-import type { CardDef } from './cards.js';
+import { zoneKey, type CardDef } from './cards.js';
+import { listAt } from './cardActions.js';
 import {
   addCounters, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
@@ -1339,6 +1340,137 @@ function goblinCount(state: GameState, seat: SeatIndex): number {
   return n;
 }
 
+// ── Eight that needed nothing new ────────────────────────────────────────────────────────────────
+
+/**
+ * Day of Judgment: the first card in the pool that answers a board rather than a creature.
+ *
+ * Every deck here could kill one thing and nothing could kill six, which made a board that got
+ * ahead unanswerable — and a wrath is also the sharpest test of the bot's search there is, since
+ * casting it is right when it is behind and catastrophic when it is ahead, and the search has to
+ * see which by playing it out.
+ */
+const DAY_OF_JUDGMENT: CardScript = {
+  name: 'Day of Judgment',
+  onResolve: (c) => {
+    let state = c.state;
+    for (const id of battlefield(state, (cardId) => {
+      const inst = state.instances[cardId];
+      return inst !== undefined && characteristicsOf(state, inst).isCreature;
+    })) {
+      state = destroy(state, id);
+    }
+    return state;
+  },
+};
+
+/** Essence Scatter: a Counterspell that only answers creatures, and costs one less for it. */
+const ESSENCE_SCATTER: CardScript = {
+  name: 'Essence Scatter',
+  targets: [{
+    kind: 'spell',
+    description: 'target creature spell',
+    filter: (state, candidate) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      return inst !== undefined && characteristicsOf(state, inst).isCreature;
+    },
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : counterSpell(c.state, id);
+  },
+};
+
+/** Unsummon: not removal, time — the creature comes back, and so does the mana it cost. */
+const UNSUMMON: CardScript = {
+  name: 'Unsummon',
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : bounceToHand(c.state, id);
+  },
+};
+
+/**
+ * Icy Manipulator: the first card to point at any permanent and do something other than exile it.
+ *
+ * A tapper is removal that gives the thing back every turn, and it reads a different part of the
+ * engine from everything else here: `tapped` is a fact about a permanent that the attack rules,
+ * the block rules and `manaSources` all already respect, so one line of effect turns off a
+ * creature, a land or an Equipment without any of them being told about it.
+ */
+const ICY_MANIPULATOR: CardScript = {
+  name: 'Icy Manipulator',
+  abilities: [{
+    cost: { mana: '{1}', tap: true },
+    description: '{1}, {T}: Tap target artifact, creature, or land.',
+    targets: [{
+      kind: 'permanent',
+      description: 'target artifact, creature, or land',
+      filter: (state, candidate, _controller, source) => {
+        if (candidate.kind !== 'card') return false;
+        if (candidate.id === source) return false;
+        const inst = state.instances[candidate.id];
+        if (inst === undefined || inst.tapped) return false;
+        const ch = characteristicsOf(state, inst);
+        return ch.isCreature || ch.isLand || hasType(ch.typeLine, 'artifact');
+      },
+    }],
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      return id === null ? c.state : tap(c.state, id);
+    },
+  }],
+};
+
+/**
+ * Tormod's Crypt: the first card to touch a whole zone.
+ *
+ * Every graveyard card in the pool reads one card out of one graveyard; this reads all of them, and
+ * it is the only answer any deck has to a Gravedigger loop. Free, because the card costs nothing
+ * and its whole price is the slot.
+ */
+const TORMODS_CRYPT: CardScript = {
+  name: "Tormod's Crypt",
+  abilities: [{
+    cost: { tap: true, sacrificeSelf: true },
+    description: "{T}, Sacrifice Tormod's Crypt: Exile target player's graveyard.",
+    targets: [TARGET_PLAYER],
+    effect: (c) => {
+      const seat = firstPlayerTarget(c);
+      if (seat === null) return c.state;
+      let state = c.state;
+      // A copy of the list first: exiling walks the same zone this is iterating.
+      for (const id of [...listAt(state, zoneKey(seat, 'graveyard'))]) state = exileCard(state, id);
+      return state;
+    },
+  }],
+};
+
+/** Ambush Viper: a blocker that arrives after the attack is declared, and kills whatever it blocks. */
+const AMBUSH_VIPER: CardScript = {
+  name: 'Ambush Viper',
+  keywords: ['flash', 'deathtouch'],
+};
+
+/** Elvish Visionary: a body that replaces itself, which is the cheapest card advantage there is. */
+const ELVISH_VISIONARY: CardScript = {
+  name: 'Elvish Visionary',
+  triggers: [{
+    on: { kind: 'etb' },
+    description: 'draw a card',
+    effect: (c) => draw(c.state, c.controller, 1),
+  }],
+};
+
+/** Read the Bones: two cards and a look at two more, paid for in life. */
+const READ_THE_BONES: CardScript = {
+  name: 'Read the Bones',
+  decisions: [scry(2)],
+  onResolve: (c) => loseLife(draw(c.state, c.controller, 2), c.controller, 2),
+};
+
 // ── Mana that is not a land ──────────────────────────────────────────────────────────────────────
 
 /**
@@ -1620,6 +1752,8 @@ const ALL: readonly CardScript[] = [
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
+  DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
+  AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
   guildgate('Rakdos Guildgate', 'B', 'R'),
 ];
 

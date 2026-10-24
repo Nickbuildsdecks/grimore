@@ -1940,3 +1940,33 @@ the seat that went first goes first again, because there is nothing to take turn
 
 The two buttons now say what they do: **Play again** is the one a player wants, and **New game** is
 beside it in a quieter style for when the decks are changing.
+
+## D60 — Eight cards that needed nothing, and a draw nobody had seen
+
+The pool is a hundred cards and `effects.ts` covers far more than that, so this round is breadth:
+eight cards that each fill a gap the decks actually felt, and not one of them needed a new engine
+feature.
+
+The three worth naming:
+
+**Day of Judgment**, because no deck could answer a board it was behind on — every piece of removal
+in the pool killed one thing. A wrath is also the sharpest test of the search: casting it is right
+when behind and catastrophic when ahead, and the only way to tell is to play it out. Measured over
+40 games it was castable on 24 moves and cast 5 times, three of those from behind on board. The
+other two are the standing cost of the bot having no "do nothing" option (D53) — when a wrath is
+the only play it has, it casts it. That is written down rather than hidden, because it is the
+cheapest honest description of a bot that always acts.
+
+**Icy Manipulator**, the first card to point at any permanent and do something other than exile it.
+A tapper is removal that gives the thing back every turn, and it works without telling anybody:
+`tapped` is a fact about a permanent that the attack rules, the block rules and `manaSources` all
+already respect, so one line of effect turns off a creature, a land or an Equipment.
+
+**Tormod's Crypt**, the first card to touch a whole zone rather than a card in one — and the only
+answer any deck has to a Gravedigger loop.
+
+**And a draw is a legal ending the arena suite had never seen.** Two players died in the same
+event — mutual combat damage on empty life totals — and the engine ended the game with no winner,
+which is correct (CR 104.4b). The suite failed, because it asserted that somebody wins. It now
+asserts that the table says what happened and that both screens say the same thing, which is what
+the test was always about.

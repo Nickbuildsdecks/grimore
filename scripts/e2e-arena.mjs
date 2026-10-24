@@ -440,10 +440,23 @@ async function main() {
         + 'on a fixed board)');
     }
     if (finished) {
+      /*
+        A result, and the same one on both screens.
+
+        "Somebody wins" is the usual ending and not the only legal one: two players can die in the
+        same event — mutual combat damage, a sweeper that kills the board on an empty life total —
+        and the engine ends that game with no winner, which is the rule (CR 104.4b). A suite that
+        demanded a winner failed on a game that had ended perfectly correctly in a draw, so what
+        is checked is that the table *says* what happened and that both players are told the same
+        thing.
+      */
       const over = await text(nick, 'game-over');
-      check('and both players are told who won', /wins/.test(over), over.slice(0, 80));
-      await expectEventually(friend, 'the loser sees the same result', async () =>
-        /wins/.test(await text(friend, 'game-over')));
+      const result = /wins|game is over/i;
+      check('and both players are told the result', result.test(over), over.slice(0, 80));
+      await expectEventually(friend, 'the other player sees the same result', async () => {
+        const theirs = await text(friend, 'game-over');
+        return result.test(theirs) && theirs.startsWith(over.slice(0, 20));
+      });
       await shot(nick, 'game-over');
     }
 

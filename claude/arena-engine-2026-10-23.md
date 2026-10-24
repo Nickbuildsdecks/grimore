@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**452 tests in the rules engine, 114 in the web app, 1,062 across the workspace.**
+**461 tests in the rules engine, 114 in the web app, 1,071 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -851,6 +851,24 @@ resolves fails the rematch exactly as it fails the manual version, and the log r
 somebody had done it themselves. Two rules of its own: **any seated player may ask** (a rematch
 after a finished game is nobody's privilege, unlike a reset mid-game, which stays the host's), and
 **only once the game is over**.
+
+**Eight more cards, and the first sweeper.** Day of Judgment (no deck could answer a board it was
+behind on), Icy Manipulator (the first card to point at *any* permanent and do something other than
+exile it — a tapper is removal that gives the thing back every turn, and `tapped` is a fact the
+attack rules, the block rules and `manaSources` all already respect), Tormod's Crypt (the first card
+to touch a whole zone, and the only answer any deck has to a Gravedigger loop), Essence Scatter,
+Unsummon, Ambush Viper, Elvish Visionary and Read the Bones. Every one of them needed nothing new
+from the engine, which is the point: the vocabulary is now wider than the pool.
+
+The wrath is also the sharpest test of the search there is, since casting it is right when behind
+and catastrophic when ahead. Measured over 40 games: castable on 24 moves, cast 5 times, **three of
+those from behind on board** and two because it was the only play available — which is the standing
+cost of the bot having no "do nothing" option (D53), stated here rather than hidden.
+
+**A draw is a legal ending, and the arena suite had never seen one.** Two players died in the same
+event and the game ended with no winner, which is the rule (CR 104.4b) — and the suite failed,
+because it asserted somebody wins. It now checks that the table *says* what happened and that both
+screens say the same thing.
 
 ## Next
 

@@ -2726,6 +2726,205 @@ describe('spells with {X} in the cost, chosen as the spell is cast', () => {
   });
 });
 
+describe('eight that needed nothing new', () => {
+  it('Day of Judgment destroys every creature, including its own', () => {
+    let s = arena({
+      decks: { 1: 'verdant-guard' }, hands: { 1: ['Day of Judgment'] },
+      battlefield: {
+        1: ['Plains', 'Plains', 'Plains', 'Plains', 'Grizzly Bears'],
+        0: ['Shivan Dragon', 'Raging Goblin'],
+      },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      if (nameOf(s, id) !== 'Plains') continue;
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    s = drain(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Day of Judgment') }));
+    // Both sides, which is the card: a wrath is not removal, it is a reset.
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Raging Goblin', 'Shivan Dragon']);
+    expect(namesIn(s, 1, 'graveyard')).toEqual(['Day of Judgment', 'Grizzly Bears']);
+    // The lands are still there: "all creatures" is all creatures.
+    expect(countOf(s, 1, 'battlefield', 'Plains')).toBe(4);
+  });
+
+  it('Essence Scatter answers a creature spell and nothing else', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' }, hands: { 0: ['Shivan Dragon', 'Lightning Bolt'], 1: ['Essence Scatter'] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'],
+        1: ['Island', 'Island'],
+      },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const dragon = find(s, 0, 'hand', 'Shivan Dragon');
+    s = apply(s, { type: 'auto:cast', by: 0, card: dragon });
+    // The caster holds priority until they pass, which is how holding a spell works; the
+    // responder's window opens after that.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    // The dragon is on the stack, and the counter may be pointed at it.
+    const play = legalActions(s, 1).plays.find((p) => p.name === 'Essence Scatter');
+    expect(play?.candidates[0]?.some((t) => t.kind === 'card' && t.id === dragon)).toBe(true);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Essence Scatter'),
+      targets: [{ kind: 'card', id: dragon }],
+    }));
+    expect(countOf(s, 0, 'graveyard', 'Shivan Dragon')).toBe(1);
+    expect(countOf(s, 0, 'battlefield', 'Shivan Dragon')).toBe(0);
+  });
+
+  it('and will not be pointed at a Lightning Bolt', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' }, hands: { 0: ['Lightning Bolt'], 1: ['Essence Scatter'] },
+      battlefield: { 0: ['Mountain'], 1: ['Island', 'Island'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const bolt = find(s, 0, 'hand', 'Lightning Bolt');
+    s = apply(s, { type: 'auto:cast', by: 0, card: bolt, targets: [{ kind: 'player', seat: 1 }] });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    // Nothing to counter, so the spell is not offered at all (CR 601.2c) and a hand-built action
+    // is refused rather than quietly countering a Bolt.
+    expect(legalActions(s, 1).plays.filter((p) => p.name === 'Essence Scatter')).toEqual([]);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Essence Scatter'),
+      targets: [{ kind: 'card', id: bolt }],
+    })).toMatch(/creature spell/);
+  });
+
+  it('Unsummon sends a creature home, counters and all', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' }, hands: { 1: ['Unsummon'] },
+      battlefield: { 1: ['Island'], 0: ['Shivan Dragon'] },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Island'), abilityIndex: 0 });
+    const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Unsummon'),
+      targets: [{ kind: 'card', id: dragon }],
+    }));
+    // In its owner's hand, not its exiler's, and castable again — which is the difference between
+    // a bounce and removal.
+    expect(s.instances[dragon]!.zone).toBe('hand');
+    expect(s.instances[dragon]!.zoneSeat).toBe(0);
+  });
+
+  it('Icy Manipulator taps anything that is not another Icy Manipulator', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      battlefield: { 1: ['Island', 'Island', 'Icy Manipulator'], 0: ['Shivan Dragon', 'Mountain'] },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Island'), abilityIndex: 0 });
+    const icy = find(s, 1, 'battlefield', 'Icy Manipulator');
+    const play = legalActions(s, 1).plays.find((p) => p.name === 'Icy Manipulator' && p.kind === 'activate');
+    const names = (play?.candidates[0] ?? []).map((t) => (t.kind === 'card' ? nameOf(s, t.id) : 'player')).sort();
+    // A creature, a land, and not itself.
+    expect(names).toContain('Shivan Dragon');
+    expect(names).toContain('Mountain');
+    expect(names).not.toContain('Icy Manipulator');
+
+    const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 1, card: icy, abilityIndex: play!.abilityIndex!,
+      targets: [{ kind: 'card', id: dragon }],
+    }));
+    expect(s.instances[dragon]!.tapped).toBe(true);
+    // A tapped creature cannot attack, which is the whole point and is somebody else's rule.
+    expect(s.instances[icy]!.tapped).toBe(true);
+  });
+
+  it("Tormod's Crypt exiles a whole graveyard", () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      battlefield: { 1: ["Tormod's Crypt"], 0: ['Shivan Dragon', 'Raging Goblin'] },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    // Fill the opponent's graveyard the way a game would.
+    for (const name of ['Shivan Dragon', 'Raging Goblin']) {
+      s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'battlefield', name), toZone: 'graveyard' });
+    }
+    s = drain(s);
+    expect(ids(s, 0, 'graveyard').length).toBe(2);
+
+    const crypt = find(s, 1, 'battlefield', "Tormod's Crypt");
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 1, card: crypt, abilityIndex: 0,
+      targets: [{ kind: 'player', seat: 0 }],
+    }));
+    expect(ids(s, 0, 'graveyard')).toEqual([]);
+    expect(ids(s, 0, 'exile').length).toBe(2);
+    // And the Crypt ate itself paying for it.
+    expect(s.instances[crypt]!.zone).toBe('graveyard');
+  });
+
+  it('Ambush Viper can be cast on their turn, and kills what it blocks', () => {
+    let s = arena({
+      decks: { 1: 'verdant-guard' }, hands: { 1: ['Ambush Viper'] },
+      battlefield: { 1: ['Forest', 'Forest'], 0: ['Hill Giant'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: giant, defender: 1 }] });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    // Flash: castable on somebody else's turn, in the middle of their combat, which is the only
+    // reason the card is worth playing — it is a 2/1 that eats whatever is already attacking.
+    expect(legalActions(s, 1).plays.some((p) => p.name === 'Ambush Viper')).toBe(true);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Ambush Viper') }));
+    const viper = find(s, 1, 'battlefield', 'Ambush Viper');
+
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: viper, attacker: giant }] });
+    s = drain(advanceTo(s, 'combat-damage'));
+    // Deathtouch: a 2/1 kills a 3/3, and dies to it.
+    expect(countOf(s, 0, 'graveyard', 'Hill Giant')).toBe(1);
+    expect(countOf(s, 1, 'graveyard', 'Ambush Viper')).toBe(1);
+  });
+
+  it('Elvish Visionary replaces itself', () => {
+    let s = arena({
+      decks: { 1: 'verdant-guard' }, hands: { 1: ['Elvish Visionary'] },
+      battlefield: { 1: ['Forest', 'Forest'] }, turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    const before = ids(s, 1, 'hand').length;
+    s = drain(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Elvish Visionary') }));
+    // One out of the hand, one in: a 1/1 for two mana that costs no cards.
+    expect(ids(s, 1, 'hand').length).toBe(before);
+    expect(countOf(s, 1, 'battlefield', 'Elvish Visionary')).toBe(1);
+  });
+
+  it('Read the Bones looks at two, draws two, and costs two life', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite' }, hands: { 0: ['Read the Bones'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'] }, turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const before = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Read the Bones') });
+    s = passBoth(s);
+    // It stops to ask which of the two to bottom, before it draws.
+    expect(choices(s)).toHaveLength(2);
+    s = drain(decide(s, []));
+    // Two cards for the one spent, and two life.
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+    expect(life(s, 0)).toBe(18);
+  });
+});
+
 describe('mana that is not a land', () => {
   it('Sol Ring makes two off one tap, and the engine taps it for a cost it offered', () => {
     // A Mountain, a Swamp and a Sol Ring: four mana from three permanents, so a three-drop leaves
