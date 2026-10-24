@@ -247,6 +247,15 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     });
     expect(res).toMatchObject({ ok: false, error: { code: 'illegal_action' } });
     expect((await rt.store.get(state.pod.code))?.stateVersion).toBe(state.stateVersion);
+    /*
+      And the refusal says *when*, which is the only way a client can tell two things apart that
+      arrive as the same code: a play the table had already moved past, which is nobody's fault
+      and must not raise a banner, and a play the table offered at the current version, which is a
+      disagreement between the table and the engine and must. The client's own last-seen version
+      cannot settle it — a broadcast can carry the rendered view past the last ack, and then it
+      reads the wrong way round.
+    */
+    expect(res.ok === false && res.error.stateVersion).toBe(state.stateVersion);
   });
 
   it('rejects an oversized chat payload and relays a normal one', async () => {

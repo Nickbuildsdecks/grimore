@@ -2667,3 +2667,35 @@ empty board.
 not be askable from the state after it, because the state after it is wherever the engine's auto-pass
 stopped. Ask the card, or ask the board before.
 
+## D78 — Two versions are not enough to tell a stale tap from a bug
+
+The table swallows a refusal for a move the game had already moved past — "tapping Pass a fraction
+of a second before an opponent's spell starts resolving sends a pass the engine then refuses, and
+the player did nothing wrong" — and shows the ones that happen at the version the play was offered
+at, because *those* are a disagreement between what the table drew and what the engine accepts, and
+`playout.test.ts` asserts deterministically that they cannot happen.
+
+The test for "already moved past" compared two numbers the client had: `versionRef`, the newest
+version it has **acked**, against `basedOn`, the version the play was **composed** against. Neither
+is the version the server refused it at, and in a pod the two part company constantly: a broadcast
+carries the rendered view ahead of the last ack, so `versionRef < basedOn`, and the guard reads
+false for a play the table had plainly moved past.
+
+The solo pod suite caught it as an error banner reading *"attackers must be declared before anyone
+passes"* over a Pass the table was showing the player. One run in twelve.
+
+**So the refusal says when it happened.** `PodError` carries the version the mutation read, stamped
+once in `mutate` rather than at forty throw sites, and it travels on the ack as
+`PodErrorEvent.stateVersion`. Ahead of the play means the table moved; equal means the table and the
+engine genuinely disagree, and that still shows.
+
+**And the banner names the move.** "auto:pass: attackers must be declared before anyone passes" is
+the engine's vocabulary; "Pass: …" is what the player tapped. It is also what would have made this
+failure readable from the screenshot the suite had already taken, instead of a guess — the same
+lesson as D76, applied to an error message rather than to a layout.
+
+A second, unrelated flake in the same suite got the same treatment rather than a fix: a rematch
+press that times out now records Playwright's whole call log instead of its first line, because
+"Timeout 2000ms exceeded" is one line short of a diagnosis and the useful half — *element is not
+stable*, *intercepts pointer events*, *outside of the viewport* — is always underneath it.
+

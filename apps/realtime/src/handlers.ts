@@ -79,14 +79,20 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
     }
   };
 
-  const fail = (socket: RealtimeSocket, ack: Ack | undefined, code: PodErrorEvent['code'], message: string): void => {
-    const error: PodErrorEvent = { code, message: message.slice(0, 500) };
+  const fail = (
+    socket: RealtimeSocket, ack: Ack | undefined, code: PodErrorEvent['code'], message: string,
+    stateVersion?: number,
+  ): void => {
+    const error: PodErrorEvent = {
+      code, message: message.slice(0, 500),
+      ...(stateVersion === undefined ? {} : { stateVersion }),
+    };
     socket.emit('pod:error', error);
     if (typeof ack === 'function') ack({ ok: false, error });
   };
 
   const reportError = (socket: RealtimeSocket, ack: Ack | undefined, event: string, err: unknown): void => {
-    if (err instanceof PodError) return fail(socket, ack, err.code, err.message);
+    if (err instanceof PodError) return fail(socket, ack, err.code, err.message, err.stateVersion);
     if (err instanceof z.ZodError) {
       const msg = err.issues.map((i) => `${i.path.join('.') || 'payload'}: ${i.message}`).join('; ');
       return fail(socket, ack, 'bad_payload', msg);

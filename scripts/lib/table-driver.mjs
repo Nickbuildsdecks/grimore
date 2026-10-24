@@ -506,15 +506,17 @@ export async function noteMove(seen, page, did) {
       render and set state each time, which was an infinite render loop (see D73) — so the arrow
       was being redrawn continuously and was always there a moment later. Fixing the loop made the
       overlay measure once, which is correct, and turned this line into a coin flip: it passed four
-      runs and then failed one. A second of patience is what the claim actually needs.
+      runs and then failed one. Patience is what the claim actually needs: a second was not enough
+      on a machine running another suite beside this one — which is a fact about the box, not about
+      the overlay — so it waits three.
     */
-    for (let i = 0; i < 10 && seen.arrows !== true; i += 1) {
+    for (let i = 0; i < 20 && seen.arrows !== true; i += 1) {
       if ((await page.locator('[data-testid^="arrow-a-"]').count()) > 0) {
         seen.arrows = true;
         await shot(page, 'combat-arrows');
         break;
       }
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(150);
     }
   }
   if (/^chose X = \d+$/.test(did)) seen.xCast = did;

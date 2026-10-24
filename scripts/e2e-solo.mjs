@@ -191,7 +191,10 @@ async function main() {
         ? 'it landed'
         : await tid(page, 'rematch').first().click({ timeout: 2000 }).then(
           () => 'landed on the fourth try',
-          (err) => String(err.message).split('\n')[0],
+          // The whole call log, not its first line. Playwright puts the useful half underneath —
+          // "element is not stable", "intercepts pointer events", "outside of the viewport" — and
+          // a run that reported only "Timeout 2000ms exceeded" was one coin flip short of useless.
+          (err) => String(err.message).split('\n').slice(0, 14).map((line) => line.trim()).join(' | '),
         );
       const dealt = await expectEventuallyTrue(page, async () =>
         !(await has(page, 'game-over')) && (await cardsIn(page, 'zone-hand-0').count()) === 7);

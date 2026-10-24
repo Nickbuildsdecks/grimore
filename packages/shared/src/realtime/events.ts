@@ -236,6 +236,15 @@ export type PodErrorCode = z.infer<typeof PodErrorCode>;
 export const PodErrorEvent = z.object({
   code: PodErrorCode,
   message: z.string().max(500),
+  /**
+   * The pod's version when the refusal happened, for the refusals that depend on it.
+   *
+   * Without it a client cannot tell "the table moved under you" from "the table and the engine
+   * disagree". Both arrive as `illegal_action`; the first is nobody's fault and must not be shown,
+   * the second is a bug and must be. The client's own last-seen version is not enough to tell
+   * them apart — it may be behind the server's, which is exactly the case this exists for.
+   */
+  stateVersion: z.number().int().min(0).optional(),
 });
 export type PodErrorEvent = z.infer<typeof PodErrorEvent>;
 

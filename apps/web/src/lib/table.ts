@@ -64,6 +64,19 @@ interface StoredSeat {
   name: string
 }
 
+/**
+ * What to call a move in an error banner.
+ *
+ * The action types are the engine's vocabulary — `auto:cast`, `turn:untapAll` — and a player has
+ * never seen one. The last segment, spaced out, is close enough to what they tapped: "pass",
+ * "declare attackers", "play land".
+ */
+export function moveName(action: { readonly type: string }): string {
+  const tail = action.type.split(":").pop() ?? action.type
+  const spaced = tail.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
 function readStored(): StoredSeat | null {
   try {
     const raw = localStorage.getItem(STORE_KEY)
@@ -387,21 +400,30 @@ export function useTable(playerName: string): UseTable {
          * deterministically that it should never happen.
          */
         /*
-          The version the action was *composed against*, which is not always the one it was sent
-          at.
+          Three versions, and it took all three.
 
-          A play is built from the view React last rendered. By the time the player's finger lands
-          the table may have moved on — in a pod with three server seats it moves constantly — and
-          the action then goes out stamped with the *newest* version, because that is what the
-          store would accept. So `sentAt` says "current" while the play itself is a version or two
-          stale, and the guard below never fired: the player got "Firebrand Archer can only be
-          cast in your main phase with an empty stack" for tapping a button the table was showing
-          them. Caught by the solo pod suite, which taps as fast as the server plays.
+          `composedAt` is the version the play was built from — the view React last rendered. Not
+          `sentAt`: by the time a finger lands the table may have moved on, and the action goes out
+          stamped with the *newest* version because that is what the store accepts, so `sentAt`
+          says "current" for a play that is two versions stale. That was the first failure: the
+          player got "Firebrand Archer can only be cast in your main phase with an empty stack" for
+          tapping a button the table was showing them.
 
-          `basedOn` is the rendered view's version, so "the table has moved since this play was
-          offered" is a question that can actually be asked.
+          `versionRef` is the newest version this client has *acked*, and on its own it is not
+          enough either. A broadcast can carry the rendered view past the last ack — in a pod with
+          three server seats it does constantly — and then it sits *behind* `composedAt` and this
+          guard reads false for a play the table had plainly moved past. That was the second
+          failure: "attackers must be declared before anyone passes", over a Pass the table was
+          offering.
+
+          `refusedAt` is the server's own version when it said no, and it is the one that settles
+          it. Both of the others are kept because either can be ahead.
         */
-        if (res.error.code === "illegal_action" && versionRef.current > (basedOn ?? sentAt)) return
+        const refusedAt = res.error.stateVersion
+        const composedAt = basedOn ?? sentAt
+        const movedOn = versionRef.current > composedAt
+          || (refusedAt !== undefined && refusedAt > composedAt)
+        if (res.error.code === "illegal_action" && movedOn) return
         /**
          * Nor is an action that arrived after the game ended.
          *
@@ -414,7 +436,9 @@ export function useTable(playerName: string): UseTable {
          * exactly that at machine speed, every run.
          */
         if (res.error.code === "game_finished") return
-        setState((s) => ({ ...s, error: res.error.message }))
+        // Named, so a player knows which of their taps the table is complaining about — and so
+        // the next failure of this kind can be read off a screenshot instead of guessed at.
+        setState((s) => ({ ...s, error: `${moveName(action)}: ${res.error.message}` }))
       }
       // Chain onto the queue, and never let one failure break the chain for everything after it.
       const queued = queueRef.current.then(run, run)

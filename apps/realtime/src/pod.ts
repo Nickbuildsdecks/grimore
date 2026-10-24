@@ -44,6 +44,15 @@ import {
 } from '@grimore/rules-engine';
 
 export class PodError extends Error {
+  /**
+   * The pod's version when this was refused, when the store knows it.
+   *
+   * Stamped in `mutate` rather than at every throw site, because every refusal inside a mutation
+   * happens at the version that mutation read — and a client that cannot tell "the table moved
+   * under you" from "the table and the engine disagree" shows an error banner for the first.
+   */
+  public stateVersion?: number;
+
   constructor(
     public readonly code: PodErrorCode,
     message: string,
@@ -294,7 +303,16 @@ export class PodStore {
       const stored = await this.read(code);
       if (!stored) throw new PodError('not_found', `pod ${code} does not exist`);
       const before = stored.record;
-      const { record, result } = fn(structuredClone(before), stored.version);
+      let outcome: { record: PodRecord | null; result: T };
+      try {
+        outcome = fn(structuredClone(before), stored.version);
+      } catch (err) {
+        // The version this was refused at, which is the only way the client can tell a refusal it
+        // caused from one the table had already moved past.
+        if (err instanceof PodError && err.stateVersion === undefined) err.stateVersion = stored.version;
+        throw err;
+      }
+      const { record, result } = outcome;
       /*
         One step of history, taken here because this is the one place the record changes.
 
