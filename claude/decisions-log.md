@@ -2307,3 +2307,46 @@ to beat an aggressive one in this pool, the bot would have to know *which* spell
 
 The claim in `claude/play-realm-setup.md` that a person plays the control decks better than the bot
 stays, because it is still true. What changed is the reason given for it.
+
+## D69 — What the control decks actually do wrong, counted
+
+Two measurements had pointed at the same wall and neither said what to build: depth is worth nothing
+(D62), pricing untapped mana is worth nothing (D68). Both of those were fixes aimed at a story about
+what the bot was doing wrong, and D68's story turned out to be false. So this is the diagnostic that
+should have come first — sixty games of the two control decks against the three that beat them
+fastest, counting rather than guessing.
+
+**The instrument was wrong the first time, which is worth recording.** It asked what the control
+seat did at the moments it was *asked to act* with an opponent's spell on the stack, and reported
+"held a counterspell it could not afford: **1**". That reads as "the tapped-out story is false" and
+it is an artifact: the engine auto-passes for a seat that can do nothing, so a seat tapped out with
+a counterspell in hand is never asked, and the moment it is in never appears. Measured again at the
+moment the opponent's spell goes on the stack, and asking the mana solver directly rather than
+asking what the bot was offered:
+
+| | |
+| --- | --- |
+| Moments with an answer in hand as an opponent cast | **51** |
+| …could pay for it | 30 |
+| …could not | **21** |
+| Its own turns | 563 |
+| …on which it cast nothing at all | **118 (21%)** |
+| Average turn it lost on | 21.3, at −2.9 life |
+| Average turn it won on | 21.9 |
+
+**And the spells it could not answer:** Rampant Growth 6, Faithless Looting 4, Banishing Light 4,
+Banisher Priest 2, Magma Jet 2, Monastery Swiftspear 1. Mostly not threats. So being tapped out at
+the moment is real — 41% of the moments that mattered — and mostly irrelevant, because what it
+missed countering was a ramp spell. **That is the better reason D68 belonged in the bin:** pricing
+mana would have bought the right to counter a Rampant Growth.
+
+**The fault the data does name is the opposite of the assumption.** In the first instrument's 28
+moments where it could pay, it countered **28 times and declined none.** It never saves an answer.
+By this evaluation it should not: countering anything is a gain, because the spell does not resolve,
+while the counterspell itself is priced as a generic card — so spending it is nearly free and
+Counterspells go on Rampant Growths.
+
+That is a specific, testable hypothesis rather than another weight on a feeling, and it is the one
+thing a one-ply search structurally cannot see: what an answer is worth depends on what it will be
+pointed at later. The experiment is to price an answer in hand above a generic card, and it is
+measured in the next entry.
