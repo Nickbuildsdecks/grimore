@@ -14,7 +14,8 @@ import { listAt, relocate, requireInstance, withInstance } from './cardActions.j
 import { characteristicsOf, hasType } from './characteristics.js';
 import {
   advanceStep, aliveSeats, atSorcerySpeed, bottomOwed, canAttack, canBlock, checkTargets,
-  endTurnCleanup, legalAttackers, legalBlockers, menaceSatisfied, payFrom, pendingDeclaration,
+  endTurnCleanup, forcedAttackers, legalAttackers, legalBlockers, menaceSatisfied, payFrom,
+  pendingDeclaration,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop, stateBasedActions,
   stillDeciding, tapAttackers,
@@ -482,6 +483,22 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
       attackerSeq: state.instances[entry.attacker]?.objectSeq ?? 0,
       ...(entry.planeswalker === undefined ? {} : { planeswalker: entry.planeswalker }),
     });
+  }
+
+  /*
+    And whatever had to go, went (CR 508.1d).
+
+    Checked after the declaration is built rather than per creature, because that is the shape of
+    the rule: a requirement is about the list, not about the card. A creature that could not have
+    attacked — tapped, summoning-sick, Pacified — is not in `forcedAttackers` at all, and in a pod
+    with nobody left to attack neither is anything else.
+  */
+  const owed = forcedAttackers(state, action.by).filter((id) => !seen.has(id));
+  if (owed.length > 0 && state.seats.some((s) => s.index !== action.by && !s.eliminated)) {
+    throw new EngineError(
+      'RULE_NOT_APPLICABLE',
+      `${cardName(state, owed[0]!)} attacks each combat if able`,
+    );
   }
 
   let next: GameState = {

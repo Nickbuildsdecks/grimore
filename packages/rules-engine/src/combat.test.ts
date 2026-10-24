@@ -273,6 +273,86 @@ describe('evasion', () => {
     blocker, and nothing in this pool makes it matter enough to ask a second question in the middle
     of combat. Recorded in `claude/arena-engine-2026-10-23.md` with the other known gaps.
   */
+  /*
+    The first requirement in the engine, as opposed to a restriction.
+
+    Everything the rules could say before this was about one card — Pacifism, defender, summoning
+    sickness, all of them "this creature may not". "Attacks each combat if able" (CR 508.1d) is
+    checked against the *declaration*: the illegal thing is the list that leaves it at home, which
+    is why it lives in `declareAttackers` rather than in `canAttack`.
+  */
+  it('makes a creature that must attack attack (CR 508.1d)', () => {
+    let s = toAttackers(arena({
+      decks: { 0: 'forge-alliance', 1: 'skyward-writ' },
+      battlefield: { 0: ['Juggernaut', 'Leonin Skyhunter'] },
+      turn: 3, firstSeat: 0,
+    }));
+    const juggernaut = find(s, 0, 'battlefield', 'Juggernaut');
+    const knight = find(s, 0, 'battlefield', 'Leonin Skyhunter');
+    s = { ...s, effects: [juggernautStatics(juggernaut)] };
+    // Attacking with nothing, or with the other creature, leaves it at home.
+    expect(refusal(s, { type: 'auto:attack', by: 0, attackers: [] })).toContain('each combat');
+    expect(refusal(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: knight, defender: 1 }],
+    })).toContain('each combat');
+    // With it in the declaration, the rest is the player's choice as usual.
+    s = attack(s, 0, [juggernaut], 1);
+    expect(s.combat.attacks.map((a) => a.attacker)).toEqual([juggernaut]);
+  });
+
+  it('and excuses it when it is not able', () => {
+    // "If able" carries every ordinary excuse with it. Tapped is the one a player meets most.
+    let s = toAttackers(arena({
+      decks: { 0: 'forge-alliance', 1: 'skyward-writ' },
+      battlefield: { 0: ['Juggernaut'] },
+      turn: 3, firstSeat: 0,
+    }));
+    const juggernaut = find(s, 0, 'battlefield', 'Juggernaut');
+    s = {
+      ...s,
+      effects: [juggernautStatics(juggernaut)],
+      instances: { ...s.instances, [juggernaut]: { ...s.instances[juggernaut]!, tapped: true } },
+    };
+    expect(refusal(s, { type: 'auto:attack', by: 0, attackers: [] })).toBeNull();
+  });
+
+  it('and does not require an attack on a table with nobody left to attack', () => {
+    // The pod case, and the one that would otherwise deadlock a game that is already over: the
+    // last opponent is out, nothing is a legal defender, so nothing is able.
+    let s = toAttackers(arena({
+      format: 'pod', seats: 4,
+      decks: { 0: 'forge-alliance' },
+      battlefield: { 0: ['Juggernaut'] },
+      turn: 3, firstSeat: 0,
+    }));
+    const juggernaut = find(s, 0, 'battlefield', 'Juggernaut');
+    s = {
+      ...s,
+      effects: [juggernautStatics(juggernaut)],
+      seats: s.seats.map((seat) => (seat.index === 0 ? seat : { ...seat, eliminated: true })),
+    };
+    expect(refusal(s, { type: 'auto:attack', by: 0, attackers: [] })).toBeNull();
+  });
+
+  it("a Juggernaut can't be blocked by a Wall, and anything else may block it", () => {
+    let s = toAttackers(arena({
+      decks: { 0: 'forge-alliance', 1: 'skyward-writ' },
+      battlefield: { 0: ['Juggernaut'], 1: ['Wall of Air', 'Leonin Skyhunter'] },
+      turn: 3, firstSeat: 0,
+    }));
+    const juggernaut = find(s, 0, 'battlefield', 'Juggernaut');
+    s = { ...s, effects: [juggernautStatics(juggernaut)] };
+    const wall = find(s, 1, 'battlefield', 'Wall of Air');
+    const knight = find(s, 1, 'battlefield', 'Leonin Skyhunter');
+    s = attack(s, 0, [juggernaut], 1);
+    s = passBoth(s);
+    expect(refusal(s, { type: 'auto:block', by: 1, blocks: [{ blocker: wall, attacker: juggernaut }] }))
+      .toContain('Walls');
+    // Wall is a creature *type*, not an ability: the knight has no trouble at all.
+    s = block(s, 1, [{ blocker: knight, attacker: juggernaut }]);
+    expect(s.combat.attacks[0]!.blockers).toEqual([knight]);
+  });
+
   it('lets creatures gang up on one attacker, and assigns damage down the line', () => {
     let s = toAttackers(arena({
       decks: { 0: 'rot-harvest', 1: 'verdant-guard' },
@@ -557,6 +637,19 @@ const deathtouch = (id: string) => grant(id, 'deathtouch');
 const lifelink = (id: string) => grant(id, 'lifelink');
 const firstStrike = (id: string) => grant(id, 'first strike');
 const doubleStrike = (id: string) => grant(id, 'double strike');
+/**
+ * Juggernaut's two statics, installed by hand.
+ *
+ * The testkit puts a permanent on the battlefield with the tabletop's own `card:move`, which is
+ * not an *arrival* — so `applyStatics` never runs and a card whose whole behaviour is a static
+ * does nothing at all. True at a real table too, and the same thing Fog Bank's test ran into.
+ */
+const juggernautStatics = (id: string) => ({
+  id: 'fx-juggernaut', source: id, controller: 0 as SeatIndex,
+  scope: { kind: 'cards' as const, ids: [id] },
+  mustAttack: true, cantBeBlockedByWalls: true,
+  duration: 'permanent' as const, createdTurn: 0,
+});
 const pump = (id: string, power: number, toughness: number) => ({
   id: 'fx-pump', source: id, controller: 0 as SeatIndex,
   scope: { kind: 'cards' as const, ids: [id] }, power, toughness,

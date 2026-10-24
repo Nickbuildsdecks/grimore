@@ -470,6 +470,10 @@ export interface PumpOptions {
   readonly cantBlock?: boolean;
   /** See `ContinuousEffect.preventsCombatDamage`. A Fog Bank is this, printed on a 0/2. */
   readonly preventsCombatDamage?: boolean;
+  /** See `ContinuousEffect.mustAttack` — "attacks each combat if able" (CR 508.1d). */
+  readonly mustAttack?: boolean;
+  /** See `ContinuousEffect.cantBeBlockedByWalls`. */
+  readonly cantBeBlockedByWalls?: boolean;
   readonly duration?: EffectDuration;
 }
 

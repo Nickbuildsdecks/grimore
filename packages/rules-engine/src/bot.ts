@@ -18,7 +18,7 @@ import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { bottomOwed, modesOf, pendingDeclaration, stillDeciding } from './automation.js';
 import { characteristicsOf, hasType, parseTypeLine, type Keyword } from './characteristics.js';
-import { canAttack, canBlock, legalAttackers } from './combat.js';
+import { canAttack, canBlock, forcedAttackers, legalAttackers } from './combat.js';
 import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
 import { costValue, parseManaCost } from './mana.js';
@@ -829,8 +829,11 @@ function throughCombat(state: GameState): GameState {
     if (owed !== null) {
       const seat = owed.seats[0];
       if (seat === undefined) break;
+      // The heuristic's own declaration, with whatever had to attack folded in — otherwise a
+      // simulated turn with a Juggernaut on the board is refused and the playout stops short of
+      // the combat it was looking at. See `attackPlans`.
       const action: Action = owed.kind === 'attackers'
-        ? { type: 'auto:attack', by: seat, attackers: chooseAttackers(next, seat) }
+        ? { type: 'auto:attack', by: seat, attackers: withForced(next, seat, chooseAttackers(next, seat)) }
         : { type: 'auto:block', by: seat, blocks: chooseBlocks(next, seat) };
       try {
         next = applyAction(next, action, HOST);
@@ -916,7 +919,32 @@ function attackPlans(state: GameState, seat: SeatIndex): AttackPlan[] {
     }
     plans.push(heuristic.filter((entry) => entry.attacker !== biggest.attacker));
   }
-  return plans;
+  /*
+    Every plan has to be legal before it is any good.
+
+    "Attacks each combat if able" (CR 508.1d) makes *leaving a creature at home* illegal, which is
+    the one kind of rule a search over plans can break by accident: "attack with nothing" is one of
+    the four plans here, and a Juggernaut on the board makes it a declaration the engine refuses.
+    `playout.test.ts` asserts the engine never refuses what was offered, so this is not a nicety.
+
+    Added rather than filtered: dropping the plans that miss a forced attacker would throw away
+    "attack with nothing", which is the plan a player picks when the swing back would kill them —
+    so the forced creatures are folded into each plan instead, aimed at whoever is weakest.
+  */
+  return plans.map((plan) => withForced(state, seat, plan));
+}
+
+/** A declaration with everything that had to attack in it, aimed at whoever is weakest. */
+function withForced(state: GameState, seat: SeatIndex, plan: AttackPlan): AttackPlan {
+  const foes = foesOf(state, seat)
+    .map((index) => ({ index, life: state.seats[index]?.life ?? 0 }))
+    .sort((a, b) => a.life - b.life);
+  const nearest = foes[0];
+  if (nearest === undefined) return plan;
+  const already = new Set(plan.map((entry) => entry.attacker));
+  const missing = forcedAttackers(state, seat).filter((id) => !already.has(id));
+  if (missing.length === 0) return plan;
+  return [...plan, ...missing.map((attacker) => ({ attacker, defender: nearest.index }))];
 }
 
 /**

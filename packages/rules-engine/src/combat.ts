@@ -11,7 +11,9 @@
  * makes "it died because it was already damaged, then got blocked" work, and what lets a creature
  * survive combat damage if it is pumped in response.
  */
-import { characteristicsOf, combatDamagePrevented, type Characteristics } from './characteristics.js';
+import {
+  characteristicsOf, combatDamagePrevented, hasSubtype, type Characteristics,
+} from './characteristics.js';
 import { listAt } from './cardActions.js';
 import { dealDamage, gainLife } from './effects.js';
 import { zoneKey, type CardInstance } from './cards.js';
@@ -46,6 +48,32 @@ export function canAttack(state: GameState, id: string, seat: SeatIndex): Combat
 }
 
 /**
+ * The creatures this seat is *required* to attack with, and could (CR 508.1d).
+ *
+ * A requirement is not a restriction turned round: "can't attack" is checked against one creature,
+ * and "attacks each combat if able" is checked against the whole declaration — the illegal thing
+ * is leaving it at home, which is a fact about a list rather than about a card. "If able" carries
+ * all the usual excuses with it: tapped, summoning-sick, Pacified, and — the one that is easy to
+ * forget — nobody left to attack, which happens in a pod the moment the last opponent is out.
+ *
+ * Exported because three callers need the same answer: the engine refusing an illegal declaration,
+ * `legalActions` telling the table so it never offers one, and the bot building plans that are
+ * legal before they are scored.
+ */
+export function forcedAttackers(state: GameState, seat: SeatIndex): string[] {
+  const out: string[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const ch = characteristicsOf(state, inst);
+    if (!ch.isCreature || !ch.mustAttack) continue;
+    if (canAttack(state, id, seat) !== null) continue;
+    out.push(id);
+  }
+  return out;
+}
+
+/**
  * Whether `blocker` may block `attacker`.
  *
  * Evasion is checked from the attacker's keywords against the blocker's: flying can only be blocked
@@ -62,6 +90,12 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
   if (attacker === null) return { card: blockerId, reason: 'that attacker is gone' };
   if (attacker.ch.keywords.has('flying') && !blocker.ch.keywords.has('flying') && !blocker.ch.keywords.has('reach')) {
     return { card: blockerId, reason: `${blocker.ch.name} can't block a flier` };
+  }
+  // The one piece of evasion in this pool that is not a keyword, so it is read off the attacker
+  // rather than compared keyword to keyword. Wall is a creature type, not an ability: a Wall of
+  // Air stopped by this is stopped for what it *is*.
+  if (attacker.ch.cantBeBlockedByWalls && hasSubtype(blocker.ch.typeLine, 'wall')) {
+    return { card: blockerId, reason: `${attacker.ch.name} can't be blocked by Walls` };
   }
   return null;
 }

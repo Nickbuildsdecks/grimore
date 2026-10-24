@@ -2270,6 +2270,24 @@ const DARK_CONFIDANT: CardScript = {
  * six. A Fog, which covers the whole table, never produces that case — the attacker is prevented
  * too, and the question never gets as far as the blocker.
  */
+/**
+ * The creature that does not get a choice.
+ *
+ * Two statics on itself, and both are rules the engine had no vocabulary for until it arrived.
+ * "Attacks each combat if able" is a *requirement* — checked against the whole declaration rather
+ * than against one card, because the illegal thing is leaving it at home. "Can't be blocked by
+ * Walls" is evasion that reads a creature *type*: Wall is what a Wall of Air is, not something it
+ * does, so it cannot be expressed as a keyword comparison the way flying and reach are.
+ *
+ * Written as statics rather than as script flags so that everything downstream reads them the way
+ * it reads a Pacifism — one place in `characteristicsOf`, one in `canBlock` — and so an effect
+ * that grants either to somebody else has somewhere to live when one is printed.
+ */
+const JUGGERNAUT: CardScript = {
+  name: 'Juggernaut',
+  statics: [{ scope: 'self', effect: { mustAttack: true, cantBeBlockedByWalls: true } }],
+};
+
 const FOG_BANK: CardScript = {
   name: 'Fog Bank',
   statics: [{ scope: 'self', effect: { preventsCombatDamage: true } }],
@@ -2317,7 +2335,7 @@ const ALL: readonly CardScript[] = [
   cyclingLand('Tranquil Thicket', 'G'),
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
-  NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN,
+  NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT,
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,

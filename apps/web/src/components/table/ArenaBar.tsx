@@ -201,6 +201,19 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             {you.attackers.length} can attack
           </span>
           {/*
+            Why one of them is already tapped and will not untap. Named rather than counted: the
+            player is looking for the creature they cannot take back, and "1 must attack" sends
+            them hunting across the board for it.
+          */}
+          {(mode.forced ?? []).length > 0 ? (
+            <span data-testid="attack-forced" className="text-[var(--g-text-muted)]">
+              {(mode.forced ?? [])
+                .map((id) => view.cards[id]?.card?.name ?? "a creature")
+                .join(", ")}
+              {" attacks each combat if able"}
+            </span>
+          ) : null}
+          {/*
             Who you are attacking, when there is more than one answer. With two players there is
             nothing to choose and the row would be a button that does nothing; in a pod it is the
             whole decision, and without it every attack went at the lowest-numbered opponent.

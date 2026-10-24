@@ -17,7 +17,7 @@ import {
   atSorcerySpeed, bottomOwed, modeCombinations, modeTargetSpecs, modesOf, pendingDeclaration,
   sacrificeOptions, stackTop,
 } from './automation.js';
-import { legalAttackers, legalBlockers, canBlock } from './combat.js';
+import { forcedAttackers, legalAttackers, legalBlockers, canBlock } from './combat.js';
 import { poolOf } from './effects.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost,
@@ -102,6 +102,14 @@ export interface LegalActions {
   readonly plays: readonly LegalPlay[];
   /** Set during declare attackers, when this seat is the attacking player. */
   readonly attackers: readonly string[];
+  /**
+   * Of those, the ones that have no choice: "attacks each combat if able" (CR 508.1d).
+   *
+   * Read by the table so it can say so rather than letting a player build a declaration the engine
+   * then refuses — the same reason `blocked` exists for cards in hand. Empty whenever there is
+   * nobody left to attack, because then nothing is able.
+   */
+  readonly mustAttack: readonly string[];
   /** Set during declare blockers, when this seat is being attacked. */
   readonly blockers: readonly BlockOption[];
   /** How many cards still have to be discarded to hand size. */
@@ -575,7 +583,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
 
   const empty: LegalActions = {
     seat, step: state.step, hasPriority, isActivePlayer: state.activeSeat === seat,
-    canPass: false, passLabel: '', plays: [], attackers: [], blockers: [],
+    canPass: false, passLabel: '', plays: [], attackers: [], mustAttack: [], blockers: [],
     mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat), mustChoose,
     mustDecide, blocked: [], pool: poolOf(state, seat), potential,
   };
@@ -591,7 +599,14 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   // A declaration comes before priority, so it is offered to the seat that owes it even though
   // nobody holds priority while it is outstanding.
   if (mustDeclare === 'attackers') {
-    return { ...empty, passLabel: 'Declare attackers', attackers: legalAttackers(state, seat) };
+    return {
+      ...empty,
+      passLabel: 'Declare attackers',
+      attackers: legalAttackers(state, seat),
+      mustAttack: state.seats.some((s) => s.index !== seat && !s.eliminated)
+        ? forcedAttackers(state, seat)
+        : [],
+    };
   }
   if (mustDeclare === 'blockers') return { ...empty, passLabel: 'Declare blockers', blockers: blockOptions(state, seat) };
   if (!hasPriority) return empty;
@@ -609,7 +624,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   const playable = new Set(plays.map((play) => play.card));
   const blocked = casts.blocked.filter((entry) => !playable.has(entry.card));
 
-  return { ...empty, canPass: true, passLabel, plays, blocked, attackers: [], blockers: [] };
+  return { ...empty, canPass: true, passLabel, plays, blocked, attackers: [], mustAttack: [], blockers: [] };
 }
 
 /** Every creature this seat may block with, and which attackers each one may be assigned to. */

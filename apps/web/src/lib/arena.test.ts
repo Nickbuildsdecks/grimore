@@ -640,6 +640,55 @@ describe("declaring attackers", () => {
     const mode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
     expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({ type: "auto:attack", attackers: [] })
   })
+
+  it("starts a creature that attacks each combat if able already attacking", () => {
+    const mode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1, forced: ["jug"] }).mode
+    expect(mode).toEqual({
+      kind: "attackers", chosen: [{ attacker: "jug", defender: 1 }], defender: 1, forced: ["jug"],
+    })
+    // And confirming without touching anything sends it, which is the declaration the engine wants.
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack", attackers: [{ attacker: "jug", defender: 1 }],
+    })
+  })
+
+  it("will not let a forced attacker be tapped back out of the attack", () => {
+    // The engine refuses a declaration that leaves it out (CR 508.1d), so a table that accepted
+    // the tap would be offering a move that bounces back as an error nobody can act on.
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1, forced: ["jug"] }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "jug" }).mode
+    expect(mode).toMatchObject({ chosen: [{ attacker: "jug", defender: 1 }] })
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "jug" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack", attackers: [{ attacker: "jug", defender: 1 }],
+    })
+  })
+
+  it("still lets a forced attacker be re-pointed at another player", () => {
+    // Whether it attacks is not the player's choice; who it attacks still is.
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1, forced: ["jug"] }).mode
+    mode = arenaReducer(mode, { kind: "aimAttacks", seat: 3 }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "jug" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack", attackers: [{ attacker: "jug", defender: 3 }],
+    })
+    // Including onto a planeswalker, and a tap after that still cannot drop it.
+    mode = arenaReducer(mode, { kind: "aimAttacks", seat: 3, planeswalker: "pw1" }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "jug" }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "jug" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack", attackers: [{ attacker: "jug", defender: 3, planeswalker: "pw1" }],
+    })
+  })
+
+  it("leaves a creature that is merely able to attack droppable", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1, forced: ["jug"] }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack", attackers: [{ attacker: "jug", defender: 1 }],
+    })
+  })
 })
 
 describe("declaring blockers", () => {
@@ -723,7 +772,8 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
     awaiting: null,
     you: {
       seat: 0, step: "precombat-main", hasPriority: true, isActivePlayer: true, canPass: true,
-      passLabel: "Pass", plays: [], attackers: [], blockers: [], mustDiscard: 0, mustDeclare: null,
+      passLabel: "Pass", plays: [], attackers: [], mustAttack: [], blockers: [], mustDiscard: 0,
+      mustDeclare: null,
       mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null, blocked: [],
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     },
@@ -781,6 +831,17 @@ describe("primaryMove", () => {
     })
     const move = primaryMove(view({ automation: auto, seats }))
     expect(move?.event).toEqual({ kind: "declareAttackers", defender: 2 })
+  })
+
+  it("carries the creatures that must attack into the declaration", () => {
+    // `primaryMove` is the only place that has both the view and the event, so this is where the
+    // engine's answer gets handed to a reducer that has no view to read it from.
+    const auto = automation({
+      awaiting: { kind: "attackers", seats: [0] },
+      you: { ...automation()!.you!, mustDeclare: "attackers", attackers: ["jug"], mustAttack: ["jug"] },
+    })
+    const move = primaryMove(view({ automation: auto }))
+    expect(move?.event).toMatchObject({ kind: "declareAttackers", forced: ["jug"] })
   })
 })
 

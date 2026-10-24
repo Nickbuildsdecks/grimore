@@ -126,6 +126,20 @@ export interface ContinuousEffect {
   readonly cantAttack?: boolean;
   readonly cantBlock?: boolean;
   /**
+   * "Attacks each combat if able" (CR 508.1d). The opposite of `cantAttack`, and the harder of the
+   * two: a restriction is checked against one creature, a *requirement* is checked against the
+   * whole declaration — a creature that could have attacked and did not makes the declaration
+   * illegal, and "could have" has to account for being tapped, summoning-sick, Pacified, or
+   * having nobody legal to attack.
+   */
+  readonly mustAttack?: boolean;
+  /**
+   * "Can't be blocked by Walls." A restriction on the *blocker*, read from the attacker, which is
+   * the only shape of evasion in this pool that is not a keyword — so it lives here rather than
+   * in `Keyword`, and `canBlock` reads it the way `dealCombatDamage` reads `preventsCombatDamage`.
+   */
+  readonly cantBeBlockedByWalls?: boolean;
+  /**
    * Combat damage involving the permanents in scope does not happen — dealt **by** them and dealt
    * **to** them. A Fog is this with an all-creatures scope; a Maze of Ith is it scoped to one card.
    *
@@ -163,6 +177,10 @@ export interface Characteristics {
   readonly isLand: boolean;
   readonly cantAttack: boolean;
   readonly cantBlock: boolean;
+  /** "Attacks each combat if able" (CR 508.1d). Checked against the whole declaration. */
+  readonly mustAttack: boolean;
+  /** "Can't be blocked by Walls", read from the attacker when a block is offered. */
+  readonly cantBeBlockedByWalls: boolean;
 }
 
 const numeric = (value: string | undefined): number => {
@@ -204,6 +222,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   const keywords = new Set<Keyword>(printedKeywords(def?.oracleText));
   let cantAttack = false;
   let cantBlock = false;
+  let mustAttack = false;
+  let cantBeBlockedByWalls = false;
 
   for (const effect of state.effects ?? []) {
     if (!effectApplies(effect, instance, creature)) continue;
@@ -213,6 +233,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     for (const k of effect.removeKeywords ?? []) keywords.delete(k);
     if (effect.cantAttack) cantAttack = true;
     if (effect.cantBlock) cantBlock = true;
+    if (effect.mustAttack) mustAttack = true;
+    if (effect.cantBeBlockedByWalls) cantBeBlockedByWalls = true;
   }
 
   const plus = instance.counters['+1/+1'] ?? 0;
@@ -233,6 +255,10 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     isLand: hasType(typeLine, 'land'),
     cantAttack,
     cantBlock,
+    // A creature that cannot attack at all is not required to: a restriction beats a requirement
+    // (CR 509.1a is the blocking half of the same idea, and 508.1d says "if able").
+    mustAttack: mustAttack && !cantAttack,
+    cantBeBlockedByWalls,
   };
 }
 

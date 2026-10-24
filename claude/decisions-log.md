@@ -3068,3 +3068,60 @@ attacking player the damage assignment order; this engine uses the order the blo
 in, which is the defending player's.** It matters only when the attacker would choose to kill a
 different blocker, and nothing in this pool makes it matter enough to ask a second question in the
 middle of combat. It is in the known-gaps list now instead of being quietly asserted as correct.
+
+## D89 — The creature with no choice, and the table that must not offer one
+
+"Attacks each combat if able" (CR 508.1d) is the first rule in this engine that takes a decision
+*away* from a player, and that makes it the first one where the table's job is not to offer a move.
+Every rule before it answered "may I?", and `legalActions` answered by listing what was allowed.
+This one answers "must I?", and a list of what is allowed cannot say it.
+
+The engine half is small: a `mustAttack` continuous effect, `forcedAttackers(state, seat)` reading
+it off the board, and a refusal in `declareAttackers` when a declaration leaves one out. The refusal
+is deliberately not silent correction — the engine does not quietly add the Juggernaut to the
+attack. A declaration is a player's statement about their own combat, and an engine that edits it
+is an engine the player cannot predict. So it is refused, with the card's own words as the reason.
+
+Which puts the weight on the table, because **"the table never offers a move the engine refuses"**
+is a project principle and a refusal nobody can act on is worse than no rule at all. The player
+would press confirm, get an error naming a card, and have no way to find out what to do about it.
+So the declaration now *starts* with the forced attackers in it, a second tap on one does nothing,
+and the bar names the card and says why rather than counting it. Re-pointing it at another player
+still works, which is the line the rule actually draws: whether it attacks is not the attacking
+player's choice; who it attacks still is.
+
+Two negative controls, because the two halves can each pass the other's test. With the seeding
+removed, three of the four reducer tests fail; with only the no-drop guard removed, two fail — and
+the no-drop test had to be rewritten to assert the mode *after* the tap, because asserting only the
+confirmed declaration passed either way (an unguarded tap on an unseeded declaration simply adds
+the creature, which looks identical at the end).
+
+**Measured over 160 unsteered games** — Forge Alliance against each of the other five decks, the
+Juggernaut counted off the board at each of its controller's declare-attackers steps rather than off
+the action:
+
+| | |
+| --- | --- |
+| Juggernauts cast | 38 |
+| declare-attackers steps with one on the battlefield | 63 |
+| …where it was in the declaration | 32 |
+| …excused, with the engine's reason: summoning sickness | 31 |
+| …excused with no reason (a bug) | **0** |
+
+Thirty-one of sixty-three sounds like a rule that half-works and is the opposite: a creature cast
+this turn is not *able* to attack, so the only excuse the engine ever gave was the correct one.
+
+**The Wall restriction is rarer and was worth measuring rather than assuming.** "Can't be blocked
+by Walls" is read off the attacker and matched against a creature *type*, not a keyword, so a Wall
+of Air stopped by it is stopped for what it is. Asking `canBlock` about every untapped Wall a
+defender held while a Juggernaut was attacking, across the same 160 games: **7 (Wall, Juggernaut)
+pairs, all 7 refused for that reason, and not one Wall block declared on a Juggernaut anyway.**
+Seven in a hundred and sixty is thin — it is unit-tested four ways for that reason — but it is
+reached, which is more than D57's warning could say about several rules before it.
+
+**And one thing deliberately not built.** Goad is the natural companion to this and is blocked:
+`EffectDuration` is `'end-of-turn' | 'end-of-combat' | 'permanent'`, and goad lasts *until your next
+turn* — a duration this engine has no way to express. End-of-turn would make a goad effect expire
+before the combat it is meant to force, which is worse than not having it. It needs a fourth
+duration keyed to a seat's turn, not a card, and that is a change to how effects expire rather than
+a card to script.

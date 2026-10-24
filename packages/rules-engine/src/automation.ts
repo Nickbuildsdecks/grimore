@@ -27,8 +27,8 @@ import {
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance, withZones } from './cardActions.js';
 import {
-  canAttack, canBlock, dealCombatDamage, legalAttackers, legalBlockers, menaceSatisfied,
-  needsFirstStrikeStep, tapAttackers,
+  canAttack, canBlock, dealCombatDamage, forcedAttackers, legalAttackers, legalBlockers,
+  menaceSatisfied, needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
   REGENERATION, addCounters, destroy, draw, loseLife, poolOf, removeEffectsFrom, setPool,
@@ -1216,10 +1216,12 @@ function applyStatics(
         ...(entry.effect.toughness === undefined ? {} : { toughness: entry.effect.toughness }),
         ...(entry.effect.keywords ? { keywords: entry.effect.keywords } : {}),
         ...(entry.effect.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
+        ...(entry.effect.mustAttack ? { mustAttack: true } : {}),
+        ...(entry.effect.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
       }],
     };
   }
   return next;
 }
 
-export { legalTargets, hasAnyLegalTargets, checkTargets, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, canAttack, canBlock, legalAttackers, legalBlockers, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, STEP_LABELS };
+export { legalTargets, hasAnyLegalTargets, checkTargets, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, canAttack, canBlock, forcedAttackers, legalAttackers, legalBlockers, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, STEP_LABELS };

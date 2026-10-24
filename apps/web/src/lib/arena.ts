@@ -50,7 +50,18 @@ export type ArenaMode =
    * because in a pod each creature may attack a different player — and `defender` here is only
    * which player the *next* creature tapped will be sent at.
    */
-  | { kind: "attackers"; chosen: Attack[]; defender: SeatIndex; planeswalker?: string }
+  | {
+      kind: "attackers"
+      chosen: Attack[]
+      defender: SeatIndex
+      planeswalker?: string
+      /**
+       * The ones with no choice: "attacks each combat if able" (CR 508.1d), as the engine listed
+       * them. Pre-selected and un-droppable, so the player cannot build a declaration the engine
+       * refuses. Absent, rather than empty, in the ordinary combat where nothing is forced.
+       */
+      forced?: readonly string[]
+    }
   | { kind: "blockers"; chosen: Block[]; holding: string | null }
 
 export interface Block {
@@ -82,7 +93,7 @@ export type ArenaEvent =
   | { kind: "setX"; amount: number }
   | { kind: "undoTarget" }
   | { kind: "confirm" }
-  | { kind: "declareAttackers"; defender: SeatIndex }
+  | { kind: "declareAttackers"; defender: SeatIndex; forced?: readonly string[] }
   | { kind: "toggleAttacker"; card: string }
   /** Points the creatures tapped from now on at a different player, or at a planeswalker. */
   | { kind: "aimAttacks"; seat: SeatIndex; planeswalker?: string }
@@ -307,8 +318,21 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       return { mode, action: null }
     }
 
-    case "declareAttackers":
-      return { mode: { kind: "attackers", chosen: [], defender: event.defender }, action: null }
+    case "declareAttackers": {
+      // A creature that attacks each combat if able starts the declaration already attacking.
+      // Leaving the player to find it is leaving them to hit confirm on a declaration the engine
+      // throws out, with no way to tell which creature was the problem.
+      const forced = event.forced ?? []
+      return {
+        mode: {
+          kind: "attackers",
+          chosen: forced.map((attacker) => ({ attacker, defender: event.defender })),
+          defender: event.defender,
+          ...(forced.length > 0 ? { forced } : {}),
+        },
+        action: null,
+      }
+    }
 
     case "toggleAttacker": {
       if (mode.kind !== "attackers") return { mode, action: null }
@@ -316,6 +340,9 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       const aim = { defender: mode.defender, ...(mode.planeswalker === undefined ? {} : { planeswalker: mode.planeswalker }) }
       const sameAim = already !== undefined
         && already.defender === mode.defender && already.planeswalker === mode.planeswalker
+      // Which player it is sent at is still the attacking player's choice; whether it attacks at
+      // all is not. So a second tap on a forced attacker does nothing rather than dropping it.
+      if (sameAim && (mode.forced ?? []).includes(event.card)) return { mode, action: null }
       // Tapping a creature that is already attacking somebody *else* re-points it, rather than
       // dropping it: having changed who you are aiming at, a second tap plainly means "this one
       // too", and making the player untap and retap to move one attacker is a trap.
@@ -663,7 +690,15 @@ export function primaryMove(view: GameView): { label: string; event: ArenaEvent 
   }
   if (you.mustDiscard > 0) return { label: `Discard ${you.mustDiscard}`, event: null, action: null }
   if (you.mustDeclare === "attackers") {
-    return { label: "Declare attackers", event: { kind: "declareAttackers", defender: firstOpponent(view) }, action: null }
+    return {
+      label: "Declare attackers",
+      event: {
+        kind: "declareAttackers",
+        defender: firstOpponent(view),
+        ...(you.mustAttack.length > 0 ? { forced: you.mustAttack } : {}),
+      },
+      action: null,
+    }
   }
   if (you.mustDeclare === "blockers") return { label: "Declare blockers", event: { kind: "declareBlockers" }, action: null }
   if (!you.hasPriority) return null

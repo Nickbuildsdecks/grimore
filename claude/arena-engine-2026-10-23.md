@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 142 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 150 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -228,7 +228,9 @@ bug rather than a board.
   evaluator, and neither was worth writing before the rules underneath them were trustworthy.
 - **Multiplayer combat nuance.** Pods work — declarations are per defender, a seat can only block
   what attacks it, and an attack can be aimed at a planeswalker — but there is no "each opponent"
-  combat maths beyond what the scripts do, and no goading or forced attacks.
+  combat maths beyond what the scripts do. Forced attacks are in — "attacks each combat if able",
+  enforced and pre-selected at the table — but **goad is not, and is blocked rather than skipped**:
+  it lasts until your next turn, and `EffectDuration` has no duration keyed to a seat's turn.
 - **Anything touching production.** No VM, no DNS, no deploy. Everything here runs on localhost and
   on the branch.
 
@@ -1733,6 +1735,49 @@ the attacking player the damage assignment order, and this engine uses the order
 declared in, which is the defending player's.** It only matters when the attacker would choose to
 kill a different blocker, and nothing in this pool makes it worth a second question in the middle
 of combat — so it is written down here rather than asserted as correct in a test.
+
+### The creature with no choice
+
+Every rule in this engine so far answered "may I?", and `legalActions` answered it by listing what
+was allowed. "Attacks each combat if able" (CR 508.1d) answers "must I?", which a list of allowed
+moves cannot say — so it is the first rule here whose job at the table is not to *offer* a move.
+
+The engine half is a `mustAttack` continuous effect, `forcedAttackers` reading it off the board, and
+a refusal in `declareAttackers` when a declaration leaves one out. It refuses rather than quietly
+adding the creature: a declaration is the player's statement about their own combat, and an engine
+that edits it is an engine they cannot predict. Which puts the weight on the table, because a
+refusal nobody can act on is worse than no rule — press confirm, read an error, and have no idea
+what to change. So the declaration now starts with the forced attackers already in it, a second tap
+on one does nothing, and the bar names the card and says *"attacks each combat if able"* rather than
+counting it. Re-pointing it at another player still works, which is the line the rule draws:
+whether it attacks is not the attacking player's choice; who it attacks still is.
+
+Juggernaut is the card, and it carries the other half of the pair — **"can't be blocked by Walls"**,
+read off the attacker and matched against a creature *type* rather than a keyword, so a Wall of Air
+stopped by it is stopped for what it is.
+
+**Measured over 160 unsteered games**, the Juggernaut counted off the board at each of its
+controller's declare-attackers steps rather than off the action:
+
+| | |
+| --- | --- |
+| Juggernauts cast | 38 |
+| declare-attackers steps with one on the battlefield | 63 |
+| …in the declaration | 32 |
+| …excused, with the engine's reason: summoning sickness | 31 |
+| …excused with no reason, which would be a bug | **0** |
+
+Thirty-one excused of sixty-three reads like a rule that half-works and is the opposite: a creature
+cast this turn is not *able* to attack, so the only excuse ever given was the correct one. And for
+the Wall half, asking `canBlock` about every untapped Wall a defender held while a Juggernaut was
+attacking: **7 (Wall, Juggernaut) pairs across the 160 games, all 7 refused for that reason, no Wall
+block declared on a Juggernaut anyway.** Thin, which is why it is unit-tested four ways — but
+reached, which is more than D57's warning could say about several rules before it.
+
+**Goad is the companion to this and is blocked, not skipped.** `EffectDuration` is `end-of-turn`,
+`end-of-combat` or `permanent`, and goad lasts *until your next turn*. End-of-turn would make a goad
+expire before the combat it is meant to force, so it needs a fourth duration keyed to a seat's turn
+rather than to a card — a change to how effects expire, not a card to script.
 
 ## Next
 

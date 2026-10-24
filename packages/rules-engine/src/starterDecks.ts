@@ -1257,6 +1257,25 @@ const HOLY_DAY: CardDef = {
   either. A Pacifism on your commander was permanent, for the rest of the game, which is not a
   thing that happens in a game of Magic.
 */
+/*
+  The first creature in the pool that does not get a choice.
+
+  Every "can't" the engine knew was a restriction on one card — Pacifism, defender, summoning
+  sickness. A *requirement* is checked against the whole declaration, which is a different shape,
+  and nothing could carry one. Juggernaut is the plainest card that does, and its second line is a
+  second small rule worth having: evasion that reads a creature type rather than a keyword.
+*/
+const JUGGERNAUT: CardDef = {
+  name: 'Juggernaut',
+  typeLine: 'Artifact Creature — Juggernaut',
+  manaCost: '{4}',
+  cmc: 4,
+  power: '5',
+  toughness: '3',
+  oracleText: "Juggernaut attacks each combat if able.\nJuggernaut can't be blocked by Walls.",
+  colors: [],
+};
+
 const NATURALIZE: CardDef = {
   name: 'Naturalize',
   typeLine: 'Instant',
@@ -1782,7 +1801,9 @@ export const FORGE_ALLIANCE: DeckSpec = {
     // is most afraid of.
     { card: BANISHING_LIGHT, count: 2 },
     { card: DISENCHANT, count: 1 },
-    { card: BASILISK_COLLAR, count: 2 },
+    { card: BASILISK_COLLAR, count: 1 },
+    // The one creature in the pool that does not get a choice about attacking.
+    { card: JUGGERNAUT, count: 1 },
     // And the Equipment that answers removal rather than adding power: whatever is holding the
     // swords stops dying to a Doom Blade or a Day of Judgment.
     { card: DARKSTEEL_PLATE, count: 1 },
