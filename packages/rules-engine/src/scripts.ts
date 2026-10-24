@@ -21,7 +21,7 @@ import { characteristicsOf, hasSubtype, hasType, parseTypeLine } from './charact
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  addCounters, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
+  addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
   gainControl, gainLife, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump, pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -1890,6 +1890,163 @@ const HANNA: CardScript = {
   ],
 };
 
+/*
+  Ten more, which is the increment that has never failed to pay.
+
+  Seven of them are the vocabulary doing what it already does — burn, a counter, removal, a body, a
+  pump, a one-drop, a mana spell. Three reach somewhere nothing else does: a pump on its own attack,
+  two targets that interact with each other, and the first target filter that reads combat.
+*/
+
+const LIGHTNING_STRIKE: CardScript = {
+  name: 'Lightning Strike',
+  targets: [ANY_TARGET],
+  onResolve: (c) => damageFirstTarget(c, 3),
+};
+
+const CANCEL: CardScript = {
+  name: 'Cancel',
+  targets: [TARGET_SPELL],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : counterSpell(c.state, id);
+  },
+};
+
+const MURDER: CardScript = {
+  name: 'Murder',
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : destroy(c.state, id);
+  },
+};
+
+/** Giant Spider: the first card whose reach is the only thing it has. */
+const GIANT_SPIDER: CardScript = { name: 'Giant Spider', keywords: ['reach'] };
+
+const TITANIC_GROWTH: CardScript = {
+  name: 'Titanic Growth',
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { power: 4, toughness: 4 });
+  },
+};
+
+const HEALERS_HAWK: CardScript = { name: "Healer's Hawk", keywords: ['flying', 'lifelink'] };
+
+const LAVA_AXE: CardScript = {
+  name: 'Lava Axe',
+  targets: [TARGET_PLAYER],
+  onResolve: (c) => {
+    const seat = firstPlayerTarget(c);
+    return seat === null ? c.state : dealDamage(c.state, { kind: 'player', seat }, 5, { controller: c.controller });
+  },
+};
+
+/**
+ * Dark Ritual: the first spell in the pool that *makes* mana.
+ *
+ * The solver has only ever been handed mana by a permanent tapping. A spell that adds to the pool
+ * on resolution is the same thing from the other direction, and it works without the solver knowing
+ * anything new: the mana is in the pool when the next play asks what it can afford. What it cannot
+ * do is help pay for *itself* or for anything already on the stack, which is the card.
+ */
+const DARK_RITUAL: CardScript = {
+  name: 'Dark Ritual',
+  onResolve: (c) => addToPool(c.state, c.controller, 'B', 3),
+};
+
+/**
+ * Borderland Marauder: bigger only while it is attacking.
+ *
+ * The first card to use the widened `attacks` trigger on itself for a pump rather than for damage,
+ * and the cheapest proof that the widening did not change what `self` means: it says nothing about
+ * `who`, so it watches only its own attack, exactly as it did before the event learned to watch
+ * the board.
+ */
+const BORDERLAND_MARAUDER: CardScript = {
+  name: 'Borderland Marauder',
+  triggers: [
+    {
+      on: { kind: 'attacks' },
+      description: 'Borderland Marauder gets +2/+0 until end of turn',
+      effect: (c) => pump(c.state, [c.source], c.source, c.controller, { power: 2 }),
+    },
+  ],
+};
+
+/**
+ * Prey Upon: the first card whose two targets are pointed at each other.
+ *
+ * Every other multi-target card in the pool aims each target independently. This one is a *fight*:
+ * each creature deals its power to the other, which needs both powers read before either is dealt,
+ * because a creature that dies to the first half still deals its damage (CR 701.12a).
+ */
+const PREY_UPON: CardScript = {
+  name: 'Prey Upon',
+  targets: [
+    {
+      kind: 'creature',
+      description: 'target creature you control',
+      filter: (state, candidate, controller) => creatureYouControl(state, candidate, controller),
+    },
+    {
+      kind: 'creature',
+      description: "target creature you don't control",
+      filter: (state, candidate, controller) => creatureYouDontControl(state, candidate, controller),
+    },
+  ],
+  onResolve: (c) => {
+    const [mine, theirs] = cardTargets(c);
+    if (mine === undefined || theirs === undefined) return c.state;
+    const mineInst = c.state.instances[mine];
+    const theirsInst = c.state.instances[theirs];
+    if (mineInst === undefined || theirsInst === undefined) return c.state;
+    // Both powers read first: a fight is simultaneous, so the creature that dies still fought.
+    const minePower = characteristicsOf(c.state, mineInst).power;
+    const theirsPower = characteristicsOf(c.state, theirsInst).power;
+    let state = c.state;
+    if (minePower > 0) {
+      state = dealDamage(state, { kind: 'card', id: theirs }, minePower, { controller: c.controller });
+    }
+    if (theirsPower > 0) {
+      state = dealDamage(state, { kind: 'card', id: mine }, theirsPower, { controller: theirsInst.zoneSeat });
+    }
+    return state;
+  },
+};
+
+/**
+ * Divine Verdict: the first target filter that reads combat.
+ *
+ * Every filter until now has asked what a permanent *is* — a creature, a land, black, yours. This
+ * one asks what it is *doing*, which means reading `state.combat` rather than the battlefield: an
+ * attacking creature is one named in an attack, a blocking one is named in somebody's blockers.
+ *
+ * The consequence is the card: outside combat it has no legal target, so the engine will not let it
+ * be cast at all and the table does not offer it (CR 601.2c). Four mana that is dead on your own
+ * main phase is exactly what the printed card is.
+ */
+const DIVINE_VERDICT: CardScript = {
+  name: 'Divine Verdict',
+  targets: [{
+    kind: 'creature',
+    description: 'target attacking or blocking creature',
+    filter: (state, candidate) => {
+      if (candidate.kind !== 'card') return false;
+      return state.combat.attacks.some(
+        (a) => a.attacker === candidate.id || a.blockers.includes(candidate.id),
+      );
+    },
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : destroy(c.state, id);
+  },
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 const ALL: readonly CardScript[] = [
@@ -1938,6 +2095,8 @@ const ALL: readonly CardScript[] = [
   HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT,
   YOUTHFUL_KNIGHT, BOGGART_BRUTE, ROBE_OF_MIRRORS, NIGHT_OF_SOULS_BETRAYAL,
   WALL_OF_AIR, HANNA,
+  LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,
+  DARK_RITUAL, BORDERLAND_MARAUDER, PREY_UPON, DIVINE_VERDICT,
   guildgate('Azorius Guildgate', 'W', 'U'),
   equipment('Darksteel Plate', '{2}', { keywords: ['indestructible'] },
     'equipped creature is indestructible'),

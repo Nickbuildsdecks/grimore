@@ -3959,6 +3959,227 @@ describe('white-blue: the seventh deck', () => {
   });
 });
 
+/**
+ * The eleven that came after the seventh deck.
+ *
+ * Most are the vocabulary doing what it already does, and the tests for those are short on purpose.
+ * Three are here for the paths they reach: a pump on a creature's own attack, two targets pointed
+ * at each other, and the first filter in the pool that reads combat rather than the battlefield.
+ */
+describe('eleven more cards', () => {
+  it('Lightning Strike deals 3 to anything, and Lava Axe 5 to a player', () => {
+    let s = withMana(0, ['Lightning Strike', 'Lava Axe'], 7);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Strike'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }));
+    expect(life(s, 1)).toBe(17);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lava Axe'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }));
+    expect(life(s, 1)).toBe(12);
+  });
+
+  it('Cancel counters a spell, and Murder kills a creature of any colour', () => {
+    let s = arena({
+      decks: { 0: 'tidal-mind', 1: 'rot-harvest' },
+      hands: { 0: ['Cancel', 'Murder'], 1: ['Centaur Courser'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Swamp', 'Swamp', 'Swamp'],
+        1: ['Forest', 'Forest', 'Forest', 'Drudge Skeletons'],
+      },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Centaur Courser') });
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    for (const id of [...ids(s, 0, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const courser = find(s, 1, 'stack', 'Centaur Courser');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cancel'),
+      targets: [{ kind: 'card', id: courser }],
+    })));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    // The active player gets priority back when the stack empties, so seat 1 has to pass before
+    // seat 0 can cast the second instant. Still the same step, so the mana is still in the pool.
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    // And the black removal that does not read colours: the Skeletons are black, which a Doom
+    // Blade cannot touch.
+    const skeletons = find(s, 1, 'battlefield', 'Drudge Skeletons');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Murder'),
+      targets: [{ kind: 'card', id: skeletons }],
+    })));
+    expect(s.instances[skeletons]!.zone).not.toBe('battlefield');
+  });
+
+  it('Giant Spider blocks a flier without being one', () => {
+    let s = arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      battlefield: { 0: ['Wind Drake'], 1: ['Giant Spider'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const drake = find(s, 0, 'battlefield', 'Wind Drake');
+    const spider = find(s, 1, 'battlefield', 'Giant Spider');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: drake, defender: 1 }] }));
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: spider, attacker: drake }] }));
+    s = advanceTo(s, 'postcombat-main', 120);
+    // Reach is not flying: the Spider cannot be blocked by what it blocks, and nothing about it
+    // attacks in the air. All it does is stop one, and a 2/4 into a 2/2 stops it for good.
+    expect(life(s, 1)).toBe(20);
+    expect(s.instances[spider]!.zone).toBe('battlefield');
+    expect(s.instances[drake]!.zone).toBe('graveyard');
+  });
+
+  it('Titanic Growth is four more power, and Healer\u2019s Hawk gains the life it deals', () => {
+    let s = withMana(1, ['Titanic Growth'], ['Forest', 'Forest'], ['Grizzly Bears']);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Titanic Growth'),
+      targets: [{ kind: 'card', id: bears }],
+    }));
+    expect([power(s, bears), toughness(s, bears)]).toEqual([6, 6]);
+
+    let t = arena({
+      decks: { 0: 'skyward-writ', 1: 'rot-harvest' },
+      battlefield: { 0: ["Healer's Hawk"] },
+      turn: 3, firstSeat: 0,
+    });
+    t = advanceTo(t, 'declare-attackers');
+    const hawk = find(t, 0, 'battlefield', "Healer's Hawk");
+    t = drain(apply(t, { type: 'auto:attack', by: 0, attackers: [{ attacker: hawk, defender: 1 }] }));
+    t = advanceTo(t, 'postcombat-main', 120);
+    expect(life(t, 1)).toBe(19);
+    expect(life(t, 0)).toBe(21);
+  });
+
+  it('Dark Ritual puts three black mana in the pool, and it pays for the next spell', () => {
+    // The first spell in the pool that makes mana rather than spending it. Nothing in the solver
+    // changed for it: the mana is in the pool, and the next play asks the pool what it can afford.
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+      hands: { 0: ['Dark Ritual', 'Flametongue Kavu'] },
+      battlefield: { 0: ['Swamp', 'Mountain'], 1: ['Grizzly Bears'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Dark Ritual'),
+    })));
+    expect(s.pools['0']).toMatchObject({ B: 3, R: 1 });
+    // One Swamp spent, three black back: a four-drop off two lands, a turn early. The Mountain is
+    // not spare change — {R} is the one symbol in the Kavu's cost the Ritual cannot pay, which is
+    // the honest limit of a spell that makes one colour.
+    const kavu = find(s, 0, 'hand', 'Flametongue Kavu');
+    expect(legalActions(s, 0).plays.some((play) => play.card === kavu)).toBe(true);
+  });
+
+  it('Borderland Marauder is a 4/2 on the swing and a 2/2 the rest of the time', () => {
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+      battlefield: { 0: ['Borderland Marauder'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const marauder = find(s, 0, 'battlefield', 'Borderland Marauder');
+    expect([power(s, marauder), toughness(s, marauder)]).toEqual([2, 2]);
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: marauder, defender: 1 }] }));
+    // Its own attack and nobody else's: the trigger says nothing about `who`, so the widening of
+    // the event left it meaning exactly what it meant.
+    expect([power(s, marauder), toughness(s, marauder)]).toEqual([4, 2]);
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(life(s, 1)).toBe(16);
+    // And it is a 2/2 again next turn.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(power(s, marauder)).toBe(2);
+  });
+
+  it('Prey Upon makes two creatures fight, and both deal their damage', () => {
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
+      hands: { 0: ['Prey Upon'] },
+      battlefield: { 0: ['Forest', 'Centaur Courser'], 1: ['Centaur Courser'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Forest'), abilityIndex: 0 });
+    const mine = find(s, 0, 'battlefield', 'Centaur Courser');
+    const theirs = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Prey Upon'),
+      targets: [{ kind: 'card', id: mine }, { kind: 'card', id: theirs }],
+    })));
+    // Two 3/3s fighting kill each other: the damage is simultaneous, so the one that dies still
+    // dealt its three (CR 701.12a).
+    expect(s.instances[mine]!.zone).toBe('graveyard');
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+  });
+
+  it('Divine Verdict kills an attacker, and cannot be cast when nothing is attacking', () => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'rot-harvest' },
+      hands: { 0: ['Divine Verdict'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains'],
+        1: ['Centaur Courser'],
+      },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const verdict = find(s, 0, 'hand', 'Divine Verdict');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    // Nothing is attacking, so the filter finds no legal target and the engine does not offer the
+    // card at all — which is what the printed card does on your own main phase (CR 601.2c).
+    expect(legalActions(s, 0).plays.some((play) => play.card === verdict)).toBe(false);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: verdict, targets: [{ kind: 'card', id: courser }],
+    })).not.toBeNull();
+
+    // Now it is attacking, and the same card is castable and kills it. A fresh board rather than
+    // the next turn of this one, because the Plains above are spent and a seat's lands untap in
+    // its own untap step — on the turn the Verdict is wanted, they would all still be tapped.
+    let t = arena({
+      decks: { 0: 'skyward-writ', 1: 'rot-harvest' },
+      hands: { 0: ['Divine Verdict'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains'],
+        1: ['Centaur Courser'],
+      },
+      turn: 4, firstSeat: 1,
+    });
+    t = advanceTo(t, 'declare-attackers');
+    const attacker = find(t, 1, 'battlefield', 'Centaur Courser');
+    t = apply(t, { type: 'auto:attack', by: 1, attackers: [{ attacker, defender: 0 }] });
+    // The attacking player holds priority first, in the step its attack was declared in.
+    t = apply(t, { type: 'auto:pass', by: 1 });
+    for (const id of [...ids(t, 0, 'battlefield')]) {
+      t = apply(t, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const held = find(t, 0, 'hand', 'Divine Verdict');
+    expect(legalActions(t, 0).plays.some((play) => play.card === held)).toBe(true);
+    t = drain(passBoth(apply(t, {
+      type: 'auto:cast', by: 0, card: held, targets: [{ kind: 'card', id: attacker }],
+    })));
+    expect(t.instances[attacker]!.zone).toBe('graveyard');
+    // Removed before damage, so nothing got through.
+    t = advanceTo(t, 'postcombat-main', 120);
+    expect(life(t, 0)).toBe(20);
+  });
+});
+
 describe('unscripted cards', () => {
   it('casts, resolves and fights normally, and says in the log that it is not automated', () => {
     // Hill Giant has no script: no triggers, no abilities, nothing printed but a body.

@@ -126,7 +126,7 @@ describe('a whole automated game', () => {
     expect(unfinished).toEqual([]);
     // Twenty-one pairings, four shuffles each: eighty-four whole games, which is more than
     // vitest's default five seconds buys even with the shallow bot.
-  }, 60_000);
+  });
 
   it('counters spells when it has the mana for it, rather than ignoring the stack', () => {
     // A game where nothing was ever countered would pass every other test here while leaving the
@@ -250,17 +250,36 @@ describe('a whole automated game', () => {
     // state-based actions", so lethal damage triggered and a destroy spell did not. A playout
     // test is the right place for it because the question is not whether one card works — it is
     // whether a death reaches its trigger from every direction a game kills things.
-    let fired = 0;
+    //
+    // Counted by consequence, not by catching the trigger on the stack. The first version of this
+    // test looked for the ability's description in `stackObjects` after each action and asserted
+    // it had been seen at least once — and with auto-pass on, a trigger nobody can respond to is
+    // put on the stack and resolved inside the same action, so the snapshot almost always misses
+    // it. Measured over sixteen of these games: six Doomed Travellers died, six Spirits arrived,
+    // and the stack was caught holding the trigger exactly once. The test passed on luck, and a
+    // deck-list change that reshuffled the same eight seeds took the luck away.
+    //
+    // What replaced it is the stronger claim anyway: *every* Doomed Traveller that died left a
+    // Spirit behind, whatever killed it.
+    let deaths = 0;
+    let spirits = 0;
     for (let seed = 1; seed <= 8; seed++) {
       let s = table(seed * 1217, (seed % 2) as SeatIndex, ['ember-rush', 'verdant-guard']);
       for (let i = 0; i < 6000 && !s.finished; i++) {
         const seat = seatToAct(s);
         if (seat === null) break;
         const before = s.stateVersion;
+        const previous = s;
         s = stepOnce(s, seat);
         if (s.stateVersion === before) break;
-        for (const object of Object.values(s.stackObjects)) {
-          if (/create a 1\/1 white Spirit|deals 1 damage to any target/.test(object.description)) fired += 1;
+        for (const [id, inst] of Object.entries(s.instances)) {
+          const was = previous.instances[id];
+          const name = s.cardDefs[inst.defKey]?.name ?? '?';
+          if (was?.zone === 'battlefield' && inst.zone === 'graveyard' && name === 'Doomed Traveler') {
+            deaths += 1;
+          }
+          // Nothing else in either deck makes a Spirit.
+          if (was === undefined && inst.isToken && name === 'Spirit') spirits += 1;
         }
         // And nothing is ever left queued: a death or an arrival recorded and never announced
         // would sit in the state for the rest of the game.
@@ -269,7 +288,8 @@ describe('a whole automated game', () => {
       }
       expect(s.finished).toBe(true);
     }
-    expect(fired).toBeGreaterThan(0);
+    expect(deaths).toBeGreaterThan(0);
+    expect(spirits).toBe(deaths);
   });
 
   it('does not throw creatures away: it attacks into blocks it can live with', () => {
@@ -315,7 +335,7 @@ describe('a whole automated game', () => {
     expect(turns.reduce((a, b) => a + b, 0) / turns.length).toBeLessThan(26);
     // Twenty whole games against the bot a player actually meets, which searches: slower per
     // decision than vitest's default five seconds allows for.
-  }, 60_000);
+  });
 
   it('plays planeswalkers: cast, ticked up and down, and sometimes attacked', () => {
     // The last card type, and the one with the most rules attached to it — loyalty on arrival, a
@@ -351,7 +371,7 @@ describe('a whole automated game', () => {
     // Attacking one is the shuffle's business — there has to be a planeswalker out, a creature
     // big enough to kill it, and a turn to do it in — so it is reported rather than required.
     expect(aimed).toBeGreaterThanOrEqual(0);
-  }, 60_000);
+  });
 
   it('casts spells with {X} in the cost, and for more than nothing', () => {
     // An X spell is the one card shape that can be cast *wrongly* while every other test passes:
@@ -746,7 +766,7 @@ describe('a four-player Commander pod', () => {
     // other packages' suites. It came in at 2.7s alone and timed out at the 5s default twice in a
     // day, which is a measurement of this machine rather than of the payload — the same 60s the
     // other whole-game tests take.
-  }, 60_000);
+  });
 
   it('never offers a play it then refuses, with four seats in the game', () => {
     // The same claim the two-player games make, re-made where turn order has to skip eliminated

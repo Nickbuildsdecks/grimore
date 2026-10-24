@@ -1133,6 +1133,114 @@ const WALL_OF_AIR: CardDef = {
 };
 
 
+// ── Ten more ─────────────────────────────────────────────────────────────────────────────────────
+
+const LIGHTNING_STRIKE: CardDef = {
+  name: 'Lightning Strike',
+  typeLine: 'Instant',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  oracleText: 'Lightning Strike deals 3 damage to any target.',
+  colors: ['R'],
+};
+
+const CANCEL: CardDef = {
+  name: 'Cancel',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}{U}',
+  cmc: 3,
+  oracleText: 'Counter target spell.',
+  colors: ['U'],
+};
+
+const MURDER: CardDef = {
+  name: 'Murder',
+  typeLine: 'Instant',
+  manaCost: '{1}{B}{B}',
+  cmc: 3,
+  oracleText: 'Destroy target creature.',
+  colors: ['B'],
+};
+
+const GIANT_SPIDER: CardDef = {
+  name: 'Giant Spider',
+  typeLine: 'Creature \u2014 Spider',
+  manaCost: '{3}{G}',
+  cmc: 4,
+  power: '2',
+  toughness: '4',
+  oracleText: 'Reach',
+  colors: ['G'],
+};
+
+const TITANIC_GROWTH: CardDef = {
+  name: 'Titanic Growth',
+  typeLine: 'Instant',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  oracleText: 'Target creature gets +4/+4 until end of turn.',
+  colors: ['G'],
+};
+
+const HEALERS_HAWK: CardDef = {
+  name: "Healer's Hawk",
+  typeLine: 'Creature \u2014 Bird',
+  manaCost: '{W}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Flying, lifelink',
+  colors: ['W'],
+};
+
+const LAVA_AXE: CardDef = {
+  name: 'Lava Axe',
+  typeLine: 'Sorcery',
+  manaCost: '{4}{R}',
+  cmc: 5,
+  oracleText: 'Lava Axe deals 5 damage to target player or planeswalker.',
+  colors: ['R'],
+};
+
+const DARK_RITUAL: CardDef = {
+  name: 'Dark Ritual',
+  typeLine: 'Instant',
+  manaCost: '{B}',
+  cmc: 1,
+  oracleText: 'Add {B}{B}{B}.',
+  colors: ['B'],
+};
+
+const BORDERLAND_MARAUDER: CardDef = {
+  name: 'Borderland Marauder',
+  typeLine: 'Creature \u2014 Human Warrior',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Whenever Borderland Marauder attacks, it gets +2/+0 until end of turn.',
+  colors: ['R'],
+};
+
+const PREY_UPON: CardDef = {
+  name: 'Prey Upon',
+  typeLine: 'Sorcery',
+  manaCost: '{G}',
+  cmc: 1,
+  oracleText: "Target creature you control fights target creature you don't control.",
+  colors: ['G'],
+};
+
+const DIVINE_VERDICT: CardDef = {
+  name: 'Divine Verdict',
+  typeLine: 'Instant',
+  manaCost: '{2}{W}{W}',
+  cmc: 4,
+  oracleText: 'Destroy target attacking or blocking creature.',
+  colors: ['W'],
+};
+
+
 // ── Mana that is not a land ──────────────────────────────────────────────────────────────────────
 
 const SOL_RING: CardDef = {
@@ -1297,22 +1405,32 @@ export const EMBER_RUSH: DeckSpec = {
   description: 'Mono-red aggro. Cheap hasty creatures, burn to the face, and a dragon to finish.',
   commander: KRENKO_MOB_BOSS,
   cards: [
-    // Twenty rather than twenty-two: the Equipment, the X spell and then Hellrider had to come
-    // from somewhere, and a land is the only thing in here no test reaches for by name.
-    { card: MOUNTAIN, count: 20 },
+    // Nineteen rather than twenty-two: the Equipment, the X spell, Hellrider and then the second
+    // Lightning Strike had to come from somewhere, and a land is the only thing in here no test
+    // reaches for by name. The curve came down with it — this deck's most expensive card it
+    // actually wants to cast on curve is four.
+    { card: MOUNTAIN, count: 19 },
     { card: MONASTERY_SWIFTSPEAR, count: 4 },
     { card: RAGING_GOBLIN, count: 2 },
-    { card: GOBLIN_ARSONIST, count: 3 },
+    { card: GOBLIN_ARSONIST, count: 2 },
     { card: FIREBRAND_ARCHER, count: 2 },
-    { card: MAGMA_JET, count: 2 },
+    { card: MAGMA_JET, count: 1 },
     { card: THERMO_ALCHEMIST, count: 2 },
     { card: HILL_GIANT, count: 1 },
     { card: FLAMETONGUE_KAVU, count: 2 },
-    { card: SHIVAN_DRAGON, count: 2 },
+    // One Dragon rather than two. A deck whose curve tops out at four wants one six-drop to win a
+    // stalled board, not two to draw in the opening hand, and the slot went back to the second
+    // Shock — which is not a preference: `automation.test.ts` deals a grip with two of them.
+    { card: SHIVAN_DRAGON, count: 1 },
     { card: LIGHTNING_BOLT, count: 4 },
     { card: SHOCK, count: 2 },
     { card: BONESPLITTER, count: 2 },
     { card: LAVA_SPIKE, count: 1 },
+    // Burn at instant speed between the Bolt and the Flame Slash, a two-drop that is a 4/2 on the
+    // swing, and five damage from nowhere when the board has stalled.
+    { card: LIGHTNING_STRIKE, count: 2 },
+    { card: BORDERLAND_MARAUDER, count: 2 },
+    { card: LAVA_AXE, count: 1 },
     // The deck's two best turn-four attacks, and the two cards it lost a Dragon, a Mountain, a
     // Fireball and an Impact Tremors to make room for. Hellrider is the payoff for the three
     // one-drops above it — a board of four creatures swings for four extra damage the blockers
@@ -1323,7 +1441,7 @@ export const EMBER_RUSH: DeckSpec = {
     // is what a mana-flooded red deck does with a board it cannot get past.
     { card: FIREBALL, count: 1 },
     { card: IMPACT_TREMORS, count: 1 },
-    { card: FAITHLESS_LOOTING, count: 2 },
+    { card: FAITHLESS_LOOTING, count: 1 },
     { card: FLAME_SLASH, count: 2 },
     { card: ACT_OF_TREASON, count: 1 },
   ],
@@ -1336,7 +1454,7 @@ export const VERDANT_GUARD: DeckSpec = {
   commander: SIGARDA_HOST_OF_HERONS,
   cards: [
     { card: FOREST, count: 8 },
-    { card: PLAINS, count: 8 },
+    { card: PLAINS, count: 7 },
     { card: SELESNYA_GUILDGATE, count: 2 },
     // Two of its Forests are cycling lands, which is the one decision this deck's mana base has.
     { card: TRANQUIL_THICKET, count: 2 },
@@ -1344,20 +1462,26 @@ export const VERDANT_GUARD: DeckSpec = {
     // The same mana a turn early as the Elves, in either colour, with flying attached — which is
     // what a two-colour deck actually wants from a one-drop.
     { card: BIRDS_OF_PARADISE, count: 2 },
-    { card: RAMPANT_GROWTH, count: 3 },
+    // Two rather than three: the third was the slot Secure the Wastes came back into, and a deck
+    // with four other mana sources on one and two does not need a third copy of the ramp.
+    { card: RAMPANT_GROWTH, count: 2 },
     { card: GARRUK_WILDSPEAKER, count: 1 },
     { card: SOUL_WARDEN, count: 2 },
+    // Both copies, pinned: `playout.test.ts` asks whether a death reaches its trigger in a real
+    // game, and the Spirit it watches for is this card's.
     { card: DOOMED_TRAVELER, count: 2 },
     // A plain 2/2 with no text, kept at one copy on purpose: `testkit.ts` builds its boards by
     // pulling named cards out of a real deck, so the vanilla creature two dozen tests use as
     // their fixture has to be *in* a deck to be reachable. Cutting it breaks them all at once.
     { card: GRIZZLY_BEARS, count: 1 },
-    { card: GLORIOUS_ANTHEM, count: 2 },
+    { card: GLORIOUS_ANTHEM, count: 1 },
     { card: CENTAUR_COURSER, count: 1 },
     { card: AJANIS_PRIDEMATE, count: 1 },
     // A blocker that arrives after the attack is declared, and a body that replaces itself.
     { card: AMBUSH_VIPER, count: 1 },
     { card: ELVISH_VISIONARY, count: 1 },
+    // A 2/4 that stops a flier without being one, which is the one thing a green deck is short of.
+    { card: GIANT_SPIDER, count: 2 },
     { card: SERRA_ANGEL, count: 2 },
     // Removal that gives the creature back if you kill the thing holding it, which is the deck's
     // answer to a creature it cannot block rather than a second Pacifism.
@@ -1369,13 +1493,19 @@ export const VERDANT_GUARD: DeckSpec = {
     // any other and every enter-the-battlefield trigger here fires again on its own.
     { card: CLOUDSHIFT, count: 2 },
     { card: GIANT_GROWTH, count: 1 },
-    { card: LOXODON_WARHAMMER, count: 2 },
-    { card: SELESNYA_CHARM, count: 2 },
-    { card: SECURE_THE_WASTES, count: 2 },
+    { card: TITANIC_GROWTH, count: 1 },
+    // Removal a green deck is actually allowed: the biggest creature on the table eats something.
+    { card: PREY_UPON, count: 2 },
+    { card: LOXODON_WARHAMMER, count: 1 },
+    { card: SELESNYA_CHARM, count: 1 },
     { card: PACIFISM, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
     { card: HARMONIZE, count: 1 },
     { card: OVERRUN, count: 1 },
+    // The deck's X spell, and the two slots above it that paid for the Spiders and the Prey Upons
+    // the first time round. It went out and had to come straight back: a token finisher is the
+    // only thing this deck does with a flooded hand, and the X-cost test casts two of them.
+    { card: SECURE_THE_WASTES, count: 2 },
     // The deck's answer to a board it is behind on, which nothing in the pool could do before.
     { card: DAY_OF_JUDGMENT, count: 1 },
   ],
@@ -1388,19 +1518,29 @@ export const TIDAL_MIND: DeckSpec = {
   commander: TALRAND,
   cards: [
     { card: ISLAND, count: 9 },
-    { card: SWAMP, count: 9 },
+    { card: SWAMP, count: 8 },
     { card: DIMIR_GUILDGATE, count: 2 },
     { card: LONELY_SANDBAR, count: 2 },
     { card: COUNTERSPELL, count: 2 },
+    // A third counter that is not a fourth Counterspell: a hand of answers should not be three
+    // copies of one card.
+    { card: CANCEL, count: 2 },
     { card: NEGATE, count: 1 },
     // The narrow counter, which answers the half of the format the Negates cannot.
     { card: ESSENCE_SCATTER, count: 2 },
     { card: DOOM_BLADE, count: 2 },
+    // Removal that does not care what colour it is, which the Doom Blades do.
+    { card: MURDER, count: 2 },
     // Not removal but time — and the only card here that answers something already resolved
     // without killing it.
-    { card: UNSUMMON, count: 2 },
+    { card: UNSUMMON, count: 1 },
     { card: ICY_MANIPULATOR, count: 1 },
-    { card: TORMODS_CRYPT, count: 2 },
+    // One Crypt rather than two: a second copy of a card that answers one deck in the pool does
+    // nothing a first copy had not already done, and the slot is Tome Scour's.
+    { card: TORMODS_CRYPT, count: 1 },
+    // Five cards off the top for one mana, which is not what this deck is for — it is what makes
+    // a Drake for free, and it is the spell Talrand's own test is written against.
+    { card: TOME_SCOUR, count: 1 },
     { card: PREORDAIN, count: 2 },
     // One mana that makes a creature untouchable by anybody, its own controller included — the
     // deck's way of protecting a flier it intends to win with, at the cost of never touching it
@@ -1413,7 +1553,6 @@ export const TIDAL_MIND: DeckSpec = {
     { card: MIND_SPRING, count: 1 },
     { card: EXSANGUINATE, count: 1 },
     { card: SIGN_IN_BLOOD, count: 1 },
-    { card: TOME_SCOUR, count: 1 },
     { card: MIND_ROT, count: 1 },
     { card: DIABOLIC_TUTOR, count: 1 },
     { card: SOUL_MANIPULATION, count: 2 },
@@ -1421,7 +1560,7 @@ export const TIDAL_MIND: DeckSpec = {
     { card: CHILD_OF_NIGHT, count: 1 },
     { card: WIND_DRAKE, count: 1 },
     { card: MAN_O_WAR, count: 2 },
-    { card: VAMPIRE_NIGHTHAWK, count: 2 },
+    { card: VAMPIRE_NIGHTHAWK, count: 1 },
     { card: AIR_ELEMENTAL, count: 1 },
   ],
 };
@@ -1535,13 +1674,16 @@ export const ASHEN_RITE: DeckSpec = {
     // is the first thing in this pool that makes more mana than it costs to use.
     { card: SOL_RING, count: 1 },
     { card: MIND_STONE, count: 2 },
+    // One mana for three, once: the only card in the pool that makes mana from a spell rather
+    // than a permanent, and this deck's way to a turn-two Flametongue.
+    { card: DARK_RITUAL, count: 2 },
     // The cycling lands are the mana base's own decision: a land early, a card late. Two of each
     // rather than four, because a deck that cycled every land would never cast anything.
     { card: BARREN_MOOR, count: 2 },
     { card: FORGOTTEN_CAVE, count: 2 },
     // Creatures that want to die: a token on the way out, a drain on the way out, or a body that
     // was only ever fuel.
-    { card: GOBLIN_ARSONIST, count: 2 },
+    { card: GOBLIN_ARSONIST, count: 1 },
     { card: DOOMED_DISSENTER, count: 2 },
     // A body one blocker cannot stop, in the deck that is happy either way: it gets through, or it
     // eats two creatures and feeds the drains on the way out.
@@ -1565,7 +1707,7 @@ export const ASHEN_RITE: DeckSpec = {
     { card: AGONIZING_DEMISE, count: 2 },
     { card: BURST_LIGHTNING, count: 2 },
     { card: BREATH_OF_DARIGAAZ, count: 1 },
-    { card: LIGHTNING_BOLT, count: 2 },
+    { card: LIGHTNING_BOLT, count: 1 },
     { card: FAITHLESS_LOOTING, count: 1 },
     // Card advantage paid for in life, which is this deck's whole idea said twice.
     { card: READ_THE_BONES, count: 1 },
@@ -1581,8 +1723,8 @@ export const ASHEN_RITE: DeckSpec = {
  * only deck whose plan is *not* to have the best board — the Walls do not attack and the fliers go
  * over whatever is in the way.
  *
- * Hanna is the commander because her ability is the deck said twice: the Pacifism, the Journey, the
- * Mind Stone and the Icy Manipulator are all worth drawing again, and she is the first commander in
+ * Hanna is the commander because her ability is the deck said twice: the Pacifism, the Journey and
+ * the Mind Stone are all worth drawing again, and she is the first commander in
  * the pool whose text is an activated ability pointing at a card in a graveyard.
  */
 export const SKYWARD_WRIT: DeckSpec = {
@@ -1606,9 +1748,12 @@ export const SKYWARD_WRIT: DeckSpec = {
       anybody plays. The answers were never the problem; having nothing alive to answer *with* was.
     */
     { card: SOUL_WARDEN, count: 2 },
-    { card: YOUTHFUL_KNIGHT, count: 3 },
+    // A one-drop that blocks in the air and gains the life back, which is what the matchups this
+    // deck loses actually ask for.
+    { card: HEALERS_HAWK, count: 2 },
+    { card: YOUTHFUL_KNIGHT, count: 2 },
     { card: OMENSPEAKER, count: 2 },
-    { card: WALL_OF_AIR, count: 4 },
+    { card: WALL_OF_AIR, count: 3 },
     { card: RAISE_THE_ALARM, count: 2 },
     // And the air, which it does intend to win.
     { card: LEONIN_SKYHUNTER, count: 3 },
@@ -1623,12 +1768,14 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: NEGATE, count: 1 },
     { card: UNSUMMON, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 3 },
-    { card: PACIFISM, count: 2 },
+    { card: PACIFISM, count: 1 },
     { card: JOURNEY_TO_NOWHERE, count: 1 },
+    // Four mana that is dead on your own turn and kills anything that attacks into it. The engine
+    // will not even offer it outside combat, which is the card.
+    { card: DIVINE_VERDICT, count: 2 },
     // Cards, and the two artifacts Hanna is happy to buy back.
     { card: DIVINATION, count: 1 },
     { card: MIND_STONE, count: 1 },
-    { card: ICY_MANIPULATOR, count: 1 },
   ],
 };
 
