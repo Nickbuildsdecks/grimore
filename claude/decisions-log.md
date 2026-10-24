@@ -3345,3 +3345,39 @@ taught to put two blockers on one attacker when it has two, and in five full run
 creatures that could both block. So the interaction is covered by five reducer tests and the rule
 by four engine tests, and the driver handles the prompt if a game ever produces one — but "a person
 tapped two blockers in order in a real browser" is not yet something this suite has seen.
+
+## D94 — The audit that found nothing, which is the result
+
+A card in a deck that never gets played is one of three different problems wearing the same face:
+the deck does not want it, the bot cannot use it, or the engine will not let it be cast. Nothing in
+the suites would notice any of them — `scripts.test.ts` proves every card *can* be cast, one test
+per card, which is a different claim from "it ever is".
+
+So: every deck against every other deck, both seat orders, **252 games with each of the seven decks
+playing 72 of them**, with every cast, land and activation attributed to its card and every card
+ever seen in a hand recorded separately — because "never drawn" and "drawn and never cast" are the
+two halves that have to be told apart.
+
+**Every card in all seven decks is cast or activated in real games, with two exceptions, and both
+are rules working rather than cards failing:**
+
+| | |
+| --- | --- |
+| Disrupt Decorum (forge-alliance) | drawn 23 times, cast 0 |
+| Inspired Charge (forge-alliance) | cast twice in 72 games, drawn 18 |
+
+Disrupt Decorum is goad, and this measurement is all duels: `goadsOpponents` (D90) stops the bot
+casting it when there is nobody for a goaded creature to attack but the goader. In four-seat pods
+the same card is cast 5 times in 160 games. Inspired Charge is the pump rule (D86) holding a card
+that is only right in a precombat main with a wide board — measured at 2 casts in 160 games when
+the rule went in, and 2 in 72 here.
+
+**One thing the audit did surface, recorded rather than fixed.** Forge Alliance now carries a card
+the bot will never cast in a duel, and a person should not either: in a two-player game goad does
+the opposite of what it is for. That is one dead slot in sixty when the deck is played as a duel
+deck and a live one when it is played in a pod, and there is no pod-only deck to put it in — every
+deck here is used for both. The alternative was keeping goad out of the pool altogether, which
+costs more than the slot does.
+
+The audit is written down because a result of "nothing is dead" is only worth anything with the
+number behind it, and because the next card added to a deck can be checked the same way.

@@ -1928,6 +1928,28 @@ one attacker when it can — never had two creatures able to block in five full 
 has five reducer tests and the rule four engine tests, and the driver answers the prompt if a game
 produces one, but no browser has yet watched a person tap two blockers into order.
 
+### The cards nobody ever casts
+
+A card in a deck that never gets played is three different problems wearing one face: the deck does
+not want it, the bot cannot use it, or the engine will not let it be cast. Nothing here would have
+noticed any of them — `scripts.test.ts` proves every card *can* be cast, which is a different claim
+from "it ever is".
+
+So every deck was played against every other, both seat orders: **252 games, 72 for each of the
+seven decks**, with every cast, land and activation attributed to its card, and every card ever
+seen in a hand recorded separately so "never drawn" could be told from "drawn and never cast".
+
+**Every card in all seven decks gets cast or activated, with two exceptions, and both are rules
+working rather than cards failing.** Disrupt Decorum was drawn 23 times and cast none: it is goad,
+this measurement is all duels, and the rule that keeps the bot from goading in a duel is doing its
+job (5 casts in 160 four-seat pods). Inspired Charge was cast twice in 72 games, which is the pump
+rule holding a card that is only right in a precombat main with a wide board.
+
+One thing it did surface, recorded rather than fixed: Forge Alliance now carries a card nobody
+should cast in a duel. That is one dead slot in sixty as a duel deck and a live one in a pod, and
+there is no pod-only deck to move it to — the alternative was keeping goad out of the pool, which
+costs more than the slot.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
