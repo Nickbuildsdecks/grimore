@@ -1044,6 +1044,30 @@ And the honest half of the win rate: **holding mana for a counterspell is this d
 the bot cannot do it** — it counters what is counterable, not what matters. That is the limitation
 D62 measured, and it means a person plays this deck better than the opponent can.
 
+**And the obvious fix for the control decks, measured and deleted.** A land is worth the same
+tapped or untapped, so spending mana costs the search nothing: the bot taps out every turn and is
+then holding a counterspell with no mana when the spell worth answering arrives. The term was built
+— a little for each untapped land, only while the hand holds an instant, capped at the cheapest
+one's cost — and measured over 84 paired games per weight on the same seeds:
+
+| mana-up weight | control decks | counterspells cast |
+| --- | --- | --- |
+| 0 (none) | 23-61 | 75 |
+| 0.5 | 23-61 | 80 |
+| 1.0 | 20-64 | 79 |
+| 2.0 | 18-66 | 78 |
+
+Monotone in the wrong direction. Removed, with the table in the comment where the next person will
+look for it — the third idea about this search built, measured and deleted.
+
+The measurement also corrected the premise, which is the half worth keeping: **every counterspell
+the bot casts is already cast in response**, 75 of 75 with the term off, because a counterspell
+targets a spell on the stack and with an empty stack it has no legal target to be offered at all.
+The handicap is not *when* it counters; it is that it is tapped out when the moment comes, and
+pricing untapped mana does not fix that, because the board the mana bought is worth more than the
+answer kept for it. Beating an aggressive deck with a control one needs the bot to know *which*
+spell is worth answering — a judgement about the opponent, not a price on a land.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -2270,3 +2270,40 @@ about this deck so much as about the one thing the opponent still cannot do.
 
 The testkit also gained a `graveyard` option for `arena()`, because the three new tests needed cards
 in a graveyard and every earlier graveyard test had been putting them there by hand.
+
+## D68 — Holding mana for the answer: measured, and worth nothing
+
+The seventh deck's win rate pointed at the obvious hole in the search: a land is worth the same
+tapped or untapped, so spending mana costs the evaluation nothing, the bot taps out every turn, and
+it is then holding a counterspell with no mana when the spell worth answering arrives. So the term
+was built — a little for each untapped land, but only while the hand holds something castable at
+instant speed, capped at the cheapest such card's cost, because mana up with nothing to spend it on
+is worth exactly nothing and more mana than the answer needs buys nothing either.
+
+**Eighty-four paired games per weight, same seeds, the two control decks against the three that beat
+them fastest plus the control mirror:**
+
+| mana-up weight | control decks | counterspells cast |
+| --- | --- | --- |
+| 0 (none) | 23-61 | 75 |
+| 0.5 | 23-61 | 80 |
+| 1.0 | 20-64 | 79 |
+| 2.0 | 18-66 | 78 |
+
+Monotone, in the wrong direction. At 0.5 it is exactly a wash and costs a scan of the hand on every
+evaluation; above that it loses games. **Removed**, with the table in the comment where the next
+person reaching for it will look — the third idea about this search to be built, measured and
+deleted, after the swing-ahead projection and the non-linear life total.
+
+What the measurement is worth is the correction it made to the premise. **Every counterspell the bot
+casts is already cast in response** — 75 of 75 with the term off, 80 of 80 at 0.5 — and it could not
+be otherwise: a counterspell targets a spell on the stack, so with an empty stack it has no legal
+target and `legalActions` never offers it. D67 said the bot "counters what is counterable, not what
+matters", and the mechanism in that sentence was wrong. What is true is narrower and more useful:
+the bot is often tapped out when the moment comes, and **valuing untapped mana does not fix it,
+because the board the mana bought is worth more than the answer kept for it.** For a control deck
+to beat an aggressive one in this pool, the bot would have to know *which* spell is worth answering
+— that is a judgement about the opponent's hand and board, not a price on a land.
+
+The claim in `claude/play-realm-setup.md` that a person plays the control decks better than the bot
+stays, because it is still true. What changed is the reason given for it.
