@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**430 tests in the rules engine, 110 in the web app, 1,036 across the workspace.**
+**432 tests in the rules engine, 110 in the web app, 1,038 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -718,6 +718,37 @@ needed teaching for two of those — it would have sent a kicked play without th
 cheap half of a card the table offered as the expensive one) and a Bone Splinters with nothing
 named to feed it, which the engine would have refused.
 
+**A stronger opponent, and the measurement that made it one.** The bot took the most expensive
+play it could afford. Now it builds every play it could make, plays each one out until the stack
+is empty, scores the position with a four-weight evaluator, and keeps the best — one ply, no
+further, because a second ply needs an opponent model and that is only worth writing once the
+evaluation has been shown to be any good.
+
+It has been. Head-to-head against the bot it replaced, alternating which seat searched so neither
+deck nor turn order could explain it: **105 wins to 55 over 160 games**, every game finished, 17.9
+turns on average, no refused actions. The old bot is still there behind `{ lookahead: false }`,
+because a claim like that needs a control to be re-measured against — and because the tests that
+play dozens of games want the cheap, wilder bot that casts whatever is most expensive and so
+wanders into more of the engine.
+
+Two things came out of the measurement that no amount of reasoning had produced. The first: the
+evaluator must value **a land in play above a card in hand**, or a land drop *lowers* the score and
+the bot stops making it — that version lost 60 games out of 60 while looking exactly like a tuning
+problem. The land drop is a rule now, taken before the search, which is also what the old ranking's
+"always make your land drop" was saying. The second: weighing each play against *doing nothing* —
+the obvious way to stop a bot spending a Shock on a 1/1 — made it measurably worse, 28 wins of 60
+against 40 with no baseline at all. A card kept is a card the evaluation scores; the turn it cost
+is invisible. So the search decides *which* play, and the old bias to act stands.
+
+What it buys, as two tests rather than an adjective: it will not cast a Hurricane that hits its own
+board for nothing when a Doom Blade kills the Serra Angel, and it will not pay a kicker that turns
+a ping into a wipe of its own creatures. Both of those were the expensive play, and the expensive
+play is what the old bot took.
+
+Cost, measured, because an opponent that thinks is only better if nobody waits for it: a decision
+takes 0.1–0.3ms at the median, under 9ms at the 95th percentile, 32ms at the very worst in a
+four-player pod.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the 63 cards currently using
@@ -731,11 +762,13 @@ named to feed it, which the engine would have refused.
    environment cannot reach Scryfall. A deck of bare names has no type line, so the engine cannot
    tell a land from a spell and Arena mode would be unusable; the tabletop would be fine. Worth
    building where the data exists, not here.
-3. A stronger opponent. It no longer gives creatures away in combat, answers mid-resolution
-   questions in the direction that helps it and will not cast an X spell for nothing — but all of
-   that is judgement one step deep. It does not hold a creature back to block, does not keep mana
-   up for the counterspell in its hand, and does not know what any card does. Each of those needs
-   it to reason about the *next* turn, which is a search and a position evaluator.
+3. A stronger opponent still. It now plays each option out one move and keeps the position it
+   likes best, which is worth two games in three against the bot it replaced — but one ply is one
+   ply. It cannot hold a creature back to block, keep mana up for the counterspell in its hand, or
+   tell that a spell is worth more next turn than this one, because all three need it to model the
+   *reply*. The honest next version is this same function recursing one level with the opponent
+   choosing against it, which is worth building now that the evaluation has a measurement behind
+   it.
 4. The pod interface beyond "it works". Three opponents sit side by side now and the combat is
    drawn rather than described, which were the two things that made a four-player board
    unreadable. What is still missing is everything a pod is *socially*: no table talk beyond the

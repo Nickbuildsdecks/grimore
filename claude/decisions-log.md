@@ -1706,3 +1706,53 @@ when that creature is worth less than what the spell is aimed at.
 
 Measured over 24 unsteered games on the new deck: 21 kicked, 38 cast by sacrificing a creature, 6
 lands cycled out of 46 chances, every game finished, 22.5 turns on average.
+
+## D53 — The bot looks one move ahead, and the measurement decided everything
+
+The bot took the most expensive play it could afford. That is a ranking, not a judgement, and this
+document has been carrying its failures as jokes for weeks: the Hurricane it casts for eight into a
+board of its own fliers, the Shock it points at a 1/1. The fix is the one the file's own header
+promised and deferred — a position evaluator and a search — and it was worth writing now because
+every rule underneath it is trustworthy.
+
+**Decided: one ply, and a cheap simulation of it.** For each play the bot could make, apply it and
+let the stack resolve with nobody responding, then score the position. That is the line the bot is
+actually choosing between — a spell cast into an empty stack on its own turn usually resolves — and
+it is the cheapest simulation that shows what a card *does* rather than what it costs. A second ply
+needs an opponent model, which is this same function recursing, and that is not worth writing
+before the evaluation has a number behind it.
+
+**The number: 105 wins to 55 over 160 games** against the bot it replaced, alternating which seat
+searched so that neither the decks nor the turn order could explain the result. Every game
+finished, 17.9 turns on average, no refused actions.
+
+**Decided: the old bot stays, behind `{ lookahead: false }`.** A claim like the one above needs a
+control that can be re-measured, and the tests that play dozens of games want the cheap bot anyway
+— it is not only faster, it is *wilder*, casting whatever is most expensive and so wandering into
+more of the engine than a bot that plays well ever would. Breadth is what those tests are for.
+
+**Two things the measurement found that reasoning had not.**
+
+*A land in play has to be worth more than a card in hand.* Otherwise the land drop lowers the score
+and the bot stops making it — which it did, losing 60 games out of 60 while looking exactly like a
+weight that needed nudging. The land drop is taken as a rule before the search now, which is what
+the old ranking's "always make your land drop" had been saying all along; the weights still have to
+agree with it, because a bot that would not play lands is not a tuning problem, it is a bot that
+does not play Magic.
+
+*Weighing a play against doing nothing made it worse.* Requiring a play to beat the current
+position by a margin is the obvious way to stop a bot spending removal on a 1/1 — and it cost
+twelve games in sixty (28 wins against 40 with no baseline at all). The reason is that a card kept
+is a card the evaluation scores, while the turn it cost is invisible to it: the discipline was
+imaginary and the wasted turns were real. So the baseline is gone. The search answers *which* play,
+and the old bias to always make one stands.
+
+**The weights are four numbers and a comment each**, and the comment is what each one broke when it
+was wrong. Creatures are power plus toughness, the same measure the blocking logic already uses to
+judge a trade, so the bot values a creature the same way whether it is deciding to cast it or to
+block with it.
+
+**Cost, since an opponent that thinks is only better if nobody waits for it:** 0.1–0.3ms per
+decision at the median, under 9ms at the 95th percentile, 32ms at the very worst in a four-player
+pod. The browser suites are unchanged in feel — a solo pod plays 282 moves in 45 seconds, and the
+bots are not what it is waiting for.

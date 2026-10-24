@@ -24,7 +24,11 @@ button in the control bar.
 
 **You can play on your own.** The lobby has a *Play on your own* section: one seat for you, one the
 server plays. No code to share and nobody to wait for. The opponent mulligans, plays lands, casts
-spells, attacks and blocks; it is not a strong player, but it is a real one.
+spells, attacks and blocks, and before each play it tries every option it has and keeps the one
+that leaves the board it likes best — so it will not throw a sweeper at its own creatures or spend
+removal on the smallest thing you own. It is still not a strong player: it cannot see your reply,
+hold a creature back to block, or keep mana up for the counterspell in its hand. It is a real one,
+and it beats the version before it two games in three.
 
 **Or a whole Commander pod on your own.** *Solo pod* in the same section deals a four-player
 Commander game against three opponents on three different decks — forty life each, a command zone

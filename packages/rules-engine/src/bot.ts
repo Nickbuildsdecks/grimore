@@ -22,6 +22,7 @@ import { canAttack, canBlock } from './combat.js';
 import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
 import { costValue, parseManaCost } from './mana.js';
+import { scriptFor } from './scripts.js';
 import type { Target } from './turnTypes.js';
 import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
@@ -401,8 +402,239 @@ function settleOpeningHand(state: GameState, seat: SeatIndex): Action {
   return { type: 'auto:keep', by: seat, bottom: pitchable.slice(0, owed).map((c) => c.id) };
 }
 
+// ── Looking one move ahead ───────────────────────────────────────────────────────────────────────
+
+/*
+  What the bot wants, in one number.
+
+  Weights are not a theory of Magic; they are the shortest list that produces recognisable play,
+  and each one is set by what changed when it was wrong:
+
+   - a creature is worth its power plus its toughness, which is the same measure the blocking
+     logic already uses to decide a trade;
+   - a point of life is worth about a quarter of a 2/2, because board takes life and life does not
+     take board — but not nothing, or the bot races into lethal;
+   - **a land in play is worth more than a card in hand**, because it is the card that makes every
+     other card castable. This one was not a preference: with a card in hand worth more, a land
+     drop *lowers* the score, so the bot stopped playing lands and lost 60 games out of 60 in the
+     measurement while looking like a tuning problem. The land drop is now taken as a rule before
+     the search runs, and the weights still have to agree with it.
+*/
+const LIFE_WEIGHT = 1.0;
+const CARD_IN_HAND = 1.5;
+const LAND_ON_BOARD = 2.5;
+const PERMANENT_ON_BOARD = 3;
+
+/** Everything one seat has, from that seat's point of view. */
+function seatValue(state: GameState, seat: SeatIndex): number {
+  let total = (state.seats[seat]?.life ?? 0) * LIFE_WEIGHT;
+  total += (state.zones[`${seat}:hand`] ?? []).length * CARD_IN_HAND;
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const ch = characteristicsOf(state, inst);
+    if (ch.isLand) total += LAND_ON_BOARD;
+    else if (ch.isCreature) total += creatureValue(state, id);
+    else total += PERMANENT_ON_BOARD;
+  }
+  return total;
+}
+
+/**
+ * How much this seat likes a position.
+ *
+ * Its own side, less the average opponent — the average rather than the sum, so a four-player pod
+ * is scored on "am I ahead of the table" instead of on "is the rest of the table small", which
+ * would have the bot ignore the player about to kill it in favour of the two who are behind.
+ */
+export function evaluate(state: GameState, seat: SeatIndex): number {
+  if (state.finished) return state.winnerSeat === seat ? 1e6 : -1e6;
+  if (state.seats[seat]?.eliminated === true) return -1e6;
+  const foes = foesOf(state, seat);
+  let theirs = 0;
+  for (const foe of foes) theirs += seatValue(state, foe);
+  return seatValue(state, seat) - (foes.length === 0 ? 0 : theirs / foes.length);
+}
+
+/**
+ * Plays one action out far enough to be worth looking at.
+ *
+ * "Far enough" is: take the action, then let everything on the stack resolve with nobody
+ * responding. That is the line the bot is actually choosing between — a spell it casts into an
+ * empty stack on its own turn usually resolves — and it is the cheapest simulation that shows what
+ * a card *does* rather than what it costs.
+ *
+ * Returns null when the action is refused, which should not happen: every action here was built
+ * from `legalActions`. Swallowed rather than thrown because a search is not the place to discover
+ * it — `playout.test.ts` is, and it asserts exactly that the engine never refuses what it offered.
+ */
+function simulate(state: GameState, action: Action): GameState | null {
+  let next: GameState;
+  try {
+    next = applyAction(state, action, HOST);
+  } catch {
+    return null;
+  }
+  for (let i = 0; i < 8; i += 1) {
+    if (next.stackOrder.length === 0) break;
+    // A question stops the line: answering it would mean guessing, and the position with the
+    // spell half-resolved is still more informative than the position before it was cast.
+    if (next.pendingDecision !== null || next.pendingChoice !== null) break;
+    if (next.priority === null) break;
+    try {
+      next = applyAction(next, { type: 'auto:pass', by: next.priority }, HOST);
+    } catch {
+      break;
+    }
+  }
+  return next;
+}
+
+/** How many ways of aiming one spell are worth simulating. */
+const AIM_WIDTH = 3;
+
+/**
+ * The ways this play could be aimed, best-first, at most `AIM_WIDTH` of them.
+ *
+ * Only the *first* target of a spell is varied. Which creature a Doom Blade kills is the choice
+ * that decides whether the card was worth playing; the second target of a two-target spell almost
+ * never is, and varying both would multiply the search for nothing.
+ */
+function aimings(state: GameState, seat: SeatIndex, play: LegalPlay): (readonly Target[])[] {
+  const first = chooseTargets(state, seat, play);
+  if (first === null) return [];
+  if (first.length === 0) return [[]];
+  const spec = play.targetSpecs[0];
+  const foes = foesOf(state, seat);
+  const alternatives = [...(play.candidates[0] ?? [])]
+    .sort((a, b) => rank(state, b, foes) - rank(state, a, foes))
+    .slice(0, AIM_WIDTH);
+  const out: (readonly Target[])[] = [first];
+  // One spec wanting several targets is left alone: the heuristic filled all of them, and swapping
+  // one out would need the rest re-picked around it.
+  if (spec !== undefined && Math.max(1, spec.count ?? 1) === 1) {
+    for (const option of alternatives) {
+      if (targetKeyOf(option) === targetKeyOf(first[0]!)) continue;
+      const rest = first.slice(1);
+      if (rest.some((t) => targetKeyOf(t) === targetKeyOf(option))) continue;
+      out.push([option, ...rest]);
+    }
+  }
+  return out.slice(0, AIM_WIDTH);
+}
+
+const targetKeyOf = (t: Target): string => (t.kind === 'card' ? `c${t.id}` : `p${t.seat}`);
+
+/** How many plays are worth simulating, best-first by the shallow ranking. */
+const PLAY_WIDTH = 8;
+
+/**
+ * Every action the bot could take right now, best-first by the old heuristic.
+ *
+ * The judgements that used to decide *the* play live here now and decide whether an option is
+ * offered at all: an X spell stuck at zero, and a cost that eats a creature worth more than what
+ * it buys. They stay because they are about things the one-move search cannot see — what a card
+ * will be worth later — rather than about what a card does.
+ */
+function candidateActions(
+  state: GameState, seat: SeatIndex, actions: LegalActions,
+): { action: Action }[] {
+  const out: { action: Action }[] = [];
+  const playable = actions.plays
+    .filter((p) => !p.isManaAbility)
+    .sort((a, b) => playValue(b) - playValue(a))
+    .slice(0, PLAY_WIDTH);
+
+  for (const play of playable) {
+    // An X spell with X stuck at nothing is a card thrown away: a Fireball for no damage, an
+    // Endless One that enters as a 0/0 and dies before anyone can look at it. Legal, and never
+    // what the bot means.
+    if (play.xMax === 0) continue;
+    // Lands are taken by the rule above, before the search sees them.
+    if (play.kind === 'land') continue;
+    for (const targets of aimings(state, seat, play)) {
+      if (play.kind === 'cast') {
+        /*
+          A spell with an additional cost: something has to be fed to it before it can be cast at
+          all, and the bot has to decide whether that is worth doing.
+
+          Shallow in the same way as every other judgement in this file, and deliberately so: it
+          feeds the cheapest creature it has, and it will not do it unless that creature is worth
+          less than what the spell is aimed at — or, for a spell with no target, unless the
+          creature is nearly free anyway. Without this it was happy to eat its best creature to
+          draw two cards, which loses games while passing every test that only checks one finished.
+        */
+        let fodder: string | null = null;
+        if (play.sacrificeOptions.length > 0) {
+          fodder = cheapestCreature(state, play.sacrificeOptions);
+          if (fodder === null) continue;
+          const cost = characteristicsOf(state, state.instances[fodder]!).power;
+          const gain = targets.reduce((best, target) => {
+            if (target.kind !== 'card') return best;
+            const inst = state.instances[target.id];
+            return inst === undefined ? best : Math.max(best, characteristicsOf(state, inst).power);
+          }, 0);
+          if (cost >= Math.max(gain, 2)) continue;
+        }
+        out.push({
+          action: {
+            type: 'auto:cast', by: seat, card: play.card,
+            // The kicker was chosen by choosing this play — `legalActions` offers the kicked
+            // version as a separate one — so it has to be said, or the engine casts the cheap
+            // half of a card the table offered as the expensive one.
+            ...(play.kicked === true ? { kicked: true } : {}),
+            ...(fodder === null ? {} : { sacrifice: fodder }),
+            // X as large as the mana allows. The search sees what that buys, which is new: it
+            // will not cast a Hurricane for eight into a board of its own fliers any more.
+            ...(play.xMax === undefined ? {} : { x: play.xMax }),
+            ...(play.modes === undefined ? {} : { modes: [...play.modes] }),
+            ...(targets.length > 0 ? { targets: [...targets] } : {}),
+          },
+        });
+        continue;
+      }
+      // An ability paid for by sacrificing something is only worth it when the thing eaten is
+      // worth less than the thing fed.
+      if (play.sacrificeOptions.length > 0) {
+        const fodder = cheapestCreature(state, play.sacrificeOptions);
+        if (fodder === null) continue;
+        const self = state.instances[play.card];
+        const worth = self === undefined ? 0 : characteristicsOf(state, self).power;
+        if (characteristicsOf(state, state.instances[fodder]!).power >= worth) continue;
+        out.push({
+          action: {
+            type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            sacrifice: fodder,
+            ...(targets.length > 0 ? { targets: [...targets] } : {}),
+          },
+        });
+        continue;
+      }
+      out.push({
+        action: {
+          type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+          ...(targets.length > 0 ? { targets: [...targets] } : {}),
+        },
+      });
+    }
+  }
+  return out;
+}
+
+export interface BotOptions {
+  /**
+   * Whether to look one move ahead before choosing a play. On by default.
+   *
+   * Off is the bot as it was before the search existed: the most expensive affordable play, aimed
+   * by the shallow ranking. It is kept for two reasons — it is the control the search is measured
+   * against, and it is there to fall back on if the search ever turns out to cost more time than
+   * it is worth on a table somebody is waiting at.
+   */
+  readonly lookahead?: boolean;
+}
+
 /** The single action this seat would take now, or null when it has nothing to do. */
-export function botAction(state: GameState, seat: SeatIndex): Action | null {
+export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = {}): Action | null {
   if (!state.automated || state.finished) return null;
   if (state.openingHands) {
     return state.kept.includes(seat) ? null : settleOpeningHand(state, seat);
@@ -448,80 +680,73 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
 
   if (!actions.hasPriority) return null;
 
-  const playable = actions.plays
-    .filter((p) => !p.isManaAbility)
-    .sort((a, b) => playValue(b) - playValue(a));
-  for (const play of playable) {
-    // An X spell with X stuck at nothing is a card thrown away: a Fireball for no damage, an
-    // Endless One that enters as a 0/0 and dies before anyone can look at it. Legal, and never
-    // what the bot means — it was casting Endless One for zero before this line.
-    if (play.xMax === 0) continue;
-    const targets = chooseTargets(state, seat, play);
-    if (targets === null) continue;
-    if (play.kind === 'land') return { type: 'auto:playLand', by: seat, card: play.card };
-    // Only offer the play if the mana for it can actually be produced; `legalActions` judges
-    // affordability against untapped sources, and the tapping happens in `botTurn`.
-    if (play.kind === 'cast') {
-      /*
-        A spell with an additional cost: something has to be fed to it before it can be cast at
-        all, and the bot has to decide whether that is worth doing.
+  /*
+    One move ahead.
 
-        Shallow in the same way as every other judgement in this file, and deliberately so: it
-        feeds the cheapest creature it has, and it will not do it unless that creature is worth
-        less than what the spell is aimed at — or, for a spell with no target, unless the creature
-        is nearly free anyway. Without this it was happy to eat its best creature to draw two
-        cards, which loses games while passing every test that only checks one finished.
-      */
-      let fodder: string | null = null;
-      if (play.sacrificeOptions.length > 0) {
-        fodder = cheapestCreature(state, play.sacrificeOptions);
-        if (fodder === null) continue;
-        const cost = characteristicsOf(state, state.instances[fodder]!).power;
-        const gain = targets.reduce((best, target) => {
-          if (target.kind !== 'card') return best;
-          const inst = state.instances[target.id];
-          return inst === undefined ? best : Math.max(best, characteristicsOf(state, inst).power);
-        }, 0);
-        if (cost >= Math.max(gain, 2)) continue;
-      }
-      return {
-        type: 'auto:cast', by: seat, card: play.card,
-        // The kicker was chosen by choosing this play — `legalActions` offers the kicked version
-        // as a separate one — so it has to be said, or the engine casts the cheap half of a card
-        // the table offered as the expensive one.
-        ...(play.kicked === true ? { kicked: true } : {}),
-        ...(fodder === null ? {} : { sacrifice: fodder }),
-        // X as large as the mana allows. The shallowness here is the same as everywhere else in
-        // this file — it does not know what the card does, so it does not know that a Hurricane
-        // hits its own controller too, and it will occasionally kill itself with one. That is the
-        // bot being a bot rather than the rules being wrong, and it is why `playout.test.ts`
-        // asserts that games *finish* rather than that they are played well.
-        ...(play.xMax === undefined ? {} : { x: play.xMax }),
-        ...(play.modes === undefined ? {} : { modes: [...play.modes] }),
-        ...(targets.length > 0 ? { targets } : {}),
-      };
-    }
-    // An ability paid for by sacrificing something is only worth it when the thing eaten is worth
-    // less than the thing fed. A bot that pumped by eating its best creature every turn would
-    // play itself out of the game while passing every other test here.
-    if (play.sacrificeOptions.length > 0) {
-      const fodder = cheapestCreature(state, play.sacrificeOptions);
-      if (fodder === null) continue;
-      const self = state.instances[play.card];
-      const worth = self === undefined ? 0 : characteristicsOf(state, self).power;
-      if (characteristicsOf(state, state.instances[fodder]!).power >= worth) continue;
-      return {
-        type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
-        sacrifice: fodder,
-        ...(targets.length > 0 ? { targets } : {}),
-      };
-    }
-    return {
-      type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
-      ...(targets.length > 0 ? { targets } : {}),
-    };
+    Everything above this line is a rule — answer the question, declare the blockers — and has one
+    right answer. Which spell to cast is not like that: it is a judgement, and until now the bot
+    made it by preferring the most expensive thing it could afford, which is how it came to cast
+    a Hurricane that killed its own board and point a Shock at a 1/1 while a 5/5 attacked it.
+
+    So: build every play it could make, *play each one out* far enough to see what happens, and
+    keep the position it likes best. Doing nothing is one of the options, which is what makes the
+    bot capable of holding a card back rather than spending it on nothing.
+
+    It is one ply and no further. A second ply needs to model the opponent's reply, which needs an
+    opponent model, and the honest version of that is this same function recursing — worth doing
+    only once there is a reason to believe the evaluation below is any good.
+  */
+  /*
+    The land drop is a rule, not a judgement.
+
+    It is taken before the search and never weighed against anything, for the same reason the old
+    ranking gave it a thousand: a land costs nothing, there is one a turn, and a turn without one
+    is a turn behind for the rest of the game. Leaving it in the search was worse than wrong, it
+    was invisible — a land is one card out of your hand for one permanent on the board, so any
+    margin big enough to stop the bot wasting a Shock also stopped it playing lands, and it lost
+    every game in the measurement while looking like a tuning problem.
+
+    Between two lands it plays the one that is ready now: a land that enters tapped is better
+    played on a turn whose mana was not going to be spent anyway.
+  */
+  const lands = actions.plays.filter((p) => p.kind === 'land');
+  if (lands.length > 0) {
+    const ready = lands.find((p) => scriptFor(state.cardDefs[state.instances[p.card]!.defKey]?.name)?.entersTapped !== true);
+    return { type: 'auto:playLand', by: seat, card: (ready ?? lands[0]!).card };
   }
-  return { type: 'auto:pass', by: seat };
+
+  const options = candidateActions(state, seat, actions);
+  if (options.length === 0) return { type: 'auto:pass', by: seat };
+  if (opts.lookahead === false) return options[0]!.action;
+
+  /*
+    The best of them, and no baseline for doing nothing.
+
+    The first version weighed every play against the position as it stood, so a play had to be
+    better than passing by a margin — the obvious way to stop a bot spending a Shock on a 1/1. It
+    was measurably wrong. Against the shallow bot it won 28 games of 60 with a one-point margin and
+    40 of 60 with none at all, and the reason is that the evaluation cannot see what holding a card
+    buys: a card kept is a card scored, while the tempo it cost is invisible. So the discipline it
+    bought was imaginary and the turns it wasted were real.
+
+    What the search is for, then, is *which* play rather than *whether* to play: the best creature,
+    the right target, the mode that does something. That it finds, and the measurement says so.
+  */
+  let best = options[0]!.action;
+  let bestScore = -Infinity;
+  for (const option of options) {
+    const after = simulate(state, option.action);
+    if (after === null) continue;
+    const score = evaluate(after, seat);
+    // `>` rather than `>=` keeps the heuristic order as the tie-break: the options arrive
+    // best-first by the old shallow ranking, so two plays that look identical one move out are
+    // separated by the cheaper judgement rather than by whichever happened to be enumerated last.
+    if (score > bestScore) {
+      bestScore = score;
+      best = option.action;
+    }
+  }
+  return best;
 }
 
 /**
@@ -531,8 +756,8 @@ export function botAction(state: GameState, seat: SeatIndex): Action | null {
  * `legalActions` offered is one the engine will accept. A bot that tapped lands itself would be
  * second-guessing that, and would get it wrong the first time a land made two colours.
  */
-export function botStep(state: GameState, seat: SeatIndex): GameState {
-  const action = botAction(state, seat);
+export function botStep(state: GameState, seat: SeatIndex, opts: BotOptions = {}): GameState {
+  const action = botAction(state, seat, opts);
   if (action === null) return state;
   return applyAction(state, action, HOST);
 }
@@ -547,16 +772,17 @@ export interface PlayOutResult {
  * Plays a game out with bots in every seat until somebody wins or `maxActions` is spent.
  *
  * Returns rather than throws when it runs out of actions, so a test can assert on how far it got
- * instead of only that it threw.
+ * instead of only that it threw. `opts` goes to every seat — `{ lookahead: false }` is how the
+ * breadth tests get through dozens of games in the time one search-driven game takes.
  */
-export function playOut(state: GameState, maxActions = 6000): PlayOutResult {
+export function playOut(state: GameState, maxActions = 6000, opts: BotOptions = {}): PlayOutResult {
   let next = state;
   let actions = 0;
   while (!next.finished && actions < maxActions) {
     const seat = seatToAct(next);
     if (seat === null) break;
     const before = next.stateVersion;
-    next = botStep(next, seat);
+    next = botStep(next, seat, opts);
     actions += 1;
     // No progress means a state nobody can act on, which is the deadlock this is looking for.
     if (next.stateVersion === before) break;

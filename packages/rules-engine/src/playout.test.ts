@@ -13,7 +13,7 @@ import {
   viewFor,
   type Action, type GameState, type SeatIndex,
 } from './index.js';
-import { PLAYERS, POD_PLAYERS, HOST, WIRE_CAP } from './testkit.js';
+import { PLAYERS, POD_PLAYERS, HOST, WIRE_CAP, advanceTo, apply, arena, find, ids } from './testkit.js';
 
 /** A four-seat Commander pod, every seat on a different deck, handed to the rules engine. */
 function pod(seed: number, firstSeat: SeatIndex = 0): GameState {
@@ -73,6 +73,19 @@ const MATCHUPS: readonly (readonly [string, string])[] = [
   ['ashen-rite', 'ashen-rite'],
 ];
 
+/**
+ * The shallow bot, for the tests that play dozens of games rather than one.
+ *
+ * These tests are about the *engine*: that it never offers a play it then refuses, and never
+ * reaches a state nobody can act on. The bot that looks a move ahead is slower by the width of
+ * its search, and it is also narrower — it picks the best play, where the shallow one cheerfully
+ * casts whatever is most expensive and so wanders into more of the engine. Breadth and speed are
+ * both what these tests want, so they ask for the shallow one by name. The searching bot, which is
+ * the default and the one a player meets, is covered by the single-game tests and by "never offers
+ * a play it then refuses".
+ */
+const BREADTH = { lookahead: false } as const;
+
 describe('a whole automated game', () => {
   it('plays from a shuffled deck to a winner with nobody steering', () => {
     const result = playOut(table(20261023));
@@ -89,7 +102,7 @@ describe('a whole automated game', () => {
     const unfinished: string[] = [];
     for (let seed = 1; seed <= 20; seed++) {
       const first: SeatIndex = seed % 2 === 0 ? 1 : 0;
-      const result = playOut(table(seed * 7919, first));
+      const result = playOut(table(seed * 7919, first), 6000, BREADTH);
       if (!result.state.finished) {
         unfinished.push(`seed ${seed}: stopped on turn ${result.turns} at ${result.state.step} after ${result.actions} actions`);
       }
@@ -104,7 +117,7 @@ describe('a whole automated game', () => {
     for (const decks of MATCHUPS) {
       for (let seed = 1; seed <= 4; seed++) {
         const first: SeatIndex = seed % 2 === 0 ? 1 : 0;
-        const result = playOut(table(seed * 104729, first, decks));
+        const result = playOut(table(seed * 104729, first, decks), 6000, BREADTH);
         if (!result.state.finished) {
           unfinished.push(`${decks[0]} vs ${decks[1]} seed ${seed}: stopped on turn ${result.turns} at ${result.state.step}`);
         }
@@ -118,7 +131,7 @@ describe('a whole automated game', () => {
     // whole interaction untested, so this one asserts a counterspell actually resolved.
     let countered = 0;
     for (let seed = 1; seed <= 6 && countered === 0; seed++) {
-      const result = playOut(table(seed * 7723, 0, ['ember-rush', 'tidal-mind']));
+      const result = playOut(table(seed * 7723, 0, ['ember-rush', 'tidal-mind']), 6000, BREADTH);
       countered += result.state.log.filter((e) => /counter/i.test(e.message)).length;
     }
     expect(countered).toBeGreaterThan(0);
@@ -132,7 +145,7 @@ describe('a whole automated game', () => {
     let actions = 0;
     let turns = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      const result = playOut(table(seed * 7919));
+      const result = playOut(table(seed * 7919), 6000, BREADTH);
       expect(result.state.finished).toBe(true);
       actions += result.actions;
       turns += result.turns;
@@ -160,7 +173,7 @@ describe('a whole automated game', () => {
     let mulligans = 0;
     let hands = 0;
     for (let seed = 1; seed <= 40; seed++) {
-      const result = playOut(table(seed * 7919, 0, ['ember-rush', 'tidal-mind']));
+      const result = playOut(table(seed * 7919, 0, ['ember-rush', 'tidal-mind']), 6000, BREADTH);
       expect(result.state.finished).toBe(true);
       for (const seat of result.state.seats) {
         hands += 1;
@@ -177,7 +190,7 @@ describe('a whole automated game', () => {
     // the spell it is built around — the graveyard targets are in a zone nothing else points at.
     let returned = 0;
     for (let seed = 1; seed <= 8 && returned === 0; seed++) {
-      const result = playOut(table(seed * 5431, 0, ['rot-harvest', 'rot-harvest']));
+      const result = playOut(table(seed * 5431, 0, ['rot-harvest', 'rot-harvest']), 6000, BREADTH);
       returned += result.state.log.filter((e) => /Raise Dead|Zombify|Gravedigger/.test(e.message)).length;
     }
     expect(returned).toBeGreaterThan(0);
@@ -189,7 +202,7 @@ describe('a whole automated game', () => {
     // what goes in is never bigger than what is being fed.
     let sacrifices = 0;
     for (let seed = 1; seed <= 10; seed++) {
-      const result = playOut(table(seed * 3187, 0, ['rot-harvest', 'rot-harvest']));
+      const result = playOut(table(seed * 3187, 0, ['rot-harvest', 'rot-harvest']), 6000, BREADTH);
       expect(result.state.finished).toBe(true);
       sacrifices += result.state.log.filter((e) => /sacrifices/.test(e.message)).length;
     }
@@ -565,12 +578,76 @@ describe('a whole automated game', () => {
   });
 });
 
+describe('what looking a move ahead buys', () => {
+  /**
+   * A position, with every land tapped for mana, where seat 0 is on the clock.
+   *
+   * The two bots are asked the same question from the same position: the shallow one, which takes
+   * the most expensive play it can afford, and the searching one, which plays each option out and
+   * keeps the best. Where they disagree is what this search is for.
+   */
+  const position = (
+    hand: readonly string[], mine: readonly string[], theirs: readonly string[], deck: string,
+  ): GameState => {
+    let s = arena({
+      decks: { 0: deck }, hands: { 0: hand },
+      battlefield: { 0: mine, 1: theirs }, turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      const name = s.cardDefs[s.instances[id]!.defKey]!.name;
+      if (!/^(Mountain|Forest|Plains|Island|Swamp)$/.test(name)) continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  const nameOfCard = (s: GameState, id: string | undefined): string =>
+    id === undefined ? '' : s.cardDefs[s.instances[id]!.defKey]!.name;
+
+  it('will not cast the sweeper that kills more of its own board than theirs', () => {
+    // Four lands, a Hurricane and a Doom Blade, and a Serra Angel across the table. The Hurricane
+    // is the expensive play and it achieves nothing: three to each flier does not kill a 4/4, and
+    // three to each player is three off its own total as well. The Doom Blade kills the Angel. The
+    // shallow bot cannot tell them apart except by price — a Hurricane for three is a four-mana
+    // play — and casting a symmetrical spell for nothing was the example in this file's own
+    // comments of the bot being a bot.
+    const mine = ['Swamp', 'Swamp', 'Swamp', 'Forest'];
+    const s = position(['Hurricane', 'Doom Blade'], mine, ['Serra Angel'], 'rot-harvest');
+
+    const shallow = botAction(s, 0, BREADTH);
+    expect(nameOfCard(s, shallow?.type === 'auto:cast' ? shallow.card : undefined)).toBe('Hurricane');
+
+    const searched = botAction(s, 0);
+    expect(nameOfCard(s, searched?.type === 'auto:cast' ? searched.card : undefined)).toBe('Doom Blade');
+  });
+
+  it('will not pay a kicker that turns a ping into a wipe of its own creatures', () => {
+    // Breath of Darigaaz for two kills their 1/1s and leaves its own 4/2s standing. Kicked, for
+    // five, it kills the 1/1s, both of its own creatures and four life off everybody. The kicked
+    // version is the more expensive play, so the shallow bot takes it; the search plays both out
+    // and sees which board it would rather be looking at.
+    const mine = [
+      'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain',
+      'Flametongue Kavu', 'Flametongue Kavu',
+    ];
+    const s = position(['Breath of Darigaaz'], mine, ['Doomed Traveler', 'Doomed Traveler'], 'ashen-rite');
+
+    const shallow = botAction(s, 0, BREADTH);
+    expect(shallow?.type === 'auto:cast' && shallow.kicked === true).toBe(true);
+
+    const searched = botAction(s, 0);
+    expect(searched?.type).toBe('auto:cast');
+    expect(searched?.type === 'auto:cast' && searched.kicked === true).toBe(false);
+  });
+});
+
 describe('a four-player Commander pod', () => {
   it('plays four seats down to one survivor', () => {
     // The format this project is built around, and nobody had sat at one: four seats, forty life,
     // a command zone, and a turn order that has to skip the seats that are out.
     for (let seed = 1; seed <= 6; seed++) {
-      const result = playOut(pod(seed * 977, (seed % 4) as SeatIndex), 20000);
+      const result = playOut(pod(seed * 977, (seed % 4) as SeatIndex), 20000, BREADTH);
       expect(result.state.finished).toBe(true);
       expect(result.state.winnerSeat).not.toBeNull();
       // Three out, one standing — not two winners and not a draw.
@@ -594,7 +671,7 @@ describe('a four-player Commander pod', () => {
         const seat = seatToAct(s);
         if (seat === null) break;
         const previous = s;
-        const action = botAction(s, seat);
+        const action = botAction(s, seat, BREADTH);
         if (action === null) break;
         s = applyAction(s, action, HOST);
         if (s.stateVersion === previous.stateVersion) break;
