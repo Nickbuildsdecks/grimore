@@ -124,7 +124,9 @@ describe('a whole automated game', () => {
       }
     }
     expect(unfinished).toEqual([]);
-  });
+    // Twenty-one pairings, four shuffles each: eighty-four whole games, which is more than
+    // vitest's default five seconds buys even with the shallow bot.
+  }, 60_000);
 
   it('counters spells when it has the mana for it, rather than ignoring the stack', () => {
     // A game where nothing was ever countered would pass every other test here while leaving the

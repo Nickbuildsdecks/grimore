@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**433 tests in the rules engine, 110 in the web app, 1,039 across the workspace.**
+**440 tests in the rules engine, 111 in the web app, 1,047 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -772,6 +772,34 @@ and a bot that keeps blockers home never closes. And the search had quietly stop
 planeswalkers (three activations in sixteen games) because a loyalty counter was worth nothing in
 the evaluation: a plus ability bought something it could not see. Loyalty is scored now, at about
 the value of a point of life, which is what it is.
+
+**Exile until this leaves the battlefield**, which is the commonest removal in Magic and was
+missing because the engine could not express the link. Two pieces: a **leave-the-battlefield
+trigger** (CR 603.6c), recorded at the same choke point as `dies` so that destroyed, exiled,
+bounced and sacrificed all count and no caller has to remember it; and the link itself, kept on the
+exiled card (`exiledBy`) the way an Aura's host is kept on the Aura, so the permanent that leaves
+knows exactly what to give back — to its **owner**, not to whoever took it, which is the difference
+between Journey to Nowhere and a Mind Control. Three cards: Banisher Priest, Journey to Nowhere and
+Banishing Light, the first card in the pool to point at a *permanent* rather than a creature. The
+table names what a permanent is holding ("holding Shivan Dragon"), because otherwise killing the
+Journey is a guess.
+
+**And it found a real loop, printed on a real card.** The first version used Oblivion Ring, whose
+text is "exile target nonland permanent" — which, alone on an empty board, is itself. It exiles
+itself, leaving fires its own return trigger, the return brings it back, entering exiles it again:
+fifty iterations and a game over on turn five, in two of thirty unsteered games. The fix is not a
+house rule in the engine but the card that says **"another"**, which is what Wizards printed ten
+years later. Banishing Light is in the deck and Oblivion Ring is in the comment.
+
+**The word "another" also found a bug that had been there for weeks.** A trigger waiting to be
+aimed had its candidates listed *without the source*, so every filter that says "another" was
+offering the ability's own permanent — while the engine, which does pass the source, refused the
+choice. A table offering what the engine refuses is the one bug class `legalActions` exists to
+prevent, and nothing had shown it because no card until now needed the word.
+
+Measured over 30 unsteered games: 25 of these cards cast, 18 of them finding a legal target and
+exiling something (the rest correctly doing nothing, by CR 603.3c). No game destroyed the exiler,
+so the giving-back half is proved by tests — one per way of leaving: destroyed, exiled, bounced.
 
 ## Next
 

@@ -935,6 +935,46 @@ const BALAN: CardDef = {
 
 // ── The decks ────────────────────────────────────────────────────────────────────────────────────
 
+// ── Exile until this leaves the battlefield ──────────────────────────────────────────────────────
+
+const BANISHER_PRIEST: CardDef = {
+  name: 'Banisher Priest',
+  typeLine: 'Creature \u2014 Human Cleric',
+  manaCost: '{1}{W}{W}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'When Banisher Priest enters the battlefield, exile target creature an opponent controls until Banisher Priest leaves the battlefield.',
+  colors: ['W'],
+};
+
+const JOURNEY_TO_NOWHERE: CardDef = {
+  name: 'Journey to Nowhere',
+  typeLine: 'Enchantment',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  oracleText: 'When Journey to Nowhere enters the battlefield, exile target creature.\nWhen Journey to Nowhere leaves the battlefield, return the exiled card to the battlefield under its owner\u2019s control.',
+  colors: ['W'],
+};
+
+/**
+ * Banishing Light, and not Oblivion Ring, because of one word.
+ *
+ * Oblivion Ring says "exile target nonland permanent", and on an empty board that is itself: it
+ * exiles itself, its leave trigger returns it, entering exiles it again. A real loop on a real
+ * card, which the engine reproduced faithfully and which ended two games in thirty on turn five.
+ * Banishing Light is the same card with "another" in it.
+ */
+const BANISHING_LIGHT: CardDef = {
+  name: 'Banishing Light',
+  typeLine: 'Enchantment',
+  manaCost: '{3}{W}',
+  cmc: 4,
+  oracleText: 'When Banishing Light enters the battlefield, exile another target nonland permanent until Banishing Light leaves the battlefield.',
+  colors: ['W'],
+};
+
+
 // ── Costs that are choices: cycling, kicker, and a creature on the altar ─────────────────────────
 
 /**
@@ -1064,19 +1104,23 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: SELESNYA_GUILDGATE, count: 2 },
     // Two of its Forests are cycling lands, which is the one decision this deck's mana base has.
     { card: TRANQUIL_THICKET, count: 2 },
-    { card: LLANOWAR_ELVES, count: 4 },
+    { card: LLANOWAR_ELVES, count: 3 },
     { card: RAMPANT_GROWTH, count: 3 },
     { card: GARRUK_WILDSPEAKER, count: 1 },
     { card: SOUL_WARDEN, count: 2 },
-    { card: DOOMED_TRAVELER, count: 3 },
+    { card: DOOMED_TRAVELER, count: 2 },
     // A plain 2/2 with no text, kept at one copy on purpose: `testkit.ts` builds its boards by
     // pulling named cards out of a real deck, so the vanilla creature two dozen tests use as
     // their fixture has to be *in* a deck to be reachable. Cutting it breaks them all at once.
     { card: GRIZZLY_BEARS, count: 1 },
     { card: GLORIOUS_ANTHEM, count: 2 },
-    { card: CENTAUR_COURSER, count: 3 },
+    { card: CENTAUR_COURSER, count: 2 },
     { card: AJANIS_PRIDEMATE, count: 2 },
-    { card: SERRA_ANGEL, count: 3 },
+    { card: SERRA_ANGEL, count: 2 },
+    // Removal that gives the creature back if you kill the thing holding it, which is the deck's
+    // answer to a creature it cannot block rather than a second Pacifism.
+    { card: BANISHER_PRIEST, count: 2 },
+    { card: JOURNEY_TO_NOWHERE, count: 2 },
     { card: GIANT_GROWTH, count: 1 },
     { card: LOXODON_WARHAMMER, count: 2 },
     { card: SELESNYA_CHARM, count: 2 },
@@ -1179,13 +1223,16 @@ export const FORGE_ALLIANCE: DeckSpec = {
     { card: SECLUDED_STEPPE, count: 2 },
     { card: ELITE_VANGUARD, count: 3 },
     { card: MONASTERY_SWIFTSPEAR, count: 3 },
-    { card: DOOMED_TRAVELER, count: 3 },
+    { card: DOOMED_TRAVELER, count: 2 },
     { card: LEONIN_SKYHUNTER, count: 3 },
     { card: FIREBRAND_ARCHER, count: 2 },
     { card: AJANIS_PRIDEMATE, count: 2 },
     { card: SERRA_ANGEL, count: 2 },
-    { card: BONESPLITTER, count: 3 },
+    { card: BONESPLITTER, count: 2 },
     { card: LOXODON_WARHAMMER, count: 2 },
+    // The deck's only answer to an Equipment or an enchantment, which is what a board of swords
+    // is most afraid of.
+    { card: BANISHING_LIGHT, count: 2 },
     { card: BASILISK_COLLAR, count: 2 },
     { card: RAISE_THE_ALARM, count: 2 },
     { card: SECURE_THE_WASTES, count: 2 },

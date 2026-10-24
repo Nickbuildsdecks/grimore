@@ -176,6 +176,13 @@ export interface AutomationState {
    */
   readonly died: readonly string[];
   /**
+   * Permanents that have left the battlefield since the last `settle`, for leave-the-battlefield
+   * triggers (CR 603.6c). Wider than `died`, which is only the ones that reached a graveyard: a
+   * permanent that was exiled or bounced left too, and the cards that exiled something "until this
+   * leaves" have to give it back either way.
+   */
+  readonly left: readonly string[];
+  /**
    * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
    * Drained by `settle` alongside `died`.
    *

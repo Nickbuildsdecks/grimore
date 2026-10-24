@@ -81,6 +81,14 @@ export interface CardInstance {
   readonly counters: Readonly<Record<string, number>>;
   /** Equipment, auras and anything else physically on another card. */
   readonly attachedTo: string | null;
+  /**
+   * The permanent that exiled this card "until it leaves the battlefield" (CR 400.7e).
+   *
+   * Set on the *exiled* card rather than on the exiler, for the same reason `attachedTo` is set on
+   * the Aura: one card in exile is exiled by at most one thing, while one Banisher Priest could
+   * in principle be holding several. The exiler's leave trigger looks up whatever points at it.
+   */
+  readonly exiledBy?: string;
   readonly isToken: boolean;
   readonly isCommander: boolean;
   /**

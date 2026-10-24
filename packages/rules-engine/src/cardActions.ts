@@ -145,6 +145,17 @@ export function relocate(
   if (state.automated && inst.zone === 'battlefield' && toZone === 'graveyard') {
     next = { ...next, died: [...next.died, inst.id] };
   }
+  /*
+    And *leaving* the battlefield at all is its own event (CR 603.6c), wider than dying.
+
+    A Banisher Priest gives its creature back whether it was destroyed, exiled, bounced or
+    sacrificed, and every one of those is a different caller. Recorded here for exactly the reason
+    `dies` is: this is the one place a card changes zone, so there is no path that can forget.
+    Changing controller is not leaving — it moves between two battlefields.
+  */
+  if (state.automated && inst.zone === 'battlefield' && toZone !== 'battlefield') {
+    next = { ...next, left: [...next.left, inst.id] };
+  }
   // And arriving from anywhere else is *entering* the battlefield. Changing controller is not —
   // it moves between two battlefields, and a creature that changed hands has not entered.
   if (state.automated && inst.zone !== 'battlefield' && toZone === 'battlefield') {

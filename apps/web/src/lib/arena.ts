@@ -470,6 +470,18 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     .map((c) => c.card?.name)
     .filter((name): name is string => name !== undefined)
   for (const name of attached) out.push(name)
+  /*
+    What this permanent is holding in exile.
+
+    Without it, killing a Journey to Nowhere is a guess: the creature it took is face up in a pile
+    on the other side of the board with nothing connecting the two, and the whole decision — is
+    destroying this worth giving that back — needs the link on screen.
+  */
+  const held = Object.values(view.cards)
+    .filter((c) => c.exiledBy === card.id && c.zone === "exile")
+    .map((c) => c.card?.name)
+    .filter((name): name is string => name !== undefined)
+  for (const name of held) out.push(`holding ${name}`)
   if (card.power !== undefined && card.toughness !== undefined && card.card?.power !== undefined) {
     out.push(`${card.power}/${card.toughness}`)
   }

@@ -468,7 +468,16 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     mustChoose = {
       description: choice.description,
       specs,
-      candidates: specs.map((spec) => legalTargets(state, spec, seat)),
+      /*
+        With the source, which it was missing.
+
+        Every filter that says "another" reads the source to know which candidate is itself, and
+        without it this list offered the ability's own permanent as a target — while
+        `chooseTargets` in the engine, which does pass it, refused the choice. A table offering
+        something the engine then refuses is the one bug class this file exists to prevent, and it
+        went unnoticed until a card with "another target nonland permanent" existed to show it.
+      */
+      candidates: specs.map((spec) => legalTargets(state, spec, seat, object?.source)),
     };
   }
 

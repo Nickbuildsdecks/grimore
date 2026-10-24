@@ -248,6 +248,42 @@ export function exileCard(state: GameState, id: string): GameState {
   return relocate(state, inst, 'exile', inst.owner, 'bottom');
 }
 
+/**
+ * Exiles a card and records which permanent did it, so that permanent can give it back.
+ *
+ * "Exile until ~ leaves the battlefield" is one effect with two halves (CR 400.7e), and the link
+ * between them is the only reason the card is fair. Kept on the exiled card — see
+ * `CardInstance.exiledBy` — and read by `returnExiledBy` when the exiler leaves.
+ */
+export function exileUntilLeaves(state: GameState, id: string, exiledBy: string): GameState {
+  const inst = state.instances[id];
+  if (inst === undefined) return state;
+  const next = relocate(state, inst, 'exile', inst.owner, 'bottom');
+  // After the move, because `relocate` rebuilds the instance and would drop a field set before it.
+  return next.instances[id] === undefined ? next : withInstance(next, id, { exiledBy });
+}
+
+/**
+ * Returns everything a permanent exiled, to the battlefield, under its **owner's** control.
+ *
+ * Its owner and not the exiler's: a Banisher Priest that dies gives the creature back to the
+ * player it took it from, and getting that wrong would make the card a Mind Control with extra
+ * steps. A card that has since left exile — exiled again by something else, or shuffled away — is
+ * skipped rather than dragged back from wherever it is now.
+ */
+export function returnExiledBy(state: GameState, exiledBy: string): GameState {
+  let next = state;
+  for (const [id, inst] of Object.entries(state.instances)) {
+    if (inst.exiledBy !== exiledBy) continue;
+    if (inst.zone !== 'exile') continue;
+    next = withInstance(next, id, { exiledBy: undefined });
+    const current = next.instances[id];
+    if (current === undefined) continue;
+    next = relocate(next, current, 'battlefield', current.owner, 'bottom');
+  }
+  return next;
+}
+
 export function bounceToHand(state: GameState, id: string): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;

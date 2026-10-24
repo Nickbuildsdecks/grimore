@@ -799,6 +799,24 @@ describe("cardBadges", () => {
     expect(cardBadges(v, permanent({ power: 5, toughness: 5 }))).toContain("5/5")
   })
 
+  it("names what a permanent is holding in exile", () => {
+    // Killing a Journey to Nowhere is a decision about the creature it took, and the two cards are
+    // on opposite sides of the board with nothing else connecting them.
+    const journey = permanent({
+      id: "j1",
+      card: { name: "Journey to Nowhere", typeLine: "Enchantment", manaCost: "{1}{W}", cmc: 2, oracleText: "", colors: ["W"] },
+      power: undefined, toughness: undefined,
+    })
+    const held = permanent({
+      id: "x1", zone: "exile", exiledBy: "j1",
+      card: { name: "Shivan Dragon", typeLine: "Creature — Dragon", manaCost: "{4}{R}{R}", cmc: 6, power: "5", toughness: "5", oracleText: "", colors: ["R"] },
+    })
+    const v = view({ automation: automation(), cards: { j1: journey, x1: held } })
+    expect(cardBadges(v, journey)).toContain("holding Shivan Dragon")
+    // And nothing is said about the card in exile itself: it is not on the battlefield.
+    expect(cardBadges(v, held)).toEqual([])
+  })
+
   it("shows marked damage", () => {
     const v = view({ automation: automation() })
     expect(cardBadges(v, permanent({ damage: 2 }))).toContain("2 dmg")

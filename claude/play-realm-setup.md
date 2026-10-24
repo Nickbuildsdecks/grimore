@@ -115,6 +115,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Pay a kicker | The kicked version is listed as its own play — "Cast Burst Lightning with kicker {4}" — and it only appears when you can pay for the whole thing. Choosing it *is* paying it. |
 | Cycle a land from your hand | Tap it in hand: beside **Play**, it offers its cycling ability. It costs the mana and the card, and draws you another. |
 | Cast a spell that costs a creature | Tap it, then tap the creature to feed it. The creature is gone before the spell is on the stack, which is the rules and not a shortcut — nobody can save it in response. |
+| Take a creature away | Journey to Nowhere, Banisher Priest and Banishing Light exile something *until they leave the battlefield*. The card holding it says what it is holding, and destroying it gives the card back to its owner. |
 | Equip something | Tap the Equipment → **Equip**, then tap one of your creatures. Only on your own turn, and the creature it is already on is not offered. It stays on the battlefield when that creature dies. |
 | Scry | The top cards appear in a row of their own, visible to you alone. Tap the ones to put on the bottom and confirm; what you leave stays on top. |
 | Mulligan | At the start, **Mulligan** draws a fresh seven; keeping then asks which card goes to the bottom. |

@@ -1804,3 +1804,45 @@ spell-per-turn, so it is scored at about the value of a point of life.
 percentile, 61ms at the very worst. The two tests that play twenty whole games with the searching
 bot now need more than vitest's default five seconds, which is the price of the player meeting the
 bot the tests measure.
+
+## D55 — Exile until this leaves, and the word "another"
+
+Oblivion Ring, Journey to Nowhere, Banisher Priest, Fiend Hunter: the commonest removal in Magic,
+and none of it could be written, because the engine had no way to say "until this leaves the
+battlefield".
+
+**Decided: a leave-the-battlefield trigger, recorded where `dies` is recorded.** A Banisher Priest
+gives its creature back whether it was destroyed, exiled, bounced or sacrificed, and every one of
+those is a different caller. `relocate` is the one place a card changes zone, so that is where the
+event is noticed — the fourth rule to end up there, after `dies`, `etb` and printed loyalty, and
+for the same reason every time: there is no path that can forget. It is wider than `died`, which is
+only the cards that reached a graveyard.
+
+**Decided: the link lives on the exiled card.** `exiledBy` on the card in exile, not a list on the
+exiler, which is the same shape as an Aura keeping its host: one card in exile is held by at most
+one thing, while one permanent could in principle be holding several. It comes back under its
+**owner's** control, not its exiler's — getting that wrong would make Journey to Nowhere a Mind
+Control with extra steps.
+
+**And the card is Banishing Light, not Oblivion Ring, because of one word.** Oblivion Ring says
+"exile target nonland permanent", and alone on an empty board the only legal target is itself: it
+exiles itself, leaving the battlefield fires its own return trigger, the return brings it back, and
+entering exiles it again. Fifty iterations and a game over on turn five, in two of thirty unsteered
+games — a real loop on a real card, which the engine reproduced faithfully. The fix is not a house
+rule in the engine, because the engine was right. It is to print the card that says "another",
+which is what Wizards themselves did ten years later. Oblivion Ring stays in the comment, because
+the next person to reach for it should know what it costs.
+
+**The same word found a bug that had been in `legalActions` for weeks.** A trigger waiting to be
+aimed listed its candidates with `legalTargets(state, spec, seat)` — no source — so every filter
+that says "another", or "a creature this is not already attached to", was offering the ability's own
+permanent. The engine's own `chooseTargets` does pass the source, so it refused the choice the
+table had offered: a table offering a move the engine rejects, which is the one failure
+`legalActions` exists to prevent. It went unnoticed because no card in the pool needed the word
+until this one.
+
+**Measured over 30 unsteered games:** 25 of the three cards cast, 18 of those finding a legal target
+and exiling something; the other seven correctly did nothing, since a trigger with no legal target
+never goes on the stack (CR 603.3c). No game destroyed the exiler, so the giving-back half is held
+by tests rather than by a measurement — one test per way of leaving, because "it works when it
+dies" is the easy third of the rule.

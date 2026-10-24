@@ -298,7 +298,10 @@ export function choices(s: GameState): string[] {
 export function drain(s: GameState, limit = 16): GameState {
   let next = s;
   for (let i = 0; i < limit; i++) {
-    if (next.stackOrder.length === 0 && next.died.length === 0 && next.entered.length === 0) return next;
+    if (
+      next.stackOrder.length === 0 && next.died.length === 0
+      && next.entered.length === 0 && next.left.length === 0
+    ) return next;
     if (next.pendingChoice !== null || next.pendingDecision !== null) return next;
     if (next.priority === null) return next;
     next = apply(next, { type: 'auto:pass', by: next.priority });

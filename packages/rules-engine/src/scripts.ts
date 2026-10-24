@@ -24,6 +24,7 @@ import {
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
   gainControl, gainLife, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump, pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
+  exileUntilLeaves, returnExiledBy,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type { CardScript, DecisionSpec, TargetSpec } from './scriptTypes.js';
@@ -1335,6 +1336,74 @@ function goblinCount(state: GameState, seat: SeatIndex): number {
   return n;
 }
 
+// ── Exile until this leaves the battlefield ──────────────────────────────────────────────────────
+
+/**
+ * "Exile it until ~ leaves the battlefield", which is two triggers and one link.
+ *
+ * The commonest removal in Magic and the fairest: the creature is not dead, it is held, and
+ * killing the thing holding it gives it back. Written once here because the three cards that use
+ * it differ only in what they may point at — and because a card that exiled without the return
+ * half would be strictly better than its printed self, which is the kind of bug a player would
+ * never report as one.
+ */
+const exileUntilItLeaves = (name: string, target: TargetSpec): Pick<CardScript, 'name' | 'triggers'> => ({
+  name,
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      targets: [target],
+      description: `exile ${target.description} until ${name} leaves the battlefield`,
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : exileUntilLeaves(c.state, id, c.source);
+      },
+    },
+    {
+      on: { kind: 'leaves' },
+      description: 'return the exiled card to the battlefield under its owner\u2019s control',
+      effect: (c) => returnExiledBy(c.state, c.source),
+    },
+  ],
+});
+
+/** Banisher Priest: a 2/2 holding a creature hostage, and the creature comes back when it dies. */
+const BANISHER_PRIEST: CardScript = exileUntilItLeaves('Banisher Priest', {
+  kind: 'creature',
+  description: 'target creature an opponent controls',
+  filter: creatureYouDontControl,
+});
+
+/** Journey to Nowhere: the same deal for one less mana, with no body attached. */
+const JOURNEY_TO_NOWHERE: CardScript = exileUntilItLeaves('Journey to Nowhere', TARGET_CREATURE);
+
+/**
+ * Banishing Light: anything that is not a land, and not itself.
+ *
+ * The first card in the pool to point at a *permanent* rather than at a creature — an Equipment, an
+ * enchantment, a planeswalker — which the targeting layer could already express and nothing had
+ * asked for.
+ *
+ * **Banishing Light rather than Oblivion Ring, and the word "another" is why.** Oblivion Ring was
+ * written first, and it says "exile target nonland permanent" — which, with an empty board, means
+ * itself. It exiles itself, leaving the battlefield fires its own return trigger, the trigger
+ * brings it back, and entering exiles it again: a real loop, printed on a real card, and the
+ * engine reproduced it faithfully. Fifty iterations and a game over on turn five, in two of thirty
+ * unsteered games. The fix is not a house rule in the engine — it is to print the card that says
+ * "another", which is what Wizards did themselves ten years later.
+ */
+const BANISHING_LIGHT: CardScript = exileUntilItLeaves('Banishing Light', {
+  kind: 'permanent',
+  description: 'another target nonland permanent',
+  filter: (state, candidate, _controller, source) => {
+    if (candidate.kind !== 'card') return false;
+    if (candidate.id === source) return false;
+    const inst = state.instances[candidate.id];
+    if (inst === undefined) return false;
+    return !characteristicsOf(state, inst).isLand;
+  },
+});
+
 // ── Kicker, and costs paid with a creature ───────────────────────────────────────────────────────
 
 /**
@@ -1500,6 +1569,7 @@ const ALL: readonly CardScript[] = [
   cyclingLand('Secluded Steppe', 'W'),
   cyclingLand('Tranquil Thicket', 'G'),
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
+  BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
   guildgate('Rakdos Guildgate', 'B', 'R'),
 ];
 

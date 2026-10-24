@@ -367,6 +367,7 @@ function triggerMatches(
     }
     case 'attacks':
     case 'becomes-tapped':
+    case 'leaves':
       return true;
     default:
       return false;
@@ -406,7 +407,7 @@ function raise(
   // battlefield, and `triggerMatches` decides from the trigger's own `who` whether it wants it.
   // The subject is always included: it may be the watcher, and for a death it is in a graveyard
   // by now rather than on the battlefield.
-  const selfOnly = new Set(['attacks', 'becomes-tapped']);
+  const selfOnly = new Set(['attacks', 'becomes-tapped', 'leaves']);
   const watchers = event.kind === 'etb' || event.kind === 'dies'
     ? [
         ...(subject === undefined ? [] : [subject]),
@@ -422,7 +423,9 @@ function raise(
     if (inst === undefined) continue;
     // A `dies` trigger fires from the graveyard, but only for the creature that died: any other
     // watcher has to still be on the battlefield to be watching.
-    const fromGraveyard = event.kind === 'dies' && id === subject;
+    // A `dies` or `leaves` trigger fires from wherever the permanent went, but only for the
+    // permanent it happened to: any other watcher has to still be on the battlefield.
+    const fromGraveyard = (event.kind === 'dies' || event.kind === 'leaves') && id === subject;
     if (!fromGraveyard && inst.zone !== 'battlefield') continue;
     const script = scriptOf(next, id);
     if (script?.triggers === undefined) continue;
@@ -627,11 +630,20 @@ function settle(state: GameState, before: GameState): GameState {
   // a reanimation, a token — and this is the only place they are announced, so no caller can
   // forget to. Deaths before arrivals in each pass, because a creature that dies and leaves
   // something behind should see the death trigger go on the stack first.
-  for (let pass = 0; pass < 32 && (next.died.length > 0 || next.entered.length > 0); pass++) {
+  for (
+    let pass = 0;
+    pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0);
+    pass++
+  ) {
     const dead = next.died;
+    const gone = next.left;
     const arrived = next.entered;
-    next = { ...next, died: [], entered: [] };
+    next = { ...next, died: [], left: [], entered: [] };
     for (const id of dead) next = raise(next, { kind: 'dies' }, next.instances[id]?.zoneSeat, id);
+    // Leaving comes after dying, so a card that does both raises the narrower event first and its
+    // death trigger goes on the stack under the leave trigger — which is the order the rules put
+    // them in for one event raising two abilities of the same controller.
+    for (const id of gone) next = raise(next, { kind: 'leaves' }, next.instances[id]?.zoneSeat, id);
     for (const id of arrived) {
       const arrival = next.instances[id];
       if (arrival?.zone !== 'battlefield') continue;

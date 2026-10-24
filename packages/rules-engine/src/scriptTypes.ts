@@ -98,6 +98,13 @@ export type TriggerEvent =
       readonly subjectIsToken?: boolean;
     }
   | { readonly kind: 'attacks' }
+  /**
+   * This permanent has left the battlefield, however it left (CR 603.6c) — destroyed, exiled,
+   * bounced or sacrificed. Only its own script can care, which is why it takes no `who`: a card
+   * that wants to watch *another* permanent leave would be watching the board rather than itself,
+   * and nothing in the pool does.
+   */
+  | { readonly kind: 'leaves' }
   | { readonly kind: 'becomes-tapped' }
   | {
       readonly kind: 'spell-cast';

@@ -15,8 +15,8 @@ import {
   STARTER_DECKS, characteristicsOf, legalActions, scriptFor, scriptedCardNames, viewFor,
 } from './index.js';
 import {
-  advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, namesIn,
-  nextTurn, passBoth, refusal, stackNames,
+  advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
+  namesIn, nextTurn, passBoth, refusal, stackNames,
 } from './testkit.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
@@ -2723,6 +2723,154 @@ describe('spells with {X} in the cost, chosen as the spell is cast', () => {
     expect(s.instances[courser]!.damage).toBe(0);
     // And both players took it, the caster included.
     expect([life(s, 0), life(s, 1)]).toEqual([18, 18]);
+  });
+});
+
+describe('exile until this leaves the battlefield', () => {
+  /** Seat 1 on a white deck, with `lands` tapped for mana, `hand` in hand and `theirs` opposite. */
+  const white = (
+    hand: readonly string[], lands: number, theirs: readonly string[], deck = 'verdant-guard',
+  ): GameState => {
+    let s = arena({
+      decks: { 1: deck }, hands: { 1: hand },
+      battlefield: { 1: Array.from({ length: lands }, () => 'Plains'), 0: theirs },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== 'Plains') continue;
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  /**
+   * Casts it and lets its entry trigger resolve, aiming it if it asks.
+   *
+   * None of these cards targets as a *spell* — the exile is an entry trigger, which is why none of
+   * them can be countered by killing the creature in response and why the target is chosen when
+   * the permanent arrives rather than when it is cast.
+   */
+  const playAndAim = (s: GameState, name: string, at: string): GameState => {
+    let next = drain(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', name) }));
+    if (next.pendingChoice !== null) {
+      next = drain(apply(next, { type: 'auto:choose', by: 1, targets: [{ kind: 'card', id: at }] }));
+    }
+    return next;
+  };
+
+  it('Journey to Nowhere takes a creature away, and dying gives it back', () => {
+    let s = white(['Journey to Nowhere'], 2, ['Shivan Dragon']);
+    const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+    s = playAndAim(s, 'Journey to Nowhere', dragon);
+    // The creature is in exile, and the enchantment holding it knows it has it.
+    expect(s.instances[dragon]!.zone).toBe('exile');
+    const journey = find(s, 1, 'battlefield', 'Journey to Nowhere');
+    expect(s.instances[dragon]!.exiledBy).toBe(journey);
+
+    // Destroy the enchantment and the creature comes back — to its owner, not to the player who
+    // exiled it, which is the difference between this card and a Mind Control.
+    s = drain(apply(s, { type: 'card:move', by: 1, card: journey, toZone: 'graveyard' }));
+    expect(s.instances[dragon]!.zone).toBe('battlefield');
+    expect(s.instances[dragon]!.zoneSeat).toBe(0);
+  });
+
+  it('and it comes back whether the exiler died, was exiled or was bounced', () => {
+    for (const how of ['graveyard', 'exile', 'hand'] as const) {
+      let s = white(['Journey to Nowhere'], 2, ['Shivan Dragon']);
+      const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+      s = playAndAim(s, 'Journey to Nowhere', dragon);
+      expect(s.instances[dragon]!.zone).toBe('exile');
+      const journey = find(s, 1, 'battlefield', 'Journey to Nowhere');
+      s = drain(apply(s, { type: 'card:move', by: 1, card: journey, toZone: how }));
+      // Leaving is leaving: the trigger is on the zone change, not on reaching a graveyard.
+      expect([how, s.instances[dragon]!.zone]).toEqual([how, 'battlefield']);
+    }
+  });
+
+  it('Banisher Priest holds a creature for as long as it lives', () => {
+    let s = white(['Banisher Priest'], 3, ['Shivan Dragon']);
+    const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+    s = playAndAim(s, 'Banisher Priest', dragon);
+    expect(s.instances[dragon]!.zone).toBe('exile');
+
+    const priest = find(s, 1, 'battlefield', 'Banisher Priest');
+    s = drain(apply(s, { type: 'card:move', by: 1, card: priest, toZone: 'graveyard' }));
+    expect(s.instances[dragon]!.zone).toBe('battlefield');
+    expect(s.instances[dragon]!.zoneSeat).toBe(0);
+  });
+
+  it('and it will not point at a creature its own controller has', () => {
+    const s = white(['Banisher Priest'], 3, [], 'verdant-guard');
+    // Nothing of the opponent's on the board, so the trigger has no legal target and the Priest is
+    // still perfectly castable — it is a 2/2 that happens to do nothing (CR 603.3c).
+    const play = legalActions(s, 1).plays.find((p) => p.name === 'Banisher Priest');
+    expect(play).toBeDefined();
+    const after = drain(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Banisher Priest') }));
+    expect(after.pendingChoice).toBeNull();
+    expect(countOf(after, 1, 'battlefield', 'Banisher Priest')).toBe(1);
+  });
+
+  it('Banishing Light points at anything that is not a land, and not at itself', () => {
+    // Two legal targets, so the trigger has to ask rather than aim itself — which is what makes
+    // the candidate list readable.
+    let s = arena({
+      decks: { 1: 'forge-alliance' }, hands: { 1: ['Banishing Light'] },
+      battlefield: {
+        1: ['Plains', 'Plains', 'Plains', 'Plains', 'Bonesplitter'],
+        0: ['Shivan Dragon'],
+      },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      if (nameOf(s, id) !== 'Plains') continue;
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Banishing Light') });
+    s = drain(s);
+    // The trigger is waiting to be aimed, and what it offers is every permanent but the lands —
+    // and not itself, which is the whole reason this card is Banishing Light and not Oblivion
+    // Ring: "target nonland permanent" on an empty board means itself, and a permanent that
+    // exiles itself returns itself and exiles itself again, forever.
+    expect(s.pendingChoice).not.toBeNull();
+    const choice = legalActions(s, 1).mustChoose;
+    const names = (choice?.candidates[0] ?? []).map((t) => (t.kind === 'card' ? nameOf(s, t.id) : 'player'));
+    expect(names).toContain('Shivan Dragon');
+    expect(names).not.toContain('Plains');
+    expect(names).not.toContain('Banishing Light');
+
+    s = drain(apply(s, { type: 'auto:choose', by: 1, targets: [{ kind: 'card', id: dragon }] }));
+    expect(s.instances[dragon]!.zone).toBe('exile');
+  });
+
+  it('and with nothing else on the board it simply does nothing', () => {
+    // The loop case, from the other side: alone on an empty board, Banishing Light has no legal
+    // target, so its trigger never goes on the stack at all (CR 603.3c) and it sits there being an
+    // enchantment. Oblivion Ring, in the same position, ended the game.
+    let s = white(['Banishing Light'], 4, [], 'forge-alliance');
+    s = drain(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Banishing Light') }));
+    expect(s.pendingChoice).toBeNull();
+    expect(countOf(s, 1, 'battlefield', 'Banishing Light')).toBe(1);
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('two of them hold two different creatures, and each gives back only its own', () => {
+    let s = white(['Journey to Nowhere', 'Journey to Nowhere'], 4, ['Shivan Dragon', 'Raging Goblin']);
+    const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+    s = playAndAim(s, 'Journey to Nowhere', dragon);
+    const first = find(s, 1, 'battlefield', 'Journey to Nowhere');
+    s = playAndAim(s, 'Journey to Nowhere', goblin);
+    const second = ids(s, 1, 'battlefield')
+      .find((id) => nameOf(s, id) === 'Journey to Nowhere' && id !== first)!;
+    expect([s.instances[dragon]!.zone, s.instances[goblin]!.zone]).toEqual(['exile', 'exile']);
+
+    // Destroy the one holding the Goblin: the Goblin comes back and the Dragon stays where it is.
+    s = drain(apply(s, { type: 'card:move', by: 1, card: second, toZone: 'graveyard' }));
+    expect(s.instances[goblin]!.zone).toBe('battlefield');
+    expect(s.instances[dragon]!.zone).toBe('exile');
   });
 });
 
