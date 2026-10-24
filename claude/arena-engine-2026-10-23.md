@@ -1995,6 +1995,32 @@ message of the action that provoked them.
 exiled while an opposing Kalitas was out** against 76 exiled by the pool's other exile effects — so
 the pass fires about two and a half times a game it is in, with no action refused.
 
+### What two hundred pods say
+
+Five rules went into combat and the stack in quick succession — forced attacks, goad, APNAP trigger
+order, the damage assignment order and a death replacement — each with its own tests and its own
+measurement. None of them answers whether the engine, with all five in it, plays hundreds of games
+to the end without getting stuck.
+
+**200 unsteered four-seat pods, all seven decks: 200 reached a winner.** No action refused, no
+action that changed nothing, no game over the 400-turn cap, no moment with nobody to act. Median 52
+turns, p90 77, longest 122. 89,188 bot decisions at a mean of 7.6ms.
+
+The number worth looking at is the slowest single decision: **2011ms**, which is the shape of the
+bug D71 was about. Measured over a second soak of 60 pods and 27,261 decisions: **p50 2.0ms, p99
+65ms, p99.9 173ms, 96 over 100ms, six over 250ms, none at all over 500ms.** So the two-second
+outlier is about one decision in ninety thousand, on turn 39 of a long game, and the ordinary
+experience of playing this bot is a reply in two milliseconds. Recorded rather than chased: a tail
+that thin is not a performance problem, and if it thickens, this is the number it thickened from.
+
+**And the damage order, seen in a browser.** D93 named the gap — no suite reached the prompt. The
+arena suite was instrumented rather than guessed about: over a whole run it declared blocks *once*,
+with two cards in the defender's row. So a two-browser duel cannot get there; the game never builds
+the board. The solo-pod suite can, because the player attacks into three bots that gang up, and in
+one run of three it happened: the driver tapped the blockers in order and the engine took it. The
+suite records it and reports it when it happens, with a line saying why not when it does not —
+sampled rather than required, the way the scry and the library search already are.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

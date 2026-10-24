@@ -440,6 +440,9 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
 
   if (await has(page, 'order-prompt')) {
     /*
+      Reached about one solo-pod run in three: the bots gang up on an attacker (D88) and the player
+      is then asked which of the blockers the damage goes to first.
+
       The damage assignment order (CR 509.2), which is the attacking player's.
 
       The blockers are on somebody *else's* side of the board, and the engine only asks when the
@@ -537,6 +540,17 @@ export async function noteMove(seen, page, did) {
     game, which is how a run came back saying no attack was ever drawn in a game full of attacks.
   */
   if (/^declared \d+ attackers$/.test(did)) seen.swung = true;
+  /*
+    The damage assignment order (CR 509.2), which only happens when a creature is blocked by two or
+    more — so it is a *sampled* observation and not something a run can be required to see.
+    Recorded when it happens and reported only then, which is how the scry and the library search
+    are handled: a check that can fail for a board the game never built is a check that says
+    nothing about the code.
+  */
+  if (did === 'assigned combat damage') {
+    if (seen.ordered !== true) await shot(page, 'assigning-combat-damage');
+    seen.ordered = true;
+  }
   if (/^declared \d+ attackers$/.test(did) && seen.arrows !== true) {
     /*
       Waited for, briefly, rather than read the instant the action returns.

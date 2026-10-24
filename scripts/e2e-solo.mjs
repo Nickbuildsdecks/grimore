@@ -101,6 +101,8 @@ async function main() {
 
     // ── Play it out ─────────────────────────────────────────────────────────────────────────────
     let moves = 0;
+    /** Whether this game ever asked for a damage assignment order. Sampled, not required. */
+    let ordered = false;
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -117,6 +119,16 @@ async function main() {
       stuck = 0;
       const did = await takeTurn(page);
       moves += 1;
+      /*
+        The damage assignment order (CR 509.2), recorded when the game happens to produce one.
+
+        It needs the bots to gang up on one of this player's attackers, which they do — but only
+        when they have two creatures able to block it, so about one run in three gets there. Not a
+        required check for that reason: a check that fails for a board the game never built says
+        nothing about the code. Reported when it is reached, which is how the scry and the library
+        search are handled in the arena suite.
+      */
+      if (did === 'assigned combat damage') ordered = true;
       if (moves % 15 === 0) console.log(`      move ${moves}: ${did}`);
       await page.waitForTimeout(60);
       const turn = await readNumber(page, 'turn');
@@ -128,6 +140,12 @@ async function main() {
     }
 
     console.log(`      played ${moves} moves over ${turnsSeen} turn changes`);
+    if (ordered) {
+      check('the attacker is asked which blocker the damage goes to first, and the engine takes it', true);
+    } else {
+      console.log('      (nothing was blocked by two creatures in this game — combat.test.ts '
+        + 'covers the damage order on a fixed board)');
+    }
     check('the opponent plays its own turns without being asked to', turnsSeen >= 4, `turns ${turnsSeen}`);
     check('the game reaches a winner', await has(page, 'game-over'),
       `stopped at ${await text(page, 'step-label')} on turn ${lastTurn} after ${moves} moves`);

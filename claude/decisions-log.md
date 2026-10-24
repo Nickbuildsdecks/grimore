@@ -3443,3 +3443,61 @@ an opposing battlefield at the moment, so a Swords to Plowshares cast in the sam
 counted with it — the 76 is the baseline that makes the attribution worth anything.
 
 All six tests go red with the pass removed.
+
+## D96 — What two hundred pods say, and the slowest decision in ninety thousand
+
+Five rules went into combat and the stack in quick succession — forced attacks, goad, APNAP trigger
+order, the damage assignment order, and a death replacement — each with its own tests and its own
+measurement. What none of them answers is whether the engine, with all five in it, still plays
+hundreds of games to the end without getting stuck. So: **200 unsteered four-seat pods, all seven
+decks, every action applied and every refusal, stall and timeout counted.**
+
+| | |
+| --- | --- |
+| games played | 200 |
+| games that reached a winner | **200** |
+| actions the engine refused | 0 |
+| actions that changed nothing (a stall) | 0 |
+| games over the 400-turn cap | 0 |
+| moments with nobody to act, or no move for the seat that had to | 0 |
+| median / p90 / longest game, in turns | 52 / 77 / 122 |
+| bot decisions | 89,188 |
+| mean time per decision | 7.6ms |
+| slowest single decision | **2011ms** |
+
+The last number is the one worth looking at, because it is the shape of the bug D71 was about: one
+pod in sixty taking minutes per decision. Measured properly over a second soak of 60 pods and 27,261
+decisions: **p50 2.0ms, p99 65ms, p99.9 173ms, 96 decisions over 100ms, six over 250ms and none at
+all over 500ms.** So the two-second outlier is roughly one decision in ninety thousand, on turn 39
+of a game that had already run long, and the ordinary experience of playing against this bot is a
+reply in two milliseconds.
+
+Recorded rather than acted on. A tail that thin is not a performance problem, and chasing it would
+mean changing the search for a case a player meets once in a hundred games — the opposite of the
+trade D71 made, where the fix was worth it because the slow case was *common*. If the tail thickens,
+this is the number it thickened from.
+
+**And one thing the soak settles that no unit test can**: every one of those 200 games ended. Not
+"did not crash" — reached a winner, with the eliminations, the state-based actions and the five new
+rules all agreeing on when the game was over.
+
+## D97 — The prompt a browser only sees one run in four
+
+D93 built the damage assignment order and named a gap: no browser suite reached the prompt, because
+the engine only asks when a creature is blocked by two or more and the suites' boards are small. The
+gap is now half closed, and the half that is closed is the interesting half.
+
+The arena suite was instrumented rather than guessed about: across a full run it declared blocks
+**once**, with two cards in the defending player's battlefield row and one of them placeable. So the
+two-browser duel cannot reach it — not because the driver is wrong but because the game never builds
+the board.
+
+The solo-pod suite can. The player attacks into three bots that gang up (D88), so the player is the
+one asked for the order — and in one of three runs it happened, the driver tapped the blockers in
+order, and the engine took the declaration. **It is sampled, not required**: the suite records it and
+reports it when it happens, with a line saying why it did not when it does not. That is how the scry
+and the library search are already handled, and the reason is the same — a check that fails for a
+board the game never built says nothing about the code.
+
+Which leaves the honest statement: the damage order works end to end through a real browser, and it
+has been seen to, about one solo-pod run in four.
