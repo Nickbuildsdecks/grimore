@@ -28,8 +28,8 @@
  */
 import path from 'node:path';
 import {
-  chromium, check, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
-  readNumber, expectEventually, isMyMove, makeMove, notePrompts, noteMove,
+  chromium, check, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text, textOf, tap,
+  press, readNumber, expectEventually, isMyMove, makeMove, notePrompts, noteMove,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -170,6 +170,11 @@ async function main() {
       eliminated: false,
       playedOnAfterElimination: false,
       commanderBadge: false,
+      /** The defender buttons' own text, which is the threat read a pod turn is decided on. */
+      attackReads: [],
+      /** Whether "all at them" was pressed, and whether every attack landed on one player. */
+      allAtTried: false,
+      allAtWorked: false,
     };
     let lastTurn = await readNumber(host.page, 'turn');
     let moves = 0;
@@ -198,10 +203,60 @@ async function main() {
         if (await has(actor.page, 'attack-prompt')) {
           seen.attackers = true;
           // Who this declaration can be sent at, which is the thing that did not exist before.
-          const aims = await actor.page.locator('[data-testid^="attack-seat-"]').count();
+          const seats = actor.page.locator('[data-testid^="attack-seat-"]');
+          const aims = await seats.count();
           if (aims > 1 && !seen.aimShot) {
             seen.aimShot = true;
             await shot(actor.page, 'choosing-who-to-attack');
+          }
+          /*
+            What each of those buttons says about the player behind it.
+
+            The threat read is the whole pod decision — their life, and what they have left to
+            block with — and it is only worth anything if it is on the button that sends you
+            there. Collected rather than asserted here, because a seat whose life has not moved
+            and whose board is empty is a legitimately sparse read.
+          */
+          if (aims > 0 && seen.attackReads.length < 6) {
+            seen.attackReads.push(...(await seats.evaluateAll((els) =>
+              els.map((e) => (e.textContent ?? '').trim()))));
+          }
+          /*
+            "All at them", once in the run, driven by hand.
+
+            Two creatures tapped at two different players, then one press, and every attack should
+            be on one of them. Done here and not in `makeMove` because the driver deliberately
+            scatters its attacks — the spread is a property this suite checks — so proving the
+            opposite needs its own turn, and this takes exactly one.
+          */
+          const mine = cardsIn(actor.page, `zone-battlefield-${actor.seat}`);
+          if (!seen.allAtTried && aims > 1 && (await mine.count()) >= 2) {
+            await tap(seats.nth(0));
+            await tap(mine.nth(0));
+            await tap(seats.nth(1));
+            await tap(mine.nth(1));
+            // The button only exists once two creatures are actually attacking, and the two taps
+            // above may have landed on a land or a creature the engine will not let attack. So the
+            // claim is made only when the situation was reached, and a turn where it was not is
+            // simply tried again on the next declaration rather than failing.
+            if (await has(actor.page, 'aim-all')) {
+              seen.allAtTried = true;
+              await press(actor.page, 'aim-all');
+              const after = await seats.evaluateAll((els) =>
+                els.map((e) => (e.textContent ?? '').trim()));
+              // One button carries the whole swing, and no other carries any of it. The count is
+              // the trailing "· N" the button appends for the attacks aimed at it.
+              const counts = after.map((t) => {
+                const m = /·\s*(\d+)(?:\s*·\s*lethal)?$/.exec(t);
+                return m === null ? 0 : Number.parseInt(m[1], 10);
+              });
+              seen.allAtWorked = counts.filter((n) => n > 0).length === 1
+                && Math.max(...counts) >= 2;
+              await shot(actor.page, 'all-at-one-player');
+            }
+            await press(actor.page, 'confirm-attackers');
+            moves += 1;
+            continue;
           }
         }
         if (await has(actor.page, 'block-prompt')) seen.blockers = true;
@@ -332,6 +387,26 @@ async function main() {
         JSON.stringify(reads));
     } else {
       console.log('      (no seat had a creature when the board was read — arena.test.ts asserts the read)');
+    }
+
+    /*
+      The read on the button that sends the attack: their life, and what is left to block with.
+
+      Asserted as "every read names a life total", because the rest of it is conditional on the
+      board — a seat with nothing untapped correctly says nothing about blockers. The arithmetic,
+      and the strict rule for calling an attack lethal, are pinned in `arena.test.ts`.
+    */
+    if (seen.attackReads.length > 0) {
+      check('each player you can attack says what going at them is walking into',
+        seen.attackReads.every((t) => /\s\d+/.test(t)), JSON.stringify(seen.attackReads.slice(0, 4)));
+    } else {
+      console.log('      (no attack had more than one possible defender in this game)');
+    }
+    if (seen.allAtTried) {
+      check('“all at them” sends every declared attack at one player', seen.allAtWorked);
+    } else {
+      console.log('      (never had two creatures and two defenders at once to send everything at '
+        + 'one player — arena.test.ts pins the reducer)');
     }
 
     // ── Commander damage is the engine's count, with nothing to contradict it ───────────────────

@@ -86,6 +86,8 @@ export type ArenaEvent =
   | { kind: "toggleAttacker"; card: string }
   /** Points the creatures tapped from now on at a different player, or at a planeswalker. */
   | { kind: "aimAttacks"; seat: SeatIndex; planeswalker?: string }
+  /** Sends every attack already declared at one player, which is what "all in on them" means. */
+  | { kind: "aimAll"; seat: SeatIndex; planeswalker?: string }
   | { kind: "declareBlockers" }
   | { kind: "holdBlocker"; card: string }
   | { kind: "assignBlock"; attacker: string }
@@ -333,6 +335,29 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       }
     }
 
+    /*
+      Everything already picked, re-pointed at one player.
+
+      Re-aiming one attacker is a second tap on it (see `toggleAttacker`), which is right for
+      moving one creature and wrong for the commonest pod decision there is: four creatures aimed
+      around the table, and then somebody's life total drops and all of them should go at them. By
+      hand that is four untaps and four retaps with the aim changed in between, which is long
+      enough for the moment to pass.
+    */
+    case "aimAll": {
+      if (mode.kind !== "attackers") return { mode, action: null }
+      const aim = { defender: event.seat, ...(event.planeswalker === undefined ? {} : { planeswalker: event.planeswalker }) }
+      return {
+        mode: {
+          ...mode,
+          defender: event.seat,
+          planeswalker: event.planeswalker,
+          chosen: mode.chosen.map((a) => ({ attacker: a.attacker, ...aim })),
+        },
+        action: null,
+      }
+    }
+
     case "declareBlockers":
       return { mode: { kind: "blockers", chosen: [], holding: null }, action: null }
 
@@ -467,11 +492,23 @@ export function splitBattlefield(cards: readonly VisibleCard[]): {
  * second is what can stop you on yours. Both are read from the same view the board is drawn from,
  * so neither can disagree with what is on screen — and `power` is the *computed* power, so a
  * Grizzly Bears under a Glorious Anthem counts as three.
+ *
+ * `readyPower` is the one the strip shows beside the total, because both questions a pod asks are
+ * about power rather than headcount: three untapped 1/1s and one untapped 7/7 are the same `ready`
+ * and nothing like the same turn. `ready` stays, because "can they block at all" is a count.
  */
-export function boardRead(view: GameView, seat: number): { power: number; creatures: number; ready: number } {
+export interface BoardRead {
+  readonly power: number
+  readonly creatures: number
+  readonly ready: number
+  readonly readyPower: number
+}
+
+export function boardRead(view: GameView, seat: number): BoardRead {
   let power = 0
   let creatures = 0
   let ready = 0
+  let readyPower = 0
   for (const id of view.zones[`${seat}:battlefield`] ?? []) {
     const card = view.cards[id]
     // The view sends `power` only for a creature, which is the engine's own answer to "is this a
@@ -479,9 +516,38 @@ export function boardRead(view: GameView, seat: number): { power: number; creatu
     if (card?.power === undefined) continue
     creatures += 1
     power += card.power
-    if (!card.tapped) ready += 1
+    if (!card.tapped) {
+      ready += 1
+      readyPower += card.power
+    }
   }
-  return { power, creatures, ready }
+  return { power, creatures, ready, readyPower }
+}
+
+/**
+ * What an attack aimed at one seat is walking into, and whether it ends them.
+ *
+ * The pod decision the table could not answer: with three players to choose between, "who do I
+ * attack" is a question about their life, what they have left to block with, and whether this is
+ * the swing that finishes somebody — and all three were on screen only as cards to count.
+ *
+ * `lethal` is deliberately the strict claim: the attack is at least their life total **and they
+ * have no untapped creature**, so there is nothing to block with and every point connects. An
+ * instant can still save them, which is true of every lethal attack ever declared; a seat holding
+ * blockers is not marked at all, because whether a block saves them depends on assignment and a
+ * table that said "lethal" and was wrong would be worse than a table that said nothing.
+ */
+export function attackRead(
+  view: GameView, seat: number, attackingPower: number,
+): { life: number; ready: number; readyPower: number; lethal: boolean } {
+  const life = view.seats.find((s) => s.index === seat)?.life ?? 0
+  const guard = boardRead(view, seat)
+  return {
+    life,
+    ready: guard.ready,
+    readyPower: guard.readyPower,
+    lethal: attackingPower > 0 && attackingPower >= life && guard.ready === 0,
+  }
 }
 
 /** Short badges for a permanent: its current body, marked damage, and why it cannot fight. */

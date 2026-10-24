@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils"
 import {
   IDLE, arenaReducer, boardRead, candidatesAt, cardBadges, choiceCandidatesAt, playsForCard,
   splitBattlefield,
-  type ArenaEvent, type ArenaMode,
+  type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
 
@@ -545,6 +545,8 @@ function SeatStrip({
   manualLife,
   seats,
   board,
+  myLife,
+  myBlockers,
 }: {
   seat: SeatView
   isMe: boolean
@@ -564,7 +566,14 @@ function SeatStrip({
    * untapped. Absent on a tabletop, where the engine is not computing anybody's power and a
    * number here would be a guess dressed up as a fact.
    */
-  board?: { power: number; creatures: number; ready: number }
+  board?: BoardRead
+  /**
+   * Your own life total, so an opponent's strip can say when their untapped power alone is enough
+   * to end you. Only passed on an automated table, and only for somebody else's strip.
+   */
+  myLife?: number
+  /** Whether *you* have an untapped creature, which is the whole of "could you block it". */
+  myBlockers?: number
 }) {
   const life = (delta: number) => onAct({ type: "life:adjust", seat: seat.index, delta })
   /**
@@ -639,17 +648,38 @@ function SeatStrip({
       </span>
       <span className="text-[var(--g-text-muted)]">gy {seat.graveyardCount}</span>
       {/*
-        The two numbers a pod turns on: how much power this seat has, and how much of it can still
-        block. Everything else on this strip says how the game has gone; these say what is about to
-        happen — and in a four-player game they are the difference between reading the board and
+        The two numbers a pod turns on: how much power this seat has, and how much of it is still
+        untapped. Everything else on this strip says how the game has gone; these say what is about
+        to happen — and in a four-player game they are the difference between reading the board and
         counting it.
+
+        Both are power rather than a headcount, because both questions they answer are about power:
+        three untapped 1/1s and one untapped 7/7 are the same number of creatures and nothing like
+        the same turn.
       */}
       {board !== undefined && board.creatures > 0 ? (
         <span data-testid={`board-${seat.index}`} className="text-[var(--g-text-muted)]">
           board <span className="font-semibold text-[var(--g-text-high)]">{board.power}</span>
-          {board.ready < board.creatures ? ` (${board.ready} up)` : ""}
+          {board.ready < board.creatures ? ` · ${board.readyPower} up` : ""}
         </span>
       ) : null}
+      {/*
+        And the one conclusion worth drawing for you: their untapped power is at least your life
+        and you have nothing untapped to block with, so unless you answer it this turn their attack
+        ends you. Strict on purpose — a seat you could block is not marked, because whether the
+        block saves you depends on how they assign, and a table that cried lethal and was wrong
+        would be worse than a table that said nothing.
+      */}
+      {board !== undefined && !isMe && myLife !== undefined && myBlockers === 0
+        && board.readyPower >= myLife && board.readyPower > 0 ? (
+          <span
+            data-testid={`lethal-${seat.index}`}
+            title="Their untapped creatures alone are lethal, and you have nothing untapped to block with"
+            className="rounded bg-[var(--g-mana-r)] px-1 text-[9px] font-bold uppercase text-white"
+          >
+            lethal
+          </span>
+        ) : null}
       {seat.poison > 0 ? <span className="text-[var(--g-mana-g)]">poison {seat.poison}</span> : null}
 
       {/*
@@ -1162,6 +1192,8 @@ function Board({ table }: { table: UseTable }) {
             manualLife={!automated}
             seats={view.seats}
             board={automated ? boardRead(view, o.index) : undefined}
+            myLife={automated ? view.seats.find((s) => s.index === seat)?.life : undefined}
+            myBlockers={automated ? boardRead(view, seat).ready : undefined}
             targetable={targetableSeats.has(o.index)}
             onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat: o.index } })}
           />

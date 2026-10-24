@@ -16,7 +16,7 @@ import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  decisionLabel, manaPips, primaryMove, specAt, targetsRequired, targetsWanted,
+  attackRead, decisionLabel, manaPips, primaryMove, specAt, targetsRequired, targetsWanted,
   type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
 
@@ -215,6 +215,20 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
                   (a) => a.defender === option.seat && a.planeswalker === option.planeswalker,
                 ).length
                 const current = mode.defender === option.seat && mode.planeswalker === option.planeswalker
+                /*
+                  What going at this player is walking into, on the button that sends you there.
+
+                  Their life and what they have left to block with are the whole of the pod
+                  decision, and they were on screen only as cards to count across three columns.
+                  A planeswalker option says nothing: its loyalty is drawn on the card, and the
+                  blockers are its controller's — already on their own button beside it.
+                */
+                const sending = mode.chosen
+                  .filter((a) => a.defender === option.seat && a.planeswalker === option.planeswalker)
+                  .reduce((n, a) => n + (view.cards[a.attacker]?.power ?? 0), 0)
+                const read = option.planeswalker === undefined
+                  ? attackRead(view, option.seat, sending)
+                  : null
                 return (
                   <Button
                     key={option.key}
@@ -229,10 +243,32 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
                     })}
                   >
                     {option.name}
-                    {aimed > 0 ? ` ${aimed}` : ""}
+                    {read === null ? "" : ` ${read.life}`}
+                    {read !== null && read.ready > 0 ? ` · ${read.readyPower} up` : ""}
+                    {aimed > 0 ? ` · ${aimed}` : ""}
+                    {read?.lethal === true ? " · lethal" : ""}
                   </Button>
                 )
               })}
+              {/*
+                All of them at whoever is aimed at now. One press for the decision a pod turn
+                actually makes — see `aimAll` — rather than untapping and retapping every creature
+                with the aim changed in between.
+              */}
+              {mode.chosen.length > 1 ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px]"
+                  data-testid="aim-all"
+                  onClick={() => dispatch({
+                    kind: "aimAll", seat: mode.defender, planeswalker: mode.planeswalker,
+                  })}
+                >
+                  All at {defendable.find((o) =>
+                    o.seat === mode.defender && o.planeswalker === mode.planeswalker)?.name ?? "them"}
+                </Button>
+              ) : null}
             </span>
           ) : null}
           <span className="ml-auto flex gap-1.5">

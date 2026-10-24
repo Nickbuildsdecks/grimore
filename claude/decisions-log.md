@@ -2094,3 +2094,46 @@ once saying no attack was ever drawn on the board, in a game full of attacks: th
 while the attack stands, and a defender with no legal block is never asked for one, so the engine
 can be through combat before any page is looked at again. It is sampled at the one moment it is
 certainly true now — immediately after the declaration — on top of the old opportunistic check.
+
+## D64 — The pod decision, on the button that makes it
+
+A four-player board shows everything and concludes nothing. D50 put two numbers on every seat
+strip — total power, and how many creatures are untapped — which answered "what can hit me". What
+it did not answer is the question a pod turn is actually spent on: **which of these three people do
+I attack**, and that one needs their life total, what they have left to block with, and whether
+this swing finishes them, all at once, while the clock runs.
+
+**Untapped *power*, not untapped creatures.** The strip said `board 11 (2 up)`. Three untapped 1/1s
+and one untapped 7/7 are the same `2 up` and nothing like the same turn, and both questions the
+number is read for — what can block my attack, what can kill me on their turn — are about power.
+It reads `board 11 · 7 up` now. The count stays in `boardRead` because one question really is a
+count: "can they block at all", which is what decides whether an attack is lethal.
+
+**The read is on the button that sends the attack.** Each defender in the attack prompt now says
+their life, what they have untapped, how many of your creatures are already aimed at them, and
+`lethal` when it applies. Put there rather than in a panel of its own because the choice is made
+by pressing one of those buttons, and a read somewhere else on screen is a read you have to go
+and find.
+
+**`lethal` is the strict claim, on purpose.** It appears only when the attack aimed at that seat is
+at least their life total **and they have no untapped creature** — nothing to block with, so every
+point connects. A seat holding blockers is not marked at all, even at one life, because whether a
+block saves them depends on how the attacker assigns damage, and a table that cried lethal and was
+wrong would be worse than a table that said nothing. An instant can still save them, which is true
+of every lethal attack ever declared.
+
+**And the same marker on an opponent's strip, the other way round.** Their untapped power alone is
+at least your life and you have nothing untapped to block with: that is a warning you can act on
+this turn, and it is the one conclusion the table draws for you.
+
+**"All at them" is one press.** Re-aiming a single attacker was already a second tap on it. What
+was missing is the commonest decision in the format: four creatures aimed around the table, then
+one life total drops and all of them should go at that player — by hand, four untaps and four
+retaps with the aim changed in between, which is long enough for the moment to pass. `aimAll`
+rewrites every declared attack, clearing a planeswalker aim rather than leaving it on the attacks
+that had one, because "all at them" means the player.
+
+**What this does *not* add is a verdict on who is winning.** Life totals sit side by side on four
+strips already, so "who is ahead" is on screen; a composite score of life and board and cards
+would be a guess dressed as a fact, which is the one thing a table must not do with a number. The
+numbers it shows are the ones it can compute exactly.

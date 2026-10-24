@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**468 tests in the rules engine, 114 in the web app, 1,080 across the workspace.**
+**468 tests in the rules engine, 119 in the web app, 1,085 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -948,6 +948,32 @@ the ones that are something else now. The blockers are compared rather than drop
 because that list is also what says the attacker is blocked: a chump blocker that dies still stops
 the damage.
 
+**The pod decision, on the button that makes it.** A four-player board showed everything and
+concluded nothing. Every seat strip has carried its total power and how many creatures are untapped
+since the table read went in; what no screen answered is the question a pod turn is actually spent
+on — *which of these three people do I attack* — which needs their life, what they have left to
+block with, and whether this swing finishes them, at the moment you are choosing.
+
+Each defender in the attack prompt now says all of it: `Bo 34 · 5 up · 2`, their life, their
+untapped power, and how many of your creatures are already pointed at them. The strip's second
+number is untapped **power** rather than a headcount, because three untapped 1/1s and one untapped
+7/7 are the same count and nothing like the same turn.
+
+`lethal` is the one conclusion the table draws, and it is the strict version: the attack is at least
+their life *and* they have no untapped creature, so there is nothing to block with. A seat holding
+blockers is never marked, even at one life, because whether the block saves them depends on how the
+damage is assigned — and a table that cried lethal and was wrong would be worse than a table that
+said nothing. The same marker appears on an opponent's own strip the other way round: their
+untapped power alone would kill you and you have nothing untapped to stop it.
+
+And **"all at them" is one press.** Re-pointing a single attacker was already a second tap on it;
+what was missing is the commonest decision in the format — four creatures aimed around the table,
+then one life total drops and all of them should go at that player. By hand that was four untaps
+and four retaps with the aim changed in between, which is long enough for the moment to pass.
+
+What this deliberately does *not* add is a verdict on who is winning. Four life totals sit side by
+side already, and a composite score of life and board and cards would be a guess dressed as a fact.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -969,8 +995,8 @@ the damage.
    which is this same function recursing with the opponent choosing against it — and the cheap
    substitute for the first of them (scoring an untapped creature above a tapped one) was tried and
    measurably lost games, which is written up in `claude/decisions-log.md`.
-4. The pod interface beyond "it works". Three opponents sit side by side now and the combat is
-   drawn rather than described, which were the two things that made a four-player board
-   unreadable. What is still missing is everything a pod is *socially*: no table talk beyond the
-   chat panel, no "attack them instead" affordance, no way to read the politics of who is ahead
-   at a glance.
+4. The pod interface beyond "it works". Three opponents side by side, combat drawn rather than
+   described, a threat read on every seat and on every button that sends an attack, and one press
+   to send the whole swing at one player. What is still missing is everything a pod is *socially*:
+   no table talk beyond the chat panel, no way to offer or take a deal, and nothing that records
+   who was politically on whose side — which is the half of Commander a screen is worst at.

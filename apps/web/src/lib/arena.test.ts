@@ -9,7 +9,8 @@
 import { describe, it, expect } from "vitest"
 import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-engine"
 import {
-  IDLE, arenaReducer, attackSummary, blockersOf, boardRead, candidatesAt, cardBadges, decisionLabel,
+  IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, candidatesAt, cardBadges,
+  decisionLabel,
   manaPips, playsForCard, primaryMove, specAt, splitBattlefield, targetKey, targetsRequired,
   targetsWanted,
   type ArenaMode, type Decision,
@@ -582,8 +583,55 @@ describe("declaring attackers", () => {
     expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({ type: "auto:attack", attackers: [] })
   })
 
+  it("sends everything already picked at one player in a single press", () => {
+    // The commonest pod decision there is: creatures aimed around the table, then one life total
+    // drops and all of them should go at that player. By hand it is an untap and a retap each.
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    mode = arenaReducer(mode, { kind: "aimAttacks", seat: 2 }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "b" }).mode
+    mode = arenaReducer(mode, { kind: "aimAttacks", seat: 3, planeswalker: "pw1" }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "c" }).mode
+    mode = arenaReducer(mode, { kind: "aimAll", seat: 3 }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack",
+      attackers: [
+        { attacker: "a", defender: 3 },
+        { attacker: "b", defender: 3 },
+        { attacker: "c", defender: 3 },
+      ],
+    })
+    // The planeswalker that was aimed at is gone from every attack, not left on the ones that had
+    // it: "all at them" means the player, and a stale `planeswalker` would send half the swing at
+    // a permanent nobody chose.
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "d" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toMatchObject({
+      attackers: [
+        { attacker: "a", defender: 3 },
+        { attacker: "b", defender: 3 },
+        { attacker: "c", defender: 3 },
+        { attacker: "d", defender: 3 },
+      ],
+    })
+  })
+
+  it("sends everything at a planeswalker when that is what is aimed at", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "b" }).mode
+    mode = arenaReducer(mode, { kind: "aimAll", seat: 2, planeswalker: "pw1" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack",
+      attackers: [
+        { attacker: "a", defender: 2, planeswalker: "pw1" },
+        { attacker: "b", defender: 2, planeswalker: "pw1" },
+      ],
+    })
+  })
+
   it("ignores an aim outside a declaration", () => {
     expect(arenaReducer(IDLE, { kind: "aimAttacks", seat: 2 })).toEqual({ mode: IDLE, action: null })
+    expect(arenaReducer(IDLE, { kind: "aimAll", seat: 2 })).toEqual({ mode: IDLE, action: null })
   })
 
   it("sends an empty declaration, which is how you attack with nothing", () => {
@@ -809,7 +857,7 @@ describe("boardRead", () => {
     })
     // Two creatures and a Forest: four power, one of them still up. The land is not a creature and
     // does not count — the view sends `power` only for creatures, which is the engine's own answer.
-    expect(boardRead(v, 1)).toEqual({ power: 4, creatures: 2, ready: 1 })
+    expect(boardRead(v, 1)).toEqual({ power: 4, creatures: 2, ready: 1, readyPower: 2 })
   })
 
   it("counts the power the engine computed, not the one printed on the card", () => {
@@ -823,7 +871,71 @@ describe("boardRead", () => {
   })
 
   it("reads an empty board as nothing rather than throwing", () => {
-    expect(boardRead(view({}), 2)).toEqual({ power: 0, creatures: 0, ready: 0 })
+    expect(boardRead(view({}), 2)).toEqual({ power: 0, creatures: 0, ready: 0, readyPower: 0 })
+  })
+
+  it("counts untapped power, not untapped creatures", () => {
+    // Three 1/1s up and one 7/7 up are the same `ready` and nothing like the same turn, which is
+    // why the strip shows the power: a headcount says the small board is the bigger threat.
+    const v = view({
+      cards: {
+        a: creature("a", { power: 7, toughness: 7 }),
+        b: creature("b", { tapped: true, power: 4, toughness: 4 }),
+      },
+      zones: { "1:battlefield": ["a", "b"] },
+    })
+    expect(boardRead(v, 1)).toEqual({ power: 11, creatures: 2, ready: 1, readyPower: 7 })
+  })
+})
+
+describe("attackRead", () => {
+  /** One seat, with only the fields a threat read looks at. */
+  const seatAt = (index: number, life: number) =>
+    ({
+      index, playerId: `p${index}`, name: `P${index}`, life, poison: 0, commanderDamage: {},
+      counters: {}, eliminated: false, eliminatedReason: null, commanderTax: 0, mulligans: 0,
+      deckId: null, searching: false, handCount: 7, libraryCount: 53, graveyardCount: 0,
+      exileCount: 0, battlefieldCount: 0,
+    }) as GameView["seats"][number]
+
+  const creature = (id: string, seat: number, over: Record<string, unknown> = {}) =>
+    ({
+      id, owner: seat, zoneSeat: seat, zone: "battlefield", tapped: false, faceDown: false,
+      revealed: false, counters: {}, attachedTo: null, isToken: false, isCommander: false,
+      card: { name: "Grizzly Bears", typeLine: "Creature — Bear", manaCost: "{1}{G}", cmc: 2, power: "2", toughness: "2", oracleText: "", colors: ["G"] },
+      power: 2, toughness: 2, keywords: [], damage: 0,
+      ...over,
+    }) as VisibleCard
+
+  it("says what a seat has left to block with, and its life", () => {
+    const v = view({
+      seats: [seatAt(0, 20), seatAt(1, 20)],
+      cards: { c1: creature("c1", 1), c2: creature("c2", 1, { tapped: true }) },
+      zones: { "1:battlefield": ["c1", "c2"] },
+    })
+    expect(attackRead(v, 1, 0)).toMatchObject({ ready: 1, readyPower: 2 })
+    expect(attackRead(v, 1, 0).life).toBe(20)
+  })
+
+  it("calls an attack lethal only when there is nothing to block with", () => {
+    // Twenty power at a seat on twenty life, with one untapped creature: not marked, because
+    // whether the block saves them depends on how the attacker assigns.
+    const guarded = view({
+      seats: [seatAt(0, 20), seatAt(1, 20)],
+      cards: { c1: creature("c1", 1) },
+      zones: { "1:battlefield": ["c1"] },
+    })
+    expect(attackRead(guarded, 1, 20).lethal).toBe(false)
+    // The same attack at the same life with the board tapped out: nothing can block it.
+    const open = view({
+      seats: [seatAt(0, 20), seatAt(1, 20)],
+      cards: { c1: creature("c1", 1, { tapped: true }) },
+      zones: { "1:battlefield": ["c1"] },
+    })
+    expect(attackRead(open, 1, 20).lethal).toBe(true)
+    // And an attack that is not actually lethal is never marked, tapped out or not.
+    expect(attackRead(open, 1, 19).lethal).toBe(false)
+    expect(attackRead(open, 1, 0).lethal).toBe(false)
   })
 })
 
