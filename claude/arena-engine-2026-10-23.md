@@ -1512,6 +1512,50 @@ Three things changed on the way to it, all worth keeping:
   per game in the five longest tests cleared it, and `turbo run test --force` has run green four
   times in a row since. Written up as D82.
 
+### The opponent that would not win
+
+A pod in sixty took over 140ms a decision where every other took under 1ms, and the profile said
+declare-attackers: 2.8 seconds a call, with **1859 creatures on the battlefield**. It looked like a
+search that could not cope with a wide board. It was the opposite.
+
+The seat with the board was playing Krenko, Mob Boss — *"{T}: Create X 1/1 red Goblin tokens, where
+X is the number of Goblins you control"* — and activating him every turn he was untapped: 7, 15,
+31, 61, 116, 230, 461, 923, 1847. Meanwhile his three opponents sat on 3, 6 and 1 life, and he
+attacked with nothing. Captured the position and replayed the two plans:
+
+| plan | result | score |
+| --- | --- | --- |
+| attack with nothing | nothing happens | **1877.3** |
+| attack with all 462 ready creatures | an opponent dies on the spot | 1875.0 |
+
+`evaluate` is "my side, less the average opponent", and the average was taken over the opponents
+**still alive** — so killing the weakest raised the average of the ones left and the score went
+down. The bot was not failing to see the alpha strike; it was correctly maximising a number that
+said winning was bad.
+
+The fix is one word: divide by the seats the table *started* with. It keeps the reason the average
+is there (a pod is "am I ahead of the table", not "is the rest of the table small") and makes an
+elimination what it is. A two-player game computes the same number either way, so none of the duel
+measurements in `bot.ts` move.
+
+**Measured on sixty four-seat pods, the same seeds before and after:**
+
+| | finished | median turns | mean turns | whole sweep | slowest game |
+| --- | --- | --- | --- | --- | --- |
+| before | 58/60 | 65 | 65.2 | 327s | 25.3s (gave up) |
+| after | **60/60** | **51** | **53.6** | **184s** | **9.9s** |
+
+Forty-seven of the sixty finish sooner. Both of the games that had not finished at all now do. The
+performance bug closed itself: nothing in the search got faster, the games just stopped going on
+long enough to build a board nobody could think about.
+
+**One loose end, recorded rather than claimed closed.** During this increment a single realtime test
+failed once under `turbo run test --force`, with all ten packages' suites running at once, and did
+not recur in eight direct runs of that suite or four more `--force` runs. Its name was lost, because
+the command's output had been filtered down to its summary line before anything read it — the same
+mistake as reading one line of a Playwright timeout, and the reason the verification runs here now
+write their whole output to a file first. If it comes back, the log will say which test.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

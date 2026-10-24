@@ -9,8 +9,8 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  applyAction, botAction, createGame, legalActions, packView, playOut, seatToAct, unpackView,
-  viewFor,
+  applyAction, botAction, createGame, evaluate, legalActions, packView, playOut, seatToAct,
+  unpackView, viewFor,
   type Action, type GameState, type SeatIndex,
 } from './index.js';
 import { PLAYERS, POD_PLAYERS, HOST, WIRE_CAP, advanceTo, apply, arena, find, ids } from './testkit.js';
@@ -663,6 +663,51 @@ describe('a whole automated game', () => {
     expect(a.turns).toBe(b.turns);
     expect(a.actions).toBe(b.actions);
     expect(a.state.log.length).toBe(b.state.log.length);
+  });
+});
+
+describe('how a seat scores a position', () => {
+  /*
+    Killing an opponent must never make the position look worse.
+
+    It did, and it is the one bug in this file's subject that cost whole games rather than single
+    plays. `evaluate` is "my side, less the average opponent", and the average used to be taken
+    over the opponents still *alive* — so eliminating the weakest player raised the average of the
+    ones left and the score went down. Measured on a real position from a four-seat pod: a seat
+    with 462 ready goblins against opponents on 3, 6 and 1 life, where the alpha strike that kills
+    one of them outright scored 1875.0 and attacking with nothing scored 1877.3. It attacked with
+    nothing for twenty turns while its board doubled to nine hundred creatures.
+
+    Asserted on the arithmetic rather than through a game, because the arithmetic is the claim:
+    the same board, with one opponent conceded, is worth more.
+  */
+  it('counts an opponent leaving the game as progress, not as a stronger table', () => {
+    const s = arena({
+      format: 'pod', seats: 4,
+      battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'], 2: ['Hill Giant'] },
+      turn: 3, firstSeat: 0,
+    });
+    const before = evaluate(s, 0);
+    // The weakest seat leaves — the one whose removal used to *raise* the average opponent.
+    const after = evaluate(apply(s, { type: 'concede', by: 3, seat: 3 }), 0);
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('and still scores the table rather than the sum of it', () => {
+    // The average is deliberate (see `evaluate`): a pod is "am I ahead of the table", not "is the
+    // rest of the table small", or the bot would chase whoever is behind instead of answering the
+    // player about to kill it. So one opponent gaining a creature must move the score by a third
+    // of what it would move in a duel, not by the whole of it.
+    const pod = arena({ format: 'pod', seats: 4, battlefield: { 0: ['Hill Giant'] }, turn: 3 });
+    const podWorse = arena({
+      format: 'pod', seats: 4, battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'] }, turn: 3,
+    });
+    const duel = arena({ battlefield: { 0: ['Hill Giant'] }, turn: 3 });
+    const duelWorse = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'] }, turn: 3 });
+    const podDrop = evaluate(pod, 0) - evaluate(podWorse, 0);
+    const duelDrop = evaluate(duel, 0) - evaluate(duelWorse, 0);
+    expect(podDrop).toBeGreaterThan(0);
+    expect(podDrop).toBeCloseTo(duelDrop / 3, 5);
   });
 });
 

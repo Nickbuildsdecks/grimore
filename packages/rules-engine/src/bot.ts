@@ -537,14 +537,27 @@ function seatValue(state: GameState, seat: SeatIndex): number {
  * Its own side, less the average opponent — the average rather than the sum, so a four-player pod
  * is scored on "am I ahead of the table" instead of on "is the rest of the table small", which
  * would have the bot ignore the player about to kill it in favour of the two who are behind.
+ *
+ * **Divided by the seats the table started with, not by the ones still alive.** That one word is
+ * the difference between a pod that ends and a pod that does not. Dividing by the living opponents
+ * means killing one *raises* the average of those left, so eliminating the weakest player scored
+ * worse than doing nothing at all — and the bot duly declined. Measured on a real position: a seat
+ * with 462 ready goblins, three opponents on 3, 6 and 1 life, and the alpha strike that kills one
+ * of them outright scoring **1875.0 against 1877.3 for attacking with nothing**. It attacked with
+ * nothing, every turn, for twenty turns, while Krenko doubled its board to nine hundred creatures
+ * and every decision in the game got slower.
+ *
+ * A fixed denominator keeps the intent exactly — still "am I ahead of the table", still immune to
+ * the sum's bias towards whoever is behind — and makes an elimination what it is: the average
+ * opponent gets smaller because one of them is gone. In a two-player game the two readings are the
+ * same number, which is why none of the duel measurements in this file move.
  */
 export function evaluate(state: GameState, seat: SeatIndex): number {
   if (state.finished) return state.winnerSeat === seat ? 1e6 : -1e6;
   if (state.seats[seat]?.eliminated === true) return -1e6;
-  const foes = foesOf(state, seat);
   let theirs = 0;
-  for (const foe of foes) theirs += seatValue(state, foe);
-  return seatValue(state, seat) - (foes.length === 0 ? 0 : theirs / foes.length);
+  for (const foe of foesOf(state, seat)) theirs += seatValue(state, foe);
+  return seatValue(state, seat) - theirs / Math.max(1, state.seats.length - 1);
 }
 
 /**

@@ -2820,3 +2820,48 @@ Three things worth keeping from it:
 - **It was never a CI risk, and it is still worth fixing.** The config said so honestly — CI was
   green — and the cost was paid locally instead, by every verification run that had to be read as
   "512 passed, exit 1, probably fine". That is exactly the signal a suite cannot afford to teach.
+
+## D83 — Divide by the seats the table started with, not the ones still alive
+
+`evaluate` is "my side, less the average opponent", and the average was taken over the opponents
+still alive. So eliminating a player changed the denominator, and eliminating the *weakest* player
+raised the average of the ones left — which made killing them score **worse than doing nothing**.
+
+Caught in a real position, captured from a four-seat pod on turn 49 and replayed:
+
+| plan | result | score |
+| --- | --- | --- |
+| attack with nothing | nothing happens | **1877.3** |
+| attack with all 462 | an opponent dies on the spot | 1875.0 |
+
+The bot took the 1877.3. It had 462 ready goblins and three opponents on 3, 6 and 1 life, and it
+attacked with nothing — every turn, for twenty turns, while Krenko doubled its board to nine
+hundred creatures. The games did not end; they ran to turn 65 and then ran out of patience.
+
+Three readings were available:
+
+- **Sum instead of average.** Monotone in "fewer opponents is better", and it throws away the
+  reason the average is there: a pod scored on the sum chases whoever is behind instead of
+  answering the player about to kill it. The existing comment had already rejected it.
+- **An explicit bonus per opponent already eliminated.** Keeps the average's scale and says the
+  thing out loud, at the cost of a second knob with no measurement behind it.
+- **A fixed denominator** — the seats the table started with. One word, keeps the intent exactly,
+  and makes an elimination what it actually is: the average opponent is smaller because one of
+  them is gone. In a two-player game the two readings are the same number, so every duel
+  measurement in `bot.ts` still holds without being re-run.
+
+Taken the third. Measured on sixty four-seat pods, the same seeds before and after:
+
+| | finished | median turns | mean turns | sweep | slowest game |
+| --- | --- | --- | --- | --- | --- |
+| before | 58/60 | 65 | 65.2 | 327s | 25.3s (gave up) |
+| after | **60/60** | **51** | **53.6** | **184s** | **9.9s** |
+
+47 of the 60 finish sooner, 7 later. The two that had not finished at all now do.
+
+**And this is what the "slow pod" was.** It was filed as a performance bug — one pod in sixty
+taking over 140ms a decision against under 1ms everywhere else — and the profile said
+declare-attackers, 2.8 seconds a call, 1859 creatures on the battlefield. None of that was the
+search being expensive; it was the search *refusing to win*, so the board kept doubling until
+thinking about it got slow. The lesson is the one D70 keeps teaching from the other end: a cost
+that grows without bound is usually a decision that is never taken.
