@@ -1,11 +1,40 @@
+import { EMPTY_COMBAT, NO_PRIORITY_STEPS } from './turnTypes.js';
+import { EMPTY_POOL } from './mana.js';
 import {
   COMMANDER_DAMAGE_THRESHOLD,
   FORMATS,
   POISON_THRESHOLD,
   isFormatId,
 } from './formats.js';
+import { dealOpeningHands, reduceCardAction } from './cardActions.js';
+import { reduceAutoAction } from './autoActions.js';
+import { pendingDeclaration, stateBasedActions } from './automation.js';
+import { isAutoAction } from './turnTypes.js';
+import {
+  assertCounterKey,
+  assertDelta,
+  assertHost,
+  assertInteger,
+  assertIntegerInRange,
+  assertMayActFor,
+  assertNotEliminated,
+  assertSeatIndex,
+  clampValue,
+  hashString,
+  MAX_COUNTER_KEY_LENGTH,
+  MAX_DICE_COUNT,
+  MAX_DICE_SIDES,
+  MIN_DICE_COUNT,
+  MIN_DICE_SIDES,
+  actionSeed,
+  deriveNextSeed,
+  mulberry32,
+  replaceSeat,
+  seatName,
+} from './internal.js';
 import {
   EngineError,
+  isCardAction,
   MAX_LOG_ENTRIES,
   type Action,
   type ActionContext,
@@ -13,115 +42,28 @@ import {
   type EliminatedReason,
   type GameState,
   type LogEntry,
+  type Outcome,
   type Seat,
   type SeatIndex,
 } from './types.js';
 
-// ---------------------------------------------------------------------------
-// Limits
-// ---------------------------------------------------------------------------
-
-export const MAX_DELTA = 999;
-export const MIN_DICE_SIDES = 2;
-export const MAX_DICE_SIDES = 1000;
-export const MIN_DICE_COUNT = 1;
-export const MAX_DICE_COUNT = 20;
-export const MAX_COUNTER_KEY_LENGTH = 32;
-/** Absolute bound on any tracked value so state can never overflow. */
-export const MAX_ABS_VALUE = 1_000_000;
-
-// ---------------------------------------------------------------------------
-// PRNG (mulberry32) — small, fast, deterministic.
-// ---------------------------------------------------------------------------
-
-/** Returns a function producing floats in [0, 1) from a 32-bit integer seed. */
-export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** FNV-1a 32-bit hash of a string, used to derive seeds from ids. */
-export function hashString(input: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-
-/**
- * The seed for the RNG used by a particular action is derived from the game's
- * seed and the version of the state the action is applied to, so any client
- * replaying the same action log obtains identical dice and coin results.
- */
-export function actionSeed(rngSeed: number, stateVersion: number): number {
-  const mixed = (rngSeed ^ Math.imul(stateVersion + 1, 0x9e3779b9)) >>> 0;
-  // Run one mulberry32 step so adjacent versions are decorrelated.
-  return Math.floor(mulberry32(mixed)() * 4294967296) >>> 0;
-}
-
-/** Derives the seed for the next game after a reset. */
-export function deriveNextSeed(rngSeed: number): number {
-  return Math.floor(mulberry32((rngSeed + 0x51ed270b) >>> 0)() * 4294967296) >>> 0;
-}
-
-// ---------------------------------------------------------------------------
-// Validation helpers
-// ---------------------------------------------------------------------------
-
-function assertInteger(value: unknown, label: string): asserts value is number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
-    throw new EngineError('INVALID_NUMBER', `${label} must be a finite integer`);
-  }
-}
-
-function assertIntegerInRange(value: unknown, min: number, max: number, label: string): asserts value is number {
-  assertInteger(value, label);
-  if (value < min || value > max) {
-    throw new EngineError('INVALID_NUMBER', `${label} must be between ${min} and ${max}`);
-  }
-}
-
-function assertDelta(value: unknown, label = 'delta'): asserts value is number {
-  assertIntegerInRange(value, -MAX_DELTA, MAX_DELTA, label);
-}
-
-function assertSeatIndex(state: GameState, value: unknown, label = 'seat'): asserts value is SeatIndex {
-  assertInteger(value, label);
-  if (value < 0 || value >= state.seats.length) {
-    throw new EngineError('INVALID_SEAT', `${label} ${value} does not exist at this table`);
-  }
-}
-
-function assertNotEliminated(state: GameState, seat: SeatIndex): void {
-  const s = state.seats[seat];
-  if (s !== undefined && s.eliminated) {
-    throw new EngineError('SEAT_ELIMINATED', `seat ${seat} has been eliminated`);
-  }
-}
-
-function assertMayActFor(action: Action, target: SeatIndex, ctx: ActionContext): void {
-  if (action.by === target || ctx.isHost === true) return;
-  throw new EngineError('FORBIDDEN', `seat ${action.by} may not modify seat ${target}`);
-}
-
-function assertHost(action: Action, ctx: ActionContext): void {
-  if (ctx.isHost === true) return;
-  throw new EngineError('FORBIDDEN', `${action.type} requires the table host`);
-}
-
-function clampValue(value: number): number {
-  if (value > MAX_ABS_VALUE) return MAX_ABS_VALUE;
-  if (value < -MAX_ABS_VALUE) return -MAX_ABS_VALUE;
-  return value;
-}
+// The limits, PRNG and assertion helpers moved to `internal.ts` so the card reducer can share them
+// without importing this module back (see that file's header). Re-exported here because they were
+// part of this module's public surface before the split.
+export {
+  MAX_ABS_VALUE,
+  MAX_COUNTER_KEY_LENGTH,
+  MAX_DELTA,
+  MAX_DICE_COUNT,
+  MAX_DICE_SIDES,
+  MIN_DICE_COUNT,
+  MIN_DICE_SIDES,
+  actionSeed,
+  deriveNextSeed,
+  hashString,
+  mulberry32,
+  shuffled,
+} from './internal.js';
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -139,6 +81,9 @@ function makeSeat(index: number, playerId: string, name: string, life: number): 
     eliminated: false,
     eliminatedReason: null,
     commanderTax: 0,
+    searching: false,
+    mulligans: 0,
+    deckId: null,
   };
 }
 
@@ -188,17 +133,39 @@ export function createGame(options: CreateGameOptions): GameState {
     stateVersion: 0,
     log: [],
     rngSeed: seed,
+    cardDefs: {},
+    instances: {},
+    zones: {},
+    instanceSeq: 0,
+    // Automation, empty until a table is switched into automated mode.
+    automated: false,
+    autoPassOff: [],
+    kept: [],
+    openingHands: false,
+    pendingChoice: null,
+    pendingDecision: null,
+    died: [],
+    left: [],
+    replacements: [],
+    entered: [],
+    step: 'precombat-main',
+    priority: null,
+    passed: [],
+    stackObjects: {},
+    stackOrder: [],
+    pools: {},
+    combat: EMPTY_COMBAT,
+    effects: [],
+    landsPlayed: {},
+    autoSeq: 0,
+    drewFromEmpty: [],
+    pendingDiscard: null,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Internal state helpers (all return new objects)
 // ---------------------------------------------------------------------------
-
-function replaceSeat(state: GameState, index: SeatIndex, patch: Partial<Seat>): GameState {
-  const seats = state.seats.map((s) => (s.index === index ? { ...s, ...patch } : s));
-  return { ...state, seats };
-}
 
 function aliveSeats(state: GameState): Seat[] {
   return state.seats.filter((s) => !s.eliminated);
@@ -223,7 +190,10 @@ interface Elimination {
 function resolveStateBasedActions(state: GameState): { state: GameState; eliminations: Elimination[] } {
   const def = FORMATS[state.format];
   const eliminations: Elimination[] = [];
-  let next = state;
+  // On an automated table the rules that check themselves — lethal damage, auras with nothing to
+  // enchant, drawing from an empty library — run first, because they can produce the very
+  // eliminations this function is about to look for.
+  let next = state.automated ? stateBasedActions(state) : state;
 
   for (const seat of state.seats) {
     if (seat.eliminated) continue;
@@ -253,13 +223,131 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
     next = { ...next, activeSeat: nextAliveSeat(next, next.activeSeat) };
   }
 
+  /**
+   * Nor can an eliminated seat hold priority (CR 800.4).
+   *
+   * The case this fixes only exists with more than two players, which is why it survived every
+   * two-player game: a seat passes, the combat damage that pass let through eliminates *them*,
+   * and `priority` still names them — because it was set while they were alive and the
+   * elimination is noticed here, afterwards. With two players the game ends in the same breath
+   * and nobody notices. With four it leaves the engine waiting on a player who has left, and the
+   * bot cheerfully acting for a dead seat.
+   */
+  const holder = next.priority === null ? undefined : next.seats[next.priority];
+  if (!next.finished && next.priority !== null && holder?.eliminated === true) {
+    next = { ...next, priority: nextAliveSeat(next, next.priority) };
+  }
+
+  /**
+   * And a player who has left the game takes the attacks aimed at them with them (CR 800.4a).
+   *
+   * Hellrider is what found this, in a four-player pod on turn forty. Its controller declared four
+   * attackers at a player on three life; Hellrider's trigger — one damage for each creature that
+   * attacked — killed them inside the same action, *after* `advanceStep` had taken the game to
+   * declare-blockers and set `priority: null` because a block was owed. With the defender gone the
+   * block was no longer owed, so nothing ever handed priority back: four attacks on the table,
+   * nobody to declare blockers, nobody holding priority, and `seatsToAct` returning nothing at
+   * all. The browser suite saw it as "stopped at Declare blockers on turn 65" with no move on
+   * screen to press, and the server's bot loop as a seat it was never asked to move.
+   *
+   * An attacker whose own controller has left goes too, for the same rule.
+   */
+  if (next.combat.attacks.length > 0) {
+    const live = next.combat.attacks.filter((attack) => {
+      if (next.seats[attack.defender]?.eliminated === true) return false;
+      const attacker = next.instances[attack.attacker];
+      return attacker !== undefined && next.seats[attacker.zoneSeat]?.eliminated !== true;
+    });
+    if (live.length !== next.combat.attacks.length) {
+      next = { ...next, combat: { ...next.combat, attacks: live } };
+    }
+  }
+
+  /**
+   * Somebody holds priority whenever nothing is blocking the game.
+   *
+   * `resetPriority` withholds it while a question, a discard or a declaration is outstanding, and
+   * hands it back when the outstanding thing is *answered* — which is an action, and so runs that
+   * code. Nothing runs it when the outstanding thing simply **stops existing**, which is what an
+   * elimination does to a block that was owed. So the invariant is restored here instead of at the
+   * one call site that happened to break it: priority null with nothing owed is not a state this
+   * engine has any legal reading of, and a table in one is a dead table.
+   *
+   * Untap and cleanup are the two steps where nobody holds priority on purpose (CR 502, CR 514).
+   */
+  const blockedByAQuestion = next.openingHands || next.pendingDecision !== null
+    || next.pendingChoice !== null || next.pendingDiscard !== null
+    || pendingDeclaration(next) !== null;
+  if (
+    !next.finished && next.started && next.automated && next.priority === null
+    && !blockedByAQuestion && !(NO_PRIORITY_STEPS as readonly string[]).includes(next.step)
+  ) {
+    next = { ...next, priority: next.activeSeat, passed: [] };
+  }
+
   const alive = aliveSeats(next);
   if (!next.finished && alive.length <= 1) {
     const winner = alive[0];
-    next = { ...next, finished: true, winnerSeat: winner === undefined ? null : winner.index };
+    /*
+      The game ends immediately, and nothing is outstanding when it does (CR 104.1).
+
+      A resolution can be halfway through asking somebody a question when the last opponent dies:
+      Magma Jet deals its damage, the engine asks where to put the top of the library, and the
+      state-based actions that end the game run in the same action. Leaving the question set
+      leaves a prompt on a finished table that nothing will ever answer, and `legalActions`
+      refusing priority while a decision is outstanding means the table offers nothing else
+      either. Found by a playout: a game that ended on a Magma Jet left its scry standing.
+    */
+    next = {
+      ...next,
+      finished: true,
+      winnerSeat: winner === undefined ? null : winner.index,
+      priority: null,
+      passed: [],
+      pendingDecision: null,
+      pendingChoice: null,
+      pendingDiscard: null,
+    };
   }
 
   return { state: next, eliminations };
+}
+
+/** How many consequences one line of the log will carry before it stops listing them. */
+const MAX_NOTES = 6;
+
+/**
+ * What an action *did*, worked out by comparing the table before and after it.
+ *
+ * Detected rather than announced, for the same reason triggers are (see `settle`): a consequence
+ * that each caller has to remember to mention is a consequence some caller will forget, and the
+ * log was the proof of it — a board wipe read "Nick casts Golgari Charm" and nothing else, with
+ * four creatures dying silently. Every card written from here on gets this for nothing.
+ *
+ * Life and death only. Zone changes in general are far too chatty — every draw, every shuffle,
+ * every token — and the two things a player scrolling back wants to reconstruct are who took
+ * damage and what died.
+ */
+function consequences(before: GameState, after: GameState): string[] {
+  const notes: string[] = [];
+  for (const seat of after.seats) {
+    const was = before.seats[seat.index];
+    if (was === undefined || was.life === seat.life) continue;
+    const delta = seat.life - was.life;
+    notes.push(`${seat.name} ${delta > 0 ? 'gains' : 'loses'} ${Math.abs(delta)} (${seat.life})`);
+  }
+  for (const [id, was] of Object.entries(before.instances)) {
+    if (was.zone !== 'battlefield') continue;
+    const now = after.instances[id];
+    // A token that leaves the battlefield ceases to exist, so "gone entirely" is a death too —
+    // and is the only way a token's death can be seen at all.
+    const zone = now === undefined ? 'graveyard' : now.zone;
+    if (zone !== 'graveyard' && zone !== 'exile') continue;
+    const name = after.cardDefs[was.defKey]?.name ?? before.cardDefs[was.defKey]?.name ?? 'a permanent';
+    notes.push(zone === 'exile' ? `${name} is exiled` : `${name} dies`);
+  }
+  if (notes.length <= MAX_NOTES) return notes;
+  return [...notes.slice(0, MAX_NOTES), `and ${notes.length - MAX_NOTES} more`];
 }
 
 function appendLog(state: GameState, entry: Omit<LogEntry, 'version' | 'turn'>): GameState {
@@ -270,20 +358,9 @@ function appendLog(state: GameState, entry: Omit<LogEntry, 'version' | 'turn'>):
   return { ...state, log };
 }
 
-function seatName(state: GameState, index: SeatIndex): string {
-  const s = state.seats[index];
-  return s === undefined ? `seat ${index}` : s.name;
-}
-
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
-
-interface Outcome {
-  readonly state: GameState;
-  readonly message: string;
-  readonly data?: Record<string, unknown>;
-}
 
 function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
   switch (action.type) {
@@ -470,10 +547,16 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
       const first = action.firstSeat === undefined ? 0 : action.firstSeat;
       assertSeatIndex(state, first, 'firstSeat');
       assertNotEliminated(state, first);
+      const started: GameState = { ...state, started: true, turn: 1, activeSeat: first };
+      // Deal opening hands only to seats that loaded a deck. A table used purely as a life tracker
+      // has no libraries, so it starts exactly as it did before the card layer existed.
+      const dealt = dealOpeningHands(started);
       return {
-        state: { ...state, started: true, turn: 1, activeSeat: first },
-        message: `game started; ${seatName(state, first)} goes first`,
-        data: { firstSeat: first },
+        state: dealt.state,
+        message: dealt.dealt > 0
+          ? `game started; ${seatName(state, first)} goes first; ${dealt.dealt} opening hand(s) drawn`
+          : `game started; ${seatName(state, first)} goes first`,
+        data: { firstSeat: first, handsDealt: dealt.dealt },
       };
     }
 
@@ -491,13 +574,46 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         finished: false,
         winnerSeat: null,
         rngSeed: deriveNextSeed(state.rngSeed),
+        // Without clearing these, a reset would leave the previous game's board on the table.
+        cardDefs: {},
+        instances: {},
+        zones: {},
+        instanceSeq: 0,
+        // Back to the manual tabletop: an automated table reset mid-game would otherwise be left
+        // with no active step and no way to hand priority to anyone, and `auto:start` refuses to
+        // run twice, so nobody could restart it.
+        automated: false,
+        autoPassOff: [],
+        kept: [],
+        openingHands: false,
+        pendingChoice: null,
+        pendingDecision: null,
+        died: [],
+        left: [],
+        replacements: [],
+        entered: [],
+        step: 'precombat-main',
+        priority: null,
+        passed: [],
+        stackObjects: {},
+        stackOrder: [],
+        pools: {},
+        combat: EMPTY_COMBAT,
+        effects: [],
+        landsPlayed: {},
+        autoSeq: 0,
+        drewFromEmpty: [],
+        pendingDiscard: null,
       };
       return { state: fresh, message: 'game reset', data: { rngSeed: fresh.rngSeed } };
     }
 
+    // Card actions and automated actions each have their own reducer, and each keeps a real
+    // exhaustiveness check over its own half because the narrowing happens here.
     default: {
-      const unknown: never = action;
-      throw new EngineError('INVALID_ACTION', `unknown action type: ${String((unknown as { type?: unknown }).type)}`);
+      if (isAutoAction(action)) return reduceAutoAction(state, action, ctx);
+      if (isCardAction(action)) return reduceCardAction(state, action, ctx);
+      throw new EngineError('INVALID_ACTION', `unknown action type: ${String((action as { type?: unknown }).type)}`);
     }
   }
 }
@@ -515,9 +631,12 @@ export function applyAction(state: GameState, action: Action, ctx: ActionContext
     throw new EngineError('INVALID_ACTION', 'action must be an object with a type');
   }
   assertSeatIndex(state, action.by, 'by');
-  if (state.finished && action.type !== 'game:reset') {
+  if (state.finished && action.type !== 'game:reset' && action.type !== 'game:rematch') {
     throw new EngineError('GAME_FINISHED', 'the game is finished');
   }
+  // A rematch is a *sequence* of actions rather than a rule, so it is composed here out of the
+  // reducers that already enforce each step. See `rematch`.
+  if (action.type === 'game:rematch') return rematch(state, action, ctx);
 
   const outcome = reduce(state, action, ctx);
   const isReset = action.type === 'game:reset';
@@ -529,6 +648,10 @@ export function applyAction(state: GameState, action: Action, ctx: ActionContext
 
   const data: Record<string, unknown> = { ...(outcome.data ?? {}) };
   let message = outcome.message;
+  // What the action actually did to the board, read off the difference rather than reported by
+  // whatever caused it.
+  const notes = isReset ? [] : consequences(state, next);
+  if (notes.length > 0) message += `; ${notes.join(', ')}`;
   if (resolved.eliminations.length > 0) {
     data['eliminations'] = resolved.eliminations;
     message += '; ' + resolved.eliminations
@@ -544,6 +667,65 @@ export function applyAction(state: GameState, action: Action, ctx: ActionContext
 
   next = appendLog(next, { by: action.by, type: action.type, message, data });
   return next;
+}
+
+/**
+ * Another game at the same table: same seats, same decks, engine still running.
+ *
+ * Composed out of the actions a player would otherwise have to take by hand — reset, load each
+ * deck, start, switch the engine back on — rather than written as a new rule, because every one of
+ * those steps already has a reducer that enforces it. A card-legality check or a deck that no
+ * longer resolves fails the rematch exactly as it would fail the manual version, and the log reads
+ * the same as if a person had done it, which is what a player comparing the two would expect.
+ *
+ * Three decisions worth naming:
+ *
+ *  - **Any seated player may ask, and only once the game is over.** A rematch out of a live game
+ *    is a reset, and that stays the host's; "again" after a finished game is nobody's privilege.
+ *  - **The previous winner goes second.** The table convention everywhere, and the engine knows
+ *    who won, so there is no reason to make anybody choose.
+ *  - **The steps are taken on the table's behalf.** The permission question is answered once, at
+ *    the top, so the sub-actions run as the host — otherwise `deck:load` for the *other* seat
+ *    would refuse, and a rematch that only worked for the player who created the table would be a
+ *    worse feature than no rematch.
+ */
+function rematch(state: GameState, action: Action, ctx: ActionContext): GameState {
+  if (!state.finished) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'a rematch starts another game once this one is over');
+  }
+  assertSeatIndex(state, action.by, 'by');
+  const decks = state.seats.map((seat) => seat.deckId);
+  const automated = state.automated;
+  // Each player's stops setting is theirs and survives the rematch, which is part of why it is a
+  // list: carrying one boolean would quietly hand one player's preference to the other.
+  const stopsOff = [...(state.autoPassOff ?? [])];
+  // The winner plays second. With no winner — a draw, or a game nobody finished — the seat that
+  // went first goes first again, since there is nothing to take turns about.
+  const seats = state.seats.length;
+  const first = state.winnerSeat === null
+    ? state.activeSeat
+    : (((state.winnerSeat + 1) % seats) as SeatIndex);
+
+  const asTable: ActionContext = { ...ctx, isHost: true };
+  let next = applyAction(state, { type: 'game:reset', by: action.by }, asTable);
+  decks.forEach((deckId, seat) => {
+    if (deckId === null) return;
+    next = applyAction(next, { type: 'deck:load', by: action.by, seat: seat as SeatIndex, deckId }, asTable);
+  });
+  next = applyAction(next, { type: 'game:start', by: action.by, firstSeat: first }, asTable);
+  if (automated) {
+    next = applyAction(next, { type: 'auto:start', by: action.by, firstSeat: first }, asTable);
+    for (const seat of stopsOff) {
+      next = applyAction(next, { type: 'auto:stops', by: seat, autoPass: false }, asTable);
+    }
+  }
+  return appendLog(next, {
+    by: action.by,
+    type: 'game:rematch',
+    message: `${seatName(next, action.by)} starts another game${
+      state.winnerSeat === null ? '' : `; ${seatName(next, first)} goes first`}`,
+    data: { firstSeat: first, decks: decks.filter((d) => d !== null).length, automated },
+  });
 }
 
 /** Applies a sequence of actions in order; useful for deterministic replay. */

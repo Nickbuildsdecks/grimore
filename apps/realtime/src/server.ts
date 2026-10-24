@@ -1,8 +1,8 @@
 import pino from 'pino';
-import { parseEnv } from '@grimore/shared';
+import { parseRealtimeEnv } from '@grimore/shared';
 import { createRealtime } from './io.js';
 
-const env = parseEnv();
+const env = parseRealtimeEnv();
 const log = pino({ level: env.LOG_LEVEL, name: 'realtime' });
 
 const rt = await createRealtime({

@@ -30,6 +30,11 @@ import {
 } from '@grimore/shared';
 import {
   applyAction as engineApply,
+  botAction,
+  seatsToAct,
+  packView,
+  viewFor,
+  type PackedView,
   createGame,
   EngineError,
   FORMATS,
@@ -39,6 +44,15 @@ import {
 } from '@grimore/rules-engine';
 
 export class PodError extends Error {
+  /**
+   * The pod's version when this was refused, when the store knows it.
+   *
+   * Stamped in `mutate` rather than at every throw site, because every refusal inside a mutation
+   * happens at the version that mutation read — and a client that cannot tell "the table moved
+   * under you" from "the table and the engine disagree" shows an error banner for the first.
+   */
+  public stateVersion?: number;
+
   constructor(
     public readonly code: PodErrorCode,
     message: string,
@@ -53,6 +67,8 @@ export interface SeatRecord extends PodSeat {
   token: string;
   /** Epoch ms of the disconnect that started the grace window, or null while connected. */
   disconnectedAt: number | null;
+  /** Which built-in deck a bot seat plays. Only set on bot seats. */
+  botDeck?: string;
 }
 
 export interface PodRecord {
@@ -60,6 +76,20 @@ export interface PodRecord {
   seats: SeatRecord[];
   game: GameState | null;
   lastActivity: number;
+  /**
+   * The whole record as it stood before the last **game action**, serialized: one step of undo.
+   *
+   * Here rather than in the rules engine because taking a move back is a fact about the table and
+   * not a rule of Magic — the engine is an immutable reducer, so the previous state is simply the
+   * previous state, and nothing in it needs to know it is being kept.
+   *
+   * Written inside the same compare-and-set that applies the action, so the history cannot tear
+   * away from the state it belongs to. One step deep on purpose: it covers the misclick, which is
+   * what people actually need, and it cannot be walked back through a whole game. Only
+   * `applyAction` records one — a join, a ready-up or a heartbeat must never be undoable — and it
+   * is stripped from the copy it stores, so nothing nests.
+   */
+  previous?: string;
 }
 
 export interface PodSnapshot {
@@ -87,6 +117,15 @@ export interface PodStoreOptions {
   /** How long a disconnected seat is held for reclaim. */
   graceMs?: number;
   now?: () => number;
+  /**
+   * Called when the server's own seats cannot move, with the reason.
+   *
+   * A pod left waiting on a seat the server plays is a dead table: nobody is on the clock, the
+   * human's bar shows no move, and the only thing on screen is whichever error happened last. It
+   * went unexplained for a whole debugging session because `runBots` returns silently on four
+   * different conditions and was called with nothing to report them to.
+   */
+  onBotStall?: (info: { code: string; reason: string }) => void;
 }
 
 export const SEAT_GRACE_MS = 120_000;
@@ -132,13 +171,54 @@ const publicSeat = (s: SeatRecord): PodSeat => ({
   name: s.name,
   ready: s.ready,
   connected: s.connected,
+  // Which seats the server plays is not a secret, and a player should be able to see it.
+  bot: s.bot === true,
 });
 
 export function toSnapshot(record: PodRecord, version: number): PodSnapshot {
   return {
-    pod: { ...record.pod, seats: record.seats.map(publicSeat) },
+    pod: {
+      ...record.pod,
+      seats: record.seats.map(publicSeat),
+      // Whether there is a move to take back, rather than the move itself: the client needs to
+      // know the button is live, and the stored record is a whole game state that nobody but this
+      // server may see.
+      undoable: record.previous !== undefined,
+    },
     state: record.game,
     stateVersion: version,
+  };
+}
+
+/**
+ * A snapshot carrying one seat's redacted view instead of the whole game state.
+ *
+ * `PackedView` rather than `GameView`: the same thing in its wire form. See `toSeatSnapshot`.
+ */
+export interface PodViewSnapshot {
+  pod: Pod;
+  state: PackedView | null;
+  stateVersion: number;
+}
+
+/**
+ * Narrows a snapshot to what one seat may see. `seat` is null for a spectator.
+ *
+ * This is the only shape that may leave the server for a card game. `PodSnapshot.state` is the full
+ * `GameState`, which contains both hands and the order of both libraries — broadcasting it to the
+ * room would hand every player their opponent's grip, and no amount of client-side discipline fixes
+ * data the client already has. See the header of `packages/rules-engine/src/view.ts`.
+ *
+ * `packView` is the wire form of the same view: each card definition said once instead of once per
+ * copy, and the fields that are false on almost every card left out. It changes nothing about what
+ * a seat may see — the client unpacks it back to the identical `GameView` — and it is what keeps a
+ * library search inside `STATE_MAX_BYTES`: 45.8KB inlined, 25.3KB packed, against a 64KB cap.
+ */
+export function toSeatSnapshot(snapshot: PodSnapshot, seat: number | null): PodViewSnapshot {
+  return {
+    pod: snapshot.pod,
+    state: snapshot.state === null ? null : packView(viewFor(snapshot.state, seat)),
+    stateVersion: snapshot.stateVersion,
   };
 }
 
@@ -153,6 +233,8 @@ export class PodStore {
   readonly graceMs: number;
   private readonly now: () => number;
 
+  private readonly onBotStall: (info: { code: string; reason: string }) => void;
+
   constructor(
     private readonly redis: RedisClientType,
     opts: PodStoreOptions = {},
@@ -161,6 +243,7 @@ export class PodStore {
     this.ttl = opts.ttlSeconds ?? POD_TTL_SECONDS;
     this.graceMs = opts.graceMs ?? SEAT_GRACE_MS;
     this.now = opts.now ?? Date.now;
+    this.onBotStall = opts.onBotStall ?? ((): void => {});
   }
 
   // -------------------------------------------------------------------------
@@ -225,13 +308,34 @@ export class PodStore {
   private async mutate<T>(
     code: string,
     fn: (record: PodRecord, version: number) => { record: PodRecord | null; result: T },
+    opts: { undoable?: boolean } = {},
   ): Promise<{ snapshot: PodSnapshot | null; result: T }> {
     for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt++) {
       if (attempt > 0) await sleep(randomInt(1, 4 * attempt)); // jittered backoff on a lost race
       const stored = await this.read(code);
       if (!stored) throw new PodError('not_found', `pod ${code} does not exist`);
       const before = stored.record;
-      const { record, result } = fn(structuredClone(before), stored.version);
+      let outcome: { record: PodRecord | null; result: T };
+      try {
+        outcome = fn(structuredClone(before), stored.version);
+      } catch (err) {
+        // The version this was refused at, which is the only way the client can tell a refusal it
+        // caused from one the table had already moved past.
+        if (err instanceof PodError && err.stateVersion === undefined) err.stateVersion = stored.version;
+        throw err;
+      }
+      const { record, result } = outcome;
+      /*
+        One step of history, taken here because this is the one place the record changes.
+
+        `before` without its own `previous`, so the stored copy is a record and not a chain: two
+        steps of undo would be two copies of a whole game state in Redis for a feature nobody asked
+        for, and a chain is also how an undo stops being the thing people mean by "put it back".
+      */
+      if (record !== null && opts.undoable === true) {
+        const { previous: _dropped, ...priorWithoutHistory } = before;
+        record.previous = JSON.stringify(priorWithoutHistory);
+      }
       if (record === null) {
         // Deletion: only safe if nobody has advanced the version since we read it.
         const ok = await this.cas(code, stored.version, before);
@@ -278,10 +382,15 @@ export class PodStore {
   // -------------------------------------------------------------------------
 
   async create(
-    input: { format: Format; visibility: PodVisibility; name: string },
+    input: {
+      format: Format; visibility: PodVisibility; name: string; bots?: number; botDeck?: string;
+      /** A deck each, in seat order, when the bots should not all play the same one. */
+      botDecks?: readonly string[];
+    },
     host: Player,
   ): Promise<JoinResult> {
     const token = makeSeatToken();
+    const bots = Math.max(0, Math.min(input.bots ?? 0, POD_MAX_SEATS - 1));
     const record: PodRecord = {
       pod: {
         code: '',
@@ -293,7 +402,22 @@ export class PodStore {
         createdAt: this.now(),
       },
       seats: [
-        { seat: 0, playerId: host.playerId, name: host.name, ready: false, connected: true, token, disconnectedAt: null },
+        { seat: 0, playerId: host.playerId, name: host.name, ready: false, connected: true, bot: false, token, disconnectedAt: null },
+        // Bot seats are ready from the moment they sit down: there is nobody to wait for.
+        ...Array.from({ length: bots }, (_, i) => ({
+          seat: i + 1,
+          playerId: `bot_${i + 1}_${makeSeatToken().slice(0, 12)}`,
+          name: BOT_NAMES[i] ?? `Opponent ${i + 1}`,
+          ready: true,
+          connected: true,
+          bot: true,
+          // A pod of three identical decks is one game played three times. Each bot takes its
+          // own when the caller gives a list, and the single `botDeck` still works for the
+          // one-opponent case, which is what the lobby's "play against this deck" sends.
+          botDeck: input.botDecks?.[i] ?? input.botDeck ?? DEFAULT_BOT_DECK,
+          token: makeSeatToken(),
+          disconnectedAt: null,
+        })),
       ],
       game: null,
       lastActivity: this.now(),
@@ -350,6 +474,7 @@ export class PodStore {
         name: player.name,
         ready: false,
         connected: true,
+        bot: false,
         token,
         disconnectedAt: null,
       });
@@ -366,9 +491,10 @@ export class PodStore {
       const seat = record.seats.find((s) => s.playerId === playerId);
       if (!seat) throw new PodError('not_in_pod', 'you are not seated in this pod');
       record.seats = record.seats.filter((s) => s !== seat);
-      if (record.seats.length === 0) return { record: null, result: undefined };
+      // A table of nothing but bots is nobody's game: the last person out closes it.
+      if (record.seats.every((s) => s.bot)) return { record: null, result: undefined };
       if (record.pod.hostPlayerId === playerId) {
-        record.pod.hostPlayerId = record.seats[0]!.playerId;
+        record.pod.hostPlayerId = record.seats.find((s) => !s.bot)?.playerId ?? null;
       }
       if (record.game && !record.game.finished) {
         const gameSeat = record.game.seats[seat.seat];
@@ -490,12 +616,50 @@ export class PodStore {
       try {
         record.game = engineApply(record.game!, stamped, { isHost });
       } catch (err) {
-        if (err instanceof EngineError) throw new PodError('illegal_action', `${err.code}: ${err.message}`);
+        if (err instanceof EngineError) {
+          // A game that has ended is not a client mistake, and telling the two apart is the
+          // client's only way to know which refusals are worth a word to the player.
+          const code = err.code === 'GAME_FINISHED' ? 'game_finished' : 'illegal_action';
+          throw new PodError(code, `${err.code}: ${err.message}`);
+        }
         throw err;
       }
+      runBots(record, (reason) => this.onBotStall({ code, reason }));
       if (record.game.finished) record.pod.status = 'finished';
       else if (record.pod.status === 'finished') record.pod.status = 'in_progress';
       return { record, result: undefined };
+    }, { undoable: true });
+    return snapshot!;
+  }
+
+  /**
+   * Puts the table back to where it was before the last game action.
+   *
+   * The host's call, because it is the one affordance at this table that can rewrite what already
+   * happened — and announced in the table's chat by the handler, because an undo nobody can see is
+   * indistinguishable from the server losing a move.
+   *
+   * What it restores is the *whole* record, including the seats and the pod's status, since an
+   * action can end a game and a game that is un-ended has to be in progress again. And it restores
+   * the bots' replies with it: a move against the server and the three answers it provoked are one
+   * thing that happened, which is also what the player means by "take that back".
+   *
+   * It is honest rather than complete: the previous state is exactly the previous state, so a card
+   * drawn and then taken back has still been seen by whoever drew it. That is true on a kitchen
+   * table too, and it is the reason this is the host's button and not everybody's.
+   */
+  async undo(code: string, playerId: string): Promise<PodSnapshot> {
+    const { snapshot } = await this.mutate(code, (record) => {
+      if (record.pod.hostPlayerId !== playerId) {
+        throw new PodError('not_host', 'only the host can take back a move');
+      }
+      if (record.previous === undefined) {
+        throw new PodError('nothing_to_undo', 'there is nothing to take back');
+      }
+      const restored = JSON.parse(record.previous) as PodRecord;
+      // Cleared, so a second press is refused rather than bouncing between two states.
+      delete restored.previous;
+      return { record: restored, result: undefined };
     });
     return snapshot!;
   }
@@ -519,6 +683,87 @@ export class PodStore {
   }
 }
 
+/** Names for the seats the server plays. Plain and obviously not a person. */
+const BOT_NAMES = ['Opponent', 'Opponent II', 'Opponent III'];
+const DEFAULT_BOT_DECK = 'verdant-guard';
+
+/**
+ * Lets the server's seats take their turns until a person is on the clock again.
+ *
+ * Run inside the same mutation as the action that provoked it, so a bot's whole reply lands in
+ * one pod version and one broadcast. Doing it as a separate write would show the player their own
+ * move, then a gap, then the answer — and would race another node applying the next human action
+ * against a state the bot had not finished moving in.
+ *
+ * The bot decides with `botAction`, which only ever returns a move the engine offered it, so a
+ * refusal here would mean the two disagree. It is caught rather than thrown anyway: a bot that
+ * cannot find a move should stall its own seat, not fail the human's action.
+ *
+ * Four of the ways out of this loop leave the pod waiting on a seat nobody will move, and all four
+ * used to be silent — the caller passed nothing to report them to. They are reported now, because
+ * a table where nobody is on the clock looks from the outside exactly like the server losing a
+ * move, and the difference between "a bot has no move" and "a bot's move was refused" is the whole
+ * diagnosis. `stall` says which; running out of the guard is one of them.
+ */
+function runBots(record: PodRecord, stall?: (reason: string) => void): void {
+  const botSeats = new Set(record.seats.filter((s) => s.bot).map((s) => s.seat));
+  if (botSeats.size === 0) return;
+  const where = (game: GameState): string => `turn ${game.turn} ${game.step}`;
+  for (let guard = 0; guard < 500; guard += 1) {
+    const game = record.game;
+    if (game === null || game.finished) return;
+    // Any seat the engine is waiting on, not just the first: opening hands are settled
+    // simultaneously, so a bot whose human opponent is still deciding is behind them in the queue
+    // and would never be reached.
+    const seat = seatsToAct(game).find((s) => botSeats.has(s));
+    // Not a stall: the engine is waiting on a person, which is most of a game.
+    if (seat === undefined) return;
+    const action = botAction(game, seat);
+    if (action === null) {
+      stall?.(`seat ${seat} is owed a move at ${where(game)} and botAction offered none`);
+      return;
+    }
+    try {
+      const next = engineApply(game, action, { isHost: false });
+      // No progress means a move the engine accepted but that changed nothing, which would spin.
+      if (next.stateVersion === game.stateVersion) {
+        stall?.(`${action.type} by seat ${seat} at ${where(game)} changed nothing`);
+        return;
+      }
+      record.game = next;
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      stall?.(`${action.type} by seat ${seat} at ${where(game)} was refused: ${why}`);
+      return;
+    }
+  }
+  /*
+    The guard ran out. Only a stall if a server seat is *still* owed a move, because then nothing
+    will call this again: the next call comes from a human action, and the engine is not waiting on
+    a human. Five hundred moves that end with the person on the clock is simply a long write.
+  */
+  const game = record.game;
+  if (game !== null && !game.finished && seatsToAct(game).some((s) => botSeats.has(s))) {
+    stall?.(`five hundred server moves in one write, still owed one at ${where(game)}`);
+  }
+}
+
+/** Gives every bot seat a deck, so a solo table needs no second person to pick one. */
+function loadBotDecks(record: PodRecord): void {
+  for (const seat of record.seats) {
+    if (!seat.bot || record.game === null) continue;
+    try {
+      record.game = engineApply(
+        record.game,
+        { type: 'deck:load', by: seat.seat, seat: seat.seat, deckId: seat.botDeck ?? DEFAULT_BOT_DECK },
+        { isHost: true },
+      );
+    } catch {
+      // An unknown deck id leaves the seat empty rather than stopping the table being dealt.
+    }
+  }
+}
+
 /** Compacts seat indices to 0..n-1 and creates the rules-engine game. */
 function dealTable(record: PodRecord): void {
   record.seats.sort((a, b) => a.seat - b.seat);
@@ -531,4 +776,5 @@ function dealTable(record: PodRecord): void {
     players: record.seats.map((s) => ({ playerId: s.playerId ?? `seat-${s.seat}`, name: s.name })),
   });
   record.pod.status = 'in_progress';
+  loadBotDecks(record);
 }

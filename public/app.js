@@ -3581,107 +3581,16 @@ function initGoogleSignInButtons() {
   // PHASE 4 - PLATFORM EXPANSION FEATURES
   // ==========================================
 
-  // 1. Dashboard Active Match View & Self Reporting
-  async function loadActiveMatch() {
-    try {
-      const res = await fetch('/api/players/active-match');
-      const data = await res.json();
-      const panel = document.getElementById('dashboard-active-match-panel');
-      if (!panel) return;
-
-      if (data.hasActiveMatch) {
-        panel.style.display = 'block';
-        document.getElementById('active-match-round').textContent = data.roundNum;
-        document.getElementById('active-match-table').textContent = data.podLabel;
-
-        const statusBadge = document.getElementById('active-match-status-badge');
-        if (data.completed) {
-          statusBadge.textContent = "Completed";
-          statusBadge.className = "badge badge-neutral";
-        } else {
-          statusBadge.textContent = "Active Match";
-          statusBadge.className = "badge badge-win";
-        }
-
-        const detailContainer = document.getElementById('active-match-details');
-        let html = `
-          <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem;">
-        `;
-
-        data.players.forEach(p => {
-          const winOrDrawBadge = p.placed_first === 1 ? '<span class="badge badge-win">Winner</span>' : (p.placed_draw === 1 ? '<span class="badge badge-neutral">Draw</span>' : '');
-          html += `
-            <div class="panel" style="background-color: var(--bg-dark); border-color: var(--border-light); padding:0.75rem; border-radius: var(--radius-sm); margin:0;">
-              <div style="font-weight: 700; font-size:0.9rem; color:var(--color-secondary); display:flex; justify-content:space-between; align-items:center;">
-                <span>${p.store_nickname} ${winOrDrawBadge}</span>
-              </div>
-              <div style="font-size: 0.8rem; color: var(--text-muted); margin-top:0.25rem;">
-                Deck: <strong>${p.deck_name || 'No deck'}</strong> ($${(p.cheapest_total_price || 0).toFixed(2)})
-              </div>
-              <div style="font-size: 0.75rem; color: var(--text-medium); margin-top:0.25rem;">
-                Kills: <strong style="color:var(--color-primary);">${p.kills}</strong>
-              </div>
-            </div>
-          `;
-        });
-        html += `</div>`;
-
-        if (!data.completed) {
-          html += `
-            <div style="border-top: 1px solid var(--border-light); padding-top: 1rem; margin-top: 0.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
-              <div style="font-size:0.85rem; font-weight:600; color:var(--text-medium);">Report Your Pod Result:</div>
-              <form onsubmit="handleSelfReport(event, '${data.podId}')" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
-                <select id="self-kills" class="input-field" style="width:95px; margin:0; font-size:0.8rem; padding: 0.25rem 0.5rem; height:32px; background:var(--bg-surface);">
-                  <option value="0">0 Kills</option>
-                  <option value="1">1 Kill</option>
-                  <option value="2">2 Kills</option>
-                  <option value="3">3 Kills</option>
-                  <option value="4">4 Kills</option>
-                </select>
-                <select id="self-outcome" class="input-field" style="width:105px; margin:0; font-size:0.8rem; padding: 0.25rem 0.5rem; height:32px; background:var(--bg-surface);">
-                  <option value="loss">I Lost</option>
-                  <option value="win">I Won</option>
-                  <option value="draw">I Drew</option>
-                </select>
-                <button type="submit" class="btn btn-primary btn-sm" style="height:32px;">Report</button>
-              </form>
-            </div>
-          `;
-        }
-
-        detailContainer.innerHTML = html;
-      } else {
-        panel.style.display = 'none';
-      }
-    } catch(e) {
-      console.error("Failed to load active match:", e);
-    }
-  }
-
-  window.handleSelfReport = async function(event, podId) {
-    event.preventDefault();
-    const kills = parseInt(document.getElementById('self-kills').value, 10);
-    const outcome = document.getElementById('self-outcome').value;
-    const placedFirst = outcome === 'win' ? 1 : 0;
-    const placedDraw = outcome === 'draw' ? 1 : 0;
-
-    try {
-      const res = await fetch(`/api/pairings/report/${podId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kills, placedFirst, placedDraw })
-      });
-      if (res.ok) {
-        alert("Score reported successfully!");
-        loadDashboardData();
-      } else {
-        const err = await res.json();
-        alert(err.error || "Failed to submit score.");
-      }
-    } catch(e) {
-      alert("Error reporting score.");
-    }
-  };
+  // The dashboard active-match panel and its one-seat self-report form used to live here. Both were
+  // unreachable: loadActiveMatch() was never called, and none of the five elements it wrote to
+  // (dashboard-active-match-panel, active-match-round, active-match-table,
+  // active-match-status-badge, active-match-details) exist in any page, so the panel never rendered
+  // and its Report button was never on screen. handleSelfReport also posted
+  // { kills, placedFirst, placedDraw } with no results array, which the report route could not have
+  // accepted in any case. Score reporting goes through the full-pod form in renderHubPairings /
+  // renderScoreForm, which submits a result for every seat -- the shape the route requires, and now
+  // the only reporting path in the product. GET /api/players/active-match is still served: the React
+  // SPA reads it in apps/web/src/pages/Events.tsx to display the pod.
 
   // 2. Metagame Tracker & Matchup Matrix Display
   async function renderHubMetagame() {

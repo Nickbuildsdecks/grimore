@@ -1,0 +1,2051 @@
+# The Arena engine — checkpoint, 2026-10-23
+
+An MTG Arena-style rules engine on top of the Play Realm tabletop: steps and priority, the stack,
+targeting, combat, continuous effects, state-based actions, and a script per card. A table opts in
+with `auto:start`; one that does not is the tabletop exactly as it was.
+
+This is the follow-on from `claude/play-realm-setup.md`, which built the manual tabletop and said
+of it: *"The action model is shaped so per-card automation can be layered on later without redoing
+any of this."* That turned out to be true — no tabletop action changed, and the two modes share one
+`GameState`.
+
+---
+
+## What a player can now do
+
+Start a table and choose **Play with the rules engine** instead of **Play as a tabletop**. From
+there the computer plays Magic with you:
+
+- The turn runs itself: untap, upkeep, draw (skipping the first player's first draw), main phases,
+  combat, end step, and a cleanup that stops and asks you to discard to hand size.
+- Priority is tracked and shown. The table always says which step it is and who it is waiting for.
+- Casting a spell puts it on the stack, where the other player can respond; passing resolves it.
+- Targets are chosen from the list the engine computed, so an illegal target cannot be picked, and
+  a spell whose targets have all gone is countered on resolution (CR 608.2b).
+- Mana is tapped for you. You can still tap lands yourself first if you want particular ones spent.
+- Combat asks the attacker to declare, then the defender to block, then deals damage — with flying,
+  reach, menace, trample, deathtouch, lifelink, first and double strike, and vigilance.
+- Creatures die when they should, auras fall off when their host leaves, life totals move on their
+  own, and the game ends when somebody hits zero.
+- A card nobody has scripted still works as cardboard, and **Move by hand** is one tap away.
+- **Four seats, with commanders.** Pick Commander in the lobby and the table deals four 40-life
+  seats, each with its commander in the command zone: cast it for its cost plus {2} a time, it goes
+  back there when it dies, 21 damage from one commander kills, and a conceded seat is skipped by
+  everything from turn order to who is asked to block.
+
+A one-player table is a short step from here: `packages/rules-engine/src/bot.ts` already plays.
+
+---
+
+## Where it lives
+
+| Module | What it owns |
+| --- | --- |
+| `mana.ts` | Costs, pools, payment, and `solveTap` — which lands to tap for a cost |
+| `characteristics.ts` | What a permanent currently *is*: P/T, keywords, continuous effects |
+| `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
+| `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
+| `scriptTypes.ts` | The shape of a card script |
+| `scripts.ts` | All 152 scripted cards, the five basic lands among them |
+| `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
+| `combat.ts` | Who can attack, who can block, damage assignment |
+| `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
+| `autoActions.ts` | The reducer for `auto:*` — what a player may do and what happens |
+| `legalActions.ts` | What a seat can legally do right now, for the client |
+| `bot.ts` | A player that only ever does what the engine offers |
+| `view.ts` | Per-seat redaction, the automation block, and the wire form |
+
+In the web app: `lib/arena.ts` (the interaction reducer), `lib/sound.ts` (which cue a view change
+is worth, and the oscillators that play it) and `lib/feed.ts` (which of the engine's log lines is
+worth saying out loud), each with a hook beside it holding the timers,
+`components/table/{PhaseBar, StackPanel, ArenaBar, PlaySheet, CombatArrows, TableFeed}.tsx`, and
+`pages/PlayTable.tsx` branching on `view.automation`.
+
+---
+
+## The decisions, and why
+
+**Nothing dies in combat.** Damage is marked on the creature; lethal damage is noticed by
+state-based actions after every action (CR 704). That is the rule, and it is also what makes "pump
+it in response to the bolt" work with no special case anywhere — the pump changes the toughness, the
+marked damage is re-read, and the creature lives.
+
+**Triggers are raised by the engine, never announced by scripts.** A script declares *when* it wants
+to fire; the moments themselves — a permanent entering, a creature dying, a spell being cast, life
+being gained — are detected in `settle`, by comparing the state before and after. A script cannot
+forget to announce itself because it never announces itself. Life gain in particular is detected by
+comparing totals, which is the only way lifelink, a spell and an ability all reach the same trigger.
+
+**Power and toughness are computed on demand.** Printed values, then continuous effects, then
+counters, in that order. A stored total drifts from the truth the moment an until-end-of-turn pump
+wears off, because nothing is left that knows what to subtract.
+
+**The client asks `legalActions` and renders it.** A UI that worked out for itself whether a card
+was castable would be a second, worse copy of the engine, and the two would disagree the moment
+either changed. Every move the table offers — every castable card, every legal target, every legal
+block — comes from the engine.
+
+**Affordability is judged against mana you *could* make, and the engine taps for it.** Nobody taps
+five lands and then decides what to cast. This pairing is load-bearing in both directions: offering
+a spell against potential mana without auto-tapping means offering plays the engine then refuses
+(see below), and auto-tapping without the potential-mana basis means a castable spell looks
+unaffordable.
+
+**Hybrid and phyrexian costs are reported unpayable rather than read as generic.** Offering a spell
+that cannot actually be cast is worse than refusing a card no current deck contains.
+
+**A decision made during resolution is a different thing from a target, and is modelled as one.**
+A target is chosen as the spell goes on the stack, by its controller, from a public zone, and an
+opponent may respond to it. A decision is made as the spell resolves, possibly by somebody else,
+possibly from a hidden zone, and nobody can respond — the spell is already resolving. Writing
+"search your library for a creature card" as a target would get every one of those wrong, which is
+why it took its own mechanism rather than a filter.
+
+**Combat declarations are turn-based actions, not priority actions** (CR 508.1, 509.1). This is
+the rule, and getting it wrong deadlocks the game — see below.
+
+**Steps that exist only to hold a decision nobody can make are skipped.** No attackers declared goes
+straight to end of combat (CR 508.1h); the first-strike damage step only exists if something has
+first or double strike (CR 510.4). A turn with no creatures is otherwise four extra rounds of
+passing.
+
+---
+
+## Bugs found, and how
+
+Each of these would have reached a player. The method mattered more than the care: every one was
+found by executing the code, not by reading it.
+
+### Found by writing the engine's own tests
+
+| Bug | Mechanism |
+| --- | --- |
+| The defender could not block | Declaring blockers required priority, but it is a turn-based action that happens *before* anybody gets priority. The defender held none, so the engine refused every declaration — and the attacker could pass the step away before the defender was ever asked. |
+| "Attacked with nothing" was indistinguishable from "has not declared yet" | Both leave `combat.attacks` empty. The first must end the step and the second must block it, so each needs its own flag. |
+| A player could block an attack aimed at somebody else | `legalBlockers` filtered on whether the creature *could* block the attacker, never on whether the attack was aimed at that seat. |
+| A pod defender's blocks were thrown away | `declareBlockers` rewrote **every** attack's blockers, not only its own seat's. |
+| `auto:start` gave the first turn to the wrong seat | Entering from the cleanup step is what runs the start-of-turn actions, and that roll advances the active seat — so starting *on* `firstSeat` skipped it. |
+| A "target player" spell accepted a creature | None of the checks after the player branch look at the spec's kind, so a hand-built action went straight past them. The UI never offered it; an action sent directly would have been accepted. |
+| An Aura outlived the creature it enchanted | `relocate` detaches an Aura when its host leaves the battlefield, so by the time state-based actions ran the Aura was attached to **nothing** rather than to something illegal — and only the second case was checked. CR 704.5m covers both; now so does the engine. |
+| **The engine could never cast a commander** | `legalActions` had one list of castable cards: the hand. The command zone is a zone a spell is cast *from* (CR 903.8), so in a Commander game the commander sat there uncastable for the whole game — the headline format of the product, missing from the function that decides what a seat may do. Never hard; never reached, because every automated game before this was 1v1 with no command zone. |
+| **Commander damage was never recorded by combat** | `dealDamage` knew nothing about where the damage came from, so the 21-damage rule (CR 903.10) could only ever fire from the tabletop's **cmd** button. The automated game had the rule and no way to feed it. |
+| **An eliminated seat could hold priority** (CR 800.4) | Impossible to see in a two-player game — when one player loses the game ends in the same breath. With four seats the state outlives the elimination, and a conceded player's table was offered a Pass the engine refused. |
+| `game:reset` left an unplayable table | Reset kept `automated: true` but cleared the step and priority, and `auto:start` refuses to run twice. Nobody could do anything. Reset now hands the table back to manual. |
+
+### Found by playing it in two real browsers
+
+| Bug | Mechanism |
+| --- | --- |
+| **A reanimated creature and a token entered the battlefield silently** | `etb` was raised at exactly one call site — a permanent *spell* finishing its resolution. So Zombify put a Gravedigger onto the battlefield and its trigger never fired, and a **token triggered nothing at all**: Krenko's Goblins, Izoni's Insects and Talrand's Drakes were all mute, as was anything watching for them. Entering means arriving from anywhere (CR 603.6a). The same fix as `dies` — recorded where the card moves, announced in one place — which is itself the evidence the architecture wanted it that way. |
+| **"When this dies" never fired for a creature killed by a spell** | `dies` meant "noticed by state-based actions", which only sees *lethal damage* and a toughness at zero. A creature **destroyed** by Doom Blade is already in the graveyard by the time those run, so nothing announced it — and the two call sites that did care had each been patched to announce their own deaths by hand, which is the shape of a rule nobody owns. "Dies" means put into a graveyard from the battlefield (CR 700.4), so `relocate` — the one place a card changes zone — records the fact and `settle` raises it. Found by writing the first card with a death trigger: the engine had gone its whole life without one. |
+| **The other player's table offered Pass forever** | A suspended resolution left `state.priority` naming whoever last passed. That seat's table offered Pass, the engine refused it because a question was outstanding, and the two disagreed for as long as the question stood — on turn ten of a real game, with a red banner and no way forward. Nobody holds priority in the middle of a resolution, and the state now says so; `legalActions` also refuses to report `hasPriority` while anything is blocking, because one of the two has to be hard to get wrong and that is the field the table keys its one button on. |
+| **Nothing castable was ever cast** | `legalActions` offered spells against potential mana; `auto:cast` required mana already floating. Every cast was refused. With no creatures there was then no combat and no damage — a whole half of the game missing, from one absent function. Fixed by `solveTap`. |
+| **A deadlock on blocking** | The table let a blocker be assigned to an attacker it could not legally block (a ground creature onto a flier). The engine refused the whole declaration, the step never ended, the player was asked again, made the same choice, and the game stopped. Assignment is now restricted to each creature's own `canBlock` list. |
+| Every land drew as a 0/0 | The view sent the zeroes `characteristicsOf` computes for a non-creature. P/T now travels only for creatures. |
+| Every tapped card overlapped its neighbour | A tapped card is rotated a quarter turn, and a CSS transform does not change the box the layout reserved. Cards now sit in a wrapper that is the right shape for the orientation. |
+| The bottom of every card in hand was cut off | The hand row had a fixed minimum height ten pixels shorter than a card. |
+| Life buttons could silently contradict the rules | With the engine running, a stray tap on a life button disagrees with what the engine just did. They are a tabletop affordance and now only exist on one. |
+
+---
+
+## How it is tested
+
+**478 tests in the rules engine, 119 in the web app, 1,100 across the workspace.**
+
+The ones that carry the most weight:
+
+- **`playout.test.ts`** plays whole games from shuffled decks with bots that only ever send actions
+  `legalActions` offered them. Twenty different shuffles, both seats going first, all reaching a
+  winner — 12 to 27 turns and 267 to 600 actions each, every one decided on life totals. A game that
+  finishes proves three things no single assertion covers: the engine never offers a play it then
+  refuses, never reaches a state where nobody can act, and keeps every seat's view inside the
+  socket budget for the whole game. Four-seat pods play out the same way, which is where turn order
+  has to skip eliminated seats and several defenders can owe a block at once.
+- **`scripts/e2e-arena.mjs`** does the same through two real browsers, taking whatever the UI offers
+  rather than a fixed sequence, so it plays whatever the shuffle deals. Thirty-two checks, including
+  that the opponent's hand is still unreadable with the engine running, that the engine never
+  refused anything the table offered, that a mid-game refresh rejoins the same automated game, and
+  that the whole thing fits a phone. `DECK_B=tidal-mind` brings counterspells into it and
+  `FORCE_MULLIGAN=1` makes both players mulligan, because at one hand in nine the flow after a
+  mulligan would otherwise almost never run.
+- **`scripts/e2e-pod.mjs`** plays a four-player Commander pod through four browser contexts —
+  four seats on one code, four opening hands at once, a commander cast *from the command zone* and
+  back in it after it died, attacks sent at more than one opponent, a seat conceding while the
+  other three play on, and one survivor. Thirty-three checks. It is also the suite that proves the
+  things only a four-player table can get wrong: that one player's screen hides all **three**
+  opponents' hands, and that four seats fit a phone.
+- **`scripts/e2e-solo.mjs`** plays a whole game in one browser against the server — fifteen checks,
+  and a game takes thirty-three moves. `OPPONENT_DECK` picks which deck the server plays, so the
+  solo game is run against each of the four. `SOLO_POD=1` turns it into a one-person Commander pod
+  against three bots — sixteen checks, with two a duel cannot make: that the lobby really seated
+  four, and that *all three* bots played, since a pod where two of them sat still would pass every
+  other check and be no kind of game.
+- **`combat.test.ts`** asserts each combat rule on a board built to need it, with the CR reference
+  in the test name — so a failure says which rule broke rather than which line did.
+- **`scripts.test.ts`** plays every scripted card the way a player would, and checks that no card in
+  either starter deck is left unscripted unless it is a vanilla creature that needs no script.
+
+Measured, not assumed: the raw `GameState` reaches 57.7KB in a long two-player game while a redacted
+view peaks at 22.3KB — of which the whole automation block is 2.6KB. Redaction is still what keeps
+the game on the wire, and a four-player pod is where that stops being a nicety: 98KB of state
+against a 36KB view.
+
+**The number that had no headroom was a library search, and it has headroom now.** Ordinary play
+peaks at 18.5KB; a view with a library open reached **45.8KB** inlined, because a zone that normally
+travels as a count suddenly travels as fifty cards. Inside the 64KB cap for a 60-card deck and
+*outside* it for a 100-card Commander one — which is this project's stated centre. The view now
+travels in a wire form (`packView`/`unpackView`) that says each card definition once instead of once
+per copy and leaves out the fields that are false on almost every card: **25.3KB at worst, 23.3KB
+during a search**, so the search is no longer even the peak. Packing is a transport concern and
+nothing else — `viewFor` is unchanged, the client unpacks once in `lib/table.ts`, and
+`unpackView(packView(v))` is asserted equal to `v` for every state of a whole game.
+
+**And the cap it is measured against is now derived rather than observed.** A four-player pod with
+259 permanents packed to 68.5KB — an ordinary long game of Commander — against a 64KB cap set when
+the Play Realm was two players. Two avoidable wastes came out first (the card id travelled as a
+field *and* as its map key; `keywords: []` travelled on every card without any), taking it to
+60.8KB. Then the cap itself: `MAX_INSTANCES` is 600 and a packed card costs about a hundred bytes,
+so a table at the engine's own hard limit is roughly 100KB and **128KB is a limit a legal game
+cannot reach** — which is the property a safety cap should have, because then what trips it is a
+bug rather than a board.
+
+---
+
+## What is deliberately not done
+
+- **Most replacement effects.** Three are in now — regeneration (CR 701.15), "enters with counters"
+  (CR 614.1c) and, from the increment below, **"if it would die, exile it instead" (CR 614)**, which
+  is the first one that belongs to a permanent and changes what happens to a *different* one. The
+  shape it needed — a pass that asks every permanent whether it wants to replace what is about to
+  happen — now exists and is what the next one should use. What is still missing is damage
+  prevention with a quantity ("prevent the next 3 damage": a shield that is spent, survives partial
+  use, and has to interact with every source of damage) and protection from a colour, which is four
+  rules wearing one keyword. Cards needing those are still left unscripted rather than
+  approximated.
+- **Copy effects** and **characteristic-setting effects**: still no vocabulary for either.
+- **True layer interaction** (CR 613). What is here is a fixed order — printed, then effects, then
+  counters — which is right for every effect the card pool produces. Characteristic-setting and copy
+  effects need the real thing.
+- **A stronger bot.** It attacks with everything, blocks when the trade is good, and casts the
+  biggest thing it can afford. A better opponent needs a search, and a search needs a position
+  evaluator, and neither was worth writing before the rules underneath them were trustworthy.
+- **Multiplayer combat nuance.** Pods work — declarations are per defender, a seat can only block
+  what attacks it, and an attack can be aimed at a planeswalker — but there is no "each opponent"
+  combat maths beyond what the scripts do. Forced attacks and goad are both in now — "attacks each
+  combat if able" and "attacks a player other than you if able", enforced, pre-selected at the
+  table, and kept out of the bot's hands in a duel where goad does the opposite of what it is for.
+- **Anything touching production.** No VM, no DNS, no deploy. Everything here runs on localhost and
+  on the branch.
+
+---
+
+## Added after the first checkpoint
+
+Twenty-four things, in the order they mattered.
+
+**A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
+counterspells, and with them the first spells that target something on the stack — so the stack
+panel had to become targetable, since in Arena mode it is drawn as a list and had no card face to
+tap. Twelve more scripted cards: countering, destroy, mill, card draw, random discard, and the
+flying / deathtouch / lifelink keywords. "Discards a card at random" is scripted and "discards a
+card" of the player's choosing is not, for the reason in the table above.
+
+**Passing for a player who has nothing to do.** The measurement that justifies it: 21.6 actions per
+turn before, 3.2 after — a whole game from 359 decisions to 56. It only ever acts when passing is
+the *only* legal move, a mana ability does not count as something to do, and four things always
+stop it: a combat declaration, a discard, any play including a land, and the start of somebody's
+turn. It is a table setting (`auto:stops`) with a toggle in the control bar, because a player who
+is bluffing or learning the turn structure wants every priority.
+
+**Opening hands.** Roughly one hand in nine opens with nought or one land, and until this the game
+was over before it started. Mulligans sit between the engine taking over and the first turn
+(CR 103.4): nobody holds priority, no step has begun, both players decide at once. The London
+mulligan is a redraw plus a debt — a fresh seven, one card owed to the bottom per mulligan — and
+`auto:keep` collects it. Which cards go back is the player's call, always.
+
+**Playing on your own.** A pod can seat the server. It readies itself, loads its own deck, settles
+its own opening hand and plays its turns, and it does all of that *inside the same pod write as the
+action that provoked it* — a reply in a separate write would show the player their own move, then a
+gap, then the answer, and would race another node against a state the opponent had not finished
+moving in.
+
+Two more bugs, both of which had been waiting for a second player who was never going to arrive:
+"which seat is the engine waiting on" returned one seat, which is wrong during opening hands (every
+seat decides at once) and wrong in a pod (every defender declares); and leaving a table left the
+server playing alone until the pod expired.
+
+**A triggered ability that asks who it is pointed at.** "When this enters the battlefield, destroy
+target creature" is one of the most common things a creature does, and until this it could not be
+scripted at all: a trigger went on the stack with no targets and no way to get any. Targets for a
+trigger are chosen as it is put on the stack (CR 603.3d), and only one of the three cases is a
+question — no legal target means the trigger never goes on the stack (CR 603.3c), exactly one legal
+target is taken, and anything else stops the game and asks its controller. Flametongue Kavu's famous
+drawback falls straight out of those rules rather than being written anywhere: played with nothing
+else on the board, the only thing it can point at is itself, so it kills itself and the engine does
+not even ask.
+
+**A fourth deck, and the graveyard as somewhere to point at.** Rot Harvest (green-black) is built on
+getting creatures back, which needed a target that is a *card in a graveyard* — a different object in
+a different zone from a creature on the battlefield, so it is its own target kind rather than a
+filter. A card in a graveyard has no continuous effects on it and its printed type is what it is.
+One real UI bug came out of playing it: targets were only lit on the battlefield, so "return target
+creature card from your graveyard" was a prompt with no visible answer and the game stopped dead.
+Every zone a spell can point at now lights its legal targets.
+
+**A cost paid by sacrificing a creature.** "Sacrifice another creature:" is a **cost**, not a target,
+and the difference is the whole reason to implement it properly: a cost is paid as the ability is
+activated, so the creature is in the graveyard before the ability is on the stack, it cannot be
+answered by killing the creature in response, and anything watching for a death sees it then rather
+than on resolution. Modelled as a target it would have looked right and been wrong exactly where it
+mattered — which is why these two cards were cut from the deck a commit earlier rather than
+approximated. The choice travels with the activation, so no new engine phase was needed: an outlet
+with nothing to feed it is not offered at all, and the table asks for the sacrifice first and the
+targets second, in the order the rules pay them. The bot got judgement rather than just capability —
+it feeds the outlet only when what goes in is worth less than what is being fed, because one that
+ate its best creature every turn would play itself out of the game while passing every other test in
+the file.
+
+**A card that stops and asks while it is resolving.** The capability behind every tutor, every
+own-choice discard and every "each player sacrifices", and the one the first checkpoint named as
+missing. A spell declares `decisions`; the engine stops, asks, and hands the answers to the effect.
+The spell stays **on the stack** while the question is outstanding, so both tables still show what
+is resolving, and nothing else happens at all until it is answered — no priority, not even for the
+player who cast it. Three questions are answered by the engine rather than asked, and each is a
+stopped game avoided: one with nothing to choose from is never asked (an opponent with no creature
+is not asked to sacrifice one), one that must take exactly what is available is taken, and a player
+who has left the game between one question and the next is not asked. `each-player` and
+`each-opponent` expand into one question each in turn order from the active player (CR 101.4),
+because who answers first is sometimes the whole card.
+
+Two things in it are worth naming separately. **A library search opens that seat's own library to
+it, and only to it** — which needed no new mechanism, because the tabletop's **Search deck** already
+did exactly that, and the view is keyed on the same `searching` flag. Answering shuffles (CR
+701.19e), which is both what the cards say and what stops the searcher keeping the order they were
+just shown. And **the candidate list is the whole authorisation**: it travels only inside the
+answering seat's own `you` block, and `auto:decide` refuses any id that is not on it — without that
+check a crafted action could fetch any card out of any library.
+
+Five cards, each exercising a different facet, taking the engine to 50. Rampant Growth searches for
+a basic land and may fail to find, because failing to find is legal (CR 701.19c) and occasionally
+right. Diabolic Tutor takes anything. Mind Rot is answered by the player *discarding*, not by the
+caster — the thing that makes it a different card from Ravenous Rats. Fleshbag Marauder makes every
+player sacrifice, including its controller, including itself when it is the only creature they have.
+And Faithless Looting is the one that needed `beforeDecisions`: the cards it offers to discard are
+the ones it has not drawn yet, so the draw has to happen before the question can be asked.
+
+Izoni's second ability is scripted now too — it was printed in prose with "Move by hand" underneath
+it two commits ago, for want of a sacrifice cost.
+
+**Modal spells, which turned out not to need a new phase at all.** "Choose one —" looked like the
+hardest thing left, and the reason it was not is a rules detail: modes are announced **as the spell
+is cast** (CR 601.2b), *before* its targets (CR 601.2c) — not while it resolves. So it is not a
+mid-resolution decision, and scripting it as one would have been actively wrong: a player could
+counter a Charm without knowing which half of it was coming.
+
+Because the choice travels with the cast, `legalActions` just offers **one play per legal
+combination of modes** — a shape it already had for a permanent with several abilities — and the
+table needed no new interface whatsoever. A combination whose targets cannot be filled is not
+offered, so "destroy target creature; or draw two cards" offers only the draw against an empty
+board, and a Charm's exile-power-5 mode appears the moment a creature grows into it and disappears
+when it shrinks. `min`/`max` on the modal block covers "choose one", "choose one or both" and
+"choose two" with the same subset enumeration.
+
+Three cards, each exercising a different part. Selesnya Charm is a plain choose-one with all three
+modes supported. Soul Manipulation and Grim Discovery are "choose one or both", which offers three
+plays: each half, and the pair. The one thing that could have been silently wrong is which target
+belongs to which mode — they arrive as one flat list — so a mode taking the wrong slice would
+return the right *kind* of card and the wrong card, and that is asserted directly on a graveyard
+holding two creatures and two lands.
+
+Two smaller things fell out. `graveyard-land` and `graveyard-card` joined `graveyard-creature` as
+target kinds, from one table keyed on the printed type, because a card in a graveyard is read from
+its type line in every case. And the play sheet now wraps instead of truncating: three Charm modes
+are three plays on the same card that differ only at the end of the sentence, and they had been
+sharing one `data-testid` as well, which breaks React and every selector that reads it.
+
+**Six cards for the parts of the engine no card reached.** Written by reading the engine rather than
+the card pool: `statics` had never been used by anything, nor had a `dies` trigger, a `step`
+trigger, or untapping. Untested code in a rules engine is where the bugs are, and this found one
+immediately — a creature killed by a *spell* never fired its death trigger, because "dies" had been
+implemented as "noticed by state-based actions" rather than as what the rules say it is.
+
+Glorious Anthem is the first static effect, and it is the clearest demonstration of why
+characteristics are computed instead of stored: it lifts a creature that arrives later, stops when
+the enchantment is destroyed, and saves a 2/2 with two damage already marked on it. Phyrexian Arena
+is the first "at the beginning of your upkeep". Thermo-Alchemist taps for damage and is untapped by
+casting an instant, which is the only card that untaps anything. Doomed Traveler and Doomed
+Dissenter leave something behind. And Goblin Arsonist is a death trigger that has to be *aimed* —
+the creature is already in the graveyard, and the trigger still asks.
+
+Two engine limits came out of writing them, both worth stating because they rule out whole families
+of cards. A `dies` trigger fires for the creature that died and **no other**, so "whenever another
+creature dies" (Blood Artist, Zulaport Cutthroat) is not scriptable; the same is true of `etb`, so
+"whenever another creature enters" is out too. And exiling is not dying (CR 700.4) — Swords to
+Plowshares fires nothing, which is the whole point of the card and is now asserted in both
+directions, because getting the second half wrong is how the first half comes back.
+
+**Triggers that watch the board rather than themselves.** `dies` and `etb` only ever reached the
+permanent the event happened to, which ruled out a whole family: "whenever ~ **or another** creature
+dies" is one of the commonest black cards there is. The events now carry `who` (self, another, any),
+`of` (you, opponent, any) and `what` (creature, permanent), all defaulting to what every existing
+script already meant, so nothing written before this changed behaviour.
+
+Blood Artist, Zulaport Cutthroat, Soul Warden and Impact Tremors, to 63. They are also the cards
+that make a sacrifice deck a deck rather than a pile: a Fleshbag Marauder with a Blood Artist out
+is a drain, and a Doomed Dissenter dying is two triggers rather than one.
+
+`what` was not in the first draft and the test caught why: an Impact Tremors fired for *its own
+arrival*, because `who`/`of` say whose and not what, and an enchantment entering is not "a creature
+you control enters". The default is `permanent`, since a `who: 'self'` trigger already knows what
+its own card is.
+
+Writing them also found the **second** bug of the same shape as the `dies` one, which is the part
+worth remembering: `etb` was announced at a single call site too, so a creature put onto the
+battlefield by Zombify arrived silently and a token triggered nothing at all. Both are now recorded
+where the card actually moves and announced in one place — `settle` drains a list of deaths and a
+list of arrivals, in a loop, because a creature dying can leave a token behind.
+
+**A four-player Commander pod, played rather than asserted.** Four seats have been supported since
+the first checkpoint and nobody had sat at one, which is how the product's headline format turned
+out to be the one thing the engine could not do: `legalActions` scanned the hand and nothing else,
+so the commander sat in the command zone, uncastable, for the whole game.
+
+What a pod needed was four rules, each small and each in exactly one place. The commander is cast
+from the command zone, for its cost plus {2} for every previous cast — carried as extra generic
+rather than a rewritten cost string, because a rewritten string has to be re-parsed and a hybrid
+pip would not survive the trip. It returns to the command zone instead of dying (CR 903.9), in
+`relocate`, which is the one choke point every zone change goes through. Combat damage records who
+dealt it so 21 from one commander ends a game (CR 903.10) — keyed by the commander's *owner seat*,
+not its instance, because the tabletop's **cmd** button has keyed by seat since the manual table
+shipped and two key spaces in one record never add up to 21. And an eliminated seat is skipped by
+everything, including the thing nothing had ever checked: holding priority.
+
+The bot learned to spread its attacks across the table rather than hammering one seat, because a
+pod where everybody attacks the same player is not a pod. Measured over ten games: all ten finish,
+46–50 commander casts, tax reaching {6}–{8}, 19–26 returns to the command zone, commander damage
+to 22 — and attacks in all twelve directions, which is the assertion that says a four-seat game is
+being played rather than three sequential duels.
+
+**The same pod through four real browsers, which is where the interface was wrong.** The engine
+playing a pod says nothing about whether four people can play one, and three things were missing
+from the *table* — each invisible from the engine's side, because the engine had always been right.
+
+Attacking could only ever be aimed at one player: the reducer sent every attacker at
+`firstOpponent(view)`, the lowest-numbered living opponent, while the engine has accepted a
+defender per attack since combat was written. In a duel that is the only answer and the code reads
+as though it meant it. The prompt now offers the players who can be attacked and each creature
+keeps the one it was tapped for, so one attack goes left and the next right. Nothing on the board
+named a defender either — `attackSummary` existed and no component called it — so an attacking
+creature now says who it is attacking and how many creatures are in its way. And the engine's
+control bar had no **Concede**, which the manual bar has always had: a player in an automated game
+had no way out of one, which is a stuck table in a duel and three people waiting on a fourth in a
+pod. It arms on the first tap and acts on the second.
+
+Two smaller ones, both Commander-specific. The command zone carried no badges, so the one card a
+Commander player always wants to cast was the only card on the table that never said it was
+playable. And the `cmd` button was a tabletop affordance rendered in both modes, so a tap on it
+with the engine running added a second count on top of the damage combat had already recorded —
+the same trap the life buttons were, one rule along.
+
+`scripts/e2e-pod.mjs` is the suite: four browser contexts, one Commander table, 33 checks, played
+to one survivor over 80-odd turn changes. The driver the arena suite had grown is now shared
+(`scripts/lib/table-driver.mjs`), because four browsers playing Commander ask for exactly the same
+moves as two playing a duel.
+
+**Spells with {X} in the cost, which were half-built — the worse half of missing.** The mana layer
+had parsed `{X}` since it was written, `payCost` took an amount for it, the stack object had a
+field for it, and `EffectContext.x` was documented as "the chosen value of X". Nothing ever set
+it: no card had an X, `legalActions` never reported one, and the table had no way to choose one.
+A missing feature is a gap you can see; one wired at both ends and never connected in the middle
+looks finished in every file you open.
+
+X is chosen as the spell is cast and before its targets (CR 601.2b, 601.2c), which is the same
+shape modal spells turned out to have — so again no new engine phase, only a step in front of
+targeting. `legalActions` reports `xMax`, because what X can be is a mana question and a client
+working it out would be a second mana engine disagreeing with the first. An X of zero is a legal
+cast and travels as a number rather than as a missing field, and an `x` on a card without one is
+refused rather than ignored. The stack says `Fireball (X=3)`, for the same reason it names a
+Charm's mode: the player holding a counterspell needs to know whether their 2/2 lives.
+
+Five cards, one per colour and each a different shape: Fireball, Mind Spring, Exsanguinate (X from
+*each opponent*, which is a different card at a pod than at a duel), Secure the Wastes (X tokens at
+instant speed) and Hurricane (X to every flier and every player, its controller included).
+
+It also caught a test method that had been quietly lucky. The modal test read `stackObjects` after
+each action to see what the bot had cast — but with auto-pass on, a spell nobody can respond to is
+cast *and resolved* inside one action, and of fifteen X spells cast across ten games exactly one
+was still on the stack to be seen. Both tests now watch the bot's own action.
+
+**And the number that decides a Commander game is on screen.** Each opponent's row showed the
+commander damage *you* had dealt them; your own row showed nothing, so a player could not see how
+close they were to losing to the 21-damage rule. Your row now carries the worst incoming total and
+whose it is — one number, because "cmd 7/0/14" is three numbers and no decision.
+
+**Scry, which needed a second hole in the one zone hidden from its own owner.** A library is
+secret from everybody including the player who owns it, with exactly one exception —
+`searching`, which opens the whole thing. Scry is the other exception and a much smaller one: the
+top two cards, face up to you and to nobody else.
+
+The reveal is authorised by the question itself. `canIdentify` lets a seat read a library card
+when there is a decision from `library-top`, it is that seat's, and the card is on *that
+question's own candidate list* — the same list `auto:decide` checks an answer against. One list,
+two uses, so an unauthorised read and a crafted answer fail for the same reason and cannot drift
+apart. The cards travel as cards with no zone attached, so the table learns "these two cards" and
+not "here is the order of your deck", and the row is drawn from the candidate list rather than
+from a zone.
+
+Putting them back is the engine's job rather than the card's: scry is a keyword action with fixed
+semantics, so `answerDecision` bottoms what was chosen and leaves the rest on top, in the same
+place a search's shuffle already lived. Preordain's own effect is the draw and nothing else, which
+is exactly what the card says. Where the engine stops is written next to the type: the cards kept
+stay in the order they were in, because reordering needs a question whose answer is a sequence
+rather than a set and no card in the pool turns on it.
+
+Preordain, Magma Jet (which damages *before* it asks, through the same `beforeDecisions` hook
+Faithless Looting needed) and Omenspeaker, for the trigger path. The bot bottoms a land once it
+has five and otherwise keeps what it is shown — the one scry decision that is obviously right
+without knowing anything else about the game.
+
+**Equipment, which is an Aura that outlives its creature.** Saying it that way is most of the
+design: everything the engine had for Auras applies, and the two differences are where the work
+is. Equip is an ordinary sorcery-speed activated ability — no new card-type machinery, no new
+resolution path, nothing in `legalActions` that knows what an Equipment is, because a card type
+that needs an engine change is a card type the engine does not really support. And the attachment
+ends while the Equipment stays (CR 301.5c), which is why a board wipe leaves the gear behind.
+
+The bug in it was the Aura bug wearing a different hat. The first version looked at `attachedTo`
+and found nothing wrong, because `relocate` detaches everything pointing at a card *as that card
+leaves* — so the state-based action has to check for an Equipment with no host **and a bonus still
+in `state.effects`**, or a dead creature's +2/+0 sits there for the rest of the game waiting to be
+applied to whatever next holds that instance id.
+
+A target filter can now see the card it belongs to, which is what stopped equip offering the
+creature it is already on: legal by the rules, useless in practice, a trap for a player and a
+waste of mana for a bot. Measured over ten games — 51 equips of which 35 were re-equipping the
+same creature, down to 26 of which none were. "Another target creature" is printed on hundreds of
+cards and now has somewhere to live.
+
+Bonesplitter, Loxodon Warhammer and Basilisk Collar, which turns a Llanowar Elves into a creature
+nobody wants to block. And one more bug the new cards exposed: **a game could end with a question
+still on the table** — Magma Jet's damage ends the game in the same action the scry is asked in,
+and the prompt stayed on a finished board with the control bar refusing everything else. The game
+ending now clears priority and every pending question, which is what CR 104.1 means by it ending
+immediately.
+
+**A land that makes one of two colours, which the mana layer could not express.** A source's
+`produces` was a multiset — `['U','B']` meant one of each — so a Guildgate would have been two
+mana off one land. `solveTap` now returns *picks* rather than keys, because a choice source does
+not settle which colour it made until it is tapped, and the greedy rule already there turns out to
+be exactly right for duals: the least flexible source that makes a short colour goes first, so a
+Guildgate is saved for the colour only it can provide.
+
+The bigger change is behind it. Affordability was **two** answers to one question: `legalActions`
+counted an optimistic pool of every untapped source's colours, while the payment used `solveTap`.
+A dual land is exactly where those part company — counted as both its colours it looks like two
+mana and it is one — so the table would have offered a two-drop off one Guildgate and the engine
+would have refused to pay for it, which is the one failure this whole design is organised against.
+`canAfford` is now the only answer, and `potentialMana` survives as what it always really was: the
+dimmed pips on the control bar, optimistic on purpose, deciding nothing.
+
+"Enters the battlefield tapped" came with it — a replacement effect (CR 614.1c) applied in
+`settle`'s arrival drain, before the entry trigger, so the land is never observably untapped.
+Measured over twelve bot games: 19 gates played, **71 gate taps paying for spells**, no refusals,
+every game finished.
+
+**Regeneration, and the card both checkpoints called unscriptable.** Golgari Charm was the stated
+limit — "a modal card with one unscriptable mode is an unscriptable card" — and the mode was
+*regenerate each creature you control*. A shield is a counter, because that is already a
+per-permanent, serialised, visible number, and the destruction is replaced in **both** places it
+can happen: in `destroy`, where a spell says so, and in the lethal-damage state-based action,
+which is the half players actually use. A shield that saved a creature from Doom Blade but not
+from the 3/3 it just blocked would be the wrong half of the card.
+
+All three parts of the replacement are real (CR 701.15a) — tapped, damage removed, **out of
+combat** — and the damage matters mechanically, because without clearing it the next pass of
+state-based actions kills the creature again and the shield buys nothing. A toughness of zero or
+less still cannot be regenerated away (CR 704.5a), which is the difference between regeneration
+and indestructible. An unspent shield expires with the turn, which the first version of the test
+got wrong in the player's favour.
+
+"Enters with N +1/+1 counters" came with it, applied where the X is known — so Endless One is as
+big as the mana poured into it, and a *reanimated* one comes back a 0/0 and dies, which is the
+rule rather than a shortcut. Drudge Skeletons, Golgari Charm and Endless One, to 82 cards. The bot
+puts shields up and never spends one: it activates on its own main phase rather than when
+something is about to die, the same shallowness as aiming a pump spell at an enemy creature.
+
+**The combat is drawn on the board now, not described beside it.** An attacking creature carried a
+badge reading "attacking Ana", which is the right first answer and not enough: with three
+opponents that is a sentence you read four times to work out what is happening to *you*, and the
+only question a defender has is whether the attack is theirs to block. `CombatArrows` draws a line
+from each attacker to the seat row it is aimed at, and a dashed one from each blocker to what it
+blocked — a block is an answer, not a threat, and the two should not look the same at a glance.
+
+Every position is measured from the DOM rather than computed, because the board is flex rows that
+wrap inside containers that scroll on a page that rotates: an overlay that knew where the cards
+were would be a second layout engine disagreeing with the first. It re-measures on resize, on
+captured scroll, and on any body resize, lands on the edge of the row facing the attacker, and
+passes pointer events straight through — without that, every card under it would stop being
+tappable at the exact moment the defender needs to tap their creatures.
+
+**The bot stopped throwing creatures away.** "Attacks with everything" has been the honest
+description since the first checkpoint, and it is the worst thing a bot can do: it ran a 1/1 into
+an untapped 3/3 every turn because the engine said it was allowed to. Each attack is now weighed
+against the blocks it could actually face — free damage, survives it, trades up, or stays home —
+with one exception that overrules all of it, which is lethal: a creature saved on the turn you
+could have won is a creature saved for nothing. Blocking picks the biggest attacker a creature can
+actually handle instead of the first legal pairing, which is what let a 4/4 eat a 1/1 while a 5/5
+walked past.
+
+All of it is read off the board. No card knowledge, no search, nothing the bot could not work out
+by looking — and the measurement is the point: **292 attackers declared and 40 dead, down to 240
+declared and 16 dead**, with the average game getting *shorter* (19.4 turns to 18.6). That last
+number is the one that says it did not solve the problem by refusing to fight, and all three are
+asserted in `playout.test.ts`.
+
+**A fifth deck, and the first built out of what the engine learned.** The four starter decks were
+written against the engine as it was: creatures, burn, counterspells, a graveyard. **Forge
+Alliance** is red-white Equipment and tokens, and nothing in it would have worked ten commits ago
+— which is the point of building it, because a deck is the honest test of whether a feature is
+usable rather than merely present.
+
+Balan, Wandering Knight is the commander and the reason for the one engine change: "attach all
+Equipment you control to Balan" is the first card that has to read *another card's script*, and a
+`+2/+0` closed over inside the Bonesplitter's own effect cannot be asked what it is. An
+Equipment's bonus is declared on its script now, which costs the helper one line.
+
+Most of the deck is cards the other decks already define — a `CardDef` is data and a script is
+keyed by name, so a deck list is genuinely just a list, and the next deck costs almost nothing.
+Five new cards for what it needed, including a vanilla 2/1 with no script at all and an Aura with
+a trigger on it. Five decks mean fifteen pairings, and `playout.test.ts` plays all of them to a
+finish: when a new deck arrives the question is not whether its cards work, it is whether a game
+between it and every other deck ends.
+
+**The log says what happened, not only what was played.** It read `Friend attacks with 2
+creature(s)`, `Nick blocks with 2 creature(s)`, `Friend passes`, `Friend passes` — a record of
+actions sent, with nothing about who was attacked, what blocked what, who took damage or what
+died. A board wipe read "Nick casts Golgari Charm" and four creatures died in silence.
+
+Consequences are **detected by comparing the table before and after**, which is the same rule as
+triggers one layer up: a consequence each caller has to remember to mention is one some caller
+will forget. `applyAction` diffs life totals and permanents that left the battlefield, and
+appends them — capped at six with the overflow counted, so a sweep is a line rather than a
+paragraph. Every card written from here on gets it for nothing. Combat names names, because
+"attacks with 2 creature(s)" is true and useless. And the client drops a pass that did nothing,
+because a hundred lines of "Friend passes" is how a player loses the four that mattered.
+
+**Planeswalkers, which needed rules rather than vocabulary.** Every other addition this session
+was a verb — scry, equip, regenerate. A planeswalker is a set of rules: it enters with loyalty,
+its abilities are paid for in counters, one per turn, it dies at zero, damage removes loyalty
+instead of being marked, and it can be attacked instead of its controller. All of it in one go,
+because abilities without attacking would have been exactly the state `{X}` was in — present and
+not connected — and worse, since a planeswalker nobody can attack is not an approximation but a
+different card.
+
+A script writes `{ loyalty: -1 }` and gets sorcery speed, once per turn and "not without the
+loyalty to pay for it", because every loyalty ability in the game has all three. The cost is paid
+as the ability is activated (CR 606.2), so a planeswalker that goes to zero on its own minus is
+already dying while the ability it paid for waits on the stack — and the ability still resolves.
+
+Two bugs of the same shape came out of it, both about a new field having to be carried by
+everything that copies a card: the printed loyalty was applied in `settle`'s arrival drain, so a
+planeswalker put onto a *manual* table had none and was swept away the moment the engine took over
+(it belongs in `relocate`, the third rule this session to end up there after `dies` and `etb`);
+and `normaliseDef` was dropping `loyalty` entirely, because it lists the fields it keeps.
+
+Jace Beleren and Garruk Wildspeaker, with all three printed abilities each and nothing simplified
+to make it fit. Garruk's "+1: untap two target lands" found the last one: the bot sent a single
+target for a spec that wanted two, because no card before it had `count: 2`.
+
+**And the in-game help was for the other table.** The panel behind the **?** had one list, all of
+it about the manual tabletop: tap your own lands, say who you are attacking in chat, settle combat
+with the life buttons. With the engine running two of those are impossible and the rest are things
+it does for you, so a new player reading it goes looking for buttons that are not there. There are
+two lists now, chosen by which table you are at — and the arena suite reads the panel and fails if
+it is showing the wrong one, because every feature in this document is invisible until something
+in the app says it exists.
+
+**A pod of one, and the two bugs that were hiding behind it.** The server could always seat three
+bots; the lobby only ever offered one, and the server gave every bot the same deck — so the format
+this product is named after was the one game a solo player could not set up, and three opponents
+would have been one opponent three times. `botDecks` gives each seat its own deck in seat order,
+the lobby's **Solo pod** button sends the first three starter decks, and `SOLO_POD=1` on the solo
+browser suite plays one to a survivor.
+
+Which is how the real find turned up. The suite failed every run on the check that matters most —
+"the engine never refused anything the table offered" — with `GAME_FINISHED: the game is finished`,
+displayed in red over "Nick wins". The pass that killed the last opponent and the pass queued
+behind it both went out, and the engine refused the second, correctly. The existing guard could not
+see it: it swallows a refusal when the table has moved on since the action was sent, and a queued
+action re-composes against the version the previous ack just handed back, so by that test nothing
+had moved. The engine's `GAME_FINISHED` now travels as its own `game_finished` code rather than
+being flattened into `illegal_action` — the server stating the one thing it knows for certain,
+instead of the client guessing from a view that can arrive *after* the refusal does. And the
+`pod:error` listener was undoing the guard anyway: every handler answers the ack *and* emits the
+error, and the listener had none of the context `send` uses to judge a refusal, so it put the
+banner back up for everything `send` had deliberately swallowed. While a call is in flight, the ack
+decides.
+
+**And `scripts/play.mjs` builds the table server before it starts it.** Three debugging sessions
+have now ended with "the code was right, the running server was old": Vite serves the web app from
+source so the UI is never stale, while `apps/realtime` runs from `dist/` and the script only
+checked that the file existed. The last instance cost an hour and three fixes that were all
+correct and none of which was running. `tsc` on an unchanged tree is two seconds, and the question
+cannot come up again. The browser driver's clicks are bounded for the same reason a different way:
+a press used to wait Playwright's default thirty seconds for a button to hold still, so a control
+bar re-rendering under the cursor — which is what four seats on one table do — ended a whole run
+with a stack trace instead of a move.
+
+**Costs that are choices.** Every deck before this one paid what was printed in the corner. Three
+things it could not express, all of them a cost that is a decision:
+
+- **Cycling**, which is the first ability in the pool used from the *hand*. The cost says so —
+  `discardSelf` — and the zone follows from the cost rather than from a flag beside it that could
+  disagree with it, exactly as a loyalty cost already implies sorcery speed. Five cycling lands, one
+  per colour, and four of the six starter decks now run a pair: a land early, a card late.
+- **Kicker**, the third member of the family that already holds X and modes, and chosen the same
+  way — the engine offers the kicked spell as a *second play* beside the plain one, so paying it is
+  one tap and the table needed no new interface. It is offered only when the whole cost can be paid,
+  because the kicker's symbols are appended to the printed cost rather than paid separately: a
+  player who can afford half of a coloured kicker is offered neither half.
+- **An additional cost that is not optional**: "sacrifice a creature" on a *cast*. The sacrifice
+  machinery has existed since activated abilities; a spell could not ask for one. A spell whose
+  additional cost cannot be paid is not castable at all (CR 601.2h), so it is not offered — and the
+  creature is in the graveyard before anybody holds priority, which is the whole point of Bone
+  Splinters.
+
+Six cards for them (Burst Lightning, Breath of Darigaaz, Agonizing Demise, Bone Splinters, Village
+Rites, and Judith) and a sixth deck, **Ashen Rite**, built out of all three. Two small engine gaps
+turned up on the way and were worth closing in themselves: a static that skips its own source
+("*other* creatures you control get +1/+0" — a lord that pumped itself would attack as a 3/2), and
+"a **nontoken** creature you control dies", which is how nearly every death payoff is printed and
+the clause that stops a deck of tokens draining a table by accident.
+
+Measured over 24 unsteered games on the new deck: 21 spells kicked, 38 cast by sacrificing a
+creature, 6 lands cycled out of 46 chances, every game finished, 22.5 turns on average. The bot
+needed teaching for two of those — it would have sent a kicked play without the kicker (casting the
+cheap half of a card the table offered as the expensive one) and a Bone Splinters with nothing
+named to feed it, which the engine would have refused.
+
+**A stronger opponent, and the measurement that made it one.** The bot took the most expensive
+play it could afford. Now it builds every play it could make, plays each one out until the stack
+is empty, scores the position with a four-weight evaluator, and keeps the best — one ply, no
+further, because a second ply needs an opponent model and that is only worth writing once the
+evaluation has been shown to be any good.
+
+It has been. Head-to-head against the bot it replaced, alternating which seat searched so neither
+deck nor turn order could explain it: **105 wins to 55 over 160 games**, every game finished, 17.9
+turns on average, no refused actions. The old bot is still there behind `{ lookahead: false }`,
+because a claim like that needs a control to be re-measured against — and because the tests that
+play dozens of games want the cheap, wilder bot that casts whatever is most expensive and so
+wanders into more of the engine.
+
+Two things came out of the measurement that no amount of reasoning had produced. The first: the
+evaluator must value **a land in play above a card in hand**, or a land drop *lowers* the score and
+the bot stops making it — that version lost 60 games out of 60 while looking exactly like a tuning
+problem. The land drop is a rule now, taken before the search, which is also what the old ranking's
+"always make your land drop" was saying. The second: weighing each play against *doing nothing* —
+the obvious way to stop a bot spending a Shock on a 1/1 — made it measurably worse, 28 wins of 60
+against 40 with no baseline at all. A card kept is a card the evaluation scores; the turn it cost
+is invisible. So the search decides *which* play, and the old bias to act stands.
+
+What it buys, as two tests rather than an adjective: it will not cast a Hurricane that hits its own
+board for nothing when a Doom Blade kills the Serra Angel, and it will not pay a kicker that turns
+a ping into a wipe of its own creatures. Both of those were the expensive play, and the expensive
+play is what the old bot took.
+
+Cost, measured, because an opponent that thinks is only better if nobody waits for it: a decision
+takes 0.1–0.3ms at the median, under 9ms at the 95th percentile, 32ms at the very worst in a
+four-player pod.
+
+**Combat, searched too.** Attacks and blocks were the last two judgements still made by
+arithmetic: `exchange()` asks "would this creature die to that one" and nothing about what the
+whole exchange leaves behind. Now the bot builds a handful of *plans* — what the heuristic would
+do, nothing at all, everything that can attack, and the heuristic minus its biggest creature — and
+plays each one through blockers, damage and the triggers that damage raises, with the defender
+blocking by the bot's own policy. Four plans rather than every subset, because the subsets of ten
+attackers are a thousand combats and these four are the shapes a player chooses between.
+
+Paired against the same 400 games on the same seeds: **270 wins to 130 with the combat search, 253
+to 147 without it** — 17 games that turned on a declaration. It changes the attack in 126 of 479
+combats, attacking with *fewer* creatures in 85 of them and more in 41, and changes the blocks in
+40 of 161. Finishing the triggers before scoring was worth another 5 games: the step moves on the
+moment damage is dealt, so stopping at the step boundary scored two creatures dying in front of a
+Blood Artist without the four points of life that follow, and the bot traded into a drain engine
+every time. It now declines that attack, which is a test.
+
+**Two things the measurement said no to.** Scoring an untapped creature above a tapped one — the
+cheap way to make the bot hold a blocker back — changed nothing at one point, cost 26 games in 400
+at two, and at four made the bot *worse than the one it replaced*. In this pool attacking is right,
+and a bot that keeps blockers home never closes. And the search had quietly stopped using
+planeswalkers (three activations in sixteen games) because a loyalty counter was worth nothing in
+the evaluation: a plus ability bought something it could not see. Loyalty is scored now, at about
+the value of a point of life, which is what it is.
+
+**Exile until this leaves the battlefield**, which is the commonest removal in Magic and was
+missing because the engine could not express the link. Two pieces: a **leave-the-battlefield
+trigger** (CR 603.6c), recorded at the same choke point as `dies` so that destroyed, exiled,
+bounced and sacrificed all count and no caller has to remember it; and the link itself, kept on the
+exiled card (`exiledBy`) the way an Aura's host is kept on the Aura, so the permanent that leaves
+knows exactly what to give back — to its **owner**, not to whoever took it, which is the difference
+between Journey to Nowhere and a Mind Control. Three cards: Banisher Priest, Journey to Nowhere and
+Banishing Light, the first card in the pool to point at a *permanent* rather than a creature. The
+table names what a permanent is holding ("holding Shivan Dragon"), because otherwise killing the
+Journey is a guess.
+
+**And it found a real loop, printed on a real card.** The first version used Oblivion Ring, whose
+text is "exile target nonland permanent" — which, alone on an empty board, is itself. It exiles
+itself, leaving fires its own return trigger, the return brings it back, entering exiles it again:
+fifty iterations and a game over on turn five, in two of thirty unsteered games. The fix is not a
+house rule in the engine but the card that says **"another"**, which is what Wizards printed ten
+years later. Banishing Light is in the deck and Oblivion Ring is in the comment.
+
+**The word "another" also found a bug that had been there for weeks.** A trigger waiting to be
+aimed had its candidates listed *without the source*, so every filter that says "another" was
+offering the ability's own permanent — while the engine, which does pass the source, refused the
+choice. A table offering what the engine refuses is the one bug class `legalActions` exists to
+prevent, and nothing had shown it because no card until now needed the word.
+
+Measured over 30 unsteered games: 25 of these cards cast, 18 of them finding a legal target and
+exiling something (the rest correctly doing nothing, by CR 603.3c). No game destroyed the exiler,
+so the giving-back half is proved by tests — one per way of leaving: destroyed, exiled, bounced.
+
+**Mana that is not a land**, which was a live code path with no card behind it. The mana solver has
+distinguished a *sum* of mana from a *choice* of mana since it was written — the comment on the
+Guildgates names Sol Ring as the thing a dual land is not — and nothing in the pool had ever made
+two mana off one tap, or offered five colours instead of two. Sol Ring, Mind Stone and Birds of
+Paradise now do, in the decks that want them.
+
+**And the first card to make two mana found the solver tapping one permanent too many.** For the
+generic part of a cost it took whatever was first in the list: a Swamp for one, still short, then
+the Ring as well — three permanents spent on a cost two could pay, and a land left face down for
+nothing. It now takes the largest source that still fits, and the smallest overshoot when nothing
+does, which is the tap a player would make. Two tests, because "fewest taps" and "do not overshoot"
+pull in opposite directions and the second is the one that keeps a Sol Ring from paying for a
+one-drop.
+
+**Reading the table.** A four-player board shows everything and says nothing: life, hand size and
+graveyard are on every seat strip, and the number a pod turn actually turns on — how much power is
+pointed at you, and how much of it can still block — was nowhere. Working it out meant counting
+creatures across three columns while the clock ran. Each strip now says `board 11 (2 up)`: the
+total *computed* power of that seat's creatures, and how many are untapped. Two numbers, because
+they answer two different questions — what can kill you on their turn, and what can stop you on
+yours — and both are read from the same view the board is drawn from, so neither can disagree with
+what is on screen.
+
+**And tapping as fast as the server plays found a real bug in the client.** The solo pod suite
+failed with "Firebrand Archer can only be cast in your main phase with an empty stack" — a refusal
+on a button the table was showing. A play is composed from the view React last rendered, but the
+action went out stamped with the *newest* version, because that is what the store accepts, so the
+one guard that tells a stale play from an illegal one ("has the table moved since this was sent?")
+could never fire. Every action now carries the version of the view it was composed from, which is
+the question that was actually being asked. In a pod with three server seats the table moves
+constantly, and a human finger is slower than a Playwright click, so this was a bug a player would
+have hit and reported as "it said no for no reason".
+
+The browser driver's text reads are bounded too, for the same reason its clicks already were: a
+read of an element that had just been re-rendered away ended a whole run with
+`locator.textContent: Timeout 30000ms exceeded` on a game that was going fine.
+
+**"Again" is one tap.** The table had a "New game" button that emptied it back to an unstarted
+tabletop — right when somebody is changing decks, wrong when two people have just finished a game
+and said "again": that took a reset, two deck picks, a start, and a switch back into Arena mode.
+`game:rematch` does all of it in one action, atomically, with the same decks, the engine still
+running, and the previous winner going second — the table convention, and the engine knows who won,
+so nobody has to choose.
+
+It is composed out of the reducers a player would otherwise drive by hand rather than written as a
+new rule, so every step is enforced by the thing that already enforces it: a deck that no longer
+resolves fails the rematch exactly as it fails the manual version, and the log reads the same as if
+somebody had done it themselves. Two rules of its own: **any seated player may ask** (a rematch
+after a finished game is nobody's privilege, unlike a reset mid-game, which stays the host's), and
+**only once the game is over**.
+
+**Eight more cards, and the first sweeper.** Day of Judgment (no deck could answer a board it was
+behind on), Icy Manipulator (the first card to point at *any* permanent and do something other than
+exile it — a tapper is removal that gives the thing back every turn, and `tapped` is a fact the
+attack rules, the block rules and `manaSources` all already respect), Tormod's Crypt (the first card
+to touch a whole zone, and the only answer any deck has to a Gravedigger loop), Essence Scatter,
+Unsummon, Ambush Viper, Elvish Visionary and Read the Bones. Every one of them needed nothing new
+from the engine, which is the point: the vocabulary is now wider than the pool.
+
+The wrath is also the sharpest test of the search there is, since casting it is right when behind
+and catastrophic when ahead. Measured over 40 games: castable on 24 moves, cast 5 times, **three of
+those from behind on board** and two because it was the only play available — which is the standing
+cost of the bot having no "do nothing" option (D53), stated here rather than hidden.
+
+**A draw is a legal ending, and the arena suite had never seen one.** Two players died in the same
+event and the game ended with no winner, which is the rule (CR 104.4b) — and the suite failed,
+because it asserted somebody wins. It now checks that the table *says* what happened and that both
+screens say the same thing.
+
+**Watching a table.** The server has built a spectator view since redaction went in — public zones,
+both hands as face-down counts, no legal moves — and nothing could ask for one. `pod:watch` joins a
+table's room without taking a seat, at any point in a game, and the client renders a read-only
+table for it.
+
+A **separate component**, not `Board` with the interaction switched off: `Board` is a thousand lines
+of "what may I do with this card", a watcher may do nothing with any of them, and a `readOnly` flag
+threaded through all of it would be a branch on every tap handler in the file — where the one
+forgotten branch is a watcher who can play somebody else's turn. There is nothing to redact in the
+watching view either, because the hidden cards never left the server.
+
+The arena suite now opens a third browser mid-game and checks the property that matters: a watcher
+is a *third party*, so the redaction that keeps two players honest has to keep it honest too — both
+boards visible, neither hand, and no control bar at all.
+
+**And it found the last send that was not saying which view it came from.** Every button on the
+control bar goes through one dispatch, and that dispatch was the one path still sending without the
+rendered version — so a Pass pressed as blockers became owed read to the client as an illegal
+action rather than a late one. Same bug as D58, one path further along, found by the same suite.
+
+**A keyword is worth something, and depth is not what was holding the bot back.** Two things were
+tried on the opponent this round and only one of them worked.
+
+**Looking one swing ahead did nothing.** The search stops at the end of its own move, so the swing
+back is invisible to it — the obvious next step is to project the opponent's next attack and score
+*that*. Built, and measured twice on the same 400 games: for every candidate play, and then for
+attack declarations alone, where it should matter most. **276 wins either way, with it and without,
+at twice the time.** The code is gone and the finding is in the comment where the next person will
+look for it: one more ply is not the limit, the evaluation is. In a pool this size a lot of games
+are decided by what was drawn, and better decisions have a ceiling.
+
+**Knowing that a flier is not a 2/2 was worth eight games.** `creatureValue` was power plus
+toughness, so a 2/2 flier and a 2/2 ground creature were the same creature — to the evaluation
+*and* to the combat heuristics that decide whether a trade is good. Keywords are now worth a little
+each (flying and deathtouch most, reach least), in the same units as a body: **284 wins to 116,
+from 276 to 124**, on the same seeds.
+
+**And a non-linear life total was not worth anything.** Being at two life is worse than being at
+twenty minus eighteen, which is true and made no measurable difference in 400 games (285 against
+284), so that one is gone too — along with a note, because it is the kind of idea that comes back.
+
+**An attack is now an event the whole board can watch.** Hellrider is one line of printed text —
+"whenever a creature you control attacks" — and the engine had no way to say it: the `attacks` event
+went to the attacking creature's own script and nowhere else, which is right for the triggers that
+talk about themselves and wrong for every one that watches the board. It takes the same `who`/`of`
+pair `etb` and `dies` already took now, and a trigger that says nothing about `who` still means
+itself, so nothing written before this changed meaning.
+
+It needed one thing the other board-watchers do not: **what the attack was aimed at.** "Deals 1
+damage to the player or planeswalker it's attacking" is about that attack, and by the time the
+trigger resolves the attacker may be dead and the attack gone from combat — so the declaration
+copies it onto the event and the stack object, and the script reads it off `EffectContext.attacked`.
+Three creatures attacking three players in a pod produce three triggers that each hit the right one.
+
+**Ball Lightning needed nothing at all**, which is the better half of the increment: six power with
+haste and trample, and an end-step trigger that sacrifices it, written in the vocabulary that was
+already there.
+
+**And Cloudshift found a rule the engine had never needed.** One mana, exile your own creature and
+return it — two `relocate` calls, no new vocabulary, and it re-triggered an Elvish Visionary's draw
+and cleared the damage for free. What it did *not* do was the thing players cast it for: blinking a
+creature in response to a Doom Blade left the Doom Blade resolving happily, because the engine keeps
+one id per physical card and the removal found its target where it left it. A card that changes
+zones becomes a new object (CR 400.7), and a spell does not resolve against an object it did not
+target (CR 608.2b). Each instance carries an `objectSeq` that the one place a card changes zone
+bumps, each stack object records which object its card targets *were*, and a resolution drops the
+ones that have since become something else — so a spell that lost one of two targets resolves
+against the one it still has and never sees the other. Ids stay stable, nothing new goes on the
+wire, and the fizzle rule finally distinguishes "chose nothing" from "lost everything it chose".
+
+The same question turned out to be wrong in combat too: a permanent that leaves the battlefield is
+removed from combat (CR 506.4), and the engine found the attack's id back on the battlefield and
+swung with it — so blinking your own blocked attacker got its damage through. Each attack records
+which objects its attacker and blockers were when they were declared, and the damage step ignores
+the ones that are something else now. The blockers are compared rather than dropped from the list,
+because that list is also what says the attacker is blocked: a chump blocker that dies still stops
+the damage.
+
+**The pod decision, on the button that makes it.** A four-player board showed everything and
+concluded nothing. Every seat strip has carried its total power and how many creatures are untapped
+since the table read went in; what no screen answered is the question a pod turn is actually spent
+on — *which of these three people do I attack* — which needs their life, what they have left to
+block with, and whether this swing finishes them, at the moment you are choosing.
+
+Each defender in the attack prompt now says all of it: `Bo 34 · 5 up · 2`, their life, their
+untapped power, and how many of your creatures are already pointed at them. The strip's second
+number is untapped **power** rather than a headcount, because three untapped 1/1s and one untapped
+7/7 are the same count and nothing like the same turn.
+
+`lethal` is the one conclusion the table draws, and it is the strict version: the attack is at least
+their life *and* they have no untapped creature, so there is nothing to block with. A seat holding
+blockers is never marked, even at one life, because whether the block saves them depends on how the
+damage is assigned — and a table that cried lethal and was wrong would be worse than a table that
+said nothing. The same marker appears on an opponent's own strip the other way round: their
+untapped power alone would kill you and you have nothing untapped to stop it.
+
+And **"all at them" is one press.** Re-pointing a single attacker was already a second tap on it;
+what was missing is the commonest decision in the format — four creatures aimed around the table,
+then one life total drops and all of them should go at that player. By hand that was four untaps
+and four retaps with the aim changed in between, which is long enough for the moment to pass.
+
+What this deliberately does *not* add is a verdict on who is winning. Four life totals sit side by
+side already, and a composite score of life and board and cards would be a guess dressed as a fact.
+
+**Four keywords the engine enforced for nobody.** First strike, menace, indestructible and shroud
+were all written and all checked in the rules, and no card in the pool had any of them;
+`all-creatures` was a static scope with nothing behind it. A live path with no card behind it is the
+same risk as an untested one, so five cards now carry them: **Youthful Knight** (the first-strike
+damage step had never happened in a game), **Boggart Brute** (a single-blocker declaration is
+refused whole, and the table only lights blocks the engine would take), **Darksteel Plate** (four
+lines using the Equipment helper's keyword grant: a 2/1 with three damage marked on it stays on the
+battlefield and Doom Blade accomplishes nothing), **Robe of Mirrors** (shroud rather than hexproof
+on purpose — it stops the *controller* targeting it too, which is the rule hexproof would not test),
+and **Night of Souls' Betrayal** (-1/-1 to every creature on the table, which is also the hardest
+thing in the pool for the state-based actions: every 1/1 dies at once, and every 1/1 token
+afterwards arrives dead).
+
+Measured over thirty unsteered games, because a card in a deck that is never cast has not been
+tested: Boggart Brute cast 20 and attacked, Robe of Mirrors 17, Youthful Knight 11, Darksteel Plate
+twice (one copy in one deck) holding a creature up with lethal damage on it twice, and Night of
+Souls' Betrayal three times, killing a creature as it landed. The first-strike damage step happened
+*once* in thirty games — not because the card is broken but because the step only exists when a
+first striker is actually in combat and the searching bot rarely blocks, which is what the
+deterministic test is for.
+
+`becomes-tapped` is the one trigger left with no card behind it, and it stays that way on purpose:
+the bare template is not on a card this pool would carry, and the cards that look like it ("whenever
+enchanted land is tapped for mana") are triggers on an *Aura* about the permanent it is attached to,
+which a self-only event cannot express.
+
+**And the misclick, which was the last thing at a real table nothing here could recover from.**
+An unscripted card has Move by hand, a dropped phone reclaims its seat, a game that cannot continue
+has never happened in thousands of playouts — but a creature tapped into the wrong attack, a land
+played before the Guildgate, or a Pass pressed a beat early was permanent.
+
+`pod:undo` puts the table back to before the last move. It belongs to the table rather than to the
+rules: the engine is an immutable reducer, so the previous state *is* the previous state — there is
+nothing to invert and `packages/rules-engine` does not know the feature exists. The store keeps one
+step, written inside the same compare-and-set that applies the action so the history cannot tear
+away from the state it belongs to, and only for actions that changed the game.
+
+Three things keep it honest. Only the host may press it, because rewriting what already happened in
+a hidden-information game is not a power to hand round. The pod says whether there is anything to
+take back, so the button is simply absent rather than erroring. And the table announces in chat
+that somebody took something back — an undo nobody can see is indistinguishable from the server
+losing a move. The limit is stated rather than hidden: the previous state is exactly the previous
+state, so a card drawn and then taken back has still been seen by whoever drew it, which is true
+across a kitchen table too.
+
+**A seventh deck, and the measurement rewrote it twice.** The two colours with the most answers in
+the pool had never been played together: every counterspell was in a deck beside black removal, and
+every flier but the Drakes was in a green-white deck that wants to attack on the ground.
+**Skyward Writ** is white-blue tempo, and the first deck whose plan is not to have the best board.
+
+Three new cards: Azorius Guildgate (one line through the gate helper), **Wall of Air** — the first
+card in the pool carrying `defender` and flying at once — and **Hanna, Ship's Navigator** as the
+commander, the first whose text is an activated ability pointing into a graveyard, which needed no
+new vocabulary at all.
+
+Then it was played against all six other decks with the searching bot on both sides. The first
+version lost 19-41, including **1-9 against both aggro decks**, while casting everything it was
+supposed to — so nothing was broken; it simply had nothing alive to answer with. Four Walls instead
+of two, a third first striker, instant-speed blockers, a lifegain one-drop and a land fewer took it
+to 29-31. The current version is **50-70 over 120 games — 42% against the field**, with the spread a
+tempo deck should have: 16-4 against Tidal Mind, 13-7 against Rot Harvest, 9-11 against Ashen Rite,
+and 5-15, 5-15, 2-18 against the three decks that attack fastest.
+
+A card was cut by the same numbers: Moon Heron, a 3/2 flier for five, was written, scripted, played
+sixty games across two versions and deleted, because it never earned the slot.
+
+And the honest half of the win rate: **holding mana for a counterspell is this deck's whole plan and
+the bot cannot do it** — it counters what is counterable, not what matters. That is the limitation
+D62 measured, and it means a person plays this deck better than the opponent can.
+
+**And the obvious fix for the control decks, measured and deleted.** A land is worth the same
+tapped or untapped, so spending mana costs the search nothing: the bot taps out every turn and is
+then holding a counterspell with no mana when the spell worth answering arrives. The term was built
+— a little for each untapped land, only while the hand holds an instant, capped at the cheapest
+one's cost — and measured over 84 paired games per weight on the same seeds:
+
+| mana-up weight | control decks | counterspells cast |
+| --- | --- | --- |
+| 0 (none) | 23-61 | 75 |
+| 0.5 | 23-61 | 80 |
+| 1.0 | 20-64 | 79 |
+| 2.0 | 18-66 | 78 |
+
+Monotone in the wrong direction. Removed, with the table in the comment where the next person will
+look for it — the third idea about this search built, measured and deleted.
+
+The measurement also corrected the premise, which is the half worth keeping: **every counterspell
+the bot casts is already cast in response**, 75 of 75 with the term off, because a counterspell
+targets a spell on the stack and with an empty stack it has no legal target to be offered at all.
+The handicap is not *when* it counters; it is that it is tapped out when the moment comes, and
+pricing untapped mana does not fix that, because the board the mana bought is worth more than the
+answer kept for it. Beating an aggressive deck with a control one needs the bot to know *which*
+spell is worth answering — a judgement about the opponent, not a price on a land.
+
+**And the ceiling, named rather than walked into again.** D69's diagnostic found what the search
+actually gets wrong: over sixty games it never declined to counter a spell it could pay for, so
+Counterspells go on Rampant Growths. Pricing an answer in hand above a generic card is the obvious
+fix and it was measured over 84 paired games per value:
+
+| answer in hand | control decks | counterspells cast |
+| --- | --- | --- |
+| 1.5 (as any card) | 23-61 | 75 |
+| 2.5 | 22-62 | 82 |
+| 3.5 | 21-63 | 83 |
+| 5.0 | 21-63 | 83 |
+
+Worse, and the second column goes the wrong way: valuing an answer more made it cast *more*
+counterspells, because holding answers made its games longer and the extra turns spent them. Four
+ideas have now been measured against this ceiling and all four deleted — a second ply, a swing
+projection, untapped mana, and this.
+
+The wall is the shape of the evaluation, not a weight in it: **a sum of material cannot say "this is
+worth more later than now"**, so every weight that makes holding a card attractive also makes doing
+nothing attractive. What is missing is which of the opponent's spells is the one that beats you — a
+judgement that depends on their deck, board, hand and the race, none of which the sum reads. The two
+things that would move it are written down in `claude/decisions-log.md` (D70), along with the note
+that the one bot change in this series that *did* win games was Magic knowledge rather than a
+weight: knowing that a flier is not a 2/2.
+
+**Eleven more cards, and the first filter that reads combat.** Lightning Strike, Lava Axe, Cancel,
+Murder, Giant Spider, Titanic Growth, Healer's Hawk, Dark Ritual, Borderland Marauder, Prey Upon and
+Divine Verdict, one test each, across five of the seven decks.
+
+Three of them needed something the pool had not had. **Divine Verdict** destroys an attacking or
+blocking creature, so its target filter asks the *combat state* whether the creature is in combat —
+the first script whose castability depends on the step rather than on the board. Outside combat it
+has no legal target and the engine does not offer the card at all, which is exactly what the printed
+card does on your own main phase (CR 601.2c). **Dark Ritual** is the first spell in the pool that
+makes mana instead of spending it, and it needed nothing at all: the mana goes in the pool and the
+next play asks the pool what it can afford. **Prey Upon** reads both creatures' power before dealing
+either (CR 701.12a), so two 3/3s fighting kill each other rather than the second one dying for free.
+
+Then they were measured the way the last three card increments were: **120 unsteered games** with the
+searching bot on both sides, across every pairing of the five decks that gained a card, counting
+what each card *did* rather than that its script ran.
+
+| card | cast | and what it did |
+| --- | --- | --- |
+| Dark Ritual | 35 | **3** were followed by a spell in the same step |
+| Giant Spider | 31 | 3 blocks, 1 of them a flier |
+| Borderland Marauder | 26 | 13 attacks, **all 13** as a 4/2 |
+| Prey Upon | 24 | 19 kills |
+| Healer's Hawk | 24 | 23 life gained off its own damage |
+| Lightning Strike | 21 | 13 at a player, 8 at a creature |
+| Murder | 20 | **9** on a black creature, which a Doom Blade cannot touch |
+| Cancel | 19 | 19 countered a spell on the stack |
+| Titanic Growth | 17 | **0** cast during a combat |
+| Divine Verdict | 11 | 7 killed the attacker outright |
+| Lava Axe | 3 | 15 damage to players |
+
+Every card gets cast, and two rows are findings rather than confirmations. **Dark Ritual is thrown
+away 32 times out of 35**: the bot casts it and then casts nothing with the mana, which empties at
+the end of the step. And **Titanic Growth is never cast in combat** — the bot plays instants at
+sorcery speed in its own main phase, so a pump spell is a permanent +4/+4 on an empty board instead
+of a blowout on a block. Both are bot behaviour rather than engine faults, and both are written down
+rather than fixed in passing.
+
+**A deck slot is not free, and the fallout proved it twice over.** Making room for eleven cards had
+quietly cut three others — the second Shock, Tome Scour and both Secure the Wastes — and every one
+of them was *pinned* by a test that places it by name out of a real deck. They are back, paid for
+out of a second Shivan Dragon in a deck whose curve tops at four, a second Tormod's Crypt that
+answered nothing the first had not, a third Rampant Growth and a second Selesnya Charm. Each pinned
+card now says so in the deck list beside it.
+
+Reshuffling those decks then turned two playout tests red, and **neither was really about the
+decks** — both had been passing on luck:
+
+- *"fires death triggers in real games"* looked for the trigger's description in `stackObjects`
+  after each bot action. With auto-pass on, a trigger nobody can respond to is put on the stack and
+  resolved inside the same action, so the snapshot almost always misses it. Measured over sixteen of
+  these games: six Doomed Travellers died, six Spirits arrived, and the stack was caught holding the
+  trigger **exactly once**. It now counts the consequence, which is the stronger claim anyway —
+  every Traveller that died left a Spirit behind, whatever killed it.
+- *"casts modal spells"* failed, passed and failed again on three consecutive runs of identical
+  code, which reads exactly like a nondeterministic engine. It is not: the same twelve games produce
+  the same seventeen modal casts and the same six mode combinations, byte-identical across
+  processes. The test was 4.5s of work against vitest's 5s default and failed whenever another
+  package's suite ran beside it. The package now sets the timeout once, in `vitest.config.ts`.
+
+**The render loop nothing was watching for.** The dev server's log from one run of the browser
+suites held **7,555** copies of React's "Maximum update depth exceeded". `CombatArrows` built a
+fresh array of attacks on every render, a `useCallback` depended on it by identity, the effect
+depended on the callback, and the effect's measurement set state — so while anything was attacking,
+the table re-rendered as fast as React would let it. The no-combat path already returned the
+existing state unchanged, which is why it only happened during combat, and why a four-player pod
+spent its declare-blockers step re-rendering instead of answering taps. That is how it was found at
+all: the pod suite stalled with nothing on screen to press.
+
+The fix is to depend on the combat *by value* — a string that changes when the attacks or the blocks
+do — to keep the measurement in a ref so the callback can be stable, and to return the existing
+state when a new measurement is identical, which also makes a scroll that moved nothing cost
+nothing.
+
+**And the reason no test caught it: `pageerror` only fires for an exception nobody caught.** React
+logs a render loop to the console and carries on. All five browser suites now watch the console for
+React's own complaints and fail on them, and the check was verified the only way a check can be —
+by putting the bug back and watching it go red, then taking it out again.
+
+**The bot stops casting Dark Ritual into nothing — and the two ways a rule like this goes wrong.**
+The 120-game measurement above found it: cast 35 times, followed by a spell in the same step 3
+times. The cause is structural rather than a bad weight. `candidateActions` never offers "pass" as
+an option — that was measured and is right in general, because the search cannot see what holding a
+card buys — so whenever a ritual is the only affordable play, it gets cast. Mana empties at the end
+of the step (CR 500.4), and by the evaluation all that happened is a card left the hand.
+
+The rule is the same shape as the two already in the search ("do not cast an X spell for X=0", "do
+not eat a better creature than the one you are feeding it to"): a card spent on nothing is a fact
+about the line, not an opinion about the position, which is why it does not run into D70's ceiling.
+A ritual is declared on the card (`makesMana` on the script, which the engine itself never reads)
+and dropped from the options unless the line it opens contains a cast that was not legal before.
+
+Both of its first two versions were wrong, and both were found by instrumenting rather than
+reasoning:
+
+- It compared **pool sizes** before and after — and changed nothing at all. Identical records,
+  casts and follow-ups over 84 paired games, because a simulated line does not stop where the
+  action does: with auto-pass on, the engine keeps passing for any seat with nothing to do, so the
+  state `simulate` returns can be a step later with the pool long since emptied. Half the time the
+  pool had not grown at all.
+- Then it fired on exactly the right lines and *still* changed nothing, because `best` was seeded
+  with `options[0]` — a loop that skipped every option returned the first one anyway. The search
+  had no way to say "none of these". It does now, and that is the piece worth keeping: a filter is
+  only as good as the default it falls back to.
+
+**Measured, paired on seeds, Ashen Rite against the other six decks, 240 games per arm and then 240
+more on a fresh seed set:**
+
+| | casts | followed by a spell | left in hand | record |
+| --- | --- | --- | --- | --- |
+| without | 164 | 17 (10%) | 7 | 92-148 |
+| with | 124 | **115 (93%)** | 44 | 89-151 |
+| without, fresh seeds | 148 | 20 (14%) | 5 | 110-130 |
+| with, fresh seeds | 107 | **102 (95%)** | 45 | 118-122 |
+
+The card does its job nine times in ten instead of one, and the record moves three games one way
+and eight the other — nothing, which is the honest answer for two cards out of sixty. Kept for the
+first column rather than the last: a bot that casts a Dark Ritual and then does nothing with it
+looks broken to the person sitting opposite, and that is worth more here than a win rate.
+
+Two things that came with the measurement and are worth more than the rule. **An 18-game swing
+between two seed sets of the same configuration** — 92-148 and 110-130 — which is the scale the
+earlier 84-game sweeps in `claude/decisions-log.md` were being read at, so a 3-game difference there
+was never a result. And one hypothesis about the three games measured and **refuted** rather than
+written up as a cause: that a hand full of unspendable rituals would discard real cards at cleanup,
+since the discard rule pitches the most expensive card. Over those 240 games there were 18 cleanup
+discards, 12 with a ritual in hand, and not one ritual discarded.
+
+**The table has a voice.** The Play Realm spec has named eight sound cues since before the rules
+engine existed — `card_draw`, `land_play`, `spell_cast`, `creature_cast`, `combat_hit`, `tap_mana`,
+`phase_step`, `game_over` — and the React table had none of them. A game where the only way to know
+the opponent did something is to read a log is a game you play with your eyes on the wrong thing.
+
+Split the way `arena.ts` is split, for the same reason. `cuesFor(before, after)` is a pure function
+over two consecutive views with eighteen tests and no browser in sight; `createSoundEngine` is a few
+oscillators with no rules in it at all. Nothing is fetched: eight short recipes synthesised on the
+spot, every gain between 0.03 and 0.12, and the longest one is the one that plays when the game is
+over.
+
+The cues come from the **view diff**, not from `view.log`. The log is prose written for a player to
+read, so matching on it would be matching on wording that is free to change; a life total that went
+down is a life total that went down. And they come from the views rather than from the taps that
+caused them, which is the only way the table can also speak for the other player's turn — and for
+the bots', which is where most of what a solo player needs to hear happens.
+
+Four rules in it are there because the obvious version is worse than silence:
+
+- **The first view makes no sound.** Sitting down at a table, or reconnecting to one in progress, is
+  a hand, a board and a life total arriving at once.
+- **A stateVersion that does not advance makes no sound.** The host taking the last move back
+  restores an older engine state and a rematch starts a new one; neither is a draw step, and the
+  difference between those two views reads as both.
+- **Only your own draws.** A card the opponent drew is a card you cannot see, and a table that
+  announced it would be telling you something a real table does not.
+- **Triggered abilities are silent, unlike spells.** A sacrifice deck puts two or three abilities on
+  the stack for one creature dying. At most two cues survive any one update, loudest first, and the
+  step tick — the quietest and by far the most frequent — is dropped whenever anything else fired.
+
+The toggle is in the table's own toolbar, remembered in `localStorage`, an SVG icon rather than an
+emoji, and the state is on the element (`data-sound`) rather than only in the icon, because a test
+cannot read an icon and a screen reader should not have to.
+
+And the check that matters most: **the arena suite counts the audio nodes the page builds.** Without
+it the whole feature could be dead and every other check would still pass — the toggle would flip,
+the preference would persist, and nothing would ever make a noise. A headless browser has no
+speaker, so what is proved is that the cue was reached and the oscillators were created. It also now
+proves something no other check did: a reloaded table reclaims its seat, which is what `table.ts`
+keeps the code and player id in `localStorage` for.
+
+**And it says what just happened.** The engine has written a line for every action since the log was
+rewritten to say what *happened* rather than what was played — and the only way to read it was to
+open a panel. A player whose creature was destroyed on somebody else's turn should not have to go
+looking for that.
+
+The same split as the cues, for the same reason: `newEntries(before, after)` is a pure function with
+its own tests, the timers are in a hook, and the markup knows nothing. The three silent cases are
+the three `cuesFor` has — the first view, a stateVersion that does not advance, a different table.
+
+**The filter is the feature.** Three things are dropped, each structurally rather than by matching
+on wording:
+
+- a **mana ability**, which carries `produced` in its data and happens three times before every
+  spell;
+- a **bare pass**, which the engine makes for a seat with nothing to do several times a turn — but
+  not a pass that resolved something, because the engine appends the consequence to the same
+  message after a semicolon;
+- a **step beginning**, which carries `step` in its data and which the phase bar has been saying in
+  bigger letters since long before this existed.
+
+The last of those was found by looking at a screenshot of the feature working. The first line the
+feed ever put on a real table was *"Nick passes — postcombat main"*, which is where the game is
+rather than what happened. Two more came from the same screenshot: the lines were landing at the
+bottom of the **document** rather than the screen, because the board is a column taller than the
+viewport and `absolute bottom-*` means something different there; and left-aligned they sat across
+the first card's name, when the right end of the hand row is the emptiest place on the board. The
+browser suite now measures the rectangles — on screen, clear of the control bar — rather than
+trusting the offset.
+
+A duplicated rule went with it: the log panel's own "a pass with no consequence is noise" regex now
+reads `isBarePass` from the same module. The two filters stay different in the one way that matters
+— the log keeps the mana taps, because *"why is that Mountain tapped"* is a question a record should
+answer and a headline should not.
+
+**And one test was fixed by the render-loop fix, which is worth recording.** The arena suite checks
+that an attack is drawn on the board by looking for an arrow immediately after the declaration. The
+overlay measures the DOM, so the arrow appears a render *later* — a race the suite used to win every
+time, because `CombatArrows` was re-measuring continuously in the infinite loop described above.
+Fixing the loop made the overlay measure once, correctly, and turned that line into a coin flip: it
+passed four runs and failed the fifth. It waits up to a second now, which is what the claim always
+needed.
+
+**Damage that does not happen.** Every answer in the pool removed something — kill it, exile it,
+bounce it, stop it attacking — and all of them are permanent and all of them cost a card for a card.
+Nothing could prevent damage, which rules out the family a casual player expects first: a Fog is the
+cheapest card in the game that beats an alpha strike.
+
+Built as a flag on the continuous effects rather than as a prevention subsystem, because everything
+such an effect needs was already there: a scope that can name one card or every creature, a
+duration, an expiry pass and a source. `preventsCombatDamage` says "combat damage involving these
+permanents does not happen — dealt by them *and* dealt to them", which is the sentence both printed
+cards use, and the engine reads it in exactly one place, `dealCombatDamage`. It is combat-only and
+named so: "prevent the next 3 damage" is a shield with a quantity that is spent, a different shape
+that no card here needs.
+
+Four cards, and each one is a different shape of the same flag:
+
+| card | what it is |
+| --- | --- |
+| **Fog** {G} | the effect with an all-creatures scope, until end of turn |
+| **Holy Day** {1}{W} | the same card in white, for the deck that holds the ground |
+| **Maze of Ith** | a land that answers one attacker every turn and never taps for mana — the scope is one card, and the untap is what lets it attack *and* block in a Commander game |
+| **Fog Bank** {1}{U} | a 0/2 that blocks anything in the pool and survives it: the same effect as a permanent static on itself |
+
+Fog Bank is also the only card that reaches one branch of combat — a blocker whose damage is
+prevented while the attacker's is not. A Ball Lightning blocked by one still has to *assign* lethal
+damage to it before it may trample past (CR 702.19b), so four of its six get through rather than
+six. A Fog never produces that case, because it covers the attacker too.
+
+**The player has to be able to see it**, and this is the one effect in the pool that changes nothing
+on any card: no power, no toughness, no keyword. So `VisibleCard` carries a computed
+`damagePrevented` the way it already carries power and keywords, and the badge says "damage
+prevented" — because the block you make under a Fog is the opposite of the block you would make
+without one.
+
+**And the bot had to be taught, twice.** A Fog cast with nothing attacking is a card in the
+graveyard, and the evaluation sees a card leaving the hand either way — the same blind spot the
+rituals sat in. The first version of the rule asked the state *after* the cast whether a prevention
+effect had appeared, and let every pointless Fog through: **21 cast across 160 games, 11 of them
+into an empty board.** With auto-pass on, a spell nobody can respond to resolves inside the same
+action and the engine keeps passing, so a simulated line can end the turn — by which point an
+end-of-turn effect is gone. (The ritual rule's own comment says this. Reading your own notes is the
+lesson.)
+
+Declared on the card instead, like `makesMana`, and asked of the board before the cast. Then the
+first measurement of the working rule found the second mistake: a Fog is symmetric, so fogging your
+*own* alpha strike prevents your damage and nobody else's — nine Holy Days had stopped eight points
+of attacking power between them. The question is now "is there an attack **aimed at this seat**".
+
+**Measured over 160 unsteered games, across eight pairings:**
+
+| card | used | attacking power stopped |
+| --- | --- | --- |
+| Maze of Ith | 76 | 202 |
+| Fog Bank | 23 cast, 24 blocks | 49 |
+| Fog | 14 | 53 |
+| Holy Day | 9 | 41 |
+
+Every one of them gets used and every one of them stops real damage — and nothing is cast into an
+empty board any more.
+
+**And it says why it will not let you.** Tapping a card the engine is not offering said *"Nothing
+you can do with Lava Axe right now."* — true, and useless. The next question a player asks is
+always *why*, and the answer is the difference between waiting a turn for the mana and waiting for
+something to point it at.
+
+`castablePlays` already knew: every `continue` in it is a reason. They are collected into
+`LegalActions.blocked` — a card id and a short sentence, first reason met wins — and the play sheet
+says it: *"Nothing you can do with Lightning Bolt right now: not enough mana, counting every land
+you could still tap."*
+
+Read from the engine rather than worked out in the client, which is the point. A table knows the
+step and the pool and could guess most of them, but **a spell with no legal target looks exactly
+like a spell you cannot afford**, and those want different answers from the player. A second
+implementation of "can this be cast" is the one thing `legalActions` exists to prevent.
+
+Six reasons, one test each: a land outside your main phase, a land when you have had your one, a
+sorcery at the wrong time, a cost you cannot pay (counting every land you could still tap, not only
+what is floating), a spell with nothing to target, and a spell that eats a creature when you have
+none. A card the engine *is* offering is not in the list at all, however many of its modes were
+rejected on the way.
+
+### The trigger with no card, and a cost that is not mana
+
+`becomes-tapped` was the last trigger in the engine with no card behind it, and the reason it had
+none is that every card that uses it charges you for its own mana. So: the two painlands, and the
+creature that charges you for the card it draws.
+
+**City of Brass** — *"Whenever City of Brass becomes tapped, it deals 1 damage to you."* The
+trigger, not the mana ability, which is the distinction that matters: an Icy Manipulator tapping
+your City still deals you the damage, and a hook on "tapped for mana" would miss it. `settle`
+raises it the way it raises a death — by comparing the board before an action to the board after
+and noticing a permanent that was untapped and now is not — so every way of tapping it is covered
+without any of them being enumerated. A land that *entered* tapped did not become tapped, and the
+comparison gets that right for free (a Guildgate costs no life), which a "set tapped" hook would
+have charged for.
+
+**Mana Confluence** — the same card with the cost and the trigger swapped: *"{T}, Pay 1 life: Add
+one mana of any colour."* Life on `AbilityCost`, paid as the ability is activated, checked before
+it is offered. Nothing goes on the stack and nothing can be done about it, because that is what a
+cost is (CR 118.4, CR 605.1a). At one life the ability is simply not offered: a cost you cannot pay
+is not a cost you may pay, and the engine stops one short of paying down to zero.
+
+**Dark Confidant** — *"At the beginning of your upkeep, reveal the top card of your library and put
+that card into your hand. You lose life equal to its mana value."* One trigger that draws and then
+charges for what it drew, including nothing for a land.
+
+**The half that was missing, and that the first measurement hid.** `manaSources` is the engine's one
+answer to "can this be paid for at all" — it drives both affordability and the auto-tap — and it
+only admitted abilities that needed *nothing but a tap*:
+
+```ts
+if (ability.cost.mana !== undefined) continue;
+if (!ability.cost.tap) continue;
+if (ability.cost.sacrificeSelf) continue;
+```
+
+So Mana Confluence was a dead land. It paid for nothing, it never showed in the dimmed pips, and a
+player holding a Soul Warden with a Confluence in play was told the card could not be cast while
+looking straight at the mana for it. A life cost is the one non-mana cost that belongs in that
+list, because it is the one a seat can always decide about from its own life total: it is admitted
+while there is life to pay it, the life is paid in `tapSources` as the tap happens, and painful
+sources are listed **last** so that every tie-break in `solveTap` — each of which keeps the first
+source it found — reaches for a Plains before it reaches for your life.
+
+**And the measurement was wrong before the cards were.** The first pass counted bot *actions*
+naming the painlands and came back with `cityTaps: 0, cityDamage: 0`, which reads as two dead
+cards. It is not: `candidateActions` never offers a mana ability, so a land the engine taps while
+paying for a spell is never an action anybody took. Counted off the board instead — untapped
+before an action, tapped after it — over 120 unsteered games:
+
+| card | copies drawn | taps | life it cost |
+| --- | --- | --- | --- |
+| City of Brass | 25 | 107 | 85 |
+| Mana Confluence | 23 | 66 | 62 |
+| Dark Confidant | 14 cast | 50 upkeeps | 65 |
+
+A second attempt at City's damage watched its trigger on the stack and found **none in 120 games**,
+for the third outing of the same trap: with auto-pass on, a trigger nobody can respond to goes on
+the stack and resolves inside the same write, so it is never visible between two actions. The state
+between actions is not the state during one. Both halves are attributed the same way in the end —
+life the owner lost in the action that tapped their land, bounded by the number of taps — which is
+a lower bound and an honest one.
+
+### The pod that stopped at declare-blockers
+
+A four-seat pod could reach a position with no legal reading: attacks on the table, nobody owed a
+declaration, and nobody holding priority. Every caller behaved correctly and the table was dead —
+the player's bar showed no move, the server's own seats were never asked to move one, and the
+browser suite reported it four seconds later as *"stopped at Declare blockers on turn 65"* with
+nothing on screen to press.
+
+**Hellrider gets there.** Its controller declares four attackers at a player on three life; the
+trigger — one damage for each creature that attacked — kills them while the attack is still on the
+table. By then the step has moved to declare-blockers and set `priority: null` because a block was
+owed. The block is not owed any more, and the code that hands priority back only runs when a
+question is *answered*. Two of the first eight pods played with a rotating deck list died this way,
+on turns 40 and 48.
+
+Fixed twice over, in the one place that already repairs this family of state:
+
+- **The cause.** A player who leaves the game takes the attacks aimed at them with them
+  (CR 800.4a), and an attacker whose own controller has left goes with it.
+- **The invariant.** If the game is running and nothing is owed, somebody holds priority. Untap and
+  cleanup excepted, being the two steps where nobody holds it on purpose. Written as an invariant
+  rather than as a patch to the one action that broke it, which is D81.
+
+**It is also the first bug this project found in its own unaccounted-for failure.** The suite had
+been flaking at that check for a while and the entry in the open list said "intermittent". It was
+not intermittent: it was a reproducible deadlock behind a deck list the pod playouts held constant.
+Four-seat pods with the decks rotated through all seven found it in eight games.
+
+**Measured on the same sixty seeds, before and after:**
+
+| | games | finished | deadlocked |
+| --- | --- | --- | --- |
+| before | first 10 | 8 | **2** |
+| after | 60 | 58 | **0** |
+
+The two that did not finish after the fix did not deadlock either — they ran out of a 25-second
+wall-clock budget while the bot was still *deciding*, at over 140ms a move against under 1ms
+everywhere else. The same two seeds are slow before the fix as after it, so that is its own bug and
+is written up as one: the searching bot enumerates every attack and block declaration, and a
+forty-turn four-seat board is where that stops being free. It matters beyond a sweep, because the
+server plays the bots' whole turns inside the human's write and the browser gives up on an answer
+after eight seconds.
+
+Three things changed on the way to it, all worth keeping:
+
+- **`runBots` says why it stopped.** It returns silently on four different conditions, every one of
+  which leaves the pod waiting on a seat nobody will move, and it was called with nothing to report
+  them to. The realtime server now warns with the seat, the step and the reason, and the
+  whole-game test asserts that a solo game produces none.
+- **One owner for a refusal, by code rather than by timing.** The table's `pod:error` handler
+  deferred to `send` by counting calls in flight, which reads zero in the gap between a retry's
+  attempts and again after the eight-second ack timeout — so a refusal `send` had deliberately
+  swallowed could still put the banner up, with no move named in front of it. That is what
+  *"FORBIDDEN: you do not have priority"* on a solo pod screen was. The codes an action's ack
+  carries are now refused there outright.
+- **The test runner's own flake is fixed.** `vitest run` on the engine package had been reporting
+  `[vitest-worker]: Timeout calling "onTaskUpdate"` beside a full set of passing tests and exiting
+  1 — about one run in two, and by this point every run. The config had already ruled out four
+  mitigations and named the remaining candidate: a playout test is eleven seconds of *synchronous*
+  game-playing in one body, and a worker that never yields cannot answer the reporter. One `await`
+  per game in the five longest tests cleared it, and `turbo run test --force` has run green four
+  times in a row since. Written up as D82.
+
+### The opponent that would not win
+
+A pod in sixty took over 140ms a decision where every other took under 1ms, and the profile said
+declare-attackers: 2.8 seconds a call, with **1859 creatures on the battlefield**. It looked like a
+search that could not cope with a wide board. It was the opposite.
+
+The seat with the board was playing Krenko, Mob Boss — *"{T}: Create X 1/1 red Goblin tokens, where
+X is the number of Goblins you control"* — and activating him every turn he was untapped: 7, 15,
+31, 61, 116, 230, 461, 923, 1847. Meanwhile his three opponents sat on 3, 6 and 1 life, and he
+attacked with nothing. Captured the position and replayed the two plans:
+
+| plan | result | score |
+| --- | --- | --- |
+| attack with nothing | nothing happens | **1877.3** |
+| attack with all 462 ready creatures | an opponent dies on the spot | 1875.0 |
+
+`evaluate` is "my side, less the average opponent", and the average was taken over the opponents
+**still alive** — so killing the weakest raised the average of the ones left and the score went
+down. The bot was not failing to see the alpha strike; it was correctly maximising a number that
+said winning was bad.
+
+The fix is one word: divide by the seats the table *started* with. It keeps the reason the average
+is there (a pod is "am I ahead of the table", not "is the rest of the table small") and makes an
+elimination what it is. A two-player game computes the same number either way, so none of the duel
+measurements in `bot.ts` move.
+
+**Measured on sixty four-seat pods, the same seeds before and after:**
+
+| | finished | median turns | mean turns | whole sweep | slowest game |
+| --- | --- | --- | --- | --- | --- |
+| before | 58/60 | 65 | 65.2 | 327s | 25.3s (gave up) |
+| after | **60/60** | **51** | **53.6** | **184s** | **9.9s** |
+
+Forty-seven of the sixty finish sooner. Both of the games that had not finished at all now do. The
+performance bug closed itself: nothing in the search got faster, the games just stopped going on
+long enough to build a board nobody could think about.
+
+**One loose end, recorded rather than claimed closed.** During this increment a single realtime test
+failed once under `turbo run test --force`, with all ten packages' suites running at once, and did
+not recur in eight direct runs of that suite or four more `--force` runs. Its name was lost, because
+the command's output had been filtered down to its summary line before anything read it — the same
+mistake as reading one line of a Playwright timeout, and the reason the verification runs here now
+write their whole output to a file first. If it comes back, the log will say which test.
+
+### Answering a permanent, and answering an answer
+
+Two holes a pair of friends would hit in their first game.
+
+**Nothing in any deck could answer an artifact or an enchantment.** Fourteen of the pool's cards
+are one or the other — a Pacifism, a Journey to Nowhere, a Loxodon Warhammer, an Icy Manipulator,
+a Night of Souls' Betrayal that shrinks everybody — and not one card could remove either. A
+Pacifism on your commander was permanent, for the rest of the game.
+
+**And nothing protected a creature at instant speed.** Every answer in the pool pointed one way:
+destroy, exile, bounce, pacify. The only card that granted untargetability was Robe of Mirrors, an
+aura cast on your own main phase onto a creature nobody was threatening yet.
+
+Four cards, no new engine surface: Naturalize and Disenchant destroy target artifact or
+enchantment (`kind: 'permanent'` with a filter, which the targeting layer has expressed since
+Banishing Light), and Blossoming Defense and Dive Down give one of your creatures +2/+2 or +0/+3
+and hexproof until end of turn (a `pump` with a keyword, which is how Robe of Mirrors already
+grants shroud).
+
+**Measured over 160 unsteered games across eight pairings:**
+
+| card | drawn | cast | what it destroyed |
+| --- | --- | --- | --- |
+| Naturalize | 80 | 62 | 20 Journeys, 8 Bonesplitters, 7 Warhammers, 6 Pacifisms, 4 Icy Manipulators |
+| Disenchant | 31 | 20 | 5 Journeys, 4 Bonesplitters, 3 Warhammers, a Glorious Anthem |
+
+Seven of the 62 Naturalizes destroyed nothing, which is what a Darksteel Plate is for. Three
+destroyed a *creature* — removing a Loxodon Warhammer from a creature that had already taken three
+damage is lethal, and the engine worked that out without being told.
+
+The two interactions that make these cards feel like Magic are both free. Destroying a Journey to
+Nowhere gives the creature back, through the Journey's own `leaves` trigger — `destroy` is just one
+more way for it to leave. And hexproof cast in response to a Doom Blade makes the Doom Blade miss,
+because its target has become illegal and a spell with no legal targets is countered on resolution
+(CR 608.2b). Cloudshift proves that rule from the other side; this proves it without the card
+moving.
+
+**The bot had to be taught, and the measurement had to be taught first.** The protection spells
+were thrown away — 64 cast, 60 of them with an empty stack — which is the third card in the family
+D63 and D77 named, so it got the same treatment: a flag on the card, a question asked of the board
+before the cast. What was new is that the first measurement could not see whether the rule worked,
+because it had two buckets and a pump cast *during a combat* landed in the waste one. With three:
+
+| | cast | in response | in combat | at nothing |
+| --- | --- | --- | --- | --- |
+| Blossoming Defense, before | 34 | 1 | 0 | **33** |
+| Blossoming Defense, after | 30 | 5 | 25 | **0** |
+| Dive Down, before | 30 | 3 | 0 | **27** |
+| Dive Down, after | 29 | 1 | 28 | **0** |
+
+Before the rule, `inCombat` is **zero**: every copy was spent on the caster's own main phase, so
+the card was in the graveyard before it could matter. The rule's real effect is not that it stops
+a bad cast — it is that holding the card is what lets the search find the good one.
+
+Deck slots were paid for, not found: a Giant Spider, a Cloudshift, a Prey Upon, a Drudge
+Skeletons, a Lotleth Giant, a Wall of Air, a Divine Verdict, an Angelic Gift and a Ravenous Rats.
+Every deck is still exactly 60 plus a commander; 149 cards have scripts.
+
+**And the oldest open flake in the project closed itself along the way.** The solo suites had been
+failing about one run in twelve on *"and 'play again' deals another game at the same table"*, with
+nothing to go on but `pressed: false`. An earlier increment answered that with an instrument
+rather than a fix — a last click that keeps Playwright's whole call log instead of its first line.
+This run it fired: `<div data-testid="play-sheet"> intercepts pointer events`. A card sheet, left
+open over the end of the game, covering the button for the next one.
+
+The sheet now clears when the game finishes **and** cannot open on a finished table, which are two
+different bugs: the first version shipped only the clear, and a sheet opened *after* the game ended
+goes straight past it. The check that caught that is deterministic — tap any card once the game is
+over, and nothing may open — and it took three attempts to write, because the first could not press
+concede (the sheet was covering it) and the second quietly never ran (the losing hand is usually
+empty). Written up as D85.
+
+### The pump cast at the wrong time
+
+The protection spells showed the shape of this: before the rule that held them back, they were
+cast 64 times and **never once during a combat**. The pool has five more cards shaped exactly the
+same way, and an earlier increment had already noticed one of them — *"Titanic Growth cast 17
+times and never in combat"* — and filed it as something the bot could not do.
+
+Measured properly, it was worse than that. Across 160 unsteered games the five pumps were cast 95
+times, none of them in a combat, and **59 of those in the caster's own upkeep or draw step** —
+before a land had been played, on a board where nothing could be attacking.
+
+The cause is the search's horizon rather than its judgement. A cast is scored with `simulate`,
+which stops once the stack is empty, so "+3/+3 until end of turn" reads as a creature that is
+bigger *now*. The combat is past where the simulation looks, and no weight fixes that, because the
+creature really is bigger.
+
+So: **do not spend now what you can spend better later** — which is the first time the
+instant/sorcery line has done real work here. An instant can wait for blockers, so it is held
+unless a combat is happening or something on the stack is pointing at one of this seat's
+creatures. A sorcery cannot wait past this main phase, so it is allowed precombat when there is
+something to attack with, which is the Overrun line and the only reason that card is playable.
+
+| card | before: cast / in combat / wasted | after: cast / in combat / wasted |
+| --- | --- | --- |
+| Giant Growth | 17 / 0 / 16 | 15 / 12 / 0 |
+| Titanic Growth | 25 / 0 / 24 | 21 / 15 / 0 |
+| Inspired Charge | 23 / 0 / 23 | 2 / 2 / 0 |
+| Overrun (sorcery) | 23 / 0 / 23 | 22, all precombat with an attack to make |
+| Selesnya Charm (pump mode) | 7 / 0 / 7 | 0 |
+
+**It wins no more games, and that is recorded rather than buried.** Against a fixed shallow-bot
+opponent over 240 paired games on two seed sets: 182-58 against 181-59, then 184-56 against
+185-55 — one game either way, against a noise floor of eighteen. It is kept for two reasons that
+are not win rate. A card thrown away is a card a *person* would have used, so the rule is worth
+more across the table from a human than against the reference bot. And an opponent that casts
+Giant Growth in its own upkeep is the most obvious way a table can feel like it is being played by
+a program.
+
+### A pod you can read on a phone
+
+Opened the solo-pod suite's own phone screenshot — D76's rule, applied again — and a fresh
+four-seat Commander pod on a 390px screen was two and a half screens tall at **turn one with
+nothing on any board**. Almost all of it was empty: every seat spent two rows apiece on "no
+creatures", "no lands", "empty" and "empty", sixteen of them before anybody had played a card.
+
+The same screenshot showed the feed sitting across the mulligan prompt — three lines of *"Opponent
+III mulliganed to 6"* over *"Keep this hand, or mulligan?"* — and a card sheet from the **previous**
+game open over the new one.
+
+| | before | after |
+| --- | --- | --- |
+| a fresh four-seat pod, on a phone | 2.51 screens | **2.23** |
+| a fresh duel, on a phone | 1.37 screens | **1.18** |
+
+An empty zone is now one line with its label inside it, and keeps its `data-testid`, so a graveyard
+a player goes looking for is where it was — just not shouting about being empty. The number is
+printed by the suite on every run and fails over a budget, so the next thing added to a seat has to
+be paid for out of it.
+
+What is left is almost all the opponents' face-down hands: seven identical card backs a seat, a
+hundred pixels, saying only a number the seat header already shows. Worth revisiting and
+deliberately not changed here — it is the tabletop metaphor, and style is the player's call.
+
+**Three constants that should have been measurements.** The feed's offset was 104px against a bar
+that is 111 on a phone; it asks the bar where it is now. An empty zone's height was two rows
+because that is what a row costs. And "declared attackers" was reported for a declaration with
+nothing in it, so the arena suite demanded an attack arrow after a turn where everything was
+summoning-sick — a check that could only fail, taking three seconds to do it, which had been read
+as the overlay's old race and waited out with more patience. Written up as D87.
+
+### Two on one
+
+`chooseBlocks` pairs each blocker with one attacker and marks that attacker taken, and has said so
+in its own comment since it was written: *"menace needs two blockers, which this bot does not
+coordinate."* The engine never had that problem — blockers are collected per attacker, menace is
+enforced, and combat damage assigns lethal to each of them in order before anything tramples past.
+Only the opponent could not ask the question, so a creature too big for anything on the board was
+either chump-blocked by one creature that died for nothing, or waved through.
+
+**Measured over 160 unsteered games, paired on the same seeds:**
+
+| | before | after |
+| --- | --- | --- |
+| blocks with one blocker | 471 | 393 |
+| blocks with two or more | 50 | **134** |
+| the attacker survived the block | 235 | 171 |
+| …where a second blocker was there and would have killed it | **53** | **12** |
+| a blocker died and the attacker lived | 116 | 93 |
+
+A tenth of every block the bot made had been leaving a kill on the table. Against the fixed
+shallow-bot reference it is worth three games in 240, in the same direction on both seed sets —
+inside the noise floor, so the table above is what this is justified by, not the win rate.
+
+The plan is offered rather than taken: gang the most valuable attacker two or more creatures can
+block, cheapest blockers first until they add up to lethal, then let the heuristic place the rest
+of the blockers on the rest of the attack. Whether two creatures are worth one is answered where
+every other combat question is — by playing it out.
+
+**A rule the engine had and nothing reached, and a simplification now named.** The only test that
+touched multiple blockers was the menace one, the card that makes ganging compulsory, which is
+D57's warning exactly; there is an ordinary one now. Writing it surfaced this: **CR 509.2 gives
+the attacking player the damage assignment order, and this engine uses the order the blocks were
+declared in, which is the defending player's.** It only matters when the attacker would choose to
+kill a different blocker, and nothing in this pool makes it worth a second question in the middle
+of combat — so it is written down here rather than asserted as correct in a test. **That last
+sentence was a guess, and it was wrong: measured four increments later it cost the attacker a kill
+32 times in 160 pods, and the question is now asked. See "The attacker chooses which blocker dies"
+below.**
+
+### The creature with no choice
+
+Every rule in this engine so far answered "may I?", and `legalActions` answered it by listing what
+was allowed. "Attacks each combat if able" (CR 508.1d) answers "must I?", which a list of allowed
+moves cannot say — so it is the first rule here whose job at the table is not to *offer* a move.
+
+The engine half is a `mustAttack` continuous effect, `forcedAttackers` reading it off the board, and
+a refusal in `declareAttackers` when a declaration leaves one out. It refuses rather than quietly
+adding the creature: a declaration is the player's statement about their own combat, and an engine
+that edits it is an engine they cannot predict. Which puts the weight on the table, because a
+refusal nobody can act on is worse than no rule — press confirm, read an error, and have no idea
+what to change. So the declaration now starts with the forced attackers already in it, a second tap
+on one does nothing, and the bar names the card and says *"attacks each combat if able"* rather than
+counting it. Re-pointing it at another player still works, which is the line the rule draws:
+whether it attacks is not the attacking player's choice; who it attacks still is.
+
+Juggernaut is the card, and it carries the other half of the pair — **"can't be blocked by Walls"**,
+read off the attacker and matched against a creature *type* rather than a keyword, so a Wall of Air
+stopped by it is stopped for what it is.
+
+**Measured over 160 unsteered games**, the Juggernaut counted off the board at each of its
+controller's declare-attackers steps rather than off the action:
+
+| | |
+| --- | --- |
+| Juggernauts cast | 38 |
+| declare-attackers steps with one on the battlefield | 63 |
+| …in the declaration | 32 |
+| …excused, with the engine's reason: summoning sickness | 31 |
+| …excused with no reason, which would be a bug | **0** |
+
+Thirty-one excused of sixty-three reads like a rule that half-works and is the opposite: a creature
+cast this turn is not *able* to attack, so the only excuse ever given was the correct one. And for
+the Wall half, asking `canBlock` about every untapped Wall a defender held while a Juggernaut was
+attacking: **7 (Wall, Juggernaut) pairs across the 160 games, all 7 refused for that reason, no Wall
+block declared on a Juggernaut anyway.** Thin, which is why it is unit-tested four ways — but
+reached, which is more than D57's warning could say about several rules before it.
+
+**Goad is the companion to this and is blocked, not skipped.** `EffectDuration` is `end-of-turn`,
+`end-of-combat` or `permanent`, and goad lasts *until your next turn*. End-of-turn would make a goad
+expire before the combat it is meant to force, so it needs a fourth duration keyed to a seat's turn
+rather than to a card — a change to how effects expire, not a card to script.
+
+### A duration that names a seat
+
+D89 wrote goad up as blocked: it lasts *until your next turn*, and the engine's durations were
+`end-of-turn`, `end-of-combat` and `permanent`. That gap is closed with one variant,
+`until-controllers-next-turn`, expired in the untap step of the turn it names — the first thing a
+turn does, so the effect is gone before anybody can read a board it was still changing.
+
+It is the first duration here keyed to a *player* rather than to a moment, which is the whole
+difficulty: an effect made on somebody else's turn has to outlive that turn and the ones after it,
+so the expiry pass had to learn to ask whose turn has begun. Writing it also turned up
+**`end-of-combat`, a duration that was declared and that nothing ever expired** — the first card to
+use it would have had an effect lasting the rest of the game.
+
+**Goad is two rules on one creature, and the second is new in kind.** "Attacks each combat if able"
+is D89's requirement, checked against the declaration. "Attacks a player other than you if able"
+(CR 701.38a) is checked against one attack's *aim*, which nothing had asked before — every rule
+until now was about whether a creature may attack at all. "If able" is where the care goes: the
+requirement lifts when the goader is the last opponent, and lifts again when every remaining
+opponent has goaded the creature, since then no choice satisfies anybody. One question answers
+both — is a non-goader left.
+
+Which made three other things learn about aims, or they would have offered moves the engine
+refuses: the bot's declaration builder (three of its four plans send everything at whoever has the
+least life, exactly what goad forbids), `legalActions` (which now carries the defenders each
+restricted creature may be sent at), and the table — where a goaded creature is pre-selected
+somewhere legal, "all at them" moves everything except it, and the bar names the card and the
+player it may not be sent at. A tap that silently moves an arrow reads as a bug unless the reason
+is on screen.
+
+**Measured over 160 four-seat pods and 160 duels:**
+
+| | pods | duels |
+| --- | --- | --- |
+| Disrupt Decorums cast | 5 | **0** |
+| creatures goaded | 9 | 0 |
+| declare-steps with a goaded creature in the declaration | 8 | 0 |
+| …aimed away from the goader | **8** | 0 |
+| actions the engine refused | 0 | 0 |
+
+The duel column is the fifth "spent on nothing" rule working, and its negative control is the
+clearest of the five: **with the rule removed the bot cast it 10 times in those same 160 duels and
+7 of the goaded creatures attacked the goader** — four mana to be attacked. Five casts in 160 pods
+is thin, and is said rather than dressed up: one copy, one of four decks, four mana and a board
+needed. The rule is unit-tested five ways for that reason.
+
+**Five hand-copied lists, found on the way.** A card's options become a continuous effect in five
+places, and each copied the subset it knew about: `pump` had no `mustAttack`, `staticEffect` had
+neither that nor `preventsCombatDamage` (and an Equipment's bonus goes through it), the aura builder
+had four of ten, and the statics builder had no `cantAttack` — so a card whose printed static was
+"this creature can't attack" would have done nothing. No card in the pool was wrong; the next one
+would have been. One translator now, with a test that every option in is every flag out.
+
+**And the realtime flake, named and measured.** "Plays a whole game on its own against the server"
+failed once weeks ago, never reproduced, and failed again here — this time the instrument added
+earlier said why: *stopped after 400 moves on turn 48*. Each pod seeds its shuffle from an id
+carrying a timestamp, so every run is a different game, and that test's client casts nothing: the
+game is the bot grinding a do-nothing opponent from twenty to zero. Over 200 random shuffles with
+the same decks and the same loop: **median 137 moves, p99 307, longest 488, and one game in two
+hundred over 400.** The cap was 400. Nothing was flaky but the shuffle; it is 1200 now, with the
+measurement beside it.
+
+### Whose trigger goes first
+
+Two rules cover simultaneous triggers: the active player puts theirs on the stack first so they
+resolve last (CR 603.3b), and a player holding more than one of their own chooses the order. The
+engine did neither — it walked the seats by index, which is APNAP only when the active player
+happens to hold the lowest seat number.
+
+**Measured over 60 four-seat pods**, counting every action that put more than one trigger on the
+stack: **131 batches, 33 of them belonging to more than one player, and 2 of those ordered
+wrongly.** Not dramatic, but the kind of thing that decides one game in thirty and leaves no trace.
+The fix is an ordering rather than a special case, and the re-measurement is 0 of 33.
+
+**The player's own choice is not built, and the same measurement is why.** 111 batches had one
+player holding two or more triggers, but only 20 where those were *different* abilities — and of
+those, 7 included a trigger with a target, which is the only way two of your own triggers can
+interact: one resolving first and removing what the other is aimed at. In all seven the companion
+was "you gain 1 life" or "1 damage to each opponent", neither of which removes a creature. **No
+reordering available in those 60 pods could have changed the outcome**, so the order is written
+down as a simplification — battlefield order, nobody asked — rather than paid for with a prompt
+once every three games. When a card does make it matter, the measurement says how: prompt only for
+two triggers with *different* descriptions, which never fires on the 33-trigger Hellrider batch a
+naive version would put in front of a player.
+
+### Stops are one player's preference
+
+The toggle's tooltip said *"Skipping priority when you have nothing to do"* — "you", singular — and
+it was not true. `autoPass` was a single boolean on the game, so pressing it turned auto-pass off
+for the other player too, who was then asked twenty-five times a turn to confirm they still had
+nothing to do, about a setting they never touched.
+
+It is a list of the seats that asked for every priority now, read through one `autoPassFor` by its
+three callers: the auto-pass loop, the per-seat view, and the toggle by way of that view. No UI
+changed — the view's `autoPass` means "mine", which is what the button had always claimed.
+
+A list rather than a map or a second boolean, for the reason the bug exists: a list of who opted
+out has one reading and one default, where a per-seat map would carry three states for a two-state
+setting and a table-wide boolean beside a per-seat one would be two sources of truth for the same
+question. It also reads correctly out of a game stored before the field existed — absent means
+everybody auto-passes, which is the default that state had.
+
+**The test that could not be written before.** With it off for seat 1 and on for seat 0, seat 0
+playing a land stops play on seat 1 in the same step, and seat 1 passing then walks the rest of the
+turn without asking seat 0 anything. The old test asserted the opposite — *"with it off, the other
+seat is offered priority even with nothing to do"* — which was the bug written down as the
+specification. Each seat's setting survives a rematch too, the other place one boolean would have
+handed a preference to the wrong player.
+
+And the claim is checked where the player is: the arena suite presses the toggle in one browser and
+reads the switch in the other. Computed table-wide instead, the other player's switch flips as
+well, and the suite says so.
+
+### The attacker chooses which blocker dies
+
+CR 509.2 gives the attacking player the order a blocked creature's damage is assigned in. The
+engine spent the attacker's power down each attack's `blockers` list, which is the order the blocks
+were *declared* in — the defending player's. D88 named that a simplification and said nothing in
+the pool made it matter enough to ask about. That was a guess.
+
+**Over 160 four-seat pods: 276 attacks blocked by two or more creatures, reordering changed how
+many died in 54, and in 32 of those the declared order cost the attacker a kill** — 35 kills in
+total, about one lost every five games. And the count understates it, because *which* creature dies
+changes far more often than how many: a 5/5 into a 2/2 and a 4/4 kills one of them either way, and
+which one is the whole decision.
+
+So it is asked, as a third turn-based action beside declaring attackers and declaring blockers —
+`pendingDeclaration` is where those live, which is what withholds priority until it is answered.
+One action settles every attack that needed one. And only when it can change something: two or more
+blockers, and power enough to kill some but not all. That brings **276 multi-blocks down to 144
+askings, about one a game.**
+
+Nothing changed in the damage step. It already spent power down the list in order, so the rule
+needed somebody to *ask*, not new code to apply it: the answer rewrites the list.
+
+The bot gets the choice too, and the search was already the right shape — three candidate orders
+per attack (as declared, cheapest first, most valuable first), each played through the combat the
+way attacks and blocks already are. With the rule live over 160 pods: **asked 144 times, kept the
+order 83 and reordered 61; of those 8 killed more blockers and 43 killed better ones**, with no
+refusals.
+
+**One gap, named rather than papered over.** No browser suite reached the prompt: the engine only
+asks when a creature is blocked by two or more, and the driver — now taught to put two blockers on
+one attacker when it can — never had two creatures able to block in five full runs. The interaction
+has five reducer tests and the rule four engine tests, and the driver answers the prompt if a game
+produces one, but no browser has yet watched a person tap two blockers into order.
+
+### The cards nobody ever casts
+
+A card in a deck that never gets played is three different problems wearing one face: the deck does
+not want it, the bot cannot use it, or the engine will not let it be cast. Nothing here would have
+noticed any of them — `scripts.test.ts` proves every card *can* be cast, which is a different claim
+from "it ever is".
+
+So every deck was played against every other, both seat orders: **252 games, 72 for each of the
+seven decks**, with every cast, land and activation attributed to its card, and every card ever
+seen in a hand recorded separately so "never drawn" could be told from "drawn and never cast".
+
+**Every card in all seven decks gets cast or activated, with two exceptions, and both are rules
+working rather than cards failing.** Disrupt Decorum was drawn 23 times and cast none: it is goad,
+this measurement is all duels, and the rule that keeps the bot from goading in a duel is doing its
+job (5 casts in 160 four-seat pods). Inspired Charge was cast twice in 72 games, which is the pump
+rule holding a card that is only right in a precombat main with a wide board.
+
+One thing it did surface, recorded rather than fixed: Forge Alliance now carries a card nobody
+should cast in a duel. That is one dead slot in sixty as a duel deck and a live one in a pod, and
+there is no pod-only deck to move it to — the alternative was keeping goad out of the pool, which
+costs more than the slot.
+
+### A replacement effect from across the table
+
+The project's own biggest named gap, closed in the smallest honest way. Two replacement effects were
+already here — regeneration and "enters the battlefield tapped" — and both got away with being a
+shield on the card they affect, because that is where they are printed. "If a nontoken creature an
+opponent controls would die, exile it instead" cannot: it is written on a vampire across the table
+from the creature it is talking about, so there has to be a *pass* that asks every permanent on the
+board whether it wants to replace what is about to happen.
+
+**Where that pass lives is the whole design, and the engine had already answered it once.** `relocate`
+is the one place a card changes zone, and it *records* what happened rather than announcing it, so
+`settle` holds the single list of what just died — and `settle` is where "enters tapped" is already
+applied, with a comment saying it is as close to a replacement as a state the engine computes in
+one action can be. The death replacement went in beside it, which is why the dying permanent touches
+its graveyard for the length of one function call.
+
+What that costs is said rather than glossed: a true replacement means the card was never in the
+graveyard at all, and the only thing that could tell the difference is something reading a graveyard
+*between* the move and the pass. Nothing does — the death event is raised after, so a replaced death
+is correctly not a death and triggers nothing. A card that counted creature cards in graveyards as
+it resolved would be the one to break it, and the reason to move this upstream into `relocate`.
+
+**`replaces` is a predicate, not a scope enum**, for the reason `TargetSpec.filter` is: every printed
+version of this words it differently — an opponent's, a nontoken one, a creature rather than a
+permanent — and an enum would be either short of what the next card needs or carrying values no card
+uses, which is D57's warning.
+
+Kalitas, Traitor of Ghet is the card, and it is the plainest possible test of the pass because it
+hits every way a creature can die: lethal damage in combat, a Doom Blade, and a sacrifice paid as an
+ability cost. All three reach it, and the sharpest test is the Blood Artist one — **a replaced death
+is not a death, so nothing that watches for a creature dying may see it.** If the drain happens, the
+engine has implemented a trigger wearing a replacement's name.
+
+**And it says what it did.** A replaced death raises no event, so nothing logs it: without a note the
+card works invisibly, and a creature dies to a Doom Blade and turns up in exile with a Zombie beside
+it for no reason on screen. Replacements are recorded the way deaths are and drained onto the
+message of the action that provoked them.
+
+**Measured over 60 four-seat pods:** Kalitas cast 19 times, 1155 creature deaths, and **48 creatures
+exiled while an opposing Kalitas was out** against 76 exiled by the pool's other exile effects — so
+the pass fires about two and a half times a game it is in, with no action refused.
+
+### What two hundred pods say
+
+Five rules went into combat and the stack in quick succession — forced attacks, goad, APNAP trigger
+order, the damage assignment order and a death replacement — each with its own tests and its own
+measurement. None of them answers whether the engine, with all five in it, plays hundreds of games
+to the end without getting stuck.
+
+**200 unsteered four-seat pods, all seven decks: 200 reached a winner.** No action refused, no
+action that changed nothing, no game over the 400-turn cap, no moment with nobody to act. Median 52
+turns, p90 77, longest 122. 89,188 bot decisions at a mean of 7.6ms.
+
+The number worth looking at is the slowest single decision: **2011ms**, which is the shape of the
+bug D71 was about. Measured over a second soak of 60 pods and 27,261 decisions: **p50 2.0ms, p99
+65ms, p99.9 173ms, 96 over 100ms, six over 250ms, none at all over 500ms.** So the two-second
+outlier is about one decision in ninety thousand, on turn 39 of a long game, and the ordinary
+experience of playing this bot is a reply in two milliseconds. Recorded rather than chased: a tail
+that thin is not a performance problem, and if it thickens, this is the number it thickened from.
+
+**And the damage order, seen in a browser.** D93 named the gap — no suite reached the prompt. The
+arena suite was instrumented rather than guessed about: over a whole run it declared blocks *once*,
+with two cards in the defender's row. So a two-browser duel cannot get there; the game never builds
+the board. The solo-pod suite can, because the player attacks into three bots that gang up, and in
+one run of three it happened: the driver tapped the blockers in order and the engine took it. The
+suite records it and reports it when it happens, with a line saying why not when it does not —
+sampled rather than required, the way the scry and the library search already are.
+
+## Next
+
+1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
+   it, and the four ways a card can ask a player something — a mode, targets, a cost, a
+   mid-resolution decision — are all in place. Adding a card is a few declarative lines. Every
+   keyword and every static scope now has a card behind it; `becomes-tapped` is the one trigger
+   left without one, and deliberately so (see the entry above).
+2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
+   `deck:load` already resolves any deck handed to it, but a real list needs card data — type
+   lines, mana costs, oracle text — and the `cards` table has never been populated while this
+   environment cannot reach Scryfall. A deck of bare names has no type line, so the engine cannot
+   tell a land from a spell and Arena mode would be unusable; the tabletop would be fine. Worth
+   building where the data exists, not here.
+3. A stronger opponent still. It plays each option out — plays, attacks and blocks — and keeps the
+   position it likes best, which is worth better than two games in three against the bot it
+   replaced. But one ply is one ply: the simulation stops at the end of the current combat, so it
+   cannot see the swing back on the opponent's next turn or keep mana up for the counterspell in
+   its hand. "A spell is worth more later than now" has been taught four times by hand instead —
+   the ritual, the Fog, the protection trick and the pump — and each time it was a fact about the
+   board rather than a weight, because the weight cannot be made to work. All three need the *reply*,
+   which is this same function recursing with the opponent choosing against it — and the cheap
+   substitute for the first of them (scoring an untapped creature above a tapped one) was tried and
+   measurably lost games, which is written up in `claude/decisions-log.md`.
+4. The pod interface beyond "it works". Three opponents side by side, combat drawn rather than
+   described, a threat read on every seat and on every button that sends an attack, and one press
+   to send the whole swing at one player. What is still missing is everything a pod is *socially*:
+   no table talk beyond the chat panel, no way to offer or take a deal, and nothing that records
+   who was politically on whose side — which is the half of Commander a screen is worst at.

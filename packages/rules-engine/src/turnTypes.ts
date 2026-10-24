@@ -1,0 +1,446 @@
+/**
+ * The shapes the automated engine adds to the game state: steps, priority, the stack, combat.
+ *
+ * Kept in their own module rather than bolted onto `types.ts` because they are the vocabulary of a
+ * different layer. The tabletop needs none of them — two people passing priority verbally is the
+ * whole of its turn structure — and a table running in manual mode leaves every one of these at its
+ * empty value.
+ */
+import type { ContinuousEffect } from './characteristics.js';
+import type { ManaPool } from './mana.js';
+import type { SeatIndex } from './types.js';
+
+/**
+ * Every step of a turn, in order. Phases that contain no steps (the main phases) appear once.
+ *
+ * `first-strike-damage` is a real step that only exists when a creature in combat has first or
+ * double strike (CR 510.4); modelling it as an always-present step that is skipped when empty is
+ * simpler than conditionally inserting one, and produces the same sequence.
+ */
+export const STEPS = [
+  'untap',
+  'upkeep',
+  'draw',
+  'precombat-main',
+  'begin-combat',
+  'declare-attackers',
+  'declare-blockers',
+  'first-strike-damage',
+  'combat-damage',
+  'end-combat',
+  'postcombat-main',
+  'end',
+  'cleanup',
+] as const;
+export type Step = (typeof STEPS)[number];
+
+export const STEP_LABELS: Readonly<Record<Step, string>> = Object.freeze({
+  untap: 'Untap',
+  upkeep: 'Upkeep',
+  draw: 'Draw',
+  'precombat-main': 'Main phase 1',
+  'begin-combat': 'Beginning of combat',
+  'declare-attackers': 'Declare attackers',
+  'declare-blockers': 'Declare blockers',
+  'first-strike-damage': 'First strike damage',
+  'combat-damage': 'Combat damage',
+  'end-combat': 'End of combat',
+  'postcombat-main': 'Main phase 2',
+  end: 'End step',
+  cleanup: 'Cleanup',
+});
+
+/** Steps in which a player may cast a sorcery-speed spell (their own main phase, empty stack). */
+export const MAIN_STEPS: readonly Step[] = Object.freeze(['precombat-main', 'postcombat-main']);
+export const COMBAT_STEPS: readonly Step[] = Object.freeze([
+  'begin-combat', 'declare-attackers', 'declare-blockers', 'first-strike-damage', 'combat-damage', 'end-combat',
+]);
+/** Steps in which nobody receives priority (CR 502.1, 514.1). */
+export const NO_PRIORITY_STEPS: readonly Step[] = Object.freeze(['untap', 'cleanup']);
+
+export type Target =
+  | { readonly kind: 'card'; readonly id: string }
+  | { readonly kind: 'player'; readonly seat: SeatIndex };
+
+export const targetKey = (t: Target): string => (t.kind === 'card' ? `card:${t.id}` : `player:${t.seat}`);
+
+/**
+ * Something waiting to resolve.
+ *
+ * A spell's id is its card instance id, so the card physically sits in the stack zone and the
+ * object describes how it was cast. An ability has no card, so it gets a synthetic id — which is
+ * why the stack zone and this map are separate: an ability on the stack has no card to put there.
+ */
+export interface StackObject {
+  readonly id: string;
+  readonly kind: 'spell' | 'activated' | 'triggered';
+  /** Instance the spell is, or the permanent the ability came from. */
+  readonly source: string;
+  readonly controller: SeatIndex;
+  readonly cardKey: string;
+  /** Which of the source's abilities, for activated and triggered objects. */
+  readonly abilityIndex?: number;
+  readonly targets: readonly Target[];
+  /**
+   * Which **object** each card target was when it was chosen, by instance id (CR 400.7).
+   *
+   * A separate map rather than a field on `Target` so that nothing downstream — the wire, the
+   * table, the bot — has to know this exists: a target is still `{kind, id}` everywhere it is
+   * read. The one reader is the fizzle check in `resolveTop`, which treats a card that has since
+   * changed zones as gone, so a creature exiled and returned is not the creature the removal was
+   * aimed at. See `CardInstance.objectSeq`.
+   */
+  readonly targetSeqs?: Readonly<Record<string, number>>;
+  readonly x?: number;
+  /**
+   * Whether this spell's kicker was paid.
+   *
+   * On the stack object for the same reason X is: it was chosen as the spell was cast, both
+   * players can read it before deciding whether to respond, and the effect needs it on
+   * resolution. Absent on everything without a kicker.
+   */
+  readonly kicked?: boolean;
+  /**
+   * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
+   * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
+   * lives on the stack object rather than anywhere private.
+   */
+  readonly modes?: readonly number[];
+  /**
+   * For a triggered ability that fired off an attack: what that attack was aimed at.
+   *
+   * Carried here because "deals 1 damage to the player or planeswalker it's attacking" is about
+   * the attack that caused the trigger, and by the time the ability resolves the board no longer
+   * says what it was aimed at — the attacker may be dead and the attack removed from combat.
+   */
+  readonly attacked?: AttackedTarget;
+  /** What to show in the stack, written when the object was put there. */
+  readonly description: string;
+}
+
+/**
+ * What one attack was declared against, kept small enough to copy onto a trigger.
+ *
+ * The seat is always there, because it is that player's planeswalker being attacked and that
+ * player who declares blockers; the planeswalker is only there when the attack was aimed at one.
+ */
+export interface AttackedTarget {
+  readonly defender: SeatIndex;
+  readonly planeswalker?: string;
+}
+
+export interface CombatAttack {
+  readonly attacker: string;
+  readonly defender: SeatIndex;
+  /**
+   * A planeswalker this attack is aimed at instead of the player (CR 506.2).
+   *
+   * The seat stays, because it is still *that player's* planeswalker being attacked and it is
+   * still that player who declares blockers. Only where the damage lands changes.
+   */
+  readonly planeswalker?: string;
+  /** In damage-assignment order, which is the order the attacker's controller chose. */
+  readonly blockers: readonly string[];
+  /**
+   * Which object the attacker was when it was declared, and which objects the blockers were.
+   *
+   * A permanent that leaves the battlefield is removed from combat (CR 506.4), and a card that
+   * comes back is a new object (CR 400.7) — so a creature blinked out and back mid-combat is not
+   * the creature that was declared, however much its id says otherwise. Compared in
+   * `dealCombatDamage`, which is the only place it changes an outcome.
+   *
+   * It is the blockers' *seqs* that are compared rather than their presence in the list, because
+   * the list is also what says the attacker is **blocked**: a chump blocker that dies still
+   * stops the damage (CR 509.1h), so nothing may be removed from it.
+   */
+  readonly attackerSeq?: number;
+  readonly blockerSeqs?: Readonly<Record<string, number>>;
+}
+
+export interface CombatState {
+  readonly attacks: readonly CombatAttack[];
+  /** Set once the first-strike damage step has happened, so it does not happen twice. */
+  readonly firstStrikeDealt: boolean;
+  /**
+   * Whether the attacking player has finished declaring. Needed as its own flag because "attacked
+   * with nothing" and "has not declared yet" both leave `attacks` empty, and the first must end the
+   * step while the second must block it.
+   */
+  readonly attackersDeclared: boolean;
+  /** Defending seats that have finished declaring blockers, for the same reason. */
+  readonly blockersDeclaredBy: readonly SeatIndex[];
+  /**
+   * Whether the attacking player has settled the damage assignment order (CR 509.2).
+   *
+   * Its own flag for the same reason as the two above: once the order is answered, each attack's
+   * `blockers` list *is* the order, so there is nothing left in the board to say whether anybody
+   * was asked. Only set when an order was actually owed, and never asked twice.
+   */
+  readonly damageOrdered: boolean;
+}
+
+export const EMPTY_COMBAT: CombatState = Object.freeze({
+  attacks: [], firstStrikeDealt: false, attackersDeclared: false, blockersDeclaredBy: [],
+  damageOrdered: false,
+});
+
+/** The automation half of the game state. Absent values mean a table in manual mode. */
+export interface AutomationState {
+  /** True when the engine runs the rules. False is the manual tabletop. */
+  readonly automated: boolean;
+  /**
+   * The seats that asked to be offered *every* priority, rather than have the engine pass for them
+   * when passing is their only legal move.
+   *
+   * Auto-pass is on by default, because without it a real game asks each player twenty-five times
+   * a turn to confirm they still cannot do anything. A player who wants every priority — to bluff,
+   * or to watch each step go by — turns it off, and this is the list of who has.
+   *
+   * **Per seat rather than per table, which is the point of the list.** It was one boolean, so one
+   * player asking to see every step made the engine stop for *both* of them: the other player was
+   * then pestered twenty-five times a turn for a setting they never touched. Stops are a preference
+   * about how you want to be asked, not a rule about the game, and two people at one table can
+   * reasonably want different answers.
+   *
+   * Read through `autoPassFor`, which treats a missing entry as "on" — so a game stored before
+   * this list existed comes back with everybody auto-passing, which is what it had.
+   */
+  readonly autoPassOff: readonly SeatIndex[];
+  readonly step: Step;
+  /** Seat holding priority, or null in a step where nobody gets it. */
+  readonly priority: SeatIndex | null;
+  /** Seats that have passed since the last time something happened. */
+  readonly passed: readonly SeatIndex[];
+  readonly stackObjects: Readonly<Record<string, StackObject>>;
+  /** Stack order, bottom first — the last id is the one that resolves next. */
+  readonly stackOrder: readonly string[];
+  /** Mana pools, keyed by seat index as a string so the state stays JSON-safe. */
+  readonly pools: Readonly<Record<string, ManaPool>>;
+  readonly combat: CombatState;
+  readonly effects: readonly ContinuousEffect[];
+  /** Lands played this turn per seat, for the one-per-turn rule. */
+  readonly landsPlayed: Readonly<Record<string, number>>;
+  /** Source of synthetic ids for ability stack objects and effects. */
+  readonly autoSeq: number;
+  /** Set when a player has lost by trying to draw from an empty library (CR 704.5b). */
+  readonly drewFromEmpty: readonly SeatIndex[];
+  /**
+   * Permanents that have moved from the battlefield to a graveyard and whose death nobody has
+   * announced yet. Drained by `settle`, which raises a `dies` event for each.
+   *
+   * This exists because "dies" means *put into a graveyard from the battlefield* (CR 700.4) — not
+   * "noticed by state-based actions", which is all it used to mean. A creature destroyed by Doom
+   * Blade, or sacrificed to pay a cost, never passes through the lethal-damage check, so its
+   * trigger never fired; two call sites had been patched to announce their own deaths by hand and
+   * every other one was silently wrong. `relocate` is the single place a card changes zone, so it
+   * records the fact and `settle` interprets it: a script cannot be forgotten because nothing
+   * announces itself.
+   */
+  readonly died: readonly string[];
+  /**
+   * Permanents that have left the battlefield since the last `settle`, for leave-the-battlefield
+   * triggers (CR 603.6c). Wider than `died`, which is only the ones that reached a graveyard: a
+   * permanent that was exiled or bounced left too, and the cards that exiled something "until this
+   * leaves" have to give it back either way.
+   */
+  readonly left: readonly string[];
+  /**
+   * What replacement effects did since the last action was announced, in words.
+   *
+   * Recorded and drained the way `died` is, and for a reason that is about the *player* rather than
+   * about triggers: a replaced death produces no event anybody can log, so without this a creature
+   * dies to a Doom Blade and silently turns up in exile with a Zombie beside it, and the card that
+   * did it is nowhere on screen. `reduceAutoAction` drains the notes onto the message of the action
+   * that provoked them, which is where a player is already looking.
+   */
+  readonly replacements: readonly string[];
+  /**
+   * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
+   * Drained by `settle` alongside `died`.
+   *
+   * The same story as `died`, and found the same way. `etb` was raised at exactly one call site —
+   * a permanent spell finishing its resolution — so a creature put onto the battlefield by
+   * Zombify never triggered, and a token never triggered at all. Krenko's Goblins, Izoni's
+   * Insects and Talrand's Drakes all arrived silently. Recorded where the card actually moves,
+   * announced in one place.
+   *
+   * A permanent changing controller is **not** entering the battlefield, so only a move from
+   * somewhere else counts.
+   */
+  readonly entered: readonly string[];
+  /**
+   * A cleanup-step discard that is blocking the turn from ending. Hand size is a real decision a
+   * player has to make, so the engine stops and waits rather than discarding for them.
+   */
+  readonly pendingDiscard: { readonly seat: SeatIndex; readonly count: number } | null;
+  /**
+   * Seats that have settled on their opening hand.
+   *
+   * A London mulligan draws a fresh seven and owes one card to the bottom of the library for each
+   * mulligan taken (CR 103.4c). The redraw is a physical move the tabletop already makes; what
+   * needs tracking is the debt, because a player who mulliganed twice and started with seven cards
+   * has not mulliganed at all. `auto:start` refuses while anybody still owes.
+   */
+  readonly kept: readonly SeatIndex[];
+  /**
+   * True between the engine taking over and the first turn beginning, while opening hands are
+   * settled. Nobody holds priority and no step has started.
+   */
+  readonly openingHands: boolean;
+  /**
+   * A triggered ability on the stack that still needs its targets chosen.
+   *
+   * Targets for a trigger are chosen as it is put on the stack (CR 603.3d), by its controller —
+   * which is a decision, and the engine will not make it. Nothing else happens until it is
+   * answered: no priority, no resolution, no step change. The same shape as `pendingDiscard`, for
+   * the same reason.
+   */
+  readonly pendingChoice: {
+    readonly seat: SeatIndex;
+    /** The stack object the targets belong to. */
+    readonly stackId: string;
+    /** What is being asked for, in words. */
+    readonly description: string;
+    /** How many targets are still to choose, in order. */
+    readonly remaining: number;
+  } | null;
+  /**
+   * A resolution that has stopped to ask somebody a question.
+   *
+   * Targets are chosen before a spell is on the stack; *this* is the other kind of decision — the
+   * one a card asks for while it is resolving, and the one that kept tutors, "choose one" and an
+   * opponent's own-choice discard off the scripted list entirely. Searching a library for a card is
+   * not a target: it is not chosen when the spell is cast, it cannot be responded to, and the cards
+   * it chooses between are in a hidden zone.
+   *
+   * The spell stays **on the stack** while this is outstanding, so both tables still show what is
+   * resolving, and nothing else happens until it is answered: no priority, no further resolution,
+   * no step change. `resume` is what the engine needs to pick the resolution back up — the answers
+   * so far and which question is next — and it is part of the state rather than a closure because
+   * the state is serialised to Redis between one action and the next.
+   */
+  readonly pendingDecision: {
+    /** Who answers. Not always the controller: a discard is chosen by the player discarding. */
+    readonly seat: SeatIndex;
+    /** The stack object that is resolving. */
+    readonly stackId: string;
+    readonly prompt: string;
+    /** Instance ids that may be chosen, computed when the question is asked. */
+    readonly candidates: readonly string[];
+    readonly min: number;
+    readonly max: number;
+    /** Where they are being chosen from, which is what the table needs to draw the picker. */
+    readonly from: DecisionZone;
+    readonly resume: {
+      /** Every question this resolution asks, in order: a spec index and who answers it. */
+      readonly plan: readonly { readonly seat: SeatIndex; readonly specIndex: number }[];
+      /** Which question in the plan is outstanding. */
+      readonly at: number;
+      readonly answers: readonly DecisionAnswer[];
+    };
+  } | null;
+}
+
+/** Where a mid-resolution decision chooses its cards from. */
+/**
+ * Where the cards a decision is about live.
+ *
+ * `library` is a search — the whole library, open to its owner while they look. `library-top` is
+ * the other way a player ever sees their own library: the top few cards, face up to them and to
+ * nobody else, which is scry and everything shaped like it.
+ */
+export type DecisionZone = 'library' | 'library-top' | 'hand' | 'graveyard' | 'battlefield';
+
+/** One answered decision, in the order the card asked. */
+export interface DecisionAnswer {
+  readonly seat: SeatIndex;
+  readonly ids: readonly string[];
+}
+
+// ── Automated actions ────────────────────────────────────────────────────────────────────────────
+export interface AutoStartAction {
+  readonly type: 'auto:start'; readonly by: SeatIndex; readonly firstSeat?: SeatIndex;
+  /**
+   * Defaults to true, for every seat. False starts the table with auto-pass off for everybody,
+   * which is what a test that wants to walk a game in lock-step asks for. See
+   * `AutomationState.autoPassOff`.
+   */
+  readonly autoPass?: boolean;
+}
+/** Turns auto-passing on or off mid-game, which is a table setting rather than a game rule. */
+/**
+ * The attacking player's damage assignment order (CR 509.2), for every attack that needed one.
+ *
+ * One action for the whole combat rather than one per attacker: the order is a turn-based action
+ * taken once, and asking a player four questions in a row for a four-creature swing is four
+ * chances to lose track of which creature the prompt is about.
+ */
+export interface AutoOrderAction {
+  readonly type: 'auto:order';
+  readonly by: SeatIndex;
+  readonly orders: readonly { readonly attacker: string; readonly blockers: readonly string[] }[];
+}
+
+/** One seat's own stops setting. `by` is whose preference it is, and nobody else's changes. */
+export interface AutoStopsAction { readonly type: 'auto:stops'; readonly by: SeatIndex; readonly autoPass: boolean }
+export interface AutoPlayLandAction { readonly type: 'auto:playLand'; readonly by: SeatIndex; readonly card: string }
+export interface AutoCastAction {
+  readonly type: 'auto:cast'; readonly by: SeatIndex; readonly card: string;
+  readonly targets?: readonly Target[]; readonly x?: number;
+  /** For a modal spell: which modes, as indices into its script's `modal.modes`. */
+  readonly modes?: readonly number[];
+  /** Pay the kicker (CR 702.32a). Refused on a spell that has none. */
+  readonly kicked?: boolean;
+  /** The creature sacrificed for an additional cost, when the spell asks for one. */
+  readonly sacrifice?: string;
+}
+export interface AutoActivateAction {
+  readonly type: 'auto:activate'; readonly by: SeatIndex; readonly card: string;
+  readonly abilityIndex: number; readonly targets?: readonly Target[];
+  /** The creature sacrificed to pay for it, when the ability's cost asks for one. */
+  readonly sacrifice?: string;
+}
+export interface AutoPassAction { readonly type: 'auto:pass'; readonly by: SeatIndex }
+export interface AutoAttackAction {
+  readonly type: 'auto:attack'; readonly by: SeatIndex;
+  readonly attackers: readonly {
+    readonly attacker: string;
+    readonly defender: SeatIndex;
+    /** A planeswalker that seat controls, attacked instead of the player (CR 506.2). */
+    readonly planeswalker?: string;
+  }[];
+}
+export interface AutoBlockAction {
+  readonly type: 'auto:block'; readonly by: SeatIndex;
+  readonly blocks: readonly { readonly blocker: string; readonly attacker: string }[];
+}
+export interface AutoDiscardAction { readonly type: 'auto:discard'; readonly by: SeatIndex; readonly card: string }
+/** Answers a triggered ability's request for targets. */
+export interface AutoChooseAction {
+  readonly type: 'auto:choose'; readonly by: SeatIndex; readonly targets: readonly Target[];
+}
+/** Answers a question a card asked while it was resolving. */
+export interface AutoDecideAction {
+  readonly type: 'auto:decide'; readonly by: SeatIndex; readonly cards: readonly string[];
+}
+/** Settles on an opening hand, putting back one card for each mulligan taken. */
+export interface AutoKeepAction {
+  readonly type: 'auto:keep'; readonly by: SeatIndex;
+  /** Cards to put on the bottom of the library, exactly as many as are owed. */
+  readonly bottom?: readonly string[];
+}
+
+export type AutoAction =
+  | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
+  | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
+  | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction;
+
+export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
+  'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
+  'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
+  'auto:decide',
+]);
+
+export const isAutoAction = (action: { type: string }): action is AutoAction =>
+  (AUTO_ACTION_TYPES as readonly string[]).includes(action.type);
+

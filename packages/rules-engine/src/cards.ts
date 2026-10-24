@@ -1,0 +1,153 @@
+/**
+ * The card layer: definitions, instances and zones.
+ *
+ * ## Why a tabletop and not a scripted engine
+ *
+ * Nothing here knows what a card *does*. A scripted engine has to implement each card individually,
+ * so it only works for the cards someone has written code for — a few dozen out of roughly thirty
+ * thousand — and a Commander deck would mostly not function. This models the cardboard instead:
+ * every zone is manipulable, every move is legal, and the players apply the rules exactly as they do
+ * at a kitchen table. That is what makes an entire game playable with any deck on day one. The
+ * action set is deliberately shaped so per-card automation can be layered on later without changing
+ * the state model.
+ *
+ * ## Why definitions are separate from instances
+ *
+ * A two-player Commander game is around 200 physical cards. Carrying a name, type line, mana cost
+ * and oracle text on each instance costs roughly 350 bytes a card, which is 70KB of state before
+ * anything has happened — past the 64KB `STATE_MAX_BYTES` the realtime contract allows for a state
+ * payload. So instances carry a `defKey` into a per-game dictionary of unique cards (about 50 entries
+ * for two decks), and `viewFor` inlines a definition only onto the cards that seat may actually see.
+ * A redacted view is a fraction of the full state, which is what travels over the socket.
+ */
+import type { SeatIndex } from './types.js';
+
+/** `library` index 0 is the top of the deck. `stack` is shared and not owned by a seat. */
+export type ZoneId = 'library' | 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command' | 'stack';
+
+export const ZONE_IDS: readonly ZoneId[] = Object.freeze([
+  'library', 'hand', 'battlefield', 'graveyard', 'exile', 'command', 'stack',
+]);
+
+export function isZoneId(value: unknown): value is ZoneId {
+  return typeof value === 'string' && (ZONE_IDS as readonly string[]).includes(value);
+}
+
+/** Zones whose contents every seat may see in full. */
+export const PUBLIC_ZONES: readonly ZoneId[] = Object.freeze(['battlefield', 'graveyard', 'exile', 'command', 'stack']);
+
+/**
+ * A printed card. `imageUri` is optional on purpose: this environment cannot reach Scryfall, and a
+ * fresh Grimore database has no card images either, so every card face has to be fully legible from
+ * text alone. The UI treats an image as an enhancement, never a requirement.
+ */
+export interface CardDef {
+  readonly name: string;
+  readonly typeLine: string;
+  readonly manaCost: string;
+  readonly cmc: number;
+  readonly oracleText: string;
+  readonly colors: readonly string[];
+  /** Printed power/toughness as strings, because `*` and `1+*` are legal values. */
+  readonly power?: string;
+  readonly toughness?: string;
+  /** Printed starting loyalty, for a planeswalker. A string for the same reason P/T are. */
+  readonly loyalty?: string;
+  readonly imageUri?: string;
+  readonly scryfallId?: string;
+}
+
+/**
+ * One physical card at the table.
+ *
+ * `owner` never changes — it decides where a card returns to when it leaves the battlefield.
+ * `zoneSeat` is whose side of the table the card is physically on right now. On the battlefield that
+ * is its controller, so stealing a creature moves it to the thief's battlefield while `owner` still
+ * sends it to its owner's graveyard when it dies. A separate `controller` field would be the same
+ * information twice, and two copies can disagree.
+ */
+export interface CardInstance {
+  readonly id: string;
+  readonly defKey: string;
+  readonly owner: SeatIndex;
+  /** Whose zone the card is in. Always equals `zoneKey(zoneSeat, zone)`'s seat. */
+  readonly zoneSeat: SeatIndex;
+  readonly zone: ZoneId;
+  readonly tapped: boolean;
+  /** Face-down cards are visible to their controller and to nobody else. */
+  readonly faceDown: boolean;
+  /** Deliberately shown to the whole table, which beats a face-up card in a hidden zone. */
+  readonly revealed: boolean;
+  readonly counters: Readonly<Record<string, number>>;
+  /** Equipment, auras and anything else physically on another card. */
+  readonly attachedTo: string | null;
+  /**
+   * The permanent that exiled this card "until it leaves the battlefield" (CR 400.7e).
+   *
+   * Set on the *exiled* card rather than on the exiler, for the same reason `attachedTo` is set on
+   * the Aura: one card in exile is exiled by at most one thing, while one Banisher Priest could
+   * in principle be holding several. The exiler's leave trigger looks up whatever points at it.
+   */
+  readonly exiledBy?: string;
+  readonly isToken: boolean;
+  readonly isCommander: boolean;
+  /**
+   * How many times this card has changed zones: the same card, a different **object** (CR 400.7).
+   *
+   * The engine keeps one id per physical card, which is what lets the table animate a card from a
+   * hand to a graveyard and a test follow it. But the rules say a card that changes zones becomes
+   * a new object, and one rule depends on it: a spell that targeted a creature does not resolve
+   * against the creature that comes *back* (CR 608.2b). A Cloudshift in response to a Doom Blade
+   * is the whole point of the card and it cannot work without this counter. Absent means zero.
+   */
+  readonly objectSeq?: number;
+  /**
+   * Damage marked on this permanent, which is wiped in the cleanup step. Separate from toughness
+   * because toughness is computed and damage is not: a creature with 3 damage that gets +3/+3 stops
+   * being dead, and that only works if the damage is remembered rather than subtracted at the time.
+   */
+  readonly damage: number;
+  /**
+   * The turn this permanent came under its controller's control. A creature is summoning sick while
+   * `enteredTurn >= state.turn`: anything that entered on an earlier turn has, by definition, been
+   * there since the start of the current turn.
+   */
+  readonly enteredTurn: number;
+  /**
+   * The turn a loyalty ability of this planeswalker was activated, or absent for never.
+   *
+   * One loyalty ability per planeswalker per turn (CR 606.3), and "per turn" is the whole
+   * restriction — it is not a tap, and the ability is not used up, so there is nothing else on
+   * the instance that could record it.
+   */
+  readonly loyaltyUsedTurn?: number;
+}
+
+/** Key into `GameState.zones`. The stack is shared, so it is not seat-scoped. */
+export function zoneKey(seat: SeatIndex, zone: ZoneId): string {
+  return zone === 'stack' ? 'stack' : `${seat}:${zone}`;
+}
+
+/** A deck as content rather than as 60 repeated objects. */
+export interface DeckEntry {
+  readonly card: CardDef;
+  readonly count: number;
+}
+
+export interface DeckSpec {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  /** Goes to the command zone when the table format uses one; otherwise joins the library. */
+  readonly commander?: CardDef;
+  readonly cards: readonly DeckEntry[];
+}
+
+/** Lowercased name. Two printings of one card share a definition, which is what we want here. */
+export function defKeyFor(card: CardDef): string {
+  return card.name.trim().toLowerCase();
+}
+
+export function deckSize(spec: DeckSpec): number {
+  return spec.cards.reduce((n, e) => n + e.count, 0) + (spec.commander ? 1 : 0);
+}

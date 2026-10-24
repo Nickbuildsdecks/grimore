@@ -30,6 +30,15 @@ export interface EmailMessage {
 export interface Transport {
   /** A name for logs and for the fail-closed error. */
   readonly name: string;
+  /**
+   * Can this transport actually deliver?
+   *
+   * Callers check this BEFORE doing any per-account work. A password-recovery route that only discovers
+   * the problem at the send has already resolved the account, and failing at that point answers
+   * differently for a known account than an unknown one — which is an enumeration oracle, open for as
+   * long as mail is misconfigured. Checking up front makes the answer identical for everyone.
+   */
+  readonly configured: boolean;
   send(message: EmailMessage): Promise<void>;
 }
 
@@ -52,6 +61,7 @@ export class MailNotConfiguredError extends Error {
  */
 export class FailClosedTransport implements Transport {
   readonly name = 'fail-closed';
+  readonly configured = false;
   async send(_message: EmailMessage): Promise<void> {
     throw new MailNotConfiguredError();
   }
@@ -66,6 +76,7 @@ export class FailClosedTransport implements Transport {
  */
 export class ConsoleTransport implements Transport {
   readonly name = 'console';
+  readonly configured = true;
   constructor(private readonly log: (line: string) => void = console.log) {}
   async send(message: EmailMessage): Promise<void> {
     this.log(`[mail:console] to=${message.to} subject=${JSON.stringify(message.subject)} (body withheld)`);
@@ -75,6 +86,7 @@ export class ConsoleTransport implements Transport {
 /** Captures messages instead of sending them. For tests, which need to assert on the body. */
 export class MemoryTransport implements Transport {
   readonly name = 'memory';
+  readonly configured = true;
   readonly sent: EmailMessage[] = [];
   async send(message: EmailMessage): Promise<void> {
     this.sent.push({ ...message });

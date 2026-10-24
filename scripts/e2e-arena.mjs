@@ -1,0 +1,729 @@
+/**
+ * Two browsers, one game of Magic with the rules engine running it.
+ *
+ * The sibling of `e2e-table.mjs`, which does the same for the manual tabletop. This one is the
+ * acceptance test for Arena mode, and the question it answers is the only one that matters: can two
+ * people sit down at two machines, start a game, and have the computer play Magic with them —
+ * steps, priority, the stack, targeting, combat, damage — without getting stuck.
+ *
+ * ## How it plays
+ *
+ * Mostly by taking whatever the UI offers, which is deliberate. A script that clicked a fixed
+ * sequence would only ever test the one game it was written against; this one reads the primary
+ * action button, the play sheet and the declaration prompts and acts on them, so it plays whatever
+ * game the shuffle deals. That makes it the browser-side twin of the engine's own `playout` test:
+ * if the UI ever offers something the engine refuses, or stops offering anything at all, the game
+ * stops advancing and this fails.
+ *
+ * On top of that it asserts the specific things a player would notice:
+ *
+ *   - the phase bar says which step it is and who the game is waiting for
+ *   - a land played from hand turns into mana when tapped, and the pool shows it
+ *   - a spell with a target waits for the target, puts an object on the stack, and resolves
+ *   - a creature's power on screen is the one the engine computed, not the printed one
+ *   - combat asks the attacker to declare, then the defender to block
+ *   - life totals move on their own, because the rules moved them
+ *   - the opponent's hand is still unreadable, with the engine running
+ *   - the whole thing fits a phone
+ *
+ * Run it yourself (the launcher starts both servers):
+ *   PLAY_HOST=127.0.0.1 node scripts/play.mjs &
+ *   node scripts/e2e-arena.mjs
+ *
+ * Screenshots land in SHOT_DIR (default ./e2e-shots/arena), so a failure can be looked at.
+ */
+import path from 'node:path';
+import {
+  chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
+  readNumber, expectEventually, isMyMove, makeMove as drive, notePrompts, noteMove, press, tap,
+  watchForReactWarnings,
+} from './lib/table-driver.mjs';
+
+const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
+const SHOT_DIR = process.env.SHOT_DIR ?? path.join('e2e-shots', 'arena');
+const HEADED = process.env.HEADED === '1';
+/** How many clicks the auto-player is allowed before it gives up and reports where it stopped. */
+const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '600', 10);
+/** Which decks the two players pick. `tidal-mind` is the one with counterspells. */
+const DECK_A = process.env.DECK_A ?? 'ember-rush';
+const DECK_B = process.env.DECK_B ?? 'verdant-guard';
+/**
+ * Makes both players mulligan once, whatever they were dealt.
+ *
+ * Mulliganing is rare — one hand in nine — so left to the shuffle, the flow that follows it
+ * (choosing which card goes back to the bottom) would almost never be exercised. The run with
+ * this on is the one that tests it.
+ */
+const FORCE_MULLIGAN = process.env.FORCE_MULLIGAN === '1';
+
+/** `makeMove` with this suite's mulligan policy attached. */
+const makeMove = (page, seat, opts = {}) => drive(page, seat, { forceMulligan: FORCE_MULLIGAN, ...opts });
+
+/**
+ * Nothing taps mana by hand, on purpose.
+ *
+ * The engine taps for a cost it can pay, so a driver that tapped lands first would only be
+ * spending mana it did not need — and, worse, leaving nothing untapped at the end of its own turn,
+ * which is exactly the mana a counterspell is held up for. Playing without touching a land is
+ * also how a person would play: you pick the spell and the mana follows.
+ */
+
+async function main() {
+  await setShotDir(SHOT_DIR);
+  const browser = await chromium.launch({ headless: !HEADED });
+  const nickCtx = await browser.newContext({ viewport: { width: 1280, height: 950 } });
+  const friendCtx = await browser.newContext({ viewport: { width: 1280, height: 950 } });
+  const nick = await nickCtx.newPage();
+  const friend = await friendCtx.newPage();
+
+  const pageErrors = [];
+  const reactWarnings = [];
+  const badRequests = [];
+  const EXPECTED_FAILURES = [/\/api\//, /\/logo\.svg/];
+  for (const [who, page] of [['Nick', nick], ['Friend', friend]]) {
+    page.on('pageerror', (err) => pageErrors.push(`${who}: ${err.message}`));
+    watchForReactWarnings(page, who, reactWarnings);
+    page.on('response', (res) => {
+      if (res.status() < 400) return;
+      if (EXPECTED_FAILURES.some((re) => re.test(res.url()))) return;
+      badRequests.push(`${who}: ${res.status()} ${res.url()}`);
+    });
+  }
+
+  try {
+    // ── Sit down ────────────────────────────────────────────────────────────────────────────────
+    /*
+      Counts the audio nodes the table actually builds, before anything on the page runs.
+
+      Without this the whole sound feature could be dead and every other check here would still
+      pass: the toggle would flip, the preference would persist, and nothing would ever make a
+      noise. A headless browser has no speaker, so what can be proved is that the oscillators were
+      created — the cue was reached, the engine was built, the call was made. Whether it sounds
+      right is a question for ears.
+    */
+    await nick.addInitScript(() => {
+      const real = window.AudioContext;
+      window.__audio = { contexts: 0, nodes: 0 };
+      if (real === undefined) return;
+      window.AudioContext = class extends real {
+        constructor() {
+          super();
+          window.__audio.contexts += 1;
+        }
+
+        createOscillator() {
+          window.__audio.nodes += 1;
+          return super.createOscillator();
+        }
+
+        createBufferSource() {
+          window.__audio.nodes += 1;
+          return super.createBufferSource();
+        }
+      };
+    });
+
+    await nick.goto(BASE);
+    await waitFor(nick, 'lobby');
+    await tid(nick, 'player-name').fill('Nick');
+    await tid(nick, 'format-modern').click();
+    await tid(nick, 'create-table').click();
+    await waitFor(nick, 'pregame');
+    const code = (await tid(nick, 'table-code').textContent())?.trim() ?? '';
+
+    await friend.goto(BASE);
+    await waitFor(friend, 'lobby');
+    await tid(friend, 'player-name').fill('Friend');
+    await tid(friend, 'join-code').fill(code);
+    await tid(friend, 'join-table').click();
+    await waitFor(friend, 'pregame');
+
+    await tid(nick, 'ready').click();
+    await tid(friend, 'ready').click();
+    await waitFor(nick, `deck-${DECK_A}`);
+    await tid(nick, `deck-${DECK_A}`).click();
+    await tid(friend, `deck-${DECK_B}`).click();
+
+    // ── Hand the table to the rules engine ──────────────────────────────────────────────────────
+    await expectEventually(nick, 'the host is offered a game run by the rules engine', async () =>
+      (await has(nick, 'start-engine')) && (await tid(nick, 'start-engine').isEnabled()));
+    await tid(nick, 'start-engine').click();
+
+    await waitFor(nick, 'table');
+    await waitFor(friend, 'table');
+    await expectEventually(nick, 'the engine takes over and asks for an opening-hand decision', async () =>
+      (await has(nick, 'phase-bar')) && (await has(nick, 'mulligan-prompt')));
+    await expectEventually(friend, 'and asks the other player too, at the same time', async () =>
+      has(friend, 'mulligan-prompt'));
+    await shot(nick, 'opening-hand');
+    // Checked here, with the opening hand on the table: after the decision a player who
+    // mulliganed is holding six.
+    await expectEventually(nick, 'Nick is dealt seven cards', async () =>
+      (await cardsIn(nick, 'zone-hand-0').count()) === 7);
+    await expectEventually(friend, 'Friend is dealt seven cards', async () =>
+      (await cardsIn(friend, 'zone-hand-1').count()) === 7);
+
+    // Both keep (or mulligan) before anybody has priority.
+    for (const [page, seat] of [[nick, 0], [friend, 1]]) {
+      for (let i = 0; i < 6 && (await isMyMove(page)); i++) {
+        if (!(await has(page, 'mulligan-prompt')) && !(await has(page, 'bottom-prompt'))) break;
+        await makeMove(page, seat);
+        await page.waitForTimeout(150);
+      }
+    }
+    await expectEventually(nick, 'and the first turn begins once both hands are settled', async () =>
+      !(await has(nick, 'mulligan-prompt')) && !(await has(friend, 'mulligan-prompt')));
+    if (FORCE_MULLIGAN) {
+      // A London mulligan draws a fresh seven and puts one back, so the hand is six.
+      await expectEventually(nick, 'a mulliganed hand is six cards, not seven', async () =>
+        (await cardsIn(nick, 'zone-hand-0').count()) === 6);
+      await expectEventually(friend, 'and the same for the other player', async () =>
+        (await cardsIn(friend, 'zone-hand-1').count()) === 6);
+      await shot(nick, 'after-mulligan');
+    }
+    await expectEventually(friend, 'both players see it, not just the host', async () =>
+      has(friend, 'phase-bar'));
+    await expectEventually(nick, 'the manual control bar is replaced by the engine’s own', async () =>
+      (await has(nick, 'arena-bar')) && !(await has(nick, 'controls')));
+    await shot(nick, 'engine-started');
+
+    // ── The table has a voice, and a way to turn it off ─────────────────────────────────────────
+    /*
+      Checked here rather than at the end, because the honest check for "the choice is remembered"
+      is a reload, and a reload is less disruptive before the game has been played than after. It
+      also exercises something no other check does: the table comes back after the page is thrown
+      away, which is what `table.ts` keeps the code and player id in `localStorage` for.
+
+      What is not checked is whether a noise came out. That needs ears, not a browser — and it is
+      why every rule about *when* a cue fires is a pure function with its own tests in
+      `apps/web/src/lib/sound.test.ts` instead of being buried in the component.
+    */
+    const soundState = async (page) => await tid(page, 'toggle-sound').getAttribute('data-sound');
+    const stored = async (page) => await page.evaluate(() => {
+      try {
+        return window.localStorage.getItem('grimore.table.sound');
+      } catch {
+        return 'unreadable';
+      }
+    });
+    check('the table offers a sound control, and starts with it on', await soundState(nick) === 'on');
+    await press(nick, 'toggle-sound');
+    await expectEventually(nick, 'turning the sound off says so on the control itself', async () =>
+      (await soundState(nick)) === 'off');
+    check('and writes the choice down', await stored(nick) === 'off');
+    await nick.reload();
+    await waitFor(nick, 'table');
+    await expectEventually(nick, 'a reloaded table reclaims its seat and remembers the choice', async () =>
+      (await has(nick, 'toggle-sound')) && (await soundState(nick)) === 'off');
+    await press(nick, 'toggle-sound');
+    await expectEventually(nick, 'and it can be turned back on', async () =>
+      (await soundState(nick)) === 'on' && (await stored(nick)) === 'on');
+
+    // ── Why a card cannot be played ─────────────────────────────────────────────────────────────
+    /*
+      Done here, on turn one, because that is when a hand is full of cards there is no mana for —
+      which is exactly the moment a player taps one and gets "nothing you can do with this right
+      now" and no idea why. Whichever seat is on the clock is the one asked.
+    */
+    {
+      const page = (await isMyMove(nick)) ? nick : friend;
+      const seat = page === nick ? 0 : 1;
+      const hand = await cardsIn(page, `zone-hand-${seat}`).all();
+      let reason = '';
+      for (const card of hand.slice(0, 5)) {
+        if (!(await tap(card))) continue;
+        if (await has(page, 'no-plays')) {
+          reason = (await text(page, 'no-plays')).trim();
+          await shot(page, 'why-not');
+        }
+        await press(page, 'play-sheet-close');
+        if (reason !== '') break;
+      }
+      check('a card it will not let you play says why', /: .+\./.test(reason), `said: ${JSON.stringify(reason)}`);
+    }
+
+    // The engine begins the first turn at its upkeep, with the active player holding priority.
+    await expectEventually(nick, 'the step is named rather than left to be guessed at', async () => {
+      const label = await text(nick, 'step-label');
+      return label.length > 0 && /upkeep|main|draw/i.test(label);
+    });
+    await expectEventually(nick, 'the bar says who the game is waiting for', async () =>
+      /priority|waiting/i.test(await text(nick, 'waiting-on')));
+    await expectEventually(nick, 'the stack starts empty and says so', async () => has(nick, 'stack-empty'));
+
+    // ── Hidden information still holds ──────────────────────────────────────────────────────────
+    const friendHandAsNickSees = await cardsIn(nick, 'zone-hand-1').evaluateAll((els) =>
+      els.map((e) => ({ hidden: e.getAttribute('data-hidden'), name: e.getAttribute('data-card-name') })));
+    check(
+      'with the engine running, the opponent’s hand is still unreadable',
+      /*
+        One, not four, and not seven.
+
+        The floor is only here to stop the claim going vacuous against an empty hand — the claim
+        itself is the `every`. It was four, on the reasoning that a London mulligan settles at
+        seven minus the number taken, and it failed on a run where the opponent mulliganed to
+        three: a legal hand, a passing claim, and a red check. A floor that encodes a guess about
+        how many mulligans are plausible is a second claim nobody meant to make.
+      */
+      friendHandAsNickSees.length >= 1 && friendHandAsNickSees.every((c) => c.hidden === 'true' && !c.name),
+      JSON.stringify(friendHandAsNickSees).slice(0, 160),
+    );
+    // Not merely hidden by a CSS rule: there is no card text inside those elements at all,
+    // because the server never sent any. Scoped to the hand itself rather than to the whole page,
+    // because two decks can legitimately contain the same card — a page-wide grep for a card name
+    // fails the moment both players are playing green.
+    const leaked = await nick.evaluate(() => {
+      const zone = document.querySelector('[data-testid="zone-hand-1"]');
+      return zone === null ? 'missing' : (zone.textContent ?? '');
+    });
+    check(
+      'and there is no card text inside the opponent’s hand at all',
+      leaked !== 'missing' && !/[a-z]{4}/.test(leaked.replace(/GRIMORE/gi, '')),
+      leaked.slice(0, 120),
+    );
+
+    // ── A third person watching ─────────────────────────────────────────────────────────────────
+    /*
+      The same claim as above, made against a *third party*.
+
+      A watcher is the case where redaction has to be right for a reason that is not symmetry:
+      the two players can at least see their own hands, and a watcher may see neither. It is also
+      the one client that is never offered a move, so the arena bar must not be there at all.
+    */
+    {
+      const watcherCtx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+      const watcher = await watcherCtx.newPage();
+      watcher.on('pageerror', (err) => pageErrors.push(`Watcher: ${err.message}`));
+      watchForReactWarnings(watcher, 'Watcher', reactWarnings);
+      await watcher.goto(BASE);
+      await waitFor(watcher, 'lobby');
+      await tid(watcher, 'join-code').fill(code);
+      await press(watcher, 'watch-table');
+      await waitFor(watcher, 'watching-code');
+
+      // It sees the board: both battlefields and both hands as counts.
+      const boards = await watcher.locator('[data-testid^="zone-battlefield-"]').count();
+      check('a watcher sees every seat\u2019s board', boards >= 2, `battlefield rows: ${boards}`);
+      const hands = [];
+      for (const seat of [0, 1]) {
+        hands.push(await cardsIn(watcher, `zone-hand-${seat}`).evaluateAll((els) =>
+          els.map((e) => ({ hidden: e.getAttribute('data-hidden'), name: e.getAttribute('data-card-name') }))));
+      }
+      // Same floor, same reason: non-empty is what keeps the claim from being vacuous, and
+      // anything above that is a guess about the shuffle.
+      check('and neither hand, which is the whole point of a third party',
+        hands.every((hand) => hand.length >= 1 && hand.every((c) => c.hidden === 'true' && !c.name)),
+        JSON.stringify(hands).slice(0, 160));
+
+      // And it is offered nothing: no control bar, no play sheet, no prompt.
+      check('a watcher is never offered a move',
+        !(await has(watcher, 'arena-bar')) && !(await has(watcher, 'primary-move')),
+        `arena-bar ${await has(watcher, 'arena-bar')}, primary-move ${await has(watcher, 'primary-move')}`);
+      await shot(watcher, 'watching');
+      await watcherCtx.close();
+    }
+
+    // ── Only one player is asked to act at a time ───────────────────────────────────────────────
+    const nickMoves = await isMyMove(nick);
+    const friendMoves = await isMyMove(friend);
+    check(
+      'exactly one player is being asked to act',
+      nickMoves !== friendMoves,
+      `nick=${nickMoves} friend=${friendMoves}`,
+    );
+    await expectEventually(friend, 'and the other is told they are waiting', async () =>
+      (await has(friend, 'not-your-move')) || (await isMyMove(friend)));
+
+    // ── Stops are one player's preference ───────────────────────────────────────────────────────
+    // It was one boolean on the game, so a player who asked to see every priority turned it off
+    // for their opponent too — who was then asked twenty-five times a turn about a setting they
+    // never touched. Toggled back on afterwards so the rest of this game plays as it always did.
+    {
+      const pressed = (page) => tid(page, 'toggle-stops').getAttribute('aria-pressed');
+      const before = await pressed(friend);
+      await tid(nick, 'toggle-stops').click();
+      await nick.waitForTimeout(250);
+      check('one player asking for every step does not change the other player\u2019s setting',
+        (await pressed(nick)) === 'false' && (await pressed(friend)) === before,
+        `nick=${await pressed(nick)} friend=${await pressed(friend)} (was ${before})`);
+      await tid(nick, 'toggle-stops').click();
+      await nick.waitForTimeout(250);
+    }
+
+    // ── Play the game out ───────────────────────────────────────────────────────────────────────
+    // From here the script takes whatever the UI offers, as a player would, and watches for the
+    // milestones that prove each part of the engine is wired through.
+    const seen = {
+      land: false, mana: false, stack: false, attackers: false, blockers: false,
+      lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
+      decided: false, searched: false, scried: false, arrows: false, swung: false, modal: false, x: false, xCast: null,
+      /** Whether the host was offered an undo, and whether the other player was not. */
+      undoOffered: false, undoGuestClean: true,
+      /** What the table said out loud, and whether it ever got in the way of a tap. */
+      feedSaid: '', feedBlockedTaps: false, feedGeometry: 'not seen',
+    };
+    const startLifeNick = await readNumber(nick, 'life-0');
+    const startLifeFriend = await readNumber(friend, 'life-1');
+    let lastTurn = await readNumber(nick, 'turn');
+    let moves = 0;
+    let finished = false;
+    let lastMove = '';
+    let repeats = 0;
+
+    while (moves < MAX_MOVES) {
+      if (await has(nick, 'game-over')) {
+        finished = true;
+        break;
+      }
+      const actor = (await isMyMove(nick)) ? { page: nick, seat: 0, who: 'Nick' }
+        : (await isMyMove(friend)) ? { page: friend, seat: 1, who: 'Friend' }
+        : null;
+      if (actor === null) {
+        // Nobody has anything to do: either the sockets are mid-flight, or the game is stuck.
+        await nick.waitForTimeout(250);
+        moves += 1;
+        if (moves % 20 === 0) {
+          const where = `${await text(nick, 'step-label')} / turn ${await readNumber(nick, 'turn')}`;
+          console.log(`      (waiting — ${where})`);
+        }
+        continue;
+      }
+
+      /*
+        Taking a move back, with the engine running.
+
+        Only observed here — whether the host's button is offered, and whether the other player's
+        is correctly absent — because actually pressing it mid-game would take back whatever the
+        engine had just done and the rest of this run is a real game being played. The tabletop
+        suite presses it, where the whole state is one number, and `realtime.test.ts` holds the
+        semantics: one step, host only, announced in the chat.
+      */
+      /*
+        Sampled rather than waited for: a feed line is up for a few seconds and then gone, so a
+        check that looked for one at a fixed moment would be a check on timing. What matters is
+        that the table says *something* over the course of a game, and that saying it never costs
+        the player a tap on the card underneath — the mistake the combat overlay had to fix once.
+      */
+      if (seen.feedSaid === '' && (await has(nick, 'feed-line'))) {
+        seen.feedSaid = (await nick.locator('[data-testid="feed-line"]').first().textContent())?.trim() ?? '';
+        const events = await nick.locator('[data-testid="table-feed"]').evaluate((el) =>
+          window.getComputedStyle(el).pointerEvents);
+        if (events !== 'none') seen.feedBlockedTaps = true;
+        // Measured rather than eyeballed. The first version of this was positioned against the
+        // board, which is a column taller than the screen, so every line landed several hundred
+        // pixels below the bottom of the viewport where nobody would ever see it.
+        seen.feedGeometry = await nick.evaluate(() => {
+          const feed = document.querySelector('[data-testid="table-feed"]');
+          const bar = document.querySelector('[data-testid="arena-bar"]');
+          if (!feed || !bar) return 'missing';
+          const f = feed.getBoundingClientRect();
+          const b = bar.getBoundingClientRect();
+          if (f.top < 0 || f.bottom > window.innerHeight) return `off screen (${Math.round(f.top)}..${Math.round(f.bottom)} of ${window.innerHeight})`;
+          if (f.bottom > b.top) return `over the control bar (feed ends ${Math.round(f.bottom)}, bar starts ${Math.round(b.top)})`;
+          return 'ok';
+        });
+        await shot(nick, 'feed');
+      }
+      if (!seen.undoOffered && (await nick.locator('[data-testid="undo"]').count()) === 1) {
+        seen.undoOffered = true;
+        await shot(nick, 'undo-offered');
+      }
+      if ((await friend.locator('[data-testid="undo"]').count()) !== 0) seen.undoGuestClean = false;
+
+      // Milestones, read before the move so the prompt that is on screen is the one recorded.
+      // Being *asked* counts, which is what the primary button says before the declaration screen
+      // opens — the question is whether the engine asks the right player, not how many clicks it
+      // takes to answer.
+      if (await has(actor.page, 'attack-prompt')) seen.attackers = true;
+      if (await has(actor.page, 'block-prompt')) seen.blockers = true;
+      await notePrompts(seen, actor.page, actor.seat);
+      if (await has(actor.page, 'primary-move')) {
+        const label = await text(actor.page, 'primary-move');
+        if (/declare attackers/i.test(label)) seen.attackers = true;
+        if (/declare blockers/i.test(label)) seen.blockers = true;
+      }
+      if (/declare|combat/i.test(await text(actor.page, 'step-label'))) seen.combatStep = true;
+
+      const did = await makeMove(actor.page, actor.seat);
+      moves += 1;
+      if (did !== null && moves % 10 === 0) {
+        console.log(`      move ${moves}: ${actor.who} ${did}`);
+      }
+      await actor.page.waitForTimeout(90);
+
+      // The same move being made over and over without the game moving on is the failure mode
+      // worth catching early: it means the table offered something the engine refused.
+      const here = `${actor.who}:${did}:${await text(nick, 'step-label')}:${await readNumber(nick, 'turn')}`;
+      repeats = here === lastMove ? repeats + 1 : 0;
+      lastMove = here;
+      if (repeats >= 8) {
+        const err = (await has(nick, 'table-error')) ? await text(nick, 'table-error')
+          : (await has(friend, 'table-error')) ? await text(friend, 'table-error')
+          : 'no error shown';
+        check('the table never offers a move the engine refuses', false, `stuck on "${did}" at ${here} — ${err}`);
+        break;
+      }
+
+      // Did anything the engine owns happen?
+      if (!seen.stack && (await nick.locator('[data-testid^="stack-"]').count()) > 0) {
+        seen.stack = true;
+        await shot(nick, 'stack-in-use');
+      }
+      // Looked for on whichever page is acting: targeting is a state of that one browser, so the
+      // other player never sees the prompt at all.
+      if (!seen.countered && (await actor.page.locator('[data-testid^="target-stack-"]').count()) > 0) {
+        seen.countered = true;
+        await shot(actor.page, 'countering-a-spell');
+      }
+      if (did !== null && /counter/i.test(did)) seen.countered = true;
+      await noteMove(seen, actor.page, did);
+      if (!seen.mana) {
+        // Either floating mana, or the dimmed "what you could still make" display. With the engine
+        // tapping for a spell's cost the pool is usually spent in the same action it was filled,
+        // so what the player actually reads most of the time is the second one.
+        const floating = await nick.locator('[data-testid^="pool-"]').count();
+        const available = await nick.locator('[data-testid="mana-potential"]').count();
+        if (floating > 0 || available > 0) seen.mana = true;
+      }
+      if (!seen.land && (await cardsIn(nick, 'zone-battlefield-0').count()) > 0) seen.land = true;
+      if (!seen.computedBody) {
+        const gold = await nick.locator('[data-testid^="body-"].text-\\[var\\(--g-gold-400\\)\\]').count();
+        if (gold > 0) {
+          seen.computedBody = true;
+          await shot(nick, 'computed-power');
+        }
+      }
+      const turn = await readNumber(nick, 'turn');
+      if (turn > lastTurn) {
+        seen.turnsPassed += turn - lastTurn;
+        lastTurn = turn;
+      }
+      if (!seen.lifeChanged) {
+        const l0 = await readNumber(nick, 'life-0');
+        const l1 = await readNumber(nick, 'life-1');
+        if (l0 !== startLifeNick || l1 !== startLifeFriend) {
+          seen.lifeChanged = true;
+          await shot(nick, 'life-changed-by-the-rules');
+        }
+      }
+      // Enough has been seen to prove every part is wired; stop before a long game times out.
+      const enough = seen.land && seen.mana && seen.stack && seen.attackers && seen.blockers &&
+        seen.lifeChanged && seen.turnsPassed >= 4;
+      if (enough) break;
+    }
+
+    console.log(`      played ${moves} moves over ${seen.turnsPassed} turn changes`);
+    check('the game keeps advancing — the engine never gets stuck', seen.turnsPassed >= 4, JSON.stringify(seen));
+    // The stack is drawn as a list rather than as cards, so a spell on it needs its own way to be
+    // pointed at. Whether the situation comes up is the shuffle's business — a counterspell has to
+    // be drawn, be affordable, and have something worth countering — so it is asserted when the
+    // game produced it and reported when it did not. `playout.test.ts` asserts deterministically
+    // that counterspells get cast; this is about the one thing only a browser can show, which is
+    // that a row in the stack panel can be tapped as a target.
+    // A question asked mid-resolution. Whether one comes up is the shuffle's business — a tutor or
+    // a looting spell has to be drawn and affordable — so it is asserted when the game produced
+    // one and reported when it did not. The deterministic version lives in `scripts.test.ts`; what
+    // only a browser can show is that the prompt has a visible answer, and the search case is the
+    // one worth naming because the cards are in a library the table draws nowhere else.
+    if (seen.decided) {
+      check('a question asked mid-resolution can be answered from the table', true);
+      if (seen.searched) check('a library search shows the library and lights what may be taken', true);
+      if (seen.scried) check('a scry shows the top of your own library and nobody else’s', true);
+      else console.log('      (nothing searched a library in this game)');
+    } else {
+      console.log('      (no card stopped to ask a question in this game — scripts.test.ts covers '
+        + 'that path on a fixed board)');
+    }
+    if (seen.countered) {
+      check('a spell on the stack can be targeted', true);
+    } else if (DECK_A === 'tidal-mind' || DECK_B === 'tidal-mind') {
+      console.log('      (no counterspell was castable in this game — nothing to aim at the stack)');
+    }
+    check('the table says what just happened without the log being opened',
+      seen.feedSaid.length > 0, `said: ${JSON.stringify(seen.feedSaid)}`);
+    check('and saying it never takes a tap away from the board', !seen.feedBlockedTaps);
+    check('and it is on the screen, clear of the control bar', seen.feedGeometry === 'ok', seen.feedGeometry);
+    check('the host can take back the last move with the engine running', seen.undoOffered);
+    check('and the other player is never offered it', seen.undoGuestClean);
+    check('a land played from hand reaches the battlefield', seen.land);
+    check('the bar shows the mana available to spend', seen.mana);
+    check('a spell or ability goes on the stack and resolves', seen.stack);
+    check('combat asks the attacking player to declare', seen.attackers);
+    // Whether a *block* is ever required depends on the shuffle: a defender with no untapped
+    // creature is not asked, and the engine declares an empty block for them. So this is asserted
+    // when the game produced the situation and reported when it did not — `combat.test.ts` owns
+    // the deterministic version of the claim, on a board built to need a block.
+    if (seen.blockers) {
+      check('and asks the defending player to block', true);
+    } else {
+      console.log('      (no block was called for in this game — the defender was never attacked '
+        + 'with a creature able to block; combat.test.ts covers that path on a fixed board)');
+    }
+    check('life totals move because the rules moved them', seen.lifeChanged);
+    /*
+      Only when a creature actually attacked.
+
+      `seen.attackers` says the table *asked* for a declaration, which it does on every turn with
+      a creature on the board — including one where everything is summoning-sick and the answer is
+      an empty attack. An empty attack draws no arrow, so demanding one there is a check that
+      cannot pass, three seconds of patience and then a red line in a game that was fine. The
+      driver now reports how many went.
+    */
+    if (seen.swung) {
+      check('an attack is drawn on the board, from the creature to who it is attacking', seen.arrows);
+    }
+    await shot(nick, 'mid-game-nick');
+    await shot(friend, 'mid-game-friend');
+
+    // ── The board agrees with the engine ────────────────────────────────────────────────────────
+    // Every creature on screen shows the power the engine computed. A card whose body came from the
+    // printed values would disagree the moment a counter or a pump existed.
+    const bodies = await nick.locator('[data-testid^="body-"]').evaluateAll((els) =>
+      els.map((e) => e.textContent?.trim() ?? ''));
+    check(
+      'creatures on the battlefield show a current power and toughness',
+      bodies.length === 0 || bodies.every((b) => /^\d+\/\d+$/.test(b)),
+      JSON.stringify(bodies).slice(0, 120),
+    );
+
+    // ── A refresh mid-game must not lose the seat ───────────────────────────────────────────────
+    const handBeforeReload = await cardsIn(friend, 'zone-hand-1').count();
+    await friend.reload();
+    await expectEventually(friend, 'a mid-game refresh rejoins the same automated game', async () => {
+      if (!(await has(friend, 'table'))) return false;
+      if (!(await has(friend, 'phase-bar'))) return false;
+      return (await cardsIn(friend, 'zone-hand-1').count()) === handBeforeReload;
+    }, 20000);
+    await shot(friend, 'after-reload');
+
+    // ── Finish it, if it has not finished itself ────────────────────────────────────────────────
+    if (!finished) {
+      // A longer budget than the first loop: that one stops as soon as it has seen every part of
+      // the engine work, while this one has to actually finish a game — and a slow matchup can run
+      // past turn forty before somebody dies or decks out.
+      let idle = 0;
+      for (let i = 0; i < MAX_MOVES * 4 && !(await has(nick, 'game-over')); i++) {
+        const actor = (await isMyMove(nick)) ? { page: nick, seat: 0 }
+          : (await isMyMove(friend)) ? { page: friend, seat: 1 }
+          : null;
+        if (actor === null) {
+          // Nobody on the clock for a long stretch means the game is stuck, not slow. Without
+          // this the run burns its whole budget and then reports only where it stopped.
+          idle += 1;
+          if (idle > 60) break;
+          await nick.waitForTimeout(200);
+          continue;
+        }
+        idle = 0;
+        await notePrompts(seen, actor.page, actor.seat);
+        const did = await makeMove(actor.page, actor.seat, { aggression: 0.85 });
+        await noteMove(seen, actor.page, did);
+        if (did !== null && i % 20 === 0) console.log(`      finishing ${i}: ${did}`);
+        if (did === null) {
+          // The table is asking for something this script cannot answer, which is worth saying
+          // out loud rather than letting it look like a slow game.
+          check('every prompt the table shows can be answered', false,
+            `no answer at ${await text(actor.page, 'step-label')} on turn ${await readNumber(nick, 'turn')}`);
+          break;
+        }
+        await actor.page.waitForTimeout(40);
+      }
+      finished = await has(nick, 'game-over');
+    }
+    check('the game reaches a winner through the real UI', finished,
+      finished ? '' : `stopped at ${await text(nick, 'step-label')} turn ${await readNumber(nick, 'turn')}`);
+
+    // Reported here rather than mid-game, because most of a game is played in the loop above: a
+    // modal spell cast on turn fifteen was being announced as "never castable" by a check that had
+    // already run. Whether one is drawn and affordable at all is the shuffle's business, so it is
+    // asserted when the game produced one and reported when it did not; `scripts.test.ts` owns the
+    // deterministic version, on a board built to need it.
+    if (seen.x) {
+      check('an X spell asks how big it is, and is cast for what was chosen', Boolean(seen.xCast),
+        seen.xCast ?? 'the prompt appeared but no cast came out of it');
+    } else {
+      console.log('      (no X spell came up in this game — scripts.test.ts covers that path '
+        + 'on a fixed board)');
+    }
+    if (seen.modal) {
+      check('a modal spell offers its modes as plays and one can be cast', true);
+    } else {
+      console.log('      (no modal spell came up in this game — scripts.test.ts covers that path '
+        + 'on a fixed board)');
+    }
+    if (finished) {
+      /*
+        A result, and the same one on both screens.
+
+        "Somebody wins" is the usual ending and not the only legal one: two players can die in the
+        same event — mutual combat damage, a sweeper that kills the board on an empty life total —
+        and the engine ends that game with no winner, which is the rule (CR 104.4b). A suite that
+        demanded a winner failed on a game that had ended perfectly correctly in a draw, so what
+        is checked is that the table *says* what happened and that both players are told the same
+        thing.
+      */
+      const over = await text(nick, 'game-over');
+      const result = /wins|game is over/i;
+      check('and both players are told the result', result.test(over), over.slice(0, 80));
+      await expectEventually(friend, 'the other player sees the same result', async () => {
+        const theirs = await text(friend, 'game-over');
+        return result.test(theirs) && theirs.startsWith(over.slice(0, 20));
+      });
+      await shot(nick, 'game-over');
+    }
+
+    // ── The help a player is actually shown ─────────────────────────────────────────────────────
+    // With the engine running, the tabletop's help is wrong in a way that would send a new player
+    // looking for buttons that are not there — it tells them to tap their own lands and to settle
+    // combat with the life buttons.
+    await tid(nick, 'toggle-help').click();
+    await waitFor(nick, 'help-panel');
+    const help = await text(nick, 'help-panel');
+    check('the help explains the table the player is actually at',
+      /rules engine runs the turn/i.test(help) && !/does not count mana/i.test(help),
+      help.slice(0, 120));
+    await tid(nick, 'help-close').click();
+
+    // ── Phone layout ────────────────────────────────────────────────────────────────────────────
+    await nick.setViewportSize({ width: 390, height: 844 });
+    await nick.waitForTimeout(400);
+    const overflow = await nick.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    check('the automated table fits a phone with no sideways scrolling', overflow <= 1, `overflow ${overflow}px`);
+    const barVisible = await nick.evaluate(() => {
+      const bar = document.querySelector('[data-testid="arena-bar"]');
+      if (!bar) return 'missing';
+      const box = bar.getBoundingClientRect();
+      return box.left >= -1 && box.right <= window.innerWidth + 1 ? 'ok' : `clipped (${box.left}..${box.right})`;
+    });
+    check('and the engine’s control bar stays fully on screen', barVisible === 'ok', String(barVisible));
+    await shot(nick, 'phone');
+
+    // The strongest form of "the table only offers what the engine accepts": a refusal would have
+    // left its message on screen, because the banner stays until it is dismissed and nothing in
+    // this script dismisses one.
+    const refusals = [];
+    for (const [who, page] of [['Nick', nick], ['Friend', friend]]) {
+      if (await has(page, 'table-error')) refusals.push(`${who}: ${await text(page, 'table-error')}`);
+    }
+    const audio = await nick.evaluate(() => window.__audio ?? { contexts: 0, nodes: 0 });
+    check('the table actually made a noise: the cues reached the oscillators', audio.nodes > 0,
+      `${audio.contexts} audio contexts, ${audio.nodes} nodes`);
+
+    check('the engine never refused anything the table offered', refusals.length === 0, refusals.join(' | '));
+
+    check('no uncaught errors in either browser', pageErrors.length === 0, pageErrors.join(' | '));
+    check('no React warnings in either browser', reactWarnings.length === 0, reactWarnings.join(' | '));
+    check('no failed requests other than the API this table does not need', badRequests.length === 0, badRequests.join(' | '));
+  } catch (err) {
+    check('the run completed without throwing', false, err.message);
+    await shot(nick, 'nick-at-failure').catch(() => {});
+    await shot(friend, 'friend-at-failure').catch(() => {});
+  } finally {
+    await browser.close();
+  }
+
+  summarize();
+}
+
+await main();

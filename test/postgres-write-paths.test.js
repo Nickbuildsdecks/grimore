@@ -325,6 +325,15 @@ async function seedPod(entrants) {
   return { seasonId, podId };
 }
 
+/**
+ * Grants a staff role by writing the column the route reads. The report route resolves roles from the
+ * database rather than the session snapshot, so the grant takes effect without a fresh login -- which
+ * is the point: revoking an organiser's role should lock them out at once, not at their next sign-in.
+ */
+async function grantRole(playerId, role) {
+  await appClient.query('UPDATE players SET role = $1 WHERE id = $2', [role, playerId]);
+}
+
 test('following a player writes a follows row on Postgres', { skip }, async () => {
   const a = await newPlayer('a');
   const b = await newPlayer('b');
@@ -519,6 +528,11 @@ test('checking in writes one active_roster row, and re-checking in replaces it',
 test('reporting a pod score rebuilds player and deck standings', { skip }, async () => {
   const a = await newPlayer('k');
   const b = await newPlayer('l');
+  // Created before seedPod opens this test's season: registering a player also seeds a zeroed
+  // player_stats row for whatever season is active, so making the organiser later would put a third
+  // row in this season and the row-count assertion below would be measuring registration, not the
+  // upsert. (That seeding is itself the season-two collision recorded in the schema-gap doc.)
+  const organiser = await newPlayer('l2');
   const deckA = await seedDeck(a.id, 'Standings Deck A');
   const deckB = await seedDeck(b.id, 'Standings Deck B');
   const { seasonId, podId } = await seedPod([
@@ -562,9 +576,25 @@ test('reporting a pod score rebuilds player and deck standings', { skip }, async
     'the winning deck records the win',
   );
 
-  // Reporting again must update in place, not raise a duplicate-key error and not double the row
-  // count -- the whole point of an upsert over a bare INSERT.
-  const again = await a.client(`/api/pairings/report/${podId}`, {
+  // A reported pod is closed to the players who sat at it, so whoever lost cannot quietly rewrite it.
+  const bySeated = await a.client(`/api/pairings/report/${podId}`, {
+    method: 'POST',
+    body: {
+      results: [
+        { player_id: a.id, kills: 9, placed_first: 1, placed_draw: 0 },
+        { player_id: b.id, kills: 0, placed_first: 0, placed_draw: 0 },
+      ],
+    },
+  });
+  assert.equal(bySeated.status, 409, `a seated player re-reporting: ${JSON.stringify(bySeated.body)}`);
+
+  // An organiser may still correct it. Nothing in either codebase can reopen a pod -- `completed` is
+  // only ever set to 1 -- so refusing outright would leave a typo in the standings all season.
+  //
+  // The correction also exercises the upsert: it must update in place, not raise a duplicate-key
+  // error and not double the row count, which is the whole point of an upsert over a bare INSERT.
+  await grantRole(organiser.id, 'scorekeeper');
+  const again = await organiser.client(`/api/pairings/report/${podId}`, {
     method: 'POST',
     body: {
       results: [
@@ -573,7 +603,7 @@ test('reporting a pod score rebuilds player and deck standings', { skip }, async
       ],
     },
   });
-  assert.equal(again.status, 200, `second report: ${JSON.stringify(again.body)}`);
+  assert.equal(again.status, 200, `organiser correction: ${JSON.stringify(again.body)}`);
   const after = await appClient.query(
     'SELECT player_id, total_kills FROM player_stats WHERE season_id = $1',
     [seasonId],
@@ -584,6 +614,123 @@ test('reporting a pod score rebuilds player and deck standings', { skip }, async
     5,
     'the corrected score must overwrite the old one',
   );
+
+  // The route read the season as `WHERE is_active = 1`, so once a season closed its pods could no
+  // longer be corrected at all -- and while another season was open, a correction paid out THAT
+  // season's points and rebuilt THAT season's board. It reads the pod's own season now.
+  await appClient.query('UPDATE seasons SET is_active = 0 WHERE id = $1', [seasonId]);
+  const closed = await organiser.client(`/api/pairings/report/${podId}`, {
+    method: 'POST',
+    body: {
+      results: [
+        { player_id: a.id, kills: 7, placed_first: 1, placed_draw: 0 },
+        { player_id: b.id, kills: 0, placed_first: 0, placed_draw: 0 },
+      ],
+    },
+  });
+  assert.equal(closed.status, 200, `correcting a closed season's pod: ${JSON.stringify(closed.body)}`);
+  const closedRows = await appClient.query(
+    'SELECT total_kills FROM player_stats WHERE season_id = $1 AND player_id = $2',
+    [seasonId, a.id],
+  );
+  assert.equal(
+    Number(closedRows.rows[0].total_kills),
+    7,
+    "the correction must score the pod's own season, not whichever one happens to be active",
+  );
+});
+
+test('a score report refuses anyone not seated at the pod or running the event', { skip }, async () => {
+  const a = await newPlayer('k3');
+  const b = await newPlayer('l3');
+  const outsider = await newPlayer('m3');
+  const deckA = await seedDeck(a.id, 'Report Auth Deck A');
+  const deckB = await seedDeck(b.id, 'Report Auth Deck B');
+  const { podId } = await seedPod([
+    { playerId: a.id, deckId: deckA },
+    { playerId: b.id, deckId: deckB },
+  ]);
+  const report = (client, results) =>
+    client(`/api/pairings/report/${podId}`, { method: 'POST', body: { results } });
+  const good = [
+    { player_id: a.id, kills: 1, placed_first: 1, placed_draw: 0 },
+    { player_id: b.id, kills: 0, placed_first: 0, placed_draw: 0 },
+  ];
+
+  // This route had no authentication of any kind. Anyone who could reach the server could post
+  // arbitrary results for any pod in any season, award themselves points and rewrite the standings.
+  const anon = await report(makeClient(), good);
+  assert.equal(anon.status, 401, `anonymous report: ${JSON.stringify(anon.body)}`);
+
+  // Signed in, but not at this table and not running the event.
+  const stranger = await report(outsider.client, good);
+  assert.equal(stranger.status, 403, `outsider report: ${JSON.stringify(stranger.body)}`);
+
+  const untouched = await appClient.query('SELECT completed FROM pods WHERE id = $1', [podId]);
+  assert.equal(Number(untouched.rows[0].completed), 0, 'a refused report must write nothing');
+
+  // A report may only name players who are actually at this table...
+  const foreign = await report(a.client, [
+    { player_id: a.id, kills: 0, placed_first: 1, placed_draw: 0 },
+    { player_id: outsider.id, kills: 0, placed_first: 0, placed_draw: 0 },
+  ]);
+  assert.equal(foreign.status, 400, `foreign player in results: ${JSON.stringify(foreign.body)}`);
+
+  // ...and may not describe a game that cannot have happened.
+  const twoWinners = await report(a.client, [
+    { player_id: a.id, kills: 0, placed_first: 1, placed_draw: 0 },
+    { player_id: b.id, kills: 0, placed_first: 1, placed_draw: 0 },
+  ]);
+  assert.equal(twoWinners.status, 400, `two winners: ${JSON.stringify(twoWinners.body)}`);
+  const winAndDraw = await report(a.client, [
+    { player_id: a.id, kills: 0, placed_first: 1, placed_draw: 0 },
+    { player_id: b.id, kills: 0, placed_first: 0, placed_draw: 1 },
+  ]);
+  assert.equal(winAndDraw.status, 400, `a winner and a draw: ${JSON.stringify(winAndDraw.body)}`);
+  const badKills = await report(a.client, [{ player_id: a.id, kills: 'lots', placed_first: 1 }]);
+  assert.equal(badKills.status, 400, `non-numeric kills: ${JSON.stringify(badKills.body)}`);
+
+  // A report must cover the whole table. Without this, one player could report only themselves as the
+  // winner -- which completes the pod, leaves everyone else on zero, and, because a reported pod is
+  // closed to the players, cannot then be corrected by the rest of the table.
+  const partial = await report(a.client, [{ player_id: a.id, kills: 2, placed_first: 1, placed_draw: 0 }]);
+  assert.equal(partial.status, 400, `a one-seat report: ${JSON.stringify(partial.body)}`);
+  const twice = await report(a.client, [
+    { player_id: a.id, kills: 0, placed_first: 1, placed_draw: 0 },
+    { player_id: a.id, kills: 0, placed_first: 0, placed_draw: 0 },
+  ]);
+  assert.equal(twice.status, 400, `the same player named twice: ${JSON.stringify(twice.body)}`);
+
+  // A body with no results array at all used to reach `for (let r of results)` on undefined and answer
+  // 500. The one client that sent that shape -- the dashboard's unreachable self-report form -- is gone,
+  // but the route must answer a request, not raise on it.
+  const shapeless = await a.client(`/api/pairings/report/${podId}`, {
+    method: 'POST',
+    body: { kills: 1, placedFirst: 1, placedDraw: 0 },
+  });
+  assert.equal(shapeless.status, 400, `no results array: ${JSON.stringify(shapeless.body)}`);
+
+  const stillUntouched = await appClient.query('SELECT completed FROM pods WHERE id = $1', [podId]);
+  assert.equal(Number(stillUntouched.rows[0].completed), 0, 'no rejected report may complete the pod');
+
+  // A player seated at the pod may report it.
+  assert.equal((await report(a.client, good)).status, 200);
+
+  // And the outsider who was refused above can report it once given a role -- read from the database,
+  // so no fresh login is needed -- including correcting a pod that has already been reported.
+  await grantRole(outsider.id, 'judge');
+  const corrected = await report(outsider.client, [
+    { player_id: a.id, kills: 0, placed_first: 0, placed_draw: 0 },
+    { player_id: b.id, kills: 4, placed_first: 1, placed_draw: 0 },
+  ]);
+  assert.equal(corrected.status, 200, `organiser correction: ${JSON.stringify(corrected.body)}`);
+  const seats = await appClient.query(
+    'SELECT player_id, kills, placed_first FROM pod_results WHERE pod_id = $1',
+    [podId],
+  );
+  const winner = seats.rows.find((r) => Number(r.placed_first) === 1);
+  assert.equal(winner.player_id, b.id, 'the correction must move the win');
+  assert.equal(Number(winner.kills), 4);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -994,4 +1141,25 @@ test('signing out everywhere ends other sessions and the calling one', { skip },
   assert.equal((await elsewhere('/api/auth/me')).body.loggedIn, false, 'the other session must end');
   // Including the caller: someone who suspects a compromise may be on the compromised device.
   assert.equal((await p.client('/api/auth/me')).body.loggedIn, false, 'the calling session must end too');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Affiliate attribution. Not a write path, but this is the only harness that boots server.js, and
+// the rule it enforces is a product requirement rather than a schema one: CLAUDE.md says every
+// purchase link must carry xJoE0d. The route defaulted to 'grimore', which is not a real affiliate
+// id, so an unset TCGPLAYER_AFFILIATE_ID silently earned nothing on every buy link in the app --
+// and it is unset on the VM. The harness sets no affiliate env vars, so this exercises the default.
+// ---------------------------------------------------------------------------------------------
+
+test('the affiliate config serves the documented id with no env var set', { skip }, async () => {
+  const res = await makeClient()('/api/config/affiliates');
+  assert.equal(res.status, 200);
+  assert.equal(
+    res.body.tcgplayerAffiliateId,
+    'xJoE0d',
+    'an unset TCGPLAYER_AFFILIATE_ID must still attribute purchase links',
+  );
+  // There is no Card Kingdom affiliate id to fall back to. 'grimore' produced a link that looked
+  // attributed and was not; null lets the client leave it unattributed honestly.
+  assert.equal(res.body.cardKingdomAffiliateId, null);
 });

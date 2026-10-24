@@ -61,3 +61,4 @@ public/changes.js
 dist/
 .turbo/
 dump.rdb
+e2e-shots/

@@ -65,6 +65,9 @@ export interface AppOverrides {
   mailer?: Transport;
 }
 
+/** `/healthz` is this app's own; the other two are legacy's, kept working across the cutover. */
+const LIVENESS_PATHS = ['/healthz', '/health', '/api/health'];
+
 export function createApp(ctx: AppContext, overrides: AppOverrides = {}): Express {
   const { env, pool, redis, log } = ctx;
   const app = express();
@@ -75,12 +78,20 @@ export function createApp(ctx: AppContext, overrides: AppOverrides = {}): Expres
   app.use(
     pinoHttp({
       logger: log,
-      autoLogging: { ignore: (req) => req.url === '/healthz' || req.url === '/readyz' },
+      autoLogging: { ignore: (req) => LIVENESS_PATHS.includes(req.url ?? '') || req.url === '/readyz' },
     }),
   );
 
   // Liveness / readiness — readiness checks real dependencies so Fly only routes to healthy machines.
-  app.get('/healthz', (_req, res) => res.json({ status: 'ok', uptime: Math.round(process.uptime()) }));
+  //
+  // `/health` and `/api/health` are legacy's two liveness paths, aliased here because they are
+  // wired into things outside this repo: `docker-compose.yml`'s healthcheck for the legacy service
+  // and any external uptime monitor Nick has pointed at the domain. Both would 404 against apps/api
+  // the moment a reverse proxy sends `/api` here, and a monitor reading 404 as "down" is a page at
+  // 3am for a service that is fine. Legacy's handler is `{ status, uptime }` with no database
+  // access, which is byte-for-byte what `/healthz` already returns, so this is an alias and not a
+  // second implementation.
+  app.get(LIVENESS_PATHS, (_req, res) => res.json({ status: 'ok', uptime: Math.round(process.uptime()) }));
   app.get('/readyz', async (_req, res) => {
     const checks: Record<string, 'ok' | 'fail'> = { db: 'fail', redis: 'fail' };
     try {
