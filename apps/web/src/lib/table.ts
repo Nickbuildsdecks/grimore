@@ -77,6 +77,33 @@ export function moveName(action: { readonly type: string }): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
+/**
+ * Whether a `pod:error` broadcast is this handler's to show.
+ *
+ * The server reports every failure twice: once as a `pod:error` event and once on the ack for the
+ * call it belongs to. D78 settled who owns the answer — "one owner per answer, and for an action
+ * that owner is `send`" — because `send` is the only thing that knows which version the play was
+ * composed against, and so the only thing that can tell a stale tap from a real disagreement.
+ *
+ * The broadcast handler used to defer to that owner by checking whether a call was in flight, and
+ * that is a race rather than a rule: the counter reads zero in the gap between a retry's attempts,
+ * and again after the eight-second ack timeout fires — which a turn-sixty pod can hit, because the
+ * server runs three seats' whole turns inside the human's write. Then the event lands with nobody
+ * in flight and the banner goes up for a refusal `send` had deliberately swallowed. That is how a
+ * solo pod came to read **"FORBIDDEN: you do not have priority"** with no move named in front of
+ * it: no move was named because `send` never wrote it.
+ *
+ * So the codes an action's ack carries are refused here by code, not by timing. Every event this
+ * client sends carries an ack, so nothing is lost by it.
+ */
+export function showsBroadcastError(err: { readonly code: string }): boolean {
+  // Retried in `send`, and a conflict is both players acting at once, which is not an error.
+  if (err.code === "version_conflict" || err.code === "rate_limited") return false
+  // An action's refusal. `send` decides whether the table had moved past it.
+  if (err.code === "illegal_action" || err.code === "game_finished") return false
+  return true
+}
+
 function readStored(): StoredSeat | null {
   try {
     const raw = localStorage.getItem(STORE_KEY)
@@ -158,16 +185,6 @@ export function useTable(playerName: string): UseTable {
   const stateRef = useRef<TableState | null>(null)
   /** Read inside `send`, which must use the newest version rather than one captured by a closure. */
   const versionRef = useRef(0)
-  /**
-   * How many calls of ours are waiting for an answer.
-   *
-   * Every handler on the server answers the ack *and* emits `pod:error`, so while one of our calls
-   * is in flight that event is a second copy of an answer the caller is already judging. Judging it
-   * twice is worse than useless: the handler below has none of the context `send` uses to decide a
-   * refusal is not the player's fault, so it put the banner back up for every refusal `send` had
-   * deliberately swallowed. One owner per answer, and for an action that owner is `send`.
-   */
-  const inFlightRef = useRef(0)
   const seatRef = useRef<number | null>(null)
   /**
    * The display name, kept in a ref rather than as an effect dependency.
@@ -249,11 +266,9 @@ export function useTable(playerName: string): UseTable {
       })
     })
     socket.on("pod:error", (err: PodErrorEvent) => {
-      // The ack for the call this belongs to decides. See `inFlightRef`.
-      if (inFlightRef.current > 0) return
-      // Retried or deliberately swallowed in `send`, so none of these is worth showing.
-      if (err.code === "version_conflict" || err.code === "rate_limited") return
-      if (err.code === "game_finished") return
+      // By code rather than by whether a call is in flight, which was a race. See
+      // `showsBroadcastError`.
+      if (!showsBroadcastError(err)) return
       setState((s) => ({ ...s, error: err.message }))
     })
     socket.on("pod:chat", (line: ChatLine) => {
@@ -271,19 +286,14 @@ export function useTable(playerName: string): UseTable {
   const emit = useCallback((event: string, payload: unknown): Promise<AckResult> => {
     const socket = socketRef.current
     if (!socket) return Promise.resolve({ ok: false, error: { code: "internal", message: "not connected" } })
-    inFlightRef.current += 1
     return new Promise((resolve) => {
-      const done = (res: AckResult): void => {
-        inFlightRef.current = Math.max(0, inFlightRef.current - 1)
-        resolve(res)
-      }
       const timer = setTimeout(
-        () => done({ ok: false, error: { code: "internal", message: "the table did not answer" } }),
+        () => resolve({ ok: false, error: { code: "internal", message: "the table did not answer" } }),
         8000,
       )
       socket.emit(event, payload, (res: AckResult) => {
         clearTimeout(timer)
-        done(res)
+        resolve(res)
       })
     })
   }, [])

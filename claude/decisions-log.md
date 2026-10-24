@@ -2747,3 +2747,76 @@ state between actions is not the state during one.** Ask the board before, or as
 final attribution is a lower bound by construction — life the owner lost in the action that tapped
 their land, bounded by the number of taps — and a lower bound that can be derived from the board is
 worth more than an exact figure that depends on when a write happens to end.
+
+## D81 — Priority null with nothing owed is not a state; restore the invariant, not the call site
+
+`resetPriority` withholds priority while something is blocking the game — an opening hand, a
+question, a discard, a combat declaration — and hands it back when the blocking thing is
+**answered**. Answering is an action, so answering runs that code. Nothing runs it when the
+blocking thing stops existing on its own.
+
+Which is what an elimination does to a block that was owed. Hellrider's controller declares four
+attackers at a player on three life; its trigger — one damage per attacking creature — kills them
+while the attack is still on the table, by which point `advanceStep` has already taken the game to
+declare-blockers and set `priority: null` because a block was owed. With the defender gone no block
+is owed, and `pendingDeclaration` returns null, and `seatsToAct` falls through to `state.priority`,
+which is null. Four attacks on the table, nobody to declare blockers, nobody holding priority, and
+every caller — the table, the bot, the server's own seats — correctly concluding that it was not
+their turn to do anything. **Two of the first eight four-seat pods played with a rotating deck list
+died this way**, on turns 40 and 48.
+
+Two candidate places to fix it:
+
+- **At the call site.** Teach `auto:attack` to re-check priority after its triggers resolve. Cheap,
+  and wrong in the way this engine has learned to recognise: the next card that eliminates somebody
+  out of turn finds the same hole in a different action. The project already has the name for this
+  — "detect, don't announce" — and this is the same lesson about a state rather than a log line.
+- **At the invariant.** `resolveStateBasedActions` already repairs exactly this family: there is a
+  block above this one headed *"Nor can an eliminated seat hold priority (CR 800.4)"*, written
+  after a seat passed, died to the damage that pass let through, and kept holding priority. So the
+  rule goes next to it: if the game is running and nothing is owed, somebody holds priority.
+  Untap and cleanup are excluded, being the two steps where nobody holds it on purpose.
+
+Taken with the rules fix that removes the cause: a player who leaves the game takes the attacks
+aimed at them with them (CR 800.4a), so the combat is cleaned up in the same place. Either fix
+alone would have unstuck these two games; both are correct independently, and the invariant is what
+stops the next card finding the same hole.
+
+**And the test had to be made to fail first.** The obvious unit test — four attackers, a dead
+defender, assert the engine is still alive — passed before the fix as well as after it, because
+with auto-pass on the engine ran the whole combat out inside the one action and never stopped at
+the step that deadlocks. A test that cannot fail is not evidence (D76 again). Two tests now, both
+checked against a stashed fix: a board of four cards that resolves the triggers one at a time and
+stops where the real game stops, and the two pod seeds that reproduce the whole deadlock end to
+end. The second needed the *searching* bot — `lookahead: false` plays a different game and never
+reaches the position — which is worth knowing: a seed is not coverage when the bot's options or the
+deck list are constants beside it.
+
+## D82 — The runner flake was the suite's own shape, and a yield fixed it
+
+`packages/rules-engine/vitest.config.ts` has carried this open question for a while:
+`turbo run test --force` failed about one run in two with `[vitest-worker]: Timeout calling
+"onTaskUpdate"` — every test passing, the process exiting 1 anyway. Four mitigations had been
+measured and written up as not working: capping the worker pool, the `dot` reporter, lowering
+turbo's concurrency, and `singleFork`. The remaining hypothesis was recorded rather than acted on,
+because it was "a real change to thirty tests for a runner's benefit": a `playout` test is ten
+seconds of *synchronous* game-playing in one body, and a worker that never yields cannot answer the
+reporter inside its RPC timeout.
+
+Enough tests accumulated that it stopped being one run in two and became **every** run, which is
+what made it testable. One `await` that defers to the event loop, once per game, inside the single
+heaviest test (eleven seconds, twenty whole games) cleared it — three green runs immediately after
+three red ones. Extended to the five tests long enough to matter, `turbo run test --force` has since
+run green four times in a row.
+
+Three things worth keeping from it:
+
+- **A flake that gets worse is an opportunity.** For as long as it failed half the time, no
+  experiment could distinguish a fix from luck. The thing to do with an intermittent failure that
+  is becoming reliable is to test the standing hypothesis immediately, not to work around it again.
+- **The measurement that said "none of these worked" is what made the fix cheap.** The note in the
+  config named the one remaining candidate and ruled out four others; acting on it took one line.
+  A failure recorded as "flaky, ignore" would have cost the whole diagnosis a second time.
+- **It was never a CI risk, and it is still worth fixing.** The config said so honestly — CI was
+  green — and the cost was paid locally instead, by every verification run that had to be read as
+  "512 passed, exit 1, probably fine". That is exactly the signal a suite cannot afford to teach.

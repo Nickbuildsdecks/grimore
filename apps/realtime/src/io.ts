@@ -95,7 +95,18 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
     ...(adapterRedis ? { adapter: createAdapter(adapterRedis) } : {}),
   });
 
-  const store = new PodStore(redis, opts.store);
+  const store = new PodStore(redis, {
+    ...opts.store,
+    /*
+      A table waiting on a seat the server plays, with the reason.
+
+      Warned rather than thrown: the human's action has already been applied and is worth keeping,
+      and a seat that cannot move stalls itself rather than failing somebody else's move. It is a
+      defect every time it fires — a pod where nobody is on the clock is a dead table — so it is
+      worth finding in a log rather than in a browser suite's idle timeout.
+    */
+    onBotStall: ({ code, reason }) => log.warn({ pod: code, reason }, 'server seats cannot move'),
+  });
   const dispose = registerHandlers(io, store, log, { ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}) });
 
   let closed = false;

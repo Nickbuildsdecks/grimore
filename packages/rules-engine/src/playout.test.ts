@@ -29,6 +29,32 @@ function pod(seed: number, firstSeat: SeatIndex = 0): GameState {
   return s;
 }
 
+/**
+ * The same pod, with the seats' decks rotated through all seven rather than fixed at four.
+ *
+ * Which decks are at the table decides which cards come up, and the deadlock below only happens
+ * when a particular card does: the fixed four in `pod` above played hundreds of games without
+ * reaching it. A seed alone is not coverage when the deck list is a constant.
+ */
+function podOfAnyDecks(seed: number): GameState {
+  const decks = [
+    'ember-rush', 'tidal-mind', 'verdant-guard', 'ashen-rite', 'rot-harvest', 'forge-alliance',
+    'skyward-writ',
+  ];
+  const firstSeat = (seed % 4) as SeatIndex;
+  let s = createGame({ id: `pod-any-${seed}`, format: 'pod', players: POD_PLAYERS, seed: seed * 1009 });
+  for (const action of [
+    ...[0, 1, 2, 3].map((seat) => ({
+      type: 'deck:load' as const, by: seat, seat, deckId: decks[(seed + seat) % decks.length]!,
+    })),
+    { type: 'game:start', by: 0, firstSeat },
+    { type: 'auto:start', by: 0, firstSeat },
+  ] as Action[]) {
+    s = applyAction(s, action, HOST);
+  }
+  return s;
+}
+
 /** A full table with two starter decks shuffled on `seed`, handed to the rules engine. */
 function table(
   seed: number, firstSeat: SeatIndex = 0,
@@ -86,6 +112,19 @@ const MATCHUPS: readonly (readonly [string, string])[] = [
  */
 const BREADTH = { lookahead: false } as const;
 
+/**
+ * Lets the event loop run, between games.
+ *
+ * Nothing here needs it to pass. It is for the test *runner*: a worker that spends eleven seconds
+ * inside one synchronous test body cannot answer the reporter's `onTaskUpdate` call, and vitest
+ * reports `[vitest-worker]: Timeout calling "onTaskUpdate"` beside a full set of passing tests and
+ * exits non-zero. `vitest.config.ts` has the measurement that narrowed it to this — four other
+ * mitigations, none of which worked — and names the yield as the remaining candidate. So: awaited
+ * once per seed in the handful of tests long enough to matter, which costs a few microseconds a
+ * game and gives the worker somewhere to answer from.
+ */
+const breathe = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve); });
+
 describe('a whole automated game', () => {
   it('plays from a shuffled deck to a winner with nobody steering', () => {
     const result = playOut(table(20261023));
@@ -110,7 +149,7 @@ describe('a whole automated game', () => {
     expect(unfinished).toEqual([]);
   });
 
-  it('reaches a winner in every pairing of the built-in decks', () => {
+  it('reaches a winner in every pairing of the built-in decks', async () => {
     // The control deck is the one that could break a player that only ever does the obvious thing:
     // its spells target objects on the stack, which exist for a moment and then do not.
     const unfinished: string[] = [];
@@ -122,6 +161,7 @@ describe('a whole automated game', () => {
           unfinished.push(`${decks[0]} vs ${decks[1]} seed ${seed}: stopped on turn ${result.turns} at ${result.state.step}`);
         }
       }
+      await breathe();
     }
     expect(unfinished).toEqual([]);
     // Twenty-one pairings, four shuffles each: eighty-four whole games, which is more than
@@ -313,7 +353,7 @@ describe('a whole automated game', () => {
     expect(spirits).toBe(deaths);
   });
 
-  it('does not throw creatures away: it attacks into blocks it can live with', () => {
+  it('does not throw creatures away: it attacks into blocks it can live with', async () => {
     // A bot that attacks with everything is the easiest bot to write and the worst to play
     // against: it feeds a creature a turn into an untapped blocker and the game becomes a
     // formality. The claim here is about the *rate* — it still attacks, it just stops attacking
@@ -346,6 +386,7 @@ describe('a whole automated game', () => {
       }
       if (s.finished) finished += 1;
       turns.push(s.turn);
+      await breathe();
     }
     expect(finished).toBe(20);
     // It still attacks — a lot. Without this the next assertion passes by doing nothing.
@@ -358,7 +399,7 @@ describe('a whole automated game', () => {
     // decision than vitest's default five seconds allows for.
   });
 
-  it('plays planeswalkers: cast, ticked up and down, and sometimes attacked', () => {
+  it('plays planeswalkers: cast, ticked up and down, and sometimes attacked', async () => {
     // The last card type, and the one with the most rules attached to it — loyalty on arrival, a
     // cost paid in counters, once per turn, death at zero, damage that removes loyalty, and an
     // attack that can be aimed at it. None of that is worth much if no game ever produces one,
@@ -384,6 +425,7 @@ describe('a whole automated game', () => {
         if (s.stateVersion === version) break;
       }
       expect(s.finished).toBe(true);
+      await breathe();
     }
     expect(cast).toBeGreaterThan(0);
     // Several activations per planeswalker cast: a planeswalker that is never used is a four-mana
@@ -423,7 +465,7 @@ describe('a whole automated game', () => {
     expect(names.size).toBeGreaterThan(0);
   });
 
-  it('casts modal spells, and does not always take the same mode', () => {
+  it('casts modal spells, and does not always take the same mode', async () => {
     // A modal card could sit in a deck and never be cast while every other test in this file
     // passed, and a bot that always took mode one would look identical to a bot that could not
     // see the others. So: the modes get cast, and not always the same one.
@@ -448,6 +490,7 @@ describe('a whole automated game', () => {
         if (s.stateVersion === before) break;
       }
       expect(s.finished).toBe(true);
+      await breathe();
     }
     expect(casts).toBeGreaterThan(0);
     // More than one distinct combination over twelve games, which is the claim that a bot taking
@@ -773,6 +816,55 @@ describe('a four-player Commander pod', () => {
       expect(result.turns).toBeLessThan(200);
     }
   });
+
+  /*
+    The deadlock a pod can reach, and the two seeds that reach it.
+
+    Both stop at declare-blockers with attacks on the table, nobody owed a declaration and
+    `priority` null — a state with no legal reading, in which `seatToAct` returns nothing and the
+    table is simply dead. Hellrider gets there: its controller swings at a player low on life, its
+    trigger kills them inside the same action, and the block that was owed a moment ago is not owed
+    any more — so the code that hands priority back, which only runs when a question is *answered*,
+    never runs. See CR 800.4a, and `resolveStateBasedActions` for the fix.
+
+    Two of the first eight seeds of this deck rotation hit it, and the browser suite hit it as
+    "stopped at Declare blockers on turn 65" with nothing on screen to press. Named seeds rather
+    than a sweep, because a regression test that takes seven seconds a game cannot afford the
+    sweep that found them — `scratchpad` kept the sweep.
+  */
+  /*
+    One `it` per seed, rather than a loop over both.
+
+    Each of these is several seconds of uninterrupted synchronous work, and this package's
+    `vitest.config.ts` records what that does to the runner: a worker that never yields misses its
+    task-update heartbeat and the run reports an error beside a full set of passing tests. Two
+    bodies of five seconds are two chances to yield; one of ten is none.
+  */
+  for (const seed of [3, 6]) {
+    it(`never leaves pod ${seed} with nobody to act, whichever decks are at the table (CR 800.4a)`, async () => {
+      let s = podOfAnyDecks(seed);
+      let dead: string | null = null;
+      for (let i = 0; i < 20000 && !s.finished; i += 1) {
+        // Once a turn or so, for the runner's sake rather than the game's. See `breathe`.
+        if (i % 400 === 0) await breathe();
+        const seat = seatToAct(s);
+        if (seat === null) {
+          dead = `turn ${s.turn} ${s.step}: priority ${String(s.priority)}, `
+            + `${s.combat.attacks.length} attacks, lives ${s.seats.map((x) => x.life).join('/')}`;
+          break;
+        }
+        const before = s.stateVersion;
+        // The searching bot, not the shallow one: which card it chooses decides whether the
+        // position that deadlocks ever comes up, and `lookahead: false` plays a different game.
+        const action = botAction(s, seat);
+        if (action === null) { dead = `seat ${seat} at ${s.step} had no move`; break; }
+        s = applyAction(s, action, HOST);
+        if (s.stateVersion === before) { dead = `${action.type} by ${seat} changed nothing`; break; }
+      }
+      expect(dead, `seed ${seed} stopped — ${String(dead)}`).toBeNull();
+      expect(s.finished, `seed ${seed} ran out of moves`).toBe(true);
+    });
+  }
 
   it('casts commanders, taxes them, and tracks the damage they deal', () => {
     // Every one of these was impossible a commit ago: `legalActions` only looked at the hand, so

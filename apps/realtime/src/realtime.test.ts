@@ -73,13 +73,25 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
   let rt: Realtime;
   let url: string;
   const clients: Client[] = [];
+  /**
+   * Every time the server's own seats could not move, across every test in this file.
+   *
+   * A pod left waiting on a seat the server plays is a dead table — nobody on the clock, no move
+   * offered, and the only thing on screen whichever error happened last — and it is invisible from
+   * the outside, which is how one went unexplained for a debugging session. Collected here so the
+   * whole-game tests below can assert it never happened, rather than trusting a log line.
+   */
+  const stalls: { code: string; reason: string }[] = [];
 
   beforeAll(async () => {
     rt = await createRealtime({
       redisUrl: REDIS_URL!,
       allowedOrigins: [],
       log: pino({ level: 'silent' }),
-      store: { keyPrefix: `test:${Date.now().toString(36)}:${process.pid}` },
+      store: {
+        keyPrefix: `test:${Date.now().toString(36)}:${process.pid}`,
+        onBotStall: (info) => stalls.push(info),
+      },
       rateLimit: { rate: 20, burst: 40 },
     });
     await new Promise<void>((resolve) => rt.httpServer.listen(0, '127.0.0.1', resolve));
@@ -746,6 +758,16 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       // Whatever questions came up over the wire were answered over the wire, and none was left
       // outstanding at the end — a game that ends mid-resolution has not ended.
       expect(view.automation!.awaiting).toBeNull();
+      /*
+        And the server's seat was never left with nothing to do.
+
+        A whole game is several hundred chances for `runBots` to take one of its four silent ways
+        out, each of which leaves the pod waiting on a seat nobody will move. Asserted here rather
+        than trusted to a log line, because the symptom — a table where nobody is on the clock —
+        reads to a player as the server having lost their move, and reads to a browser suite as
+        an idle timeout four seconds later with nothing to go on.
+      */
+      expect(stalls, JSON.stringify(stalls)).toEqual([]);
 
       // One more action, now that there is a winner. It is refused — and refused as its own thing
       // rather than as an illegal action, which is the whole point: a client sends the pass that

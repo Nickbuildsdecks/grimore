@@ -117,6 +117,15 @@ export interface PodStoreOptions {
   /** How long a disconnected seat is held for reclaim. */
   graceMs?: number;
   now?: () => number;
+  /**
+   * Called when the server's own seats cannot move, with the reason.
+   *
+   * A pod left waiting on a seat the server plays is a dead table: nobody is on the clock, the
+   * human's bar shows no move, and the only thing on screen is whichever error happened last. It
+   * went unexplained for a whole debugging session because `runBots` returns silently on four
+   * different conditions and was called with nothing to report them to.
+   */
+  onBotStall?: (info: { code: string; reason: string }) => void;
 }
 
 export const SEAT_GRACE_MS = 120_000;
@@ -224,6 +233,8 @@ export class PodStore {
   readonly graceMs: number;
   private readonly now: () => number;
 
+  private readonly onBotStall: (info: { code: string; reason: string }) => void;
+
   constructor(
     private readonly redis: RedisClientType,
     opts: PodStoreOptions = {},
@@ -232,6 +243,7 @@ export class PodStore {
     this.ttl = opts.ttlSeconds ?? POD_TTL_SECONDS;
     this.graceMs = opts.graceMs ?? SEAT_GRACE_MS;
     this.now = opts.now ?? Date.now;
+    this.onBotStall = opts.onBotStall ?? ((): void => {});
   }
 
   // -------------------------------------------------------------------------
@@ -612,7 +624,7 @@ export class PodStore {
         }
         throw err;
       }
-      runBots(record);
+      runBots(record, (reason) => this.onBotStall({ code, reason }));
       if (record.game.finished) record.pod.status = 'finished';
       else if (record.pod.status === 'finished') record.pod.status = 'in_progress';
       return { record, result: undefined };
@@ -686,10 +698,17 @@ const DEFAULT_BOT_DECK = 'verdant-guard';
  * The bot decides with `botAction`, which only ever returns a move the engine offered it, so a
  * refusal here would mean the two disagree. It is caught rather than thrown anyway: a bot that
  * cannot find a move should stall its own seat, not fail the human's action.
+ *
+ * Four of the ways out of this loop leave the pod waiting on a seat nobody will move, and all four
+ * used to be silent — the caller passed nothing to report them to. They are reported now, because
+ * a table where nobody is on the clock looks from the outside exactly like the server losing a
+ * move, and the difference between "a bot has no move" and "a bot's move was refused" is the whole
+ * diagnosis. `stall` says which; running out of the guard is one of them.
  */
-function runBots(record: PodRecord, log?: (err: unknown) => void): void {
+function runBots(record: PodRecord, stall?: (reason: string) => void): void {
   const botSeats = new Set(record.seats.filter((s) => s.bot).map((s) => s.seat));
   if (botSeats.size === 0) return;
+  const where = (game: GameState): string => `turn ${game.turn} ${game.step}`;
   for (let guard = 0; guard < 500; guard += 1) {
     const game = record.game;
     if (game === null || game.finished) return;
@@ -697,18 +716,35 @@ function runBots(record: PodRecord, log?: (err: unknown) => void): void {
     // simultaneously, so a bot whose human opponent is still deciding is behind them in the queue
     // and would never be reached.
     const seat = seatsToAct(game).find((s) => botSeats.has(s));
+    // Not a stall: the engine is waiting on a person, which is most of a game.
     if (seat === undefined) return;
     const action = botAction(game, seat);
-    if (action === null) return;
+    if (action === null) {
+      stall?.(`seat ${seat} is owed a move at ${where(game)} and botAction offered none`);
+      return;
+    }
     try {
       const next = engineApply(game, action, { isHost: false });
       // No progress means a move the engine accepted but that changed nothing, which would spin.
-      if (next.stateVersion === game.stateVersion) return;
+      if (next.stateVersion === game.stateVersion) {
+        stall?.(`${action.type} by seat ${seat} at ${where(game)} changed nothing`);
+        return;
+      }
       record.game = next;
     } catch (err) {
-      log?.(err);
+      const why = err instanceof Error ? err.message : String(err);
+      stall?.(`${action.type} by seat ${seat} at ${where(game)} was refused: ${why}`);
       return;
     }
+  }
+  /*
+    The guard ran out. Only a stall if a server seat is *still* owed a move, because then nothing
+    will call this again: the next call comes from a human action, and the engine is not waiting on
+    a human. Five hundred moves that end with the person on the clock is simply a long write.
+  */
+  const game = record.game;
+  if (game !== null && !game.finished && seatsToAct(game).some((s) => botSeats.has(s))) {
+    stall?.(`five hundred server moves in one write, still owed one at ${where(game)}`);
   }
 }
 

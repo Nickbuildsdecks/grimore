@@ -1,4 +1,4 @@
-import { EMPTY_COMBAT } from './turnTypes.js';
+import { EMPTY_COMBAT, NO_PRIORITY_STEPS } from './turnTypes.js';
 import { EMPTY_POOL } from './mana.js';
 import {
   COMMANDER_DAMAGE_THRESHOLD,
@@ -8,7 +8,7 @@ import {
 } from './formats.js';
 import { dealOpeningHands, reduceCardAction } from './cardActions.js';
 import { reduceAutoAction } from './autoActions.js';
-import { stateBasedActions } from './automation.js';
+import { pendingDeclaration, stateBasedActions } from './automation.js';
 import { isAutoAction } from './turnTypes.js';
 import {
   assertCounterKey,
@@ -235,6 +235,53 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
   const holder = next.priority === null ? undefined : next.seats[next.priority];
   if (!next.finished && next.priority !== null && holder?.eliminated === true) {
     next = { ...next, priority: nextAliveSeat(next, next.priority) };
+  }
+
+  /**
+   * And a player who has left the game takes the attacks aimed at them with them (CR 800.4a).
+   *
+   * Hellrider is what found this, in a four-player pod on turn forty. Its controller declared four
+   * attackers at a player on three life; Hellrider's trigger — one damage for each creature that
+   * attacked — killed them inside the same action, *after* `advanceStep` had taken the game to
+   * declare-blockers and set `priority: null` because a block was owed. With the defender gone the
+   * block was no longer owed, so nothing ever handed priority back: four attacks on the table,
+   * nobody to declare blockers, nobody holding priority, and `seatsToAct` returning nothing at
+   * all. The browser suite saw it as "stopped at Declare blockers on turn 65" with no move on
+   * screen to press, and the server's bot loop as a seat it was never asked to move.
+   *
+   * An attacker whose own controller has left goes too, for the same rule.
+   */
+  if (next.combat.attacks.length > 0) {
+    const live = next.combat.attacks.filter((attack) => {
+      if (next.seats[attack.defender]?.eliminated === true) return false;
+      const attacker = next.instances[attack.attacker];
+      return attacker !== undefined && next.seats[attacker.zoneSeat]?.eliminated !== true;
+    });
+    if (live.length !== next.combat.attacks.length) {
+      next = { ...next, combat: { ...next.combat, attacks: live } };
+    }
+  }
+
+  /**
+   * Somebody holds priority whenever nothing is blocking the game.
+   *
+   * `resetPriority` withholds it while a question, a discard or a declaration is outstanding, and
+   * hands it back when the outstanding thing is *answered* — which is an action, and so runs that
+   * code. Nothing runs it when the outstanding thing simply **stops existing**, which is what an
+   * elimination does to a block that was owed. So the invariant is restored here instead of at the
+   * one call site that happened to break it: priority null with nothing owed is not a state this
+   * engine has any legal reading of, and a table in one is a dead table.
+   *
+   * Untap and cleanup are the two steps where nobody holds priority on purpose (CR 502, CR 514).
+   */
+  const blockedByAQuestion = next.openingHands || next.pendingDecision !== null
+    || next.pendingChoice !== null || next.pendingDiscard !== null
+    || pendingDeclaration(next) !== null;
+  if (
+    !next.finished && next.started && next.automated && next.priority === null
+    && !blockedByAQuestion && !(NO_PRIORITY_STEPS as readonly string[]).includes(next.step)
+  ) {
+    next = { ...next, priority: next.activeSeat, passed: [] };
   }
 
   const alive = aliveSeats(next);

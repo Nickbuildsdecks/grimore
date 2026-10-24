@@ -1449,6 +1449,69 @@ between actions is not the state during one. Both halves are attributed the same
 life the owner lost in the action that tapped their land, bounded by the number of taps — which is
 a lower bound and an honest one.
 
+### The pod that stopped at declare-blockers
+
+A four-seat pod could reach a position with no legal reading: attacks on the table, nobody owed a
+declaration, and nobody holding priority. Every caller behaved correctly and the table was dead —
+the player's bar showed no move, the server's own seats were never asked to move one, and the
+browser suite reported it four seconds later as *"stopped at Declare blockers on turn 65"* with
+nothing on screen to press.
+
+**Hellrider gets there.** Its controller declares four attackers at a player on three life; the
+trigger — one damage for each creature that attacked — kills them while the attack is still on the
+table. By then the step has moved to declare-blockers and set `priority: null` because a block was
+owed. The block is not owed any more, and the code that hands priority back only runs when a
+question is *answered*. Two of the first eight pods played with a rotating deck list died this way,
+on turns 40 and 48.
+
+Fixed twice over, in the one place that already repairs this family of state:
+
+- **The cause.** A player who leaves the game takes the attacks aimed at them with them
+  (CR 800.4a), and an attacker whose own controller has left goes with it.
+- **The invariant.** If the game is running and nothing is owed, somebody holds priority. Untap and
+  cleanup excepted, being the two steps where nobody holds it on purpose. Written as an invariant
+  rather than as a patch to the one action that broke it, which is D81.
+
+**It is also the first bug this project found in its own unaccounted-for failure.** The suite had
+been flaking at that check for a while and the entry in the open list said "intermittent". It was
+not intermittent: it was a reproducible deadlock behind a deck list the pod playouts held constant.
+Four-seat pods with the decks rotated through all seven found it in eight games.
+
+**Measured on the same sixty seeds, before and after:**
+
+| | games | finished | deadlocked |
+| --- | --- | --- | --- |
+| before | first 10 | 8 | **2** |
+| after | 60 | 58 | **0** |
+
+The two that did not finish after the fix did not deadlock either — they ran out of a 25-second
+wall-clock budget while the bot was still *deciding*, at over 140ms a move against under 1ms
+everywhere else. The same two seeds are slow before the fix as after it, so that is its own bug and
+is written up as one: the searching bot enumerates every attack and block declaration, and a
+forty-turn four-seat board is where that stops being free. It matters beyond a sweep, because the
+server plays the bots' whole turns inside the human's write and the browser gives up on an answer
+after eight seconds.
+
+Three things changed on the way to it, all worth keeping:
+
+- **`runBots` says why it stopped.** It returns silently on four different conditions, every one of
+  which leaves the pod waiting on a seat nobody will move, and it was called with nothing to report
+  them to. The realtime server now warns with the seat, the step and the reason, and the
+  whole-game test asserts that a solo game produces none.
+- **One owner for a refusal, by code rather than by timing.** The table's `pod:error` handler
+  deferred to `send` by counting calls in flight, which reads zero in the gap between a retry's
+  attempts and again after the eight-second ack timeout — so a refusal `send` had deliberately
+  swallowed could still put the banner up, with no move named in front of it. That is what
+  *"FORBIDDEN: you do not have priority"* on a solo pod screen was. The codes an action's ack
+  carries are now refused there outright.
+- **The test runner's own flake is fixed.** `vitest run` on the engine package had been reporting
+  `[vitest-worker]: Timeout calling "onTaskUpdate"` beside a full set of passing tests and exiting
+  1 — about one run in two, and by this point every run. The config had already ruled out four
+  mitigations and named the remaining candidate: a playout test is eleven seconds of *synchronous*
+  game-playing in one body, and a worker that never yields cannot answer the reporter. One `await`
+  per game in the five longest tests cleared it, and `turbo run test --force` has run green four
+  times in a row since. Written up as D82.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

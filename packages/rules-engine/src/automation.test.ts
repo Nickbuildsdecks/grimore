@@ -8,8 +8,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  bottomOwed, createGame, legalActions, packView, pendingDeclaration, stackTop, stillDeciding,
-  unpackView, viewFor,
+  bottomOwed, createGame, legalActions, packView, pendingDeclaration, seatsToAct, stackTop,
+  stillDeciding, unpackView, viewFor,
 } from './index.js';
 import {
   advanceTo, apply, applyAll, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
@@ -645,6 +645,51 @@ describe('state-based actions', () => {
     expect(s.effects.length).toBe(1);
     s = nextTurn(s);
     expect(s.effects.length).toBe(0);
+  });
+
+  /*
+    A player who leaves the game takes the attacks aimed at them with them (CR 800.4a) — and
+    somebody holds priority afterwards.
+
+    Found by playing four-seat pods against themselves: two games in eight stopped dead at
+    declare-blockers on turn forty-odd, with attacks on the table, nobody owed a declaration and
+    `priority` null, which is a state the engine has no reading of at all. Hellrider is the card
+    that gets there. Its controller declares a swing at a player low on life, its trigger — one
+    damage per attacking creature — kills them while the attack is still on the table, and the
+    block that was owed a moment ago is no longer owed; the code that hands priority back only
+    runs when a question is *answered*, so nothing ran it. `playout.test.ts` holds the two seeds
+    that reproduce the whole deadlock; this is the rule on a board of four cards.
+  */
+  it('removes attacks on a player who has left from combat (CR 800.4a)', () => {
+    let s = arena({
+      format: 'pod', seats: 4,
+      battlefield: { 0: ['Hellrider', 'Monastery Swiftspear', 'Raging Goblin', 'Firebrand Archer'] },
+      turn: 3, firstSeat: 0,
+    });
+    // One damage per attacker is four, which is one more than this seat has.
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, life: 3 } : seat)) };
+    s = advanceTo(s, 'declare-attackers');
+    const attackers = [...ids(s, 0, 'battlefield')].map((attacker) => ({ attacker, defender: 1 as const }));
+    expect(attackers.length).toBe(4);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers });
+    // Four triggers on the stack, one per attacking creature, and the attack still on the table.
+    expect(s.stackOrder.length).toBe(4);
+    expect(s.combat.attacks.length).toBe(4);
+
+    // Resolved one at a time, which is how a real table gets here: the fourth is the one that
+    // kills, and it does it with the combat it was triggered by still standing.
+    for (let i = 0; i < 4; i += 1) s = passBoth(s);
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(life(s, 1)).toBeLessThanOrEqual(0);
+
+    // The attacks go with the player. Leaving them would leave an attack nobody can block, and a
+    // declare-blockers step nobody is owed.
+    expect(s.combat.attacks.filter((a) => a.defender === 1)).toEqual([]);
+    // And the table is still a table: somebody is on the clock, and it is not the seat that left.
+    expect(pendingDeclaration(s)).toBeNull();
+    expect(s.priority).not.toBeNull();
+    expect(s.seats[s.priority!]!.eliminated).toBe(false);
+    expect(seatsToAct(s).length).toBeGreaterThan(0);
   });
 });
 
