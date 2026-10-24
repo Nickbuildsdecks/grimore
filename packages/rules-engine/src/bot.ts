@@ -435,7 +435,11 @@ function seatValue(state: GameState, seat: SeatIndex): number {
     const ch = characteristicsOf(state, inst);
     if (ch.isLand) total += LAND_ON_BOARD;
     else if (ch.isCreature) total += creatureValue(state, id);
-    else total += PERMANENT_ON_BOARD;
+    // A planeswalker's loyalty is its life *and* its spell-per-turn, so a counter on one is worth
+    // about what a point of life is worth. Without this the search could not see what a plus
+    // ability bought and stopped using them — three activations across sixteen games, where the
+    // bot it replaced managed more than one per planeswalker it cast.
+    else total += PERMANENT_ON_BOARD + (inst.counters['loyalty'] ?? 0) * LIFE_WEIGHT;
   }
   return total;
 }
@@ -475,11 +479,17 @@ function simulate(state: GameState, action: Action): GameState | null {
   } catch {
     return null;
   }
-  for (let i = 0; i < 8; i += 1) {
-    if (next.stackOrder.length === 0) break;
-    // A question stops the line: answering it would mean guessing, and the position with the
-    // spell half-resolved is still more informative than the position before it was cast.
-    if (next.pendingDecision !== null || next.pendingChoice !== null) break;
+  for (let i = 0; i < 12; i += 1) {
+    if (next.stackOrder.length === 0 && answerPending(next) === null) break;
+    const answer = answerPending(next);
+    if (answer !== null) {
+      try {
+        next = applyAction(next, answer, HOST);
+      } catch {
+        break;
+      }
+      continue;
+    }
     if (next.priority === null) break;
     try {
       next = applyAction(next, { type: 'auto:pass', by: next.priority }, HOST);
@@ -633,6 +643,241 @@ export interface BotOptions {
   readonly lookahead?: boolean;
 }
 
+/**
+ * Aims a trigger that is waiting for its targets, best candidate first.
+ *
+ * Lifted out of `botAction` so a simulation can answer the same question the same way: a combat
+ * that kills two creatures in front of a Blood Artist stops dead on "choose a player", and a
+ * search that gave up there would score the exchange without the four points of life it swings.
+ */
+function aimPending(
+  state: GameState, seat: SeatIndex, choice: NonNullable<LegalActions['mustChoose']>,
+): Action {
+  const foes = foesOf(state, seat);
+  const chosen: Target[] = [];
+  const used = new Set<string>();
+  for (let i = 0; i < choice.specs.length; i++) {
+    const want = Math.max(1, choice.specs[i]!.count ?? 1);
+    const ranked = [...(choice.candidates[i] ?? [])]
+      .filter((t) => !used.has(t.kind === 'card' ? `c${t.id}` : `p${t.seat}`))
+      .sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
+    for (const pick of ranked.slice(0, want)) {
+      used.add(pick.kind === 'card' ? `c${pick.id}` : `p${pick.seat}`);
+      chosen.push(pick);
+    }
+  }
+  return { type: 'auto:choose', by: seat, targets: chosen };
+}
+
+/**
+ * Answers whatever a simulated line is waiting on, for the seat it is waiting on.
+ *
+ * Returns null when nothing is pending. Both policies are the bot's own, which is the only
+ * opponent model there is and the fair one: the other seat is assumed to answer as well as this
+ * one would.
+ */
+function answerPending(state: GameState): Action | null {
+  if (state.pendingChoice !== null) {
+    const seat = state.pendingChoice.seat;
+    const choice = legalActions(state, seat).mustChoose;
+    return choice === null ? null : aimPending(state, seat, choice);
+  }
+  if (state.pendingDecision !== null) {
+    const seat = state.pendingDecision.seat;
+    const ask = legalActions(state, seat).mustDecide;
+    return ask === null ? null : { type: 'auto:decide', by: seat, cards: decideCards(state, seat, ask) };
+  }
+  return null;
+}
+
+// ── Combat, played out before it is declared ─────────────────────────────────────────────────────
+
+/**
+ * Plays a combat out: blockers declared, damage dealt, through to the end of combat.
+ *
+ * The defenders block with the bot's own blocking policy, which is the only opponent model there
+ * is and a fair one — it is the same reasoning the player across the table would be using if they
+ * were also the server. Everything else passes.
+ *
+ * It stops at the end of combat, so what it shows is *this* exchange played by the rules rather
+ * than by `exchange()`'s arithmetic — first strike, deathtouch, trample, two blockers on one
+ * attacker, a pump spell cast in response. That is the whole gain, and it is worth 17 games in
+ * 400 against the same opponent on the same seeds.
+ *
+ * It does not reach the opponent's next turn, so "hold a creature back to block" is still outside
+ * what it can see. The cheap substitute — scoring an untapped creature above a tapped one, so
+ * attacking costs something — was tried and *lost* games: a one-point bonus changed nothing, two
+ * points cost 26 games in 400, and four points made the bot worse than the one it replaced. In
+ * this pool, attacking is right, and a bot that keeps blockers home is a bot that never closes.
+ * Holding back needs to be chosen by seeing the swing back, which is the second ply.
+ */
+function throughCombat(state: GameState): GameState {
+  let next = state;
+  for (let i = 0; i < 40; i += 1) {
+    if (next.finished) break;
+    /*
+      Past combat — but not before the consequences of it have finished.
+
+      The step moves on the moment damage is dealt, while the triggers that damage raised are
+      still on the stack: two creatures dying in front of a Blood Artist is four points of life
+      that have not happened yet. Stopping at the step boundary scored the exchange without them,
+      and the bot traded into a drain engine every time.
+    */
+    const settled = next.stackOrder.length === 0 && answerPending(next) === null;
+    if (settled && (next.step === 'end-combat' || next.step === 'postcombat-main' || next.step === 'end')) break;
+    const owed = pendingDeclaration(next);
+    if (owed !== null) {
+      const seat = owed.seats[0];
+      if (seat === undefined) break;
+      const action: Action = owed.kind === 'attackers'
+        ? { type: 'auto:attack', by: seat, attackers: chooseAttackers(next, seat) }
+        : { type: 'auto:block', by: seat, blocks: chooseBlocks(next, seat) };
+      try {
+        next = applyAction(next, action, HOST);
+      } catch {
+        break;
+      }
+      continue;
+    }
+    const answer = answerPending(next);
+    if (answer !== null) {
+      try {
+        next = applyAction(next, answer, HOST);
+      } catch {
+        break;
+      }
+      continue;
+    }
+    if (next.priority === null) break;
+    try {
+      next = applyAction(next, { type: 'auto:pass', by: next.priority }, HOST);
+    } catch {
+      break;
+    }
+  }
+  return next;
+}
+
+/** One declaration, and what the board looks like once the dust settles. */
+function scoreDeclaration(state: GameState, seat: SeatIndex, action: Action): number | null {
+  let after: GameState;
+  try {
+    after = applyAction(state, action, HOST);
+  } catch {
+    return null;
+  }
+  return evaluate(throughCombat(after), seat);
+}
+
+type AttackPlan = { attacker: string; defender: SeatIndex; planeswalker?: string }[];
+
+/**
+ * The attacks worth considering, as whole plans rather than one creature at a time.
+ *
+ * Combat is not a sum of independent choices — two attackers into one blocker is a different
+ * exchange from either of them alone — so the search compares plans:
+ *
+ *  - what the heuristic would do, which is the one to beat;
+ *  - nothing at all, which is the plan the heuristic can never choose and the one a player picks
+ *    when the swing back would kill them;
+ *  - everything that can attack, because the heuristic is pessimistic about blockers on purpose
+ *    and an alpha strike is sometimes exactly right;
+ *  - the heuristic's plan minus its biggest creature, which is the plan a player picks when the
+ *    board needs a blocker more than the opponent needs the damage.
+ *
+ * Four plans, not every subset: the subsets of ten attackers are a thousand combats to play out,
+ * and these four are the shapes a player actually chooses between.
+ */
+function attackPlans(state: GameState, seat: SeatIndex): AttackPlan[] {
+  const heuristic = chooseAttackers(state, seat);
+  const plans: AttackPlan[] = [heuristic, []];
+
+  const able = legalActions(state, seat).attackers.filter((id) => canAttack(state, id, seat) === null);
+  const foes = foesOf(state, seat)
+    .map((index) => ({ index, life: state.seats[index]?.life ?? 0 }))
+    .sort((a, b) => a.life - b.life);
+  const nearest = foes[0];
+  if (nearest !== undefined && able.length > heuristic.length) {
+    plans.push(able.map((attacker) => ({ attacker, defender: nearest.index })));
+  }
+
+  if (heuristic.length > 1) {
+    let biggest = heuristic[0]!;
+    for (const entry of heuristic) {
+      if (creatureValue(state, entry.attacker) > creatureValue(state, biggest.attacker)) biggest = entry;
+    }
+    plans.push(heuristic.filter((entry) => entry.attacker !== biggest.attacker));
+  }
+  return plans;
+}
+
+/**
+ * The blocks worth considering.
+ *
+ * The same idea, shorter: what the heuristic would do, no blocks at all, and every blocker thrown
+ * in front of the biggest thing it may legally block. "No blocks" matters more than it sounds —
+ * the heuristic blocks whenever a trade looks even, and an even trade is a bad deal when the
+ * creature it gives up was the only thing holding the next attack off.
+ */
+function blockPlans(state: GameState, seat: SeatIndex): { blocker: string; attacker: string }[][] {
+  const heuristic = chooseBlocks(state, seat);
+  const plans: { blocker: string; attacker: string }[][] = [heuristic, []];
+  const everything: { blocker: string; attacker: string }[] = [];
+  const taken = new Set<string>();
+  for (const option of legalActions(state, seat).blockers) {
+    let best: string | null = null;
+    for (const attackerId of option.canBlock) {
+      if (taken.has(attackerId)) continue;
+      const attacker = state.instances[attackerId];
+      if (attacker === undefined) continue;
+      if (characteristicsOf(state, attacker).keywords.has('menace')) continue;
+      if (best === null || creatureValue(state, attackerId) > creatureValue(state, best)) best = attackerId;
+    }
+    if (best === null) continue;
+    taken.add(best);
+    everything.push({ blocker: option.blocker, attacker: best });
+  }
+  if (everything.length > heuristic.length) plans.push(everything);
+  return plans;
+}
+
+/** The declaration this seat owes, chosen by playing each plan out. */
+function declareBySearch(
+  state: GameState, seat: SeatIndex, kind: 'attackers' | 'blockers', opts: BotOptions,
+): Action {
+  if (kind === 'attackers') {
+    const plans = attackPlans(state, seat);
+    const fallback: Action = { type: 'auto:attack', by: seat, attackers: plans[0]! };
+    if (opts.lookahead === false) return fallback;
+    return bestPlan(state, seat, plans.map((attackers) => ({
+      type: 'auto:attack', by: seat, attackers,
+    } as Action))) ?? fallback;
+  }
+  const plans = blockPlans(state, seat);
+  const fallback: Action = { type: 'auto:block', by: seat, blocks: plans[0]! };
+  if (opts.lookahead === false) return fallback;
+  return bestPlan(state, seat, plans.map((blocks) => ({
+    type: 'auto:block', by: seat, blocks,
+  } as Action))) ?? fallback;
+}
+
+/** The highest-scoring of a set of declarations, or null when none of them can be applied. */
+function bestPlan(state: GameState, seat: SeatIndex, actions: readonly Action[]): Action | null {
+  let best: Action | null = null;
+  let bestScore = -Infinity;
+  for (const action of actions) {
+    const score = scoreDeclaration(state, seat, action);
+    if (score === null) continue;
+    // `>` again, so the heuristic's own plan — which is always first — wins a tie. A search that
+    // changed the play for a rounding error would be impossible to reason about from a log.
+    if (score > bestScore) {
+      bestScore = score;
+      best = action;
+    }
+  }
+  return best;
+}
+
 /** The single action this seat would take now, or null when it has nothing to do. */
 export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = {}): Action | null {
   if (!state.automated || state.finished) return null;
@@ -648,22 +893,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
 
   // A trigger waiting for its targets blocks everything else, so it is answered next.
   const choice = actions.mustChoose;
-  if (choice !== null) {
-    const foes = foesOf(state, seat);
-    const chosen: Target[] = [];
-    const used = new Set<string>();
-    for (let i = 0; i < choice.specs.length; i++) {
-      const want = Math.max(1, choice.specs[i]!.count ?? 1);
-      const ranked = [...(choice.candidates[i] ?? [])]
-        .filter((t) => !used.has(t.kind === 'card' ? `c${t.id}` : `p${t.seat}`))
-        .sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
-      for (const pick of ranked.slice(0, want)) {
-        used.add(pick.kind === 'card' ? `c${pick.id}` : `p${pick.seat}`);
-        chosen.push(pick);
-      }
-    }
-    return { type: 'auto:choose', by: seat, targets: chosen };
-  }
+  if (choice !== null) return aimPending(state, seat, choice);
 
   if (actions.mustDiscard > 0) {
     // Pitch the most expensive thing, which is the card least likely to be castable.
@@ -673,9 +903,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
 
   const owed = pendingDeclaration(state);
   if (owed !== null && owed.seats.includes(seat)) {
-    return owed.kind === 'attackers'
-      ? { type: 'auto:attack', by: seat, attackers: chooseAttackers(state, seat) }
-      : { type: 'auto:block', by: seat, blocks: chooseBlocks(state, seat) };
+    return declareBySearch(state, seat, owed.kind, opts);
   }
 
   if (!actions.hasPriority) return null;

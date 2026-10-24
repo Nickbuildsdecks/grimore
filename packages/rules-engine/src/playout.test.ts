@@ -311,7 +311,9 @@ describe('a whole automated game', () => {
     expect(lost / 20).toBeLessThan(1.5);
     // Games did not get longer, which is how a cautious bot goes wrong.
     expect(turns.reduce((a, b) => a + b, 0) / turns.length).toBeLessThan(26);
-  });
+    // Twenty whole games against the bot a player actually meets, which searches: slower per
+    // decision than vitest's default five seconds allows for.
+  }, 60_000);
 
   it('plays planeswalkers: cast, ticked up and down, and sometimes attacked', () => {
     // The last card type, and the one with the most rules attached to it — loyalty on arrival, a
@@ -347,7 +349,7 @@ describe('a whole automated game', () => {
     // Attacking one is the shuffle's business — there has to be a planeswalker out, a creature
     // big enough to kill it, and a turn to do it in — so it is reported rather than required.
     expect(aimed).toBeGreaterThanOrEqual(0);
-  });
+  }, 60_000);
 
   it('casts spells with {X} in the cost, and for more than nothing', () => {
     // An X spell is the one card shape that can be cast *wrongly* while every other test passes:
@@ -620,6 +622,27 @@ describe('what looking a move ahead buys', () => {
 
     const searched = botAction(s, 0);
     expect(nameOfCard(s, searched?.type === 'auto:cast' ? searched.card : undefined)).toBe('Doom Blade');
+  });
+
+  it('will not trade a creature into a drain engine', () => {
+    // A 2/2 into a 2/2, with a Blood Artist behind it. The arithmetic the shallow bot does says
+    // this is an even trade and takes it; playing it out says two creatures die in front of a
+    // Blood Artist, which is two points of life each way that the arithmetic cannot see.
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Grizzly Bears'],
+        1: ['Blood Artist', 'Vampire Aristocrat'],
+      },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+
+    const shallow = botAction(s, 0, BREADTH);
+    expect(shallow?.type === 'auto:attack' && shallow.attackers.length).toBe(1);
+
+    const searched = botAction(s, 0);
+    expect(searched?.type === 'auto:attack' && searched.attackers.length).toBe(0);
   });
 
   it('will not pay a kicker that turns a ping into a wipe of its own creatures', () => {

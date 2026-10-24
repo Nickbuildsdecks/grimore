@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**432 tests in the rules engine, 110 in the web app, 1,038 across the workspace.**
+**433 tests in the rules engine, 110 in the web app, 1,039 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -749,6 +749,30 @@ Cost, measured, because an opponent that thinks is only better if nobody waits f
 takes 0.1–0.3ms at the median, under 9ms at the 95th percentile, 32ms at the very worst in a
 four-player pod.
 
+**Combat, searched too.** Attacks and blocks were the last two judgements still made by
+arithmetic: `exchange()` asks "would this creature die to that one" and nothing about what the
+whole exchange leaves behind. Now the bot builds a handful of *plans* — what the heuristic would
+do, nothing at all, everything that can attack, and the heuristic minus its biggest creature — and
+plays each one through blockers, damage and the triggers that damage raises, with the defender
+blocking by the bot's own policy. Four plans rather than every subset, because the subsets of ten
+attackers are a thousand combats and these four are the shapes a player chooses between.
+
+Paired against the same 400 games on the same seeds: **270 wins to 130 with the combat search, 253
+to 147 without it** — 17 games that turned on a declaration. It changes the attack in 126 of 479
+combats, attacking with *fewer* creatures in 85 of them and more in 41, and changes the blocks in
+40 of 161. Finishing the triggers before scoring was worth another 5 games: the step moves on the
+moment damage is dealt, so stopping at the step boundary scored two creatures dying in front of a
+Blood Artist without the four points of life that follow, and the bot traded into a drain engine
+every time. It now declines that attack, which is a test.
+
+**Two things the measurement said no to.** Scoring an untapped creature above a tapped one — the
+cheap way to make the bot hold a blocker back — changed nothing at one point, cost 26 games in 400
+at two, and at four made the bot *worse than the one it replaced*. In this pool attacking is right,
+and a bot that keeps blockers home never closes. And the search had quietly stopped using
+planeswalkers (three activations in sixteen games) because a loyalty counter was worth nothing in
+the evaluation: a plus ability bought something it could not see. Loyalty is scored now, at about
+the value of a point of life, which is what it is.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the 63 cards currently using
@@ -762,13 +786,14 @@ four-player pod.
    environment cannot reach Scryfall. A deck of bare names has no type line, so the engine cannot
    tell a land from a spell and Arena mode would be unusable; the tabletop would be fine. Worth
    building where the data exists, not here.
-3. A stronger opponent still. It now plays each option out one move and keeps the position it
-   likes best, which is worth two games in three against the bot it replaced — but one ply is one
-   ply. It cannot hold a creature back to block, keep mana up for the counterspell in its hand, or
-   tell that a spell is worth more next turn than this one, because all three need it to model the
-   *reply*. The honest next version is this same function recursing one level with the opponent
-   choosing against it, which is worth building now that the evaluation has a measurement behind
-   it.
+3. A stronger opponent still. It plays each option out — plays, attacks and blocks — and keeps the
+   position it likes best, which is worth better than two games in three against the bot it
+   replaced. But one ply is one ply: the simulation stops at the end of the current combat, so it
+   cannot see the swing back on the opponent's next turn, keep mana up for the counterspell in its
+   hand, or tell that a spell is worth more next turn than this one. All three need the *reply*,
+   which is this same function recursing with the opponent choosing against it — and the cheap
+   substitute for the first of them (scoring an untapped creature above a tapped one) was tried and
+   measurably lost games, which is written up in `claude/decisions-log.md`.
 4. The pod interface beyond "it works". Three opponents sit side by side now and the combat is
    drawn rather than described, which were the two things that made a four-player board
    unreadable. What is still missing is everything a pod is *socially*: no table talk beyond the

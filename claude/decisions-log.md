@@ -1756,3 +1756,51 @@ block with it.
 decision at the median, under 9ms at the 95th percentile, 32ms at the very worst in a four-player
 pod. The browser suites are unchanged in feel — a solo pod plays 282 moves in 45 seconds, and the
 bots are not what it is waiting for.
+
+## D54 — Combat is chosen by playing it out, in whole plans
+
+Attacks and blocks were the last two judgements the bot made by arithmetic. `exchange()` answers
+"would this creature die to that one", one pair at a time, and knows nothing about what the whole
+exchange leaves behind — which is most of what combat is.
+
+**Decided: plans, not creatures.** Combat is not a sum of independent choices, so the search
+compares whole declarations: what the heuristic would do, nothing at all, everything that can
+attack, and the heuristic minus its biggest creature. Four plans rather than every subset — ten
+attackers have a thousand subsets, and these four are the shapes a player actually chooses between.
+Blocks get the same treatment with three.
+
+**Decided: the defender blocks with the bot's own policy.** It is the only opponent model there is
+and the fair one: the other seat is assumed to answer as well as this one would.
+
+**The number: 270 wins to 130 with the combat search against 253 to 147 without**, on the same 400
+games with the same seeds and the same opponent — 17 games that turned on a declaration. It changes
+the attack in 126 of 479 combats (85 of them attacking with *fewer* creatures), and the blocks in
+40 of 161.
+
+**And the simulation has to finish the combat, not the step.** The step moves on the moment damage
+is dealt, while the triggers that damage raised are still on the stack. Scoring there meant two
+creatures dying in front of a Blood Artist counted as an even trade, because the four points of
+life had not happened yet — and the bot traded into a drain engine every time. Both simulations now
+answer whatever the line is waiting on, with the same aiming policy a real decision uses, rather
+than stopping at the first trigger that wants a target. Worth five games in 400 on its own, and it
+is the one case in this work where the fix was a bug rather than a weight.
+
+**Two things the measurement refused.**
+
+*Holding a blocker back.* The honest way to express it is to see the swing back, which is the
+second ply. The cheap substitute is to score an untapped creature above a tapped one so that
+attacking costs something — and it lost: nothing at one point, 26 games in 400 at two points, and
+at four points the bot was *worse than the shallow one it replaced*. In this pool attacking is
+right, and a bot that keeps blockers home is a bot that never closes. The term is gone, and this
+paragraph is here so the next person to have the idea does not have to measure it again.
+
+*A loyalty counter being worth nothing.* The search had quietly stopped using planeswalkers — three
+activations across sixteen games, against more than one per planeswalker for the bot before it —
+because a plus ability bought something the evaluation could not see, and the test that says
+"activated more often than cast" is what caught it. Loyalty is a planeswalker's life and its
+spell-per-turn, so it is scored at about the value of a point of life.
+
+**Cost:** a decision takes 2ms at the median in a duel and 0.1ms in a pod, under 15ms at the 95th
+percentile, 61ms at the very worst. The two tests that play twenty whole games with the searching
+bot now need more than vitest's default five seconds, which is the price of the player meeting the
+bot the tests measure.
