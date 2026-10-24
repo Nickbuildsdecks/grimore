@@ -16,7 +16,7 @@ import {
 } from './index.js';
 import {
   advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
-  namesIn, nextTurn, passBoth, refusal, stackNames,
+  namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
@@ -4336,6 +4336,75 @@ describe('damage that does not happen', () => {
     s = advanceTo(s, 'precombat-main');
     const maze = find(s, 1, 'battlefield', 'Maze of Ith');
     expect(legalActions(s, 1).plays.some((play) => play.card === maze)).toBe(false);
+  });
+});
+
+describe('why a card cannot be played', () => {
+  /** The reason the engine gives for a card in hand, or '' when it is playable. */
+  const why = (s: GameState, seat: SeatIndex, name: string): string =>
+    legalActions(s, seat).blocked.find((entry) => entry.card === find(s, seat, 'hand', name))?.reason ?? '';
+
+  it('says a land is a main-phase play, and that you have had your one', () => {
+    let s = arena({ hands: { 0: ['Mountain', 'Mountain'] }, turn: 2, firstSeat: 0 });
+    s = advanceTo(s, 'upkeep');
+    expect(why(s, 0, 'Mountain')).toMatch(/main phase/i);
+    s = advanceTo(s, 'precombat-main');
+    expect(why(s, 0, 'Mountain')).toBe('');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Mountain') });
+    expect(why(s, 0, 'Mountain')).toMatch(/already played a land/i);
+  });
+
+  it('says a sorcery is a sorcery', () => {
+    let s = arena({ hands: { 0: ['Lava Axe'] }, battlefield: { 0: Array(5).fill('Mountain') }, turn: 2, firstSeat: 0 });
+    s = advanceTo(s, 'upkeep');
+    s = tapAllLands(s, 0);
+    expect(why(s, 0, 'Lava Axe')).toMatch(/sorcery speed/i);
+  });
+
+  it('says it is the mana, and stops saying it once the mana is there', () => {
+    let s = arena({ hands: { 0: ['Lava Axe'] }, battlefield: { 0: ['Mountain'] }, turn: 2, firstSeat: 0 });
+    s = advanceTo(s, 'precombat-main');
+    // Counting what could still be tapped, not only what is floating: one Mountain is not five.
+    expect(why(s, 0, 'Lava Axe')).toMatch(/not enough mana/i);
+
+    let rich = arena({ hands: { 0: ['Lava Axe'] }, battlefield: { 0: Array(5).fill('Mountain') }, turn: 2, firstSeat: 0 });
+    rich = advanceTo(rich, 'precombat-main');
+    expect(why(rich, 0, 'Lava Axe')).toBe('');
+  });
+
+  it('says there is nothing to point it at, which looks the same as mana from outside', () => {
+    // Divine Verdict can only target an attacking or blocking creature, and the board has one of
+    // neither. The mana is there, so "not enough mana" would be a lie — and the two are the pair
+    // a client could never tell apart on its own.
+    let s = arena({
+      decks: { 0: 'skyward-writ' },
+      hands: { 0: ['Divine Verdict'] },
+      battlefield: { 0: Array(4).fill('Plains') },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    expect(why(s, 0, 'Divine Verdict')).toMatch(/target/i);
+  });
+
+  it('says a spell that eats a creature has nothing to eat', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite' },
+      hands: { 0: ['Bone Splinters'] },
+      battlefield: { 0: ['Swamp'], 1: ['Grizzly Bears'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    expect(why(s, 0, 'Bone Splinters')).toMatch(/sacrifice/i);
+  });
+
+  it('says nothing at all about a card it is offering', () => {
+    let s = arena({ hands: { 0: ['Lightning Bolt'] }, battlefield: { 0: ['Mountain'] }, turn: 2, firstSeat: 0 });
+    s = advanceTo(s, 'precombat-main');
+    const bolt = find(s, 0, 'hand', 'Lightning Bolt');
+    expect(legalActions(s, 0).plays.some((play) => play.card === bolt)).toBe(true);
+    expect(legalActions(s, 0).blocked.some((entry) => entry.card === bolt)).toBe(false);
   });
 });
 

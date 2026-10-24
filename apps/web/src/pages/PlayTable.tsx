@@ -42,7 +42,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
   IDLE, arenaReducer, boardRead, candidatesAt, cardBadges, choiceCandidatesAt, playsForCard,
-  splitBattlefield,
+  reasonCannotPlay, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
@@ -1465,6 +1465,7 @@ function Board({ table }: { table: UseTable }) {
         <PlaySheet
           card={picked}
           plays={playsForCard(view, picked.id)}
+          reason={reasonCannotPlay(view, picked.id)}
           mustDiscard={picked.zone === "hand" && picked.zoneSeat === seat ? (you?.mustDiscard ?? 0) : 0}
           onPlay={(play: LegalPlay) => {
             setPicked(null)

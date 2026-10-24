@@ -22,6 +22,14 @@ export interface PlaySheetProps {
   plays: readonly LegalPlay[]
   /** Set when this seat owes a discard, which makes "Discard" the obvious move for a card in hand. */
   mustDiscard: number
+  /**
+   * The engine's own reason for not offering this card, when it is not offering it.
+   *
+   * "Nothing you can do with Lava Axe right now" is true and useless: the next question a player
+   * asks is always *why*, and the answer is the difference between waiting a turn for the mana and
+   * waiting for something to point it at.
+   */
+  reason?: string | null
   onPlay: (play: LegalPlay) => void
   onDiscard: () => void
   /** The manual move menu, rendered under a disclosure. */
@@ -29,7 +37,7 @@ export interface PlaySheetProps {
   onClose: () => void
 }
 
-export function PlaySheet({ card, plays, mustDiscard, onPlay, onDiscard, manual, onClose }: PlaySheetProps) {
+export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard, manual, onClose }: PlaySheetProps) {
   const [showManual, setShowManual] = useState(false)
   const name = card.card?.name ?? "this card"
 
@@ -99,7 +107,8 @@ export function PlaySheet({ card, plays, mustDiscard, onPlay, onDiscard, manual,
           </div>
         ) : (
           <p data-testid="no-plays" className="text-xs text-[var(--g-text-muted)]">
-            Nothing you can do with {name} right now.
+            Nothing you can do with {name} right now
+            {reason ? <span data-testid="no-plays-reason">: {reason}</span> : null}.
           </p>
         )}
 

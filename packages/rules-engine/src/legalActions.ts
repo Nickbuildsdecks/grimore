@@ -141,6 +141,18 @@ export interface LegalActions {
    * priority — a UI keyed on priority alone would show the defender nothing to do.
    */
   readonly mustDeclare: 'attackers' | 'blockers' | null;
+  /**
+   * Why each card this seat holds is *not* playable, for the ones that are not.
+   *
+   * The table could work most of these out — it knows the step and the pool — but not all of them
+   * (a spell with no legal target looks exactly like a spell you cannot afford), and a second
+   * implementation of "can this be cast" is the one thing `legalActions` exists to prevent. Every
+   * `continue` in `castablePlays` is a reason; this is that list, said in words.
+   *
+   * Cards in hand and in the command zone only. An ability missing from a permanent's list is a
+   * different question and is not answered here.
+   */
+  readonly blocked: readonly { readonly card: string; readonly reason: string }[];
   /** Mana floating right now. */
   readonly pool: ManaPool;
   /** Mana that could still be produced from untapped permanents. */
@@ -242,8 +254,19 @@ function playableTargets(
   return { ok, candidates };
 }
 
-function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources): LegalPlay[] {
+interface Castable {
+  readonly plays: LegalPlay[];
+  /** Why a card produced no play, in the player's words. First reason met wins. */
+  readonly blocked: { card: string; reason: string }[];
+}
+
+function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources): Castable {
   const out: LegalPlay[] = [];
+  const blocked: { card: string; reason: string }[] = [];
+  /** Records the first reason a card gave, so a later one does not overwrite the real cause. */
+  const why = (card: string, reason: string): void => {
+    if (!blocked.some((entry) => entry.card === card)) blocked.push({ card, reason });
+  };
   const sorcerySpeed = atSorcerySpeed(state, seat);
   const landsPlayed = state.landsPlayed[String(seat)] ?? 0;
   const tax = state.seats[seat]?.commanderTax ?? 0;
@@ -272,15 +295,25 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           kind: 'land', card: id, name: ch.name, description: `Play ${ch.name}`,
           manaCost: '', targetSpecs: [], candidates: [], isManaAbility: false, sacrificeOptions: [],
         });
+      } else if (!sorcerySpeed) {
+        why(id, 'a land is played in your own main phase, with nothing on the stack');
+      } else {
+        why(id, 'you have already played a land this turn');
       }
       continue;
     }
 
     const instantSpeed = ch.typeLine.types.some((t) => t.toLowerCase() === 'instant') || ch.keywords.has('flash');
-    if (!instantSpeed && !sorcerySpeed) continue;
+    if (!instantSpeed && !sorcerySpeed) {
+      why(id, 'sorcery speed: your own main phase, with nothing on the stack');
+      continue;
+    }
 
     const printed = parseManaCost(def?.manaCost);
-    if (printed.unsupported !== undefined) continue;
+    if (printed.unsupported !== undefined) {
+      why(id, 'this cost is not one the engine can pay — move it by hand');
+      continue;
+    }
     /*
       An additional cost that is not optional (CR 601.2h): a spell asking for a creature to
       sacrifice is not castable with no creature to sacrifice, so it is not offered at all. The
@@ -290,13 +323,21 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const victims = script?.additionalCost === undefined
       ? []
       : sacrificeOptions(state, seat, id, { sacrifice: script.additionalCost.sacrifice });
-    if (script?.additionalCost !== undefined && victims.length === 0) continue;
+    if (script?.additionalCost !== undefined && victims.length === 0) {
+      why(id, script.additionalCost.sacrifice === 'another-creature'
+        ? 'it asks for another creature to sacrifice, and you have none'
+        : 'it asks for a creature to sacrifice, and you have none');
+      continue;
+    }
     // The tax is generic mana on top of the printed cost (CR 903.8), and it only applies to a
     // cast from the command zone.
     const cost: ManaCost = fromCommand && tax > 0
       ? { ...printed, generic: printed.generic + tax }
       : printed;
-    if (!canAfford(poolOf(state, seat), cost, sources)) continue;
+    if (!canAfford(poolOf(state, seat), cost, sources)) {
+      why(id, 'not enough mana, counting every land you could still tap');
+      continue;
+    }
     const taxOn = fromCommand && tax > 0 ? { commanderTax: tax } : {};
     // X at zero is a legal cast of an X spell and sometimes the only one available, so a cost with
     // {X} is offered whenever the rest of it can be paid; `xMax` says how high the player may go.
@@ -311,7 +352,10 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         const chosen = modesOf(script, modes);
         const specs = modeTargetSpecs(chosen);
         const { ok, candidates } = playableTargets(state, specs, seat, id);
-        if (!ok) continue;
+        if (!ok) {
+          why(id, 'no legal target for any of its modes');
+          continue;
+        }
         out.push({
           kind: 'cast', card: id, name: ch.name,
           description: `Cast ${ch.name} — ${chosen.map((m) => m.description).join('; and ')}`,
@@ -324,7 +368,10 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
 
     const specs = specsFor(script);
     const { ok, candidates } = playableTargets(state, specs, seat, id);
-    if (!ok) continue;
+    if (!ok) {
+      why(id, 'nothing it could legally target');
+      continue;
+    }
 
     out.push({
       kind: 'cast', card: id, name: ch.name,
@@ -359,7 +406,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       }
     }
   }
-  return out;
+  return { plays: out, blocked };
 }
 
 function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSources): LegalPlay[] {
@@ -493,7 +540,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     seat, step: state.step, hasPriority, isActivePlayer: state.activeSeat === seat,
     canPass: false, passLabel: '', plays: [], attackers: [], blockers: [],
     mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat), mustChoose,
-    mustDecide, pool: poolOf(state, seat), potential,
+    mustDecide, blocked: [], pool: poolOf(state, seat), potential,
   };
   if (!state.automated || state.finished) return empty;
   // Opening hands come before anything else, including priority.
@@ -518,9 +565,14 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     ? othersPassed ? `Resolve ${top.description}` : 'Pass'
     : othersPassed ? 'Next step' : 'Pass';
 
-  const plays = [...castablePlays(state, seat, sources), ...activatablePlays(state, seat, sources)];
+  const casts = castablePlays(state, seat, sources);
+  const plays = [...casts.plays, ...activatablePlays(state, seat, sources)];
+  // A card with a play is not blocked, whatever else was tried: a modal spell whose first mode
+  // has no target is still castable for the mode that does.
+  const playable = new Set(plays.map((play) => play.card));
+  const blocked = casts.blocked.filter((entry) => !playable.has(entry.card));
 
-  return { ...empty, canPass: true, passLabel, plays, attackers: [], blockers: [] };
+  return { ...empty, canPass: true, passLabel, plays, blocked, attackers: [], blockers: [] };
 }
 
 /** Every creature this seat may block with, and which attackers each one may be assigned to. */

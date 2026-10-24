@@ -246,7 +246,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 
 ```bash
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 54 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 51 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 39 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 16 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 19 checks

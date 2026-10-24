@@ -35,7 +35,7 @@
 import path from 'node:path';
 import {
   chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
-  readNumber, expectEventually, isMyMove, makeMove as drive, notePrompts, noteMove, press,
+  readNumber, expectEventually, isMyMove, makeMove as drive, notePrompts, noteMove, press, tap,
   watchForReactWarnings,
 } from './lib/table-driver.mjs';
 
@@ -218,6 +218,29 @@ async function main() {
     await press(nick, 'toggle-sound');
     await expectEventually(nick, 'and it can be turned back on', async () =>
       (await soundState(nick)) === 'on' && (await stored(nick)) === 'on');
+
+    // ── Why a card cannot be played ─────────────────────────────────────────────────────────────
+    /*
+      Done here, on turn one, because that is when a hand is full of cards there is no mana for —
+      which is exactly the moment a player taps one and gets "nothing you can do with this right
+      now" and no idea why. Whichever seat is on the clock is the one asked.
+    */
+    {
+      const page = (await isMyMove(nick)) ? nick : friend;
+      const seat = page === nick ? 0 : 1;
+      const hand = await cardsIn(page, `zone-hand-${seat}`).all();
+      let reason = '';
+      for (const card of hand.slice(0, 5)) {
+        if (!(await tap(card))) continue;
+        if (await has(page, 'no-plays')) {
+          reason = (await text(page, 'no-plays')).trim();
+          await shot(page, 'why-not');
+        }
+        await press(page, 'play-sheet-close');
+        if (reason !== '') break;
+      }
+      check('a card it will not let you play says why', /: .+\./.test(reason), `said: ${JSON.stringify(reason)}`);
+    }
 
     // The engine begins the first turn at its upkeep, with the active player holding priority.
     await expectEventually(nick, 'the step is named rather than left to be guessed at', async () => {

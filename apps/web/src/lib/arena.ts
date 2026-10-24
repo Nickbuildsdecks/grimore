@@ -433,6 +433,18 @@ export function playsForCard(view: GameView, cardId: string): LegalPlay[] {
 /** Whether tapping this card would do anything in automated mode. */
 export const hasPlays = (view: GameView, cardId: string): boolean => playsForCard(view, cardId).length > 0
 
+/**
+ * Why the engine is not offering this card, in its own words, or null when it is offering it.
+ *
+ * Read from the engine rather than worked out here. Most of the reasons a table could guess — it
+ * knows the step and the pool — but not all of them: a spell with no legal target looks exactly
+ * like a spell you cannot afford, and the two want different answers from the player. A second
+ * implementation of "can this be cast" is the thing `legalActions` exists to prevent.
+ */
+export function reasonCannotPlay(view: GameView, cardId: string): string | null {
+  return view.automation?.you?.blocked?.find((entry) => entry.card === cardId)?.reason ?? null
+}
+
 /** Mana in a pool, in WUBRG then colourless order, skipping what is not there. */
 export function manaPips(pool: Record<string, number> | undefined): { type: string; count: number }[] {
   const order = ["W", "U", "B", "R", "G", "C"]

@@ -1366,6 +1366,27 @@ of attacking power between them. The question is now "is there an attack **aimed
 Every one of them gets used and every one of them stops real damage — and nothing is cast into an
 empty board any more.
 
+**And it says why it will not let you.** Tapping a card the engine is not offering said *"Nothing
+you can do with Lava Axe right now."* — true, and useless. The next question a player asks is
+always *why*, and the answer is the difference between waiting a turn for the mana and waiting for
+something to point it at.
+
+`castablePlays` already knew: every `continue` in it is a reason. They are collected into
+`LegalActions.blocked` — a card id and a short sentence, first reason met wins — and the play sheet
+says it: *"Nothing you can do with Lightning Bolt right now: not enough mana, counting every land
+you could still tap."*
+
+Read from the engine rather than worked out in the client, which is the point. A table knows the
+step and the pool and could guess most of them, but **a spell with no legal target looks exactly
+like a spell you cannot afford**, and those want different answers from the player. A second
+implementation of "can this be cast" is the one thing `legalActions` exists to prevent.
+
+Six reasons, one test each: a land outside your main phase, a land when you have had your one, a
+sorcery at the wrong time, a cost you cannot pay (counting every land you could still tap, not only
+what is floating), a spell with nothing to target, and a spell that eats a creature when you have
+none. A card the engine *is* offering is not in the list at all, however many of its modes were
+rejected on the way.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

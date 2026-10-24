@@ -11,7 +11,8 @@ import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-en
 import {
   IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, candidatesAt, cardBadges,
   decisionLabel,
-  manaPips, playsForCard, primaryMove, specAt, splitBattlefield, targetKey, targetsRequired,
+  manaPips, playsForCard, primaryMove, reasonCannotPlay, specAt, splitBattlefield, targetKey,
+  targetsRequired,
   targetsWanted,
   type ArenaMode, type Decision,
 } from "./arena"
@@ -723,7 +724,7 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
     you: {
       seat: 0, step: "precombat-main", hasPriority: true, isActivePlayer: true, canPass: true,
       passLabel: "Pass", plays: [], attackers: [], blockers: [], mustDiscard: 0, mustDeclare: null,
-      mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null,
+      mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null, blocked: [],
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     },
     ...over,
@@ -936,6 +937,23 @@ describe("attackRead", () => {
     // And an attack that is not actually lethal is never marked, tapped out or not.
     expect(attackRead(open, 1, 19).lethal).toBe(false)
     expect(attackRead(open, 1, 0).lethal).toBe(false)
+  })
+})
+
+describe("reasonCannotPlay", () => {
+  it("gives the engine's reason for the card it is about, and nothing for the rest", () => {
+    const auto = automation({
+      you: {
+        ...automation()!.you!,
+        blocked: [{ card: "c1", reason: "not enough mana, counting every land you could still tap" }],
+      },
+    })
+    expect(reasonCannotPlay(view({ automation: auto }), "c1")).toMatch(/not enough mana/)
+    expect(reasonCannotPlay(view({ automation: auto }), "c2")).toBeNull()
+  })
+
+  it("is null on a manual table, where nothing is being offered in the first place", () => {
+    expect(reasonCannotPlay(view(), "c1")).toBeNull()
   })
 })
 
