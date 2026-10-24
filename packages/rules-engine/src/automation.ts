@@ -398,6 +398,18 @@ function triggerMatches(
  * player who did it, for events that are about an action (casting a spell, gaining life).
  */
 /**
+ * Whether the engine passes priority for this seat when passing is all it can do.
+ *
+ * One answer to one question, for the three callers that ask it: the auto-pass loop, the per-seat
+ * view, and the table's own toggle by way of that view. A seat missing from the list is on, which
+ * also means a game stored before the list existed comes back with everybody auto-passing — the
+ * default it had.
+ */
+export function autoPassFor(state: GameState, seat: SeatIndex): boolean {
+  return !(state.autoPassOff ?? []).includes(seat);
+}
+
+/**
  * The seats in APNAP order: the active player, then everybody else in turn order (CR 101.4).
  *
  * The order simultaneous triggers are *put on* the stack, which is the reverse of the order they

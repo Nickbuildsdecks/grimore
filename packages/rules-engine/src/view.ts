@@ -29,7 +29,7 @@ import { zoneKey, type CardDef, type CardInstance, type ZoneId } from './cards.j
 import type { FormatId } from './formats.js';
 import { characteristicsOf, combatDamagePrevented, type Keyword } from './characteristics.js';
 import { legalActions, type LegalActions } from './legalActions.js';
-import { pendingDeclaration, stillDeciding } from './automation.js';
+import { autoPassFor, pendingDeclaration, stillDeciding } from './automation.js';
 import { STEP_LABELS } from './turnTypes.js';
 import type { ManaPool } from './mana.js';
 import type { CombatState, StackObject, Step } from './turnTypes.js';
@@ -108,7 +108,13 @@ export interface StackView {
 export interface AutomationView {
   readonly step: Step;
   readonly stepLabel: string;
-  /** Whether the engine passes for a player with nothing to do. A table setting, not a rule. */
+  /**
+   * Whether the engine passes for **this seat** when passing is all it can do.
+   *
+   * One player's preference rather than the table's, which is why it travels in the per-seat view:
+   * a player who wants to watch each step go by gets every priority, and their opponent is still
+   * passed for. A spectator, who is never asked for anything, sees the default.
+   */
   readonly autoPass: boolean;
   readonly priority: SeatIndex | null;
   readonly passed: readonly SeatIndex[];
@@ -418,7 +424,7 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
   return {
     step: state.step,
     stepLabel: STEP_LABELS[state.step],
-    autoPass: state.autoPass,
+    autoPass: viewer === null ? true : autoPassFor(state, viewer),
     priority: state.priority,
     passed: state.passed,
     stack,

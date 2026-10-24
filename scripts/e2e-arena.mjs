@@ -334,6 +334,22 @@ async function main() {
     await expectEventually(friend, 'and the other is told they are waiting', async () =>
       (await has(friend, 'not-your-move')) || (await isMyMove(friend)));
 
+    // ── Stops are one player's preference ───────────────────────────────────────────────────────
+    // It was one boolean on the game, so a player who asked to see every priority turned it off
+    // for their opponent too — who was then asked twenty-five times a turn about a setting they
+    // never touched. Toggled back on afterwards so the rest of this game plays as it always did.
+    {
+      const pressed = (page) => tid(page, 'toggle-stops').getAttribute('aria-pressed');
+      const before = await pressed(friend);
+      await tid(nick, 'toggle-stops').click();
+      await nick.waitForTimeout(250);
+      check('one player asking for every step does not change the other player\u2019s setting',
+        (await pressed(nick)) === 'false' && (await pressed(friend)) === before,
+        `nick=${await pressed(nick)} friend=${await pressed(friend)} (was ${before})`);
+      await tid(nick, 'toggle-stops').click();
+      await nick.waitForTimeout(250);
+    }
+
     // ── Play the game out ───────────────────────────────────────────────────────────────────────
     // From here the script takes whatever the UI offers, as a player would, and watches for the
     // milestones that prove each part of the engine is wired through.

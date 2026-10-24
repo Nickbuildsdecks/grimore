@@ -180,13 +180,23 @@ export interface AutomationState {
   /** True when the engine runs the rules. False is the manual tabletop. */
   readonly automated: boolean;
   /**
-   * Whether the engine passes priority for a player whose only legal move is to pass.
+   * The seats that asked to be offered *every* priority, rather than have the engine pass for them
+   * when passing is their only legal move.
    *
-   * On by default, because without it a real game asks each player twenty-five times a turn to
-   * confirm they still cannot do anything. A player who wants to be offered every priority —
-   * to bluff, or to watch each step go by — turns it off.
+   * Auto-pass is on by default, because without it a real game asks each player twenty-five times
+   * a turn to confirm they still cannot do anything. A player who wants every priority — to bluff,
+   * or to watch each step go by — turns it off, and this is the list of who has.
+   *
+   * **Per seat rather than per table, which is the point of the list.** It was one boolean, so one
+   * player asking to see every step made the engine stop for *both* of them: the other player was
+   * then pestered twenty-five times a turn for a setting they never touched. Stops are a preference
+   * about how you want to be asked, not a rule about the game, and two people at one table can
+   * reasonably want different answers.
+   *
+   * Read through `autoPassFor`, which treats a missing entry as "on" — so a game stored before
+   * this list existed comes back with everybody auto-passing, which is what it had.
    */
-  readonly autoPass: boolean;
+  readonly autoPassOff: readonly SeatIndex[];
   readonly step: Step;
   /** Seat holding priority, or null in a step where nobody gets it. */
   readonly priority: SeatIndex | null;
@@ -331,10 +341,15 @@ export interface DecisionAnswer {
 // ── Automated actions ────────────────────────────────────────────────────────────────────────────
 export interface AutoStartAction {
   readonly type: 'auto:start'; readonly by: SeatIndex; readonly firstSeat?: SeatIndex;
-  /** Defaults to true. See `AutomationState.autoPass`. */
+  /**
+   * Defaults to true, for every seat. False starts the table with auto-pass off for everybody,
+   * which is what a test that wants to walk a game in lock-step asks for. See
+   * `AutomationState.autoPassOff`.
+   */
   readonly autoPass?: boolean;
 }
 /** Turns auto-passing on or off mid-game, which is a table setting rather than a game rule. */
+/** One seat's own stops setting. `by` is whose preference it is, and nobody else's changes. */
 export interface AutoStopsAction { readonly type: 'auto:stops'; readonly by: SeatIndex; readonly autoPass: boolean }
 export interface AutoPlayLandAction { readonly type: 'auto:playLand'; readonly by: SeatIndex; readonly card: string }
 export interface AutoCastAction {

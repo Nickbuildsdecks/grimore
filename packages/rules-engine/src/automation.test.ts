@@ -8,8 +8,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  bottomOwed, createGame, legalActions, packView, pendingDeclaration, seatsToAct, stackTop,
-  stillDeciding, unpackView, viewFor,
+  autoPassFor, bottomOwed, createGame, legalActions, packView, pendingDeclaration, seatsToAct,
+  stackTop, stillDeciding, unpackView, viewFor,
 } from './index.js';
 import {
   advanceTo, apply, applyAll, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
@@ -833,8 +833,10 @@ const nameFor = (s: Parameters<typeof legalActions>[0], id: string): string =>
 
 describe('passing for a player with nothing to do', () => {
   it('is on at a real table, and off for the lock-step tests in this file', () => {
-    expect(arena().autoPass).toBe(false);
-    expect(arena({ autoPass: true }).autoPass).toBe(true);
+    // Off for everybody is what a test that walks a game step by step asks for, and on for
+    // everybody is what a real table starts as. Both are the same list, full or empty.
+    expect(arena().autoPassOff).toEqual([0, 1]);
+    expect(arena({ autoPass: true }).autoPassOff).toEqual([]);
   });
 
   it('hands control over at the first moment there is something to do', () => {
@@ -923,14 +925,67 @@ describe('passing for a player with nothing to do', () => {
   it('can be turned off mid-game, and back on', () => {
     let s = arena({ autoPass: true, hands: { 0: ['Mountain'] } });
     s = apply(s, { type: 'auto:stops', by: 0, autoPass: false });
-    expect(s.autoPass).toBe(false);
+    expect(s.autoPassOff).toEqual([0]);
     const step = s.step;
+    // With it off for seat 0, seat 0 is asked again at the next step — and seat 1, who did not
+    // ask for anything, is still passed for, so play comes straight back round.
     s = apply(s, { type: 'auto:pass', by: 0 });
-    // With it off, the other seat is offered priority even with nothing to do.
+    expect(s.step).not.toBe(step);
+    expect(s.priority).toBe(0);
+    // Back on, and play runs to the next thing seat 0 could actually do.
+    s = apply(s, { type: 'auto:stops', by: 0, autoPass: true });
+    expect(s.autoPassOff).toEqual([]);
+  });
+
+  /*
+    Stops are one player's preference, and the list is what makes that expressible.
+
+    It was a single boolean, so the seat that asked to see every step turned auto-pass off for the
+    *other* player too — who was then asked twenty-five times a turn to confirm they still had
+    nothing to do, for a setting they never touched. Two people at one table can reasonably want
+    different answers to "how do you want to be asked".
+  */
+  it('passes for the player who wants it while stopping for the one who does not', () => {
+    // Seat 1 wants every priority. Seat 0 does not, and holds the only thing worth doing.
+    let s = arena({ autoPass: true, hands: { 0: ['Mountain'] } });
+    s = apply(s, { type: 'auto:stops', by: 1, autoPass: false });
+    expect(autoPassFor(s, 0)).toBe(true);
+    expect(autoPassFor(s, 1)).toBe(false);
+
+    const step = s.step;
+    const land = legalActions(s, 0).plays.find((p) => p.kind === 'land')!;
+    s = apply(s, { type: 'auto:playLand', by: 0, card: land.card });
+    // Play stops on seat 1 in the same step, because seat 1 asked for it.
     expect(s.step).toBe(step);
     expect(s.priority).toBe(1);
-    s = apply(s, { type: 'auto:stops', by: 1, autoPass: true });
-    expect(s.autoPass).toBe(true);
+    expect(legalActions(s, 1).plays).toEqual([]);
+
+    // And seat 1 passing walks the rest of the turn without ever asking seat 0 again, because
+    // seat 0 never asked to be. Before the list this was impossible to express either way round.
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    expect(s.priority).toBe(1);
+    expect(s.step).not.toBe(step);
+  });
+
+  it('tells each seat about its own setting and nobody else\'s', () => {
+    // The table's toggle reads this, so it has to be the viewer's own answer: a shared boolean is
+    // how one player's press used to move the other player's switch.
+    let s = arena({ autoPass: true });
+    s = apply(s, { type: 'auto:stops', by: 1, autoPass: false });
+    expect(viewFor(s, 0).automation!.autoPass).toBe(true);
+    expect(viewFor(s, 1).automation!.autoPass).toBe(false);
+    // A spectator is never asked for anything, so they see the default rather than somebody's.
+    expect(viewFor(s, null).automation!.autoPass).toBe(true);
+  });
+
+  it('keeps each seat\'s setting across a rematch', () => {
+    // Carried as a list for the same reason it is stored as one: a boolean would have handed one
+    // player's preference to the other on the way into the next game.
+    let s = arena({ autoPass: true });
+    s = apply(s, { type: 'auto:stops', by: 1, autoPass: false });
+    s = { ...s, finished: true, winnerSeat: 0 };
+    s = apply(s, { type: 'game:rematch', by: 0 });
+    expect(s.autoPassOff).toEqual([1]);
   });
 
   it('says in the log where play ended up, so a skipped step is not a mystery', () => {

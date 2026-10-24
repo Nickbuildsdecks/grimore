@@ -139,7 +139,7 @@ export function createGame(options: CreateGameOptions): GameState {
     instanceSeq: 0,
     // Automation, empty until a table is switched into automated mode.
     automated: false,
-    autoPass: true,
+    autoPassOff: [],
     kept: [],
     openingHands: false,
     pendingChoice: null,
@@ -582,7 +582,7 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         // with no active step and no way to hand priority to anyone, and `auto:start` refuses to
         // run twice, so nobody could restart it.
         automated: false,
-        autoPass: true,
+        autoPassOff: [],
         kept: [],
         openingHands: false,
         pendingChoice: null,
@@ -694,7 +694,9 @@ function rematch(state: GameState, action: Action, ctx: ActionContext): GameStat
   assertSeatIndex(state, action.by, 'by');
   const decks = state.seats.map((seat) => seat.deckId);
   const automated = state.automated;
-  const autoPass = state.autoPass;
+  // Each player's stops setting is theirs and survives the rematch, which is part of why it is a
+  // list: carrying one boolean would quietly hand one player's preference to the other.
+  const stopsOff = [...(state.autoPassOff ?? [])];
   // The winner plays second. With no winner — a draw, or a game nobody finished — the seat that
   // went first goes first again, since there is nothing to take turns about.
   const seats = state.seats.length;
@@ -710,7 +712,10 @@ function rematch(state: GameState, action: Action, ctx: ActionContext): GameStat
   });
   next = applyAction(next, { type: 'game:start', by: action.by, firstSeat: first }, asTable);
   if (automated) {
-    next = applyAction(next, { type: 'auto:start', by: action.by, firstSeat: first, autoPass }, asTable);
+    next = applyAction(next, { type: 'auto:start', by: action.by, firstSeat: first }, asTable);
+    for (const seat of stopsOff) {
+      next = applyAction(next, { type: 'auto:stops', by: seat, autoPass: false }, asTable);
+    }
   }
   return appendLog(next, {
     by: action.by,

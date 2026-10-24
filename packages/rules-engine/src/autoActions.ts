@@ -13,10 +13,9 @@ import { zoneKey } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
 import { characteristicsOf, hasType } from './characteristics.js';
 import {
-  advanceStep, aliveSeats, atSorcerySpeed, attackAimIssue, bottomOwed, canAttack, canBlock,
-  checkTargets, endTurnCleanup, forcedAttackers, legalAttackers, legalBlockers, menaceSatisfied,
-  payFrom,
-  pendingDeclaration,
+  advanceStep, aliveSeats, atSorcerySpeed, attackAimIssue, autoPassFor, bottomOwed, canAttack,
+  canBlock, checkTargets, endTurnCleanup, forcedAttackers, legalAttackers, legalBlockers,
+  menaceSatisfied, payFrom, pendingDeclaration,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop, stateBasedActions,
   stillDeciding, tapAttackers,
@@ -801,14 +800,24 @@ function decide(state: GameState, action: { by: SeatIndex; cards?: readonly stri
 
 // ── Starting ─────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * One seat's stops setting, and nobody else's.
+ *
+ * `autoPassOff` is a list for this reason: it was one boolean, so a player asking to see every step
+ * made the engine stop for *both* players — and the one who never touched the setting was then
+ * asked twenty-five times a turn whether they still had nothing to do. How you want to be asked is
+ * a preference, not a rule about the game.
+ */
 function setStops(state: GameState, action: { by: SeatIndex; autoPass: boolean }): Outcome {
   requireAutomated(state);
+  assertSeatIndex(state, action.by, 'by');
+  const off = (state.autoPassOff ?? []).filter((seat) => seat !== action.by);
   return {
-    state: { ...state, autoPass: action.autoPass },
+    state: { ...state, autoPassOff: action.autoPass ? off : [...off, action.by] },
     message: action.autoPass
-      ? `${seatName(state, action.by)} lets the table pass when there is nothing to do`
+      ? `${seatName(state, action.by)} lets the table pass for them when there is nothing to do`
       : `${seatName(state, action.by)} asks to be offered every priority`,
-    data: { autoPass: action.autoPass },
+    data: { autoPass: action.autoPass, seat: action.by },
   };
 }
 
@@ -822,7 +831,8 @@ function startAutomation(
   const next: GameState = {
     ...state,
     automated: true,
-    autoPass: action.autoPass ?? true,
+    // `false` here means "nobody", which is what a test walking a game in lock-step asks for.
+    autoPassOff: action.autoPass === false ? state.seats.map((seat) => seat.index) : [],
     // Opening hands come before the first turn (CR 103.4). Nobody holds priority and no step has
     // begun until every seat has settled, which is also what tells both clients to show the
     // mulligan decision rather than a board nobody can act on.
@@ -869,12 +879,15 @@ function autoPass(state: GameState): { state: GameState; passes: number } {
   let next = state;
   let passes = 0;
   for (let guard = 0; guard < 64; guard++) {
-    if (next.finished || !next.automated || !next.autoPass || next.openingHands) break;
+    if (next.finished || !next.automated || next.openingHands) break;
     if (next.pendingDiscard !== null || next.pendingChoice !== null) break;
     if (next.pendingDecision !== null) break;
     if (pendingDeclaration(next) !== null) break;
     const seat = next.priority;
     if (seat === null) break;
+    // Asked of the seat holding priority rather than of the table: the player who wants every
+    // step gets every step, and the player who did not is still passed for.
+    if (!autoPassFor(next, seat)) break;
     if (legalActions(next, seat).plays.some((play) => !play.isManaAbility)) break;
     next = pass(next, { by: seat }).state;
     passes += 1;

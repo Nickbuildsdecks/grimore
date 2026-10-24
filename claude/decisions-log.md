@@ -3251,3 +3251,42 @@ assignment order: **two simultaneous triggers of your own resolve in battlefield
 not asked.** What the measurement also says is how to build it when a card makes it matter: prompt
 only when one seat has two or more triggers with *different* descriptions, which never fires on the
 33-trigger Hellrider batch that a naive version would put in front of a player.
+
+## D92 — Stops are one player's preference, not the table's
+
+`autoPass` was a single boolean on the game. The toggle's own tooltip said *"Skipping priority when
+you have nothing to do"* — "you", singular — and it was not true: pressing it turned auto-pass off
+for the **other** player as well, who was then asked twenty-five times a turn to confirm they still
+had nothing to do, for a setting they never touched.
+
+It is now `autoPassOff`, the list of seats that asked to be offered every priority, read through
+one `autoPassFor(state, seat)` by its three callers: the auto-pass loop, the per-seat view, and the
+table's toggle by way of that view. Nothing in the UI changed, because the view's `autoPass` now
+means "mine" and the toggle was already written as though it did.
+
+**Why a list rather than a map or a second boolean.** A list of who opted out has one reading and
+one default: absent means on. A `Record<seat, boolean>` would have had three states per seat (on,
+off, unset) for a setting with two, and keeping a table-wide boolean *beside* a per-seat one would
+have been two sources of truth for the same question — which is the shape of bug this is. It also
+survives a state stored before the field existed: `?? []` reads as "everybody auto-passes", which
+is exactly the default that state had.
+
+**What the shape makes expressible, and the test that could not be written before.** With it off for
+seat 1 and on for seat 0, seat 0 playing a land now stops play on seat 1 in the same step — and
+seat 1 passing walks the rest of the turn without asking seat 0 anything. Neither half of that was
+sayable with one boolean: the old test asserted *"with it off, the other seat is offered priority
+even with nothing to do"*, which was the bug written down as the specification.
+
+Each seat's setting also survives a rematch, which is the other place a boolean would have handed
+one player's preference to the other: the rematch carries the list and re-applies it seat by seat
+after `auto:start`.
+
+**And the check that proves it where the player actually is.** The arena suite presses the toggle
+in Nick's browser and reads the `aria-pressed` on Friend's, which was the claim nobody was making:
+with the view computed table-wide instead, Friend's switch flips to `false` too, and the suite says
+so. (`nick=false friend=false (was true)`.) It is pressed back on afterwards so the rest of that
+game plays as it always did.
+
+One thing deliberately left as it was: the bots. A bot seat is never in the list, so the engine
+always passes for it — a bot asking to be offered every priority would be a table that stops for
+nobody's benefit.

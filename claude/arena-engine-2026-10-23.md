@@ -1863,6 +1863,34 @@ once every three games. When a card does make it matter, the measurement says ho
 two triggers with *different* descriptions, which never fires on the 33-trigger Hellrider batch a
 naive version would put in front of a player.
 
+### Stops are one player's preference
+
+The toggle's tooltip said *"Skipping priority when you have nothing to do"* — "you", singular — and
+it was not true. `autoPass` was a single boolean on the game, so pressing it turned auto-pass off
+for the other player too, who was then asked twenty-five times a turn to confirm they still had
+nothing to do, about a setting they never touched.
+
+It is a list of the seats that asked for every priority now, read through one `autoPassFor` by its
+three callers: the auto-pass loop, the per-seat view, and the toggle by way of that view. No UI
+changed — the view's `autoPass` means "mine", which is what the button had always claimed.
+
+A list rather than a map or a second boolean, for the reason the bug exists: a list of who opted
+out has one reading and one default, where a per-seat map would carry three states for a two-state
+setting and a table-wide boolean beside a per-seat one would be two sources of truth for the same
+question. It also reads correctly out of a game stored before the field existed — absent means
+everybody auto-passes, which is the default that state had.
+
+**The test that could not be written before.** With it off for seat 1 and on for seat 0, seat 0
+playing a land stops play on seat 1 in the same step, and seat 1 passing then walks the rest of the
+turn without asking seat 0 anything. The old test asserted the opposite — *"with it off, the other
+seat is offered priority even with nothing to do"* — which was the bug written down as the
+specification. Each seat's setting survives a rematch too, the other place one boolean would have
+handed a preference to the wrong player.
+
+And the claim is checked where the player is: the arena suite presses the toggle in one browser and
+reads the switch in the other. Computed table-wide instead, the other player's switch flips as
+well, and the suite says so.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

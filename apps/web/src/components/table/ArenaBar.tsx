@@ -456,6 +456,11 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           The stops toggle. On, the engine passes for you whenever passing is your only legal move,
           which is most of a game — off, you are offered every priority in every step, which is
           what a player wants when they are bluffing or learning the turn structure.
+
+          Yours and nobody else's, which the wording here always claimed and the engine did not: it
+          was one boolean on the game, so pressing this turned stops off for your opponent as well,
+          and they were then asked twenty-five times a turn about a setting they never touched.
+          `automation.autoPass` is per seat now, so this reads the viewer's own answer.
         */}
         <Button
           size="sm"
