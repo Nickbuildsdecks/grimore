@@ -95,6 +95,13 @@ export const PodCreateInput = z.object({
   bots: z.number().int().min(0).max(POD_MAX_SEATS - 1).default(0),
   /** Which built-in deck each bot plays. Defaults to one the rules engine ships. */
   botDeck: z.string().trim().min(1).max(64).optional(),
+  /**
+   * A deck per bot, in seat order, for a table where they should not all play the same one.
+   *
+   * A pod of three identical decks is one game played three times, which is the opposite of what
+   * a Commander table is for. `botDeck` still covers the single-opponent case.
+   */
+  botDecks: z.array(z.string().trim().min(1).max(64)).max(POD_MAX_SEATS - 1).optional(),
 });
 export type PodCreateInput = z.infer<typeof PodCreateInput>;
 
@@ -173,6 +180,15 @@ export const PodErrorCode = z.enum([
   "not_host",
   "version_conflict",
   "illegal_action",
+  /**
+   * The game has a winner, so nothing is legal any more.
+   *
+   * Its own code rather than an `illegal_action` because it is not one: the action was fine, the
+   * game ended under it. A client that sent the last pass of a game and the pass queued behind it
+   * gets this for the second, and the right thing to do with it is nothing — the game-over panel
+   * has already said what happened.
+   */
+  "game_finished",
   "rate_limited",
   "internal",
 ]);

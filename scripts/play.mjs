@@ -10,7 +10,7 @@
  *
  * Both processes are children of this one, so Ctrl-C stops the pair.
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { existsSync } from 'node:fs';
@@ -69,10 +69,35 @@ for (const [label, port] of [['the table server', REALTIME_PORT], ['the web app'
   }
 }
 
-if (!existsSync('apps/realtime/dist/server.js')) {
-  console.error('\napps/realtime is not built. Run:');
-  console.error("  pnpm install && pnpm -r --filter './packages/*' run build && pnpm --filter @grimore/realtime run build\n");
-  process.exit(1);
+/*
+  The table server is built before it is started, every time.
+
+  Not a convenience. Vite serves the web app from source, so an edit shows up on the next reload
+  and the table server's `dist/` is the one thing on the table that can be older than the code —
+  and when it is, the game that comes out is the one you wrote last time. It has cost three
+  debugging sessions in this project: a command zone that never said "playable", and twice a
+  refusal that had already been fixed. "Restart the play stack after an engine change" was the
+  advice, and it was wrong: restarting a stale build starts the stale build again.
+
+  `tsc` on an unchanged tree is a couple of seconds, which is a price worth paying to never ask
+  that question again.
+*/
+{
+  if (!existsSync('apps/realtime/package.json')) {
+    console.error('\nRun this from the repository root: node scripts/play.mjs\n');
+    process.exit(1);
+  }
+  process.stdout.write('Building the table server... ');
+  const built = spawnSync('pnpm', ['-r', '--filter', './packages/*', '--filter', '@grimore/realtime', 'run', 'build'], {
+    encoding: 'utf8',
+  });
+  if (built.status !== 0) {
+    console.error('failed.\n');
+    console.error((built.stdout ?? '') + (built.stderr ?? '') || String(built.error));
+    console.error('\nFix the build, then run this again. If pnpm itself is missing: npm i -g pnpm\n');
+    process.exit(1);
+  }
+  console.log('done.');
 }
 
 const host = lanAddress();

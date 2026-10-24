@@ -1590,3 +1590,66 @@ This is not documentation work: the help panel is the only place a player who ha
 `claude/play-realm-setup.md` learns any of it, and every feature added this session is invisible
 until something says it exists. The arena suite now reads the panel and fails if it is showing
 tabletop help at an automated table — which is exactly the regression that produced this entry.
+
+## D49 — A pod of one: three bots, three different decks
+
+The server has been able to seat three bots since the pod format went in, and the lobby has only
+ever offered one. So the one thing a solo player could not set up was the format the product is
+built around: a four-player Commander game. Worse, the server gave every bot the same deck, so a
+pod of three opponents would have been the same deck three times, drawing the same cards in the
+same order — which is not three opponents.
+
+**Decided: `botDecks`, a deck each in seat order, with the single `botDeck` still working.** Three
+lines in the pod's `create`, because `runBots` already loaded a deck per seat; what it lacked was
+anywhere for the caller to say which. The lobby's new **Solo pod** button sends the first three
+starter decks. A realtime test asserts the pod arrives as asked — four seats, three bots, each on
+its own deck, everybody on forty, every commander in its command zone — because that assertion is
+the feature, and the browser suite below is the proof it is playable.
+
+**`SOLO_POD=1` on the solo browser suite plays one to a survivor**, with two checks a duel cannot
+make: that the lobby really seated four, and that *all three* bots played. A pod where two of the
+three sat still would pass every other check in the suite and be no kind of game.
+
+## D50 — "The game is finished" is not an error
+
+The solo pod suite failed on the one check that matters most — "the engine never refused anything
+the table offered" — with `GAME_FINISHED: the game is finished`, every run. Not a rules bug: the
+pass that killed the last opponent and the pass queued behind it both went out, and the engine
+refused the second, correctly. The client then put it on screen in red, over "Nick wins".
+
+The existing guard could not catch it. It swallows a refusal when the table has moved on since the
+action was sent — but a queued action re-composes against the version the previous ack just handed
+back, so by that test nothing had moved.
+
+**Decided: the server gives it its own code, `game_finished`.** Not a string match on the message,
+and not a guess from the client's own copy of the view: the client's view of "is it over" can
+arrive after the refusal does, which is exactly the race. A distinct code is the server stating the
+one thing it knows for certain, and the client swallows that code and nothing else. The engine's
+`GAME_FINISHED` was being flattened into `illegal_action`, which is what made it unanswerable —
+and it never was an illegal action: the action was fine, the game ended under it.
+
+**And the refusal has one owner now.** Every handler answers the ack *and* emits `pod:error`, and
+the `pod:error` listener had none of the context `send` uses to judge a refusal — so it put the
+banner back up for every refusal `send` had deliberately swallowed, including the version-stale one
+that has been in the code since D-era optimistic concurrency. While a call of ours is in flight,
+the ack decides; `pod:error` is for anything that arrives unasked.
+
+## D51 — `scripts/play.mjs` builds the table server before starting it
+
+Three debugging sessions in this project have ended the same way: the code was right, the running
+server was old. Vite serves the web app from source, so the UI is never stale; `apps/realtime` runs
+from `dist/`, and the script only checked that the file *existed*. "Restart the play stack after an
+engine change" was the standing advice and it was wrong — restarting a stale build starts the stale
+build again. The most recent instance cost an hour: a refusal that three separate fixes failed to
+make go away, because none of them was running.
+
+**Decided: build it, every time, as part of starting it.** `tsc` on an unchanged tree is a couple
+of seconds. The question "is the server up to date?" cannot come up again, which is worth more than
+the seconds.
+
+**And the browser driver's clicks are bounded.** A press used to wait Playwright's default thirty
+seconds for a button to hold still, so a control bar that re-rendered under the cursor — which is
+what four seats acting on one table do — ended a whole run with a stack trace instead of a move.
+Two tries at two seconds, then the press is reported as not having landed, which the callers'
+own idle detectors already know what to do with. One `tap`/`press` pair for every click in the
+driver, rather than the three different ad-hoc timeouts that had accumulated.

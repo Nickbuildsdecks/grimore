@@ -26,6 +26,11 @@ button in the control bar.
 server plays. No code to share and nobody to wait for. The opponent mulligans, plays lands, casts
 spells, attacks and blocks; it is not a strong player, but it is a real one.
 
+**Or a whole Commander pod on your own.** *Solo pod* in the same section deals a four-player
+Commander game against three opponents on three different decks — forty life each, a command zone
+each, the full politics of a pod minus the people. It is the same server opponent three times over,
+so it will not scheme against you, but it does attack whoever is most worth attacking.
+
 **Up to four of you.** Pick **Commander** when you create the table and it seats four at 40 life
 with a command zone each — cast your commander for its cost plus {2} a time, it goes back to the
 command zone when it dies, and 21 damage from one commander ends that player's game. Turn order,
@@ -187,11 +192,11 @@ run end to end.
 | Handshake fails with **403** | An origin is being refused. Either `SOCKET_ALLOWED_ORIGINS` does not list the address you are browsing from, or clear it to allow any. |
 | `/api/auth/status` fails in the console | Expected. The table does not use `apps/api`; this is the rest of the SPA asking whether you are signed in. |
 | A reload loses the game | It should not — your seat is held for two minutes and reclaimed automatically. Past that the seat is gone. |
-| A change to the rules engine does not show up | Restart `scripts/play.mjs`. The web app hot-reloads; the table server does not — it holds the build it loaded at startup, so an engine change needs `pnpm -r --filter './packages/*' run build` and a restart. This looks exactly like a bug in the new code, and it caught me twice. |
+| A change to the rules engine does not show up | Restart `scripts/play.mjs`, and that is all — it rebuilds the packages and the table server itself on the way up (two seconds when nothing changed). The web app hot-reloads from source; the table server runs from `dist/` and holds whatever it loaded at startup, so for three debugging sessions "the code is right and the server is old" looked exactly like a bug in the new code. It cannot now: restarting is rebuilding. |
 
 ## Proving it works
 
-Three browser suites, one per way of playing. All need the stack running and Playwright available
+Four browser suites, one per way of playing. All need the stack running and Playwright available
 (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
 
 ```bash
@@ -199,6 +204,7 @@ node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 47 ch
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 35 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 33 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 13 checks
+SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 16 checks
 ```
 
 The tabletop suite plays a complete game through the real UI — lobby, decks, opening hands, card
@@ -219,6 +225,7 @@ DECK_B=tidal-mind node scripts/e2e-arena.mjs     # counterspells, so the stack g
 DECK_A=rot-harvest DECK_B=rot-harvest node scripts/e2e-arena.mjs   # graveyards and sacrifice outlets
 FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatever they drew
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
+SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
 The layers under them have their own suites: `packages/rules-engine` (414 tests, including whole

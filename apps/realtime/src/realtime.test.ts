@@ -535,7 +535,8 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       expect(nickFinal.winnerSeat).toBe(0);
 
       const dead = await emitAck(nick, 'pod:action', { action: { type: 'zone:draw', seat: 0, count: 1 }, expectedVersion: version });
-      expect(dead).toMatchObject({ ok: false, error: { code: 'illegal_action' } });
+      // Its own code, not `illegal_action`: the action was fine, the game ended under it.
+      expect(dead).toMatchObject({ ok: false, error: { code: 'game_finished' } });
 
       // ── Redaction held for the entire game, not just at the checkpoint above ──────────────────
       // Every card Friend ever held in hand, by id, from Friend's own payloads.
@@ -703,7 +704,53 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       // Whatever questions came up over the wire were answered over the wire, and none was left
       // outstanding at the end — a game that ends mid-resolution has not ended.
       expect(view.automation!.awaiting).toBeNull();
+
+      // One more action, now that there is a winner. It is refused — and refused as its own thing
+      // rather than as an illegal action, which is the whole point: a client sends the pass that
+      // ends a game and the pass queued behind it, and the second one must not land as a red error
+      // over "Nick wins". The browser client swallows exactly this code.
+      // Against the newest version the table has broadcast, not the last ack's: the point of this
+      // assertion is the engine's answer, and sending a version behind would ask the store's
+      // concurrency check instead, which answers first and says something else.
+      const latest = saw.reduce((top, e) => Math.max(top, e.stateVersion), version);
+      const afterwards = await emitAck(solo, 'pod:action', {
+        action: { type: 'auto:pass' }, expectedVersion: latest,
+      });
+      expect(afterwards).toMatchObject({ ok: false, error: { code: 'game_finished' } });
     }, 60_000);
+
+    /**
+     * One person, a four-player Commander pod, three different opponents.
+     *
+     * The server has always been able to seat three bots; what it could not do was give them
+     * different decks, so a solo pod was the same deck three times and every opponent drew the
+     * same cards. The test is not that the game plays — the test above covers that — but that the
+     * pod the lobby now offers actually arrives: four seats, forty life, and three decks that are
+     * not each other.
+     */
+    it('seats three bots on their own decks for a one-person Commander pod', async () => {
+      const solo = await client('Solo');
+      const botDecks = ['tidal-mind', 'rot-harvest', 'forge-alliance'];
+      okAck(await emitAck(solo, 'pod:create', {
+        name: 'Solo pod', format: 'commander', visibility: 'private', bots: 3, botDecks,
+      }));
+      const dealt = waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.state !== null);
+      okAck(await emitAck(solo, 'pod:ready', { ready: true }));
+      const first = await dealt;
+
+      expect(first.pod.seats).toHaveLength(4);
+      expect(first.pod.seats.filter((s) => s.bot)).toHaveLength(3);
+      const view = viewOf(first);
+      // Each bot took the deck it was given, in seat order, rather than all three taking the
+      // caller's single `botDeck` fallback.
+      expect(view.seats.slice(1).map((s) => s.deckId)).toEqual(botDecks);
+      // It is a Commander pod, so everybody is on forty and the commanders are in the command
+      // zone, including the three the server is playing.
+      for (const seat of view.seats) expect(seat.life).toBe(40);
+      for (let seat = 1; seat < 4; seat += 1) {
+        expect(view.zones[`${seat}:command`] ?? []).toHaveLength(1);
+      }
+    }, 30_000);
 
     it('closes a table when the last person leaves, rather than leaving the server playing alone', async () => {
       const solo = await client('Solo');

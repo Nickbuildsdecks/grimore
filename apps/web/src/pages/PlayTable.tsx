@@ -169,6 +169,28 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
               <span className="block text-xs text-[var(--g-text-muted)]">{deck.description}</span>
             </button>
           ))}
+          {/*
+            A pod on your own, which is the format this product is named after and the one table
+            a single player could not set up: the server has always been able to play three
+            seats, and nothing in the lobby ever asked it to. Three different decks, because
+            three of the same is one game played three times.
+          */}
+          <button
+            type="button"
+            data-testid="solo-pod"
+            onClick={() => void table.createTable({
+              name: "Solo pod",
+              format: "commander",
+              bots: 3,
+              botDecks: Object.keys(STARTER_DECKS).slice(0, 3),
+            })}
+            className="rounded-md border border-[var(--g-gold-400)]/40 px-3 py-2 text-left transition-colors hover:border-[var(--g-gold-400)]"
+          >
+            <span className="block text-sm font-medium text-[var(--g-text-high)]">Play a Commander pod</span>
+            <span className="block text-xs text-[var(--g-text-muted)]">
+              Four seats at 40 life, three of them the computer's, each on a different deck.
+            </span>
+          </button>
         </div>
       </section>
 

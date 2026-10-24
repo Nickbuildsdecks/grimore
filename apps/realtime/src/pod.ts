@@ -319,7 +319,11 @@ export class PodStore {
   // -------------------------------------------------------------------------
 
   async create(
-    input: { format: Format; visibility: PodVisibility; name: string; bots?: number; botDeck?: string },
+    input: {
+      format: Format; visibility: PodVisibility; name: string; bots?: number; botDeck?: string;
+      /** A deck each, in seat order, when the bots should not all play the same one. */
+      botDecks?: readonly string[];
+    },
     host: Player,
   ): Promise<JoinResult> {
     const token = makeSeatToken();
@@ -344,7 +348,10 @@ export class PodStore {
           ready: true,
           connected: true,
           bot: true,
-          botDeck: input.botDeck ?? DEFAULT_BOT_DECK,
+          // A pod of three identical decks is one game played three times. Each bot takes its
+          // own when the caller gives a list, and the single `botDeck` still works for the
+          // one-opponent case, which is what the lobby's "play against this deck" sends.
+          botDeck: input.botDecks?.[i] ?? input.botDeck ?? DEFAULT_BOT_DECK,
           token: makeSeatToken(),
           disconnectedAt: null,
         })),
@@ -546,7 +553,12 @@ export class PodStore {
       try {
         record.game = engineApply(record.game!, stamped, { isHost });
       } catch (err) {
-        if (err instanceof EngineError) throw new PodError('illegal_action', `${err.code}: ${err.message}`);
+        if (err instanceof EngineError) {
+          // A game that has ended is not a client mistake, and telling the two apart is the
+          // client's only way to know which refusals are worth a word to the player.
+          const code = err.code === 'GAME_FINISHED' ? 'game_finished' : 'illegal_action';
+          throw new PodError(code, `${err.code}: ${err.message}`);
+        }
         throw err;
       }
       runBots(record);

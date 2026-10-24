@@ -24,6 +24,14 @@ const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
 const SHOT_DIR = process.env.SHOT_DIR ?? path.join('e2e-shots', 'solo');
 const HEADED = process.env.HEADED === '1';
 const OPPONENT_DECK = process.env.OPPONENT_DECK ?? 'tidal-mind';
+/**
+ * `SOLO_POD=1` plays the four-seat Commander table instead of the duel.
+ *
+ * The same script, because it is the same claim — one person, one browser, a whole game — and
+ * the only difference is how many seats the server is playing. A second file would be a second
+ * copy of the play loop, and this project has already learned what that costs.
+ */
+const SOLO_POD = process.env.SOLO_POD === '1';
 const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '2000', 10);
 
 /**
@@ -52,16 +60,23 @@ async function main() {
     await tid(page, 'player-name').fill('Nick');
 
     // One button. That is the whole of starting a game on your own.
-    await waitFor(page, `solo-${OPPONENT_DECK}`);
-    await tid(page, `solo-${OPPONENT_DECK}`).click();
+    const entry = SOLO_POD ? 'solo-pod' : `solo-${OPPONENT_DECK}`;
+    await waitFor(page, entry);
+    await tid(page, entry).click();
     await waitFor(page, 'pregame');
-    check('the lobby offers a game against the computer', true);
+    check(SOLO_POD
+      ? 'the lobby offers a Commander pod against the computer'
+      : 'the lobby offers a game against the computer', true);
 
     // No ready-up: there is nobody to wait for, so the table deals itself.
     await waitFor(page, 'deck-ember-rush', 20000);
     check('the table deals without anybody having to ready up', true);
     const seatText = await text(page, 'lobby-seat-1');
     check('and says which seat the computer plays', /computer/i.test(seatText), seatText);
+    if (SOLO_POD) {
+      const seats = await page.locator('[data-testid^="lobby-seat-"]').count();
+      check('four seats, three of them the computer’s', seats === 4, `seats ${seats}`);
+    }
     await shot(page, 'solo-lobby');
 
     await tid(page, 'deck-ember-rush').click();
@@ -72,6 +87,11 @@ async function main() {
     await waitFor(page, 'phase-bar');
     await waitFor(page, 'mulligan-prompt');
     check('the game starts and asks for an opening-hand decision', true);
+    if (SOLO_POD) {
+      const lives = [];
+      for (let s = 0; s < 4; s++) lives.push(await readNumber(page, `life-${s}`));
+      check('everybody starts on forty', lives.every((l) => l === 40), JSON.stringify(lives));
+    }
     // The opponent settled its own hand in the same write, so the table is waiting only on you.
     const waiting = await text(page, 'waiting-on');
     check('the computer has already settled its hand', /you/i.test(waiting), waiting);
@@ -121,6 +141,17 @@ async function main() {
     const theirGraveyard = await page.locator('[data-testid="zone-graveyard-1"] [data-testid^="card-"]').count();
     check('the computer played a real game', theirBoard + theirGraveyard > 0,
       `board ${theirBoard}, graveyard ${theirGraveyard}`);
+    if (SOLO_POD) {
+      // Every seat, not just the one next to you: a pod where two of the three bots sat still
+      // would pass every check above and be no kind of game.
+      const played = [];
+      for (const s of [1, 2, 3]) {
+        const board = await page.locator(`[data-testid="zone-battlefield-${s}"] [data-testid^="card-"]`).count();
+        const yard = await page.locator(`[data-testid="zone-graveyard-${s}"] [data-testid^="card-"]`).count();
+        played.push(board + yard);
+      }
+      check('all three of them played', played.every((n) => n > 0), JSON.stringify(played));
+    }
 
     // And its hand was never readable, for exactly the same reason a person's is not.
     const theirHand = await cardsIn(page, 'zone-hand-1').evaluateAll((els) =>

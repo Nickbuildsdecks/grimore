@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**414 tests in the rules engine, 106 in the web app, 1,015 across the workspace.**
+**414 tests in the rules engine, 106 in the web app, 1,016 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -173,7 +173,10 @@ The ones that carry the most weight:
   opponents' hands, and that four seats fit a phone.
 - **`scripts/e2e-solo.mjs`** plays a whole game in one browser against the server — thirteen checks,
   and a game takes thirty-three moves. `OPPONENT_DECK` picks which deck the server plays, so the
-  solo game is run against each of the four.
+  solo game is run against each of the four. `SOLO_POD=1` turns it into a one-person Commander pod
+  against three bots — sixteen checks, with two a duel cannot make: that the lobby really seated
+  four, and that *all three* bots played, since a pod where two of them sat still would pass every
+  other check and be no kind of game.
 - **`combat.test.ts`** asserts each combat rule on a board built to need it, with the CR reference
   in the test name — so a failure says which rule broke rather than which line did.
 - **`scripts.test.ts`** plays every scripted card the way a player would, and checks that no card in
@@ -652,6 +655,37 @@ it does for you, so a new player reading it goes looking for buttons that are no
 two lists now, chosen by which table you are at — and the arena suite reads the panel and fails if
 it is showing the wrong one, because every feature in this document is invisible until something
 in the app says it exists.
+
+**A pod of one, and the two bugs that were hiding behind it.** The server could always seat three
+bots; the lobby only ever offered one, and the server gave every bot the same deck — so the format
+this product is named after was the one game a solo player could not set up, and three opponents
+would have been one opponent three times. `botDecks` gives each seat its own deck in seat order,
+the lobby's **Solo pod** button sends the first three starter decks, and `SOLO_POD=1` on the solo
+browser suite plays one to a survivor.
+
+Which is how the real find turned up. The suite failed every run on the check that matters most —
+"the engine never refused anything the table offered" — with `GAME_FINISHED: the game is finished`,
+displayed in red over "Nick wins". The pass that killed the last opponent and the pass queued
+behind it both went out, and the engine refused the second, correctly. The existing guard could not
+see it: it swallows a refusal when the table has moved on since the action was sent, and a queued
+action re-composes against the version the previous ack just handed back, so by that test nothing
+had moved. The engine's `GAME_FINISHED` now travels as its own `game_finished` code rather than
+being flattened into `illegal_action` — the server stating the one thing it knows for certain,
+instead of the client guessing from a view that can arrive *after* the refusal does. And the
+`pod:error` listener was undoing the guard anyway: every handler answers the ack *and* emits the
+error, and the listener had none of the context `send` uses to judge a refusal, so it put the
+banner back up for everything `send` had deliberately swallowed. While a call is in flight, the ack
+decides.
+
+**And `scripts/play.mjs` builds the table server before it starts it.** Three debugging sessions
+have now ended with "the code was right, the running server was old": Vite serves the web app from
+source so the UI is never stale, while `apps/realtime` runs from `dist/` and the script only
+checked that the file existed. The last instance cost an hour and three fixes that were all
+correct and none of which was running. `tsc` on an unchanged tree is two seconds, and the question
+cannot come up again. The browser driver's clicks are bounded for the same reason a different way:
+a press used to wait Playwright's default thirty seconds for a button to hold still, so a control
+bar re-rendering under the cursor — which is what four seats on one table do — ended a whole run
+with a stack trace instead of a move.
 
 ## Next
 

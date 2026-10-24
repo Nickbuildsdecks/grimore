@@ -91,6 +91,8 @@ export interface UseTable extends TableState {
     /** Seats for the server to play, so one person can start a table and play now. */
     bots?: number
     botDeck?: string
+    /** A deck each, in seat order, when the bots should not all play the same one. */
+    botDecks?: readonly string[]
   }) => Promise<void>
   joinTable: (input: { code: string; name: string }) => Promise<void>
   leaveTable: () => Promise<void>
@@ -114,6 +116,16 @@ export function useTable(playerName: string): UseTable {
   const socketRef = useRef<Socket | null>(null)
   /** Read inside `send`, which must use the newest version rather than one captured by a closure. */
   const versionRef = useRef(0)
+  /**
+   * How many calls of ours are waiting for an answer.
+   *
+   * Every handler on the server answers the ack *and* emits `pod:error`, so while one of our calls
+   * is in flight that event is a second copy of an answer the caller is already judging. Judging it
+   * twice is worse than useless: the handler below has none of the context `send` uses to decide a
+   * refusal is not the player's fault, so it put the banner back up for every refusal `send` had
+   * deliberately swallowed. One owner per answer, and for an action that owner is `send`.
+   */
+  const inFlightRef = useRef(0)
   const seatRef = useRef<number | null>(null)
   /**
    * The display name, kept in a ref rather than as an effect dependency.
@@ -195,8 +207,11 @@ export function useTable(playerName: string): UseTable {
       })
     })
     socket.on("pod:error", (err: PodErrorEvent) => {
-      // Both of these are retried in `send`, so they are not worth showing the player.
+      // The ack for the call this belongs to decides. See `inFlightRef`.
+      if (inFlightRef.current > 0) return
+      // Retried or deliberately swallowed in `send`, so none of these is worth showing.
       if (err.code === "version_conflict" || err.code === "rate_limited") return
+      if (err.code === "game_finished") return
       setState((s) => ({ ...s, error: err.message }))
     })
     socket.on("pod:chat", (line: ChatLine) => {
@@ -214,14 +229,19 @@ export function useTable(playerName: string): UseTable {
   const emit = useCallback((event: string, payload: unknown): Promise<AckResult> => {
     const socket = socketRef.current
     if (!socket) return Promise.resolve({ ok: false, error: { code: "internal", message: "not connected" } })
+    inFlightRef.current += 1
     return new Promise((resolve) => {
+      const done = (res: AckResult): void => {
+        inFlightRef.current = Math.max(0, inFlightRef.current - 1)
+        resolve(res)
+      }
       const timer = setTimeout(
-        () => resolve({ ok: false, error: { code: "internal", message: "the table did not answer" } }),
+        () => done({ ok: false, error: { code: "internal", message: "the table did not answer" } }),
         8000,
       )
       socket.emit(event, payload, (res: AckResult) => {
         clearTimeout(timer)
-        resolve(res)
+        done(res)
       })
     })
   }, [])
@@ -235,6 +255,7 @@ export function useTable(playerName: string): UseTable {
         playerName: nameRef.current,
         bots: input.bots ?? 0,
         ...(input.botDeck === undefined ? {} : { botDeck: input.botDeck }),
+        ...(input.botDecks === undefined ? {} : { botDecks: [...input.botDecks] }),
       })
       if (!res.ok) return setState((s) => ({ ...s, error: res.error.message }))
       if (res.code && res.seatToken) writeStored({ code: res.code, seatToken: res.seatToken, name: nameRef.current })
@@ -317,6 +338,18 @@ export function useTable(playerName: string): UseTable {
          * deterministically that it should never happen.
          */
         if (res.error.code === "illegal_action" && versionRef.current > sentAt) return
+        /**
+         * Nor is an action that arrived after the game ended.
+         *
+         * The version test above misses this one, because a queued action re-composes against the
+         * version the ack just handed back: the pass that kills the last opponent and the pass
+         * behind it in the queue both go out at the newest version, so the second is refused at a
+         * version that has not moved since it was sent. A real player hits it by tapping Pass a
+         * beat before the final damage lands, and reading "the game is finished" in red over
+         * "Nick wins" is no kind of answer. Caught by the solo pod browser suite, which does
+         * exactly that at machine speed, every run.
+         */
+        if (res.error.code === "game_finished") return
         setState((s) => ({ ...s, error: res.error.message }))
       }
       // Chain onto the queue, and never let one failure break the chain for everything after it.

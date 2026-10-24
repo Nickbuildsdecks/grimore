@@ -84,6 +84,43 @@ export async function waitFor(page, testId, timeout = 15000) {
 }
 
 export const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
+
+/**
+ * Presses a control, and says whether the press landed.
+ *
+ * Bounded on purpose. A table that four seats are all acting on re-renders the control bar under
+ * the cursor, and Playwright's default click waits thirty seconds for an element to hold still —
+ * so a button that was replaced between "it is here" and "click it" used to end the whole run with
+ * a stack trace instead of a move. Caught in a solo pod: "element was detached from the DOM,
+ * retrying" for thirty seconds, in a game that was otherwise going fine.
+ *
+ * Two tries at two seconds, because the second try is against the re-rendered button and nearly
+ * always works. A press that still will not land is not a failure to report from here: the callers
+ * carry on and their own idle detectors say so if the table has really stopped.
+ */
+export async function tap(locator) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await locator.click({ timeout: 2000 });
+      return true;
+    } catch {
+      /* The board moved: try the same locator once more, then give up quietly. */
+    }
+  }
+  return false;
+}
+
+export async function press(page, id) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await tid(page, id).first().click({ timeout: 2000 });
+      return true;
+    } catch {
+      if (!(await has(page, id))) return false;
+    }
+  }
+  return false;
+}
 export const cardsIn = (page, zoneTestId) => page.locator(`[data-testid="${zoneTestId}"] [data-testid^="card-"]`);
 export const has = async (page, id) => (await tid(page, id).count()) > 0;
 export const text = async (page, id) => ((await tid(page, id).first().textContent()) ?? '').trim();
@@ -147,13 +184,13 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     const count = await hand.count();
     for (let i = 0; i < count; i++) {
       if (await has(page, 'confirm-bottom')) break;
-      await hand.nth(i).click({ timeout: 2000 }).catch(() => {});
+      await tap(hand.nth(i));
     }
     if (await has(page, 'confirm-bottom')) {
-      await tid(page, 'confirm-bottom').click();
+      await press(page, 'confirm-bottom');
       return 'kept a mulliganed hand';
     }
-    await tid(page, 'cancel-mode').click();
+    await press(page, 'cancel-mode');
     return 'backed out of bottoming';
   }
   if (await has(page, 'mulligan-prompt')) {
@@ -164,10 +201,10 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     const mulliganed = seatMulligans[seat] ?? 0;
     if ((lands <= 1 || (forceMulligan && mulliganed === 0)) && (await has(page, 'mulligan'))) {
       seatMulligans[seat] = mulliganed + 1;
-      await tid(page, 'mulligan').click();
+      await press(page, 'mulligan');
       return `mulliganed a hand with ${lands} land`;
     }
-    await tid(page, 'primary-move').click();
+    await press(page, 'primary-move');
     return 'kept the opening hand';
   }
 
@@ -180,16 +217,16 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     for (let pick = 0; pick < 4; pick++) {
       const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
       if ((await lit.count()) === 0) break;
-      await lit.first().click({ timeout: 2000 }).catch(() => {});
+      await tap(lit.first());
       // An exact count sends itself; a range needs confirming, and "choose nothing" is an answer.
       if (!(await has(page, 'decide-prompt'))) return `answered: ${prompt}`;
       if (await has(page, 'confirm-decision')) {
-        await tid(page, 'confirm-decision').click();
+        await press(page, 'confirm-decision');
         return `answered: ${prompt}`;
       }
     }
     if (await has(page, 'confirm-decision')) {
-      await tid(page, 'confirm-decision').click();
+      await press(page, 'confirm-decision');
       return `answered with nothing: ${prompt}`;
     }
     // Nothing lit and nothing to confirm: the table is asking a question it is not showing an
@@ -204,10 +241,10 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     if (count > 1) {
       // Not always the largest, which is what the table opens on: an X spell cast for its maximum
       // every time would never exercise the picker, and X=0 is a legal cast worth seeing work.
-      await options.nth(Math.floor(Math.random() * count)).click({ timeout: 2000 }).catch(() => {});
+      await tap(options.nth(Math.floor(Math.random() * count)));
     }
     const label = await text(page, 'confirm-x');
-    await tid(page, 'confirm-x').click();
+    await press(page, 'confirm-x');
     return `chose ${label}`;
   }
 
@@ -215,10 +252,10 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     // An ability whose cost is a sacrifice: the creatures that can pay for it are lit.
     const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
     if ((await lit.count()) > 0) {
-      await lit.first().click();
+      await tap(lit.first());
       return 'fed a sacrifice outlet';
     }
-    await tid(page, 'cancel-mode').click();
+    await press(page, 'cancel-mode');
     return 'backed out of a sacrifice';
   }
 
@@ -227,12 +264,12 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
   if (await has(page, 'choose-prompt')) {
     const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
     if ((await lit.count()) > 0) {
-      await lit.first().click();
+      await tap(lit.first());
       return 'aimed a trigger';
     }
     const seatButtons = page.locator('[data-testid^="target-seat-"]');
     if ((await seatButtons.count()) > 0) {
-      await seatButtons.first().click();
+      await tap(seatButtons.first());
       return 'aimed a trigger at a player';
     }
     // Nothing lit anywhere: the table is asking for a target it is not showing, which is a defect
@@ -247,23 +284,23 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     // a legal target should always take it.
     const onStack = page.locator('[data-testid^="target-stack-"]');
     if ((await onStack.count()) > 0) {
-      await onStack.first().click();
+      await tap(onStack.first());
       return 'countered something on the stack';
     }
     // Otherwise the first legal target: a lit card, or the opponent.
     const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
     if ((await lit.count()) > 0) {
-      await lit.first().click();
+      await tap(lit.first());
       return 'picked a card as a target';
     }
     const seatButtons = page.locator('[data-testid^="target-seat-"]');
     if ((await seatButtons.count()) > 0) {
       // Prefer the opponent's seat over your own.
       const theirs = page.locator(`[data-testid^="target-seat-"]:not([data-testid="target-seat-${seat}"])`);
-      await ((await theirs.count()) > 0 ? theirs.first() : seatButtons.first()).click();
+      await tap((await theirs.count()) > 0 ? theirs.first() : seatButtons.first());
       return 'picked a player as a target';
     }
-    await tid(page, 'cancel-mode').click();
+    await press(page, 'cancel-mode');
     return 'cancelled an untargetable spell';
   }
 
@@ -282,11 +319,11 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     const count = await mine.count();
     for (let i = 0; i < count; i++) {
       if (seats > 1) {
-        await aims.nth(Math.floor(Math.random() * seats)).click({ timeout: 2000 }).catch(() => {});
+        await tap(aims.nth(Math.floor(Math.random() * seats)));
       }
-      await mine.nth(i).click({ timeout: 2000 }).catch(() => {});
+      await tap(mine.nth(i));
     }
-    await tid(page, 'confirm-attackers').click();
+    await press(page, 'confirm-attackers');
     return 'declared attackers';
   }
 
@@ -297,18 +334,18 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     const mine = cardsIn(page, `zone-battlefield-${seat}`);
     const count = await mine.count();
     for (let i = 0; i < count; i++) {
-      await mine.nth(i).click({ timeout: 2000 }).catch(() => {});
+      await tap(mine.nth(i));
       const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
       if ((await lit.count()) === 0) continue;
-      await lit.first().click({ timeout: 2000 }).catch(() => {});
+      await tap(lit.first());
       break;
     }
-    await tid(page, 'confirm-blockers').click();
+    await press(page, 'confirm-blockers');
     return 'declared blockers';
   }
 
   if (await has(page, 'discard-prompt')) {
-    await cardsIn(page, `zone-hand-${seat}`).first().click();
+    await tap(cardsIn(page, `zone-hand-${seat}`).first());
     return 'discarded to hand size';
   }
 
@@ -338,7 +375,7 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     const played = await tryToPlayFromHand(page, seat);
     if (played !== null) return played;
   }
-  await tid(page, 'primary-move').click();
+  await press(page, 'primary-move');
   return `primary: ${label}`;
 }
 
@@ -405,7 +442,7 @@ export async function tryToPlayFromHand(page, seat) {
     const card = playable.nth(i);
     const badges = (await card.textContent()) ?? '';
     if (!/playable/i.test(badges)) continue;
-    await card.click();
+    await tap(card);
     await waitFor(page, 'play-sheet', 5000);
     const options = page.locator('[data-testid^="play-"]:not([data-testid="play-sheet"]):not([data-testid="play-sheet-close"])');
     const choices = await options.count();
@@ -415,10 +452,10 @@ export async function tryToPlayFromHand(page, seat) {
       // — and would look identical to a table that could not offer the others.
       const pick = options.nth(Math.floor(Math.random() * choices));
       const name = (await pick.textContent()) ?? '';
-      await pick.click();
+      await tap(pick);
       return `chose a play: ${name.trim().replace(/\s+/g, ' ').slice(0, 70)}`;
     }
-    await tid(page, 'play-sheet-close').click();
+    await press(page, 'play-sheet-close');
     return null;
   }
   return null;
