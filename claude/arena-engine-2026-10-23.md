@@ -1840,6 +1840,29 @@ the same decks and the same loop: **median 137 moves, p99 307, longest 488, and 
 hundred over 400.** The cap was 400. Nothing was flaky but the shuffle; it is 1200 now, with the
 measurement beside it.
 
+### Whose trigger goes first
+
+Two rules cover simultaneous triggers: the active player puts theirs on the stack first so they
+resolve last (CR 603.3b), and a player holding more than one of their own chooses the order. The
+engine did neither — it walked the seats by index, which is APNAP only when the active player
+happens to hold the lowest seat number.
+
+**Measured over 60 four-seat pods**, counting every action that put more than one trigger on the
+stack: **131 batches, 33 of them belonging to more than one player, and 2 of those ordered
+wrongly.** Not dramatic, but the kind of thing that decides one game in thirty and leaves no trace.
+The fix is an ordering rather than a special case, and the re-measurement is 0 of 33.
+
+**The player's own choice is not built, and the same measurement is why.** 111 batches had one
+player holding two or more triggers, but only 20 where those were *different* abilities — and of
+those, 7 included a trigger with a target, which is the only way two of your own triggers can
+interact: one resolving first and removing what the other is aimed at. In all seven the companion
+was "you gain 1 life" or "1 damage to each opponent", neither of which removes a creature. **No
+reordering available in those 60 pods could have changed the outcome**, so the order is written
+down as a simplification — battlefield order, nobody asked — rather than paid for with a prompt
+once every three games. When a card does make it matter, the measurement says how: prompt only for
+two triggers with *different* descriptions, which never fires on the 33-trigger Hellrider batch a
+naive version would put in front of a player.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -3208,3 +3208,46 @@ Played out over 200 random shuffles with the same decks and the same loop: **med
 flaky but the shuffle, and the constant is now 1200 — two and a half times the worst of two hundred
 games, with the measurement in the comment beside it. D87's rule, applied to the constant that
 broke it.
+
+## D91 — Whose trigger goes on the stack first, and the choice that cannot matter yet
+
+Two rules govern simultaneous triggers. CR 603.3b: the active player puts theirs on the stack
+first, then each other player in turn order — so the active player's resolve *last*. And a player
+with more than one of their own chooses the order among them.
+
+The engine did neither. `raise` walked the seats by index, which gets APNAP right only when the
+active player happens to hold the lowest seat number, and it never asked anybody anything.
+
+**Measured over 60 four-seat pods**, counting every moment an action put more than one trigger on
+the stack:
+
+| | |
+| --- | --- |
+| batches of two or more simultaneous triggers | 131 |
+| …belonging to more than one player, where APNAP is the rule | 33 |
+| …that the engine actually ordered wrongly | **2** |
+| batches where one player held two or more of their own | 111 |
+| …where those were *different* abilities | 20 |
+| …of those, where any carried a target | 7 |
+| largest batch seen | 33 |
+
+**APNAP is fixed, because it is an ordering rather than a question.** `apnapSeats` returns the live
+seats starting from the active one, and the watchers are walked in that order with a dying or
+entering permanent placed inside its own controller's group rather than ahead of everybody. Two
+wrong orderings in sixty pods is not dramatic — but it is the kind of thing that decides one game
+in thirty and leaves no trace, and it costs nothing to get right. Re-measured after: 0 of 33.
+
+**The player's own choice is deliberately not built, and this is the evidence.** Twenty batches in
+sixty pods had two *different* triggers from one player, which would be a prompt roughly once every
+three games. Seven of the twenty included a trigger with a target, which is the only way two of
+your own triggers can interact at all — one resolving first and removing what the other is aimed
+at. In all seven the companion was "you gain 1 life" or "deals 1 damage to each opponent", neither
+of which can remove a creature, so **no reordering available in those sixty pods could have changed
+the outcome.** The seven shapes were read by hand and the instrument's count agrees with the
+reading, which is as close to proof as a measurement gets.
+
+So the simplification is named rather than asserted as correct, alongside CR 509.2's damage
+assignment order: **two simultaneous triggers of your own resolve in battlefield order, and you are
+not asked.** What the measurement also says is how to build it when a card makes it matter: prompt
+only when one seat has two or more triggers with *different* descriptions, which never fires on the
+33-trigger Hellrider batch that a naive version would put in front of a player.

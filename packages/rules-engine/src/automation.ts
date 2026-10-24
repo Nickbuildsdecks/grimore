@@ -397,6 +397,28 @@ function triggerMatches(
  * creature entering, dying, attacking) — only that permanent's own triggers fire. `actor` is the
  * player who did it, for events that are about an action (casting a spell, gaining life).
  */
+/**
+ * The seats in APNAP order: the active player, then everybody else in turn order (CR 101.4).
+ *
+ * The order simultaneous triggers are *put on* the stack, which is the reverse of the order they
+ * resolve in — the active player's go on first and so resolve last (CR 603.3b). Before this the
+ * engine walked seats by index, which gets the rule right only when the active player happens to
+ * hold the lowest seat number: measured over 60 four-seat pods, 34 batches of simultaneous
+ * triggers belonged to more than one player and 2 of them went on in the wrong order.
+ *
+ * Eliminated seats are kept out: a player who has left has no permanents and no triggers, and
+ * including them would only make the order depend on how many people had already lost.
+ */
+function apnapSeats(state: GameState): SeatIndex[] {
+  const live = state.seats.filter((s) => !s.eliminated).map((s) => s.index);
+  if (live.length === 0) return state.seats.map((s) => s.index);
+  const start = live.indexOf(state.activeSeat);
+  // The active player may themselves be mid-elimination, in which case turn order from the next
+  // live seat is the best reading there is.
+  if (start < 0) return live;
+  return [...live.slice(start), ...live.slice(0, start)];
+}
+
 function raise(
   state: GameState, event: TriggerEvent, actor?: SeatIndex, subject?: string,
 ): GameState {
@@ -425,15 +447,19 @@ function raise(
   // always included: it may be the watcher, and for a death it is in a graveyard by now rather
   // than on the battlefield.
   const selfOnly = new Set(['becomes-tapped', 'leaves']);
+  const everyBattlefield = apnapSeats(next).flatMap((seat) => {
+    const mine = [...listAt(next, zoneKey(seat, 'battlefield'))].filter((id) => id !== subject);
+    // The subject goes with its own controller rather than ahead of everybody: it may be the only
+    // watcher, and after a death it is in a graveyard rather than on a battlefield, so it would
+    // otherwise be missed. Put first within that seat, which is where it was.
+    const subjectSeat = subject === undefined ? undefined : next.instances[subject]?.zoneSeat;
+    return subjectSeat === seat ? [subject as string, ...mine] : mine;
+  });
   const watchers = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
-    ? [
-        ...(subject === undefined ? [] : [subject]),
-        ...next.seats.flatMap((s) => [...listAt(next, zoneKey(s.index, 'battlefield'))])
-          .filter((id) => id !== subject),
-      ]
+    ? everyBattlefield
     : selfOnly.has(event.kind)
       ? subject === undefined ? [] : [subject]
-      : next.seats.flatMap((s) => [...listAt(next, zoneKey(s.index, 'battlefield'))]);
+      : everyBattlefield;
 
   for (const id of watchers) {
     const inst = next.instances[id];

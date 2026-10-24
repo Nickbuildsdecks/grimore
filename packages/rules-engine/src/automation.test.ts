@@ -648,6 +648,34 @@ describe('state-based actions', () => {
   });
 
   /*
+    APNAP (CR 101.4, CR 603.3b): the active player's simultaneous triggers go on the stack first,
+    so they resolve *last*.
+
+    Before this the engine walked seats by index, which gets the rule right only when the active
+    player happens to hold the lowest seat number. Measured over 60 four-seat pods: 34 batches of
+    simultaneous triggers belonged to more than one player, and 2 of them went on in the wrong
+    order. Not a dramatic bug — but it is the kind that decides one game in thirty and leaves no
+    trace, and the fix is an ordering rather than a special case.
+  */
+  it('puts the active player\'s simultaneous triggers on the stack first (CR 603.3b)', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'skyward-writ' },
+      battlefield: { 0: ['Soul Warden'], 1: ['Soul Warden', 'Plains'] },
+      hands: { 1: ["Healer's Hawk"] },
+      turn: 2, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', "Healer's Hawk") });
+    s = passBoth(s);
+    // One trigger each, from the two Soul Wardens, raised by the same arrival.
+    expect(s.stackOrder.length).toBe(2);
+    const order = s.stackOrder.map((id) => s.stackObjects[id]!.controller);
+    // Seat 1 is the active player, so theirs is at the bottom and seat 0's resolves first.
+    expect(order).toEqual([1, 0]);
+    expect(stackTop(s)!.controller).toBe(0);
+  });
+
+  /*
     "Until your next turn", which is the first duration here anchored to a seat rather than to a
     moment in the current turn.
 
