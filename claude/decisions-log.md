@@ -1910,3 +1910,33 @@ happening, not a red banner blaming them for a button the table drew.
 
 Worth naming what found it: a suite that taps as fast as the server plays. A human would have hit
 this too, just less often, and would have reported it as "it said no for no reason".
+
+## D59 — "Again" is one tap, and it is a composition rather than a rule
+
+The game-over panel had one button: "New game", which is `game:reset` — the table emptied back to
+an unstarted tabletop with no decks and no engine. That is exactly right when somebody is changing
+decks or the next thing they do is leave, and exactly wrong when two people have just finished a
+game and said "again", which took a reset, two deck picks, a start, and a switch back into Arena
+mode. Five actions and a deck picker between one game and the next, in a product whose whole point
+is playing Magic with a friend.
+
+**Decided: `game:rematch`, composed out of the reducers rather than written as a new rule.** It
+applies reset, then `deck:load` for each seat's own deck, then `game:start`, then `auto:start` if
+the engine was running — the same actions a player would drive by hand. So a deck that no longer
+resolves fails the rematch the same way it fails the manual version, every permission and legality
+check is enforced by the thing that already enforces it, and the log reads as if somebody had done
+it themselves. A new rule would have been a second implementation of four existing ones.
+
+**Decided: any seated player may ask, and only once the game is over.** A reset mid-game is the
+host's, because it throws away a game in progress. "Again" after a finished game is nobody's
+privilege, and a rematch that only worked for whoever created the table would be a worse feature
+than no rematch. The steps inside run as the table — otherwise `deck:load` for the *other* seat
+would refuse — which is the permission question being answered once, at the top, instead of four
+times in the middle.
+
+**Decided: the previous winner goes second.** The convention at every table, and the engine knows
+who won, so there is nothing to ask anybody. With no winner — a draw, or a game nobody finished —
+the seat that went first goes first again, because there is nothing to take turns about.
+
+The two buttons now say what they do: **Play again** is the one a player wants, and **New game** is
+beside it in a quieter style for when the decks are changing.

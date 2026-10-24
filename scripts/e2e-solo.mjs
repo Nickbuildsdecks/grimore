@@ -17,7 +17,7 @@
 import path from 'node:path';
 import {
   chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
-  isMyMove, makeMove, readNumber,
+  isMyMove, makeMove, press, readNumber, expectEventuallyTrue,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -158,6 +158,30 @@ async function main() {
       els.map((e) => ({ hidden: e.getAttribute('data-hidden'), name: e.getAttribute('data-card-name') })));
     check('and its hand is as unreadable as a person’s', theirHand.every((c) => c.hidden === 'true' && !c.name),
       JSON.stringify(theirHand).slice(0, 120));
+
+    /*
+      And "again" is one tap.
+
+      The thing being checked is not the button but what is behind it: the same decks dealt again,
+      the engine still running, and a fresh opening hand to decide — which is five actions and a
+      deck picker if the table only offers a reset. Last of the game checks, because it clears the
+      board every other one of them is reading.
+    */
+    if (await has(page, 'game-over')) {
+      const turnBefore = (await readNumber(page, 'turn').catch(() => null)) ?? 0;
+      await press(page, 'rematch');
+      const dealt = await expectEventuallyTrue(page, async () =>
+        !(await has(page, 'game-over')) && (await cardsIn(page, 'zone-hand-0').count()) === 7);
+      check('and “play again” deals another game at the same table', dealt,
+        `game-over still up: ${await has(page, 'game-over')}, hand ${await cardsIn(page, 'zone-hand-0').count()}`);
+      if (dealt) {
+        const turnAfter = (await readNumber(page, 'turn').catch(() => null)) ?? 0;
+        check('the new game starts from turn one with the engine still running',
+          turnAfter === 1 && turnBefore >= turnAfter && await has(page, 'arena-bar'),
+          `turn ${turnBefore} -> ${turnAfter}`);
+        await shot(page, 'rematch');
+      }
+    }
 
     const refusal = (await has(page, 'table-error')) ? await text(page, 'table-error') : '';
     check('the engine never refused anything the table offered', refusal === '', refusal);

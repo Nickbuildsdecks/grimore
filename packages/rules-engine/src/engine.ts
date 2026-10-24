@@ -582,9 +582,12 @@ export function applyAction(state: GameState, action: Action, ctx: ActionContext
     throw new EngineError('INVALID_ACTION', 'action must be an object with a type');
   }
   assertSeatIndex(state, action.by, 'by');
-  if (state.finished && action.type !== 'game:reset') {
+  if (state.finished && action.type !== 'game:reset' && action.type !== 'game:rematch') {
     throw new EngineError('GAME_FINISHED', 'the game is finished');
   }
+  // A rematch is a *sequence* of actions rather than a rule, so it is composed here out of the
+  // reducers that already enforce each step. See `rematch`.
+  if (action.type === 'game:rematch') return rematch(state, action, ctx);
 
   const outcome = reduce(state, action, ctx);
   const isReset = action.type === 'game:reset';
@@ -615,6 +618,60 @@ export function applyAction(state: GameState, action: Action, ctx: ActionContext
 
   next = appendLog(next, { by: action.by, type: action.type, message, data });
   return next;
+}
+
+/**
+ * Another game at the same table: same seats, same decks, engine still running.
+ *
+ * Composed out of the actions a player would otherwise have to take by hand — reset, load each
+ * deck, start, switch the engine back on — rather than written as a new rule, because every one of
+ * those steps already has a reducer that enforces it. A card-legality check or a deck that no
+ * longer resolves fails the rematch exactly as it would fail the manual version, and the log reads
+ * the same as if a person had done it, which is what a player comparing the two would expect.
+ *
+ * Three decisions worth naming:
+ *
+ *  - **Any seated player may ask, and only once the game is over.** A rematch out of a live game
+ *    is a reset, and that stays the host's; "again" after a finished game is nobody's privilege.
+ *  - **The previous winner goes second.** The table convention everywhere, and the engine knows
+ *    who won, so there is no reason to make anybody choose.
+ *  - **The steps are taken on the table's behalf.** The permission question is answered once, at
+ *    the top, so the sub-actions run as the host — otherwise `deck:load` for the *other* seat
+ *    would refuse, and a rematch that only worked for the player who created the table would be a
+ *    worse feature than no rematch.
+ */
+function rematch(state: GameState, action: Action, ctx: ActionContext): GameState {
+  if (!state.finished) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'a rematch starts another game once this one is over');
+  }
+  assertSeatIndex(state, action.by, 'by');
+  const decks = state.seats.map((seat) => seat.deckId);
+  const automated = state.automated;
+  const autoPass = state.autoPass;
+  // The winner plays second. With no winner — a draw, or a game nobody finished — the seat that
+  // went first goes first again, since there is nothing to take turns about.
+  const seats = state.seats.length;
+  const first = state.winnerSeat === null
+    ? state.activeSeat
+    : (((state.winnerSeat + 1) % seats) as SeatIndex);
+
+  const asTable: ActionContext = { ...ctx, isHost: true };
+  let next = applyAction(state, { type: 'game:reset', by: action.by }, asTable);
+  decks.forEach((deckId, seat) => {
+    if (deckId === null) return;
+    next = applyAction(next, { type: 'deck:load', by: action.by, seat: seat as SeatIndex, deckId }, asTable);
+  });
+  next = applyAction(next, { type: 'game:start', by: action.by, firstSeat: first }, asTable);
+  if (automated) {
+    next = applyAction(next, { type: 'auto:start', by: action.by, firstSeat: first, autoPass }, asTable);
+  }
+  return appendLog(next, {
+    by: action.by,
+    type: 'game:rematch',
+    message: `${seatName(next, action.by)} starts another game${
+      state.winnerSeat === null ? '' : `; ${seatName(next, first)} goes first`}`,
+    data: { firstSeat: first, decks: decks.filter((d) => d !== null).length, automated },
+  });
 }
 
 /** Applies a sequence of actions in order; useful for deterministic replay. */

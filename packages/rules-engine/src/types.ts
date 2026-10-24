@@ -151,6 +151,17 @@ export interface GameStartAction extends BaseAction {
 export interface GameResetAction extends BaseAction {
   readonly type: 'game:reset';
 }
+/**
+ * Another game at the same table: same seats, same decks, engine still running.
+ *
+ * `game:reset` empties the table back to an unstarted tabletop, which is what you want when the
+ * players are changing decks or walking away. It is not what you want when two people have just
+ * finished a game and said "again" — that took four more actions and a deck picker, and in a
+ * product whose whole point is playing Magic with a friend, "again" is one tap.
+ */
+export interface GameRematchAction extends BaseAction {
+  readonly type: 'game:rematch';
+}
 
 // ── Card actions ────────────────────────────────────────────────────────────────────────────────
 // Every one of these is a physical move, not a game rule: the engine never asks whether a play is
@@ -252,6 +263,7 @@ export type Action =
   | ConcedeAction
   | GameStartAction
   | GameResetAction
+  | GameRematchAction
   | DeckLoadAction
   | ZoneDrawAction
   | ZoneShuffleAction

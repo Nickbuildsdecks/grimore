@@ -1087,8 +1087,19 @@ function Board({ table }: { table: UseTable }) {
       {view.finished ? (
         <div data-testid="game-over" className="rounded-md border border-[var(--g-gold-400)]/50 bg-[var(--g-gold-400)]/10 px-3 py-2 text-sm font-semibold text-[var(--g-text-high)]">
           {view.winnerSeat === null ? "The game is over." : `${view.seats[view.winnerSeat]?.name} wins.`}{" "}
-          <Button size="sm" variant="secondary" className="ml-2 h-7" data-testid="new-game" onClick={() => act({ type: "game:reset" })}>
-            <RotateCcw className="size-3.5" /> New game
+          {/*
+            Two different things, and the difference matters once a game has actually ended.
+
+            "Play again" deals another game at this table with the same decks and the engine still
+            running, which is what "again" means and is one tap. "New game" empties the table back
+            to an unstarted tabletop, which is what you want when somebody is changing decks or the
+            next thing you do is leave.
+          */}
+          <Button size="sm" className="ml-2 h-7" data-testid="rematch" onClick={() => act({ type: "game:rematch" })}>
+            <RotateCcw className="size-3.5" /> Play again
+          </Button>
+          <Button size="sm" variant="ghost" className="ml-2 h-7" data-testid="new-game" onClick={() => act({ type: "game:reset" })}>
+            New game
           </Button>
         </div>
       ) : null}

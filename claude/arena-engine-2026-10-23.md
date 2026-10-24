@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**448 tests in the rules engine, 114 in the web app, 1,058 across the workspace.**
+**452 tests in the rules engine, 114 in the web app, 1,062 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -171,7 +171,7 @@ The ones that carry the most weight:
   other three play on, and one survivor. Thirty-three checks. It is also the suite that proves the
   things only a four-player table can get wrong: that one player's screen hides all **three**
   opponents' hands, and that four seats fit a phone.
-- **`scripts/e2e-solo.mjs`** plays a whole game in one browser against the server — thirteen checks,
+- **`scripts/e2e-solo.mjs`** plays a whole game in one browser against the server — fifteen checks,
   and a game takes thirty-three moves. `OPPONENT_DECK` picks which deck the server plays, so the
   solo game is run against each of the four. `SOLO_POD=1` turns it into a one-person Commander pod
   against three bots — sixteen checks, with two a duel cannot make: that the lobby really seated
@@ -837,6 +837,20 @@ have hit and reported as "it said no for no reason".
 The browser driver's text reads are bounded too, for the same reason its clicks already were: a
 read of an element that had just been re-rendered away ended a whole run with
 `locator.textContent: Timeout 30000ms exceeded` on a game that was going fine.
+
+**"Again" is one tap.** The table had a "New game" button that emptied it back to an unstarted
+tabletop — right when somebody is changing decks, wrong when two people have just finished a game
+and said "again": that took a reset, two deck picks, a start, and a switch back into Arena mode.
+`game:rematch` does all of it in one action, atomically, with the same decks, the engine still
+running, and the previous winner going second — the table convention, and the engine knows who won,
+so nobody has to choose.
+
+It is composed out of the reducers a player would otherwise drive by hand rather than written as a
+new rule, so every step is enforced by the thing that already enforces it: a deck that no longer
+resolves fails the rematch exactly as it fails the manual version, and the log reads the same as if
+somebody had done it themselves. Two rules of its own: **any seated player may ask** (a rematch
+after a finished game is nobody's privilege, unlike a reset mid-game, which stays the host's), and
+**only once the game is over**.
 
 ## Next
 

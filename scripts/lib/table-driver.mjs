@@ -160,6 +160,25 @@ export async function readNumber(page, testId, timeout = 10000) {
   }
 }
 
+/**
+ * Waits for a predicate to come true and says whether it did, without making a check of its own.
+ *
+ * `expectEventually` reports its own result, which is right for most waits; this one is for the
+ * cases where the caller wants to say *what* failed with numbers the predicate cannot see.
+ */
+export async function expectEventuallyTrue(page, predicate, timeout = 12000) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    try {
+      if (await predicate()) return true;
+    } catch {
+      /* A locator that is mid-rerender: try again. */
+    }
+    if (Date.now() > deadline) return false;
+    await page.waitForTimeout(150);
+  }
+}
+
 export async function expectEventually(page, label, predicate, timeout = 12000) {
   const deadline = Date.now() + timeout;
   let last;
