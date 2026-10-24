@@ -1523,3 +1523,49 @@ Skeletons` are the same information the arrows draw, in the form you can scroll 
 going round the table, and a hundred lines of "Friend passes" is how a player loses the four that
 mattered. A pass that ended a step or killed something keeps its line — by then it is not a pass,
 it is the action that caused all of that, and the engine now says so on the same line.
+
+## D47 — Planeswalkers, which needed rules rather than vocabulary
+
+The last card type, and the only one so far that could not be built out of effects the engine
+already had. Every other addition this session was a verb — scry, equip, regenerate. A
+planeswalker is a *set of rules*: it enters with loyalty, its abilities are paid for in counters,
+one of them per turn, it dies at zero, damage removes loyalty rather than being marked on it, and
+it can be attacked instead of its controller.
+
+**Decided: all of it in one go, abilities and attacking.** Abilities without attacking would have
+left exactly the state `{X}` was in before D37 — present and not connected — and worse, because a
+planeswalker nobody can attack is not an approximation, it is a different card. The combat change
+turned out to be two lines in `dealCombatDamage` behind one function that answers "what does this
+attack hit", plus validation on the declaration.
+
+**Decided: a loyalty cost carries its restrictions.** A script writes `{ loyalty: -1 }` and gets
+sorcery speed, once per planeswalker per turn (CR 606.3) and "not without the loyalty to pay for
+it" — because every loyalty ability in the game has all three, and a script repeating them is
+three more places to forget one. The cost is paid *as the ability is activated* (CR 606.2), so a
+planeswalker that goes to zero on its own minus is already dying while the ability it paid for
+waits on the stack — and the ability still resolves, which is the rule and the reason the cost is
+not paid on resolution.
+
+**Decided: the printed loyalty is applied in `relocate`.** The first version did it in `settle`'s
+arrival drain, which is where "enters tapped" lives — and a planeswalker put onto a *manual* table
+got none, so the moment the engine took over the state-based actions read zero loyalty and swept
+it into the graveyard. Found by a test whose board kept coming up empty. `relocate` is the one
+place a card arrives; it is the third rule this session to end up there, after `dies` and `etb`.
+
+**And `normaliseDef` was dropping it.** The loyalty was on the card definition and gone by the
+time it reached the table, because the normaliser lists the fields it keeps and nobody had added
+this one. Two bugs of the same shape in one feature: a new field has to be carried by everything
+that copies a card, and the compiler cannot see an omission in an object literal.
+
+**Damage to a planeswalker removes loyalty** (CR 120.3c) rather than being marked. Not a detail:
+marked damage wears off at end of turn, and a planeswalker that healed itself every turn would be
+unkillable by anything but a removal spell.
+
+**The bot attacks a planeswalker only when it can kill it.** Chipping at one gives the damage up
+for nothing, because a player's life total is what ends the game. Shallow — it does not ask what
+the planeswalker *does* — and measured: over sixteen games, 5 cast, 24 abilities activated, 2
+attacks aimed at one, every game finished.
+
+Jace Beleren and Garruk Wildspeaker, both with all three printed abilities implemented; nothing
+was simplified to make it fit. Garruk's "+1: untap two target lands" found the last bug: the bot
+sent one target for a spec that wanted two, because no card before it had `count: 2`.

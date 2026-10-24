@@ -607,6 +607,76 @@ const HURRICANE: CardScript = {
   },
 };
 
+// ── Planeswalkers ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The last card type, and the one that needed rules rather than vocabulary.
+ *
+ * A loyalty cost carries three restrictions with it — sorcery speed, once per turn per
+ * planeswalker, and a minus you can pay for — so a script writes `+2` or `-1` and gets them. The
+ * printed loyalty is read off the card when it arrives, and zero loyalty puts it in the graveyard
+ * (CR 704.5i), neither of which a script has to say.
+ */
+const JACE_BELEREN: CardScript = {
+  name: 'Jace Beleren',
+  abilities: [
+    {
+      cost: { loyalty: 2 },
+      description: '+2: Each player draws a card.',
+      // Symmetrical, including the opponent — which is the card, and the reason it is not simply
+      // a better Divination.
+      effect: (c) => c.state.seats.reduce(
+        (state, seat) => (seat.eliminated ? state : draw(state, seat.index, 1)),
+        c.state,
+      ),
+    },
+    {
+      cost: { loyalty: -1 },
+      description: '−1: You draw a card.',
+      effect: (c) => draw(c.state, c.controller, 1),
+    },
+    {
+      cost: { loyalty: -10 },
+      description: '−10: Target player mills twenty cards.',
+      targets: [TARGET_PLAYER],
+      effect: (c) => {
+        const seat = firstPlayerTarget(c);
+        return seat === null ? c.state : mill(c.state, seat, 20);
+      },
+    },
+  ],
+};
+
+const GARRUK_WILDSPEAKER: CardScript = {
+  name: 'Garruk Wildspeaker',
+  abilities: [
+    {
+      cost: { loyalty: 1 },
+      description: '+1: Untap two target lands.',
+      targets: [{
+        kind: 'permanent',
+        description: 'target land',
+        count: 2,
+        filter: (state, candidate) => candidate.kind === 'card'
+          && hasType(parseTypeLine(state.cardDefs[state.instances[candidate.id]?.defKey ?? '']?.typeLine), 'land'),
+      }],
+      effect: (c) => cardTargets(c).reduce((state, id) => tap(state, id, false), c.state),
+    },
+    {
+      cost: { loyalty: -1 },
+      description: '−1: Create a 3/3 green Beast creature token.',
+      effect: (c) => createToken(c.state, c.controller, BEAST_TOKEN, 1),
+    },
+    {
+      cost: { loyalty: -4 },
+      description: '−4: Creatures you control get +3/+3 and gain trample until end of turn.',
+      effect: (c) => pumpTeam(c.state, c.source, c.controller, {
+        power: 3, toughness: 3, keywords: ['trample'],
+      }),
+    },
+  ],
+};
+
 // ── Red-white equipment ──────────────────────────────────────────────────────────────────────────
 
 const LEONIN_SKYHUNTER: CardScript = { name: 'Leonin Skyhunter', keywords: ['flying'] };
@@ -787,6 +857,11 @@ export const ZOMBIE_TOKEN: CardDef = {
 export const KNIGHT_TOKEN: CardDef = {
   name: 'Knight', typeLine: 'Token Creature — Knight', manaCost: '', cmc: 0,
   power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
+};
+
+export const BEAST_TOKEN: CardDef = {
+  name: 'Beast', typeLine: 'Token Creature — Beast', manaCost: '', cmc: 0,
+  power: '3', toughness: '3', oracleText: '', colors: ['G'],
 };
 
 export const SOLDIER_TOKEN: CardDef = {
@@ -1267,6 +1342,7 @@ const ALL: readonly CardScript[] = [
   MAGMA_JET, PREORDAIN, OMENSPEAKER,
   DRUDGE_SKELETONS, GOLGARI_CHARM, ENDLESS_ONE,
   LEONIN_SKYHUNTER, RAISE_THE_ALARM, ANGELIC_GIFT, INSPIRED_CHARGE, BALAN,
+  JACE_BELEREN, GARRUK_WILDSPEAKER,
   guildgate('Boros Guildgate', 'R', 'W'),
   equipment('Bonesplitter', '{1}', { power: 2 }, 'equipped creature gets +2/+0'),
   equipment('Loxodon Warhammer', '{3}', { power: 3, keywords: ['trample', 'lifelink'] },

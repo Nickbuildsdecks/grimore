@@ -69,8 +69,12 @@ export function isLegalTarget(
 
   if (inst.zone !== 'battlefield') return false;
   const ch = characteristicsOf(state, inst);
-  // "Any target" means a creature, a player or a planeswalker — never an untargetable permanent.
-  if ((spec.kind === 'creature' || spec.kind === 'any') && !ch.isCreature) return false;
+  // "Any target" means a creature, a player or a planeswalker (CR 115.4) — never an untargetable
+  // permanent. "Target creature" is creatures and nothing else, which is the difference: a
+  // Lightning Bolt may be pointed at a planeswalker and a Pacifism may not.
+  const isPlaneswalker = hasType(ch.typeLine, 'planeswalker');
+  if (spec.kind === 'creature' && !ch.isCreature) return false;
+  if (spec.kind === 'any' && !ch.isCreature && !isPlaneswalker) return false;
   // Hexproof stops opponents targeting it; shroud stops everyone.
   if (ch.keywords.has('shroud')) return false;
   if (ch.keywords.has('hexproof') && inst.zoneSeat !== controller) return false;

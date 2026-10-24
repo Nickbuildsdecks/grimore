@@ -95,6 +95,13 @@ export interface StackObject {
 export interface CombatAttack {
   readonly attacker: string;
   readonly defender: SeatIndex;
+  /**
+   * A planeswalker this attack is aimed at instead of the player (CR 506.2).
+   *
+   * The seat stays, because it is still *that player's* planeswalker being attacked and it is
+   * still that player who declares blockers. Only where the damage lands changes.
+   */
+  readonly planeswalker?: string;
   /** In damage-assignment order, which is the order the attacker's controller chose. */
   readonly blockers: readonly string[];
 }
@@ -287,7 +294,12 @@ export interface AutoActivateAction {
 export interface AutoPassAction { readonly type: 'auto:pass'; readonly by: SeatIndex }
 export interface AutoAttackAction {
   readonly type: 'auto:attack'; readonly by: SeatIndex;
-  readonly attackers: readonly { readonly attacker: string; readonly defender: SeatIndex }[];
+  readonly attackers: readonly {
+    readonly attacker: string;
+    readonly defender: SeatIndex;
+    /** A planeswalker that seat controls, attacked instead of the player (CR 506.2). */
+    readonly planeswalker?: string;
+  }[];
 }
 export interface AutoBlockAction {
   readonly type: 'auto:block'; readonly by: SeatIndex;

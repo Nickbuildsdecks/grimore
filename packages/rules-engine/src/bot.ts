@@ -17,7 +17,7 @@ import { legalActions, type LegalActions, type LegalPlay } from './legalActions.
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { bottomOwed, pendingDeclaration, stillDeciding } from './automation.js';
-import { characteristicsOf } from './characteristics.js';
+import { characteristicsOf, hasType } from './characteristics.js';
 import { canAttack, canBlock } from './combat.js';
 import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
@@ -110,17 +110,23 @@ function chooseTargets(state: GameState, seat: SeatIndex, play: LegalPlay): Targ
   const foes = foesOf(state, seat);
   for (let i = 0; i < play.targetSpecs.length; i++) {
     const spec = play.targetSpecs[i]!;
-    const candidates = (play.candidates[i] ?? []).filter(
-      (t) => !used.has(t.kind === 'card' ? `c${t.id}` : `p${t.seat}`),
-    );
-    const enemyFirst = [...candidates].sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
-    const pick = enemyFirst[0];
-    if (pick === undefined) {
-      if (spec.optional) continue;
-      return null;
+    // A spec can want more than one — "untap two target lands" is one spec with a count of two,
+    // and sending one target for it is a play the engine refuses. The bot was doing exactly that
+    // the moment a card with `count: 2` existed.
+    const want = Math.max(1, spec.count ?? 1);
+    for (let taken = 0; taken < want; taken++) {
+      const candidates = (play.candidates[i] ?? []).filter(
+        (t) => !used.has(t.kind === 'card' ? `c${t.id}` : `p${t.seat}`),
+      );
+      const enemyFirst = [...candidates].sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
+      const pick = enemyFirst[0];
+      if (pick === undefined) {
+        if (spec.optional) break;
+        return null;
+      }
+      used.add(pick.kind === 'card' ? `c${pick.id}` : `p${pick.seat}`);
+      chosen.push(pick);
     }
-    used.add(pick.kind === 'card' ? `c${pick.id}` : `p${pick.seat}`);
-    chosen.push(pick);
   }
   return chosen;
 }
@@ -172,6 +178,28 @@ function exchange(
     itDies: deadly(mine.power, mine.keywords.has('deathtouch'), theirs.toughness)
       && !theirs.keywords.has('indestructible'),
   };
+}
+
+/**
+ * A planeswalker this attacker could finish off this turn, or null.
+ *
+ * Only one it can kill: attacking a planeswalker it cannot remove gives the damage up for
+ * nothing, since a player's life total is the thing that ends the game.
+ */
+function killableWalker(state: GameState, attackerId: string, foe: SeatIndex): string | null {
+  const attacker = state.instances[attackerId];
+  if (attacker === undefined) return null;
+  const power = characteristicsOf(state, attacker).power;
+  let best: { id: string; loyalty: number } | null = null;
+  for (const id of listAt(state, zoneKey(foe, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    if (!hasType(characteristicsOf(state, inst).typeLine, 'planeswalker')) continue;
+    const loyalty = inst.counters['loyalty'] ?? 0;
+    if (loyalty <= 0 || loyalty > power) continue;
+    if (best === null || loyalty > best.loyalty) best = { id, loyalty };
+  }
+  return best === null ? null : best.id;
 }
 
 /** The creatures a seat could actually block with right now: its own, untapped. */
@@ -250,13 +278,18 @@ function chooseAttackers(state: GameState, seat: SeatIndex): { attacker: string;
     return !worstLoss || trade;
   };
 
-  const out: { attacker: string; defender: SeatIndex }[] = [];
+  const out: { attacker: string; defender: SeatIndex; planeswalker?: string }[] = [];
   let at = 0;
   let committed = 0;
   for (const attacker of able) {
     const target = foes[at] ?? foes[foes.length - 1]!;
     if (lethalAgainst(target) || worthAttacking(attacker, target.index)) {
-      out.push({ attacker, defender: target.index });
+      // A planeswalker it can kill outright is worth more than the same damage to a player on
+      // forty life. Shallow on purpose — it does not ask what the planeswalker *does*, only
+      // whether this creature finishes it — and a planeswalker nobody can kill is left alone
+      // rather than chipped at, because chipping is how a creature dies for nothing.
+      const walker = killableWalker(state, attacker, target.index);
+      out.push({ attacker, defender: target.index, ...(walker === null ? {} : { planeswalker: walker }) });
       const inst = state.instances[attacker];
       committed += inst === undefined ? 0 : characteristicsOf(state, inst).power;
     }

@@ -175,6 +175,15 @@ export interface AbilityCost {
    * exactly where it matters.
    */
   readonly sacrifice?: 'creature' | 'another-creature';
+  /**
+   * A planeswalker's loyalty cost: `+1`, `0`, `-3`. Paid by adding or removing loyalty counters
+   * as the ability is activated (CR 606.2), which is why a minus ability cannot be used without
+   * the loyalty to pay for it — and why using one is how a planeswalker runs out.
+   *
+   * Sorcery speed and once per turn per planeswalker are implied by the cost existing, rather
+   * than asked for separately: every loyalty ability in the game has both restrictions.
+   */
+  readonly loyalty?: number;
 }
 
 export interface AbilityDef {

@@ -274,7 +274,9 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     // tapped — at random, because the thing being tested is that the table can send attacks in
     // different directions at once. With two players there is nothing to choose and this does
     // nothing at all.
-    const aims = page.locator('[data-testid^="attack-seat-"]');
+    // Players *and* planeswalkers: an attack can be aimed at either (CR 506.2), and the suites
+    // only ever exercise what the driver is willing to click.
+    const aims = page.locator('[data-testid^="attack-seat-"], [data-testid^="attack-walker-"]');
     const seats = await aims.count();
     const mine = cardsIn(page, `zone-battlefield-${seat}`);
     const count = await mine.count();

@@ -51,8 +51,25 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
   const you = auto?.you
   if (!auto || !you) return null
   const move = primaryMove(view)
-  /** The players an attack can be sent at: everybody still in the game but you. */
-  const defendable = view.seats.filter((s) => s.index !== view.seat && !s.eliminated)
+  /**
+   * What an attack can be sent at: every player still in the game but you, and each planeswalker
+   * they control (CR 506.2).
+   *
+   * The planeswalkers are read off the board rather than asked for, because "which permanents are
+   * planeswalkers" is a fact in the view rather than a rule — and the engine validates the
+   * declaration either way, so the worst a wrong one can do is be refused.
+   */
+  const defendable = view.seats
+    .filter((s) => s.index !== view.seat && !s.eliminated)
+    .flatMap((s) => [
+      { key: `seat-${s.index}`, seat: s.index, name: s.name, planeswalker: undefined as string | undefined },
+      ...Object.values(view.cards)
+        .filter((c) => c.zone === "battlefield" && c.zoneSeat === s.index
+          && /planeswalker/i.test(c.card?.typeLine ?? ""))
+        .map((c) => ({
+          key: `walker-${c.id}`, seat: s.index, name: c.card?.name ?? "planeswalker", planeswalker: c.id,
+        })),
+    ])
   /** Who the game is waiting on, when it is exactly one person and not you. */
   const waitingSeats = (auto.awaiting?.seats ?? []).filter((s) => s !== view.seat)
   const waitingFor = waitingSeats.length === 1
@@ -193,18 +210,25 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           {defendable.length > 1 ? (
             <span className="flex flex-wrap items-center gap-1">
               <span className="text-[var(--g-text-muted)]">attacking</span>
-              {defendable.map((s) => {
-                const aimed = mode.chosen.filter((a) => a.defender === s.index).length
+              {defendable.map((option) => {
+                const aimed = mode.chosen.filter(
+                  (a) => a.defender === option.seat && a.planeswalker === option.planeswalker,
+                ).length
+                const current = mode.defender === option.seat && mode.planeswalker === option.planeswalker
                 return (
                   <Button
-                    key={s.index}
+                    key={option.key}
                     size="sm"
-                    variant={mode.defender === s.index ? "default" : "ghost"}
+                    variant={current ? "default" : "ghost"}
                     className="h-6 px-2 text-[10px]"
-                    data-testid={`attack-seat-${s.index}`}
-                    onClick={() => dispatch({ kind: "aimAttacks", seat: s.index })}
+                    data-testid={option.planeswalker === undefined
+                      ? `attack-seat-${option.seat}`
+                      : `attack-walker-${option.planeswalker}`}
+                    onClick={() => dispatch({
+                      kind: "aimAttacks", seat: option.seat, planeswalker: option.planeswalker,
+                    })}
                   >
-                    {s.name}
+                    {option.name}
                     {aimed > 0 ? ` ${aimed}` : ""}
                   </Button>
                 )

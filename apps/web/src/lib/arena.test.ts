@@ -509,6 +509,32 @@ describe("declaring attackers", () => {
     expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({ type: "auto:attack", attackers: [] })
   })
 
+  it("aims an attack at a planeswalker, and sends it with the declaration", () => {
+    // CR 506.2: the attack is still on that player — they declare the blockers — and only where
+    // the damage lands changes, which is why both travel.
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
+    mode = arenaReducer(mode, { kind: "aimAttacks", seat: 1, planeswalker: "pw1" }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack",
+      attackers: [{ attacker: "a", defender: 1, planeswalker: "pw1" }],
+    })
+  })
+
+  it("moves an attacker from the player to their planeswalker on a second tap", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareAttackers", defender: 1 }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    mode = arenaReducer(mode, { kind: "aimAttacks", seat: 1, planeswalker: "pw1" }).mode
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:attack",
+      attackers: [{ attacker: "a", defender: 1, planeswalker: "pw1" }],
+    })
+    // And tapping it again with nothing re-aimed takes it out, as it always did.
+    mode = arenaReducer(mode, { kind: "toggleAttacker", card: "a" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({ type: "auto:attack", attackers: [] })
+  })
+
   it("ignores an aim outside a declaration", () => {
     expect(arenaReducer(IDLE, { kind: "aimAttacks", seat: 2 })).toEqual({ mode: IDLE, action: null })
   })

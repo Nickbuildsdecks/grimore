@@ -22,7 +22,7 @@
  * which kills something else) comes out right.
  */
 import {
-  characteristicsOf, expireEffects, hasSubtype, type ContinuousEffect,
+  characteristicsOf, expireEffects, hasSubtype, hasType, type ContinuousEffect,
 } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance, withZones } from './cardActions.js';
@@ -563,6 +563,17 @@ export function stateBasedActions(state: GameState): GameState {
             next = removeEffectsFrom(withInstance(next, inst.id, { attachedTo: null }), inst.id);
             changed = true;
           }
+        }
+
+        // CR 704.5i: a planeswalker with no loyalty counters on it goes to its owner's
+        // graveyard. Checked before the creature rules, because a planeswalker is not a creature
+        // and would otherwise never be looked at again after it entered.
+        if (hasType(ch.typeLine, 'planeswalker')) {
+          if ((inst.counters['loyalty'] ?? 0) <= 0) {
+            next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+            changed = true;
+          }
+          continue;
         }
 
         if (!ch.isCreature) continue;

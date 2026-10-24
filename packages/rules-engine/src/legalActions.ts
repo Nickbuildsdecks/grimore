@@ -332,6 +332,18 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
     for (let i = 0; i < abilities.length; i++) {
       const ability = abilities[i]!;
       if (ability.sorcerySpeed && !sorcerySpeed) continue;
+      /*
+        A loyalty ability: sorcery speed, one per planeswalker per turn (CR 606.3), and a minus
+        that cannot be paid for is not an option at all. All three are implied by the cost being
+        a loyalty cost — every loyalty ability in the game has them — so a script says `-3` and
+        gets the rules with it.
+      */
+      if (ability.cost.loyalty !== undefined) {
+        if (!sorcerySpeed) continue;
+        if (inst.loyaltyUsedTurn === state.turn) continue;
+        const loyalty = inst.counters['loyalty'] ?? 0;
+        if (loyalty + ability.cost.loyalty < 0) continue;
+      }
       if (ability.cost.tap) {
         if (inst.tapped) continue;
         if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;

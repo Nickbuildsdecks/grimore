@@ -424,6 +424,16 @@ const LOXODON_WARHAMMER: CardDef = {
   colors: [],
 };
 
+const GARRUK_WILDSPEAKER: CardDef = {
+  name: 'Garruk Wildspeaker',
+  typeLine: 'Legendary Planeswalker — Garruk',
+  manaCost: '{2}{G}{G}',
+  cmc: 4,
+  loyalty: '3',
+  oracleText: '+1: Untap two target lands.\n−1: Create a 3/3 green Beast creature token.\n−4: Creatures you control get +3/+3 and gain trample until end of turn.',
+  colors: ['G'],
+};
+
 const SECURE_THE_WASTES: CardDef = {
   name: 'Secure the Wastes',
   typeLine: 'Instant',
@@ -662,6 +672,16 @@ const OMENSPEAKER: CardDef = {
   power: '1',
   toughness: '3',
   oracleText: 'When Omenspeaker enters the battlefield, scry 2.',
+  colors: ['U'],
+};
+
+const JACE_BELEREN: CardDef = {
+  name: 'Jace Beleren',
+  typeLine: 'Legendary Planeswalker — Jace',
+  manaCost: '{1}{U}{U}',
+  cmc: 3,
+  loyalty: '3',
+  oracleText: '+2: Each player draws a card.\n−1: You draw a card.\n−10: Target player mills twenty cards.',
   colors: ['U'],
 };
 
@@ -957,7 +977,8 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: PLAINS, count: 9 },
     { card: SELESNYA_GUILDGATE, count: 2 },
     { card: LLANOWAR_ELVES, count: 4 },
-    { card: RAMPANT_GROWTH, count: 4 },
+    { card: RAMPANT_GROWTH, count: 3 },
+    { card: GARRUK_WILDSPEAKER, count: 1 },
     { card: SOUL_WARDEN, count: 2 },
     { card: DOOMED_TRAVELER, count: 3 },
     // A plain 2/2 with no text, kept at one copy on purpose: `testkit.ts` builds its boards by
@@ -991,7 +1012,8 @@ export const TIDAL_MIND: DeckSpec = {
     { card: COUNTERSPELL, count: 3 },
     { card: NEGATE, count: 2 },
     { card: DOOM_BLADE, count: 2 },
-    { card: PREORDAIN, count: 3 },
+    { card: PREORDAIN, count: 2 },
+    { card: JACE_BELEREN, count: 1 },
     { card: OMENSPEAKER, count: 2 },
     { card: PHYREXIAN_ARENA, count: 2 },
     { card: DIVINATION, count: 1 },

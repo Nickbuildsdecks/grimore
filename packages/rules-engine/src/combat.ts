@@ -15,7 +15,7 @@ import { characteristicsOf, type Characteristics } from './characteristics.js';
 import { listAt } from './cardActions.js';
 import { dealDamage, gainLife } from './effects.js';
 import { zoneKey, type CardInstance } from './cards.js';
-import type { CombatAttack, CombatState } from './turnTypes.js';
+import type { CombatAttack, CombatState, Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 export interface CombatIssue {
@@ -114,6 +114,22 @@ const dealsInStep = (ch: Characteristics, firstStrike: boolean): boolean =>
  * An attacker that was blocked but whose blockers have all gone deals no damage: it is still
  * "blocked", which is the rule that makes a chump block work even if the chump dies first.
  */
+/**
+ * What an unblocked attack hits: the planeswalker it was aimed at, or the player.
+ *
+ * The planeswalker has to still be there — it can be killed, bounced or stolen between the
+ * declaration and the damage step, and CR 506.4 says an attack whose planeswalker has gone deals
+ * no combat damage at all rather than falling through to its controller.
+ */
+function defenderTarget(state: GameState, attack: CombatAttack): Target {
+  if (attack.planeswalker === undefined) return { kind: 'player', seat: attack.defender };
+  const walker = state.instances[attack.planeswalker];
+  if (walker === undefined || walker.zone !== 'battlefield' || walker.zoneSeat !== attack.defender) {
+    return { kind: 'card', id: '' };
+  }
+  return { kind: 'card', id: attack.planeswalker };
+}
+
 export function dealCombatDamage(state: GameState, firstStrike: boolean): GameState {
   let next = state;
   for (const attack of next.combat.attacks) {
@@ -127,7 +143,7 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
 
       if (attack.blockers.length === 0) {
         // `combatFrom` is what makes commander damage accumulate; see `dealDamage`.
-        next = dealDamage(next, { kind: 'player', seat: attack.defender }, attacker.ch.power, {
+        next = dealDamage(next, defenderTarget(next, attack), attacker.ch.power, {
           deathtouch, lifelink, controller, combatFrom: attack.attacker,
         });
       } else {
@@ -144,8 +160,9 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
         }
         if (remaining > 0 && attacker.ch.keywords.has('trample')) {
           // Trample damage to a player is still combat damage from the attacker, so a trampling
-          // commander counts towards twenty-one just as an unblocked one does.
-          next = dealDamage(next, { kind: 'player', seat: attack.defender }, remaining, {
+          // commander counts towards twenty-one just as an unblocked one does. Trampling over a
+          // blocker in front of a planeswalker hits the planeswalker, for the same reason.
+          next = dealDamage(next, defenderTarget(next, attack), remaining, {
             deathtouch, lifelink, controller, combatFrom: attack.attacker,
           });
         }

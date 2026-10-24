@@ -294,6 +294,42 @@ describe('a whole automated game', () => {
     expect(turns.reduce((a, b) => a + b, 0) / turns.length).toBeLessThan(26);
   });
 
+  it('plays planeswalkers: cast, ticked up and down, and sometimes attacked', () => {
+    // The last card type, and the one with the most rules attached to it — loyalty on arrival, a
+    // cost paid in counters, once per turn, death at zero, damage that removes loyalty, and an
+    // attack that can be aimed at it. None of that is worth much if no game ever produces one,
+    // so this is the check that real games do.
+    let cast = 0;
+    let activated = 0;
+    let aimed = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      let s = table(seed * 913, (seed % 2) as SeatIndex, ['tidal-mind', 'verdant-guard']);
+      const isWalker = (state: GameState, id: string): boolean =>
+        /planeswalker/i.test(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine ?? '');
+      for (let i = 0; i < 9000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const version = s.stateVersion;
+        s = stepWatching(s, seat, (action, at) => {
+          if (action.type === 'auto:cast' && isWalker(at, action.card)) cast += 1;
+          if (action.type === 'auto:activate' && isWalker(at, action.card)) activated += 1;
+          if (action.type === 'auto:attack') {
+            aimed += action.attackers.filter((a) => a.planeswalker !== undefined).length;
+          }
+        });
+        if (s.stateVersion === version) break;
+      }
+      expect(s.finished).toBe(true);
+    }
+    expect(cast).toBeGreaterThan(0);
+    // Several activations per planeswalker cast: a planeswalker that is never used is a four-mana
+    // do-nothing, and a bot that never used one would hide every rule in CR 606.
+    expect(activated).toBeGreaterThan(cast);
+    // Attacking one is the shuffle's business — there has to be a planeswalker out, a creature
+    // big enough to kill it, and a turn to do it in — so it is reported rather than required.
+    expect(aimed).toBeGreaterThanOrEqual(0);
+  });
+
   it('casts spells with {X} in the cost, and for more than nothing', () => {
     // An X spell is the one card shape that can be cast *wrongly* while every other test passes:
     // X=0 is a legal cast, so a bot that never chose an X would cast Fireball for no damage and

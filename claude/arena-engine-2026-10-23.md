@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 88 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 90 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**406 tests in the rules engine, 104 in the web app, 1,005 across the workspace.**
+**414 tests in the rules engine, 106 in the web app, 1,015 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -220,9 +220,9 @@ bug rather than a board.
 - **A stronger bot.** It attacks with everything, blocks when the trade is good, and casts the
   biggest thing it can afford. A better opponent needs a search, and a search needs a position
   evaluator, and neither was worth writing before the rules underneath them were trustworthy.
-- **Multiplayer combat nuance.** Pods work — declarations are per defender and a seat can only block
-  what attacks it — but there is no attacking a planeswalker and no "each opponent" combat maths
-  beyond what the scripts do.
+- **Multiplayer combat nuance.** Pods work — declarations are per defender, a seat can only block
+  what attacks it, and an attack can be aimed at a planeswalker — but there is no "each opponent"
+  combat maths beyond what the scripts do, and no goading or forced attacks.
 - **Anything touching production.** No VM, no DNS, no deploy. Everything here runs on localhost and
   on the branch.
 
@@ -230,7 +230,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Twenty-two things, in the order they mattered.
+Twenty-three things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -621,6 +621,29 @@ appends them — capped at six with the overflow counted, so a sweep is a line r
 paragraph. Every card written from here on gets it for nothing. Combat names names, because
 "attacks with 2 creature(s)" is true and useless. And the client drops a pass that did nothing,
 because a hundred lines of "Friend passes" is how a player loses the four that mattered.
+
+**Planeswalkers, which needed rules rather than vocabulary.** Every other addition this session
+was a verb — scry, equip, regenerate. A planeswalker is a set of rules: it enters with loyalty,
+its abilities are paid for in counters, one per turn, it dies at zero, damage removes loyalty
+instead of being marked, and it can be attacked instead of its controller. All of it in one go,
+because abilities without attacking would have been exactly the state `{X}` was in — present and
+not connected — and worse, since a planeswalker nobody can attack is not an approximation but a
+different card.
+
+A script writes `{ loyalty: -1 }` and gets sorcery speed, once per turn and "not without the
+loyalty to pay for it", because every loyalty ability in the game has all three. The cost is paid
+as the ability is activated (CR 606.2), so a planeswalker that goes to zero on its own minus is
+already dying while the ability it paid for waits on the stack — and the ability still resolves.
+
+Two bugs of the same shape came out of it, both about a new field having to be carried by
+everything that copies a card: the printed loyalty was applied in `settle`'s arrival drain, so a
+planeswalker put onto a *manual* table had none and was swept away the moment the engine took over
+(it belongs in `relocate`, the third rule this session to end up there after `dies` and `etb`);
+and `normaliseDef` was dropping `loyalty` entirely, because it lists the fields it keeps.
+
+Jace Beleren and Garruk Wildspeaker, with all three printed abilities each and nothing simplified
+to make it fit. Garruk's "+1: untap two target lands" found the last one: the bot sent a single
+target for a spec that wanted two, because no card before it had `count: 2`.
 
 ## Next
 

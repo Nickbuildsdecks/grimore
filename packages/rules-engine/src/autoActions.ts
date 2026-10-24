@@ -11,7 +11,7 @@
  */
 import { zoneKey } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
-import { characteristicsOf } from './characteristics.js';
+import { characteristicsOf, hasType } from './characteristics.js';
 import {
   advanceStep, aliveSeats, atSorcerySpeed, bottomOwed, canAttack, canBlock, checkTargets,
   endTurnCleanup, legalAttackers, legalBlockers, menaceSatisfied, payFrom, pendingDeclaration,
@@ -214,6 +214,21 @@ function activate(
   if (ability.sorcerySpeed && !atSorcerySpeed(state, action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that ability can only be activated in your main phase');
   }
+  // A loyalty ability carries three restrictions with it, all from CR 606: sorcery speed, one
+  // per planeswalker per turn, and a minus you can actually pay for. Checked here as well as in
+  // `legalActions` because an action can arrive from anywhere, and the third one is the rule that
+  // decides whether a planeswalker survives its own ability.
+  if (ability.cost.loyalty !== undefined) {
+    if (!atSorcerySpeed(state, action.by)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'a loyalty ability is a sorcery-speed action');
+    }
+    if (inst.loyaltyUsedTurn === state.turn) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} has already used a loyalty ability this turn`);
+    }
+    if ((inst.counters['loyalty'] ?? 0) + ability.cost.loyalty < 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} does not have the loyalty for that`);
+    }
+  }
   if (ability.cost.tap) {
     if (inst.tapped) throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} is already tapped`);
     // A creature's {T} ability needs it to have been there since the start of the turn, same as
@@ -249,6 +264,17 @@ function activate(
   const paid = payFrom(state, action.by, ability.cost.mana, 0);
   let next = paid.state;
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
+  if (ability.cost.loyalty !== undefined) {
+    // Paid as the ability is activated (CR 606.2), so the counters move before it is on the
+    // stack: a planeswalker that goes to zero this way is already dying while its own ability
+    // waits to resolve, and the ability still resolves — which is the rule, and the reason the
+    // cost is not paid on resolution.
+    const current = requireInstance(next, inst.id).counters['loyalty'] ?? 0;
+    next = withInstance(next, inst.id, {
+      counters: { ...requireInstance(next, inst.id).counters, loyalty: current + ability.cost.loyalty },
+      loyaltyUsedTurn: state.turn,
+    });
+  }
   if (sacrificed !== null) {
     const victim = requireInstance(next, sacrificed);
     const name = characteristicsOf(next, victim).name;
@@ -360,7 +386,20 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     if (issue !== null) throw new EngineError('RULE_NOT_APPLICABLE', issue.reason);
     assertSeatIndex(state, entry.defender, 'defender');
     if (entry.defender === action.by) throw new EngineError('RULE_NOT_APPLICABLE', 'you cannot attack yourself');
-    attacks.push({ attacker: entry.attacker, defender: entry.defender, blockers: [] });
+    // A planeswalker is attacked instead of its controller (CR 506.2), so the seat still says
+    // who declares blockers and the planeswalker says where the damage goes. It has to be a
+    // planeswalker, and it has to be *theirs* — attacking your own is not a thing, and nor is
+    // naming one that is not on the battlefield.
+    if (entry.planeswalker !== undefined) {
+      const walker = state.instances[entry.planeswalker];
+      const ok = walker !== undefined && walker.zone === 'battlefield' && walker.zoneSeat === entry.defender
+        && hasType(characteristicsOf(state, walker).typeLine, 'planeswalker');
+      if (!ok) throw new EngineError('RULE_NOT_APPLICABLE', 'that is not a planeswalker you can attack');
+    }
+    attacks.push({
+      attacker: entry.attacker, defender: entry.defender, blockers: [],
+      ...(entry.planeswalker === undefined ? {} : { planeswalker: entry.planeswalker }),
+    });
   }
 
   let next: GameState = {
@@ -377,7 +416,9 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     message: attacks.length === 0
       ? `${seatName(state, action.by)} attacks with nothing`
       : `${seatName(state, action.by)} attacks: ${attacks
-          .map((a) => `${cardName(state, a.attacker)} at ${seatName(state, a.defender)}`)
+          .map((a) => `${cardName(state, a.attacker)} at ${a.planeswalker === undefined
+            ? seatName(state, a.defender)
+            : cardName(state, a.planeswalker)}`)
           .join(', ')}`,
     data: { attackers: attacks.map((a) => a.attacker) },
   };

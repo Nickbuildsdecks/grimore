@@ -50,7 +50,7 @@ export type ArenaMode =
    * because in a pod each creature may attack a different player — and `defender` here is only
    * which player the *next* creature tapped will be sent at.
    */
-  | { kind: "attackers"; chosen: Attack[]; defender: SeatIndex }
+  | { kind: "attackers"; chosen: Attack[]; defender: SeatIndex; planeswalker?: string }
   | { kind: "blockers"; chosen: Block[]; holding: string | null }
 
 export interface Block {
@@ -61,6 +61,8 @@ export interface Block {
 export interface Attack {
   attacker: string
   defender: SeatIndex
+  /** A planeswalker that player controls, attacked instead of them (CR 506.2). */
+  planeswalker?: string
 }
 
 /** The engine's mid-resolution question, exactly as `legalActions` reports it. */
@@ -82,8 +84,8 @@ export type ArenaEvent =
   | { kind: "confirm" }
   | { kind: "declareAttackers"; defender: SeatIndex }
   | { kind: "toggleAttacker"; card: string }
-  /** Points the creatures tapped from now on at a different player. */
-  | { kind: "aimAttacks"; seat: SeatIndex }
+  /** Points the creatures tapped from now on at a different player, or at a planeswalker. */
+  | { kind: "aimAttacks"; seat: SeatIndex; planeswalker?: string }
   | { kind: "declareBlockers" }
   | { kind: "holdBlocker"; card: string }
   | { kind: "assignBlock"; attacker: string }
@@ -299,20 +301,26 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
     case "toggleAttacker": {
       if (mode.kind !== "attackers") return { mode, action: null }
       const already = mode.chosen.find((a) => a.attacker === event.card)
+      const aim = { defender: mode.defender, ...(mode.planeswalker === undefined ? {} : { planeswalker: mode.planeswalker }) }
+      const sameAim = already !== undefined
+        && already.defender === mode.defender && already.planeswalker === mode.planeswalker
       // Tapping a creature that is already attacking somebody *else* re-points it, rather than
       // dropping it: having changed who you are aiming at, a second tap plainly means "this one
       // too", and making the player untap and retap to move one attacker is a trap.
       const chosen = already === undefined
-        ? [...mode.chosen, { attacker: event.card, defender: mode.defender }]
-        : already.defender === mode.defender
+        ? [...mode.chosen, { attacker: event.card, ...aim }]
+        : sameAim
           ? mode.chosen.filter((a) => a.attacker !== event.card)
-          : mode.chosen.map((a) => (a.attacker === event.card ? { ...a, defender: mode.defender } : a))
+          : mode.chosen.map((a) => (a.attacker === event.card ? { attacker: a.attacker, ...aim } : a))
       return { mode: { ...mode, chosen }, action: null }
     }
 
     case "aimAttacks": {
       if (mode.kind !== "attackers") return { mode, action: null }
-      return { mode: { ...mode, defender: event.seat }, action: null }
+      return {
+        mode: { ...mode, defender: event.seat, planeswalker: event.planeswalker },
+        action: null,
+      }
     }
 
     case "declareBlockers":
@@ -404,11 +412,14 @@ export function blockersOf(view: GameView, attacker: string): string[] {
 }
 
 /** Who is attacking, with who they are attacking, for the combat banner. */
-export function attackSummary(view: GameView): { attacker: string; defender: number; blockers: string[] }[] {
+export function attackSummary(
+  view: GameView,
+): { attacker: string; defender: number; blockers: string[]; planeswalker?: string }[] {
   return (view.automation?.combat.attacks ?? []).map((a) => ({
     attacker: a.attacker,
     defender: a.defender,
     blockers: [...a.blockers],
+    ...(a.planeswalker === undefined ? {} : { planeswalker: a.planeswalker }),
   }))
 }
 
@@ -462,8 +473,9 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
   */
   for (const attack of view.automation?.combat.attacks ?? []) {
     if (attack.attacker !== card.id) continue;
+    const walker = attack.planeswalker === undefined ? undefined : view.cards[attack.planeswalker]
     const at = view.seats.find((s) => s.index === attack.defender)
-    out.push(`attacking ${at?.name ?? `seat ${attack.defender}`}`)
+    out.push(`attacking ${walker?.card?.name ?? at?.name ?? `seat ${attack.defender}`}`)
     if (attack.blockers.length > 0) out.push(`blocked by ${attack.blockers.length}`)
   }
   if (card.cantAttack === true && card.cantBlock === true) out.push("can't fight")

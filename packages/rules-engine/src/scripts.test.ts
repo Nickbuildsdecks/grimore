@@ -1952,6 +1952,129 @@ describe('the log, when a lot happens at once', () => {
   });
 });
 
+describe('planeswalkers', () => {
+  /** A seat with the named planeswalker on the battlefield and its lands tapped for mana. */
+  const withWalker = (seat: SeatIndex, deck: string, walker: string, basic: string, lands: number,
+    extra: readonly string[] = []) => {
+    let s = advanceTo(arena({
+      decks: { [seat]: deck },
+      battlefield: { [seat]: [...Array.from({ length: lands }, () => basic), walker, ...extra] },
+      turn: 3, firstSeat: seat,
+    }), 'precombat-main');
+    for (const id of [...ids(s, seat, 'battlefield')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== basic) continue;
+      s = apply(s, { type: 'auto:activate', by: seat, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  it('arrives with its printed loyalty, whoever put it there', () => {
+    const s = withWalker(1, 'tidal-mind', 'Jace Beleren', 'Island', 2);
+    const jace = find(s, 1, 'battlefield', 'Jace Beleren');
+    expect(s.instances[jace]!.counters['loyalty']).toBe(3);
+  });
+
+  it('ticks up, and will not use a second ability in the same turn (CR 606.3)', () => {
+    let s = withWalker(1, 'tidal-mind', 'Jace Beleren', 'Island', 2);
+    const jace = find(s, 1, 'battlefield', 'Jace Beleren');
+    const before = ids(s, 1, 'hand').length;
+    s = passBoth(apply(s, { type: 'auto:activate', by: 1, card: jace, abilityIndex: 0 }));
+    expect(s.instances[jace]!.counters['loyalty']).toBe(5);
+    // Each player drew, including the opponent — which is the card rather than a better draw spell.
+    expect(ids(s, 1, 'hand').length).toBe(before + 1);
+    expect(ids(s, 0, 'hand').length).toBe(1);
+
+    expect(refusal(s, { type: 'auto:activate', by: 1, card: jace, abilityIndex: 1 }))
+      .toContain('already used a loyalty ability');
+    expect(legalActions(s, 1).plays.filter((p) => p.card === jace)).toEqual([]);
+
+    // Next turn it may act again.
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(legalActions(s, 1).plays.filter((p) => p.card === jace).length).toBeGreaterThan(0);
+  });
+
+  it('will not offer a minus it cannot pay for', () => {
+    const s = withWalker(1, 'tidal-mind', 'Jace Beleren', 'Island', 2);
+    const jace = find(s, 1, 'battlefield', 'Jace Beleren');
+    // Loyalty 3: the +2 and the −1 are on offer, the −10 is not.
+    expect(legalActions(s, 1).plays.filter((p) => p.card === jace).map((p) => p.abilityIndex))
+      .toEqual([0, 1]);
+    expect(refusal(s, {
+      type: 'auto:activate', by: 1, card: jace, abilityIndex: 2, targets: [{ kind: 'player', seat: 0 }],
+    })).toContain('does not have the loyalty');
+  });
+
+  it('dies when its loyalty runs out, using its own ability', () => {
+    let s = withWalker(0, 'verdant-guard', 'Garruk Wildspeaker', 'Forest', 4);
+    const garruk = find(s, 0, 'battlefield', 'Garruk Wildspeaker');
+    // Three loyalty, and the −1 three times over three turns.
+    for (let i = 0; i < 3; i++) {
+      s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: garruk, abilityIndex: 1 }));
+      if (i < 2) s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    }
+    expect(countOf(s, 0, 'battlefield', 'Beast')).toBe(3);
+    // Zero loyalty is a state-based action, not something the card says (CR 704.5i).
+    expect(s.instances[garruk]!.zone).toBe('graveyard');
+  });
+
+  it('takes damage as lost loyalty, and a burn spell may be pointed at it', () => {
+    // "Any target" is a creature, a player or a planeswalker (CR 115.4), and damage to a
+    // planeswalker removes loyalty rather than being marked (CR 120.3c) — which matters, because
+    // marked damage wears off and a planeswalker that healed every turn would be unkillable.
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: { 0: ['Lightning Bolt'] },
+      battlefield: { 0: ['Mountain'], 1: ['Jace Beleren'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    const jace = find(s, 1, 'battlefield', 'Jace Beleren');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: jace }],
+    }));
+    expect(s.instances[jace]!.zone).toBe('graveyard');
+  });
+
+  it('can be attacked instead of its controller (CR 506.2)', () => {
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      battlefield: { 0: ['Hill Giant'], 1: ['Jace Beleren'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    const jace = find(s, 1, 'battlefield', 'Jace Beleren');
+    s = apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: giant, defender: 1, planeswalker: jace }],
+    });
+    // The log says what is being attacked, which with a planeswalker on the table is a real
+    // question rather than a formality.
+    expect(s.log[s.log.length - 1]!.message).toContain('Hill Giant at Jace Beleren');
+
+    const lifeBefore = life(s, 1);
+    for (let i = 0; i < 8 && s.instances[jace]!.zone === 'battlefield'; i++) s = passBoth(s);
+    // Three damage to a three-loyalty planeswalker, and the player took none of it.
+    expect(s.instances[jace]!.zone).toBe('graveyard');
+    expect(life(s, 1)).toBe(lifeBefore);
+  });
+
+  it('refuses an attack on a planeswalker that is not that player’s', () => {
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      battlefield: { 0: ['Hill Giant'], 1: ['Jace Beleren'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    expect(refusal(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: giant, defender: 1, planeswalker: giant }],
+    })).toContain('not a planeswalker you can attack');
+  });
+});
+
 describe('the fifth deck, which is built out of what the engine learned', () => {
   /** Forge Alliance on seat 0, lands down and tapped, in its main phase. */
   const forge = (hand: readonly string[], lands: readonly string[], board: readonly string[] = []) => {

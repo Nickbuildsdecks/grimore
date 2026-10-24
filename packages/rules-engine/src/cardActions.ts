@@ -164,6 +164,20 @@ export function relocate(
   }
 
   const arriving = toZone === 'battlefield' && (inst.zone !== 'battlefield' || inst.zoneSeat !== toSeat);
+  /*
+    A planeswalker enters with its printed loyalty (CR 306.5b).
+
+    Here rather than in `settle`, for the reason `dies` and `etb` are here: this is the one place
+    a card arrives, so there is no path that can forget. The first version put it in the engine's
+    arrival drain and a planeswalker placed on a *manual* table had none — which the engine then
+    read as zero loyalty and swept into the graveyard the moment it took over. Found by a test
+    whose board kept coming up empty.
+
+    From the card rather than from a script, because the number is printed on the card.
+  */
+  const printedLoyalty = Number.parseInt(next.cardDefs[inst.defKey]?.loyalty ?? '', 10);
+  const entersWithLoyalty = toZone === 'battlefield' && inst.zone !== 'battlefield'
+    && Number.isFinite(printedLoyalty);
   next = withInstance(next, inst.id, {
     zone: toZone,
     zoneSeat: toSeat,
@@ -173,7 +187,9 @@ export function relocate(
     // Only the battlefield has an orientation, and only a permanent can carry counters that
     // belong to a physical object. Everything resets on the way out.
     tapped: toZone === 'battlefield' ? inst.tapped : false,
-    counters: toZone === 'battlefield' ? inst.counters : {},
+    counters: toZone !== 'battlefield'
+      ? {}
+      : entersWithLoyalty ? { ...inst.counters, loyalty: printedLoyalty } : inst.counters,
     attachedTo: toZone === 'battlefield' ? inst.attachedTo : null,
     faceDown: toZone === 'battlefield' || toZone === 'exile' ? inst.faceDown : false,
     revealed: false,
@@ -238,6 +254,10 @@ export function normaliseDef(card: CardDef): CardDef {
     colors: Array.isArray(card.colors) ? [...card.colors] : [],
     ...(card.power === undefined ? {} : { power: card.power }),
     ...(card.toughness === undefined ? {} : { toughness: card.toughness }),
+    // Printed loyalty, which is to a planeswalker what toughness is to a creature — and was
+    // dropped here at first, so every planeswalker entered the battlefield with no loyalty and
+    // was swept straight into the graveyard by the state-based actions.
+    ...(card.loyalty === undefined ? {} : { loyalty: card.loyalty }),
     ...(card.imageUri === undefined ? {} : { imageUri: card.imageUri }),
     ...(card.scryfallId === undefined ? {} : { scryfallId: card.scryfallId }),
   };

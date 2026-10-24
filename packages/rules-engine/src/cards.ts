@@ -51,6 +51,8 @@ export interface CardDef {
   /** Printed power/toughness as strings, because `*` and `1+*` are legal values. */
   readonly power?: string;
   readonly toughness?: string;
+  /** Printed starting loyalty, for a planeswalker. A string for the same reason P/T are. */
+  readonly loyalty?: string;
   readonly imageUri?: string;
   readonly scryfallId?: string;
 }
@@ -93,6 +95,14 @@ export interface CardInstance {
    * there since the start of the current turn.
    */
   readonly enteredTurn: number;
+  /**
+   * The turn a loyalty ability of this planeswalker was activated, or absent for never.
+   *
+   * One loyalty ability per planeswalker per turn (CR 606.3), and "per turn" is the whole
+   * restriction — it is not a tap, and the ability is not used up, so there is nothing else on
+   * the instance that could record it.
+   */
+  readonly loyaltyUsedTurn?: number;
 }
 
 /** Key into `GameState.zones`. The stack is shared, so it is not seat-scoped. */

@@ -72,10 +72,16 @@ export function CombatArrows({ view }: { view: GameView }) {
     const found: Arrow[] = []
     for (const attack of attacks) {
       const from = document.querySelector(`[data-testid="card-${attack.attacker}"]`)
-      const to = document.querySelector(`[data-testid="seat-${attack.defender}"]`)
+      // An attack aimed at a planeswalker points at the card, not at its controller's row: that
+      // is the whole difference the player needs to see.
+      const to = attack.planeswalker === undefined
+        ? document.querySelector(`[data-testid="seat-${attack.defender}"]`)
+        : document.querySelector(`[data-testid="card-${attack.planeswalker}"]`)
       if (from !== null && to !== null) {
         const start = centreOf(from, box)
-        const end = edgeOf(to, box, start.y)
+        const end = attack.planeswalker === undefined
+          ? edgeOf(to, box, start.y)
+          : centreOf(to, box)
         found.push({ key: `a-${attack.attacker}`, x1: start.x, y1: start.y, x2: end.x, y2: end.y, kind: "attack" })
       }
       for (const blocker of attack.blockers) {

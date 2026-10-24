@@ -13,7 +13,9 @@
  * effect ran, and arrives in `ctx.decisions` the same way. An effect that picked for itself would
  * be a tutor that chooses your card for you, which is worse than one you resolve by hand.
  */
-import { characteristicsOf, type ContinuousEffect, type EffectDuration, type Keyword } from './characteristics.js';
+import {
+  characteristicsOf, hasType, type ContinuousEffect, type EffectDuration, type Keyword,
+} from './characteristics.js';
 import { defKeyFor, zoneKey, type CardDef } from './cards.js';
 import {
   drawFromLibrary, listAt, normaliseDef, relocate, requireInstance, withInstance, withZones,
@@ -131,6 +133,18 @@ export function dealDamage(
   } else {
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') return next;
+    /*
+      Damage to a planeswalker removes that many loyalty counters (CR 120.3c) rather than being
+      marked on it. Not a detail: marked damage wears off at end of turn, and a planeswalker that
+      healed every turn would be unkillable by anything but a removal spell.
+    */
+    if (hasType(characteristicsOf(next, inst).typeLine, 'planeswalker')) {
+      const loyalty = inst.counters['loyalty'] ?? 0;
+      const counters = { ...inst.counters, loyalty: Math.max(0, loyalty - amount) };
+      next = withInstance(next, inst.id, { counters });
+      if (opts.lifelink && opts.controller !== undefined) next = gainLife(next, opts.controller, amount);
+      return next;
+    }
     next = withInstance(next, inst.id, {
       damage: clampValue(inst.damage + amount),
       // Any damage from a deathtouch source destroys the creature (CR 702.2b). Marking it keeps
