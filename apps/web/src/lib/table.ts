@@ -97,7 +97,11 @@ export interface UseTable extends TableState {
   joinTable: (input: { code: string; name: string }) => Promise<void>
   leaveTable: () => Promise<void>
   setReady: (ready: boolean) => Promise<void>
-  send: (action: TableAction) => Promise<void>
+  /**
+   * Sends an action. `basedOn` is the `stateVersion` of the view it was *composed from*, which is
+   * what tells a stale action apart from an illegal one — see the refusal handling in `send`.
+   */
+  send: (action: TableAction, basedOn?: number) => Promise<void>
   say: (text: string) => Promise<void>
   clearError: () => void
 }
@@ -293,7 +297,7 @@ export function useTable(playerName: string): UseTable {
   )
 
   const send = useCallback<UseTable["send"]>(
-    (action) => {
+    (action, basedOn) => {
       const run = async (): Promise<void> => {
         // The version this action was composed against, so a refusal can be told apart from a
         // disagreement. See the `illegal_action` case below.
@@ -337,7 +341,22 @@ export function useTable(playerName: string): UseTable {
          * engine, and still shows — that is the one worth seeing, and `playout.test.ts` asserts
          * deterministically that it should never happen.
          */
-        if (res.error.code === "illegal_action" && versionRef.current > sentAt) return
+        /*
+          The version the action was *composed against*, which is not always the one it was sent
+          at.
+
+          A play is built from the view React last rendered. By the time the player's finger lands
+          the table may have moved on — in a pod with three server seats it moves constantly — and
+          the action then goes out stamped with the *newest* version, because that is what the
+          store would accept. So `sentAt` says "current" while the play itself is a version or two
+          stale, and the guard below never fired: the player got "Firebrand Archer can only be
+          cast in your main phase with an empty stack" for tapping a button the table was showing
+          them. Caught by the solo pod suite, which taps as fast as the server plays.
+
+          `basedOn` is the rendered view's version, so "the table has moved since this play was
+          offered" is a question that can actually be asked.
+        */
+        if (res.error.code === "illegal_action" && versionRef.current > (basedOn ?? sentAt)) return
         /**
          * Nor is an action that arrived after the game ended.
          *

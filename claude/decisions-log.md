@@ -1867,3 +1867,46 @@ and the reason both halves are tested: "fewest taps" alone would pay a one-drop 
 Nothing about this is visible in a win rate; it is visible as a land still untapped when the
 opponent casts something. That is the kind of thing a person notices in the first ten minutes of
 playing and would not report as a bug.
+
+## D57 — Two numbers that say who the threat is
+
+Everything on a seat strip said how the game had gone — life, hand, graveyard, poison, commander
+damage — and nothing said what was about to happen. In a duel that is survivable: there is one
+board opposite you and you are already looking at it. In a four-player pod the boards are in three
+columns and the question "can they kill me, and can they stop me if I go at them instead" takes
+twenty seconds of counting, every turn, which is exactly the kind of work a table is supposed to do
+for you.
+
+**Decided: total power, and how much of it is untapped.** Not a threat score, not a ranking — two
+facts, in the order a player needs them. Power is what can kill you on their turn; untapped is what
+can stop you on yours. A single number would have hidden the difference, and a computed "who is
+winning" would be the table telling players what to think about each other, which in a pod is the
+players' own business.
+
+**Read from the view, not recomputed.** `boardRead` walks the same `zones` the board is drawn from
+and uses the view's `power`, which is the engine's computed value — so a 2/2 under a Glorious
+Anthem counts as three, and the number on the strip cannot disagree with the number on the card.
+It is shown only on an automated table: on a tabletop nothing is computing anybody's power, and a
+number there would be a guess dressed as a fact.
+
+## D58 — An action has two versions, and only one of them was being asked about
+
+The solo pod suite started failing with "Firebrand Archer can only be cast in your main phase with
+an empty stack" — a refusal on a button the table was showing the player. Not a rules bug: a play
+is composed from the view React last rendered, and by the time the click lands the table may have
+moved on. In a pod with three server seats it moves constantly.
+
+The client already had a guard for this: swallow an `illegal_action` when the table has moved since
+the action was sent, because then the player did nothing wrong. It never fired, and the reason is
+that the action was stamped with `versionRef.current` at *send* time — the newest version, because
+that is what the store will accept. So the guard compared the newest version against itself while
+the play it was judging came from a view one or two versions older.
+
+**Decided: an action carries the version of the view it was composed from.** `send(action,
+basedOn)`, with `basedOn` being what React last rendered, so "has the table moved since this play
+was offered?" is a question that can actually be asked. The stale play is dropped silently, which
+is what "the moment passed" means — a human tap that lands a version late deserves nothing
+happening, not a red banner blaming them for a button the table drew.
+
+Worth naming what found it: a suite that taps as fast as the server plays. A human would have hit
+this too, just less often, and would have reported it as "it said no for no reason".

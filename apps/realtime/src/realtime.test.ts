@@ -668,9 +668,23 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
 
       // Play it out by only ever doing what the table offers.
       const decisions: string[] = [];
+      /*
+        Why the loop stopped, for the assertion below.
+
+        This test failed once in a parallel run and passed every time it was run alone, which is
+        the least useful kind of failure: "expected false to be true" says nothing about whether
+        the game ran out of moves, stalled on a prompt this loop cannot answer, or lost priority.
+        So the loop records its own exit and the assertion prints it.
+      */
+      let stopped = 'the move cap';
+      let moves = 0;
       for (let move = 0; move < 400 && !view.finished; move++) {
+        moves = move + 1;
         const you = view.automation?.you;
-        if (you === undefined || you === null) break;
+        if (you === undefined || you === null) {
+          stopped = 'the view stopped reporting this seat';
+          break;
+        }
         // A card that stopped mid-resolution to ask comes before everything, including priority:
         // the spell is already resolving and nothing else is legal until it is answered. Without
         // this the game stops dead the first time this seat casts a tutor or a looting spell —
@@ -683,7 +697,10 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         }
         if (you.mustDiscard > 0) {
           const hand = view.zones['0:hand'] ?? [];
-          if (hand.length === 0) break;
+          if (hand.length === 0) {
+            stopped = 'a discard was owed with an empty hand';
+            break;
+          }
           view = await act({ type: 'auto:discard', card: hand[0]! });
           continue;
         }
@@ -695,12 +712,19 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
           view = await act({ type: 'auto:block', blocks: [] });
           continue;
         }
-        if (!you.hasPriority) break;
+        if (!you.hasPriority) {
+          stopped = `nobody held priority at ${view.automation?.step} on turn ${view.turn}`;
+          break;
+        }
         const land = you.plays.find((p) => p.kind === 'land');
         view = land === undefined ? await act({ type: 'auto:pass' }) : await act({ type: 'auto:playLand', card: land.card });
       }
 
-      expect(view.finished).toBe(true);
+      // Says what happened when it did not finish, rather than only that it did not.
+      expect(
+        view.finished,
+        `stopped after ${moves} moves on turn ${view.turn} at ${view.automation?.step}: ${stopped}`,
+      ).toBe(true);
       expect(view.winnerSeat).not.toBeNull();
       // The server played a real game: it has a board, a graveyard and a life total that moved.
       const theirs = view.seats[1]!;

@@ -123,12 +123,36 @@ export async function press(page, id) {
 }
 export const cardsIn = (page, zoneTestId) => page.locator(`[data-testid="${zoneTestId}"] [data-testid^="card-"]`);
 export const has = async (page, id) => (await tid(page, id).count()) > 0;
-export const text = async (page, id) => ((await tid(page, id).first().textContent()) ?? '').trim();
+/**
+ * The text of an element, or '' when it is not there.
+ *
+ * Bounded for the same reason the clicks are: Playwright waits thirty seconds for an element by
+ * default, and a read of something that has just been re-rendered away used to end a whole run
+ * with "locator.textContent: Timeout 30000ms exceeded" — on a game that was going fine. A caller
+ * that genuinely needs the text gets '' and fails its own check with its own message, which says
+ * more than a stack trace from inside the driver.
+ */
+/** The text of a locator, or '' when reading it times out. See `text`. */
+export const textOf = async (locator) => {
+  try {
+    return ((await locator.textContent({ timeout: 2000 })) ?? '').trim();
+  } catch {
+    return '';
+  }
+};
+
+export const text = async (page, id) => {
+  try {
+    return ((await tid(page, id).first().textContent({ timeout: 2000 })) ?? '').trim();
+  } catch {
+    return '';
+  }
+};
 
 export async function readNumber(page, testId, timeout = 10000) {
   const deadline = Date.now() + timeout;
   for (;;) {
-    const raw = (await tid(page, testId).first().textContent()) ?? '';
+    const raw = await text(page, testId);
     const n = Number.parseInt(raw.trim(), 10);
     if (Number.isFinite(n)) return n;
     if (Date.now() > deadline) throw new Error(`${testId} never read as a number (last: ${JSON.stringify(raw)})`);
@@ -440,7 +464,7 @@ export async function tryToPlayFromHand(page, seat) {
   const order = [...Array(count).keys()].sort(() => Math.random() - 0.5);
   for (const i of order) {
     const card = playable.nth(i);
-    const badges = (await card.textContent()) ?? '';
+    const badges = await textOf(card);
     if (!/playable/i.test(badges)) continue;
     await tap(card);
     await waitFor(page, 'play-sheet', 5000);
@@ -451,9 +475,9 @@ export async function tryToPlayFromHand(page, seat) {
       // abilities, so a driver that always took the top option would only ever exercise mode one
       // — and would look identical to a table that could not offer the others.
       const pick = options.nth(Math.floor(Math.random() * choices));
-      const name = (await pick.textContent()) ?? '';
+      const name = await textOf(pick);
       await tap(pick);
-      return `chose a play: ${name.trim().replace(/\s+/g, ' ').slice(0, 70)}`;
+      return `chose a play: ${name.replace(/\s+/g, ' ').slice(0, 70)}`;
     }
     await press(page, 'play-sheet-close');
     return null;

@@ -455,6 +455,35 @@ export function splitBattlefield(cards: readonly VisibleCard[]): {
   return { creatures, lands }
 }
 
+/**
+ * What one seat's board can do: how hard it hits, and how much of it can still block.
+ *
+ * The number a pod turns on and the one the table never showed. Life, hand size and graveyard are
+ * on every seat strip; "how much power is pointed at me, and can they defend if I go at them
+ * instead" meant counting creatures across three columns while the clock ran.
+ *
+ * `power` is the total power of their creatures and `ready` the number of those that are untapped,
+ * because those are the two different questions: the first is what can kill you on their turn, the
+ * second is what can stop you on yours. Both are read from the same view the board is drawn from,
+ * so neither can disagree with what is on screen — and `power` is the *computed* power, so a
+ * Grizzly Bears under a Glorious Anthem counts as three.
+ */
+export function boardRead(view: GameView, seat: number): { power: number; creatures: number; ready: number } {
+  let power = 0
+  let creatures = 0
+  let ready = 0
+  for (const id of view.zones[`${seat}:battlefield`] ?? []) {
+    const card = view.cards[id]
+    // The view sends `power` only for a creature, which is the engine's own answer to "is this a
+    // creature" — the same test `splitBattlefield` uses to decide which row to draw it in.
+    if (card?.power === undefined) continue
+    creatures += 1
+    power += card.power
+    if (!card.tapped) ready += 1
+  }
+  return { power, creatures, ready }
+}
+
 /** Short badges for a permanent: its current body, marked damage, and why it cannot fight. */
 export function cardBadges(view: GameView, card: VisibleCard): string[] {
   const out: string[] = []

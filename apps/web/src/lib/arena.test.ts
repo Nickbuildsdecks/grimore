@@ -7,10 +7,11 @@
  * of component state: the misclick cases are the ones that matter and they need no browser.
  */
 import { describe, it, expect } from "vitest"
-import type { GameView, LegalPlay, Target } from "@grimore/rules-engine"
+import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-engine"
 import {
-  IDLE, arenaReducer, attackSummary, blockersOf, candidatesAt, cardBadges, decisionLabel, manaPips,
-  playsForCard, primaryMove, specAt, splitBattlefield, targetKey, targetsRequired, targetsWanted,
+  IDLE, arenaReducer, attackSummary, blockersOf, boardRead, candidatesAt, cardBadges, decisionLabel,
+  manaPips, playsForCard, primaryMove, specAt, splitBattlefield, targetKey, targetsRequired,
+  targetsWanted,
   type ArenaMode, type Decision,
 } from "./arena"
 
@@ -781,6 +782,48 @@ describe("splitBattlefield", () => {
     // question that row answers is "what is not fighting".
     const { lands } = splitBattlefield([card("pacifism"), card("facedown")])
     expect(lands).toHaveLength(2)
+  })
+})
+
+describe("boardRead", () => {
+  const creature = (id: string, over: Record<string, unknown> = {}) =>
+    ({
+      id, owner: 1, zoneSeat: 1, zone: "battlefield", tapped: false, faceDown: false,
+      revealed: false, counters: {}, attachedTo: null, isToken: false, isCommander: false,
+      card: { name: "Grizzly Bears", typeLine: "Creature — Bear", manaCost: "{1}{G}", cmc: 2, power: "2", toughness: "2", oracleText: "", colors: ["G"] },
+      power: 2, toughness: 2, keywords: [], damage: 0,
+      ...over,
+    }) as VisibleCard
+
+  const land = (id: string) =>
+    ({
+      id, owner: 1, zoneSeat: 1, zone: "battlefield", tapped: false, faceDown: false,
+      revealed: false, counters: {}, attachedTo: null, isToken: false, isCommander: false,
+      card: { name: "Forest", typeLine: "Basic Land — Forest", manaCost: "", cmc: 0, oracleText: "", colors: [] },
+    }) as VisibleCard
+
+  it("adds up what a seat can hit with, and counts what can still block", () => {
+    const v = view({
+      cards: { c1: creature("c1"), c2: creature("c2", { tapped: true }), l1: land("l1") },
+      zones: { "1:battlefield": ["c1", "c2", "l1"] },
+    })
+    // Two creatures and a Forest: four power, one of them still up. The land is not a creature and
+    // does not count — the view sends `power` only for creatures, which is the engine's own answer.
+    expect(boardRead(v, 1)).toEqual({ power: 4, creatures: 2, ready: 1 })
+  })
+
+  it("counts the power the engine computed, not the one printed on the card", () => {
+    // A 2/2 under an anthem is a 3/3, and a read that trusted the card would say the board is
+    // smaller than it is — which is the one direction a threat read must never be wrong in.
+    const v = view({
+      cards: { c1: creature("c1", { power: 3, toughness: 3 }) },
+      zones: { "1:battlefield": ["c1"] },
+    })
+    expect(boardRead(v, 1).power).toBe(3)
+  })
+
+  it("reads an empty board as nothing rather than throwing", () => {
+    expect(boardRead(view({}), 2)).toEqual({ power: 0, creatures: 0, ready: 0 })
   })
 })
 

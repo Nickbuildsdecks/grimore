@@ -147,7 +147,7 @@ found by executing the code, not by reading it.
 
 ## How it is tested
 
-**448 tests in the rules engine, 111 in the web app, 1,055 across the workspace.**
+**448 tests in the rules engine, 114 in the web app, 1,058 across the workspace.**
 
 The ones that carry the most weight:
 
@@ -814,6 +814,29 @@ nothing. It now takes the largest source that still fits, and the smallest overs
 does, which is the tap a player would make. Two tests, because "fewest taps" and "do not overshoot"
 pull in opposite directions and the second is the one that keeps a Sol Ring from paying for a
 one-drop.
+
+**Reading the table.** A four-player board shows everything and says nothing: life, hand size and
+graveyard are on every seat strip, and the number a pod turn actually turns on — how much power is
+pointed at you, and how much of it can still block — was nowhere. Working it out meant counting
+creatures across three columns while the clock ran. Each strip now says `board 11 (2 up)`: the
+total *computed* power of that seat's creatures, and how many are untapped. Two numbers, because
+they answer two different questions — what can kill you on their turn, and what can stop you on
+yours — and both are read from the same view the board is drawn from, so neither can disagree with
+what is on screen.
+
+**And tapping as fast as the server plays found a real bug in the client.** The solo pod suite
+failed with "Firebrand Archer can only be cast in your main phase with an empty stack" — a refusal
+on a button the table was showing. A play is composed from the view React last rendered, but the
+action went out stamped with the *newest* version, because that is what the store accepts, so the
+one guard that tells a stale play from an illegal one ("has the table moved since this was sent?")
+could never fire. Every action now carries the version of the view it was composed from, which is
+the question that was actually being asked. In a pod with three server seats the table moves
+constantly, and a human finger is slower than a Playwright click, so this was a bug a player would
+have hit and reported as "it said no for no reason".
+
+The browser driver's text reads are bounded too, for the same reason its clicks already were: a
+read of an element that had just been re-rendered away ended a whole run with
+`locator.textContent: Timeout 30000ms exceeded` on a game that was going fine.
 
 ## Next
 

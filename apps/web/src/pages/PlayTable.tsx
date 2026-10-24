@@ -39,7 +39,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  IDLE, arenaReducer, candidatesAt, cardBadges, choiceCandidatesAt, playsForCard, splitBattlefield,
+  IDLE, arenaReducer, boardRead, candidatesAt, cardBadges, choiceCandidatesAt, playsForCard,
+  splitBattlefield,
   type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
@@ -528,6 +529,7 @@ function SeatStrip({
   onTarget,
   manualLife,
   seats,
+  board,
 }: {
   seat: SeatView
   isMe: boolean
@@ -542,6 +544,12 @@ function SeatStrip({
   manualLife?: boolean
   /** Every seat, so commander damage can name who dealt it rather than printing a seat number. */
   seats: readonly SeatView[]
+  /**
+   * What this seat's board can do, on an automated table: total power, and how much of it is
+   * untapped. Absent on a tabletop, where the engine is not computing anybody's power and a
+   * number here would be a guess dressed up as a fact.
+   */
+  board?: { power: number; creatures: number; ready: number }
 }) {
   const life = (delta: number) => onAct({ type: "life:adjust", seat: seat.index, delta })
   /**
@@ -615,6 +623,18 @@ function SeatStrip({
         deck <span data-testid={`library-count-${seat.index}`}>{seat.libraryCount}</span>
       </span>
       <span className="text-[var(--g-text-muted)]">gy {seat.graveyardCount}</span>
+      {/*
+        The two numbers a pod turns on: how much power this seat has, and how much of it can still
+        block. Everything else on this strip says how the game has gone; these say what is about to
+        happen — and in a four-player game they are the difference between reading the board and
+        counting it.
+      */}
+      {board !== undefined && board.creatures > 0 ? (
+        <span data-testid={`board-${seat.index}`} className="text-[var(--g-text-muted)]">
+          board <span className="font-semibold text-[var(--g-text-high)]">{board.power}</span>
+          {board.ready < board.creatures ? ` (${board.ready} up)` : ""}
+        </span>
+      ) : null}
       {seat.poison > 0 ? <span className="text-[var(--g-mana-g)]">poison {seat.poison}</span> : null}
 
       {/*
@@ -796,7 +816,17 @@ function Board({ table }: { table: UseTable }) {
   }, [showChat, table.chat.length])
   const unread = table.chat.length - seenChat
 
-  const act = useCallback((action: TableAction) => void table.send(action), [table])
+  /*
+    Every action carries the version of the view it was composed from.
+
+    `table.stateVersion` is what React last rendered, which is the version the player was looking
+    at when they chose this. Without it a play that was legal when it was offered and is not legal
+    now reads to the client as an illegal action rather than a stale one — see `send`.
+  */
+  const act = useCallback(
+    (action: TableAction) => void table.send(action, table.stateVersion),
+    [table],
+  )
 
   /**
    * Runs one interaction event and sends whatever action it completed.
@@ -1100,6 +1130,7 @@ function Board({ table }: { table: UseTable }) {
             onAct={act}
             manualLife={!automated}
             seats={view.seats}
+            board={automated ? boardRead(view, o.index) : undefined}
             targetable={targetableSeats.has(o.index)}
             onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat: o.index } })}
           />
@@ -1167,6 +1198,7 @@ function Board({ table }: { table: UseTable }) {
           onAct={act}
           manualLife={!automated}
           seats={view.seats}
+          board={automated ? boardRead(view, seat) : undefined}
           targetable={targetableSeats.has(seat)}
           onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat } })}
         />

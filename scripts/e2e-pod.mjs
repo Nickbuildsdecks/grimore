@@ -319,6 +319,21 @@ async function main() {
         + '— the engine asserts the spread deterministically in playout.test.ts)');
     }
 
+    // ── The table read: what each seat can hit you with ────────────────────────────────────────
+    /*
+      The two numbers a pod turns on, on screen for every seat that has creatures. Checked here
+      rather than in a unit test as well as it, because what matters is that they are *visible* on
+      a four-player board — the arithmetic is asserted in `arena.test.ts`.
+    */
+    const reads = await host.page.locator('[data-testid^="board-"]').evaluateAll((els) =>
+      els.map((e) => (e.textContent ?? '').trim()));
+    if (reads.length > 0) {
+      check('each seat with a board says how much power it has', reads.every((t) => /^board \d+/.test(t)),
+        JSON.stringify(reads));
+    } else {
+      console.log('      (no seat had a creature when the board was read — arena.test.ts asserts the read)');
+    }
+
     // ── Commander damage is the engine's count, with nothing to contradict it ───────────────────
     const cmdCells = await host.page.locator('[data-testid^="cmd-dmg-"]').evaluateAll((els) =>
       els.map((e) => ({ tag: e.tagName.toLowerCase(), text: (e.textContent ?? '').trim() })));
