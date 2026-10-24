@@ -230,7 +230,7 @@ bug rather than a board.
 
 ## Added after the first checkpoint
 
-Twenty-three things, in the order they mattered.
+Twenty-four things, in the order they mattered.
 
 **A control deck, which makes the stack a place you can fight.** Tidal Mind (blue-black) brings
 counterspells, and with them the first spells that target something on the stack — so the stack
@@ -644,6 +644,14 @@ and `normaliseDef` was dropping `loyalty` entirely, because it lists the fields 
 Jace Beleren and Garruk Wildspeaker, with all three printed abilities each and nothing simplified
 to make it fit. Garruk's "+1: untap two target lands" found the last one: the bot sent a single
 target for a spec that wanted two, because no card before it had `count: 2`.
+
+**And the in-game help was for the other table.** The panel behind the **?** had one list, all of
+it about the manual tabletop: tap your own lands, say who you are attacking in chat, settle combat
+with the life buttons. With the engine running two of those are impossible and the rest are things
+it does for you, so a new player reading it goes looking for buttons that are not there. There are
+two lists now, chosen by which table you are at — and the arena suite reads the panel and fails if
+it is showing the wrong one, because every feature in this document is invisible until something
+in the app says it exists.
 
 ## Next
 

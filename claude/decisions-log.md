@@ -1569,3 +1569,24 @@ attacks aimed at one, every game finished.
 Jace Beleren and Garruk Wildspeaker, both with all three printed abilities implemented; nothing
 was simplified to make it fit. Garruk's "+1: untap two target lands" found the last bug: the bot
 sent one target for a spec that wanted two, because no card before it had `count: 2`.
+
+## D48 — The in-game help was for the other table
+
+The help panel behind the **?** has one list, and every line of it is about the manual tabletop:
+tap your own lands, say who you are attacking in chat, settle combat with the life buttons. With
+the engine running, two of those are not possible any more and the rest are things the engine
+does for you — so a new player reading it goes looking for buttons that are not there, which is
+worse than no help at all.
+
+**Decided: two lists, chosen by which table you are at.** The Arena list is the one a player
+needs on their first automated game: that the bar always shows the one thing the game is waiting
+for, that mana is tapped for them, that targets light up wherever they are, that an X spell asks
+how big before it asks what at, that attacking asks *who* — a player or one of their
+planeswalkers — that a planeswalker's own abilities are one a turn, that some cards stop and ask
+a question mid-resolution, what the skipping toggle does, and that **Move by hand** is there for
+anything the engine does not know.
+
+This is not documentation work: the help panel is the only place a player who has not read
+`claude/play-realm-setup.md` learns any of it, and every feature added this session is invisible
+until something says it exists. The arena suite now reads the panel and fails if it is showing
+tabletop help at an automated table — which is exactly the regression that produced this entry.

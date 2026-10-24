@@ -55,6 +55,28 @@ const FORMATS = [
  * Shown in the game rather than only in the docs: nobody has the setup guide open while playing,
  * and "how do I counter this?" is exactly the question that stops a game dead.
  */
+/**
+ * The help a player needs depends on which table they are at, and the two are not alike.
+ *
+ * The tabletop list below was the only one for a long time, and with the engine running every
+ * line of it is actively wrong: it tells a player to tap their own lands, to say who they are
+ * attacking in chat, and to settle combat with the life buttons — none of which is how an
+ * automated table works, and two of which are not even possible there any more.
+ */
+const HOW_TO_ARENA: [string, string][] = [
+  ["One button", "The bar at the bottom always shows the one thing the game is waiting for: Pass, Resolve, Next step, Declare attackers, Keep. The top bar says which step it is and who is holding things up."],
+  ["Cast something", "Tap the card. Everything you can legally do with it is listed and nothing else is; a card you can play right now says playable. The mana is tapped for you — tap lands yourself first only if you want particular ones spent."],
+  ["Choose a target", "The legal ones light up, wherever they are: a creature, a player's row, a card in a graveyard, or a spell waiting on the stack."],
+  ["How big is it?", "A spell with {X} in its cost asks for X before it asks for a target, because that is when the rules choose it. The numbers offered are the ones your mana covers."],
+  ["Attack", "Declare attackers, pick who each creature is going at — a player, or one of their planeswalkers — then tap the creatures. Lines on the board show what is attacking what."],
+  ["Block", "Declare blockers, tap your creature, then tap the attacker it blocks. Only the attackers it may legally block light up."],
+  ["A planeswalker", "Tap it and take one of its loyalty abilities: one a turn each, your main phase only, and a minus you cannot pay for is not offered."],
+  ["Questions mid-spell", "Some cards stop and ask — a search, a discard, a scry. The cards you may choose light up, and nothing else happens until you answer."],
+  ["Being asked less", "The skipping toggle passes for you whenever passing is your only legal move, which is most of a game. Turn it off to be offered every priority."],
+  ["Something it does not know", "Tap the card → Move by hand. The tabletop's full move list is underneath, and the log says the card was not automated."],
+  ["Leaving", "Concede takes two taps. The rest of the table plays on without you."],
+]
+
 const HOW_TO: [string, string][] = [
   ["Cast something", "Tap it in hand → Play to battlefield, or Cast (to the stack) to let them respond first."],
   ["It resolves", "Tap it on the stack → Resolves onto the battlefield, or to the graveyard for an instant or sorcery."],
@@ -1321,11 +1343,12 @@ function Board({ table }: { table: UseTable }) {
           <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-xl border border-white/15 bg-[var(--g-surface-2)] p-4 sm:rounded-xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-sm font-semibold text-[var(--g-text-high)]">How this table works</h2>
             <p className="mt-1 text-xs text-[var(--g-text-muted)]">
-              It keeps the board, the zones and the life totals honest, and leaves the rules to the two
-              of you — so it works with any card. Tap a card to see what you can do with it.
+              {automated
+                ? "The rules engine runs the turn, the stack and combat, and refuses a play that is not legal. It knows the cards somebody has scripted; anything else still works as cardboard."
+                : "It keeps the board, the zones and the life totals honest, and leaves the rules to the two of you — so it works with any card. Tap a card to see what you can do with it."}
             </p>
             <dl className="mt-3 flex flex-col gap-2.5">
-              {HOW_TO.map(([title, body]) => (
+              {(automated ? HOW_TO_ARENA : HOW_TO).map(([title, body]) => (
                 <div key={title}>
                   <dt className="text-xs font-semibold text-[var(--g-gold-400)]">{title}</dt>
                   <dd className="text-xs text-[var(--g-text-muted)]">{body}</dd>

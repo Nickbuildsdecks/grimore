@@ -447,6 +447,18 @@ async function main() {
       await shot(nick, 'game-over');
     }
 
+    // ── The help a player is actually shown ─────────────────────────────────────────────────────
+    // With the engine running, the tabletop's help is wrong in a way that would send a new player
+    // looking for buttons that are not there — it tells them to tap their own lands and to settle
+    // combat with the life buttons.
+    await tid(nick, 'toggle-help').click();
+    await waitFor(nick, 'help-panel');
+    const help = await text(nick, 'help-panel');
+    check('the help explains the table the player is actually at',
+      /rules engine runs the turn/i.test(help) && !/does not count mana/i.test(help),
+      help.slice(0, 120));
+    await tid(nick, 'help-close').click();
+
     // ── Phone layout ────────────────────────────────────────────────────────────────────────────
     await nick.setViewportSize({ width: 390, height: 844 });
     await nick.waitForTimeout(400);
