@@ -1734,7 +1734,10 @@ D57's warning exactly; there is an ordinary one now. Writing it surfaced this: *
 the attacking player the damage assignment order, and this engine uses the order the blocks were
 declared in, which is the defending player's.** It only matters when the attacker would choose to
 kill a different blocker, and nothing in this pool makes it worth a second question in the middle
-of combat — so it is written down here rather than asserted as correct in a test.
+of combat — so it is written down here rather than asserted as correct in a test. **That last
+sentence was a guess, and it was wrong: measured four increments later it cost the attacker a kill
+32 times in 160 pods, and the question is now asked. See "The attacker chooses which blocker dies"
+below.**
 
 ### The creature with no choice
 
@@ -1890,6 +1893,40 @@ handed a preference to the wrong player.
 And the claim is checked where the player is: the arena suite presses the toggle in one browser and
 reads the switch in the other. Computed table-wide instead, the other player's switch flips as
 well, and the suite says so.
+
+### The attacker chooses which blocker dies
+
+CR 509.2 gives the attacking player the order a blocked creature's damage is assigned in. The
+engine spent the attacker's power down each attack's `blockers` list, which is the order the blocks
+were *declared* in — the defending player's. D88 named that a simplification and said nothing in
+the pool made it matter enough to ask about. That was a guess.
+
+**Over 160 four-seat pods: 276 attacks blocked by two or more creatures, reordering changed how
+many died in 54, and in 32 of those the declared order cost the attacker a kill** — 35 kills in
+total, about one lost every five games. And the count understates it, because *which* creature dies
+changes far more often than how many: a 5/5 into a 2/2 and a 4/4 kills one of them either way, and
+which one is the whole decision.
+
+So it is asked, as a third turn-based action beside declaring attackers and declaring blockers —
+`pendingDeclaration` is where those live, which is what withholds priority until it is answered.
+One action settles every attack that needed one. And only when it can change something: two or more
+blockers, and power enough to kill some but not all. That brings **276 multi-blocks down to 144
+askings, about one a game.**
+
+Nothing changed in the damage step. It already spent power down the list in order, so the rule
+needed somebody to *ask*, not new code to apply it: the answer rewrites the list.
+
+The bot gets the choice too, and the search was already the right shape — three candidate orders
+per attack (as declared, cheapest first, most valuable first), each played through the combat the
+way attacks and blocks already are. With the rule live over 160 pods: **asked 144 times, kept the
+order 83 and reordered 61; of those 8 killed more blockers and 43 killed better ones**, with no
+refusals.
+
+**One gap, named rather than papered over.** No browser suite reached the prompt: the engine only
+asks when a creature is blocked by two or more, and the driver — now taught to put two blockers on
+one attacker when it can — never had two creatures able to block in five full runs. The interaction
+has five reducer tests and the rule four engine tests, and the driver answers the prompt if a game
+produces one, but no browser has yet watched a person tap two blockers into order.
 
 ## Next
 

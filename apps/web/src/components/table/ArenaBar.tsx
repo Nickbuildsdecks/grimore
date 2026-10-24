@@ -16,8 +16,8 @@ import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  attackRead, decisionLabel, manaPips, primaryMove, specAt, targetsRequired, targetsWanted,
-  type ArenaEvent, type ArenaMode,
+  attackRead, decisionLabel, manaPips, orderingDone, primaryMove, specAt, targetsRequired,
+  targetsWanted, type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
 
 const MANA_BG: Record<string, string> = {
@@ -327,6 +327,47 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           <span className="ml-auto flex gap-1.5">
             <Button size="sm" data-testid="confirm-blockers" onClick={() => dispatch({ kind: "confirm" })}>
               <Check className="size-3.5" /> {mode.chosen.length === 0 ? "No blocks" : "Block"}
+            </Button>
+          </span>
+        </div>
+      ) : null}
+
+      {/*
+        The damage assignment order (CR 509.2), which is the attacking player's and was the
+        defending player's until this was built: the engine spent an attacker's power in the order
+        the *blocks* were declared. Measured over 160 four-seat pods, that cost the attacker a kill
+        it could have had 32 times.
+
+        Asked per attacking creature, in the order the player taps — so a 5/5 into a 2/2 and a 4/4
+        can kill either one, and the choice is on the board rather than decided for them. Only
+        attacks where the order can change which blockers die are ever asked about.
+      */}
+      {mode.kind === "ordering" ? (
+        <div data-testid="order-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-[var(--g-text-high)]">
+            <Swords className="mr-1 inline size-3.5" />
+            Tap the blockers in the order damage is assigned
+          </span>
+          {mode.owed.map((ask) => {
+            const picked = mode.chosen[ask.attacker] ?? []
+            return (
+              <span key={`order-${ask.attacker}`} data-testid={`order-${ask.attacker}`} className="text-[var(--g-text-muted)]">
+                {view.cards[ask.attacker]?.card?.name ?? "a creature"}
+                {": "}
+                {picked.length === 0
+                  ? `${ask.blockers.length} to order`
+                  : picked.map((id) => view.cards[id]?.card?.name ?? "a creature").join(", then ")}
+              </span>
+            )
+          })}
+          <span className="ml-auto flex gap-1.5">
+            <Button
+              size="sm"
+              data-testid="confirm-order"
+              disabled={!orderingDone(mode.owed, mode.chosen)}
+              onClick={() => dispatch({ kind: "confirm" })}
+            >
+              <Check className="size-3.5" /> Assign damage
             </Button>
           </span>
         </div>

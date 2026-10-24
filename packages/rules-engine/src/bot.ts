@@ -19,7 +19,8 @@ import { listAt } from './cardActions.js';
 import { bottomOwed, modesOf, pendingDeclaration, stillDeciding } from './automation.js';
 import { characteristicsOf, hasType, parseTypeLine, type Keyword } from './characteristics.js';
 import {
-  attackAimIssue, canAttack, canBlock, forcedAttackers, legalAttackers, legalDefenders,
+  attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
+  legalDefenders,
 } from './combat.js';
 import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
@@ -839,7 +840,12 @@ function throughCombat(state: GameState): GameState {
             type: 'auto:attack', by: seat,
             attackers: legalDeclaration(next, seat, chooseAttackers(next, seat)),
           }
-        : { type: 'auto:block', by: seat, blocks: chooseBlocks(next, seat) };
+        // Inside a simulation the order is taken rather than searched: searching it here would be
+        // a search inside the search, and the heuristic order is the one `scoreDeclaration` is
+        // comparing plans against anyway.
+        : owed.kind === 'order'
+          ? { type: 'auto:order', by: seat, orders: damageOrdersOwed(next, seat) }
+          : { type: 'auto:block', by: seat, blocks: chooseBlocks(next, seat) };
       try {
         next = applyAction(next, action, HOST);
       } catch {
@@ -1088,10 +1094,61 @@ function blockPlans(state: GameState, seat: SeatIndex): { blocker: string; attac
   return plans;
 }
 
+type DamageOrder = { attacker: string; blockers: string[] };
+
+/**
+ * The damage assignment orders worth considering (CR 509.2).
+ *
+ * Three shapes, applied to every attack that owes an order, because they are the three answers a
+ * player actually picks between:
+ *
+ *  - the order the blocks were declared in, which is what the engine used to do and is the one to
+ *    beat;
+ *  - cheapest first, which kills as *many* blockers as the power allows;
+ *  - most valuable first, which kills the biggest thing it can afford — a 5/5 blocked by a 2/2 and
+ *    a 4/4 kills the 4/4 or the 2/2, never both, and which one matters.
+ *
+ * Whether more kills or a better kill is worth having is not decided here: each order is played
+ * through the combat by `scoreDeclaration`, the same way the attack and the block are.
+ */
+function orderPlans(state: GameState, seat: SeatIndex): DamageOrder[][] {
+  const owed = damageOrdersOwed(state, seat);
+  if (owed.length === 0) return [[]];
+  const lethalCost = (attackerId: string, blockerId: string): number => {
+    const attacker = state.instances[attackerId];
+    const blocker = state.instances[blockerId];
+    if (attacker === undefined || blocker === undefined) return 1;
+    if (characteristicsOf(state, attacker).keywords.has('deathtouch')) return 1;
+    const ch = characteristicsOf(state, blocker);
+    return Math.max(1, ch.toughness - blocker.damage);
+  };
+  const byCost = (entry: DamageOrder): DamageOrder => ({
+    attacker: entry.attacker,
+    blockers: [...entry.blockers].sort(
+      (a, b) => lethalCost(entry.attacker, a) - lethalCost(entry.attacker, b),
+    ),
+  });
+  const byValue = (entry: DamageOrder): DamageOrder => ({
+    attacker: entry.attacker,
+    blockers: [...entry.blockers].sort(
+      (a, b) => creatureValue(state, b) - creatureValue(state, a),
+    ),
+  });
+  return [owed, owed.map(byCost), owed.map(byValue)];
+}
+
 /** The declaration this seat owes, chosen by playing each plan out. */
 function declareBySearch(
-  state: GameState, seat: SeatIndex, kind: 'attackers' | 'blockers', opts: BotOptions,
+  state: GameState, seat: SeatIndex, kind: 'attackers' | 'blockers' | 'order', opts: BotOptions,
 ): Action {
+  if (kind === 'order') {
+    const plans = orderPlans(state, seat);
+    const fallback: Action = { type: 'auto:order', by: seat, orders: plans[0]! };
+    if (opts.lookahead === false) return fallback;
+    return bestPlan(state, seat, plans.map((orders) => ({
+      type: 'auto:order', by: seat, orders,
+    } as Action))) ?? fallback;
+  }
   if (kind === 'attackers') {
     const plans = attackPlans(state, seat);
     const fallback: Action = { type: 'auto:attack', by: seat, attackers: plans[0]! };

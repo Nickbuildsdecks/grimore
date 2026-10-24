@@ -748,6 +748,12 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
           view = await act({ type: 'auto:block', blocks: [] });
           continue;
         }
+        // The damage assignment order (CR 509.2). Left as the engine offered it, which is what
+        // this client is for: it only ever does what the table hands it.
+        if (you.mustDeclare === 'order') {
+          view = await act({ type: 'auto:order', orders: you.mustOrder.map((ask) => ({ ...ask })) });
+          continue;
+        }
         if (!you.hasPriority) {
           stopped = `nobody held priority at ${view.automation?.step} on turn ${view.turn}`;
           break;

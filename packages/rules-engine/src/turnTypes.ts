@@ -169,10 +169,19 @@ export interface CombatState {
   readonly attackersDeclared: boolean;
   /** Defending seats that have finished declaring blockers, for the same reason. */
   readonly blockersDeclaredBy: readonly SeatIndex[];
+  /**
+   * Whether the attacking player has settled the damage assignment order (CR 509.2).
+   *
+   * Its own flag for the same reason as the two above: once the order is answered, each attack's
+   * `blockers` list *is* the order, so there is nothing left in the board to say whether anybody
+   * was asked. Only set when an order was actually owed, and never asked twice.
+   */
+  readonly damageOrdered: boolean;
 }
 
 export const EMPTY_COMBAT: CombatState = Object.freeze({
   attacks: [], firstStrikeDealt: false, attackersDeclared: false, blockersDeclaredBy: [],
+  damageOrdered: false,
 });
 
 /** The automation half of the game state. Absent values mean a table in manual mode. */
@@ -349,6 +358,19 @@ export interface AutoStartAction {
   readonly autoPass?: boolean;
 }
 /** Turns auto-passing on or off mid-game, which is a table setting rather than a game rule. */
+/**
+ * The attacking player's damage assignment order (CR 509.2), for every attack that needed one.
+ *
+ * One action for the whole combat rather than one per attacker: the order is a turn-based action
+ * taken once, and asking a player four questions in a row for a four-creature swing is four
+ * chances to lose track of which creature the prompt is about.
+ */
+export interface AutoOrderAction {
+  readonly type: 'auto:order';
+  readonly by: SeatIndex;
+  readonly orders: readonly { readonly attacker: string; readonly blockers: readonly string[] }[];
+}
+
 /** One seat's own stops setting. `by` is whose preference it is, and nobody else's changes. */
 export interface AutoStopsAction { readonly type: 'auto:stops'; readonly by: SeatIndex; readonly autoPass: boolean }
 export interface AutoPlayLandAction { readonly type: 'auto:playLand'; readonly by: SeatIndex; readonly card: string }
@@ -400,12 +422,13 @@ export interface AutoKeepAction {
 
 export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
-  | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoDiscardAction | AutoStopsAction
-  | AutoKeepAction | AutoChooseAction | AutoDecideAction;
+  | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
+  | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
-  'auto:block', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose', 'auto:decide',
+  'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
+  'auto:decide',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

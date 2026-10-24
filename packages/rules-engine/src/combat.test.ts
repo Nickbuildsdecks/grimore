@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { legalActions, pendingDeclaration } from './index.js';
+import { damageOrdersOwed } from './index.js';
 import {
   advanceTo, apply, arena, damageOn, find, ids, life, namesIn, nextTurn, passBoth, refusal,
 } from './testkit.js';
@@ -31,7 +32,11 @@ function resolveCombat(s: GameState): GameState {
       for (const seat of owed.seats) {
         next = owed.kind === 'attackers'
           ? apply(next, { type: 'auto:attack', by: seat, attackers: [] })
-          : apply(next, { type: 'auto:block', by: seat, blocks: [] });
+          : owed.kind === 'order'
+            // Left as declared, which is what every test written before CR 509.2 was asked
+            // assumed — so those tests keep testing what they were written to test.
+            ? apply(next, { type: 'auto:order', by: seat, orders: damageOrdersOwed(next, seat) })
+            : apply(next, { type: 'auto:block', by: seat, blocks: [] });
       }
       continue;
     }
@@ -522,6 +527,114 @@ describe('combat damage', () => {
     // remaining two are simply lost because Sigarda has no trample.
     expect(namesIn(s, 0, 'graveyard').sort()).toEqual(['Monastery Swiftspear', 'Raging Goblin']);
     expect(life(s, 0)).toBe(20);
+  });
+
+  /*
+    The damage assignment order is the *attacking* player's (CR 509.2).
+
+    It was the defending player's: the engine spent an attacker's power down the `blockers` list,
+    which is the order the blocks were declared in. Measured over 160 four-seat pods, 276 attacks
+    were blocked by two or more creatures, the order changed which of them died in 54, and in 32 of
+    those the defender's order cost the attacker a kill it could have had.
+
+    The question is only asked when it can change something — two or more blockers, and power
+    enough to kill some of them but not all. With enough for everybody the whole block dies
+    whatever the order, and with less than the cheapest nothing does.
+  */
+  const orderSetup = (): GameState => {
+    let s = toAttackers(arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      battlefield: { 1: ['Hill Giant'], 0: ['Grizzly Bears', 'Giant Spider'] },
+      turn: 2, firstSeat: 1,
+    }));
+    const giant = find(s, 1, 'battlefield', 'Hill Giant');
+    s = attack(s, 1, [giant], 0);
+    s = passBoth(s);
+    return block(s, 0, [
+      { blocker: find(s, 0, 'battlefield', 'Grizzly Bears'), attacker: giant },
+      { blocker: find(s, 0, 'battlefield', 'Giant Spider'), attacker: giant },
+    ]);
+  };
+
+  it('asks the attacking player for the damage order, and nobody holds priority until it is given', () => {
+    const s = orderSetup();
+    const giant = find(s, 1, 'battlefield', 'Hill Giant');
+    const bear = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const spider = find(s, 0, 'battlefield', 'Giant Spider');
+    // A 3/3 into a 2/2 and a 2/4: enough to kill the bear, or to put three on the spider, never
+    // both — so which of them the damage goes to first is a real decision and it is the
+    // attacker's. It is a turn-based action, so it comes before priority (CR 509.2).
+    expect(pendingDeclaration(s)).toEqual({ kind: 'order', seats: [1] });
+    expect(s.priority).toBeNull();
+    const actions = legalActions(s, 1);
+    expect(actions.mustDeclare).toBe('order');
+    expect(actions.mustOrder).toEqual([{ attacker: giant, blockers: [bear, spider] }]);
+    // And the defending player is not the one being asked.
+    expect(legalActions(s, 0).mustDeclare).toBeNull();
+  });
+
+  it('kills whichever blocker the attacker puts first', () => {
+    let s = orderSetup();
+    const giant = find(s, 1, 'battlefield', 'Hill Giant');
+    const bear = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const spider = find(s, 0, 'battlefield', 'Giant Spider');
+    // Bear first: two kills it, and the last point lands on the spider.
+    let killsBear = apply(s, {
+      type: 'auto:order', by: 1, orders: [{ attacker: giant, blockers: [bear, spider] }],
+    });
+    killsBear = resolveCombat(killsBear);
+    expect(namesIn(killsBear, 0, 'graveyard')).toEqual(['Grizzly Bears']);
+    expect(damageOn(killsBear, spider)).toBe(1);
+
+    // Spider first: all three points are spent on it, so nothing dies at all — which is a worse
+    // choice here and a perfectly legal one. The point is that the attacker gets to make it.
+    s = apply(s, {
+      type: 'auto:order', by: 1, orders: [{ attacker: giant, blockers: [spider, bear] }],
+    });
+    s = resolveCombat(s);
+    expect(namesIn(s, 0, 'graveyard')).toEqual([]);
+    expect(damageOn(s, spider)).toBe(3);
+  });
+
+  it('does not ask when the order cannot change which blockers die', () => {
+    // Enough power for both: the whole block dies whatever the order (CR 510.1c), and the step
+    // runs on without a question. The same line covers power below the cheapest blocker.
+    let s = toAttackers(arena({
+      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
+      battlefield: { 1: ['Lotleth Giant'], 0: ['Grizzly Bears', 'Elvish Visionary'] },
+      turn: 2, firstSeat: 1,
+    }));
+    const giant = find(s, 1, 'battlefield', 'Lotleth Giant');
+    const blockers = [...ids(s, 0, 'battlefield')];
+    s = attack(s, 1, [giant], 0);
+    s = passBoth(s);
+    s = block(s, 0, blockers.map((blocker) => ({ blocker, attacker: giant })));
+    // A 5/6 into a 2/2 and a 1/1: three points kill both, so no order can save either of them.
+    expect(pendingDeclaration(s)).toBeNull();
+    expect(legalActions(s, 1).mustDeclare).toBeNull();
+    s = resolveCombat(s);
+    expect(namesIn(s, 0, 'graveyard').sort()).toEqual(['Elvish Visionary', 'Grizzly Bears']);
+  });
+
+  it('refuses an order that is not the creatures doing the blocking', () => {
+    const s = orderSetup();
+    const giant = find(s, 1, 'battlefield', 'Hill Giant');
+    const bear = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const spider = find(s, 0, 'battlefield', 'Giant Spider');
+    // A short order would leave a blocker out of the damage it is owed.
+    expect(refusal(s, {
+      type: 'auto:order', by: 1, orders: [{ attacker: giant, blockers: [bear] }],
+    })).toContain('not the creatures blocking');
+    // An order for an attack that was not asked about is a client working the rules out for
+    // itself, which is the disagreement `legalActions` exists to prevent.
+    expect(refusal(s, {
+      type: 'auto:order', by: 1,
+      orders: [{ attacker: giant, blockers: [bear, spider] }, { attacker: bear, blockers: [] }],
+    })).toContain('does not need a damage order');
+    // And it is not the defending player's to give.
+    expect(refusal(s, {
+      type: 'auto:order', by: 0, orders: [{ attacker: giant, blockers: [bear, spider] }],
+    })).toContain('only the attacking player');
   });
 
   it('pushes excess damage through with trample (CR 702.19b)', () => {

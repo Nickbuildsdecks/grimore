@@ -239,6 +239,7 @@ export async function isMyMove(page) {
   if (await has(page, 'target-prompt')) return true;
   if (await has(page, 'attack-prompt')) return true;
   if (await has(page, 'block-prompt')) return true;
+  if (await has(page, 'order-prompt')) return true;
   if (await has(page, 'discard-prompt')) return true;
   return has(page, 'primary-move');
 }
@@ -413,20 +414,49 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
   }
 
   if (await has(page, 'block-prompt')) {
-    // Pick up each of your creatures in turn and put it on whichever attacker lights up, which is
-    // the table telling you what that creature may legally block. A real player would think about
-    // the trade; the point here is that the pairing flow produces a declaration the engine accepts.
+    /*
+      Pick up each of your creatures in turn and put it on whichever attacker lights up, which is
+      the table telling you what that creature may legally block. A real player would think about
+      the trade; the point here is that the pairing flow produces a declaration the engine accepts.
+
+      Two blockers rather than one, when there are two. One was enough to prove the pairing worked
+      and left two whole rules unreached by any browser: ganging up on an attacker, and the damage
+      assignment order it then asks the *attacking* player for (CR 509.2). A suite that never
+      double-blocks never sees either.
+    */
     const mine = cardsIn(page, `zone-battlefield-${seat}`);
     const count = await mine.count();
-    for (let i = 0; i < count; i++) {
+    let placed = 0;
+    for (let i = 0; i < count && placed < 2; i++) {
       await tap(mine.nth(i));
       const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
       if ((await lit.count()) === 0) continue;
       await tap(lit.first());
-      break;
+      placed += 1;
     }
     await press(page, 'confirm-blockers');
-    return 'declared blockers';
+    return placed > 1 ? 'declared blockers, two on one' : 'declared blockers';
+  }
+
+  if (await has(page, 'order-prompt')) {
+    /*
+      The damage assignment order (CR 509.2), which is the attacking player's.
+
+      The blockers are on somebody *else's* side of the board, and the engine only asks when the
+      order can change which of them die — so the driver taps every card on every battlefield and
+      lets the reducer keep the ones that belong to an order it was asked about. The confirm button
+      stays disabled until every owed order is complete, which is what makes "tap everything" a
+      legal answer rather than a guess.
+    */
+    const rows = page.locator('[data-testid^="zone-battlefield-"]');
+    const rowCount = await rows.count();
+    for (let r = 0; r < rowCount; r++) {
+      const cards = rows.nth(r).locator('[data-testid^="card-"]');
+      const count = await cards.count();
+      for (let i = 0; i < count; i++) await tap(cards.nth(i));
+    }
+    await press(page, 'confirm-order');
+    return 'assigned combat damage';
   }
 
   if (await has(page, 'discard-prompt')) {

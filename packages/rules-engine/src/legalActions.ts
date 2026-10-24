@@ -17,7 +17,9 @@ import {
   atSorcerySpeed, bottomOwed, modeCombinations, modeTargetSpecs, modesOf, pendingDeclaration,
   sacrificeOptions, stackTop,
 } from './automation.js';
-import { forcedAttackers, legalAttackers, legalBlockers, legalDefenders, canBlock } from './combat.js';
+import {
+  canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
+} from './combat.js';
 import { poolOf } from './effects.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost,
@@ -157,7 +159,15 @@ export interface LegalActions {
    * declaring attackers or blockers is a turn-based action, so the seat that owes one holds no
    * priority — a UI keyed on priority alone would show the defender nothing to do.
    */
-  readonly mustDeclare: 'attackers' | 'blockers' | null;
+  readonly mustDeclare: 'attackers' | 'blockers' | 'order' | null;
+  /**
+   * The damage assignment order this seat owes (CR 509.2): per attacking creature of theirs, the
+   * blockers to put in order. Empty unless `mustDeclare` is `'order'`.
+   *
+   * Carried here rather than worked out by the table for the usual reason — the question is only
+   * asked when the order can change which blockers die, and that is a rules judgement.
+   */
+  readonly mustOrder: readonly { readonly attacker: string; readonly blockers: readonly string[] }[];
   /**
    * Why each card this seat holds is *not* playable, for the ones that are not.
    *
@@ -593,7 +603,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   const empty: LegalActions = {
     seat, step: state.step, hasPriority, isActivePlayer: state.activeSeat === seat,
     canPass: false, passLabel: '', plays: [], attackers: [], mustAttack: [], attackAims: [],
-    blockers: [],
+    blockers: [], mustOrder: [],
     mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat), mustChoose,
     mustDecide, blocked: [], pool: poolOf(state, seat), potential,
   };
@@ -622,6 +632,9 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     };
   }
   if (mustDeclare === 'blockers') return { ...empty, passLabel: 'Declare blockers', blockers: blockOptions(state, seat) };
+  if (mustDeclare === 'order') {
+    return { ...empty, passLabel: 'Assign damage', mustOrder: damageOrdersOwed(state, seat) };
+  }
   if (!hasPriority) return empty;
 
   const top = stackTop(state);
@@ -639,7 +652,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
 
   return {
     ...empty, canPass: true, passLabel, plays, blocked,
-    attackers: [], mustAttack: [], attackAims: [], blockers: [],
+    attackers: [], mustAttack: [], attackAims: [], blockers: [], mustOrder: [],
   };
 }
 

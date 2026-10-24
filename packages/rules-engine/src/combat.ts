@@ -118,6 +118,53 @@ export function legalDefenders(state: GameState, id: string, seat: SeatIndex): S
 }
 
 /**
+ * The blockers whose order the attacking player should be asked about (CR 509.2), or none.
+ *
+ * Asked only when the answer can change something, which is the same line D91 drew for trigger
+ * order: two or more blockers, and a budget that kills *some* of them but not all. With power
+ * enough for everybody the whole block dies whatever the order; with power below the cheapest
+ * nothing does. In between, which creatures die is a real decision and it is the attacking
+ * player's.
+ *
+ * Deathtouch is included rather than excluded: it makes every blocker cost one, so the *count*
+ * that die is fixed — but which ones is still a choice, and with a 1/1 deathtoucher blocked by a
+ * 2/2 and a 7/7 it is the whole decision.
+ *
+ * Prevention is read as the rules read it: a Fog Bank still has to be *assigned* lethal damage
+ * before anything gets past it (CR 702.19b), so it spends the budget here even though it will not
+ * die. That makes the question "whose damage gets spent where", which is what the order is.
+ */
+export function damageOrderChoice(state: GameState, attack: CombatAttack): string[] | null {
+  const blockers = attack.blockers.filter((id) => creatureOf(state, id) !== null);
+  if (blockers.length < 2) return null;
+  const attacker = creatureOf(state, attack.attacker);
+  if (attacker === null || attacker.ch.power <= 0) return null;
+  const deathtouch = attacker.ch.keywords.has('deathtouch');
+  const costs = blockers.map((id) => {
+    const blocker = creatureOf(state, id)!;
+    return deathtouch ? 1 : Math.max(1, blocker.ch.toughness - blocker.inst.damage);
+  });
+  const total = costs.reduce((n, c) => n + c, 0);
+  const cheapest = Math.min(...costs);
+  if (attacker.ch.power >= total) return null;
+  if (attacker.ch.power < cheapest) return null;
+  return blockers;
+}
+
+/** Every attack of this seat's that still owes a damage assignment order. */
+export function damageOrdersOwed(
+  state: GameState, seat: SeatIndex,
+): { attacker: string; blockers: string[] }[] {
+  const owed: { attacker: string; blockers: string[] }[] = [];
+  for (const attack of state.combat.attacks) {
+    if (state.instances[attack.attacker]?.zoneSeat !== seat) continue;
+    const blockers = damageOrderChoice(state, attack);
+    if (blockers !== null) owed.push({ attacker: attack.attacker, blockers });
+  }
+  return owed;
+}
+
+/**
  * Whether `blocker` may block `attacker`.
  *
  * Evasion is checked from the attacker's keywords against the blocker's: flying can only be blocked

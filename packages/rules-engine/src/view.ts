@@ -123,7 +123,7 @@ export interface AutomationView {
   readonly combat: CombatState;
   /** Who the engine is waiting on, and for what. */
   readonly awaiting: {
-    readonly kind: 'attackers' | 'blockers' | 'discard' | 'mulligan' | 'choose' | 'decide';
+    readonly kind: 'attackers' | 'blockers' | 'order' | 'discard' | 'mulligan' | 'choose' | 'decide';
     readonly seats: readonly SeatIndex[];
     /**
      * What is being asked, when it is a mid-resolution decision. Public on purpose: the other

@@ -15,6 +15,7 @@ import {
   zoneKey,
   type Action,
   type ActionContext,
+  damageOrdersOwed,
   pendingDeclaration,
   type GameState,
   type SeatIndex,
@@ -231,7 +232,11 @@ export function nextTurn(s: GameState): GameState {
       for (const seat of owed.seats) {
         next = owed.kind === 'attackers'
           ? apply(next, { type: 'auto:attack', by: seat, attackers: [] })
-          : apply(next, { type: 'auto:block', by: seat, blocks: [] });
+          // The damage order has no "nothing" answer — the blockers are already declared, so the
+          // only empty-handed answer is the one the engine itself would have used.
+          : owed.kind === 'order'
+            ? apply(next, { type: 'auto:order', by: seat, orders: damageOrdersOwed(next, seat) })
+            : apply(next, { type: 'auto:block', by: seat, blocks: [] });
       }
       continue;
     }

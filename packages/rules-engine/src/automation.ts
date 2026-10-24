@@ -27,8 +27,9 @@ import {
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance, withZones } from './cardActions.js';
 import {
-  attackAimIssue, canAttack, canBlock, dealCombatDamage, forcedAttackers, legalAttackers,
-  legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers,
+  attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, dealCombatDamage,
+  forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied,
+  needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
   REGENERATION, addCounters, destroy, draw, loseLife, modsFrom, poolOf, removeEffectsFrom,
@@ -62,7 +63,7 @@ export const MAX_HAND_SIZE = 7;
 // without importing this module, which imports `types.ts` itself.
 export type {
   AutoAction, AutoStartAction, AutoPlayLandAction, AutoCastAction, AutoActivateAction,
-  AutoPassAction, AutoAttackAction, AutoBlockAction, AutoDiscardAction,
+  AutoPassAction, AutoAttackAction, AutoBlockAction, AutoOrderAction, AutoDiscardAction,
 } from './turnTypes.js';
 export { AUTO_ACTION_TYPES, isAutoAction } from './turnTypes.js';
 
@@ -129,7 +130,7 @@ export function stillDeciding(state: GameState): SeatIndex[] {
  */
 export function pendingDeclaration(
   state: GameState,
-): { readonly kind: 'attackers' | 'blockers'; readonly seats: readonly SeatIndex[] } | null {
+): { readonly kind: 'attackers' | 'blockers' | 'order'; readonly seats: readonly SeatIndex[] } | null {
   if (!state.automated) return null;
   if (state.step === 'declare-attackers' && !state.combat.attackersDeclared) {
     return { kind: 'attackers', seats: [state.activeSeat] };
@@ -139,6 +140,18 @@ export function pendingDeclaration(
       (seat) => !state.combat.blockersDeclaredBy.includes(seat) && state.seats[seat]?.eliminated === false,
     );
     if (defenders.length > 0) return { kind: 'blockers', seats: defenders };
+    /*
+      And then the attacking player's damage assignment order (CR 509.2), which is the third
+      turn-based action in combat and belongs here for the same reason as the other two: nobody
+      holds priority while it is outstanding, so a UI keyed on priority alone would show an empty
+      table waiting on nothing.
+
+      After every defender has declared, never before: in a pod the order can only be settled once
+      all the blocks are in, and the question is about the whole swing rather than one attack.
+    */
+    if (!state.combat.damageOrdered && damageOrdersOwed(state, state.activeSeat).length > 0) {
+      return { kind: 'order', seats: [state.activeSeat] };
+    }
   }
   return null;
 }
@@ -1262,4 +1275,4 @@ function applyStatics(
   return next;
 }
 
-export { legalTargets, hasAnyLegalTargets, checkTargets, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, attackAimIssue, canAttack, canBlock, forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, STEP_LABELS };
+export { legalTargets, hasAnyLegalTargets, checkTargets, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, STEP_LABELS };

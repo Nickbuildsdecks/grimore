@@ -755,6 +755,74 @@ describe("declaring attackers", () => {
   })
 })
 
+describe("assigning combat damage", () => {
+  const owed = [{ attacker: "giant", blockers: ["bear", "spider"] }]
+
+  it("builds one order per attacker and sends it when every one is complete", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startOrdering", owed }).mode
+    // Nothing is sent until the order is a whole answer: a short list is one the engine refuses.
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "spider" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" })).toEqual({ mode, action: null })
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "bear" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:order", orders: [{ attacker: "giant", blockers: ["spider", "bear"] }],
+    })
+  })
+
+  it("starts an attacker's order again when a card already in it is tapped", () => {
+    // An order with a hole in the middle is not an answer, so a tap on a card already placed can
+    // only mean "do that one again" — which is also the only correction a player can express by
+    // tapping a card that is already lit.
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startOrdering", owed }).mode
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "bear" }).mode
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "spider" }).mode
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "bear" }).mode
+    expect(mode).toMatchObject({ chosen: { giant: [] } })
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "spider" }).mode
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "bear" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:order", orders: [{ attacker: "giant", blockers: ["spider", "bear"] }],
+    })
+  })
+
+  it("puts each blocker in its own attacker's order, so one swing can need two", () => {
+    // Two attacking creatures each blocked by two: there is no wizard to step through, and no way
+    // to put a blocker into the wrong attacker's order, because the engine said whose it is.
+    const two = [
+      { attacker: "giant", blockers: ["bear", "spider"] },
+      { attacker: "angel", blockers: ["hawk", "wall"] },
+    ]
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startOrdering", owed: two }).mode
+    for (const card of ["wall", "spider", "hawk", "bear"]) {
+      mode = arenaReducer(mode, { kind: "pickOrder", card }).mode
+    }
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:order",
+      orders: [
+        { attacker: "giant", blockers: ["spider", "bear"] },
+        { attacker: "angel", blockers: ["wall", "hawk"] },
+      ],
+    })
+  })
+
+  it("ignores a card the engine did not ask about", () => {
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startOrdering", owed }).mode
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "somebody-else" }).mode
+    expect(mode).toEqual({ kind: "ordering", owed, chosen: {} })
+    expect(arenaReducer(IDLE, { kind: "pickOrder", card: "bear" })).toEqual({ mode: IDLE, action: null })
+  })
+
+  it("offers the order as the one thing to do when the engine asks for it", () => {
+    const auto = automation({
+      awaiting: { kind: "order", seats: [0] },
+      you: { ...automation()!.you!, hasPriority: false, mustDeclare: "order", mustOrder: owed },
+    })
+    const move = primaryMove(view({ automation: auto }))
+    expect(move?.label).toBe("Assign combat damage")
+    expect(move?.event).toEqual({ kind: "startOrdering", owed })
+  })
+})
+
 describe("declaring blockers", () => {
   it("picks up a blocker, assigns it to an attacker, and sends the pairing", () => {
     let mode: ArenaMode = arenaReducer(IDLE, { kind: "declareBlockers" }).mode
@@ -832,12 +900,16 @@ function view(over: Partial<GameView> = {}): GameView {
 const automation = (over: Record<string, unknown> = {}): GameView["automation"] =>
   ({
     step: "precombat-main", stepLabel: "Main phase 1", autoPass: true, priority: 0, passed: [], stack: [],
-    pools: {}, combat: { attacks: [], firstStrikeDealt: false, attackersDeclared: false, blockersDeclaredBy: [] },
+    pools: {},
+    combat: {
+      attacks: [], firstStrikeDealt: false, attackersDeclared: false, blockersDeclaredBy: [],
+      damageOrdered: false,
+    },
     awaiting: null,
     you: {
       seat: 0, step: "precombat-main", hasPriority: true, isActivePlayer: true, canPass: true,
       passLabel: "Pass", plays: [], attackers: [], mustAttack: [], attackAims: [], blockers: [],
-      mustDiscard: 0, mustDeclare: null,
+      mustOrder: [], mustDiscard: 0, mustDeclare: null,
       mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null, blocked: [],
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     },

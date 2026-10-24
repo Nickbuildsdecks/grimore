@@ -974,6 +974,7 @@ function Board({ table }: { table: UseTable }) {
     const stale =
       (mode.kind === "attackers" && awaitingKind !== "attackers") ||
       (mode.kind === "blockers" && awaitingKind !== "blockers") ||
+      (mode.kind === "ordering" && awaitingKind !== "order") ||
       (mode.kind === "bottoming" && awaitingKind !== "mulligan") ||
       (mode.kind === "choosing" && awaitingKind !== "choose") ||
       (mode.kind === "deciding" && awaitingKind !== "decide") ||
@@ -1035,6 +1036,9 @@ function Board({ table }: { table: UseTable }) {
     // A card a mid-resolution question is offering is lit exactly like a target, wherever it is —
     // including a library, which is the one zone the table normally does not draw at all.
     ...(arenaMode.kind === "deciding" ? arenaMode.ask.candidates : []),
+    // And the blockers waiting to be put in damage order, which are on somebody else's side of
+    // the board: without the ring the player is being asked to tap cards that look untappable.
+    ...(arenaMode.kind === "ordering" ? arenaMode.owed.flatMap((ask) => ask.blockers) : []),
   ])
   const targetableSeats = new Set<number>(
     nowChoosing.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat),
@@ -1046,9 +1050,11 @@ function Board({ table }: { table: UseTable }) {
         ? arenaMode.chosen.map((a) => a.attacker)
         : arenaMode.kind === "blockers"
           ? [...arenaMode.chosen.map((b) => b.blocker), ...(arenaMode.holding === null ? [] : [arenaMode.holding])]
-          : arenaMode.kind === "bottoming" || arenaMode.kind === "deciding"
-            ? arenaMode.chosen
-            : [],
+          : arenaMode.kind === "ordering"
+            ? Object.values(arenaMode.chosen).flat()
+            : arenaMode.kind === "bottoming" || arenaMode.kind === "deciding"
+              ? arenaMode.chosen
+              : [],
   )
 
   /**
@@ -1099,6 +1105,13 @@ function Board({ table }: { table: UseTable }) {
     if (mode.kind === "attackers") {
       if (myAttackers.has(card.id) || mode.chosen.some((a) => a.attacker === card.id)) {
         dispatchArena({ kind: "toggleAttacker", card: card.id })
+      }
+      return
+    }
+    if (mode.kind === "ordering") {
+      // Only the creatures the engine listed, and each into its own attacker's order.
+      if (mode.owed.some((ask) => ask.blockers.includes(card.id))) {
+        dispatchArena({ kind: "pickOrder", card: card.id })
       }
       return
     }

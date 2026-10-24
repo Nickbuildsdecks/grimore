@@ -3290,3 +3290,58 @@ game plays as it always did.
 One thing deliberately left as it was: the bots. A bot seat is never in the list, so the engine
 always passes for it — a bot asking to be offered every priority would be a table that stops for
 nobody's benefit.
+
+## D93 — The attacker chooses which blocker dies
+
+CR 509.2 gives the *attacking* player the order in which a blocked creature's combat damage is
+assigned. This engine spent the attacker's power down each attack's `blockers` list, which is the
+order the blocks were *declared* in — the defending player's. D88 named it as a simplification and
+said nothing in the pool made it matter enough to ask a second question in the middle of combat.
+That was a guess, and this is the measurement.
+
+**Over 160 four-seat pods, before anything changed:**
+
+| | |
+| --- | --- |
+| attacks blocked by two or more creatures | 276 |
+| …where reordering changes how many of them die | 54 |
+| …where the declared order killed fewer than the attacker's best order | **32** |
+| kills that cost, in total | 35 |
+
+A lost kill every five games, from a decision the attacking player was never offered. And the count
+understates it, because the *identity* of what dies changes far more often than the count does: a
+5/5 blocked by a 2/2 and a 4/4 kills one of them either way, and which one is the whole decision.
+
+**So it is asked, and asked as a third turn-based action.** Combat already had two things that are
+not priority decisions — declaring attackers and declaring blockers — and `pendingDeclaration` is
+where they live, which is why nobody holds priority while one is outstanding. The order is the
+third, so it went in beside them: `kind: 'order'`, owed by the active player, after every defender
+has declared. One action settles every attack that needed one, because asking a player four
+questions in a row for a four-creature swing is four chances to lose track of which creature the
+prompt is about.
+
+**Only when it can change something.** `damageOrderChoice` returns null unless there are two or
+more blockers and the power kills *some* of them but not all: with enough for everybody the whole
+block dies whatever the order (CR 510.1c), and with less than the cheapest nothing does. That is
+the same line D91 drew for trigger order, and here it brings the question down to **144 askings in
+160 pods — about one a game**, from 276 multi-blocks. Deathtouch is included rather than excluded:
+it makes every blocker cost one, so the number that die is fixed, but with a 1/1 deathtoucher
+blocked by a 2/2 and a 7/7 which one dies is the entire question.
+
+Nothing changed in the damage step itself. `dealCombatDamage` already spent power down the
+`blockers` list in order, so the rule needed somebody to *ask* rather than new code to apply it —
+the answer rewrites the list.
+
+**The bot gets the choice too, and the search was already the right shape for it.** Three candidate
+orders per attack — as declared, cheapest first (most kills), most valuable first (best kill) — and
+`bestPlan` plays each through the combat exactly as it does for attacks and blocks. Measured over
+160 pods with the rule live: **asked 144 times, kept the declared order 83 times and reordered 61;
+of those, 8 killed more blockers and 43 killed the same number but more valuable ones.** Zero
+refusals, which is the invariant that matters: the search generates orders the engine accepts.
+
+**One gap, named rather than papered over.** No browser suite reached the prompt. The engine only
+asks when a creature is blocked by two or more, and the suites' driver builds small boards: it was
+taught to put two blockers on one attacker when it has two, and in five full runs it never had two
+creatures that could both block. So the interaction is covered by five reducer tests and the rule
+by four engine tests, and the driver handles the prompt if a game ever produces one — but "a person
+tapped two blockers in order in a real browser" is not yet something this suite has seen.

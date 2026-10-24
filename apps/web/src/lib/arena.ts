@@ -71,11 +71,23 @@ export type ArenaMode =
       aims?: readonly AttackAims[]
     }
   | { kind: "blockers"; chosen: Block[]; holding: string | null }
+  /**
+   * The attacking player putting each blocked creature's blockers in order (CR 509.2).
+   *
+   * `owed` is the engine's question, carried whole; `chosen` is the answer being built, keyed by
+   * the attacking creature, because one swing can have two creatures that each need an order.
+   * Tapping a blocker appends it to its own attacker's list, so there is no wizard to step through
+   * and no way to put a blocker in the wrong attacker's order.
+   */
+  | { kind: "ordering"; owed: readonly OrderAsk[]; chosen: Record<string, string[]> }
 
 export interface Block {
   blocker: string
   attacker: string
 }
+
+/** One attacking creature's blockers, waiting to be put in damage order. */
+export type OrderAsk = LegalActions["mustOrder"][number]
 
 /** One creature's legal defenders, as `legalActions.attackAims` reports them. */
 export type AttackAims = LegalActions["attackAims"][number]
@@ -118,6 +130,10 @@ export type ArenaEvent =
   | { kind: "declareBlockers" }
   | { kind: "holdBlocker"; card: string }
   | { kind: "assignBlock"; attacker: string }
+  /** The attacking player starting on the damage assignment order the engine asked for. */
+  | { kind: "startOrdering"; owed: readonly OrderAsk[] }
+  /** Puts one blocker next in its own attacker's order; tapping a chosen one starts that list over. */
+  | { kind: "pickOrder"; card: string }
 
 /** The reducer's answer: the new mode, and an action to send if the step is complete. */
 export interface ArenaResult {
@@ -126,6 +142,13 @@ export interface ArenaResult {
 }
 
 export const IDLE: ArenaMode = { kind: "idle" }
+
+/** Whether every attacker that owes an order has all of its blockers placed. */
+export function orderingDone(
+  owed: readonly OrderAsk[], chosen: Record<string, readonly string[]>,
+): boolean {
+  return owed.every((ask) => (chosen[ask.attacker] ?? []).length === ask.blockers.length)
+}
 
 /**
  * Where a creature may actually be sent, given where the player is aiming.
@@ -330,6 +353,21 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (mode.kind === "blockers") {
         return { mode: IDLE, action: { type: "auto:block", blocks: mode.chosen.map((b) => ({ ...b })) } }
       }
+      if (mode.kind === "ordering") {
+        // Every owed order, complete. A short list is not an answer the engine takes, so the
+        // button does nothing rather than sending one that bounces back.
+        if (!orderingDone(mode.owed, mode.chosen)) return { mode, action: null }
+        return {
+          mode: IDLE,
+          action: {
+            type: "auto:order",
+            orders: mode.owed.map((ask) => ({
+              attacker: ask.attacker,
+              blockers: [...(mode.chosen[ask.attacker] ?? [])],
+            })),
+          },
+        }
+      }
       if (mode.kind === "bottoming") {
         return { mode: IDLE, action: { type: "auto:keep", bottom: [...mode.chosen] } }
       }
@@ -440,6 +478,21 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
 
     case "declareBlockers":
       return { mode: { kind: "blockers", chosen: [], holding: null }, action: null }
+
+    case "startOrdering":
+      return { mode: { kind: "ordering", owed: event.owed, chosen: {} }, action: null }
+
+    case "pickOrder": {
+      if (mode.kind !== "ordering") return { mode, action: null }
+      const ask = mode.owed.find((entry) => entry.blockers.includes(event.card))
+      if (ask === undefined) return { mode, action: null }
+      const taken = mode.chosen[ask.attacker] ?? []
+      // Tapping one already in the order clears that attacker's list rather than removing one from
+      // the middle: an order with a hole in it is not an answer, and "start that one again" is the
+      // only correction a player means by tapping a card they have already placed.
+      const next = taken.includes(event.card) ? [] : [...taken, event.card]
+      return { mode: { ...mode, chosen: { ...mode.chosen, [ask.attacker]: next } }, action: null }
+    }
 
     case "startBottoming":
       return { mode: { kind: "bottoming", chosen: [] }, action: null }
@@ -755,6 +808,13 @@ export function primaryMove(view: GameView): { label: string; event: ArenaEvent 
     }
   }
   if (you.mustDeclare === "blockers") return { label: "Declare blockers", event: { kind: "declareBlockers" }, action: null }
+  if (you.mustDeclare === "order") {
+    return {
+      label: "Assign combat damage",
+      event: { kind: "startOrdering", owed: you.mustOrder },
+      action: null,
+    }
+  }
   if (!you.hasPriority) return null
   return { label: you.passLabel || "Pass", event: null, action: { type: "auto:pass" } }
 }
