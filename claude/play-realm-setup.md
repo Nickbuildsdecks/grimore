@@ -178,7 +178,7 @@ slower decks comfortably and losing to the fastest ones — and a good part of t
 rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
 A person plays it better.
 
-The decks share a pool of a hundred and twenty-seven scripted cards, which now includes a wrath, a
+The decks share a pool of a hundred and forty-five scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -194,6 +194,15 @@ nothing in the pool to trigger them, and Night of Souls' Betrayal is the first c
 effect reaches across the table rather than down one side. Shroud is the one worth knowing as a
 player: a creature with it cannot be targeted by **anybody**, you included — no pump, no targeted
 equip, no rescue.
+
+Three of the newest are the ones that cost you something to play them. **City of Brass** deals you
+a damage every time it becomes tapped — including when an opponent's Icy Manipulator taps it, which
+is the half a "tapped for mana" rule would miss. **Mana Confluence** charges a life as a cost
+instead, so it happens the moment you tap it and nothing can be done about it; at one life the
+engine stops offering it, because a cost you cannot pay is not a cost you may pay. Both are tapped
+last when the table pays for a spell on your behalf: it reaches for a basic before it reaches for
+your life total. **Dark Confidant** reveals your top card each upkeep and charges you its mana
+value, which over 120 measured games cost its controller 65 life and drew 50 cards.
 
 Cards are drawn as text, not pictures. That is deliberate: there is no card artwork available (the
 card table on the server has never been populated, and this environment cannot reach Scryfall), so

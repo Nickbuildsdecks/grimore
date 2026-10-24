@@ -174,12 +174,23 @@ export interface ManaSource {
   readonly produces: readonly ManaType[];
   /** One of `produces`, picked when it is tapped, rather than all of them. */
   readonly choose?: boolean;
+  /**
+   * Life the tap costs, for a land that charges you for the colour.
+   *
+   * The solver does not weigh it — it only carries it through to the pick, so whoever taps the
+   * source knows what to charge. Keeping a painful source out of the way of a painless one is
+   * `manaSources`' job, and it does it by listing them last: every tie-break in here keeps the
+   * first source it found, so the end of the list is the back of the queue.
+   */
+  readonly life?: number;
 }
 
 /** What tapping one source actually added, which a choice source only settles when it is tapped. */
 export interface ManaPick {
   readonly key: string;
   readonly types: readonly ManaType[];
+  /** Life owed for this tap, carried from the source so the caller can charge it. */
+  readonly life?: number;
 }
 
 /**
@@ -291,7 +302,9 @@ export function solveTap(
       ? [wanted ?? source.produces[0]!]
       : source.produces;
     for (const type of types) working = addMana(working, type, 1);
-    chosen.push({ key: source.key, types });
+    chosen.push(source.life === undefined
+      ? { key: source.key, types }
+      : { key: source.key, types, life: source.life });
   }
   return canPay(working, cost, xAmount) ? chosen : null;
 }

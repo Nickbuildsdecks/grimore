@@ -212,6 +212,16 @@ export interface AbilityCost {
    */
   readonly sacrifice?: 'creature' | 'another-creature';
   /**
+   * "Pay 1 life:" — life as part of the cost rather than as something the ability does.
+   *
+   * The difference is not cosmetic. A cost is paid as the ability is activated and cannot be
+   * responded to, and an ability whose cost you cannot pay is never offered at all — so a player
+   * on one life is not shown a Mana Confluence's mana, where "it deals 1 damage to you" on a City
+   * of Brass would happily take them to zero. That is the printed difference between those two
+   * cards, and it is the reason both of them are in the pool.
+   */
+  readonly life?: number;
+  /**
    * A planeswalker's loyalty cost: `+1`, `0`, `-3`. Paid by adding or removing loyalty counters
    * as the ability is activated (CR 606.2), which is why a minus ability cannot be used without
    * the loyalty to pay for it — and why using one is how a planeswalker runs out.

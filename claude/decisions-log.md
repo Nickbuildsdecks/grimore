@@ -2699,3 +2699,51 @@ press that times out now records Playwright's whole call log instead of its firs
 "Timeout 2000ms exceeded" is one line short of a diagnosis and the useful half — *element is not
 stable*, *intercepts pointer events*, *outside of the viewport* — is always underneath it.
 
+
+## D79 — A life cost belongs in `manaSources`; everything costlier does not
+
+`manaSources` is the one answer to "can this be paid for at all" — `legalActions` asks it what is
+castable and `payFrom` asks it what to tap — and it admitted only abilities that needed nothing but
+a tap. Two defensible readings of why:
+
+- **The strict one.** A cost that is not a tap is a decision, and the engine should not make
+  decisions on a player's behalf. Keep the list to free taps; let anything else be an explicit
+  activation.
+- **The one taken.** A *life* cost is the one non-mana cost a seat can always settle from
+  information it already has — its own life total — so leaving it out does not protect the player,
+  it hides a land from them. Mana Confluence was dead: it paid for nothing, it never appeared in
+  the dimmed pips, and the engine refused casts the player could see the mana for.
+
+The strict reading survives for everything else, and that is the point of drawing the line here
+rather than at "any cost the engine can pay": sacrificing a creature is a decision with no right
+answer, and discarding a card is worse. Life is admitted; nothing else is.
+
+Three consequences, each of which had to be decided rather than inherited:
+
+1. **Stopping one short of zero.** Paying life down to 0 is legal and loses the game (CR 118.4), so
+   the engine offers the ability while `life > cost` and not while `life === cost`. 37 board-states
+   across 120 measured games had an untapped Confluence its controller declined at one life.
+2. **Painful sources go last in the list.** Every tie-break in `solveTap` keeps the first source it
+   found, so ordering *is* the preference — a Plains before your life total, with no new rule in
+   the solver. The solver carries the life through to the pick and charges nothing itself.
+3. **A permanent with a free tap and a paid one keeps only the free ones.** No scripted card is
+   shaped that way. If one ever is, charging life for a tap that did not need it is the mistake
+   that cannot be taken back, so the conservative half is the half offered.
+
+## D80 — Count it off the board, not off the move somebody made
+
+The painlands measured as completely dead: `cityTaps: 0, cityDamage: 0` over 120 games. Both
+numbers were the measurement's, not the cards'. It counted bot *actions* naming the land — and
+`candidateActions` never offers a mana ability, so a land the engine taps while paying for a spell
+is never an action anybody took. Counted off the board instead (untapped before an action, tapped
+after it), the same 120 games show 107 City taps for 85 damage and 66 Confluence taps for 62 life.
+
+Then the replacement got it wrong a second way: City's damage is a trigger, so the fixed version
+watched the stack for it — and found **none in 120 games**. With auto-pass on, a trigger nobody can
+respond to goes on the stack and resolves inside the same write, so it is never visible between two
+actions. That is the third separate occasion this engine's auto-pass has broken a measurement
+(D63's Dark Ritual pools, D77's Fog check, this), and the lesson is the same one each time: **the
+state between actions is not the state during one.** Ask the board before, or ask the card. The
+final attribution is a lower bound by construction — life the owner lost in the action that tapped
+their land, bounded by the number of taps — and a lower bound that can be derived from the board is
+worth more than an exact figure that depends on when a write happens to end.

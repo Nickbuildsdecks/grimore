@@ -4339,6 +4339,181 @@ describe('damage that does not happen', () => {
   });
 });
 
+describe('the painlands, and a cost that is not mana', () => {
+  it('City of Brass deals you a damage every time it is tapped, however it was tapped', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      battlefield: { 0: ['City of Brass'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const city = find(s, 0, 'battlefield', 'City of Brass');
+    // Tapped for mana. A mana ability does not use the stack (CR 605.3a) — but the trigger it set
+    // off does, so the damage waits to resolve like anything else.
+    s = apply(s, { type: 'auto:activate', by: 0, card: city, abilityIndex: 0 });
+    expect(s.pools['0']!.W).toBe(1);
+    expect(stackNames(s).join(' ')).toMatch(/City of Brass/);
+    s = drain(passBoth(s));
+    expect(life(s, 0)).toBe(19);
+  });
+
+  it('and when something else taps it, which is the half a mana-ability hook would miss', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      battlefield: { 0: ['City of Brass'], 1: ['Island', 'Island', 'Icy Manipulator'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')].filter((i) => nameOf(s, i) === 'Island')) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    const city = find(s, 0, 'battlefield', 'City of Brass');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Icy Manipulator'),
+      abilityIndex: 0, targets: [{ kind: 'card', id: city }],
+    })));
+    expect(s.instances[city]!.tapped).toBe(true);
+    expect(life(s, 0)).toBe(19);
+  });
+
+  it('and a land that entered tapped did not become tapped', () => {
+    // Rakdos Guildgate enters tapped, which is a replacement effect rather than a tapping. A
+    // version of this that hooked "set tapped" rather than comparing would charge for it.
+    let s = arena({
+      decks: { 0: 'ashen-rite' },
+      hands: { 0: ['Rakdos Guildgate'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = drain(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Rakdos Guildgate') }));
+    expect(s.instances[find(s, 0, 'battlefield', 'Rakdos Guildgate')]!.tapped).toBe(true);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('Mana Confluence charges as a cost, and stops offering mana at one life', () => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+      battlefield: { 0: ['Mana Confluence'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const land = find(s, 0, 'battlefield', 'Mana Confluence');
+    s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: 1 });
+    expect(s.pools['0']!.U).toBe(1);
+    // Paid as the ability was activated: nothing on the stack, and the life already gone.
+    expect(life(s, 0)).toBe(19);
+    expect(stackNames(s)).toEqual([]);
+
+    // And at one life it is not a choice. A cost you cannot pay is not a cost you may pay.
+    let dying = arena({
+      decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+      battlefield: { 0: ['Mana Confluence'] },
+      turn: 2, firstSeat: 0,
+    });
+    dying = advanceTo(dying, 'precombat-main');
+    dying = { ...dying, seats: dying.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 1 } : seat)) };
+    const confluence = find(dying, 0, 'battlefield', 'Mana Confluence');
+    expect(legalActions(dying, 0).plays.some((play) => play.card === confluence)).toBe(false);
+    expect(refusal(dying, { type: 'auto:activate', by: 0, card: confluence, abilityIndex: 0 }))
+      .toMatch(/1 life to pay/);
+  });
+
+  /*
+    The other half of a cost that is not mana: the half the engine pays for you.
+
+    `manaSources` is the one answer to "can this be paid for at all", and for as long as it only
+    admitted a bare tap, Mana Confluence was a land the engine could not see. It never paid for a
+    spell, it never showed in the dimmed pips, and a player with one in play and a Soul Warden in
+    hand was told the card could not be cast while looking straight at the mana for it.
+  */
+  it('the engine taps a painland for you, and charges the life as it taps', () => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+      hands: { 0: ['Soul Warden'] }, battlefield: { 0: ['Mana Confluence'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const land = find(s, 0, 'battlefield', 'Mana Confluence');
+    // Offered at all, which is the part that was broken: no floating mana, one land, one white
+    // spell in hand.
+    expect(legalActions(s, 0).plays.some((play) => play.card === find(s, 0, 'hand', 'Soul Warden')))
+      .toBe(true);
+    s = drain(cast(s, 0, 'Soul Warden'));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Soul Warden');
+    expect(s.instances[land]!.tapped).toBe(true);
+    expect(life(s, 0)).toBe(19);
+  });
+
+  it('and reaches for a Plains before it reaches for your life total', () => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+      hands: { 0: ['Soul Warden'] }, battlefield: { 0: ['Mana Confluence', 'Plains'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const land = find(s, 0, 'battlefield', 'Mana Confluence');
+    const plains = find(s, 0, 'battlefield', 'Plains');
+    s = drain(cast(s, 0, 'Soul Warden'));
+    // Both make white, so both would pay. The solver keeps the first source it finds on a tie and
+    // `manaSources` lists the painful ones last, which is the whole of how this comes out right.
+    expect(s.instances[plains]!.tapped).toBe(true);
+    expect(s.instances[land]!.tapped).toBe(false);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('and at one life it stops being a land the engine can count', () => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+      hands: { 0: ['Soul Warden'] }, battlefield: { 0: ['Mana Confluence'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 1 } : seat)) };
+    const actions = legalActions(s, 0);
+    const warden = find(s, 0, 'hand', 'Soul Warden');
+    expect(actions.plays.some((play) => play.card === warden)).toBe(false);
+    // And the dimmed pips agree with the refusal, because they are asked the same question.
+    expect(actions.potential.W).toBe(0);
+    expect(actions.blocked.find((b) => b.card === warden)?.reason).toMatch(/mana/i);
+  });
+
+  it('and City of Brass triggers off a tap the engine made, not only one you made', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      hands: { 0: ['Lightning Bolt'] }, battlefield: { 0: ['City of Brass'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    // The land was tapped by `payFrom`, and `settle` compared the board before to the board after
+    // and raised the trigger off the difference. Nothing hooked the tap itself.
+    expect(stackNames(s).join(' ')).toMatch(/City of Brass/);
+    s = drain(passBoth(s));
+    expect(life(s, 0)).toBe(19);
+    expect(life(s, 1)).toBe(17);
+  });
+
+  it('Dark Confidant charges you for the card it just drew', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      battlefield: { 0: ['Dark Confidant'] },
+      turn: 3, firstSeat: 1,
+    });
+    // Its controller's upkeep, which is the next turn round.
+    s = advanceTo(nextTurn(s), 'upkeep');
+    const held = ids(s, 0, 'hand').length;
+    s = drain(passBoth(s));
+    expect(ids(s, 0, 'hand').length).toBe(held + 1);
+    // Whatever it drew, the life lost is that card's mana value — including nothing for a land.
+    const drawn = [...ids(s, 0, 'hand')].pop()!;
+    const cost = s.cardDefs[s.instances[drawn]!.defKey]?.cmc ?? 0;
+    expect(life(s, 0)).toBe(20 - cost);
+  });
+});
+
 describe('why a card cannot be played', () => {
   /** The reason the engine gives for a card in hand, or '' when it is playable. */
   const why = (s: GameState, seat: SeatIndex, name: string): string =>

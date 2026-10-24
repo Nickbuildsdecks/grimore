@@ -31,8 +31,8 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  REGENERATION, addCounters, destroy, draw, poolOf, removeEffectsFrom, setPool, spendRegeneration,
-  untapAll, type EffectContext, type EffectFn,
+  REGENERATION, addCounters, destroy, draw, loseLife, poolOf, removeEffectsFrom, setPool,
+  spendRegeneration, untapAll, type EffectContext, type EffectFn,
 } from './effects.js';
 import { manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -676,6 +676,28 @@ function settle(state: GameState, before: GameState): GameState {
     }
     next = stateBasedActions(next);
   }
+  /*
+    Permanents that became tapped, found by comparing rather than announced by whatever tapped
+    them — the same way deaths and arrivals are found, and for the same reason.
+
+    "Whenever ~ becomes tapped" has to fire whether the permanent was tapped for mana, tapped by an
+    Icy Manipulator or tapped by attacking, and none of those three paths should have to know the
+    event exists. A mana ability does not use the stack (CR 605.3a) but a triggered ability that
+    triggers off one does, which is exactly what a City of Brass is.
+
+    A permanent that *entered* tapped did not become tapped, and the comparison gets that for free:
+    it was not on the battlefield in `before` at all.
+  */
+  for (const key of Object.keys(next.zones)) {
+    if (!key.endsWith(':battlefield')) continue;
+    for (const id of next.zones[key] ?? []) {
+      const now = next.instances[id];
+      const was = before.instances[id];
+      if (now === undefined || !now.tapped) continue;
+      if (was === undefined || was.tapped || was.zone !== 'battlefield') continue;
+      next = raise(next, { kind: 'becomes-tapped' }, now.zoneSeat, id);
+    }
+  }
   for (const seat of next.seats) {
     const was = before.seats[seat.index];
     if (was === undefined || seat.eliminated) continue;
@@ -687,11 +709,19 @@ function settle(state: GameState, before: GameState): GameState {
 // ── Casting, activating, resolving ───────────────────────────────────────────────────────────────
 
 
-/** Taps the chosen permanents and puts their mana in the pool. */
+/**
+ * Taps the chosen permanents and puts their mana in the pool.
+ *
+ * The life a painland charges is paid here, as the tap happens, because that is what it is: a cost
+ * of the mana ability, not an effect of it (CR 118.4, CR 605.1a). Nothing goes on the stack and
+ * nothing can be done about it — unlike City of Brass, whose damage is a trigger `settle` raises
+ * off the tap itself and which therefore resolves like anything else.
+ */
 function tapSources(state: GameState, seat: SeatIndex, picks: readonly ManaPick[]): GameState {
   let next = state;
   for (const pick of picks) {
     next = withInstance(next, pick.key, { tapped: true });
+    if (pick.life !== undefined) next = loseLife(next, seat, pick.life);
     // What the solver decided this one made — for a dual, the single colour it was tapped for.
     for (const type of pick.types) next = setPool(next, seat, addMana(poolOf(next, seat), type, 1));
   }

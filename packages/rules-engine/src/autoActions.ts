@@ -20,7 +20,7 @@ import {
   stillDeciding, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
 } from './automation.js';
-import { addToPool, poolOf } from './effects.js';
+import { addToPool, loseLife, poolOf } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
@@ -305,6 +305,15 @@ function activate(
     }
   }
 
+  if (ability.cost.life !== undefined) {
+    // Checked before anything is spent, and refused at exactly the life that would kill you: a
+    // cost you cannot pay is not a cost you may choose to pay (CR 118.4).
+    const life = state.seats[action.by]?.life ?? 0;
+    if (life <= ability.cost.life) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${ability.cost.life} life to pay`);
+    }
+  }
+
   const specs = ability.targets ?? [];
   const chosen = action.targets ?? [];
   const check = checkTargets(state, specs, chosen, action.by, inst.id);
@@ -330,6 +339,7 @@ function activate(
 
   const paid = payFrom(state, action.by, ability.cost.mana, 0);
   let next = paid.state;
+  if (ability.cost.life !== undefined) next = loseLife(next, action.by, ability.cost.life);
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
   if (ability.cost.loyalty !== undefined) {
     // Paid as the ability is activated (CR 606.2), so the counters move before it is on the

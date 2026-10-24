@@ -160,29 +160,45 @@ export interface LegalActions {
 }
 
 /** Mana the seat could add to its pool without casting anything. */
+/** One permanent the engine may tap for mana, and what tapping it would cost and add. */
+interface ManaSourceEntry {
+  readonly key: string;
+  readonly produces: readonly ManaType[];
+  readonly abilityIndex: number;
+  readonly choose?: boolean;
+  /** Life the tap costs, for a land that charges you for the colour. */
+  readonly life?: number;
+}
+
 /**
  * Permanents the engine may tap on a player's behalf to pay a cost.
  *
- * Only abilities that are free and need nothing but a tap: one that costs mana would need mana
- * first, and pretending otherwise offers spells that cannot be cast. One entry per permanent,
+ * Only abilities that need nothing the seat does not already have: one that costs mana would need
+ * mana first, and pretending otherwise offers spells that cannot be cast. One entry per permanent,
  * because tapping it is what pays — and several tap-for-mana abilities on one permanent are a
  * *choice* between them rather than a sum, which is exactly what a dual land is.
+ *
+ * A life cost is the one non-mana cost that counts, because it is the one a seat can always decide
+ * about from its own life total. Mana Confluence was a dead land for as long as this function only
+ * admitted a bare tap: it never paid for a spell, never showed up in the dimmed pips, and the
+ * engine would refuse a cast that the player could see the mana for. Painful sources go last in
+ * the list so the solver's tie-breaks — every one of which keeps the first source it found —
+ * reach for a Swamp before they reach for your life total.
  *
  * Lives here rather than in `automation.ts` because `legalActions` is what asks it the question
  * that matters — "can this be paid for at all" — and `automation.ts` already imports this file.
  */
-export function manaSources(
-  state: GameState, seat: SeatIndex,
-): { readonly key: string; readonly produces: readonly ManaType[]; readonly abilityIndex: number;
-     readonly choose?: boolean }[] {
-  const out: { key: string; produces: readonly ManaType[]; abilityIndex: number; choose?: boolean }[] = [];
+export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[] {
+  const free: ManaSourceEntry[] = [];
+  const painful: ManaSourceEntry[] = [];
+  const life = state.seats[seat]?.life ?? 0;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined || inst.tapped) continue;
     const script = scriptFor(state.cardDefs[inst.defKey]?.name);
     const ch = characteristicsOf(state, inst);
     const abilities = script?.abilities ?? [];
-    const usable: { index: number; produces: readonly ManaType[] }[] = [];
+    let usable: { index: number; produces: readonly ManaType[]; life: number }[] = [];
     for (let i = 0; i < abilities.length; i++) {
       const ability = abilities[i]!;
       if (ability.produces === undefined || ability.produces.length === 0) continue;
@@ -190,24 +206,38 @@ export function manaSources(
       if (!ability.cost.tap) continue;
       if (ability.cost.sacrificeSelf) continue;
       if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
-      usable.push({ index: i, produces: ability.produces as readonly ManaType[] });
+      // A cost you cannot pay is not a cost you may pay (CR 118.4) — and paying down to nothing
+      // is a legal way to lose the game, so the engine stops one short of it.
+      const cost = ability.cost.life ?? 0;
+      if (cost > 0 && life <= cost) continue;
+      usable.push({ index: i, produces: ability.produces as readonly ManaType[], life: cost });
     }
+    // A permanent with both a free tap and a paid one keeps only the free ones. No scripted card
+    // is shaped that way; if one ever is, the conservative half of it is the half to offer, since
+    // charging life for a tap that did not need it is the one mistake that cannot be taken back.
+    if (usable.some((u) => u.life === 0)) usable = usable.filter((u) => u.life === 0);
     if (usable.length === 0) continue;
+    const cost = usable[0]!.life;
+    const bucket = cost > 0 ? painful : free;
     // One source per permanent, because tapping it is what pays — and several tap abilities on
     // one permanent are a *choice* between them, not a sum. That is what a dual land is: two
     // abilities, one tap, one mana. Treating them as a sum would offer spells nobody can cast.
     if (usable.length === 1) {
-      out.push({ key: id, produces: usable[0]!.produces, abilityIndex: usable[0]!.index });
+      bucket.push({
+        key: id, produces: usable[0]!.produces, abilityIndex: usable[0]!.index,
+        ...(cost > 0 ? { life: cost } : {}),
+      });
       continue;
     }
-    out.push({
+    bucket.push({
       key: id,
       produces: usable.flatMap((u) => u.produces),
       abilityIndex: usable[0]!.index,
       choose: true,
+      ...(cost > 0 ? { life: cost } : {}),
     });
   }
-  return out;
+  return [...free, ...painful];
 }
 
 /** The sources `legalActions` asks about affordability, as `manaSources` reports them. */
@@ -237,6 +267,10 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
       // Only free mana abilities count towards what is reachable; one that costs mana would need
       // the mana first, and pretending otherwise would offer spells that cannot be cast.
       if (ability.cost.mana) continue;
+      // A life cost is reachable while there is life to pay it with. Shown rather than hidden,
+      // because a player looking at Mana Confluence already counts it as a land.
+      const life = ability.cost.life ?? 0;
+      if (life > 0 && (state.seats[seat]?.life ?? 0) <= life) continue;
       for (const type of ability.produces) pool = addMana(pool, type as ManaType, 1);
     }
   }
@@ -456,6 +490,9 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       }
       if (ability.cost.mana
         && !canAfford(poolOf(state, seat), parseManaCost(ability.cost.mana), sources)) continue;
+      // Life is a cost like any other: an ability you cannot pay for is not offered, which is why
+      // a Mana Confluence stops making mana at one life and a City of Brass does not.
+      if (ability.cost.life !== undefined && (state.seats[seat]?.life ?? 0) <= ability.cost.life) continue;
       // An ability whose cost is a sacrifice is not activatable with nothing to sacrifice.
       const victims = sacrificeOptions(state, seat, id, ability.cost);
       if (ability.cost.sacrifice !== undefined && victims.length === 0) continue;

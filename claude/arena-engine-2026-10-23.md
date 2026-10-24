@@ -1387,6 +1387,68 @@ what is floating), a spell with nothing to target, and a spell that eats a creat
 none. A card the engine *is* offering is not in the list at all, however many of its modes were
 rejected on the way.
 
+### The trigger with no card, and a cost that is not mana
+
+`becomes-tapped` was the last trigger in the engine with no card behind it, and the reason it had
+none is that every card that uses it charges you for its own mana. So: the two painlands, and the
+creature that charges you for the card it draws.
+
+**City of Brass** — *"Whenever City of Brass becomes tapped, it deals 1 damage to you."* The
+trigger, not the mana ability, which is the distinction that matters: an Icy Manipulator tapping
+your City still deals you the damage, and a hook on "tapped for mana" would miss it. `settle`
+raises it the way it raises a death — by comparing the board before an action to the board after
+and noticing a permanent that was untapped and now is not — so every way of tapping it is covered
+without any of them being enumerated. A land that *entered* tapped did not become tapped, and the
+comparison gets that right for free (a Guildgate costs no life), which a "set tapped" hook would
+have charged for.
+
+**Mana Confluence** — the same card with the cost and the trigger swapped: *"{T}, Pay 1 life: Add
+one mana of any colour."* Life on `AbilityCost`, paid as the ability is activated, checked before
+it is offered. Nothing goes on the stack and nothing can be done about it, because that is what a
+cost is (CR 118.4, CR 605.1a). At one life the ability is simply not offered: a cost you cannot pay
+is not a cost you may pay, and the engine stops one short of paying down to zero.
+
+**Dark Confidant** — *"At the beginning of your upkeep, reveal the top card of your library and put
+that card into your hand. You lose life equal to its mana value."* One trigger that draws and then
+charges for what it drew, including nothing for a land.
+
+**The half that was missing, and that the first measurement hid.** `manaSources` is the engine's one
+answer to "can this be paid for at all" — it drives both affordability and the auto-tap — and it
+only admitted abilities that needed *nothing but a tap*:
+
+```ts
+if (ability.cost.mana !== undefined) continue;
+if (!ability.cost.tap) continue;
+if (ability.cost.sacrificeSelf) continue;
+```
+
+So Mana Confluence was a dead land. It paid for nothing, it never showed in the dimmed pips, and a
+player holding a Soul Warden with a Confluence in play was told the card could not be cast while
+looking straight at the mana for it. A life cost is the one non-mana cost that belongs in that
+list, because it is the one a seat can always decide about from its own life total: it is admitted
+while there is life to pay it, the life is paid in `tapSources` as the tap happens, and painful
+sources are listed **last** so that every tie-break in `solveTap` — each of which keeps the first
+source it found — reaches for a Plains before it reaches for your life.
+
+**And the measurement was wrong before the cards were.** The first pass counted bot *actions*
+naming the painlands and came back with `cityTaps: 0, cityDamage: 0`, which reads as two dead
+cards. It is not: `candidateActions` never offers a mana ability, so a land the engine taps while
+paying for a spell is never an action anybody took. Counted off the board instead — untapped
+before an action, tapped after it — over 120 unsteered games:
+
+| card | copies drawn | taps | life it cost |
+| --- | --- | --- | --- |
+| City of Brass | 25 | 107 | 85 |
+| Mana Confluence | 23 | 66 | 62 |
+| Dark Confidant | 14 cast | 50 upkeeps | 65 |
+
+A second attempt at City's damage watched its trigger on the stack and found **none in 120 games**,
+for the third outing of the same trap: with auto-pass on, a trigger nobody can respond to goes on
+the stack and resolves inside the same write, so it is never visible between two actions. The state
+between actions is not the state during one. Both halves are attributed the same way in the end —
+life the owner lost in the action that tapped their land, bounded by the number of taps — which is
+a lower bound and an honest one.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

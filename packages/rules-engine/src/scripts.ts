@@ -2107,6 +2107,69 @@ const MAZE_OF_ITH: CardScript = {
   }],
 };
 
+// ── The two painlands, which are the same card said two different ways ───────────────────────────
+
+/*
+  A pair worth having together, because the difference between them is a rule rather than a number.
+
+  City of Brass **triggers**: it taps, and then it deals you a damage. The damage uses the stack,
+  it can be responded to, and nothing stops a player on one life tapping it — they simply die.
+
+  Mana Confluence **costs**: the life is paid as the ability is activated, so there is nothing to
+  respond to and a player on one life is not offered the mana at all, because a cost you cannot pay
+  is not a cost you may choose to pay (CR 118.4).
+
+  Between them they are also the two halves of this increment: the trigger kind the engine matched
+  and nothing ever raised, and a cost that is not mana.
+*/
+
+const CITY_OF_BRASS: CardScript = {
+  name: 'City of Brass',
+  abilities: COLOURS.map((colour) => ({
+    cost: { tap: true },
+    description: `{T}: Add {${colour}}.`,
+    produces: [colour],
+  })),
+  triggers: [{
+    on: { kind: 'becomes-tapped' },
+    description: 'City of Brass deals 1 damage to you',
+    effect: (c) => dealDamage(c.state, { kind: 'player', seat: c.controller }, 1),
+  }],
+};
+
+const MANA_CONFLUENCE: CardScript = {
+  name: 'Mana Confluence',
+  abilities: COLOURS.map((colour) => ({
+    cost: { tap: true, life: 1 },
+    description: `{T}, Pay 1 life: Add {${colour}}.`,
+    produces: [colour],
+  })),
+};
+
+/**
+ * Dark Confidant: the card that reads what it just drew.
+ *
+ * Every other upkeep trigger in the pool does a fixed thing. This one has to look at the card it
+ * put in the hand and charge for *that* — which is the whole card, and the reason a deck with it
+ * stops playing seven-drops.
+ */
+const DARK_CONFIDANT: CardScript = {
+  name: 'Dark Confidant',
+  triggers: [{
+    on: { kind: 'step', step: 'upkeep', of: 'you' },
+    description: 'Reveal the top card of your library and put it into your hand. You lose life equal to its mana value',
+    effect: (c) => {
+      const before = listAt(c.state, zoneKey(c.controller, 'hand'));
+      const next = draw(c.state, c.controller, 1);
+      const after = listAt(next, zoneKey(c.controller, 'hand'));
+      const drawn = after.find((id) => !before.includes(id));
+      if (drawn === undefined) return next;
+      const cost = next.cardDefs[next.instances[drawn]!.defKey]?.cmc ?? 0;
+      return cost === 0 ? next : loseLife(next, c.controller, cost);
+    },
+  }],
+};
+
 /**
  * Fog Bank: the prevention printed on a permanent rather than cast from hand.
  *
@@ -2175,7 +2238,7 @@ const ALL: readonly CardScript[] = [
   WALL_OF_AIR, HANNA,
   LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,
   DARK_RITUAL, BORDERLAND_MARAUDER, PREY_UPON, DIVINE_VERDICT,
-  FOG, HOLY_DAY, MAZE_OF_ITH, FOG_BANK,
+  FOG, HOLY_DAY, MAZE_OF_ITH, FOG_BANK, CITY_OF_BRASS, MANA_CONFLUENCE, DARK_CONFIDANT,
   guildgate('Azorius Guildgate', 'W', 'U'),
   equipment('Darksteel Plate', '{2}', { keywords: ['indestructible'] },
     'equipped creature is indestructible'),

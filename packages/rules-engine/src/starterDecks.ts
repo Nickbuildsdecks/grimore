@@ -1249,6 +1249,38 @@ const HOLY_DAY: CardDef = {
   colors: ['W'],
 };
 
+const CITY_OF_BRASS: CardDef = {
+  name: 'City of Brass',
+  typeLine: 'Land',
+  manaCost: '',
+  cmc: 0,
+  oracleText:
+    'Whenever City of Brass becomes tapped, it deals 1 damage to you.\n{T}: Add one mana of any colour.',
+  colors: [],
+};
+
+const MANA_CONFLUENCE: CardDef = {
+  name: 'Mana Confluence',
+  typeLine: 'Land',
+  manaCost: '',
+  cmc: 0,
+  oracleText: '{T}, Pay 1 life: Add one mana of any colour.',
+  colors: [],
+};
+
+const DARK_CONFIDANT: CardDef = {
+  name: 'Dark Confidant',
+  typeLine: 'Creature \u2014 Human Wizard',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText:
+    'At the beginning of your upkeep, reveal the top card of your library and put that card into '
+    + 'your hand. You lose life equal to its mana value.',
+  colors: ['B'],
+};
+
 const FOG_BANK: CardDef = {
   name: 'Fog Bank',
   typeLine: 'Creature \u2014 Wall',
@@ -1721,16 +1753,22 @@ export const ASHEN_RITE: DeckSpec = {
   description: 'Black-red sacrifice. Every creature is a resource, and every land is a card.',
   commander: JUDITH,
   cards: [
-    { card: SWAMP, count: 8 },
+    { card: SWAMP, count: 7 },
     { card: MOUNTAIN, count: 7 },
     { card: RAKDOS_GUILDGATE, count: 2 },
     // Two mana off one tap on turn two is the most-played card in Commander for a reason, and it
     // is the first thing in this pool that makes more mana than it costs to use.
     { card: SOL_RING, count: 1 },
-    { card: MIND_STONE, count: 2 },
+    { card: MIND_STONE, count: 1 },
     // One mana for three, once: the only card in the pool that makes mana from a spell rather
     // than a permanent, and this deck's way to a turn-two Flametongue.
     { card: DARK_RITUAL, count: 2 },
+    // Two cards a turn in a deck that spends them, and a life total it is already paying from.
+    // It cost the second Mind Stone, which this deck has the Rituals and the Guildgates for.
+    { card: DARK_CONFIDANT, count: 1 },
+    // The painland that triggers: tapping it is the cost of a two-colour deck with eight basics
+    // of each. It cost a Swamp.
+    { card: CITY_OF_BRASS, count: 1 },
     // The cycling lands are the mana base's own decision: a land early, a card late. Two of each
     // rather than four, because a deck that cycled every land would never cast anything.
     { card: BARREN_MOOR, count: 2 },
@@ -1787,9 +1825,12 @@ export const SKYWARD_WRIT: DeckSpec = {
   description: 'White-blue fliers. Hold the ground, answer the spell that matters, and win in the air.',
   commander: HANNA_SHIPS_NAVIGATOR,
   cards: [
-    { card: PLAINS, count: 8 },
+    { card: PLAINS, count: 7 },
     { card: ISLAND, count: 8 },
     { card: AZORIUS_GUILDGATE, count: 3 },
+    // The painland that charges rather than triggers, in the deck most likely to be at one life
+    // and have to decide whether it can afford its own mana. It cost a Plains.
+    { card: MANA_CONFLUENCE, count: 1 },
     { card: LONELY_SANDBAR, count: 2 },
     { card: SECLUDED_STEPPE, count: 2 },
     /*
