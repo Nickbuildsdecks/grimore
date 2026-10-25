@@ -17,7 +17,8 @@ import {
 
 const SUBJECT = process.env.SUBJECT ?? 'tidal-mind';
 const ALL = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance',
-  'skyward-writ', 'hollow-tide', 'ashen-rite'];
+  'skyward-writ', 'hollow-tide', 'ashen-rite',
+  'arc-tempest'];
 const SEEDS = Number(process.env.SEEDS ?? 17);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];

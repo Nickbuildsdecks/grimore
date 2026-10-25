@@ -62,6 +62,12 @@ deck's cheapest answer and 1 down and 7 up when they replaced a three-mana remov
 If a slot change measures worse than it should, re-run it with a different card removed before
 concluding anything about the card added.
 
+**A `deck-table` percentage is a statement about a field, not about a deck.** Adding Arc Tempest
+moved four of the other eight decks by three to six games with **not one card of theirs changing**
+(D128): Tidal Mind down six, Skyward Writ up five. So a percentage from a run with a different
+number of decks in it is not comparable to a current one — re-run the table rather than quoting the
+old row, and never read a deck's own move across such a boundary as a change in that deck.
+
 **Read `deck-probe`'s per-opponent split before believing the total.** A trim that wins ten games
 each against the slow decks and none at all against the fast ones is a change about having a clock,
 whatever the total says — and that is exactly what happened the one time the total was trusted on

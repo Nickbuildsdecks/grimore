@@ -284,7 +284,15 @@ export interface ContinuousEffect {
      * the rest are each a line in `cdaCount` and a card away — and a clause with no card behind it
      * is a clause nothing has ever run (D57), so they are named here rather than written.
      */
-    readonly count: 'creature-cards-in-graveyards';
+    readonly count:
+      | 'creature-cards-in-graveyards'
+      | 'instant-and-sorcery-cards-in-your-graveyard';
+    /**
+     * Which of the two the count defines. `both` is a Lhurgoyf, whose power and toughness are both
+     * the count; `power` is the Drake printed with a star for power and a 4 for toughness, where
+     * only the power is counted. Defaulting to `both` leaves the card that shipped first unchanged.
+     */
+    readonly applies?: 'both' | 'power';
     readonly powerPlus?: number;
     readonly toughnessPlus?: number;
   };
@@ -370,16 +378,26 @@ function effectApplies(effect: ContinuousEffect, instance: CardInstance, creatur
  * which the number is decided, so there is nothing to store and nothing to invalidate.
  */
 function cdaCount(
-  state: GameState, kind: NonNullable<ContinuousEffect['definesSize']>['count'],
+  state: GameState,
+  kind: NonNullable<ContinuousEffect['definesSize']>['count'],
+  controller: SeatIndex,
 ): number {
-  if (kind !== 'creature-cards-in-graveyards') return 0;
-  // Every graveyard at the table, which is what the card says: "in all graveyards".
+  // Whose graveyards are counted is part of what the card says, so it is read off the kind rather
+  // than passed in: "in all graveyards" and "in your graveyard" are two different counts, and a
+  // card that said one while the engine performed the other would be wrong in the quiet way.
+  const seats = kind === 'instant-and-sorcery-cards-in-your-graveyard'
+    ? [controller]
+    : state.seats.map((row) => row.index);
   let total = 0;
-  for (const row of state.seats) {
-    for (const id of state.zones[zoneKey(row.index, 'graveyard')] ?? []) {
+  for (const seat of seats) {
+    for (const id of state.zones[zoneKey(seat, 'graveyard')] ?? []) {
       const inst = state.instances[id];
       if (inst === undefined) continue;
-      if (hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'creature')) total += 1;
+      const line = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+      const counts = kind === 'creature-cards-in-graveyards'
+        ? hasType(line, 'creature')
+        : hasType(line, 'instant') || hasType(line, 'sorcery');
+      if (counts) total += 1;
     }
   }
   return total;
@@ -565,9 +583,11 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     // Layer 7a before 7b, which is the whole of the ordering: a defined size is a *base*, and a
     // setting effect replaces it however early the definition was installed (CR 613.4a, 613.4c).
     if (effect.definesSize !== undefined) {
-      const counted = cdaCount(state, effect.definesSize.count);
+      const counted = cdaCount(state, effect.definesSize.count, effect.controller);
       definedPower = counted + (effect.definesSize.powerPlus ?? 0);
-      definedToughness = counted + (effect.definesSize.toughnessPlus ?? 0);
+      if (effect.definesSize.applies !== 'power') {
+        definedToughness = counted + (effect.definesSize.toughnessPlus ?? 0);
+      }
     }
     if (effect.setPower !== undefined) setPower = effect.setPower;
     if (effect.setToughness !== undefined) setToughness = effect.setToughness;

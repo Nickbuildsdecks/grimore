@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 189 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 196 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2821,6 +2821,73 @@ measures −1 and +7 — same two cards added, one different card removed, a swi
 That is the finding worth keeping and it is not about foretell: **which card a slot change removes
 matters more than which card it adds.** Both arrangements were measured on both seed sets before
 either shipped, which is the only reason the first one did not.
+
+### A ninth deck, and the trigger that already had the vocabulary for an archetype
+
+Eight decks, and the gap between them was never a colour pair — it was a *way of winning*. Six won
+by attacking with creatures, one by attacking a library, one by draining a life total. Nothing had
+ever been built so that **casting a spell was itself the thing that advanced the board**, which is
+the one archetype Magic has had since Urza's block and this pool had never had. The `spell-cast`
+trigger was older than most of the engine and had nine readers, every one of them a card sitting
+inside a deck that would have been fine without it.
+
+**Arc Tempest** is twenty-five instants and sorceries, seven creatures that read them, and
+twenty-one lands. Five of the six new cards needed nothing new: Guttersnipe is Firebrand Archer at
+twice the damage, Young Pyromancer is Talrand at a third of the cost, Gelectrode is
+Thermo-Alchemist with a target, Stormchaser Mage is prowess on a flier, and Adeliz is a pump with a
+list of ids the card chooses itself. That last one is the useful shape: "each Wizard you control" is
+narrower than any scope `ContinuousEffect` has, and it did not need one, because `pump` takes ids
+and so the filtering is the card's business. A *static* "Wizards you control get +1/+1" still cannot
+be written — that hole is real and is still open — but a one-shot pump reading a subtype never
+needed it.
+
+The sixth card is the one that cost engine work. **Enigma Drake** is printed with a star for power
+and a 4 for toughness, and the pool's only previous characteristic-defining ability — Lhurgoyf —
+counts creature cards in *all* graveyards and defines *both* halves of its size. So `definesSize`
+learned two things: a second count (`instant-and-sorcery-cards-in-your-graveyard`, which needed the
+effect's controller passed into `cdaCount`), and `applies: 'power'`, for a card where only one half
+is counted. Both are additions to the mechanism rather than a second mechanism, which is the point
+of having built a CDA properly the first time: the number is still read fresh on every
+characteristic lookup, so the Drake grows as the deck does its own thing and shrinks if somebody
+exiles the graveyard, with no trigger, no event and nothing to invalidate.
+
+**Where it landed: 47%, 90-102, fourth of nine** (192 games each, two seeds-sets' worth of games on
+one run). The per-opponent split is the deck's own design document read back:
+
+```
+beats    tidal-mind   19-5     rot-harvest  16-8     hollow-tide  13-11    ashen-rite  13-11
+loses to ember-rush    5-19    forge-alliance 5-19   verdant-guard 8-16    skyward-writ 11-13
+```
+
+A deck of cheap removal and counterspells beats everything slower than it and loses to everything
+faster. The 5-19 against both one-drop decks is also the bot's limitation showing through for the
+third time (D108, D110): holding Counterspell up is half this deck's plan against them, and the
+one-ply search casts it on the turn it can afford it.
+
+**The more interesting number is what happened to the other eight decks, none of which changed a
+card.** Skyward Writ up five, Hollow Tide up two, Rot Harvest down three, Tidal Mind down six. The
+whole of that is Arc Tempest's record against each of them, arriving in a table where every deck's
+percentage is a function of the entire rest of the field. The doc has carried a caveat about this
+since the first balance pass, illustrated by Hollow Tide once falling eight points without a card
+changing; this is the cleaner demonstration, because *nothing* changed except the size of the field.
+
+The cast counts say no slot is dead: the weakest is the single Enigma Drake at 46% (cast in 13 of
+the 28 games it reached hand — a four-drop in a deck whose curve stops at three), then the two
+narrow counters at 61% and 62%. At the other end, Gelectrode was activated 144 times in 128 games
+and Thermo-Alchemist 100, which is the untap-on-cast line doing exactly what the deck is built
+around, and Think Twice was cast 171 times from 88 games in hand, which is flashback doing the same.
+
+**One bug, and the browser suite found it.** `e2e-arena` has a check called "creatures on the
+battlefield show a current power and toughness", and it read every `body-` element on the page —
+hand included. A card in hand is *supposed* to show its printed body, so the check had been passing
+on a false premise for as long as it had existed: every other card in the pool prints a number, so
+reading the hand looked the same as reading the board. Enigma Drake prints a `*`, and the suite went
+red the first time it was dealt one. The fix is in the check, not the card: scope the selector to
+`zone-battlefield-*`. Verified non-vacuous rather than assumed — the narrowed selector was made to
+print what it found, and it came back `["2/2","2/3","7/4"]`, the 7/4 being a Drake with seven spells
+in its graveyard. This is the third check in this project that was wrong by being broader than its
+own sentence, after the face-down leak check that read the game log and the crew test that asserted
+the wrong arithmetic.
 
 ## Next
 

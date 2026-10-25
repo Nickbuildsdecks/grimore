@@ -2847,6 +2847,208 @@ export const HOLLOW_TIDE: DeckSpec = {
   ],
 };
 
+// ── Arc Tempest: red-blue, and the cards it needed ──────────────────────────────────────────────
+
+const IZZET_GUILDGATE: CardDef = {
+  name: 'Izzet Guildgate',
+  typeLine: 'Land — Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Izzet Guildgate enters the battlefield tapped.\n{T}: Add {U} or {R}.',
+  colors: [],
+};
+
+const ADELIZ: CardDef = {
+  name: 'Adeliz, the Cinder Wind',
+  typeLine: 'Legendary Creature — Human Wizard',
+  manaCost: '{1}{U}{R}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Flying, haste\nWhenever you cast an instant or sorcery spell, each Wizard you control gets +1/+1 until end of turn.',
+  colors: ['U', 'R'],
+};
+
+const STORMCHASER_MAGE: CardDef = {
+  name: 'Stormchaser Mage',
+  typeLine: 'Creature — Human Monk Wizard',
+  manaCost: '{U}{R}',
+  cmc: 2,
+  power: '1',
+  toughness: '3',
+  oracleText: 'Flying, haste, prowess',
+  colors: ['U', 'R'],
+};
+
+const YOUNG_PYROMANCER: CardDef = {
+  name: 'Young Pyromancer',
+  typeLine: 'Creature — Human Shaman',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'Whenever you cast an instant or sorcery spell, create a 1/1 red Elemental creature token.',
+  colors: ['R'],
+};
+
+const GUTTERSNIPE: CardDef = {
+  name: 'Guttersnipe',
+  typeLine: 'Creature — Goblin Shaman',
+  manaCost: '{2}{R}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Whenever you cast an instant or sorcery spell, Guttersnipe deals 2 damage to each opponent.',
+  colors: ['R'],
+};
+
+const GELECTRODE: CardDef = {
+  name: 'Gelectrode',
+  typeLine: 'Creature — Weird Wizard',
+  manaCost: '{1}{U}{R}',
+  cmc: 3,
+  power: '0',
+  toughness: '1',
+  oracleText: '{T}: Gelectrode deals 1 damage to any target.\nWhenever you cast an instant or sorcery spell, untap Gelectrode.',
+  colors: ['U', 'R'],
+};
+
+/**
+ * The second star in the pool's power boxes, and the first that is only in the power box.
+ *
+ * Lhurgoyf is printed `*` over `1+*`; this one is printed `*` over `4`, so the engine had to learn
+ * that a characteristic-defining size can define one half and leave the other printed. The `*`
+ * here is a real asterisk rather than a 0 for the same reason Lhurgoyf's is: the card face should
+ * say what the card says, and the number the player wants is on the battlefield, computed.
+ */
+const ENIGMA_DRAKE: CardDef = {
+  name: 'Enigma Drake',
+  typeLine: 'Creature — Drake',
+  manaCost: '{2}{U}{R}',
+  cmc: 4,
+  power: '*',
+  toughness: '4',
+  oracleText: "Flying\nEnigma Drake's power is equal to the number of instant and sorcery cards in your graveyard.",
+  colors: ['U', 'R'],
+};
+
+/**
+ * Arc Tempest: the ninth deck, and the first whose creatures are paid for by its spells.
+ *
+ * Eight decks, and the gap between them was not a colour pair — it was a *way of winning*. Six won
+ * by attacking with creatures, one by attacking a library, one by draining a life total; all nine
+ * of the pool's `spell-cast` readers were cards inside decks that would have been fine without
+ * them. Nothing had ever been built so that casting a spell was itself the thing that advanced the
+ * board, which is the one archetype Magic has had since Urza's block and this pool had never had.
+ *
+ * So the deck list is twenty-five instants and sorceries and seven creatures that read them.
+ * **Guttersnipe** turns each cast into two damage at the face and **Young Pyromancer** turns it
+ * into a body; **Gelectrode** and **Thermo-Alchemist** untap on each cast, which makes a tap
+ * ability into a once-per-spell ability; **Monastery Swiftspear** and **Stormchaser Mage** grow.
+ * **Enigma Drake** is the one that needs nothing to have resolved first — a 1/4 flier early, and
+ * whatever the graveyard has become by turn eight.
+ *
+ * Adeliz is the commander because she is the half of the deck a deck list cannot have: a 2/2 flier
+ * with haste that is a four-power flier the turn two spells are cast, and a Wizard herself, so the
+ * line works on an empty board. Three of the deck's creatures are Wizards and the other four are
+ * not, which is the honest version of this card — she pumps the ones that share her type and the
+ * Pyromancer tokens are on their own.
+ *
+ * What the deck does not have, said out loud: a sweeper, a way to answer a resolved permanent that
+ * is not a creature, and any card that gains life. It expects to be the deck with the shorter
+ * clock, and against the two decks whose clock is shorter still it has to be the one holding
+ * Counterspell. Where that actually leaves it is measured rather than claimed — see the table in
+ * claude/play-realm-setup.md.
+ */
+export const ARC_TEMPEST: DeckSpec = {
+  id: 'arc-tempest',
+  name: 'Arc Tempest',
+  description: 'Red-blue spells. Every creature here is paid for by the instant you were casting anyway.',
+  commander: ADELIZ,
+  cards: [
+    { card: MOUNTAIN, count: 7 },
+    { card: ISLAND, count: 7 },
+    { card: IZZET_GUILDGATE, count: 3 },
+    /*
+      Two cycling lands in each colour, and this deck wants them more than the two decks that
+      already run them.
+
+      A deck of one- and two-mana spells floods on the fourth land and keeps flooding, and a land
+      that becomes a card for {2} is a land that is never the eighth one. It is also two spells out
+      of one card for everything here that counts casts — the cycling is an ability, not a cast, so
+      it does not feed Guttersnipe, but drawing into the spell it finds does.
+    */
+    { card: FORGOTTEN_CAVE, count: 2 },
+    { card: LONELY_SANDBAR, count: 2 },
+    /*
+      Twenty-one lands for a curve that stops at four, which is a land fewer than most of the pool.
+
+      Twelve sources of each colour, counting the Guildgates on both sides. The two cards that want
+      more than that are Counterspell and Saw It Coming at {U}{U}, and Saw It Coming is the one card
+      in the deck that can be put somewhere for {2} on the turn the second Island has not arrived.
+    */
+
+    // ── The creatures that read the spells ──
+    /*
+      Seven creatures, which is fewer than any other deck in the pool and is the point: a creature
+      here is not the plan, it is the multiplier on the plan. The deck wins with a Guttersnipe in
+      play and twelve burn spells in the library, or with a Swiftspear and two cantrips, and it can
+      win with neither — twelve of the spells point at a face.
+    */
+    { card: MONASTERY_SWIFTSPEAR, count: 3 },
+    { card: STORMCHASER_MAGE, count: 2 },
+    { card: YOUNG_PYROMANCER, count: 2 },
+    { card: GUTTERSNIPE, count: 2 },
+    // The two that untap on a cast, which is the deck's inevitability: a board the deck cannot
+    // attack into still loses to a Gelectrode and three cantrips. The Alchemist has defender and
+    // cannot be aimed; Gelectrode can be, and is also the deck's answer to an X/1.
+    { card: GELECTRODE, count: 2 },
+    { card: THERMO_ALCHEMIST, count: 2 },
+    { card: ENIGMA_DRAKE, count: 1 },
+
+    // ── Twelve spells that point at a face ──
+    { card: LIGHTNING_BOLT, count: 2 },
+    { card: SHOCK, count: 2 },
+    { card: LIGHTNING_STRIKE, count: 2 },
+    // Magma Jet over a third Lightning Strike: the scry is the half this deck is short of, since a
+    // deck that needs its one Guttersnipe needs to find it.
+    { card: MAGMA_JET, count: 2 },
+    { card: BURST_LIGHTNING, count: 1 },
+    // Firebolt, which is two casts out of one card — the flashback is the second trigger for every
+    // creature on the board, and the pool's only burn spell that is.
+    { card: FIREBOLT, count: 1 },
+    { card: LAVA_SPIKE, count: 1 },
+    // The X spell, which is what the deck's unspent mana is for on the turn the game ends.
+    { card: FIREBALL, count: 1 },
+
+    // ── Eight that find the next spell ──
+    { card: PREORDAIN, count: 2 },
+    // Think Twice, for the same reason as Firebolt: one card, two casts, and the second one comes
+    // on a turn the hand is empty.
+    { card: THINK_TWICE, count: 2 },
+    // Behold the Multiverse, which is the deck's two-mana play on a turn it has nothing else to do
+    // and its four-mana draw-two on a turn it does.
+    { card: BEHOLD_THE_MULTIVERSE, count: 2 },
+    { card: DIVINATION, count: 1 },
+    { card: FAITHLESS_LOOTING, count: 1 },
+
+    // ── Five that say no ──
+    /*
+      The concession that this deck is not actually the fastest in the pool.
+
+      Ember Rush and Forge Alliance both put a creature on the board on turn one, and a deck whose
+      own clock starts on turn three has to survive theirs. Counterspell is the card; Saw It Coming
+      is the one that can be paid for on a turn when the mana was needed elsewhere; Essence Scatter
+      is the narrow one, and it is narrow in the right direction, since six of the nine decks here
+      win with creatures.
+    */
+    { card: COUNTERSPELL, count: 2 },
+    { card: ESSENCE_SCATTER, count: 1 },
+    { card: SAW_IT_COMING, count: 1 },
+    { card: NEGATE, count: 1 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
@@ -2856,6 +3058,7 @@ export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [ASHEN_RITE.id]: ASHEN_RITE,
   [SKYWARD_WRIT.id]: SKYWARD_WRIT,
   [HOLLOW_TIDE.id]: HOLLOW_TIDE,
+  [ARC_TEMPEST.id]: ARC_TEMPEST,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

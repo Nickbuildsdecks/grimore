@@ -3162,6 +3162,158 @@ const DISRUPT_DECORUM: CardScript = {
   },
 };
 
+// ── Red-blue: the deck whose creatures are paid for by its spells ───────────────────────────────
+
+/*
+  Six cards for Arc Tempest, and the thing they have in common is the thing the pool was missing.
+
+  Eight decks, and every one of them won with creatures or with a library. Nothing in the pool had
+  ever been built so that *casting a spell* was itself the thing that advanced the board, which
+  meant the `spell-cast` trigger — among the oldest in the engine, and the one Talrand, prowess,
+  Firebrand Archer and the two magecraft cards all use — had never had a deck that was about it.
+  So: five creatures that each convert a cast into something, and a Drake whose size is a fact
+  about the deck's own graveyard.
+
+  Only one of the six needed anything new, and it is the Drake. The other five are assembled out of
+  parts that already shipped, which is the useful fact here: a trigger kind with four readers had
+  the vocabulary for a whole archetype and nobody had asked it for one.
+*/
+
+export const ELEMENTAL_TOKEN: CardDef = {
+  name: 'Elemental', typeLine: 'Token Creature — Elemental', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: '', colors: ['R'],
+};
+
+/**
+ * Adeliz, the Cinder Wind: the commander, and the one card here that reads a creature *type*.
+ *
+ * Every other pump in the pool hits one named permanent, the caster's whole team, or the whole
+ * board. "Each Wizard you control" is narrower than any of those, and it does not need a new scope
+ * to be: `pump` takes a list of ids, so the filtering is the card's own business and the engine's
+ * `controller-creatures` scope stays a scope about control rather than about subtypes. A static
+ * effect reading "Wizards you control get +1/+1" could not be written this way and still is not —
+ * that is `ContinuousEffect`'s missing subtype scope, and it is a different hole.
+ *
+ * She is a Wizard herself, which is why she is a clock on an empty board: two spells in a turn and
+ * the 2/2 flier that cost {1}{U}{R} is swinging for four.
+ */
+const ADELIZ: CardScript = {
+  name: 'Adeliz, the Cinder Wind',
+  keywords: ['flying', 'haste'],
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      description: 'each Wizard you control gets +1/+1 until end of turn',
+      effect: (c) => {
+        const wizards = creaturesControlledBy(c.state, c.controller).filter((id) => {
+          const inst = c.state.instances[id];
+          return inst !== undefined
+            && hasSubtype(characteristicsOf(c.state, inst).typeLine, 'wizard');
+        });
+        return pump(c.state, wizards, c.source, c.controller, { power: 1, toughness: 1 });
+      },
+    },
+  ],
+};
+
+/** Prowess on a flier with haste, which is the whole card. */
+const STORMCHASER_MAGE: CardScript = {
+  name: 'Stormchaser Mage',
+  keywords: ['flying', 'haste', 'prowess'],
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'noncreature' },
+      description: 'Prowess — +1/+1 until end of turn',
+      effect: (c) => pump(c.state, [c.source], c.source, c.controller, { power: 1, toughness: 1 }),
+    },
+  ],
+};
+
+/** Talrand's shape at a third of the cost, for a token a third of the size. */
+const YOUNG_PYROMANCER: CardScript = {
+  name: 'Young Pyromancer',
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      description: 'create a 1/1 red Elemental creature token',
+      effect: (c) => createToken(c.state, c.controller, ELEMENTAL_TOKEN, 1),
+    },
+  ],
+};
+
+/** Firebrand Archer's shape at twice the damage, which is a clock rather than a tax. */
+const GUTTERSNIPE: CardScript = {
+  name: 'Guttersnipe',
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      description: 'deals 2 damage to each opponent',
+      effect: (c) => opponentsOf(c.state, c.controller).reduce(
+        (state, seat) => dealDamage(state, { kind: 'player', seat }, 2, { controller: c.controller, source: c.source }),
+        c.state,
+      ),
+    },
+  ],
+};
+
+/**
+ * Gelectrode: Thermo-Alchemist's text with a target, and a Wizard to go under Adeliz.
+ *
+ * The difference from the Alchemist is not the mana cost. The Alchemist hits each opponent and
+ * cannot be aimed, so it is a clock and nothing else; Gelectrode's damage chooses, which makes the
+ * same ability also the deck's answer to an X/1. Both untap on a spell, so both are "once per spell
+ * you cast" rather than once per turn — the reason a deck holding twenty-five instants and
+ * sorceries wants either of them at all.
+ */
+const GELECTRODE: CardScript = {
+  name: 'Gelectrode',
+  abilities: [
+    {
+      cost: { tap: true },
+      targets: [ANY_TARGET],
+      description: '{T}: Gelectrode deals 1 damage to any target.',
+      effect: (c) => {
+        const target = c.targets[0];
+        return target === undefined
+          ? c.state
+          : dealDamage(c.state, target, 1, { controller: c.controller, source: c.source });
+      },
+    },
+  ],
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      description: 'untap Gelectrode',
+      effect: (c) => tap(c.state, c.source, false),
+    },
+  ],
+};
+
+/**
+ * Enigma Drake: the second characteristic-defining ability in the pool, and the first that is a
+ * fact about one player's deck rather than about the table.
+ *
+ * Lhurgoyf counts creature cards in *all* graveyards and sets both halves of its size from the
+ * count. This one counts instants and sorceries in *your* graveyard and sets only its power — the
+ * toughness is printed, which is what `applies: 'power'` is for. Both of those were additions to
+ * `definesSize`, and both were additions rather than a second mechanism because the hard part of a
+ * CDA is already solved: the number is read fresh on every characteristic lookup, so a Drake gets
+ * bigger as the deck does its own thing and smaller if somebody exiles the graveyard, with no
+ * trigger, no event and nothing to invalidate.
+ *
+ * It is also the one creature in Arc Tempest that is a threat without the rest of the deck having
+ * resolved first. A 1/4 flier on turn three is a blocker; the same card on turn eight is a six-
+ * power flier, and nothing was spent getting it there that the deck was not spending anyway.
+ */
+const ENIGMA_DRAKE: CardScript = {
+  name: 'Enigma Drake',
+  keywords: ['flying'],
+  statics: [{
+    scope: 'self',
+    effect: { definesSize: { count: 'instant-and-sorcery-cards-in-your-graveyard', applies: 'power' } },
+  }],
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -3257,7 +3409,7 @@ const SEDGEMOOR_WITCH: CardScript = {
  */
 export const TOKEN_DEFS: readonly CardDef[] = [
   GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN,
-  SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN,
+  SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN, ELEMENTAL_TOKEN,
 ];
 
 const ALL: readonly CardScript[] = [
@@ -3288,6 +3440,7 @@ const ALL: readonly CardScript[] = [
   LEONIN_SKYHUNTER, RAISE_THE_ALARM, ANGELIC_GIFT, INSPIRED_CHARGE, BALAN,
   JACE_BELEREN, GARRUK_WILDSPEAKER,
   guildgate('Boros Guildgate', 'R', 'W'),
+  guildgate('Izzet Guildgate', 'U', 'R'),
   equipment('Bonesplitter', '{1}', { power: 2 }, 'equipped creature gets +2/+0'),
   equipment('Loxodon Warhammer', '{3}', { power: 3, keywords: ['trample', 'lifelink'] },
     'equipped creature gets +3/+0 and has trample and lifelink'),
@@ -3325,6 +3478,7 @@ const ALL: readonly CardScript[] = [
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,
   SKY_SKIFF, RENEGADE_FREIGHTER, CONSULATE_DREADNOUGHT,
   THE_BIRTH_OF_MELETIS, THE_ELDEST_REBORN, BEHOLD_THE_MULTIVERSE, SAW_IT_COMING,
+  ADELIZ, STORMCHASER_MAGE, YOUNG_PYROMANCER, GUTTERSNIPE, GELECTRODE, ENIGMA_DRAKE,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

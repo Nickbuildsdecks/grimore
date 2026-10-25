@@ -616,11 +616,20 @@ async function main() {
     await shot(nick, 'mid-game-nick');
     await shot(friend, 'mid-game-friend');
 
-    // ── The board agrees with the engine ────────────────────────────────────────────────────────
-    // Every creature on screen shows the power the engine computed. A card whose body came from the
-    // printed values would disagree the moment a counter or a pump existed.
-    const bodies = await nick.locator('[data-testid^="body-"]').evaluateAll((els) =>
-      els.map((e) => e.textContent?.trim() ?? ''));
+    /*
+      ── The board agrees with the engine ────────────────────────────────────────────────────────
+
+      Every creature *on the battlefield* shows the power the engine computed. A card whose body
+      came from the printed values would disagree the moment a counter or a pump existed.
+
+      Scoped to the two battlefields rather than to the page, and that is the whole correctness of
+      this check: a card in hand is *supposed* to show its printed body, and Enigma Drake's printed
+      power is a `*`. Read across the page this passed for a year only because every other card in
+      the pool prints a number — see the note in `claude/decisions-log.md` D128.
+    */
+    const bodies = await nick
+      .locator('[data-testid^="zone-battlefield-"] [data-testid^="body-"]')
+      .evaluateAll((els) => els.map((e) => e.textContent?.trim() ?? ''));
     check(
       'creatures on the battlefield show a current power and toughness',
       bodies.length === 0 || bodies.every((b) => /^\d+\/\d+$/.test(b)),

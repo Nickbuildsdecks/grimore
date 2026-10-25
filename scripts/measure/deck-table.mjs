@@ -7,7 +7,8 @@
 import { applyAction, createGame, botAction, seatsToAct } from '../../packages/rules-engine/dist/index.js';
 
 const ALL = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance',
-  'skyward-writ', 'hollow-tide', 'ashen-rite'];
+  'skyward-writ', 'hollow-tide', 'ashen-rite',
+  'arc-tempest'];
 const SEEDS = Number(process.env.SEEDS ?? 6);
 const SEED0 = Number(process.env.SEED0 ?? 4400);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];

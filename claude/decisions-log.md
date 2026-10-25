@@ -5156,3 +5156,84 @@ face-down card in exile and nothing else, so foretelling an answer and foretelli
 identical from across the table. This bot has no model of what an opponent knows and the rule above
 is deliberately conservative about it — it will not foretell to hide a card, only to use mana that
 was going spare. The hidden half belongs to the two people at the table.
+
+## D128 — A ninth deck, and the eight records that moved without a card changing
+
+**Decision: the pool's ninth deck is red-blue spells — the archetype where casting a spell is
+itself the thing that advances the board — and it is assembled almost entirely out of a trigger the
+engine has had since the first red deck.**
+
+The gap in eight decks was never a colour pair. Six won by attacking with creatures, one by
+attacking a library, one by draining a life total; the `spell-cast` trigger had nine readers and
+every one of them was a card inside a deck that would have been fine without it. Arc Tempest is
+twenty-five instants and sorceries, seven creatures that read them and twenty-one lands, and five
+of its six new cards needed no new engine behaviour at all — Guttersnipe is Firebrand Archer at
+twice the damage, Young Pyromancer is Talrand at a third of the cost, Gelectrode is
+Thermo-Alchemist with a target, Stormchaser Mage is prowess on a hasty flier.
+
+**Adeliz's pump is the one worth stating as a rule.** "Each Wizard you control" is narrower than
+any scope `ContinuousEffect` has, and it needed none: `pump` takes a list of ids, so which
+creatures are in the list is the card's own business. The subtype-scoped *static* effect ("Wizards
+you control get +1/+1") still cannot be written and that hole is still open — but a one-shot pump
+that reads a subtype was never the same problem, and treating it as one would have meant adding a
+scope for a card that did not need it.
+
+**Enigma Drake is the engine work, and it is two additions rather than a mechanism.** The pool's
+only previous characteristic-defining ability, Lhurgoyf, counts creature cards in *all* graveyards
+and defines both halves of its size. The Drake counts instants and sorceries in *your* graveyard
+and is printed with a star for power and a 4 for toughness. So `definesSize` gained a second count
+(which meant passing the effect's controller into `cdaCount` — whose graveyards are counted is part
+of what the card says, so it is read off the count kind rather than guessed) and an
+`applies: 'power'` flag. Everything hard about a CDA was already solved: the count is read fresh on
+every characteristic lookup, so the Drake grows as the deck fills its own graveyard and shrinks when
+somebody exiles it, with no trigger, no event and nothing to invalidate.
+
+**Where it landed, and what it did to everybody else.** 192 games against each of the eight,
+`SEEDS=12 node scripts/measure/deck-table.mjs`:
+
+```
+ 82%  157-35   ember-rush          beats    tidal-mind     19-5
+ 70%  134-58   forge-alliance               rot-harvest    16-8
+ 58%  112-80   verdant-guard                hollow-tide    13-11
+ 47%   90-102  arc-tempest   ←              ashen-rite     13-11
+ 45%   86-106  ashen-rite          loses to ember-rush      5-19
+ 44%   85-107  skyward-writ                 forge-alliance  5-19
+ 38%   72-120  hollow-tide                  verdant-guard   8-16
+ 36%   70-122  rot-harvest                  skyward-writ   11-13
+ 29%   56-136  tidal-mind
+```
+
+Fourth of nine, and the split is the deck's design read back: it beats everything slower than it and
+loses to everything faster. The 5-19 against both one-drop decks is the bot's limitation showing for
+the third time (D108, D110) — holding Counterspell up is half the plan against them, and a one-ply
+search casts it the turn it can afford it.
+
+**The finding worth keeping is in the other eight rows, none of which changed a card.** Skyward
+Writ up five, Hollow Tide up two, Rot Harvest down three, Tidal Mind down six. All of it is Arc
+Tempest's own record against each of them. This table has carried a caveat about exactly this since
+D114 — a deck's percentage is a function of the whole rest of the field — illustrated until now by
+Hollow Tide falling eight points between two runs. This is the cleaner demonstration: *nothing*
+changed except the size of the field, and a quarter of the pool moved by three to six games.
+**A deck-table percentage is a statement about a field, not about a deck**, and it should be re-read
+rather than compared whenever the field changes size.
+
+**No slot is dead, and the cast counts say which are closest.** `SUBJECT=arc-tempest
+scripts/measure/cast-counts.mjs`, 128 games: the single Enigma Drake at 46% is the weakest, cast in
+13 of the 28 games it reached hand, which is what a four-drop does in a deck whose curve stops at
+three; then the two narrow counters at 61% and 62%. At the other end, Gelectrode was activated 144
+times and Thermo-Alchemist 100, which is the untap-on-cast line doing the thing the deck is built
+around, and Think Twice was cast 171 times from 88 games in hand, which is flashback doing the same.
+The Drake stays at one copy rather than being cut: it is the deck's only threat that does not need
+the rest of the deck to have resolved first, and 46% is a curve complaint rather than a dead card.
+**One bug, and the browser suite found it.** `e2e-arena` has a check called "creatures on the
+battlefield show a current power and toughness", and it read every `body-` element on the page —
+hand included. A card in hand is *supposed* to show its printed body, so the check had been passing
+on a false premise for as long as it had existed: every other card in the pool prints a number, so
+reading the hand looked the same as reading the board. Enigma Drake prints a `*`, and the suite went
+red the first time it was dealt one. The fix is in the check, not the card: scope the selector to
+`zone-battlefield-*`. Verified non-vacuous rather than assumed — the narrowed selector was made to
+print what it found, and it came back `["2/2","2/3","7/4"]`, the 7/4 being a Drake with seven spells
+in its graveyard. This is the third check in this project that was wrong by being broader than its
+own sentence, after the face-down leak check that read the game log and the crew test that asserted
+the wrong arithmetic.
+

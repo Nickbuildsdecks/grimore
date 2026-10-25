@@ -7570,3 +7570,148 @@ describe('foretell: {2} to hide a card in exile, and a cheaper cost later (CR 70
       .toContain('not foretold by you');
   });
 });
+
+describe('red-blue: six cards whose job is to read the spells', () => {
+  /*
+    Arc Tempest's own cards, and the reason they are tested together: five of the six are new
+    *decks* for an old trigger rather than new engine behaviour. `spell-cast` has been in the
+    engine since the first red deck; what had never been asked of it was whether a whole archetype
+    could be assembled out of it, so what these tests check is each card's printed line, and then
+    the one place where that did need something new — the Drake's power.
+  */
+  const izzet = (
+    mine: readonly string[], hand: readonly string[], graveyard: readonly string[] = [],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'arc-tempest' },
+    hands: { 0: [...hand] },
+    battlefield: { 0: ['Island', 'Island', 'Mountain', 'Mountain', ...mine] },
+    ...(graveyard.length === 0 ? {} : { graveyard: { 0: [...graveyard] } }),
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('pumps the Wizards Adeliz shares a type with, and nothing else', () => {
+    /*
+      "Each Wizard you control" — narrower than any scope in `ContinuousEffect`, and it does not
+      need one: `pump` takes a list of ids, so which creatures are in the list is the card's
+      business. Adeliz is a Wizard herself, Gelectrode is a Weird Wizard, and Young Pyromancer is a
+      Human Shaman who gets nothing.
+    */
+    let s = izzet(['Adeliz, the Cinder Wind', 'Gelectrode', 'Young Pyromancer'], ['Shock']);
+    const adeliz = find(s, 0, 'battlefield', 'Adeliz, the Cinder Wind');
+    const wizard = find(s, 0, 'battlefield', 'Gelectrode');
+    const shaman = find(s, 0, 'battlefield', 'Young Pyromancer');
+    expect([power(s, adeliz), power(s, wizard), power(s, shaman)]).toEqual([2, 0, 2]);
+
+    s = tapAllLands(s, 0);
+    // The Shock and Adeliz's trigger are both on the stack, so the board is read once both have
+    // resolved rather than once the spell has.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect([power(s, adeliz), power(s, wizard), power(s, shaman)]).toEqual([3, 1, 2]);
+    expect([toughness(s, adeliz), toughness(s, wizard)]).toEqual([3, 2]);
+  });
+
+  it('does not pump on a creature spell, which is the half the filter is for', () => {
+    // `spell: 'instant-or-sorcery'` rather than `'noncreature'`: Adeliz is not prowess, and a
+    // Gelectrode cast is not a trigger.
+    let s = izzet(['Adeliz, the Cinder Wind'], ['Gelectrode']);
+    const adeliz = find(s, 0, 'battlefield', 'Adeliz, the Cinder Wind');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gelectrode') })));
+    expect(power(s, adeliz)).toBe(2);
+  });
+
+  it('sends two damage at the face for every spell Guttersnipe sees cast', () => {
+    let s = izzet(['Guttersnipe'], ['Think Twice', 'Shock']);
+    s = tapAllLands(s, 0);
+    const before = life(s, 1);
+    // A cantrip: no damage of its own, two from the Goblin.
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Think Twice') })));
+    expect(life(s, 1)).toBe(before - 2);
+    // And a Shock, which is two of its own on top of the Goblin's two.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(life(s, 1)).toBe(before - 6);
+  });
+
+  it('leaves a body behind for every spell Young Pyromancer sees cast', () => {
+    let s = izzet(['Young Pyromancer'], ['Think Twice']);
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Think Twice') })));
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Elemental').length).toBe(1);
+  });
+
+  it('untaps Gelectrode on a cast, so one creature pings twice in a turn', () => {
+    /*
+      The reason a tap ability is worth a card in this deck: "once per turn" becomes "once per
+      spell". Two pings off one Gelectrode in one main phase, with a Preordain in between.
+    */
+    let s = izzet(['Gelectrode'], ['Think Twice']);
+    const gel = find(s, 0, 'battlefield', 'Gelectrode');
+    s = tapAllLands(s, 0);
+    const before = life(s, 1);
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: gel, abilityIndex: 0,
+      targets: [{ kind: 'player', seat: 1 }],
+    }));
+    expect(life(s, 1)).toBe(before - 1);
+    expect(s.instances[gel]!.tapped).toBe(true);
+
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Think Twice') })));
+    expect(s.instances[gel]!.tapped).toBe(false);
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: gel, abilityIndex: 0,
+      targets: [{ kind: 'player', seat: 1 }],
+    }));
+    expect(life(s, 1)).toBe(before - 2);
+  });
+
+  it('grows Stormchaser Mage on any noncreature spell, Adeliz or not', () => {
+    // Prowess, which is the wider filter: an artifact or an enchantment would do it too, and the
+    // Mage does not care whose Wizard it is.
+    let s = izzet(['Stormchaser Mage'], ['Think Twice']);
+    const mage = find(s, 0, 'battlefield', 'Stormchaser Mage');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Think Twice') })));
+    expect([power(s, mage), toughness(s, mage)]).toEqual([2, 4]);
+  });
+
+  /*
+    The Drake, and the two things `definesSize` had to learn for it.
+
+    Lhurgoyf counts creature cards in *all* graveyards and defines both halves of its size. This
+    one counts instants and sorceries in *your* graveyard and defines only its power — printed `*`
+    over `4`. Both halves of that are worth a test, because both are the kind of mistake that makes
+    a card quietly the wrong size rather than throwing.
+  */
+  it('is as big as its own graveyard, and keeps the toughness it is printed with', () => {
+    let s = izzet(['Enigma Drake'], []);
+    const drake = find(s, 0, 'battlefield', 'Enigma Drake');
+    expect([power(s, drake), toughness(s, drake)]).toEqual([0, 4]);
+
+    // Three cards into the graveyard: two spells and a land, and the land is not a spell.
+    for (const name of ['Shock', 'Preordain', 'Mountain']) {
+      s = apply(s, {
+        type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'graveyard',
+      });
+    }
+    expect([power(s, drake), toughness(s, drake)]).toEqual([2, 4]);
+  });
+
+  it('does not count the other player’s graveyard, which Lhurgoyf would have', () => {
+    // The difference between the two counts, said as a test: seat 1's bin is full of instants and
+    // the Drake is still a 0/4.
+    let s = izzet(['Enigma Drake'], []);
+    const drake = find(s, 0, 'battlefield', 'Enigma Drake');
+    for (const name of ['Giant Growth', 'Harmonize']) {
+      s = apply(s, {
+        type: 'card:move', by: 1, card: find(s, 1, 'library', name), toZone: 'graveyard',
+      });
+    }
+    expect(power(s, drake)).toBe(0);
+  });
+});

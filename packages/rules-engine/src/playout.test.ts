@@ -913,14 +913,22 @@ describe('what looking a move ahead buys', () => {
     });
     s = advanceTo(s, 'declare-attackers');
     const elemental = find(s, 1, 'battlefield', 'Air Elemental');
-    // Reach on both blockers, so the flier is a legal target for either: the claim is about
-    // ganging up, not about who can see a flier.
+    /*
+      Reach on both blockers, so the flier is a legal target for either: the claim is about ganging
+      up, not about who can see a flier.
+
+      `end-of-turn` rather than `permanent`, and the distinction is not cosmetic: a permanent effect
+      exists only while its source is on the battlefield, and the source here is the string `test`,
+      which is not an instance at all — so the first expiry pass would throw both effects away and
+      the flier would be unblockable again. End-of-turn outlasts the one combat this test is about,
+      which is all it needs.
+    */
     s = {
       ...s,
       effects: [0, 1].map((i) => ({
         id: `reach${i}`, createdTurn: s.turn, source: 'test', controller: 0 as SeatIndex,
         scope: { kind: 'cards' as const, ids: [find(s, 0, 'battlefield', i === 0 ? 'Grizzly Bears' : 'Centaur Courser')] },
-        keywords: ['reach' as const],
+        keywords: ['reach' as const], duration: 'end-of-turn' as const,
       })),
     };
     s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: elemental, defender: 0 }] });
