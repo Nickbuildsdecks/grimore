@@ -1409,17 +1409,39 @@ const TURN_TO_FROG: CardScript = {
  * honest: copying a Grizzly Bears under two Giant Growths gives a 2/2, and copying a Fog Bank gives
  * something that prevents damage because the token's abilities come from the copied card's name.
  *
- * The printed card has flashback, which this engine has no vocabulary for — casting a spell from a
- * graveyard is a whole mechanism rather than a cost — so the card here is the front half only, and
- * that is said rather than implied.
+ * Both halves now. The note that used to be here said the printed flashback was out of reach
+ * because "casting a spell from a graveyard is a whole mechanism rather than a cost" — which was
+ * true, and the mechanism is in: see `CardScript.flashback`.
  */
 const CACKLING_COUNTERPART: CardScript = {
   name: 'Cackling Counterpart',
+  flashback: { cost: '{5}{U}{U}' },
   targets: [{ ...TARGET_CREATURE, description: 'target creature you control', filter: creatureYouControl }],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null ? c.state : copyAsToken(c.state, c.controller, id);
   },
+};
+
+/*
+  The two cards flashback was built for, beside the Counterpart.
+
+  Each is the same card twice for two different prices, which is the whole mechanic: Think Twice is
+  a cantrip you cast now and a cantrip you cast later out of the graveyard, and Firebolt kills two
+  creatures over the course of a game for five mana. What makes them fair rather than engines is the
+  end of it — the card is exiled as it leaves the stack the second time, and there is no third.
+*/
+const THINK_TWICE: CardScript = {
+  name: 'Think Twice',
+  flashback: { cost: '{2}{U}' },
+  onResolve: (c) => draw(c.state, c.controller, 1),
+};
+
+const FIREBOLT: CardScript = {
+  name: 'Firebolt',
+  flashback: { cost: '{4}{R}' },
+  targets: [ANY_TARGET],
+  onResolve: (c) => damageFirstTarget(c, 2),
 };
 
 // ── The library as the thing you attack ──────────────────────────────────────────────────────────
@@ -2902,7 +2924,7 @@ const ALL: readonly CardScript[] = [
   equipment('Darksteel Plate', '{2}', { keywords: ['indestructible'] },
     'equipped creature is indestructible'),
   guildgate('Rakdos Guildgate', 'B', 'R'),
-  MUTAVAULT, CRIMSON_WISPS, LHURGOYF,
+  MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

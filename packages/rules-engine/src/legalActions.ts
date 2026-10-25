@@ -67,6 +67,14 @@ export interface LegalPlay {
   /** Set on the second of the two plays a kicker offers: this one pays it (CR 702.32a). */
   readonly kicked?: boolean;
   /**
+   * Set on a play that casts the card out of its owner's graveyard for its flashback cost
+   * (CR 702.33).
+   *
+   * A separate play rather than a flag on the hand's one, for the same reason the kicker is: the
+   * table draws it in a different row — the graveyard — and the cost shown is not the printed one.
+   */
+  readonly flashback?: boolean;
+  /**
    * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
    *
    * One play per legal combination, which is why the table needed no new interface for modal
@@ -373,12 +381,24 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   // A commander is cast from the command zone, which is why it is a second list rather than part
   // of the hand. Without this the engine never offered a commander at all — in a format whose
   // whole point is the commander.
+  /*
+    Three zones a spell can be cast from, which is three lists rather than one.
+
+    The hand is the ordinary case; the command zone is a commander (CR 903.8); and the graveyard is
+    flashback (CR 702.33), offered only for a card whose script has a flashback cost. A card in a
+    graveyard with no flashback is not a play and never appears here — which is also why this does
+    not go through `why`: there is no sense in telling a player that each of the nine cards in their
+    graveyard cannot be cast.
+  */
   const castable = [
-    ...listAt(state, zoneKey(seat, 'hand')).map((id) => ({ id, fromCommand: false })),
-    ...listAt(state, zoneKey(seat, 'command')).map((id) => ({ id, fromCommand: true })),
+    ...listAt(state, zoneKey(seat, 'hand')).map((id) => ({ id, fromCommand: false, flashback: false })),
+    ...listAt(state, zoneKey(seat, 'command')).map((id) => ({ id, fromCommand: true, flashback: false })),
+    ...listAt(state, zoneKey(seat, 'graveyard'))
+      .filter((id) => scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name)?.flashback !== undefined)
+      .map((id) => ({ id, fromCommand: false, flashback: true })),
   ];
 
-  for (const { id, fromCommand } of castable) {
+  for (const { id, fromCommand, flashback } of castable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     const def = state.cardDefs[inst.defKey];
@@ -408,7 +428,10 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       continue;
     }
 
-    const printed = parseManaCost(def?.manaCost);
+    // Flashback replaces the cost, so everything from here on — affordability, X, the description
+    // — is about the flashback cost rather than the printed one.
+    const costShown = flashback ? script?.flashback?.cost ?? '' : def?.manaCost ?? '';
+    const printed = parseManaCost(costShown);
     if (printed.unsupported !== undefined) {
       why(id, 'this cost is not one the engine can pay — move it by hand');
       continue;
@@ -458,7 +481,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         out.push({
           kind: 'cast', card: id, name: ch.name,
           description: `Cast ${ch.name} — ${chosen.map((m) => m.description).join('; and ')}`,
-          manaCost: def?.manaCost ?? '', ...taxOn, ...xOn, modes, targetSpecs: specs, candidates,
+          manaCost: costShown, ...taxOn, ...xOn, modes, targetSpecs: specs, candidates,
           isManaAbility: false, sacrificeOptions: victims,
         });
       }
@@ -474,8 +497,11 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
 
     out.push({
       kind: 'cast', card: id, name: ch.name,
-      description: fromCommand && tax > 0 ? `Cast ${ch.name} (+{${tax}} tax)` : `Cast ${ch.name}`,
-      manaCost: def?.manaCost ?? '', ...taxOn, ...xOn, targetSpecs: specs, candidates,
+      description: flashback
+        ? `Cast ${ch.name} from your graveyard (flashback ${costShown})`
+        : fromCommand && tax > 0 ? `Cast ${ch.name} (+{${tax}} tax)` : `Cast ${ch.name}`,
+      manaCost: costShown, ...taxOn, ...xOn, targetSpecs: specs, candidates,
+      ...(flashback ? { flashback: true } : {}),
       isManaAbility: false, sacrificeOptions: victims,
     });
 
@@ -488,7 +514,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       to the printed cost rather than paid separately, so a coloured kicker is checked as part of
       one cost and a player who could pay half of it is offered neither half.
     */
-    const kicker = script?.kicker;
+    // A flashback casting pays the flashback cost and nothing else, so the kicker is not on offer
+    // with it: the two are alternative costs, and no card in the pool has both.
+    const kicker = flashback ? undefined : script?.kicker;
     if (kicker !== undefined) {
       const withKicker = parseManaCost(`${def?.manaCost ?? ''}${kicker.cost}`);
       const kickedCost: ManaCost = fromCommand && tax > 0

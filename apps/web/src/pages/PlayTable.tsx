@@ -1451,7 +1451,21 @@ function Board({ table }: { table: UseTable }) {
         badgesOf={badgesOf}
       />
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-        <ZoneRow label="Your graveyard" testId={`zone-graveyard-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "graveyard"))} onSelect={onSelect} {...aiming} />
+        {/*
+          The graveyard says "playable" too, which it never had reason to before flashback: a card
+          in there was always a card you could look at and never a card you could cast, so the one
+          row on the table that can now hold a play was the only one with nothing to say about it.
+          Same word as the hand and the command zone, for the same reason.
+        */}
+        <ZoneRow
+          label="Your graveyard"
+          testId={`zone-graveyard-${seat}`}
+          size="pile"
+          cards={cardsIn(view, zoneAt(view, seat, "graveyard"))}
+          onSelect={onSelect}
+          {...aiming}
+          badgesOf={(card) => (automated && playsForCard(view, card.id).length > 0 ? ["playable"] : [])}
+        />
         <ZoneRow label="Your exile" testId={`zone-exile-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "exile"))} onSelect={onSelect} {...aiming} />
         {/*
           The badge matters more on the command zone than anywhere: a commander is castable on most

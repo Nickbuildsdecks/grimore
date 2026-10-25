@@ -17,14 +17,14 @@ import {
   characteristicsOf, hasType, protectedFrom, type ContinuousEffect, type EffectDuration,
   type Keyword,
 } from './characteristics.js';
-import { defKeyFor, zoneKey, type CardDef } from './cards.js';
+import { defKeyFor, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import {
   drawFromLibrary, listAt, normaliseDef, relocate, requireInstance, withInstance, withZones,
 } from './cardActions.js';
 import { actionSeed, clampValue, mulberry32, replaceSeat } from './internal.js';
 import type { Color, ManaType } from './mana.js';
 import { addMana, EMPTY_POOL } from './mana.js';
-import type { AttackedTarget, DecisionAnswer, Target } from './turnTypes.js';
+import type { AttackedTarget, DecisionAnswer, StackObject, Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 /** What an effect is given when it runs. */
@@ -355,6 +355,19 @@ export function destroy(state: GameState, id: string): GameState {
   return relocate(state, inst, 'graveyard', inst.owner, 'bottom');
 }
 
+/**
+ * Where a spell card goes as it leaves the stack: its owner's graveyard, or exile.
+ *
+ * One function for the three places a spell leaves the stack — it resolved, its targets are gone,
+ * or something countered it — because flashback's second half applies to all three: "exile it
+ * instead of putting it anywhere else" (CR 702.33a). Three call sites each deciding for themselves
+ * is three chances for a card cast from the graveyard to end up back in the graveyard, which is a
+ * one-mana spell with no end.
+ */
+export function spellLeavesStack(state: GameState, object: StackObject, inst: CardInstance): GameState {
+  return relocate(state, inst, object.flashback === true ? 'exile' : 'graveyard', inst.owner, 'bottom');
+}
+
 export function exileCard(state: GameState, id: string): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;
@@ -431,7 +444,8 @@ export function counterSpell(state: GameState, id: string): GameState {
   };
   const inst = next.instances[id];
   if (object.kind !== 'spell' || inst === undefined) return next;
-  return relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+  // Exiled rather than buried when it was cast with flashback, countered or not (CR 702.33a).
+  return spellLeavesStack(next, object, inst);
 }
 
 /** Puts the top `count` cards of a library into its owner's graveyard. */

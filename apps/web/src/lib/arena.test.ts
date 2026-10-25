@@ -251,6 +251,25 @@ describe("costs that are choices", () => {
     })
   })
 
+  it("sends the flashback flag when the play came out of the graveyard", () => {
+    /*
+      The flag the client forgot, and the reason this test exists rather than a comment.
+
+      Flashback is a different *zone* as well as a different cost, so an action sent without it
+      tells the engine to cast a card in the graveyard as though it were in hand — and the engine
+      refuses the play the table had just offered. Every engine test passed, because they build the
+      action by hand; the pod browser suite caught it on the first flashback play a bot made
+      ("that card is not in your hand"). See D113.
+    */
+    const back = play({
+      name: "Think Twice", description: "Cast Think Twice from your graveyard (flashback {2}{U})",
+      flashback: true, manaCost: "{2}{U}", targetSpecs: [], candidates: [],
+    })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: back }).action).toEqual({
+      type: "auto:cast", card: "c1", flashback: true,
+    })
+  })
+
   it("and never sends one on the play beside it", () => {
     const mode = arenaReducer(IDLE, { kind: "choosePlay", play: play({ name: "Burst Lightning" }) }).mode
     expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({

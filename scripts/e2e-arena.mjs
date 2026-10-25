@@ -378,6 +378,8 @@ async function main() {
       land: false, mana: false, stack: false, attackers: false, blockers: false,
       lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
       decided: false, searched: false, scried: false, arrows: false, swung: false, modal: false, x: false, xCast: null,
+      /** A spell cast out of a graveyard for its flashback cost. Sampled, not required. */
+      flashback: false,
       /** Whether the host was offered an undo, and whether the other player was not. */
       undoOffered: false, undoGuestClean: true,
       /** What the table said out loud, and whether it ever got in the way of a tap. */
@@ -549,6 +551,12 @@ async function main() {
     if (seen.decided) {
       check('a question asked mid-resolution can be answered from the table', true);
       if (seen.searched) check('a library search shows the library and lights what may be taken', true);
+      if (seen.flashback) {
+        check('a spell is cast out of a graveyard for its flashback cost', true);
+      } else {
+        console.log('      (no flashback casting came up in this game — scripts.test.ts asserts '
+          + 'the offer, the cost and the exile deterministically)');
+      }
       if (seen.scried) check('a scry shows the top of your own library and nobody else’s', true);
       else console.log('      (nothing searched a library in this game)');
     } else {

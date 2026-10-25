@@ -33,7 +33,7 @@ import {
 } from './combat.js';
 import {
   REGENERATION, addCounters, destroy, draw, loseLife, modsFrom, poolOf, removeEffectsFrom,
-  setPool, spendRegeneration, untapAll, type EffectContext, type EffectFn,
+  setPool, spellLeavesStack, spendRegeneration, untapAll, type EffectContext, type EffectFn,
 } from './effects.js';
 import { manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -1269,7 +1269,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     const name = next.cardDefs[object.cardKey]?.name ?? 'it';
     if (object.kind === 'spell') {
       const inst = next.instances[object.id];
-      if (inst !== undefined) next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+      if (inst !== undefined) next = spellLeavesStack(next, object, inst);
     }
     return { state: next, message: `${name} is countered: its targets are gone` };
   }
@@ -1339,7 +1339,8 @@ function completeResolution(
       // here as well was the bug: a permanent that arrived any *other* way got none.
 
     } else if (inst !== undefined) {
-      next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
+      // Graveyard, or exile when it was cast with flashback. See `spellLeavesStack`.
+      next = spellLeavesStack(next, object, requireInstance(next, inst.id));
     }
     const name = def?.name ?? 'a spell';
     return { state: next, message: script ? `${name} resolves` : `${name} resolves (not automated — resolve it by hand)` };

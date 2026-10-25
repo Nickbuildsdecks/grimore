@@ -101,6 +101,14 @@ export interface StackObject {
    */
   readonly kicked?: boolean;
   /**
+   * Whether this spell was cast with flashback (CR 702.33a).
+   *
+   * On the stack object because the card's destination depends on it and the card does not: a
+   * spell cast from the graveyard is **exiled** as it leaves the stack, countered or resolved, and
+   * by then the only thing that remembers how it was cast is this.
+   */
+  readonly flashback?: true;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.
@@ -421,6 +429,11 @@ export interface AutoCastAction {
   readonly modes?: readonly number[];
   /** Pay the kicker (CR 702.32a). Refused on a spell that has none. */
   readonly kicked?: boolean;
+  /**
+   * Cast it from your graveyard for its flashback cost (CR 702.33). Refused on a card with no
+   * flashback, and on one that is not in your graveyard.
+   */
+  readonly flashback?: boolean;
   /** The creature sacrificed for an additional cost, when the spell asks for one. */
   readonly sacrifice?: string;
 }

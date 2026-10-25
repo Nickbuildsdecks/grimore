@@ -240,12 +240,22 @@ function playAction(
   // The kicker is part of the cost, and the player paid it by choosing this play rather than the
   // one beside it — the same gesture that chooses a mode.
   const withKicker = play.kicked === true ? { kicked: true } : {}
+  /*
+    Flashback, for the same reason as the kicker and one more: it is a different *zone* as well as a
+    different cost, so without it the engine is told to cast a card in the graveyard as though it
+    were in hand — and refuses the play the table had just offered.
+
+    Found by the pod browser suite rather than by reasoning: "the engine never refused anything a
+    table offered" failed with "that card is not in your hand" the first time a bot's flashback play
+    reached this function. The engine's own tests all passed, because they build the action by hand.
+  */
+  const withFlashback = play.flashback === true ? { flashback: true } : {}
   if (play.kind === "cast") {
     // A cast can have a cost of its own to pay now: "sacrifice a creature" is an additional cost,
     // not something the spell asks for on resolution, so it travels with the cast.
     return {
       type: "auto:cast", card: play.card,
-      ...withModes, ...withX, ...withKicker, ...withSacrifice, ...withTargets,
+      ...withModes, ...withX, ...withKicker, ...withFlashback, ...withSacrifice, ...withTargets,
     }
   }
   return {

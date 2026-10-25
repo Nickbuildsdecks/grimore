@@ -540,6 +540,13 @@ export async function noteMove(seen, page, did) {
     game, which is how a run came back saying no attack was ever drawn in a game full of attacks.
   */
   if (/^declared \d+ attackers$/.test(did)) seen.swung = true;
+  // A spell cast out of a graveyard, which is the one play on the table that is not in the hand or
+  // on the board. Sampled rather than required: it needs the card drawn, cast, and the mana for
+  // the second casting, which is a game the shuffle has to produce.
+  if (/from your graveyard/.test(did) && seen.flashback !== true) {
+    seen.flashback = true;
+    await shot(page, 'cast-out-of-the-graveyard');
+  }
   /*
     The damage assignment order (CR 509.2), which only happens when a creature is blocked by two or
     more — so it is a *sampled* observation and not something a run can be required to see.
@@ -598,7 +605,21 @@ export async function noteMove(seen, page, did) {
  * all while three copies of a Charm sat in the deck.
  */
 export async function tryToPlayFromHand(page, seat) {
-  const playable = page.locator(`[data-testid="zone-hand-${seat}"] [data-testid^="card-"]`);
+  /*
+    The hand first, then the graveyard, which is the second zone a spell can be cast from.
+
+    Flashback made the graveyard a row with plays in it, and a driver that only ever tapped the
+    hand would have left the whole mechanic unexercised in a browser — the engine's own suite would
+    pass and the thing a player does would never have been done. Both rows mark a castable card
+    the same way ("playable"), so the same badge-driven loop works on either.
+  */
+  return (await tryToPlayFromZone(page, `zone-hand-${seat}`))
+    ?? (await tryToPlayFromZone(page, `zone-graveyard-${seat}`));
+}
+
+/** Taps the first card in one zone that says it is playable, and takes one of its plays. */
+async function tryToPlayFromZone(page, zone) {
+  const playable = page.locator(`[data-testid="${zone}"] [data-testid^="card-"]`);
   const count = await playable.count();
   const order = [...Array(count).keys()].sort(() => Math.random() - 0.5);
   for (const i of order) {

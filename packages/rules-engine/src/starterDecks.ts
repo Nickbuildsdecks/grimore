@@ -1631,6 +1631,27 @@ const MUTAVAULT: CardDef = {
   colors: [],
 };
 
+/**
+ * The two cards flashback was built for. Both are the same card twice for two different prices.
+ */
+const THINK_TWICE: CardDef = {
+  name: 'Think Twice',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  oracleText: 'Draw a card.\nFlashback {2}{U}',
+  colors: ['U'],
+};
+
+const FIREBOLT: CardDef = {
+  name: 'Firebolt',
+  typeLine: 'Sorcery',
+  manaCost: '{R}',
+  cmc: 1,
+  oracleText: 'Firebolt deals 2 damage to any target.\nFlashback {4}{R}',
+  colors: ['R'],
+};
+
 const MAZE_OF_ITH: CardDef = {
   name: 'Maze of Ith',
   typeLine: 'Land',
@@ -2014,7 +2035,14 @@ export const TIDAL_MIND: DeckSpec = {
     { card: SIGN_IN_BLOOD, count: 1 },
     { card: MIND_ROT, count: 1 },
     { card: DIABOLIC_TUTOR, count: 1 },
-    { card: SOUL_MANIPULATION, count: 2 },
+    { card: SOUL_MANIPULATION, count: 1 },
+    /*
+      Think Twice for the second Soul Manipulation: a cantrip you cast twice is better in the long
+      games this deck wants than a second three-mana counterspell that only answers creatures. It
+      sits beside the Cackling Counterpart above, which is the other card here with flashback —
+      both slots are in this deck so one measurement covers the mechanic.
+    */
+    { card: THINK_TWICE, count: 1 },
     { card: DIVE_DOWN, count: 1 },
     { card: RAVENOUS_RATS, count: 1 },
     { card: CHILD_OF_NIGHT, count: 1 },
@@ -2188,7 +2216,11 @@ export const ASHEN_RITE: DeckSpec = {
     { card: BONE_SPLINTERS, count: 2 },
     { card: VILLAGE_RITES, count: 1 },
     { card: AGONIZING_DEMISE, count: 2 },
-    { card: BURST_LIGHTNING, count: 2 },
+    { card: BURST_LIGHTNING, count: 1 },
+    // Two damage now and two more from the graveyard later, for a deck that is happy to spend its
+    // whole turn on removal. One Burst Lightning stays, because the kicker is what that card is
+    // for and this deck reaches eight mana often enough to use it.
+    { card: FIREBOLT, count: 1 },
     { card: BREATH_OF_DARIGAAZ, count: 1 },
     { card: LIGHTNING_BOLT, count: 1 },
     { card: FAITHLESS_LOOTING, count: 1 },

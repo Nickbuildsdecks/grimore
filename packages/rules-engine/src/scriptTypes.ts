@@ -537,6 +537,21 @@ export interface CardScript {
     readonly description: string;
   };
   /**
+   * Flashback: a second casting, out of the graveyard, for a different cost (CR 702.33).
+   *
+   * The second zone a spell is ever cast *from* in this engine — the command zone was the first,
+   * and that one was a whole missing branch of `legalActions` when it went in. What makes flashback
+   * more than a cost is the end of it: the card is **exiled instead of going anywhere else** as it
+   * leaves the stack, countered or resolved, which is what stops a one-mana spell being an engine.
+   *
+   * Replaces the printed cost rather than adding to it, unlike the kicker, and keeps the card's own
+   * timing: a sorcery with flashback is still a sorcery.
+   */
+  readonly flashback?: {
+    /** The whole cost of the flashback casting, in the printed `{2}{U}` form. */
+    readonly cost: string;
+  };
+  /**
    * An additional cost that is not optional: "As an additional cost to cast this spell, sacrifice
    * a creature."
    *

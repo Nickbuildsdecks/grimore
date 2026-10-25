@@ -53,16 +53,27 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   requireAutomated(state);
   requirePriority(state, action.by);
   const inst = requireInstance(state, action.card);
-  // A commander is cast from the command zone (CR 903.8); everything else from hand.
+  // A commander is cast from the command zone (CR 903.8); everything else from hand — or, with
+  // flashback, from its owner's graveyard (CR 702.33).
   const fromCommand = inst.zone === 'command' && inst.isCommander;
-  if (!fromCommand && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
+  const def = state.cardDefs[inst.defKey];
+  const script = scriptFor(def?.name);
+  const flashback = action.flashback === true;
+  if (flashback) {
+    if (script?.flashback === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no flashback`);
+    }
+    // Its owner's graveyard and nobody else's: flashback is cast "from your graveyard", and the
+    // card in there is the one you put there.
+    if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
+    }
+  } else if (!fromCommand && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
   if (fromCommand && inst.zoneSeat !== action.by) {
     throw new EngineError('FORBIDDEN', 'that is not your commander');
   }
-  const def = state.cardDefs[inst.defKey];
-  const script = scriptFor(def?.name);
   const characteristics = characteristicsOf(state, inst);
   if (characteristics.isLand) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'play a land with auto:playLand; lands are not cast');
@@ -161,7 +172,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // on the same cost rather than as a second payment: a kicked spell either gets cast or does not,
   // and a player who could pay the printed cost but not the kicker must not end up having paid
   // half of it.
-  const costText = kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
+  // Flashback *replaces* the cost rather than adding to it, which is the difference between it
+  // and the kicker and the reason the two cannot both be paid on one casting.
+  const costText = flashback
+    ? script?.flashback?.cost
+    : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
   const paid = payFrom(state, action.by, costText, action.x ?? 0, tax);
   let next = paid.state;
   if (sacrificed !== null) {
@@ -188,13 +203,19 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // And the kicker, for the same reason again: whether it was paid changes what the spell does,
   // and the player deciding whether to respond reads the stack to find out.
   const kickedText = kicked ? ' (kicked)' : '';
+  // And flashback, for the third time for the same reason: a player deciding whether to counter a
+  // spell cast out of a graveyard should be able to see that it is never coming back.
+  const flashbackText = flashback ? ' (flashback)' : '';
   const object: StackObject = {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
     cardKey: inst.defKey, targets: [...chosen], targetSeqs: targetSeqsFor(state, chosen),
     ...(action.x === undefined ? {} : { x: action.x }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
     ...(kicked ? { kicked: true } : {}),
-    description: `${characteristics.name}${xText}${kickedText}${modeText}`,
+    // The flag the card's destination depends on: a spell cast from the graveyard is exiled as it
+    // leaves the stack, and by then nothing else remembers where it came from.
+    ...(flashback ? { flashback: true as const } : {}),
+    description: `${characteristics.name}${xText}${kickedText}${flashbackText}${modeText}`,
   };
   next = {
     ...next,

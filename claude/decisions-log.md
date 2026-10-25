@@ -3828,7 +3828,8 @@ The cards are **Turn to Frog** ({1}{U}: target creature becomes 1/1 and loses al
 mana of instant-speed removal that leaves the body behind) and **Cackling Counterpart** ({1}{U}{U}:
 a token copy of a creature you control). The printed Counterpart has flashback, which this engine
 has no vocabulary for — casting from a graveyard is a mechanism, not a cost — so what is here is the
-front half, said rather than implied.
+front half, said rather than implied. (That mechanism was then built: see D113, and the Counterpart
+has both halves now.)
 
 They went into Tidal Mind, which wanted tricks, costing the Tome Scour (Hollow Tide's card rather
 than this deck's) and the second Preordain. Measured over 240 paired duels against the rest of the
@@ -4229,3 +4230,63 @@ What is left of CR 613 after this: dependency ordering between effects in the sa
 which no two cards in this pool argue about, and layers 2 and 3 — control and text-changing — which
 exist in the engine as *moves* rather than as layers, because control is a change of battlefield and
 nothing here rewrites a card's text.
+
+## D113 — Flashback, and the second zone a spell is cast from
+
+`scripts.ts` said of Cackling Counterpart that "the printed card has flashback, which this engine has
+no vocabulary for — casting from a graveyard is a mechanism, not a cost — so what is here is the
+front half, said rather than implied". This is that mechanism.
+
+Flashback (CR 702.33) is two things at once, and only one of them is a cost. The cost half is easy:
+it *replaces* the printed cost rather than adding to it, which is the difference between it and the
+kicker. The half that matters is the **zone**: a card with flashback is cast from its owner's
+graveyard, which makes the graveyard the second zone a spell is ever cast from here. The command
+zone was the first, and that one was a whole missing branch of `legalActions` when it went in — a
+format whose point is its commander, and the function deciding what a seat may do never looked
+there. So this went in the same place, as a third list beside the hand and the command zone, and the
+list is filtered to cards whose script *has* a flashback cost: a graveyard of nine cards must not
+produce nine lines of "you cannot cast this".
+
+**And the end of it.** "Exile it instead of putting it anywhere else" is what stops a two-mana
+cantrip being an engine, and *anywhere else* is the load-bearing phrase: a spell leaves the stack
+three ways in this engine — it resolved, its targets are gone, something countered it — and all
+three used to put the card in the graveyard. Three call sites each deciding for themselves is three
+chances for a flashback casting to end up somewhere it can be cast from again, so the three now
+share one function (`spellLeavesStack`) that reads the one flag the stack object carries. The test
+that would have caught the miss is the one where a Counterspell answers a flashback casting: the
+card is still exiled.
+
+Three cards, one per shape:
+
+- **Cackling Counterpart** ({1}{U}{U}, flashback {5}{U}{U}) — the one the note was about, both
+  halves now.
+- **Think Twice** ({1}{U} instant, flashback {2}{U}) — a cantrip whose whole point is the second
+  casting.
+- **Firebolt** ({R} sorcery, flashback {4}{R}) — two damage now and two more later, and the card
+  that proves flashback did not quietly make a sorcery castable at instant speed: with something on
+  the stack it is not offered, and a hand-built action naming it is refused for the printed reason.
+
+**The bot needed nothing taught.** It casts them from hand because `legalActions` offers them and
+the search prices the effect; it casts them again from the graveyard for exactly the same reason.
+Measured over 48 duels: Firebolt cast 8 times and flashed back 8, Cackling Counterpart 4 and 4,
+Think Twice 11 and 10. The one line of bot code this needed is the one that copies the flag onto the
+action, without which the engine would have been told to cast a card in a graveyard as though it
+were in hand — and would have refused its own offer.
+
+**The table needed one line.** The graveyard row now says "playable" on a card that can be cast,
+which it never had reason to before: a card in there was always something to look at and never
+something to do. The browser driver learned the same thing — it tries the hand and then the
+graveyard — because a mechanic the suites never click is a mechanic the engine's own tests pass and
+nobody has ever actually used.
+
+**The slots were a wash, which is the honest reading.** Think Twice for the second Soul Manipulation
+in Tidal Mind: 45-193 → 45-193 and 64-174 → 63-175 over 238 games per arm on two seed sets — the
+first of those is the same record to the game. Firebolt for one of Ashen Rite's two Burst Lightnings:
+108-130 → 114-124 and 100-138 → 103-135, six and three games up, both inside the 18-game noise floor.
+Cackling Counterpart's new half rode along in both arms of the Tidal Mind measurement, since the
+script changed rather than the deck list, so that number is the Think Twice slot alone.
+
+And one thing the measurement said that is not about flashback at all: **Tidal Mind wins 45 of 238
+games against the rest of the pool on one seed set and 64 on the other** — about a fifth of them,
+where Ember Rush wins three quarters. That is a balance problem with eight decks in it rather than a
+card problem, and it is the next thing worth a measurement of its own.

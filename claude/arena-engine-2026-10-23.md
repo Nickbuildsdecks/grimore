@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 170 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 172 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2430,6 +2430,32 @@ It went into Rot Harvest for the second Hurricane, and it is live rather than de
 42 games, attacking at a mean power of 4.3 and a maximum of 8, with the deck's paired record moving
 **104-132 → 107-131 and 93-144 → 103-135** — three and ten games up, both inside the noise floor.
 D112 has the detail, and what is left of CR 613 with it.
+
+### Flashback, and the second zone a spell is cast from
+
+An earlier entry said of Cackling Counterpart that the printed card's flashback was out of reach
+because "casting from a graveyard is a mechanism, not a cost". The mechanism is in.
+
+The cost half is the easy half: flashback *replaces* the printed cost rather than adding to it. The
+half that matters is the zone — a card with flashback is cast from its owner's graveyard, so the
+graveyard is now the second zone a spell is ever cast from, and it went in beside the hand and the
+command zone as a third list in `legalActions`, filtered to cards that actually have a flashback
+cost. The other half of the card is the end of it: "exile it instead of putting it anywhere else",
+and *anywhere else* is load-bearing — a spell leaves the stack three ways here, and all three now go
+through one function rather than deciding for themselves. The test that would have caught the miss
+is a Counterspell answering a flashback casting; the card is still exiled.
+
+Three cards, one per shape: Cackling Counterpart (both halves now), Think Twice (a cantrip whose
+point is the second casting) and Firebolt (the sorcery that proves flashback did not make a sorcery
+castable at instant speed). The bot needed nothing taught — over 48 duels it cast Firebolt 8 times
+and flashed it back 8, the Counterpart 4 and 4, Think Twice 11 and 10 — and the table needed one
+line: the graveyard row says "playable" now, which it never had reason to before.
+
+The slots were a wash: 45-193 → 45-193 and 64-174 → 63-175 for Tidal Mind, 108-130 → 114-124 and
+100-138 → 103-135 for Ashen Rite, over 238 games per arm on two seed sets. D113 has the detail — and
+one number that is not about flashback: Tidal Mind wins about a fifth of its games against the rest
+of the pool, where Ember Rush wins three quarters. That is a balance problem rather than a card
+problem, and it is the next thing worth measuring.
 
 ## Next
 

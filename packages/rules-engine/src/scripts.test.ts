@@ -4598,6 +4598,152 @@ describe('a land that becomes a creature, and a creature that changes colour', (
   });
 });
 
+describe('flashback: casting a spell out of the graveyard', () => {
+  /*
+    The second zone a spell is ever cast *from* in this engine. The command zone was the first, and
+    that one was a whole missing branch of `legalActions`; this is the other one, and what makes it
+    more than an alternative cost is the end of it — the card is **exiled** as it leaves the stack,
+    so a two-mana cantrip is two cards and not an engine.
+
+    The last test is the one that matters: a card cast with flashback is not offered a third time,
+    because it is in exile rather than in the graveyard.
+  */
+  const graveyard = (name: string, lands: readonly string[], deck = 'tidal-mind'): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: deck }, hands: { 0: [name] },
+      battlefield: { 0: [...lands] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    // Into the graveyard the way it gets there in a game: cast it, and let it resolve.
+    return s;
+  };
+
+  it('is not offered from the hand and is offered from the graveyard', () => {
+    // Five Islands: two for the first casting and three for the second, because a flashback play
+    // is only offered when it can be paid for, like every other play.
+    let s = graveyard('Think Twice', ['Island', 'Island', 'Island', 'Island', 'Island']);
+    const card = find(s, 0, 'hand', 'Think Twice');
+    // From hand it is the printed cost and nothing else.
+    const fromHand = legalActions(s, 0).plays.filter((p) => p.card === card);
+    expect(fromHand).toHaveLength(1);
+    expect(fromHand[0]?.flashback).toBeUndefined();
+    expect(fromHand[0]?.manaCost).toBe('{1}{U}');
+
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card })));
+    expect(s.instances[card]!.zone).toBe('graveyard');
+
+    // And now it is a play again, for the other cost, said where a player will look for it.
+    const again = legalActions(s, 0).plays.filter((p) => p.card === card);
+    expect(again).toHaveLength(1);
+    expect(again[0]?.flashback).toBe(true);
+    expect(again[0]?.manaCost).toBe('{2}{U}');
+    expect(again[0]?.description).toContain('from your graveyard');
+  });
+
+  it('pays the flashback cost, not the printed one, and exiles the card', () => {
+    let s = graveyard('Think Twice', ['Island', 'Island', 'Island', 'Island', 'Island']);
+    const card = find(s, 0, 'hand', 'Think Twice');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card })));
+    const heldAfterFirst = ids(s, 0, 'hand').length;
+
+    // Three mana for the second casting: the printed {1}{U} is not what is being paid.
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, flashback: true })));
+    expect(ids(s, 0, 'hand').length).toBe(heldAfterFirst + 1);
+    // Exiled rather than buried (CR 702.33a), which is the whole of what makes the card fair.
+    expect(s.instances[card]!.zone).toBe('exile');
+  });
+
+  it('and is not offered a third time, because it is in exile', () => {
+    let s = graveyard('Think Twice', ['Island', 'Island', 'Island', 'Island', 'Island']);
+    const card = find(s, 0, 'hand', 'Think Twice');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card })));
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, flashback: true })));
+    expect(legalActions(s, 0).plays.some((p) => p.card === card)).toBe(false);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, flashback: true }))
+      .toContain('not in your graveyard');
+  });
+
+  it('refuses flashback on a card that has none, and on somebody else\u2019s graveyard', () => {
+    let s = graveyard('Divination', ['Island', 'Island', 'Island']);
+    const card = find(s, 0, 'hand', 'Divination');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card })));
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    // In a graveyard, with no flashback: not a play, and refused if named anyway.
+    expect(legalActions(s, 0).plays.some((p) => p.card === card)).toBe(false);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, flashback: true })).toContain('no flashback');
+  });
+
+  it('keeps the card\u2019s own timing: a sorcery with flashback is still a sorcery', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'skyward-writ' },
+      hands: { 0: ['Firebolt', 'Burst Lightning'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Swamp'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const bolt = find(s, 0, 'hand', 'Firebolt');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: bolt, targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(life(s, 1)).toBe(18);
+    expect(s.instances[bolt]!.zone).toBe('graveyard');
+
+    // Offered in the main phase, and not once the step has moved on: flashback changes the cost
+    // and the zone, not the timing (CR 702.33b).
+    expect(legalActions(s, 0).plays.some((p) => p.card === bolt && p.flashback === true)).toBe(true);
+    /*
+      And with something on the stack it is not a play, which is the half that proves flashback did
+      not quietly turn a sorcery into an instant. Its own main phase with an *empty* stack is the
+      rule (CR 307.1), and holding priority over its own Burst Lightning is the cheapest way to be
+      in a main phase that is not empty.
+    */
+    const onStack = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Burst Lightning'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    expect(onStack.stackOrder).toHaveLength(1);
+    expect(legalActions(onStack, 0).plays.some((p) => p.card === bolt)).toBe(false);
+    expect(refusal(onStack, {
+      type: 'auto:cast', by: 0, card: bolt, flashback: true, targets: [{ kind: 'player', seat: 1 }],
+    })).toContain('main phase');
+  });
+
+  it('exiles it even when it is countered on the way', () => {
+    /*
+      "Exile it instead of putting it anywhere else" is not only about resolving (CR 702.33a). A
+      counterspell on a flashback casting still exiles the card, which is the difference between
+      answering it once and answering it twice.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'tidal-mind' },
+      hands: { 0: ['Think Twice'], 1: ['Counterspell'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Island', 'Island'],
+        1: ['Island', 'Island'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Think Twice');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card })));
+    s = apply(s, { type: 'auto:cast', by: 0, card, flashback: true });
+    // The caster keeps priority after casting (CR 117.3c), so seat 1 answers after a pass — and
+    // taps its own lands once it has priority, which is when a player would.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = tapAllLands(s, 1);
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Counterspell'),
+      targets: [{ kind: 'card', id: card }],
+    });
+    s = drain(passBoth(s));
+    expect(s.instances[card]!.zone).toBe('exile');
+  });
+});
+
 describe('a creature whose size is a fact about the board', () => {
   /*
     Layer 7a — a characteristic-defining ability — and the last layer of CR 613 this engine had

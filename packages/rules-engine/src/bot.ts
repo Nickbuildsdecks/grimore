@@ -771,6 +771,10 @@ function candidateActions(
             // version as a separate one — so it has to be said, or the engine casts the cheap
             // half of a card the table offered as the expensive one.
             ...(play.kicked === true ? { kicked: true } : {}),
+            // And the same for flashback, which is a different *zone* as well as a different
+            // cost: without this the engine would be told to cast a card that is in a graveyard
+            // as though it were in hand, and would refuse its own offer.
+            ...(play.flashback === true ? { flashback: true } : {}),
             ...(fodder === null ? {} : { sacrifice: fodder }),
             // X as large as the mana allows. The search sees what that buys, which is new: it
             // will not cast a Hurricane for eight into a board of its own fliers any more.
