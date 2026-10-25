@@ -4666,3 +4666,33 @@ The term stays deleted. Two of the four deletions D118 flagged are now corrected
 to have been level rather than harmful. That is the shape of the finding: **a broken instrument did
 not produce noise, it produced confident wrong signs** — monotone ones, in both cases, which is
 exactly what makes a bad measurement persuasive.
+
+## D120 — The control: a term about the present measures the same on both searches
+
+D119 claimed something specific — that the two sign flips happened because those terms were about
+*what happens next*, and were read in a position the table had already left. A claim like that is
+worth a control, and D62 left a convenient one: a non-linear life total, deleted for measuring
+level at 285-284 over 400 games. Two life is worse than twenty minus eighteen, which is true and did
+not show up.
+
+It is a statement about **what is**, not about what will be, so the theory predicts the fixed search
+should not change it. Rebuilt as D62 had it — a penalty per point of life below a threshold — and
+measured on the fixed search:
+
+| bite below six life | record over 336 games |
+| --- | --- |
+| 1 | 169-167 |
+| 3 | 168-168 |
+
+Level, exactly as before. **So the fixed search did not simply move every number**: it moved the two
+terms about the future from confidently-against to level, and left the term about the present
+alone. That is the result the theory needs, and the cheapest way this session could have been wrong
+about it.
+
+Deleted again, for the reason D62 deleted it: level is level.
+
+What is left of the original five is the half that needs the search restructured rather than a
+weight changed — a swing projection and a second ply, both of which D62 measured at *exactly* level
+(276-276 and 276-276) rather than against, and the honest reply D110 measured at 120-120. Those are
+the three where "no difference" might still be an artifact of the old instrument, and re-asking them
+is a different piece of work from adding a term: each one is a search, not a number.
