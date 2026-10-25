@@ -26,7 +26,10 @@ import {
   type ManaCost, type ManaPool, type ManaType,
 } from './mana.js';
 import { scriptFor } from './scripts.js';
-import { FORETELL_COST, MORPH_COST, type AbilityDef, type CardScript, type TargetSpec } from './scriptTypes.js';
+import {
+  FORETELL_COST, MORPH_COST, morphCostText,
+  type AbilityDef, type CardScript, type TargetSpec,
+} from './scriptTypes.js';
 import { legalTargets } from './targeting.js';
 import { PACT_KINDS } from './pacts.js';
 import { MAIN_STEPS, type DecisionZone, type Step, type Target } from './turnTypes.js';
@@ -883,13 +886,24 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
     const def = state.cardDefs[inst.defKey];
     const morph = scriptFor(def?.name)?.morph;
     if (morph === undefined) continue;
-    const cost = parseManaCost(morph.cost);
+    const mana = morph.cost.mana ?? '';
+    const cost = parseManaCost(mana);
     if (cost.unsupported !== undefined) continue;
     if (!canAfford(poolOf(state, seat), cost, sources)) continue;
+    /*
+      And the life half, refused at exactly the life that would kill you (CR 118.4).
+
+      The same rule `activate` applies to a Mana Confluence, and the reason the cost is an
+      `AbilityCost` rather than a second kind of cost: a Zombie Cutthroat on three life is not
+      offered a turn-up, because paying for it would lose the game and a cost you cannot pay is not
+      a cost you may choose to pay.
+    */
+    if (morph.cost.life !== undefined && (state.seats[seat]?.life ?? 0) <= morph.cost.life) continue;
+    const word = morph.mega === true ? 'megamorph' : 'morph';
     out.push({
       kind: 'turnUp', card: id, name: def?.name ?? 'that card',
-      description: `Turn ${def?.name ?? 'it'} face up (morph ${morph.cost})`,
-      manaCost: morph.cost, targetSpecs: [], candidates: [],
+      description: `Turn ${def?.name ?? 'it'} face up (${word} ${morphCostText(morph.cost)})`,
+      manaCost: mana, targetSpecs: [], candidates: [],
       isManaAbility: false, sacrificeOptions: [],
     });
   }

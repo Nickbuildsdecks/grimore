@@ -7871,3 +7871,147 @@ describe('a static effect scoped to a creature type: the pool’s first tribal l
     expect([power(s, wall), toughness(s, wall)]).toEqual([1, 5]);
   });
 });
+
+describe('megamorph, and a morph cost that is not mana (CR 702.37a, 702.37c)', () => {
+  /*
+    The two halves the first pass at morph left out, and they are the same observation from
+    different ends: the rule lets a card print whatever it likes for turning itself up, and the
+    first five morphs all printed mana, so the engine held the cost as a mana string. The cost is an
+    `AbilityCost` now — the same vocabulary an activated ability uses — which is what makes "pay 3
+    life, and no mana at all" expressible, and brought the life clause's own rule with it.
+  */
+  const holding = (
+    seat: SeatIndex, name: string, deck: string, lands: readonly string[],
+  ): GameState => {
+    const s = advanceTo(arena({
+      decks: { [seat]: deck }, hands: { [seat]: [name] }, battlefield: { [seat]: [...lands] },
+      turn: 4, firstSeat: seat,
+    }), 'precombat-main');
+    return tapAllLands(s, seat);
+  };
+
+  /** Casts it face down and lets it resolve, which is where every test below starts. */
+  const faceDown = (state: GameState, seat: SeatIndex, name: string): GameState =>
+    drain(passBoth(apply(state, {
+      type: 'auto:cast', by: seat, card: find(state, seat, 'hand', name), faceDown: true,
+    })));
+
+  it('turns a Zombie Cutthroat up for three life and no mana at all', () => {
+    let s = holding(0, 'Zombie Cutthroat', 'ashen-rite', ['Swamp', 'Swamp', 'Swamp']);
+    s = faceDown(s, 0, 'Zombie Cutthroat');
+    const card = find(s, 0, 'battlefield', 'Zombie Cutthroat');
+    expect(s.instances[card]!.faceDown).toBe(true);
+    // A 2/2 while it is down, whatever is printed on it (CR 707.2).
+    expect([power(s, card), toughness(s, card)]).toEqual([2, 2]);
+
+    // The offer says what it costs in the words a player reads, and asks for no mana.
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'turnUp');
+    expect(play?.description).toContain('morph pay 3 life');
+    expect(play?.manaCost).toBe('');
+
+    const before = life(s, 0);
+    // Every land is already tapped and the pool is empty, which is the point: nothing but life.
+    s = drain(apply(s, { type: 'auto:turnUp', by: 0, card }));
+    expect(s.instances[card]!.faceDown).toBe(false);
+    expect([power(s, card), toughness(s, card)]).toEqual([3, 3]);
+    expect(life(s, 0)).toBe(before - 3);
+  });
+
+  it('refuses the turn-up at exactly the life that would pay for it', () => {
+    /*
+      CR 118.4, and the reason the cost is an `AbilityCost`: a cost you cannot pay is not a cost you
+      may choose to pay. At three life, paying three life would lose the game, so the turn-up is not
+      *offered* — the same rule that stops the engine offering a Mana Confluence's mana at one life.
+    */
+    let s = holding(0, 'Zombie Cutthroat', 'ashen-rite', ['Swamp', 'Swamp', 'Swamp']);
+    s = faceDown(s, 0, 'Zombie Cutthroat');
+    const card = find(s, 0, 'battlefield', 'Zombie Cutthroat');
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 3 } : seat)) };
+
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'turnUp')).toBe(false);
+    expect(refusal(s, { type: 'auto:turnUp', by: 0, card })).toContain('3 life to pay');
+
+    // One life more and it is a play again, which is what "exactly" means.
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 4 } : seat)) };
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'turnUp')).toBe(true);
+  });
+
+  it('puts a +1/+1 counter on a megamorph as it turns up, in the same action', () => {
+    /*
+      The whole of megamorph (CR 702.37c), and the reason it is three lines in `turnUp` rather than
+      a `turned-face-up` trigger on the card: a trigger goes on the stack, and an opponent given a
+      window between "it is face up" and "it is bigger" has a window to kill the creature in
+      response to its own counter. Turning a permanent face up is the thing nobody may respond to.
+    */
+    let s = holding(0, 'Hidden Dragonslayer', 'skyward-writ', ['Plains', 'Plains', 'Plains']);
+    s = faceDown(s, 0, 'Hidden Dragonslayer');
+    const card = find(s, 0, 'battlefield', 'Hidden Dragonslayer');
+    // Three Plains were spent casting it face down, so turning it up needs a fresh turn's mana —
+    // and until there is some, the special action is not offered at all.
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'turnUp')).toBe(false);
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 0);
+    expect(legalActions(s, 0).plays.find((p) => p.kind === 'turnUp')?.description)
+      .toContain('megamorph {2}{W}');
+
+    s = drain(apply(s, { type: 'auto:turnUp', by: 0, card }));
+    expect(s.instances[card]!.faceDown).toBe(false);
+    expect(s.instances[card]!.counters['+1/+1']).toBe(1);
+    // Printed 2/1 plus the counter: a 3/2, and lifelink is its own.
+    expect([power(s, card), toughness(s, card)]).toEqual([3, 2]);
+    expect([...characteristicsOf(s, s.instances[card]!).keywords]).toContain('lifelink');
+  });
+
+  it('and destroys the big creature it was turned up to answer', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+      hands: { 0: ['Hidden Dragonslayer'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains'],
+        1: ['Mountain', 'Shivan Dragon', 'Raging Goblin'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = faceDown(tapAllLands(s, 0), 0, 'Hidden Dragonslayer');
+    const card = find(s, 0, 'battlefield', 'Hidden Dragonslayer');
+    const dragon = find(s, 1, 'battlefield', 'Shivan Dragon');
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 0);
+    /*
+      No targets on the action, because turning a permanent face up does not take any: the trigger
+      is a separate object that asks for its own (CR 603.3d), and here it has exactly one legal
+      answer — the 5/5 — so `drain` aims and resolves it the way the table would.
+    */
+    s = drain(apply(s, { type: 'auto:turnUp', by: 0, card }));
+    expect(s.instances[dragon]!.zone).toBe('graveyard');
+    /*
+      The 5/5 is dead and the 1/1 was never a legal target — "power 4 or greater" is the filter, and
+      it is also why the trigger being mandatory is safe: a board of small creatures gives it
+      nothing to destroy, so the card is a 3/2 lifelinker and nothing more.
+    */
+    expect(s.instances[goblin]!.zone).toBe('battlefield');
+  });
+
+  it('turns up into a board it cannot answer, and is simply a creature', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+      hands: { 0: ['Hidden Dragonslayer'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains'],
+        1: ['Mountain', 'Raging Goblin'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = faceDown(tapAllLands(s, 0), 0, 'Hidden Dragonslayer');
+    const card = find(s, 0, 'battlefield', 'Hidden Dragonslayer');
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 0);
+    s = drain(apply(s, { type: 'auto:turnUp', by: 0, card }));
+    // Face up, counter on, nothing destroyed, and no decision left hanging.
+    expect(s.instances[card]!.faceDown).toBe(false);
+    expect(power(s, card)).toBe(3);
+    expect(s.instances[goblin]!.zone).toBe('battlefield');
+    expect(s.pendingDecision).toBeNull();
+  });
+});

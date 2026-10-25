@@ -2613,6 +2613,35 @@ export const FORGE_ALLIANCE: DeckSpec = {
  * for you — every nontoken creature you control is a Shock on the way out, which turns Bone
  * Splinters from removal that costs a creature into removal that kills two.
  */
+// ── The two morphs the first pass could not express ─────────────────────────────────────────────
+
+/*
+  A cost that is not mana, and megamorph. Both exist because CR 702.37a lets a card print whatever
+  it likes for turning itself up, and the pool's first five morphs all happened to print mana.
+*/
+
+const ZOMBIE_CUTTHROAT: CardDef = {
+  name: 'Zombie Cutthroat',
+  typeLine: 'Creature — Zombie',
+  manaCost: '{3}{B}',
+  cmc: 4,
+  power: '3',
+  toughness: '3',
+  oracleText: 'Morph — Pay 3 life.',
+  colors: ['B'],
+};
+
+const HIDDEN_DRAGONSLAYER: CardDef = {
+  name: 'Hidden Dragonslayer',
+  typeLine: 'Creature — Human Warrior',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'Lifelink\nMegamorph {2}{W}\nWhen Hidden Dragonslayer is turned face up, destroy target creature an opponent controls with power 4 or greater.',
+  colors: ['W'],
+};
+
 export const ASHEN_RITE: DeckSpec = {
   id: 'ashen-rite',
   name: 'Ashen Rite',
@@ -2699,11 +2728,28 @@ export const ASHEN_RITE: DeckSpec = {
     // because a second one in a game would do nothing a first one had not already done.
     { card: NIGHT_OF_SOULS_BETRAYAL, count: 1 },
     // And the spells that spend them.
-    // Two Splinters rather than three, because the deck already has more ways to spend a creature
-    // than creatures to spend, and the slot bought the first replacement effect in the pool: a
-    // vampire who denies the other side its graveyard, in the deck that lives off its own.
+    /*
+      One Splinters rather than three, and the same sentence explains both cuts: this deck has more
+      ways to spend a creature than creatures to spend. The first slot bought Kalitas — the pool's
+      first replacement effect, a vampire who denies the other side its graveyard, in the deck that
+      lives off its own. The second bought the Zombie Cutthroat below, which is a creature, which
+      is the thing the Splinters were short of.
+    */
     { card: KALITAS, count: 1 },
-    { card: BONE_SPLINTERS, count: 2 },
+    { card: BONE_SPLINTERS, count: 1 },
+    /*
+      The morph whose cost is not mana: three life, and no mana at all (CR 702.37a).
+
+      Here rather than anywhere else because this is the deck whose whole identity is costs that are
+      decisions — a kicker you may pay for, removal paid for with your own creature, a Dark
+      Confidant and a City of Brass that both charge life. A 2/2 on turn three that becomes a 3/3
+      for three life on a turn you had no mana to spare is the same card as the rest of that list.
+
+      It is also the one card in the pool whose play the engine refuses on *life* rather than on
+      mana: at three life the turn-up is not offered, because a cost you cannot pay is not a cost
+      you may choose to pay.
+    */
+    { card: ZOMBIE_CUTTHROAT, count: 1 },
     { card: VILLAGE_RITES, count: 1 },
     { card: AGONIZING_DEMISE, count: 2 },
     { card: BURST_LIGHTNING, count: 1 },
@@ -2816,8 +2862,21 @@ export const SKYWARD_WRIT: DeckSpec = {
     // it is the only card here that proves protection does all four of its jobs.
     { card: PALADIN_EN_VEC, count: 2 },
     { card: MAN_O_WAR, count: 2 },
-    { card: AIR_ELEMENTAL, count: 1 },
     { card: SERRA_ANGEL, count: 2 },
+    /*
+      Megamorph, and the Air Elemental it replaced.
+
+      Three cards in one, which is what this deck wants from a slot more than it wants a fifth-turn
+      4/4: a {1}{W} 2/1 lifelink when the board is empty, a {3} 2/2 when it needs a blocker, and a
+      {2}{W} "destroy their best creature" when the thing that beats it has already landed. The
+      power-4 filter names what the white decks actually lose to, and because the trigger is
+      mandatory and a trigger with no legal target never reaches the stack, turning it up into a
+      board of small creatures is simply a 3/2 lifelinker.
+
+      The Air Elemental went because the deck already intends to win in the air with two Serra
+      Angels, three Skyhunters and two Hawks, and Tidal Mind keeps its own copy.
+    */
+    { card: HIDDEN_DRAGONSLAYER, count: 1 },
     // The answers. Three different counters rather than four of one, because what needs countering
     // changes: Essence Scatter is for the creature decks and Negate for everything else.
     { card: COUNTERSPELL, count: 2 },

@@ -18,7 +18,7 @@
  *     SEEDS=6 node scripts/measure/morph-use.mjs
  */
 import {
-  applyAction, createGame, botAction, scriptFor, seatsToAct, STARTER_DECKS,
+  applyAction, createGame, botAction, morphCostText, scriptFor, seatsToAct, STARTER_DECKS,
 } from '../../packages/rules-engine/dist/index.js';
 
 const ALL = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance',
@@ -32,7 +32,10 @@ const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
 const morphs = new Map(); // name -> { deck, cost }
 for (const [deckId, spec] of Object.entries(STARTER_DECKS)) {
   for (const entry of spec.cards) {
-    const cost = scriptFor(entry.card.name)?.morph?.cost;
+    // Through the engine's own formatter, because a morph cost stopped being a string the day one
+    // of them became "pay 3 life": printed raw it came out as `[object Object]`.
+    const raw = scriptFor(entry.card.name)?.morph?.cost;
+    const cost = raw === undefined ? undefined : morphCostText(raw);
     if (cost !== undefined) morphs.set(entry.card.name, { deck: deckId, cost });
   }
 }

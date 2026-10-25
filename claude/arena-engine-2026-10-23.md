@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 199 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 201 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2966,16 +2966,72 @@ different claims and only the first one is true.
 
 
 
+### Megamorph, and the morph cost that is not mana
+
+Two of the three things the morph entry listed as missing, and they turned out to be one
+observation from two ends. CR 702.37a lets a card print whatever it likes for turning itself up;
+the pool's first five morphs all printed mana; so the engine held the cost as a mana string. That
+is not a design, it is a shortcut that reads as one until the sixth card arrives.
+
+The cost is an `AbilityCost` now — the same vocabulary an activated ability's cost uses — which
+made **Zombie Cutthroat** expressible: `{ life: 3 }`, and no mana at all. Reusing the type rather
+than growing a second one brought the life clause's own rule with it for free: a cost you cannot
+pay is not a cost you may choose to pay (CR 118.4), so at three life the turn-up is not *offered*,
+which is exactly what `AbilityCost.life` already said about a Mana Confluence. Only `mana` and
+`life` are paid, and the type comment says so rather than letting a script ask for a `tap` on a
+turn-up cost and get a quiet approximation.
+
+**Megamorph is one flag, and the reason it is a flag matters more than the flag.** CR 702.37c says
+turning the permanent up also puts a +1/+1 counter on it, and the obvious implementation is a
+`turned-face-up` trigger on each megamorph card — the engine already has that event and two cards
+using it. It would be wrong. A trigger goes on the stack, which would hand an opponent a window
+between "it is face up" and "it is bigger": a window to kill a 2/1 in response to its own +1/+1
+counter. Turning a permanent face up is specifically the one thing in this mechanic nobody may
+respond to, so both halves happen inside `turnUp`, before anybody has priority again.
+
+**Hidden Dragonslayer** is the card that makes the point for the mechanic rather than for itself:
+a {1}{W} 2/1 lifelink if the board is empty, a {3} 2/2 if it needs a blocker, and a {2}{W} "destroy
+their best creature" if the thing that beats this deck has already landed — one card, one hand,
+decided late, and the opponent cannot see which of the three it is. Its trigger is mandatory and a
+trigger with no legal target never reaches the stack, so turning it up into a board of 1/1s is a
+3/2 lifelinker and nothing more.
+
+**What the measurement said, and the one number worth keeping.** Both slots are level: Zombie
+Cutthroat for the second Bone Splinters measured **+3 and 0** over 240 games a side on the two seed
+sets, and Hidden Dragonslayer for the Air Elemental **+9 and 0** — non-negative on both sets and
+under the floor on both, so neither is priced and both ship for the mechanic.
+
+`morph-use.mjs` is where the interesting number is. Of the seven morphs, Zombie Cutthroat is the
+only one with a **100% follow-through — 10 of 10 turned up** — and its mean turn face down and mean
+turn turned up are the *same number*, 6.8. That is the cost doing it: every other morph has to find
+mana on a later turn, and a cost paid in life can be paid on the turn the 2/2 lands. The bot needed
+no teaching for it at all, because paying three life is something `evaluate` can already see.
+
+**And one bug in the harness, found by the change rather than by a test.** `morph-use.mjs` printed
+the morph cost straight into its header, which had been a string and was now an object, so every
+line read `morph [object Object]`. It goes through the engine's own `morphCostText` now — the same
+formatter the offer uses, so the harness and the table cannot disagree about what a card costs.
+
+**The full table moved the way the probes said, and moved two decks that did not change.** After
+both slots: Skyward Writ up eight (44% to 48%) and Ashen Rite up three, which is each card in the
+direction its own probe gave. Verdant Guard is down five and Forge Alliance down two with no card
+of theirs touched — they are the two decks that beat Skyward Writ most often, and a stronger
+Skyward Writ takes those games off them (18-6 became 16-8; 17-7 became 15-9). D128's rule about a
+deck-table percentage being a statement about a field now has an example *inside a single run*
+rather than across two.
+
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
    it, and the four ways a card can ask a player something — a mode, targets, a cost, a
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. Every
-   keyword and every static scope now has a card behind it; `becomes-tapped` is the one trigger
-   left without one, and deliberately so (see the entry above). `turned-face-up` was the last one
-   added and has two cards behind it. What morph still does not have is **megamorph**, a morph cost
-   that is not mana (Zombie Cutthroat pays three life), and the one card that needs target
-   redirection rather than a new trigger — Willbender.
+   keyword and every static scope now has a card behind it, the subtype scope included;
+   `becomes-tapped` is the one trigger left without one, and deliberately so (see the entry above).
+   `turned-face-up` has two cards behind it. Morph has megamorph and a cost paid in life now, so
+   the one thing left on that list is the card that needs **target redirection** rather than a new
+   trigger — Willbender — which is a different kind of work from everything above it: it changes
+   what a spell already on the stack is pointed at.
 2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
    `deck:load` already resolves any deck handed to it, but a real list needs card data — type
    lines, mana costs, oracle text — and the `cards` table has never been populated while this

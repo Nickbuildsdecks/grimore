@@ -757,6 +757,16 @@ describe('what looking a move ahead buys', () => {
   const nameOfCard = (s: GameState, id: string | undefined): string =>
     id === undefined ? '' : s.cardDefs[s.instances[id]!.defKey]!.name;
 
+  /** Puts everything in seat 0's hand back under the library except the one named card. */
+  const onlyInHand = (state: GameState, keep: string): GameState => {
+    let s = state;
+    for (const id of [...ids(s, 0, 'hand')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name === keep) continue;
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+
   it('will not cast the sweeper that kills more of its own board than theirs', () => {
     // Four lands, a Hurricane and a Doom Blade, and a Serra Angel across the table. The Hurricane
     // is the expensive play and it achieves nothing: three to each flier does not kill a 4/4, and
@@ -906,8 +916,10 @@ describe('what looking a move ahead buys', () => {
       killing the 2/2 and bouncing off the 3/3 behind it. The shallow bot blocks with neither,
       because one at a time each block is a creature thrown away.
     */
+    // Seat 1 is on Tidal Mind for the Air Elemental: Skyward Writ traded its copy for the
+    // Hidden Dragonslayer, and Tidal Mind is the deck that still runs one.
     let s = arena({
-      decks: { 0: 'verdant-guard', 1: 'skyward-writ' },
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
       battlefield: { 0: ['Grizzly Bears', 'Centaur Courser'], 1: ['Air Elemental'] },
       turn: 4, firstSeat: 1,
     });
@@ -1023,7 +1035,18 @@ describe('what looking a move ahead buys', () => {
     // a card in the graveyard for nothing — and the evaluation cannot see that, because all it can
     // see is a card leaving the hand. Measured over 240 unsteered games before the bot knew: cast
     // 164 times, followed by a spell in the same step 17 times.
-    const alone = position(['Dark Ritual'], ['Swamp'], [], 'ashen-rite');
+    /*
+      `onlyInHand` matters here and nowhere else in this file, and it is the premise of the test.
+
+      `arena` fast-forwards the turn counter with real `turn:pass` actions, so every draw step on
+      the way has happened and the hand holds whatever the shuffle gave it beside the named card.
+      For every other test in here that is harmless. For this one it is the whole thing: the claim
+      is "a ritual with nothing to spend it on", and the test was true for two months only because
+      nothing ashen-rite happened to draw cost three or less. Adding a morph to that deck made a
+      face-down 2/2 for {3} castable off the ritual's own mana — which is the rule working, and a
+      test that cannot tell that from a regression is a test that will cry wolf again.
+    */
+    const alone = onlyInHand(position(['Dark Ritual'], ['Swamp'], [], 'ashen-rite'), 'Dark Ritual');
     // The shallow bot takes the only play it has. That it is the only play is the point: the
     // search has to be able to answer "none of these", which it could not until this test existed.
     expect(botAction(alone, 0, BREADTH)?.type).toBe('auto:cast');

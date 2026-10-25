@@ -662,8 +662,30 @@ export interface CardScript {
    * is turned up.
    */
   readonly morph?: {
-    /** The whole turn-up cost, in the printed `{2}{U}` form. */
-    readonly cost: string;
+    /**
+     * The whole turn-up cost, in the same vocabulary an activated ability's cost uses.
+     *
+     * An `AbilityCost` rather than a mana string, because a morph cost is not always mana: Zombie
+     * Cutthroat's is "pay 3 life" and nothing else. Reusing the type rather than growing a second
+     * one means the life clause's own rule comes with it — a cost you cannot pay is not a cost you
+     * may pay, so a player on three life is not offered a turn-up that would kill them, which is
+     * exactly what `AbilityCost.life` already says about Mana Confluence.
+     *
+     * Not every field of it makes sense here and the engine only pays the two that do, `mana` and
+     * `life`. A `tap` on a turn-up cost would be a card that does not exist, and `crew` and
+     * `loyalty` belong to other mechanics; a script asking for one of those gets nothing rather
+     * than a quiet approximation, which is what `morphCostText` and `payMorphCost` both say.
+     */
+    readonly cost: AbilityCost;
+    /**
+     * Megamorph: turning it face up also puts a +1/+1 counter on it (CR 702.37c).
+     *
+     * One flag, because that is the whole difference between the two keywords. The counter is part
+     * of the *same* action as the turn-up rather than something that happens afterwards — a
+     * megamorph whose counter arrived from a trigger could be answered between the two halves, and
+     * turning a permanent face up is specifically the thing nobody may respond to.
+     */
+    readonly mega?: true;
   };
   /**
    * An additional cost that is not optional: "As an additional cost to cast this spell, sacrifice
@@ -767,6 +789,19 @@ export const targetCount = (spec: TargetSpec): number => Math.max(1, spec.count 
  * it, and this file exists to keep an offer and a payment from disagreeing.
  */
 export const MORPH_COST = '{3}';
+
+/**
+ * A morph cost as a player reads it: "{2}{U}", "pay 3 life", or both.
+ *
+ * Here rather than in `legalActions` because the offer and the log both want the same sentence,
+ * and two formatters would eventually disagree about one of them.
+ */
+export function morphCostText(cost: AbilityCost): string {
+  const parts: string[] = [];
+  if (cost.mana !== undefined && cost.mana !== '') parts.push(cost.mana);
+  if (cost.life !== undefined) parts.push(`pay ${cost.life} life`);
+  return parts.length === 0 ? 'nothing' : parts.join(', ');
+}
 
 /**
  * What foretelling costs: {2} (CR 702.143a).

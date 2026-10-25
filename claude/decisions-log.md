@@ -5312,3 +5312,70 @@ It is worth stating precisely, because "the total did not change" and "nothing c
 different claims and only the first one is true.
 
 
+
+## D130 — Megamorph is a flag and not a trigger, and a morph cost stops being a string
+
+**Decision: the morph turn-up cost becomes an `AbilityCost` rather than a mana string, and
+megamorph's +1/+1 counter is applied inside `turnUp` rather than by a `turned-face-up` trigger.**
+
+The first half is a shortcut being paid off. CR 702.37a lets a card print whatever it likes for
+turning itself up; the pool's first five morphs all printed mana; so the cost was held as a `string`
+and that read as a design right up until **Zombie Cutthroat**, whose cost is "pay 3 life" and no
+mana at all. Reusing `AbilityCost` — the type an activated ability's cost already uses — rather than
+growing a second vocabulary brought the life clause's own rule along for nothing: a cost you cannot
+pay is not a cost you may choose to pay (CR 118.4), so at three life the turn-up is not offered, the
+same way a Mana Confluence's mana is not offered at one. Only `mana` and `life` are paid and the
+type says so out loud, because a `tap` on a turn-up cost would be a card that does not exist and a
+script that asked for one should get nothing rather than an approximation.
+
+**The second half is the one worth arguing.** Megamorph (CR 702.37c) is "and put a +1/+1 counter on
+it", and the engine already had the obvious hook: `turned-face-up`, with two cards using it. Using
+it here would be wrong, and wrong in a way that only shows up in play. A triggered ability goes on
+the stack, so it would hand the opponent a window between *it is face up* and *it is bigger* — a
+window to kill a 2/1 in response to its own +1/+1 counter. The whole reason morph is worth holding
+is that turning a permanent face up cannot be answered, so the counter is three lines in `turnUp`
+and both halves resolve before anybody has priority again. **A mechanic's timing is part of the
+mechanic; implementing it with the nearest available hook is how that gets lost.**
+
+**Both slots measure level**, 240 games a side on each seed set, deck holding the new card first:
+
+```
+Zombie Cutthroat     for the 2nd Bone Splinters, Ashen Rite    125-115 v 122-118   120-120 v 120-120
+Hidden Dragonslayer  for the Air Elemental, Skyward Writ       107-133 v  98-142   101-139 v 101-139
+```
+
++3 and 0, then +9 and 0. Non-negative on both sets, under the eighteen-game floor on both, so
+neither is priced; both ship because they are the cards the mechanics needed.
+
+**The number worth keeping is from `morph-use.mjs`.** Of seven morphs, Zombie Cutthroat is the only
+one with a **100% follow-through — 10 of 10 turned up** — and its mean turn face down and mean turn
+*turned up* are the same number, 6.8. The cost is why: every other morph has to find mana on a later
+turn, and life can be paid on the turn the 2/2 lands. It needed no bot rule at all, because three
+life is a thing `evaluate` can already see — which is the first time a new cost in this engine has
+cost the bot nothing to learn.
+
+**Two bugs, both found by the change rather than by a test.**
+
+`morph-use.mjs` printed the morph cost into its own header, so every line read
+`morph [object Object]` the moment the cost stopped being a string. It goes through the engine's
+`morphCostText` now, the same formatter the offer uses, so the harness and the table cannot disagree
+about what a card costs.
+
+**The full table moved the way the probes said, and moved two decks that did not change.** After
+both slots: Skyward Writ up eight (44% to 48%) and Ashen Rite up three, which is each card in the
+direction its own probe gave. Verdant Guard is down five and Forge Alliance down two with no card
+of theirs touched — they are the two decks that beat Skyward Writ most often, and a stronger
+Skyward Writ takes those games off them (18-6 became 16-8; 17-7 became 15-9). D128's rule about a
+deck-table percentage being a statement about a field now has an example *inside a single run*
+rather than across two.
+
+
+And a test that had been passing on a false premise: "will not cast a ritual with nothing to spend
+it on" built its board with `position(['Dark Ritual'], ['Swamp'], [], 'ashen-rite')` and asserted
+the bot passes. `arena` fast-forwards the turn counter with real `turn:pass` actions, so every draw
+step on the way has happened and the hand holds whatever the shuffle gave it beside the named card —
+and the test was true only because nothing ashen-rite happened to draw cost three or less. Putting a
+morph in that deck made a face-down 2/2 for {3} castable off the ritual's own mana, which is **the
+rule working**, and the test called it a regression. The hand is now emptied explicitly down to the
+one card the premise names. A test whose setup is "and whatever else turned up" cannot tell a
+regression from the feature it is testing.

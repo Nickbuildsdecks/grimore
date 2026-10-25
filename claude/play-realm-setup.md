@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — a hundred and ninety-nine, today, across nine starter decks. A
+cards somebody has scripted — two hundred and one, today, across nine starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -116,7 +116,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Send everything at one player | With two or more creatures declared, **All at ⟨name⟩** re-points the whole swing at whoever is selected. For the turn where somebody's life total drops and the plan changes. |
 | Cast a spell out of your graveyard | Three cards have **flashback**: Think Twice, Firebolt and Cackling Counterpart. Once one is in your graveyard, tap it there — it says **playable** like a card in hand — and it offers a second casting for its flashback cost, which replaces the printed one. It keeps its own timing (the Firebolt is still a sorcery), and it is **exiled** rather than buried afterwards, so there is no third casting. |
 | Cast a spell with **convoke** | Two cards have it, both in Verdant Guard: Siege Wurm ({5}{G}{G}) and Conclave Tribunal ({3}{W}{W}). Each creature you tap as you cast it pays one generic mana or one of that creature's colour, so a seven-mana Wurm is castable off four lands and three creatures. The play says how many it will tap — **Cast Siege Wurm (convoking 3)** — and it taps none that your lands already cover, because a tapped creature cannot block. A creature that arrived this turn may still be tapped for it. |
-| Cast a card **face down** | Five cards have **morph**: Dirgur Nemesis and Zoetic Cavern in Tidal Mind, Battering Craghorn in Ashen Rite, Ainok Survivalist in Verdant Guard and Master of Pearls in Skyward Writ. Each offers a second play — **Cast it face down ({3}, a 2/2)** — which is there even when you cannot afford the printed cost, and that is what the mechanic is for: a five-mana creature on turn three. Face down it is a 2/2 with no name and no abilities and nobody else can see which card it is. Tap it later → **Turn it face up**, pay the morph cost printed on it, and it is itself again — keeping its damage, its counters, whether it is tapped and how long it has been there, so one that has been down since last turn can attack the moment it is turned up. **Nobody can respond to that.** Turning a permanent face up uses no stack, so you can do it after blockers are declared: a 2/2 that becomes a 3/1 with first strike kills the creature blocking it and takes nothing back. Two of them have text on the back, which is what you hold them for: Ainok Survivalist destroys an opponent's artifact or enchantment when it is turned up, and Master of Pearls gives your creatures +2/+2 until end of turn — turn it up after blockers are declared and the attack they blocked correctly kills them instead. What they trigger goes on the stack and *can* be answered; the turning up cannot. Zoetic Cavern is the strange one — a *land* you may cast as a 2/2 instead of playing it, for the turn your hand has lands and nothing to do with them. |
+| Cast a card **face down** | Seven cards have **morph**: Dirgur Nemesis and Zoetic Cavern in Tidal Mind, Battering Craghorn and Zombie Cutthroat in Ashen Rite, Ainok Survivalist in Verdant Guard, and Master of Pearls and Hidden Dragonslayer in Skyward Writ. Each offers a second play — **Cast it face down ({3}, a 2/2)** — which is there even when you cannot afford the printed cost, and that is what the mechanic is for: a five-mana creature on turn three. Face down it is a 2/2 with no name and no abilities and nobody else can see which card it is. Tap it later → **Turn it face up**, pay the morph cost printed on it, and it is itself again — keeping its damage, its counters, whether it is tapped and how long it has been there, so one that has been down since last turn can attack the moment it is turned up. **Nobody can respond to that.** Turning a permanent face up uses no stack, so you can do it after blockers are declared: a 2/2 that becomes a 3/1 with first strike kills the creature blocking it and takes nothing back. Two of them have text on the back, which is what you hold them for: Ainok Survivalist destroys an opponent's artifact or enchantment when it is turned up, and Master of Pearls gives your creatures +2/+2 until end of turn — turn it up after blockers are declared and the attack they blocked correctly kills them instead. What they trigger goes on the stack and *can* be answered; the turning up cannot. Zoetic Cavern is the strange one — a *land* you may cast as a 2/2 instead of playing it, for the turn your hand has lands and nothing to do with them. Two of the seven do not cost mana the way the others do. **Zombie Cutthroat**'s morph cost is **pay 3 life** and no mana at all, so it turns up on a turn you spent everything — and at three life or less the table stops offering it, because a cost that would lose you the game is not a cost you may choose to pay. **Hidden Dragonslayer** has **megamorph**: same {3} face down, and turning it up for {2}{W} also puts a +1/+1 counter on it, so it comes up a 3/2 rather than a 2/1 — and its trigger destroys an opponent's creature with power 4 or greater, which is the card you were holding a 2/2 for. The counter goes on in the same breath as the turn-up: there is no window where it is face up and not yet bigger. |
 | Drive a **Vehicle** | Three cards are Vehicles: Sky Skiff and Renegade Freighter in Forge Alliance, Consulate Dreadnought in Rot Harvest. A Vehicle is an artifact and **not a creature at all** until it is crewed — it cannot attack, cannot block, and a sweeper that kills every creature leaves it sitting there, which is why its printed body is far above its cost. Tap it → **Crew N**, and the table taps enough of your own untapped creatures to reach N power and tells you how many before you press it (**Crew 2 (tapping 2)**). It picks your smallest creatures, because the big one is the one you want left standing. A creature that arrived this turn can still crew. The Vehicle is a creature until end of turn, and then an artifact again, still on the battlefield. Crewing *is* an activated ability, so unlike turning a morph face up it can be answered — and the creatures are tapped as the cost, so an answer leaves them sideways and the Vehicle inert. The board says **not crewed** on one that nobody is driving. |
 | Play a **Saga** | Two cards are Sagas: The Birth of Meletis in Skyward Writ and The Eldest Reborn in Hollow Tide. A Saga is an enchantment that reads itself out over three turns. It arrives with one lore counter and **chapter I happens immediately** — you do not wait a turn for it — and it gets another counter at the start of each of your own main phases, never on anybody else's turn. Each chapter goes on the stack like any other trigger, so an opponent can answer the chapter even though they cannot stop the counter. Once the last chapter has resolved the Saga is sacrificed and goes to your graveyard; the card shows **lore** counters so you can see which chapter is next. Nothing can be killed in response to a Saga except the Saga: a creature removal spell does not touch it, and in this pool only three cards destroy an enchantment. |
 | **Foretell** a card | Two cards have it, in Tidal Mind and in Arc Tempest: Behold the Multiverse and Saw It Coming. On your own turn, tap the card in hand → **Foretell** and pay {2}; the card goes into exile **face down**, and nobody else can see what it is — only that there is a card there. From your next turn onwards it is a play again, out of exile, for the smaller cost printed on it (**{1}{U}** and **{U}{U}**). You cannot cast it on the turn you foretold it. The point is that it splits a four-mana spell across two turns, so you can hold up a counterspell without holding up the mana — which is the hardest thing in this pool to do and the one thing the computer genuinely cannot. Foretelling cannot be answered: no stack, nothing to respond to. |
@@ -220,22 +220,28 @@ other, both seats, 192 games each (`SEEDS=12 node scripts/measure/deck-table.mjs
 
 ```
  81%  156-36   ember-rush
- 68%  131-61   forge-alliance
- 59%  113-79   verdant-guard
- 47%   91-101  arc-tempest
- 45%   86-106  ashen-rite
- 44%   85-107  skyward-writ
- 39%   75-117  rot-harvest
- 38%   72-120  hollow-tide
- 28%   54-138  tidal-mind
+ 67%  129-63   forge-alliance
+ 56%  108-84   verdant-guard
+ 48%   93-99   skyward-writ
+ 46%   89-103  ashen-rite
+ 46%   89-103  arc-tempest
+ 40%   77-115  rot-harvest
+ 36%   69-123  hollow-tide
+ 28%   53-139  tidal-mind
 ```
 
-That run is after the three tribal lords went in. **The only deck whose record moved is Rot
-Harvest, up five** — the one whose slot change was re-measured with a different card cut (see
-D129). Ashen Rite and Skyward Writ landed on 86-106 and 85-107 for the second run in a row, which
-is a coincidence rather than a card doing nothing: several of their individual matchups moved by
-one or two games each and the totals happened to come out the same. Which is the caveat below in
-its most literal form.
+That run is after the three tribal lords and the two new morphs. **Skyward Writ is up eight and
+Ashen Rite up three**, which is both of the decks that got a card and both in the direction their
+own slot measurement said (D130). The two decks that *lost* ground, Verdant Guard down five and
+Forge Alliance down two, changed nothing at all: they are the two that beat Skyward Writ most
+often, and a stronger Skyward Writ takes those games off them — 18-6 became 16-8, and 17-7 became
+15-9. That is the caveat below happening in the same table as the change that caused it.
+
+The run before this one was after the three lords, where the only record that moved was Rot
+Harvest's, up five: the one deck whose cut was re-measured with a different card removed (D129).
+Ashen Rite and Skyward Writ landed on identical totals to the run before that one, which was a
+coincidence rather than a card doing nothing — several of their matchups moved by a game or two
+each and the sums happened to come out the same.
 
 The run before this one was the first with nine decks in it, and **not one of the other eight
 changed a card** for it. Four of them still moved by three to six points — Skyward Writ up five,
@@ -268,7 +274,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of a hundred and ninety-nine scripted cards, which now includes a wrath, a
+The decks share a pool of two hundred and one scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -438,7 +444,7 @@ playing the server, and a deal struck with the server's own seat).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows a hundred and ninety-nine cards.** Everything in the nine starter decks. It
+- **The engine knows two hundred and one cards.** Everything in the nine starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

@@ -23,7 +23,7 @@ import {
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
   type AutoOrderAction,
 } from './automation.js';
-import { addToPool, counterSpell, loseLife, poolOf } from './effects.js';
+import { addCounters, addToPool, counterSpell, loseLife, poolOf } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
@@ -477,8 +477,35 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
   if (script?.morph === undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that permanent has no morph cost to pay');
   }
-  const paid = payFrom(state, action.by, script.morph.cost, 0, 0);
+  /*
+    The cost, in two halves because a morph cost is not always mana (CR 702.37a lets a card print
+    whatever it likes). The life half is checked before anything is spent and refused at exactly
+    the life that would kill you — the same rule `activate` applies to an ability's `life` cost.
+  */
+  if (script.morph.cost.life !== undefined) {
+    const life = state.seats[action.by]?.life ?? 0;
+    if (life <= script.morph.cost.life) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        `you do not have ${script.morph.cost.life} life to pay`);
+    }
+  }
+  const paid = payFrom(state, action.by, script.morph.cost.mana, 0, 0);
   let next = withInstance(paid.state, inst.id, { faceDown: false });
+  if (script.morph.cost.life !== undefined) {
+    next = loseLife(next, action.by, script.morph.cost.life);
+  }
+  /*
+    Megamorph's counter, put on here rather than by a trigger (CR 702.37c).
+
+    Part of the same action as the turn-up, which is the whole reason it is three lines in this
+    function instead of a `turned-face-up` trigger on each megamorph card: a trigger goes on the
+    stack, and an opponent given a window between "it is face up" and "it is bigger" could remove
+    the creature in response to its own counter. Turning a permanent face up is specifically the
+    thing nobody may respond to, so both halves happen before anybody gets priority back.
+  */
+  if (script.morph.mega === true) {
+    next = addCounters(next, inst.id, '+1/+1', 1);
+  }
   /*
     Its static abilities, installed here, because `settle` installs them only for a permanent that
     *arrived* — and this one arrived face down, with no abilities to install.

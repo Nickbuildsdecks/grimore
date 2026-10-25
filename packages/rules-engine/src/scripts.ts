@@ -2029,8 +2029,8 @@ const SIEGE_WURM: CardScript = {
 };
 
 /*
-  The three morphs (CR 702.37). One field each, because both halves of the mechanic are already
-  built: the engine knows a face-down permanent is a 2/2 with no abilities, so a script's whole job
+  The first three morphs (CR 702.37). One field each, because both halves of the mechanic are
+  already built: the engine knows a face-down permanent is a 2/2 with no abilities, so a script's whole job
   here is to say what turning it up costs.
 
   Which is the point worth noticing about this entry. Nothing below mentions the {3} — that is in
@@ -2041,19 +2041,19 @@ const SIEGE_WURM: CardScript = {
 const ZOETIC_CAVERN: CardScript = {
   name: 'Zoetic Cavern',
   abilities: [{ cost: { tap: true }, description: '{T}: Add {C}.', produces: ['C'] }],
-  morph: { cost: '{2}' },
+  morph: { cost: { mana: '{2}' } },
 };
 
 const DIRGUR_NEMESIS: CardScript = {
   name: 'Dirgur Nemesis',
   keywords: ['defender'],
-  morph: { cost: '{5}{U}' },
+  morph: { cost: { mana: '{5}{U}' } },
 };
 
 const BATTERING_CRAGHORN: CardScript = {
   name: 'Battering Craghorn',
   keywords: ['first strike'],
-  morph: { cost: '{4}{R}' },
+  morph: { cost: { mana: '{4}{R}' } },
 };
 
 /*
@@ -2069,7 +2069,7 @@ const BATTERING_CRAGHORN: CardScript = {
 */
 const AINOK_SURVIVALIST: CardScript = {
   name: 'Ainok Survivalist',
-  morph: { cost: '{1}{G}' },
+  morph: { cost: { mana: '{1}{G}' } },
   triggers: [{
     on: { kind: 'turned-face-up' },
     description: 'destroy target artifact or enchantment an opponent controls',
@@ -2101,11 +2101,72 @@ const AINOK_SURVIVALIST: CardScript = {
 
 const MASTER_OF_PEARLS: CardScript = {
   name: 'Master of Pearls',
-  morph: { cost: '{2}{W}{W}' },
+  morph: { cost: { mana: '{2}{W}{W}' } },
   triggers: [{
     on: { kind: 'turned-face-up' },
     description: 'creatures you control get +2/+2 until end of turn',
     effect: (c) => pumpTeam(c.state, c.source, c.controller, { power: 2, toughness: 2 }),
+  }],
+};
+
+/*
+  The two halves of morph the first pass left out: a cost that is not mana, and megamorph.
+
+  Both are the same observation from different ends. CR 702.37a lets a card print whatever cost it
+  likes for turning itself up, and the first five morphs all printed mana, so the engine held the
+  cost as a mana string — which is the sort of shortcut that reads as a design until the sixth card
+  arrives. The cost is an `AbilityCost` now, the same vocabulary an activated ability uses, and it
+  brought the life clause's own rule with it: a player on three life is not *offered* a Zombie
+  Cutthroat's turn-up, because a cost you cannot pay is not a cost you may choose to pay.
+
+  Megamorph (CR 702.37c) is one flag, and the reason it is a flag rather than a `turned-face-up`
+  trigger on each card is the one rule that makes morph worth playing: turning a permanent face up
+  cannot be responded to. A counter that arrived from a trigger would go on the stack, and an
+  opponent would get a window between "it is face up" and "it is bigger" — which is a window to
+  kill a creature in response to its own +1/+1 counter. Both halves happen inside `turnUp`, before
+  anybody has priority again.
+*/
+const ZOMBIE_CUTTHROAT: CardScript = {
+  name: 'Zombie Cutthroat',
+  // No mana at all, which is the case the string could not express: `{ life: 3 }` and nothing else.
+  morph: { cost: { life: 3 } },
+};
+
+/**
+ * Hidden Dragonslayer: megamorph, and the removal spell you were holding as a 2/2.
+ *
+ * The one card in the pool that is three things at once — a {1}{W} 2/1 with lifelink if you need a
+ * body, a {3} 2/2 if you need a blocker, and a {2}{W} "destroy their best creature" if you need
+ * that — and all three are the same card in the same hand. Which is the argument for morph as a
+ * mechanic rather than for this card: the decision is made late and the opponent cannot see which
+ * of the three it is.
+ *
+ * The power filter is why the trigger is worth having over a plain Swords to Plowshares: it is
+ * mandatory, and a trigger with no legal target never reaches the stack, so turning this up on a
+ * board of 1/1s is a 3/2 lifelinker and nothing more. "Power 4 or greater" also names what the
+ * white decks actually lose to.
+ */
+const HIDDEN_DRAGONSLAYER: CardScript = {
+  name: 'Hidden Dragonslayer',
+  keywords: ['lifelink'],
+  morph: { cost: { mana: '{2}{W}' }, mega: true },
+  triggers: [{
+    on: { kind: 'turned-face-up' },
+    description: "destroy target creature an opponent controls with power 4 or greater",
+    targets: [{
+      kind: 'creature',
+      description: 'target creature an opponent controls with power 4 or greater',
+      filter: (state, candidate, chooser) => {
+        if (candidate.kind !== 'card') return false;
+        const inst = state.instances[candidate.id];
+        if (inst === undefined || inst.zoneSeat === chooser) return false;
+        return characteristicsOf(state, inst).power >= 4;
+      },
+    }],
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      return id === null ? c.state : destroy(c.state, id);
+    },
   }],
 };
 
@@ -3568,6 +3629,7 @@ const ALL: readonly CardScript[] = [
   THE_BIRTH_OF_MELETIS, THE_ELDEST_REBORN, BEHOLD_THE_MULTIVERSE, SAW_IT_COMING,
   ADELIZ, STORMCHASER_MAGE, YOUNG_PYROMANCER, GUTTERSNIPE, GELECTRODE, ENIGMA_DRAKE,
   STROMKIRK_CAPTAIN, KNIGHT_EXEMPLAR, IMPERIOUS_PERFECT,
+  ZOMBIE_CUTTHROAT, HIDDEN_DRAGONSLAYER,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

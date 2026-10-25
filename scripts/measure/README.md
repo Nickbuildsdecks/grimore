@@ -65,6 +65,13 @@ Elf lord went from (+2, -8) to (+4, +13) on the same two seed sets by taking a r
 of a creature instead of the deck's only protection spell. Treat measuring the cut as half of what a
 slot change is, not as an extra step taken when the first number disappoints.
 
+**Build first, and let the build finish before launching anything.** Every harness here reads
+`packages/rules-engine/dist/index.js`, so a probe started while `pnpm --filter @grimore/rules-engine
+build` is still running measures the *previous* deck lists and says nothing about it. The one tell is
+`deck-probe`'s own size warning — "the two lists are not the same size" means the `CHANGE` named a
+card the stale `STARTER_DECKS` did not have, which is how this was caught rather than published.
+Treat that warning as "stop and re-run", never as a rounding error.
+
 **A `deck-table` percentage is a statement about a field, not about a deck.** Adding Arc Tempest
 moved four of the other eight decks by three to six games with **not one card of theirs changing**
 (D128): Tidal Mind down six, Skyward Writ up five. So a percentage from a run with a different
