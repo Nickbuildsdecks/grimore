@@ -9,8 +9,8 @@
 import { describe, it, expect } from "vitest"
 import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-engine"
 import {
-  IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, candidatesAt, cardBadges,
-  decisionLabel,
+  IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, brokeADeal, candidatesAt,
+  cardBadges, decisionLabel, pactAsked, pactBadge, pactOffers,
   manaPips, playsForCard, primaryMove, reasonCannotPlay, specAt, splitBattlefield, targetKey,
   targetsRequired,
   targetsWanted,
@@ -892,7 +892,7 @@ function view(over: Partial<GameView> = {}): GameView {
   return {
     id: "g", format: "modern", turn: 3, activeSeat: 0, monarch: null, initiative: null,
     started: true, finished: false, winnerSeat: null, stateVersion: 1, log: [], seat: 0,
-    automation: null, seats: [], cards: {}, zones: {},
+    automation: null, seats: [], cards: {}, zones: {}, pacts: [],
     ...over,
   } as GameView
 }
@@ -911,6 +911,7 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
       passLabel: "Pass", plays: [], attackers: [], mustAttack: [], attackAims: [], blockers: [],
       mustOrder: [], mustDiscard: 0, mustDeclare: null,
       mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null, blocked: [],
+      pacts: { offer: [], answer: [] },
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     },
     ...over,
@@ -1254,5 +1255,67 @@ describe("cardBadges", () => {
   it("says nothing about a card that is not on the battlefield", () => {
     const v = view({ automation: automation() })
     expect(cardBadges(v, permanent({ zone: "hand" }))).toEqual([])
+  })
+})
+
+describe("deals between players", () => {
+  const seats = [
+    { index: 0, name: "Nick" }, { index: 1, name: "Friend" }, { index: 2, name: "Third" },
+  ] as unknown as GameView["seats"]
+
+  const deal = (over: Record<string, unknown>) => ({
+    id: "pact1", from: 1, to: 0, kind: "truce-until-your-turn", offeredTurn: 3,
+    status: "accepted", throughTurn: 5, ...over,
+  }) as unknown as GameView["pacts"][number]
+
+  it("badges a live deal on the seat it is with, and nobody else's", () => {
+    const v = view({ turn: 3, seats, pacts: [deal({})] })
+    expect(pactBadge(v, 1)).toBe("truce")
+    expect(pactBadge(v, 2)).toBeNull()
+  })
+
+  it("drops the badge the turn the deal runs out, and when somebody breaks it", () => {
+    // The expiry is the engine's own `pactLiveAt`, asked of the view's turn: a table that kept
+    // showing a truce the engine had let lapse would get somebody killed holding an attack back.
+    expect(pactBadge(view({ turn: 6, seats, pacts: [deal({})] }), 1)).toBeNull()
+    expect(pactBadge(view({ turn: 3, seats, pacts: [deal({ broken: true })] }), 1)).toBeNull()
+    expect(pactBadge(view({ turn: 3, seats, pacts: [deal({ status: "offered", throughTurn: null })] }), 1))
+      .toBeNull()
+  })
+
+  it("remembers who went back on one, for the rest of the game", () => {
+    const v = view({ turn: 20, seats, pacts: [deal({ broken: true })] })
+    // Long expired, and still shown: the badge is a social consequence, not a rule, and it is the
+    // only reason recording the deals is worth anything.
+    expect(brokeADeal(v, 1)).toBe(true)
+    expect(brokeADeal(v, 0)).toBe(false)
+  })
+
+  it("puts an offer to you in the same words the log will use", () => {
+    const v = view({
+      turn: 3, seats, pacts: [deal({ status: "offered", throughTurn: null })],
+    })
+    expect(pactAsked(v)).toEqual({
+      id: "pact1",
+      words: "Friend and Nick will not attack each other until Nick's next turn",
+    })
+    // Not an offer *you* made, and not one already answered.
+    expect(pactAsked(view({ turn: 3, seats, pacts: [deal({ status: "offered", from: 0, to: 1, throughTurn: null })] })))
+      .toBeNull()
+    expect(pactAsked(view({ turn: 3, seats, pacts: [deal({})] }))).toBeNull()
+  })
+
+  it("offers the deals the engine says are available, named", () => {
+    const auto = automation({
+      you: {
+        ...automation()!.you!,
+        pacts: { offer: [{ seat: 2, kinds: ["truce-until-your-turn"] }], answer: [] },
+      },
+    })
+    expect(pactOffers(view({ seats, automation: auto }))).toEqual([
+      { seat: 2, name: "Third", kinds: ["truce-until-your-turn"] },
+    ])
+    // Nothing on a manual table, where the engine is not computing anybody's options.
+    expect(pactOffers(view({ seats }))).toEqual([])
   })
 })

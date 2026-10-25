@@ -114,6 +114,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Work out who the threat is | Every seat strip says `board N` — the total power of that seat's creatures — and `· M up` for how much of that power is untapped. The first number is what can kill you eventually; the second is what can kill you on their *next* turn, and what can stop you on yours. A **lethal** badge on an opponent's strip means their untapped power alone is at least your life and you have nothing untapped to block with. |
 | Choose who to attack | The attack prompt lists every player and planeswalker you may send an attack at, and each player's button says their life, their untapped power, and how many of your creatures are already pointed at them — plus **lethal** when that swing would finish them with nothing able to block. Tap a player, then tap the creatures that go at them; tap a different player and the next creatures go there instead. |
 | Send everything at one player | With two or more creatures declared, **All at ⟨name⟩** re-points the whole swing at whoever is selected. For the turn where somebody's life total drops and the plan changes. |
+| Offer somebody a deal | **Deal** on the bottom bar: pick a player and one of three things to say to them — a truce until their next turn, or not attacking them this turn or next. They see it in those words with **Agree** and **No deal**, and once it is agreed both seat strips carry a badge for as long as it lasts. **Nothing enforces it.** You can attack them anyway; the log says you broke a deal, and their strip says **broke a deal** for the rest of the game. The computer's seats take a deal unless they can kill you right now, and keep every one they take unless a creature that must attack leaves them no choice. |
 | Watch somebody else's game | Put their code in the **Join a table** box and press **Watch** instead of **Join**. You take no seat, it works mid-game, and you see both boards and neither hand. |
 | Play another game | **Play again** on the game-over banner deals a fresh game at the same table, with the same decks and the engine still running — the winner of the last one goes second. **New game** beside it empties the table instead, for when somebody is changing decks. |
 | Cast a spell with {X} in its cost | Tap it and pick X from the numbers offered — the list stops at what your mana covers, and it opens on the largest. X is chosen before the target, because that is when the rules choose it. |
@@ -268,7 +269,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 ```bash
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 54 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52 checks
-node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 39 checks
+node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 21 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 23 checks
 ```
@@ -303,8 +304,8 @@ for the cases the shuffle makes rare:
 
 The pod suite is the four-player one: four seats on one code, four opening hands at once, a
 commander cast from the command zone and back in it after it died, attacks sent at more than one
-opponent, a player conceding while the other three carry on, and one survivor. `DECKS=` picks who
-plays what, in seat order.
+opponent, a deal offered to another player and accepted on their table, a player conceding while the
+other three carry on, and one survivor. `DECKS=` picks who plays what, in seat order.
 
 ```bash
 DECKS=rot-harvest,tidal-mind,ember-rush,verdant-guard node scripts/e2e-pod.mjs
@@ -315,12 +316,12 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (581 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (605 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (171 tests, the interaction reducer behind every prompt) and
+pods as well as duels), `apps/web` (176 tests, the interaction reducer behind every prompt) and
 `apps/realtime`
-(30 tests against live Redis, including two socket clients playing to a finish and one person
-playing the server).
+(31 tests against live Redis, including two socket clients playing to a finish, one person
+playing the server, and a deal struck with the server's own seat).
 
 ## What is not done
 
@@ -351,7 +352,8 @@ playing the server).
   test run — commanders cast from the command zone and taxed, attacks aimed at whichever opponent
   you choose, a conceding seat skipped by everything. What is missing is everything a pod is
   socially: three opponents are three strips above your own board, whose turn it is reads as a gold
-  border rather than a layout, and there is no politics anywhere beyond the chat panel.
+  border rather than a layout, and the politics is three preset deals and a badge rather than a
+  table you can talk at.
 - **Watching is read-only, and that is all it is.** A watcher sees both boards, both graveyards,
   the stack and the log, with both hands as face-down counts — and is offered no moves at all.
   There is no spectator chat and no way to watch a *list* of tables: you need the code.
@@ -360,8 +362,11 @@ playing the server).
   What it is not is a rewind: there is no second step back, no undoing an undo, and no taking back
   something three moves ago — for that, move the cards by hand and read the log. It also cannot
   unsee: the state it restores is exact, so a card drawn and taken back has still been looked at.
-- **Pod politics is still the pod's own business.** The table now says what going at each player
-  is walking into, and sends the whole swing at one of them in a press, but a deal struck out loud
-  is between the people at the table.
+- **Pod politics is half the pod's own business.** The table says what going at each player is
+  walking into, sends the whole swing at one of them in a press, and now records a deal: three
+  preset things you can say to another player, their answer, and a badge on whoever went back on
+  one. What it does not do is enforce any of it, deliberately — a table where the software stops
+  you breaking your word is a table where your word costs nothing. Anything said beyond those three
+  sentences is still between the people at the table, in the chat panel or out loud.
 - **Websocket only.** A network that blocks WebSockets cannot play, because the server has polling
   disabled. Rare, but it would look like a table that never connects.

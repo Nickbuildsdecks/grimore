@@ -41,8 +41,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  IDLE, arenaReducer, boardRead, candidatesAt, cardBadges, choiceCandidatesAt, eliminatedLabel,
-  playsForCard, reasonCannotPlay, splitBattlefield,
+  IDLE, arenaReducer, boardRead, brokeADeal, candidatesAt, cardBadges, choiceCandidatesAt,
+  eliminatedLabel, pactBadge, playsForCard, reasonCannotPlay, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
@@ -552,6 +552,8 @@ function SeatStrip({
   board,
   myLife,
   myBlockers,
+  pact,
+  brokeDeal,
 }: {
   seat: SeatView
   isMe: boolean
@@ -579,6 +581,10 @@ function SeatStrip({
   myLife?: number
   /** Whether *you* have an untapped creature, which is the whole of "could you block it". */
   myBlockers?: number
+  /** The live deal between you and this seat, in a word or two. See `GameState.pacts`. */
+  pact?: string | null
+  /** Whether this seat has gone back on a deal in this game. */
+  brokeDeal?: boolean
 }) {
   const life = (delta: number) => onAct({ type: "life:adjust", seat: seat.index, delta })
   /**
@@ -687,6 +693,33 @@ function SeatStrip({
             lethal
           </span>
         ) : null}
+      {/*
+        The deal you have with this player, and whether they have kept one.
+
+        On the seat strip rather than anywhere else because a pact is about a *player*: the question
+        it answers is "am I safe from them this turn", which is the same question the life total and
+        the untapped power on this row answer. The broken badge stays for the rest of the game, and
+        is the only thing in this engine that is purely a social consequence — it changes no rule,
+        and it is the whole reason the deals are worth recording.
+      */}
+      {typeof pact === "string" ? (
+        <span
+          data-testid={`pact-${seat.index}`}
+          title="A deal you have with this player. Nothing enforces it."
+          className="rounded bg-[var(--g-mana-w)]/20 px-1 text-[9px] font-bold uppercase text-[var(--g-mana-w)]"
+        >
+          {pact}
+        </span>
+      ) : null}
+      {brokeDeal === true ? (
+        <span
+          data-testid={`broke-deal-${seat.index}`}
+          title="This player attacked somebody they had agreed not to attack"
+          className="rounded bg-[var(--g-mana-r)]/20 px-1 text-[9px] font-bold uppercase text-[var(--g-mana-r)]"
+        >
+          broke a deal
+        </span>
+      ) : null}
       {seat.poison > 0 ? <span className="text-[var(--g-mana-g)]">poison {seat.poison}</span> : null}
 
       {/*
@@ -1334,6 +1367,8 @@ function Board({ table }: { table: UseTable }) {
             myBlockers={automated ? boardRead(view, seat).ready : undefined}
             targetable={targetableSeats.has(o.index)}
             onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat: o.index } })}
+            pact={pactBadge(view, o.index)}
+            brokeDeal={brokeADeal(view, o.index)}
           />
           <div className="flex gap-1.5">
             <ZoneRow

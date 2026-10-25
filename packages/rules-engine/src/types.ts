@@ -13,6 +13,42 @@ export type SeatIndex = number;
  * they died at zero life while their life total sat at nineteen. Nobody noticed because nothing in
  * the pool had ever tried to win that way.
  */
+/**
+ * The deals a table can offer, as fixed wordings rather than free text.
+ *
+ * Presets because the point is an agreement both players can read the same way, and because free
+ * text at a table is what the chat panel is already for. Each one carries its own expiry, which is
+ * the only part of a deal the engine needs to understand:
+ *
+ *  - `no-attack-this-turn` — until the end of the current turn.
+ *  - `no-attack-next-turn` — until the end of the offering player's next turn.
+ *  - `truce-until-your-turn` — both ways, until the receiving player's next turn begins.
+ *
+ * `truce` is the only one that binds both seats, and it is the one players actually make.
+ */
+export type PactKind = 'no-attack-this-turn' | 'no-attack-next-turn' | 'truce-until-your-turn';
+
+export interface Pact {
+  readonly id: string;
+  /** Who offered it. */
+  readonly from: SeatIndex;
+  /** Who was offered it, and who answers. */
+  readonly to: SeatIndex;
+  readonly kind: PactKind;
+  readonly offeredTurn: number;
+  readonly status: 'offered' | 'accepted' | 'declined';
+  /**
+   * The last turn this pact covers, set when it is accepted.
+   *
+   * Null while it is only an offer, because an offer nobody has taken covers nothing. An accepted
+   * pact stays in the list after it expires rather than being swept: the table's memory of who
+   * agreed to what is the point, and a pact that vanished would take the record with it.
+   */
+  readonly throughTurn: number | null;
+  /** Set when somebody attacked in the face of it. The engine notices; it does not refuse. */
+  readonly broken?: true;
+}
+
 export type EliminatedReason = 'life' | 'poison' | 'commanderDamage' | 'concede' | 'library';
 
 export interface Seat {
@@ -71,6 +107,26 @@ export interface GameState extends AutomationState {
   readonly activeSeat: SeatIndex;
   readonly monarch: SeatIndex | null;
   readonly initiative: SeatIndex | null;
+  /**
+   * Deals between players, which the engine records and does not enforce.
+   *
+   * The half of Commander a screen has been worst at. A pod has had threat reads and goad for a
+   * while — both of them facts about the board — and no way to say the thing players actually say
+   * to each other: *leave me alone this turn and I will leave you alone*. Chat could carry the
+   * words, and did, but a sentence that scrolls away is not an agreement anybody can point at
+   * three turns later.
+   *
+   * **Recorded, shown, and never enforced.** A pact is not a rule: nothing here refuses an attack
+   * that breaks one, because a table where the software stops you breaking your word is a table
+   * where your word costs nothing. What the engine does instead is notice — an attack against
+   * somebody you promised not to attack marks the pact broken and says so in the log, so the
+   * table remembers who kept their word and who did not. That is the social half of Commander
+   * modelled honestly: the pressure is other players, and all the software owes them is a record.
+   *
+   * On `GameState` rather than in the chat stream because a live pact has to survive a reload and
+   * be the same for everybody, which is exactly what state is for and messages are not.
+   */
+  readonly pacts: readonly Pact[];
   readonly started: boolean;
   readonly finished: boolean;
   readonly winnerSeat: SeatIndex | null;
@@ -134,6 +190,18 @@ export interface MonarchSetAction extends BaseAction {
 export interface InitiativeSetAction extends BaseAction {
   readonly type: 'initiative:set';
   readonly seat: SeatIndex | null;
+}
+/** Offering another seat a deal. See `GameState.pacts`. */
+export interface PactOfferAction extends BaseAction {
+  readonly type: 'pact:offer';
+  readonly seat: SeatIndex;
+  readonly kind: PactKind;
+}
+/** Answering one. Only the seat it was offered to may, which is the whole of its authority. */
+export interface PactRespondAction extends BaseAction {
+  readonly type: 'pact:respond';
+  readonly pact: string;
+  readonly accept: boolean;
 }
 export interface TurnPassAction extends BaseAction {
   readonly type: 'turn:pass';
@@ -265,6 +333,8 @@ export type Action =
   | CommanderTaxAdjustAction
   | MonarchSetAction
   | InitiativeSetAction
+  | PactOfferAction
+  | PactRespondAction
   | TurnPassAction
   | DiceRollAction
   | CoinFlipAction

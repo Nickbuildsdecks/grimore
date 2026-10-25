@@ -53,6 +53,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `autoActions.ts` | The reducer for `auto:*` — what a player may do and what happens |
 | `legalActions.ts` | What a seat can legally do right now, for the client |
 | `bot.ts` | A player that only ever does what the engine offers |
+| `pacts.ts` | Deals between players: the words, the term, and who broke one — never a rule |
 | `view.ts` | Per-seat redaction, the automation block, and the wire form |
 
 In the web app: `lib/arena.ts` (the interaction reducer), `lib/sound.ts` (which cue a view change
@@ -2317,6 +2318,39 @@ horizon. Both terms are gone, the evaluation keeps six honest weights instead of
 ones, and the finding is in `claude/decisions-log.md` (D108): the Salve's halves are worth the same
 to this bot, and taking the life is a defensible play rather than a bug.
 
+### A deal at the table, and a table that remembers it
+
+The pod could read the board and could not say a word to it. Threat reads, goad, one press to send
+the whole swing at one player — all facts about creatures — and the thing players actually say to
+each other had nowhere to live but the chat panel, where it scrolls away.
+
+Deals are state now. Three fixed wordings, offered by one seat to another: a truce until the asked
+player's next turn, or not attacking them this turn or next. They are offered from a sheet on the
+bottom bar, answered by **Agree** or **No deal** in the words the log will use, shown as a badge on
+both seat strips while they last, and sent to everybody at the table — the only unredacted part of
+the state, because a deal struck out loud is heard by the other two players and that is most of what
+makes it mean anything.
+
+**Nothing enforces one.** An attack on somebody you promised not to attack is declared, the attack's
+own log line says it broke a deal, and that seat's strip says **broke a deal** for the rest of the
+game. A table where the software stops you breaking your word is a table where your word costs
+nothing; the pressure at a pod is the other players, and all a program owes them is the record.
+
+The opponent answers deals and never offers one. It takes a deal unless the player offering it is
+dead on the board already, and keeping its word is a filter over every attack plan rather than one
+option in the search — a deal weighed against half a point of board advantage is a deal nobody can
+rely on. Over 30 pods with a truce going on the table every third turn, same seeds both arms: **0 of
+672 attack declarations broke a live deal, against 161 of 753 with the filter off.** The one
+exception is the rules' own: with two Juggernaut decks at the table 10 of 882 declarations broke a
+deal, and all 10 were creatures that attack each combat if able with nobody else legal to attack —
+the engine refuses the declaration that leaves one at home, so the promise goes and the log says so.
+Deals cost the table attacks and time, which is the point: 672 declarations against 724 with no
+deals, and 24 of 30 games finished inside the move budget against 28. The full write-up is D109.
+
+What is still only the chat panel's: anything said beyond those three sentences, and any record of
+who was on whose side. Three preset deals is not a conversation; it is the part of one that can be
+pointed at three turns later.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -2341,7 +2375,8 @@ to this bot, and taking the life is a defensible play rather than a bug.
    substitute for the first of them (scoring an untapped creature above a tapped one) was tried and
    measurably lost games, which is written up in `claude/decisions-log.md`.
 4. The pod interface beyond "it works". Three opponents side by side, combat drawn rather than
-   described, a threat read on every seat and on every button that sends an attack, and one press
-   to send the whole swing at one player. What is still missing is everything a pod is *socially*:
-   no table talk beyond the chat panel, no way to offer or take a deal, and nothing that records
-   who was politically on whose side — which is the half of Commander a screen is worst at.
+   described, a threat read on every seat and on every button that sends an attack, one press to
+   send the whole swing at one player, and three preset deals that the table records and never
+   enforces. What is still missing is the rest of what a pod is *socially*: no table talk beyond the
+   chat panel and those three sentences, and nothing that records who was politically on whose side
+   over a game — the badge says who broke a deal, not who was helping whom.

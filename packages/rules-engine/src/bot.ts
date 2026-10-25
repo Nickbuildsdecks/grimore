@@ -13,6 +13,7 @@
  * stronger opponent needs a search, and a search needs a position evaluator, and neither is worth
  * writing before the rules underneath them are trustworthy.
  */
+import { pactProtects } from './pacts.js';
 import { legalActions, type LegalActions, type LegalPlay } from './legalActions.js';
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
@@ -1016,7 +1017,48 @@ function attackPlans(state: GameState, seat: SeatIndex): AttackPlan[] {
     "attack with nothing", which is the plan a player picks when the swing back would kill them —
     so the forced creatures are folded into each plan instead, aimed at whoever is weakest.
   */
-  return plans.map((plan) => legalDeclaration(state, seat, plan));
+  return plans.map((plan) => keepsItsWord(state, seat, legalDeclaration(state, seat, plan)));
+}
+
+/**
+ * The same plan with the promises in it kept (see `GameState.pacts`).
+ *
+ * A pact is not a rule, so this is not `legalDeclaration`: every plan it touches was already legal
+ * and the engine would have taken it. It is the bot *choosing* to keep its word, and it is applied
+ * to every plan rather than scored as one option among several on purpose — a deal the search
+ * would weigh against half a point of board advantage is a deal nobody at the table can rely on,
+ * and the only thing a pact has going for it is that it is reliable.
+ *
+ * Which leaves the one case where it cannot: a creature that has to attack and has nowhere else to
+ * go. Then the attack stands, the pact is marked broken, and the log says so — the bot breaking a
+ * promise because the rules made it is better than the bot being unable to declare a legal attack,
+ * and it is the honest answer to give a player who asks why.
+ */
+function keepsItsWord(state: GameState, seat: SeatIndex, plan: AttackPlan): AttackPlan {
+  if (!plan.some((entry) => pactProtects(state, seat, entry.defender))) return plan;
+  const forced = new Set(forcedAttackers(state, seat));
+  const byLife = foesOf(state, seat)
+    .map((index) => ({ index, life: state.seats[index]?.life ?? 0 }))
+    .sort((a, b) => a.life - b.life)
+    .map((foe) => foe.index);
+
+  const kept: AttackPlan = [];
+  for (const entry of plan) {
+    if (!pactProtects(state, seat, entry.defender)) {
+      kept.push(entry);
+      continue;
+    }
+    const allowed = new Set(legalDefenders(state, entry.attacker, seat));
+    const elsewhere = byLife.find((index) => allowed.has(index) && !pactProtects(state, seat, index));
+    if (elsewhere !== undefined) {
+      // Re-pointed before it is dropped: a deal with one player is not a reason to stop attacking
+      // the other two, and in a pod that is usually the whole point of making one.
+      kept.push({ attacker: entry.attacker, defender: elsewhere });
+    } else if (forced.has(entry.attacker)) {
+      kept.push(entry);
+    }
+  }
+  return kept;
 }
 
 /**
@@ -1610,6 +1652,47 @@ function ritualBoughtSomething(before: GameState, after: GameState, seat: SeatIn
   return legalActions(after, seat).plays.some((p) => p.kind === 'cast' && !had.has(playKey(p)));
 }
 
+/**
+ * The total power this seat could swing with, ignoring whose turn it is.
+ *
+ * A rough reach rather than a real attack: it is asked at a moment that may be nobody's combat, so
+ * the question it answers is "do I have the board to kill you", not "can I kill you this turn".
+ */
+function openPower(state: GameState, seat: SeatIndex): number {
+  let total = 0;
+  for (const id of legalAttackers(state, seat)) {
+    total += Math.max(0, characteristicsOf(state, state.instances[id]!).power);
+  }
+  return total;
+}
+
+/**
+ * Answering a deal this seat was offered (see `GameState.pacts`).
+ *
+ * One rule: take it, unless the player offering it is already dead on the board. A bot that can
+ * swing for somebody's whole life total and signs a truce instead is a bot that throws games
+ * away, and a player who offers a deal while at four life against a swarm is asking to be let off
+ * rather than offering anything — so that one gets declined and everything else gets accepted.
+ *
+ * It is this crude deliberately. The honest version of "is this deal good for me" needs the thing
+ * the bot does not have: a model of what the other player does *next*, which is the same two-ply
+ * search named in D108 as the limit on the shield half of prevention. Until that exists, a bot
+ * that keeps every deal it takes (see `keepsItsWord`) and takes nearly every deal offered is
+ * predictable, which is worth more at a table than clever would be.
+ *
+ * And it never offers one. Offering is the half of a pact a search genuinely cannot price: what it
+ * buys is somebody else's future behaviour, and nothing in here models that at all. A bot that
+ * offered deals it had no way to value would be making noise at the table, which is worse than
+ * silence.
+ */
+function answerPact(state: GameState, seat: SeatIndex): Action | null {
+  // The oldest offer first, which is the order they were made in: `state.pacts` is append-ordered.
+  const offer = state.pacts.find((p) => p.status === 'offered' && p.to === seat);
+  if (offer === undefined) return null;
+  const accept = openPower(state, seat) < (state.seats[offer.from]?.life ?? 0);
+  return { type: 'pact:respond', by: seat, pact: offer.id, accept };
+}
+
 export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = {}): Action | null {
   if (!state.automated || state.finished) return null;
   if (state.openingHands) {
@@ -1631,6 +1714,17 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     const worst = handByCost(state, seat)[0];
     return worst === undefined ? null : { type: 'auto:discard', by: seat, card: worst.id };
   }
+
+  /*
+    A deal on the table, answered before anything the rules are waiting on.
+
+    Before the declaration deliberately: a truce accepted in the middle of the attack step changes
+    who this seat may attack, so answering after declaring attackers would be answering a question
+    that had already been decided. Nothing in the engine gates a pact on priority or on a step,
+    which is what makes this ordering available.
+  */
+  const deal = answerPact(state, seat);
+  if (deal !== null) return deal;
 
   const owed = pendingDeclaration(state);
   if (owed !== null && owed.seats.includes(seat)) {
@@ -1851,8 +1945,28 @@ export function seatsToAct(state: GameState): SeatIndex[] {
   if (state.pendingChoice !== null) return [state.pendingChoice.seat];
   if (state.pendingDiscard !== null) return [state.pendingDiscard.seat];
   const owed = pendingDeclaration(state);
-  if (owed !== null) return [...owed.seats];
-  return state.priority === null ? [] : [state.priority];
+  if (owed !== null) return [...owed.seats, ...offeredSeats(state, owed.seats)];
+  const holder = state.priority === null ? [] : [state.priority];
+  return [...holder, ...offeredSeats(state, holder)];
+}
+
+/**
+ * Seats with a deal waiting for an answer, which the rules are not waiting on but a table is.
+ *
+ * Appended to the queue rather than put at its head, and never returned on its own ahead of a
+ * question that blocks the engine: an unanswered offer stops nothing, so a seat that owes the
+ * table an answer must not be able to push past the seat that owes it a move. The caller filters
+ * this list to the seats it drives, so an offer made to a person sits there until they answer it.
+ */
+function offeredSeats(state: GameState, already: readonly SeatIndex[]): SeatIndex[] {
+  const out: SeatIndex[] = [];
+  for (const pact of state.pacts) {
+    if (pact.status !== 'offered') continue;
+    if (already.includes(pact.to) || out.includes(pact.to)) continue;
+    if (state.seats[pact.to]?.eliminated === true) continue;
+    out.push(pact.to);
+  }
+  return out;
 }
 
 /** The seat at the front of that queue, for a caller that only handles one at a time. */

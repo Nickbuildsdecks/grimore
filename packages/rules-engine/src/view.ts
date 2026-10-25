@@ -34,7 +34,7 @@ import { autoPassFor, pendingDeclaration, stillDeciding } from './automation.js'
 import { STEP_LABELS } from './turnTypes.js';
 import type { ManaPool } from './mana.js';
 import type { CombatState, StackObject, Step } from './turnTypes.js';
-import type { EliminatedReason, GameState, LogEntry, SeatIndex } from './types.js';
+import type { EliminatedReason, GameState, LogEntry, Pact, SeatIndex } from './types.js';
 
 /**
  * How much history a view carries. The engine keeps 200 entries; a table needs far fewer on screen,
@@ -183,6 +183,15 @@ export interface GameView {
   readonly activeSeat: SeatIndex;
   readonly monarch: SeatIndex | null;
   readonly initiative: SeatIndex | null;
+  /**
+   * Every deal offered at this table, live, answered, expired or broken.
+   *
+   * Unredacted, all of it, to everybody — the only part of the state that is. A deal struck at a
+   * real table is struck out loud, and the fourth player hearing it is most of what makes a pact
+   * mean anything. Spent offers and expired pacts travel too, bounded by `MAX_PACTS`, because
+   * who kept their word is the half of this a screen has never been able to show.
+   */
+  readonly pacts: readonly Pact[];
   readonly started: boolean;
   readonly finished: boolean;
   readonly winnerSeat: SeatIndex | null;
@@ -538,6 +547,7 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     finished: state.finished,
     winnerSeat: state.winnerSeat,
     stateVersion: state.stateVersion,
+    pacts: state.pacts,
     log: state.log.slice(-VIEW_LOG_ENTRIES),
     seat: viewer,
     automation: automationFor(state, viewer),

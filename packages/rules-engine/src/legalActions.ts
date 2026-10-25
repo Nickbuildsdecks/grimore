@@ -28,8 +28,9 @@ import {
 import { scriptFor } from './scripts.js';
 import type { AbilityDef, CardScript, TargetSpec } from './scriptTypes.js';
 import { legalTargets } from './targeting.js';
+import { PACT_KINDS } from './pacts.js';
 import { MAIN_STEPS, type DecisionZone, type Step, type Target } from './turnTypes.js';
-import type { GameState, SeatIndex } from './types.js';
+import type { GameState, PactKind, SeatIndex } from './types.js';
 
 /** One thing a player could do, with everything the UI needs to offer it. */
 export interface LegalPlay {
@@ -180,10 +181,47 @@ export interface LegalActions {
    * different question and is not answered here.
    */
   readonly blocked: readonly { readonly card: string; readonly reason: string }[];
+  /**
+   * Deals this seat may offer, and deals waiting on its answer. See `GameState.pacts`.
+   *
+   * Present in every branch of this function, which no other field is: a pact is not gated on
+   * priority or on a step, because two players agreeing to leave each other alone is not a thing
+   * the turn structure has an opinion about. The one gate is the engine's own — one live offer per
+   * direction — and it shows up here as an opponent missing from `offer`.
+   */
+  readonly pacts: {
+    /** Per opponent, the deals that could be put to them right now. */
+    readonly offer: readonly { readonly seat: SeatIndex; readonly kinds: readonly PactKind[] }[];
+    /** Offers waiting on this seat, by pact id, oldest first. */
+    readonly answer: readonly string[];
+  };
   /** Mana floating right now. */
   readonly pool: ManaPool;
   /** Mana that could still be produced from untapped permanents. */
   readonly potential: ManaPool;
+}
+
+/**
+ * The deals a seat may offer now, and the ones it owes an answer to.
+ *
+ * Nothing is offered once the game is finished, which is the only state that closes this down: the
+ * reducer refuses every action on a finished table, so a UI still showing a deal button would be
+ * offering a move the engine would refuse.
+ */
+function pactOptions(state: GameState, seat: SeatIndex): LegalActions['pacts'] {
+  if (state.finished || state.seats[seat]?.eliminated === true) return { offer: [], answer: [] };
+  const offer: { seat: SeatIndex; kinds: readonly PactKind[] }[] = [];
+  for (const other of state.seats) {
+    if (other.index === seat || other.eliminated) continue;
+    const pending = state.pacts.some(
+      (p) => p.status === 'offered' && p.from === seat && p.to === other.index,
+    );
+    if (!pending) offer.push({ seat: other.index, kinds: PACT_KINDS });
+  }
+  return {
+    offer,
+    answer: state.pacts.filter((p) => p.status === 'offered' && p.to === seat).map((p) => p.id),
+  };
 }
 
 /** Mana the seat could add to its pool without casting anything. */
@@ -605,7 +643,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     canPass: false, passLabel: '', plays: [], attackers: [], mustAttack: [], attackAims: [],
     blockers: [], mustOrder: [],
     mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat), mustChoose,
-    mustDecide, blocked: [], pool: poolOf(state, seat), potential,
+    mustDecide, blocked: [], pacts: pactOptions(state, seat), pool: poolOf(state, seat), potential,
   };
   if (!state.automated || state.finished) return empty;
   // Opening hands come before anything else, including priority.

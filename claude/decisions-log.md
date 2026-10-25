@@ -3976,3 +3976,75 @@ decorative ones, and the lesson is written here instead: **the Salve's two halve
 to this bot, and taking the life is a defensible play rather than a bug.** The next person to want
 the shield half chosen needs a deeper search, not a bigger number — and the measurement that proves
 it takes twenty minutes, which is cheaper than the weight.
+
+## D109 — A deal at the table, and the one thing it does not do
+
+The half of Commander a screen has always been worst at is not a rule. A pod has had threat reads
+and goad for a while — both of them facts about the board — and no way to say the thing players
+actually say to each other: *leave me alone this turn and I will leave you alone*. Chat carried the
+words and nothing else: a sentence that scrolls away is not an agreement anybody can point at three
+turns later.
+
+So the table records deals now. Three of them, fixed wordings — a truce until the asked player's
+next turn, and not attacking them this turn or next — offered by one seat to another, answered by
+that seat and nobody else. **And nothing enforces any of it.** `pact:offer` and `pact:respond` are
+the whole of the engine's involvement in making one; the only other place pacts appear in the rules
+engine is `declareAttackers`, where an attack against somebody you promised not to attack marks the
+pact broken, says so on the attack's own log line, and **is declared anyway**.
+
+That was the decision, and it was not close. A table where the software stops you breaking your word
+is a table where your word costs nothing: the pressure at a real pod is the other three players, and
+all a program owes them is a record. Half the tests in `pacts.test.ts` exist to hold that line — if
+one of them starts failing because the engine refused an attack, the feature has quietly turned into
+a rule and the point of it is gone.
+
+Three smaller calls fell out of it:
+
+**Only the seat a deal was offered to may answer it — not even the host.** This is the one action in
+the engine with no host override, and `assertMayActFor` is deliberately not used. The host runs the
+table; they do not get to give somebody else's word.
+
+**An expiry is a turn number, not a seat and a count.** "Until my next turn" stops meaning anything
+once a seat between us is eliminated, and a turn number does not. The cost is that a pact is
+measured in turns *taken* rather than turns promised, which is the same thing at the moment it is
+accepted, and is what a player watching the table sees. A deal keyed to a turn nobody will ever take
+— the player who offered it conceded before the answer came — expires before it starts, which is the
+honest answer rather than a pact that lasts forever.
+
+**The pacts travel to everybody, unredacted, including the spent ones.** It is the only part of the
+state that does. A deal struck at a real table is struck out loud, and the fourth player hearing it
+is most of what makes it mean anything; and the record of who kept their word is the whole feature,
+so declined and expired pacts stay in the list (bounded by `MAX_PACTS`, which only ever drops
+settled ones).
+
+### Does the opponent keep its word?
+
+The bot answers deals and never offers them. Answering is one rule — take it, unless the player
+offering it is already dead on the board — because a bot that can swing for somebody's whole life
+total and signs a truce instead is throwing a game away, and a player who offers a deal at four life
+against a swarm is asking to be let off rather than offering anything. Offering is the half a search
+genuinely cannot price: what a deal buys is somebody else's future behaviour, which is the two-ply
+model D108 named as missing. A bot offering deals it had no way to value would be noise at the
+table, which is worse than silence.
+
+Keeping its word is a filter over every attack plan rather than one option among several, and that
+distinction is the design: a deal the search would weigh against half a point of board advantage is
+a deal nobody can rely on, and reliability is the only thing a pact has going for it. Measured over
+30 pods with a truce going on the table every third turn, 500 moves each, same seeds both arms:
+
+| | attack declarations | broke a live deal |
+| --- | --- | --- |
+| keeping its word | 672 | **0** |
+| negative control (filter off) | 753 | **161** (21%) |
+
+And the one case where it cannot keep its word: with two Juggernaut decks at the table, 10 of 882
+declarations broke a deal, and **all 10 were creatures that attack each combat if able** with nobody
+else legal to attack. The engine refuses the declaration that leaves such a creature at home, so the
+choice is between an illegal attack and a broken promise — the promise goes, the log says so, and
+the badge on that seat stays for the rest of the game. A bot that could not declare a legal attack
+would be a worse table than a bot that occasionally has to break its word because the rules made it.
+
+Deals cost the table attacks and time, which is what they are for: 672 declarations against 724 with
+no deals on the same seeds, and 24 of 30 games finished inside the 500-move budget against 28. Of
+495 offers the bots accepted 457 and declined 25 — the declines being the seats that could have
+killed the offerer that turn.

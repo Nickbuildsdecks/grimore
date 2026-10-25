@@ -16,4 +16,5 @@ export * from './automation.js';
 export * from './autoActions.js';
 export * from './legalActions.js';
 export * from './bot.js';
+export * from './pacts.js';
 export * from './view.js';

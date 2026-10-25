@@ -847,6 +847,53 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     }, 30_000);
 
     /**
+     * A deal offered across the wire, and answered inside the same write.
+     *
+     * The engine's own suite proves what a pact does; what this proves is that it travels. A pact
+     * is the first action in this server that is neither a rules move nor a table affordance — it
+     * is one player saying something to another — and the two things that could have gone wrong
+     * are both about the server: `by` is stamped from the socket, so nobody can offer a deal in
+     * somebody else's name, and the server's own seat answers in the write that provoked it rather
+     * than leaving an offer hanging on a table nobody is holding.
+     */
+    it('carries a deal to the server\u2019s seat and brings back its answer', async () => {
+      const solo = await client('Dealer');
+      okAck(await emitAck(solo, 'pod:create', {
+        name: 'Deals', format: 'commander', visibility: 'private', bots: 1, botDeck: 'tidal-mind',
+      }));
+      const dealt = waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.state !== null);
+      let version = okAck(await emitAck(solo, 'pod:ready', { ready: true })).stateVersion!;
+      await dealt;
+
+      const act = async (action: Record<string, unknown>): Promise<PodStateEvent> => {
+        // `from` is captured before the emit: the predicate runs when the event arrives, which is
+        // after `version` has already moved on, so reading it there would never match.
+        const from = version;
+        const seen = waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.stateVersion > from);
+        version = okAck(await emitAck(solo, 'pod:action', { action, expectedVersion: version })).stateVersion!;
+        return seen;
+      };
+
+      await act({ type: 'deck:load', seat: 0, deckId: 'ember-rush' });
+      await act({ type: 'game:start', firstSeat: 0 });
+      await act({ type: 'auto:start', firstSeat: 0 });
+      await act({ type: 'auto:keep' });
+
+      // The table offers the deals, per opponent, and this seat has one opponent.
+      const before = viewOf(await act({ type: 'coin:flip' }));
+      expect(before.automation?.you?.pacts.offer.map((o) => o.seat)).toEqual([1]);
+
+      const after = viewOf(await act({ type: 'pact:offer', seat: 1, kind: 'truce-until-your-turn' }));
+      // Offered and answered in one write: the server's seat does not leave a deal on the table.
+      expect(after.pacts).toHaveLength(1);
+      expect(after.pacts[0]).toMatchObject({ from: 0, to: 1, status: 'accepted' });
+      expect(after.pacts[0]!.throughTurn).not.toBeNull();
+      // And the words are in the log, where the table can read them back.
+      expect(after.log.some((e) => e.message.includes('offers a deal'))).toBe(true);
+      expect(after.log.some((e) => e.message.includes('agrees'))).toBe(true);
+    }, 30_000);
+
+    /**
      * A third person watching, which is a different kind of client: no seat, no moves, no hands.
      *
      * The spectator view has existed since redaction went in and nothing could ask for one. The

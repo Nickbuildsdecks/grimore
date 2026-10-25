@@ -16,7 +16,10 @@
  * target disappearing while you choose — and a reducer is the only version of them that can be
  * tested without a browser.
  */
-import type { GameView, LegalActions, LegalPlay, SeatIndex, Target, VisibleCard } from "@grimore/rules-engine"
+import { pactBinds, pactLiveAt, pactShort, pactWords } from "@grimore/rules-engine"
+import type {
+  GameView, LegalActions, LegalPlay, PactKind, SeatIndex, Target, VisibleCard,
+} from "@grimore/rules-engine"
 import type { TableAction } from "@/lib/table"
 
 /** What the player is in the middle of doing. `idle` is the ordinary "pick something" state. */
@@ -855,4 +858,51 @@ export function decisionLabel(ask: Decision, chosen: readonly string[]): string 
 export function firstOpponent(view: GameView): SeatIndex {
   const other = view.seats.find((s) => s.index !== view.seat && !s.eliminated)
   return (other?.index ?? 0) as SeatIndex
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Deals between players
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The live deal between you and another seat, short enough for a badge, or null.
+ *
+ * `pactLiveAt` and `pactBinds` come from the engine rather than being rewritten here, which is the
+ * whole point: a table that drew a badge from its own idea of when a deal expires would eventually
+ * show a truce the engine had already let lapse, and a player would hold back a lethal attack on
+ * the strength of it.
+ */
+export function pactBadge(view: GameView, other: SeatIndex): string | null {
+  const mine = view.seat
+  if (mine === null) return null
+  const live = view.pacts.find((p) => pactLiveAt(view.turn, p) && pactBinds(p, mine, other))
+  return live === undefined ? null : pactShort(live.kind)
+}
+
+/** Whether this seat has gone back on a deal in this game. The table remembers; that is the point. */
+export function brokeADeal(view: GameView, seat: SeatIndex): boolean {
+  return view.pacts.some((p) => p.broken === true && p.from === seat)
+}
+
+/** A deal waiting on your answer, in the words the log will use, or null. */
+export function pactAsked(view: GameView): { readonly id: string; readonly words: string } | null {
+  const mine = view.seat
+  if (mine === null) return null
+  const open = view.pacts.find((p) => p.status === "offered" && p.to === mine)
+  if (open === undefined) return null
+  const from = view.seats.find((s) => s.index === open.from)?.name ?? `seat ${open.from}`
+  const to = view.seats.find((s) => s.index === open.to)?.name ?? `seat ${open.to}`
+  return { id: open.id, words: pactWords(open.kind, from, to) }
+}
+
+/** The deals you could put to each opponent right now, named. */
+export function pactOffers(
+  view: GameView,
+): readonly { readonly seat: SeatIndex; readonly name: string; readonly kinds: readonly PactKind[] }[] {
+  const offer = view.automation?.you?.pacts.offer ?? []
+  return offer.map((entry) => ({
+    seat: entry.seat,
+    name: view.seats.find((s) => s.index === entry.seat)?.name ?? `seat ${entry.seat}`,
+    kinds: entry.kinds,
+  }))
 }

@@ -11,14 +11,15 @@
  * `legalActions.attackers`, and the mana comes from the pool the server sent.
  */
 import { useState } from "react"
-import { Check, FastForward, Hand, Skull, Swords, X } from "lucide-react"
+import { Check, FastForward, Hand, Handshake, Skull, Swords, X } from "lucide-react"
 import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  attackRead, decisionLabel, manaPips, orderingDone, primaryMove, specAt, targetsRequired,
-  targetsWanted, type ArenaEvent, type ArenaMode,
+  attackRead, decisionLabel, manaPips, orderingDone, pactAsked, pactOffers, primaryMove, specAt,
+  targetsRequired, targetsWanted, type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
+import { pactWords } from "@grimore/rules-engine"
 
 const MANA_BG: Record<string, string> = {
   W: "var(--g-mana-w)",
@@ -47,6 +48,8 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
    * inside the engine, and in a pod it ends it while three other people keep playing.
    */
   const [arming, setArming] = useState(false)
+  /** Whether the deals sheet is open. A sheet, so an unused feature costs the table no height. */
+  const [dealing, setDealing] = useState(false)
   const auto = view.automation
   const you = auto?.you
   if (!auto || !you) return null
@@ -75,6 +78,8 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
   const waitingFor = waitingSeats.length === 1
     ? view.seats.find((s) => s.index === waitingSeats[0])?.name ?? null
     : null
+  const asked = pactAsked(view)
+  const offers = pactOffers(view)
   const pool = manaPips(auto.pools[String(view.seat)] as Record<string, number> | undefined)
   const potential = manaPips(you.potential as unknown as Record<string, number>)
 
@@ -422,6 +427,37 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         </div>
       ) : null}
 
+      {/*
+        A deal somebody has put to you, and the two answers.
+
+        Above the primary action and never instead of it: a pact blocks nothing, so a player who
+        would rather ignore an offer can carry on playing and leave it sitting there. It is the one
+        thing on this bar that is not the engine waiting for something.
+      */}
+      {asked !== null ? (
+        <div data-testid="pact-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <Handshake className="size-3.5 text-[var(--g-gold-400)]" />
+          <span className="font-semibold text-[var(--g-text-high)]">{asked.words}</span>
+          <span className="ml-auto flex gap-1.5">
+            <Button
+              size="sm"
+              data-testid="pact-accept"
+              onClick={() => onAct({ type: "pact:respond", pact: asked.id, accept: true })}
+            >
+              <Check className="size-3.5" /> Agree
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="pact-decline"
+              onClick={() => onAct({ type: "pact:respond", pact: asked.id, accept: false })}
+            >
+              <X className="size-3.5" /> No deal
+            </Button>
+          </span>
+        </div>
+      ) : null}
+
       {you.mustDiscard > 0 ? (
         <div data-testid="discard-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <Hand className="size-3.5 text-[var(--g-gold-400)]" />
@@ -494,6 +530,24 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         ) : null}
 
         {/*
+          Offering a deal. One button into a sheet rather than a control per opponent, because the
+          table is already dense and a pod has three of them — and because a deal is a thing you go
+          looking for once a game, not something you need under your thumb every step.
+        */}
+        {offers.length > 0 && !view.finished ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="open-deals"
+            className="h-7 px-2 text-[10px]"
+            title="Offer another player a deal. Nothing enforces it — the table just remembers."
+            onClick={() => setDealing(true)}
+          >
+            <Handshake className="size-3.5" /> Deal
+          </Button>
+        ) : null}
+
+        {/*
           The stops toggle. On, the engine passes for you whenever passing is your only legal move,
           which is most of a game — off, you are offered every priority in every step, which is
           what a player wants when they are bluffing or learning the turn structure.
@@ -544,6 +598,57 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           </Button>
         )}
       </div>
+
+      {/*
+        The deals sheet: a seat, and the three things you can say to them.
+
+        The wording is the engine's own `pactWords`, so the button says exactly what the log will
+        say — a player should never find out what they agreed to by reading it back afterwards. And
+        the line at the bottom is the honest one: nothing here is enforced.
+      */}
+      {dealing ? (
+        <div
+          data-testid="pact-sheet"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center"
+          onClick={() => setDealing(false)}
+        >
+          <div
+            className="max-h-[80dvh] w-full max-w-md overflow-y-auto rounded-t-xl border border-white/10 bg-[var(--g-surface-raised)] p-4 sm:rounded-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-2 text-sm font-semibold text-[var(--g-text-high)]">Offer a deal</p>
+            <div className="flex flex-col gap-3">
+              {offers.map((target) => (
+                <div key={target.seat} className="flex flex-col gap-1.5">
+                  <p className="text-xs font-semibold text-[var(--g-text-high)]">{target.name}</p>
+                  {target.kinds.map((kind) => (
+                    <Button
+                      key={kind}
+                      size="sm"
+                      variant="secondary"
+                      className="h-auto justify-start whitespace-normal py-1.5 text-left text-[11px]"
+                      data-testid={`offer-${target.seat}-${kind}`}
+                      onClick={() => {
+                        onAct({ type: "pact:offer", seat: target.seat, kind })
+                        setDealing(false)
+                      }}
+                    >
+                      {pactWords(kind, "You", target.name)}
+                    </Button>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-[10px] text-[var(--g-text-muted)]">
+              Nothing here is enforced. The table records what was agreed, and says in the log if
+              somebody attacks anyway.
+            </p>
+            <Button className="mt-3 w-full" variant="ghost" data-testid="pact-sheet-close" onClick={() => setDealing(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

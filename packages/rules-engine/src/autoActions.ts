@@ -28,6 +28,7 @@ import { canPay, parseManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
 import type { CardScript, TargetSpec } from './scriptTypes.js';
 import { hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
+import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import { legalActions } from './legalActions.js';
 import { EMPTY_COMBAT, MAIN_STEPS, type CombatAttack, type StackObject, type Target } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -506,8 +507,19 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     );
   }
 
+  /*
+    And whose word this breaks (see `GameState.pacts`).
+
+    Read before the declaration is applied and recorded with it, because a broken deal is part of
+    the same event as the attack that broke it. Nothing above this line consulted a pact: every
+    check that could refuse an attack has already run, and an attack that breaks a promise is
+    legal. All that happens is that the table finds out.
+  */
+  const broken = pactsBrokenBy(state, action.by, attacks.map((a) => a.defender));
+
   let next: GameState = {
     ...state,
+    pacts: markPactsBroken(state.pacts, broken),
     combat: {
       attacks, firstStrikeDealt: false, attackersDeclared: true, blockersDeclaredBy: [],
       damageOrdered: false,
@@ -542,14 +554,20 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     state: next,
     // Named, and aimed. "Attacks with 2 creature(s)" is true and useless: in a pod the question
     // a reader has is who is being attacked, and in a duel it is what with.
-    message: attacks.length === 0
+    message: (attacks.length === 0
       ? `${seatName(state, action.by)} attacks with nothing`
       : `${seatName(state, action.by)} attacks: ${attacks
           .map((a) => `${cardName(state, a.attacker)} at ${a.planeswalker === undefined
             ? seatName(state, a.defender)
             : cardName(state, a.planeswalker)}`)
-          .join(', ')}`,
-    data: { attackers: attacks.map((a) => a.attacker) },
+          .join(', ')}`)
+      // Said on the attack rather than in a line of its own, because it is not a second thing that
+      // happened: breaking your word *is* this attack, read by a table that remembers the deal.
+      + broken.map((p) => ` — breaking a deal: ${pactLine(state, p.from, p.to, p.kind)}`).join(''),
+    data: {
+      attackers: attacks.map((a) => a.attacker),
+      ...(broken.length === 0 ? {} : { brokePacts: broken.map((p) => p.id) }),
+    },
   };
 }
 

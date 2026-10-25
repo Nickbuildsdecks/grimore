@@ -15,6 +15,7 @@
  *   - one player's table hides all three opponents' hands, not just the one next to them
  *   - a commander is cast *from the command zone* through the real UI, and the table says it can be
  *   - an attack can be sent at a chosen opponent, and two attacks at two different ones
+ *   - a deal is offered, read, accepted and shown on both tables, and binds nothing
  *   - commander damage is shown as the engine's count, with no button to contradict it
  *   - a player who concedes is marked out and the other three play on
  *   - the game reaches one survivor, and all four are told
@@ -158,6 +159,42 @@ async function main() {
       for (const p of players) if (await has(p.page, 'mulligan-prompt')) return false;
       return has(host.page, 'step-label');
     }, 20000);
+
+    /*
+      ── A deal, struck through the real UI ──────────────────────────────────────────────────────
+
+      Done here, before a single turn has been played, because it is the one thing at this table
+      that needs no board: two players agreeing to leave each other alone is available from the
+      moment everybody is seated. Driven by hand rather than left to `makeMove` for the same
+      reason the attack spread is — nothing the driver does would ever think to offer a deal.
+
+      The claim is the whole round trip: the host offers, the deal reaches the other player in the
+      words the log will use, they accept, and *both* tables show it. A pact that one of the two
+      players could not see would be worse than no pact at all.
+    */
+    const partner = players[1];
+    await press(host.page, 'open-deals');
+    await waitFor(host.page, 'pact-sheet');
+    await shot(host.page, 'offering-a-deal');
+    check('the table offers a deal to each opponent by name',
+      (await host.page.locator('[data-testid^="offer-"]').count()) >= 3);
+    await press(host.page, `offer-${partner.seat}-truce-until-your-turn`);
+    await expectEventually(partner.page, 'the deal reaches the other player, in words', async () => {
+      if (!(await has(partner.page, 'pact-prompt'))) return false;
+      const words = await text(partner.page, 'pact-prompt');
+      return /will not attack each other/.test(words) ? true : words;
+    });
+    await shot(partner.page, 'a-deal-on-the-table');
+    await press(partner.page, 'pact-accept');
+    await expectEventually(host.page, 'and once it is accepted both tables say so', async () => {
+      const mine = await has(host.page, `pact-${partner.seat}`);
+      const theirs = await has(partner.page, `pact-${host.seat}`);
+      if (!mine || !theirs) return JSON.stringify({ mine, theirs });
+      return /truce/.test(await text(host.page, `pact-${partner.seat}`));
+    });
+    await shot(host.page, 'a-deal-nobody-is-enforcing');
+    // And nothing is enforced: the table never refuses an attack because of it, which the attack
+    // spread below would catch, and the engine's own suite asserts case by case.
 
     // ── Play it out ─────────────────────────────────────────────────────────────────────────────
     const seen = {

@@ -9,6 +9,7 @@ import {
 import { dealOpeningHands, reduceCardAction } from './cardActions.js';
 import { reduceAutoAction } from './autoActions.js';
 import { pendingDeclaration, stateBasedActions } from './automation.js';
+import { appendPact, pactLine, pactThrough, PACT_KINDS } from './pacts.js';
 import { isAutoAction } from './turnTypes.js';
 import {
   assertCounterKey,
@@ -43,6 +44,7 @@ import {
   type GameState,
   type LogEntry,
   type Outcome,
+  type Pact,
   type Seat,
   type SeatIndex,
 } from './types.js';
@@ -126,6 +128,7 @@ export function createGame(options: CreateGameOptions): GameState {
     turn: 0,
     activeSeat: 0,
     monarch: null,
+    pacts: [],
     initiative: null,
     started: false,
     finished: false,
@@ -476,6 +479,73 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
       };
     }
 
+    /*
+      Offering a deal, and answering one. See `GameState.pacts`.
+
+      Deliberately available on a manual tabletop as well as an automated table: a pact is a thing
+      two players say to each other, not a rule the engine runs, so nothing about it needs the
+      engine to be driving the game. The only authority anywhere in here is who may answer — the
+      seat it was offered to, and nobody else, not even the host, because an agreement somebody
+      else can accept on your behalf is not an agreement.
+    */
+    case 'pact:offer': {
+      assertSeatIndex(state, action.seat);
+      // The offering seat is whoever sent it, never a seat named in the action: a deal offered on
+      // somebody else's behalf is not their deal. `action.by` is already a validated seat index.
+      const from = action.by;
+      if (from === action.seat) throw new EngineError('RULE_NOT_APPLICABLE', 'you cannot make a deal with yourself');
+      if (!PACT_KINDS.includes(action.kind)) throw new EngineError('INVALID_ACTION', 'that is not a deal this table offers');
+      assertNotEliminated(state, from);
+      assertNotEliminated(state, action.seat);
+      // One live offer at a time between the same two seats, in the same direction: a table spammed
+      // with offers is a table nobody reads.
+      if (state.pacts.some((p) => p.status === 'offered' && p.from === from && p.to === action.seat)) {
+        throw new EngineError('RULE_NOT_APPLICABLE', 'you already have an offer out to that player');
+      }
+      const pact: Pact = {
+        id: `pact${state.stateVersion + 1}`,
+        from,
+        to: action.seat,
+        kind: action.kind,
+        offeredTurn: state.turn,
+        status: 'offered',
+        throughTurn: null,
+      };
+      return {
+        state: { ...state, pacts: appendPact(state, pact) },
+        message: `${seatName(state, from)} offers a deal: ${pactLine(state, from, action.seat, action.kind)}`,
+        data: { pact: pact.id, from, to: action.seat, kind: action.kind },
+      };
+    }
+
+    case 'pact:respond': {
+      const pact = state.pacts.find((p) => p.id === action.pact);
+      if (pact === undefined || pact.status !== 'offered') {
+        throw new EngineError('RULE_NOT_APPLICABLE', 'that deal is no longer on the table');
+      }
+      /*
+        Only the seat it was offered to — deliberately not `assertMayActFor`, which lets the host
+        act for anybody. The host runs the table; they do not get to give somebody else's word.
+        This is the one action in the engine with no host override, and the reason is the whole
+        point of pacts: an agreement a third party can accept for you is not an agreement.
+      */
+      if (action.by !== pact.to) {
+        throw new EngineError('FORBIDDEN', 'only the player a deal was offered to may answer it');
+      }
+      if (typeof action.accept !== 'boolean') {
+        throw new EngineError('INVALID_ACTION', 'accept must be true or false');
+      }
+      const answered: Pact = action.accept
+        ? { ...pact, status: 'accepted', throughTurn: pactThrough(state, pact) }
+        : { ...pact, status: 'declined' };
+      return {
+        state: { ...state, pacts: state.pacts.map((p) => (p.id === pact.id ? answered : p)) },
+        message: `${seatName(state, pact.to)} ${action.accept ? 'agrees' : 'declines'}: ${
+          pactLine(state, pact.from, pact.to, pact.kind)}`,
+        data: { pact: pact.id, accept: action.accept },
+      };
+    }
+
     case 'initiative:set': {
       if (action.seat === null) {
         if (state.initiative !== null) assertMayActFor(action, state.initiative, ctx);
@@ -571,6 +641,8 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         activeSeat: 0,
         monarch: null,
         initiative: null,
+        // A new game is a new table: last game's deals are not this game's.
+        pacts: [],
         started: false,
         finished: false,
         winnerSeat: null,
