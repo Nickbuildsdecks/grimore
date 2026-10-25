@@ -15,7 +15,7 @@
  * ordering) is not scriptable yet, and `scripts/` says so rather than producing a plausible wrong
  * number.
  */
-import { zoneKey, type CardDef, type CardInstance } from './cards.js';
+import { isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 
@@ -399,6 +399,7 @@ function withAddedTypes(
   let subtypes: string[] | null = null;
   for (const effect of state.effects ?? []) {
     if (effect.addTypes === undefined && effect.addSubtypes === undefined) continue;
+    if (silenced(state, effect.source)) continue;
     if (!effectApplies(effect, instance, printedCreature)) continue;
     for (const type of effect.addTypes ?? []) {
       if (hasType(printed, type) || (types !== null && types.includes(type))) continue;
@@ -415,6 +416,48 @@ function withAddedTypes(
     types: types === null ? printed.types : [...printed.types, ...types],
     subtypes: subtypes === null ? printed.subtypes : [...printed.subtypes, ...subtypes],
   };
+}
+
+/**
+ * What a face-down permanent is, instead of what its card says (CR 707.2).
+ *
+ * A 2/2 creature with no name, no mana cost, no creature types and no abilities. Substituted for
+ * the card at the top of `characteristicsOf` rather than special-cased through it, so every layer
+ * below applies to *this* instead: a Giant Growth on a face-down creature still makes it a 5/5, a
+ * +1/+1 counter still makes it a 3/3, and an anthem still lifts it, which is the rule.
+ *
+ * The bug this fixes was visible from both sides of a table. Any player may turn a permanent face
+ * down, and `viewFor` has always hidden its identity from everybody else — but nothing hid it from
+ * the *rules*, so a face-down Hill Giant was a card the opponent could not see and a 3/3 that
+ * fought like a Hill Giant. Two players looking at one board with different facts.
+ */
+const FACE_DOWN: CardDef = Object.freeze({
+  name: 'a face-down creature',
+  typeLine: 'Creature',
+  manaCost: '',
+  cmc: 0,
+  power: '2',
+  toughness: '2',
+  oracleText: '',
+  colors: [],
+});
+
+/**
+ * Whether a continuous effect's source has been turned face down, and so has no abilities to grant.
+ *
+ * A face-down permanent has no abilities at all (CR 707.2), including the static ones it was
+ * handing out while it was face up: turn a Glorious Anthem face down and the team shrinks. Checked
+ * where each effect is read rather than by removing the effect when the card is turned over —
+ * "detect, don't announce" — because a permanent turned back face up has its abilities again, and
+ * an effect that was deleted could not come back.
+ *
+ * One lookup rather than a filtered copy of `state.effects`: `characteristicsOf` runs on every
+ * read of every permanent, and the comments in it about allocating nothing mean it.
+ */
+function silenced(state: GameState, source: string | undefined): boolean {
+  if (source === undefined) return false;
+  const inst = state.instances[source];
+  return inst !== undefined && isFaceDownPermanent(inst);
 }
 
 /**
@@ -448,7 +491,12 @@ function withAddedTypes(
  * between effects in the same layer (613.8), which no two cards in the pool argue about.
  */
 export function characteristicsOf(state: GameState, instance: CardInstance): Characteristics {
-  const def = state.cardDefs[instance.defKey];
+  /*
+    Face down only matters on the battlefield. A card face down in exile is a card nobody can read,
+    which is what `viewFor` is for; it has no characteristics to get wrong because nothing fights
+    it, and treating it as a 2/2 creature there would make exile a battlefield.
+  */
+  const def = isFaceDownPermanent(instance) ? FACE_DOWN : state.cardDefs[instance.defKey];
   const printed = parseTypeLine(def?.typeLine);
   /*
     Layer 4 first, in a pass of its own (CR 613.1c).
@@ -492,6 +540,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let setColors: readonly Color[] | null = null;
 
   for (const effect of state.effects ?? []) {
+    if (silenced(state, effect.source)) continue;
     if (!effectApplies(effect, instance, creature)) continue;
     /*
       Layer 6, and the one place the order of this loop is load-bearing.

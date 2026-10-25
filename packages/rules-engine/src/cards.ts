@@ -135,6 +135,19 @@ export interface CardInstance {
   readonly loyaltyUsedTurn?: number;
 }
 
+/**
+ * A permanent that is face down, and so has none of its card's abilities (CR 707.2).
+ *
+ * One predicate rather than the condition written out at each of the places that has to respect
+ * it — a trigger loop, a mana source, an activated ability, a continuous effect, the characteristics
+ * themselves — because a list of five places is a list somebody adds a sixth to without noticing.
+ *
+ * Only on the battlefield: a face-down card in exile is a card nobody may read, which is a question
+ * for `viewFor` rather than for the rules.
+ */
+export const isFaceDownPermanent = (inst: CardInstance): boolean =>
+  inst.faceDown && inst.zone === 'battlefield';
+
 /** Key into `GameState.zones`. The stack is shared, so it is not seat-scoped. */
 export function zoneKey(seat: SeatIndex, zone: ZoneId): string {
   return zone === 'stack' ? 'stack' : `${seat}:${zone}`;

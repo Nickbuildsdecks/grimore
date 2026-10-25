@@ -6543,3 +6543,110 @@ describe('convoke: a cost paid by tapping creatures', () => {
     }
   });
 });
+
+describe('a face-down permanent is a 2/2 with no abilities (CR 707.2)', () => {
+  /*
+    A bug that was visible from both sides of a table and from neither at once.
+
+    Any player may turn a permanent face down — it is on the card menu — and `viewFor` has always
+    hidden its identity from everybody else. Nothing hid it from the *rules*: a face-down Hill Giant
+    was a card the opponent could not see and a 3/3 that fought like a Hill Giant, so two people
+    looking at one board held different facts about it.
+
+    CR 707.2 says what it actually is: a 2/2 creature with no name, no mana cost, no creature types
+    and no abilities. Layers apply on top of that, which is why the counter test below reads 3/3.
+  */
+  const faceDown = (name: string, deck = 'ember-rush', extra: readonly string[] = []): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: deck, 1: 'verdant-guard' },
+      battlefield: { 0: [name, ...extra] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'battlefield', name);
+    return apply(s, { type: 'card:faceDown', by: 0, card });
+  };
+
+  it('fights as a 2/2 rather than as the card underneath', () => {
+    const s = faceDown('Hill Giant');
+    const giant = [...ids(s, 0, 'battlefield')][0]!;
+    const ch = characteristicsOf(s, s.instances[giant]!);
+    expect(ch.power).toBe(2);
+    expect(ch.toughness).toBe(2);
+    expect(ch.isCreature).toBe(true);
+    // No name, no colour, no types of its own: all of that is the card, and the card is hidden.
+    expect(ch.name).not.toBe('Hill Giant');
+    expect(ch.colors).toEqual([]);
+  });
+
+  it('loses its printed keywords, and a land turned over stops being a land', () => {
+    const flier = faceDown('Serra Angel', 'verdant-guard');
+    const angel = [...ids(flier, 0, 'battlefield')][0]!;
+    expect([...characteristicsOf(flier, flier.instances[angel]!).keywords]).toEqual([]);
+
+    // A face-down Mountain is not a Mountain: it is a 2/2 creature, so it taps for nothing.
+    const land = faceDown('Mountain');
+    const mountain = [...ids(land, 0, 'battlefield')][0]!;
+    const ch = characteristicsOf(land, land.instances[mountain]!);
+    expect(ch.isLand).toBe(false);
+    expect(ch.isCreature).toBe(true);
+    expect(legalActions(land, 0).plays.some((p) => p.card === mountain)).toBe(false);
+  });
+
+  it('keeps the layers that apply to it, because they apply to what it is now', () => {
+    // A +1/+1 counter on a face-down creature makes it a 3/3 — the counter is public and the
+    // base it modifies is the 2/2, not the card.
+    let s = faceDown('Hill Giant');
+    const giant = [...ids(s, 0, 'battlefield')][0]!;
+    s = addCounters(s, giant, '+1/+1', 1);
+    const ch = characteristicsOf(s, s.instances[giant]!);
+    expect(ch.power).toBe(3);
+    expect(ch.toughness).toBe(3);
+  });
+
+  it('stops handing out the static ability it was handing out', () => {
+    /*
+      Turn a Glorious Anthem face down and the team shrinks, because a face-down permanent has no
+      abilities at all — including the ones it is giving to everybody else.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard' },
+      battlefield: { 0: ['Glorious Anthem', 'Grizzly Bears'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(characteristicsOf(s, s.instances[bears]!).power).toBe(3);
+
+    s = apply(s, { type: 'card:faceDown', by: 0, card: find(s, 0, 'battlefield', 'Glorious Anthem') });
+    expect(characteristicsOf(s, s.instances[bears]!).power).toBe(2);
+  });
+
+  it('shows the other player a 2/2 and never the card underneath', () => {
+    /*
+      The leak test, and the reason the view change had to come second.
+
+      `viewFor` now computes characteristics for a battlefield permanent even when the viewer
+      cannot identify it — otherwise the opponent is sent a card with no power and no toughness and
+      cannot draw the thing that is sitting there. That is only safe because `characteristicsOf`
+      substitutes the face-down profile first, so what goes out is the 2/2 and never the Hill Giant.
+    */
+    const s = faceDown('Hill Giant');
+    const giant = [...ids(s, 0, 'battlefield')][0]!;
+    const theirs = viewFor(s, 1).cards[giant]!;
+    expect(theirs.faceDown).toBe(true);
+    expect(theirs.power).toBe(2);
+    expect(theirs.toughness).toBe(2);
+    // The card itself never travels, which is the whole point.
+    expect(theirs.card).toBeUndefined();
+    expect(JSON.stringify(theirs)).not.toContain('Hill Giant');
+    // And the spectator sees exactly what the opponent does.
+    expect(JSON.stringify(viewFor(s, null).cards[giant])).not.toContain('Hill Giant');
+  });
+
+  it('is identifiable by the player it belongs to, who may read their own card', () => {
+    const s = faceDown('Hill Giant');
+    const giant = [...ids(s, 0, 'battlefield')][0]!;
+    expect(viewFor(s, 0).cards[giant]?.card?.name).toBe('Hill Giant');
+    // Still a 2/2 to its controller as well: the rules do not care who is looking.
+    expect(viewFor(s, 0).cards[giant]?.power).toBe(2);
+  });
+});

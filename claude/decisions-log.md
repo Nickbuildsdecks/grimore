@@ -4767,3 +4767,56 @@ over 168 games the bot cast one of the two twenty times and **convoked thirteen 
 2.7 creatures a time**; 168 of 168 games finished. The bot needed nothing taught: `legalActions`
 offers the cast and the search prices the tapped creatures, because `simulate` scores the board
 after they are tapped.
+
+## D122 — Face down: a 2/2 with no abilities, and two players who could disagree about one board
+
+Scoping morph turned up a live bug instead. Any player may turn a permanent face down — the card
+menu has offered it since the tabletop table existed, and an automated table reaches the same move
+through **Move by hand** — and `viewFor` has always hidden the card's identity from everybody else.
+Nothing hid it from the *rules*. A face-down Hill Giant was a card the opponent could not read and
+a 3/3 that fought like a Hill Giant, tapped for whatever its card taps for, handed out whatever
+static it was handing out, and watched for whatever its triggers watch. A probe test printed both
+halves verbatim before anything was changed: `characteristicsOf` said
+`{"name":"Hill Giant","power":3,"toughness":3,...,"colors":["R"]}`, and the opponent's copy of that
+same card had no `card` field **and no power or toughness at all**. Two players looking at one
+board with different facts, and one of them looking at a blank.
+
+**Substitute the card, do not special-case the function.** `characteristicsOf` swaps a frozen
+`FACE_DOWN` CardDef — a 2/2 creature, no name, no mana cost, no types beyond Creature, no colours,
+no text — in for `state.cardDefs[defKey]` at the top, and every one of CR 613's layers then runs on
+*that*. Which is the rule, not a convenience: a Giant Growth on a face-down creature makes it a
+5/5, a +1/+1 counter makes it a 3/3, an anthem lifts it. Three of the six tests are that sentence.
+Had the face-down case been a branch *through* the function instead, each of those layers would
+have been a separate decision to get right, and the counters one is the layer most easily dropped.
+
+**It loses what it was giving as well as what it has.** CR 707.2 is "no abilities", and the static
+ones count: turn a Glorious Anthem face down and the team shrinks. But the effect is not deleted
+when the card is turned over, because a permanent turned back face up has its abilities again and a
+deleted effect could not come back. So `silenced(state, effect.source)` is checked where each
+effect is *read*, in both of the loops in `characteristicsOf` — detect, don't announce, the same
+rule that governs death triggers here.
+
+**One predicate, five callers, and that is the reason it exists.** `isFaceDownPermanent` lives in
+`cards.ts` and is read by the trigger watcher, the mana-source list, the activated-ability offer,
+the continuous-effect loops and `characteristicsOf` itself. The condition is two clauses long and
+writing it out five times would have worked; a list of five places is a list somebody adds a sixth
+to without noticing. A face-down Forest is not a Forest, and a face-down Llanowar Elves taps for
+nothing — the mana-source line is the one a player would hit first.
+
+**Only on the battlefield.** A face-down card in exile is a card nobody may read, which is a
+question for `viewFor` and not for the rules: it has no characteristics to get wrong because
+nothing fights it, and calling it a 2/2 creature there would make exile a battlefield.
+
+**The view had to be restructured, not patched.** `redact` used to return early the moment a card
+could not be identified, and that early return was what cost the opponent the stats. It now
+computes the characteristics for *every* battlefield permanent and attaches the card definition
+only when the viewer may have it. That reads like a leak and is the opposite of one: what goes out
+is the 2/2, because `characteristicsOf` already substituted the profile for the card. The sixth
+test is the one that proves it — the opponent's view and the spectator's view both carry a 2/2 with
+`card` undefined, and the string `"Hill Giant"` does not appear anywhere in either payload.
+
+**Not measured, and why not.** No card in this pool turns a permanent face down, so no number of
+bot games exercises any of this; a games-played figure here would be measuring nothing. What there
+is instead: six tests that each name the rule they pin, 649 in the package, and the five browser
+suites (54, 53, 41, 21, 23 checks) on the rebuilt stack. Morph is now unblocked, but the fix was
+worth doing on its own — the table offered the move already, and what it did with it was wrong.

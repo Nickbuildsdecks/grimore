@@ -24,7 +24,7 @@
 import {
   characteristicsOf, expireEffects, hasSubtype, hasType, type ContinuousEffect,
 } from './characteristics.js';
-import { zoneKey, type CardDef } from './cards.js';
+import { isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance, withZones } from './cardActions.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, dealCombatDamage,
@@ -164,7 +164,8 @@ export const stackTop = (state: GameState): StackObject | undefined => {
 
 const scriptOf = (state: GameState, instanceId: string): CardScript | undefined => {
   const inst = state.instances[instanceId];
-  return inst === undefined ? undefined : scriptFor(state.cardDefs[inst.defKey]?.name);
+  if (inst === undefined || isFaceDownPermanent(inst)) return undefined;
+  return scriptFor(state.cardDefs[inst.defKey]?.name);
 };
 
 /** Sorcery timing: your own main phase, empty stack, and you hold priority. */
@@ -525,7 +526,8 @@ function raise(
     if (!fromGraveyard && inst.zone !== 'battlefield') continue;
     // From the instance resolved above rather than by id, so a vanished token's own script is
     // still found: `scriptOf` reads `instances`, and a token that ceased to exist is not in it.
-    const script = scriptFor(next.cardDefs[inst.defKey]?.name);
+    // A face-down permanent has no abilities, so it watches nothing (CR 707.2).
+    const script = isFaceDownPermanent(inst) ? undefined : scriptFor(next.cardDefs[inst.defKey]?.name);
     if (script?.triggers === undefined) continue;
     for (let i = 0; i < script.triggers.length; i++) {
       const trigger = script.triggers[i]!;

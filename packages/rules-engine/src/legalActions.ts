@@ -10,7 +10,7 @@
  * mana follows. Showing a card as uncastable because the lands are still untapped would be
  * technically true and useless.
  */
-import { zoneKey } from './cards.js';
+import { isFaceDownPermanent, zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { characteristicsOf } from './characteristics.js';
 import {
@@ -351,6 +351,9 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined || inst.tapped) continue;
+    // A face-down permanent is a 2/2 creature with no abilities, so it taps for nothing — a
+    // face-down Forest is not a Forest (CR 707.2).
+    if (isFaceDownPermanent(inst)) continue;
     const script = scriptFor(state.cardDefs[inst.defKey]?.name);
     const ch = characteristicsOf(state, inst);
     const abilities = script?.abilities ?? [];
@@ -663,6 +666,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
   for (const { id, inHand } of reachable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
+    // Face down is face down: no name, no types, no abilities to activate (CR 707.2).
+    if (isFaceDownPermanent(inst)) continue;
     const script = scriptFor(state.cardDefs[inst.defKey]?.name);
     const ch = characteristicsOf(state, inst);
     const abilities: readonly AbilityDef[] = script?.abilities ?? [];

@@ -2591,6 +2591,45 @@ Angel the Wurm replaced manages 63%. Over 168 games the bot convoked thirteen of
 tapping 2.7 creatures a time, and needed nothing taught — the search prices the tapped creatures
 because it scores the board after they are tapped.
 
+### Face down, and two players who could disagree about one board
+
+Scoping morph turned up a live bug instead. Any player may turn a permanent face down — the card
+menu has offered it since the tabletop existed, and an automated table reaches the same move through
+**Move by hand** — and `viewFor` has always hidden the card's identity from everybody else. Nothing
+hid it from the rules. A face-down Hill Giant was a card the opponent could not read and a 3/3 that
+fought like a Hill Giant, tapped for what its card taps for, and kept handing out its static. A
+probe test printed both halves before anything changed: the rules said
+`{"name":"Hill Giant","power":3,"toughness":3}`, and the opponent's copy of the card had no name
+**and no power or toughness at all**.
+
+`characteristicsOf` now swaps a frozen 2/2 profile in for the card at the top — no name, no cost, no
+types but Creature, no colours, no text — so all of CR 613 runs on *that*. Which is the rule rather
+than a convenience: a Giant Growth makes a face-down creature a 5/5, a +1/+1 counter makes it a 3/3,
+an anthem lifts it. Had it been a branch through the function instead, each of those layers would
+have been a separate thing to get right.
+
+It loses what it was giving, not only what it has: turn a Glorious Anthem face down and the team
+shrinks. The effect is not deleted, because a permanent turned back face up has its abilities again
+and a deleted effect could not come back — so the check sits where each effect is read, which is the
+same "detect, don't announce" rule the death triggers follow.
+
+One predicate, `isFaceDownPermanent`, read by five callers: the trigger watcher, the mana sources,
+the ability offer, the effect loops and the characteristics. Two clauses written out five times
+would have worked; a list of five places is a list somebody adds a sixth to without noticing. A
+face-down Forest is not a Forest, and a face-down Llanowar Elves taps for nothing.
+
+The view had to be restructured rather than patched. `redact` used to return early the moment a card
+could not be identified, and that early return was what cost the opponent the stats; it now computes
+characteristics for every battlefield permanent and attaches the card definition only when the
+viewer may have it. That reads like a leak and is the opposite: what goes out is the 2/2, and the
+sixth test checks that the string `"Hill Giant"` appears nowhere in the opponent's payload or the
+spectator's.
+
+Nothing to measure, and that is stated rather than papered over: no card in this pool turns a
+permanent face down, so no number of bot games touches any of it. Six tests, 649 in the package, and
+the five browser suites on the rebuilt stack. Morph is unblocked, but the fix stands on its own —
+the table offered the move already and did the wrong thing with it.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

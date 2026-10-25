@@ -406,12 +406,19 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     isToken: inst.isToken,
     isCommander: inst.isCommander,
   };
-  if (!canIdentify(state, inst, viewer)) return base;
   const card = state.cardDefs[inst.defKey];
-  if (card === undefined) return base;
-  const identified: VisibleCard = { ...base, card };
+  const known = canIdentify(state, inst, viewer) && card !== undefined;
+  const identified: VisibleCard = known ? { ...base, card } : base;
   // Only a permanent on the battlefield has current characteristics at all.
   if (inst.zone !== 'battlefield') return identified;
+  /*
+    Characteristics even for a card this viewer cannot identify, which is the point rather than an
+    oversight: a face-down creature is publicly a 2/2 (CR 707.2), and a table that sent its
+    opponent a card with no power and no toughness could not draw the thing that is actually
+    sitting there. `characteristicsOf` substitutes the face-down profile for the card, so what goes
+    out here is the 2/2 and never the Hill Giant underneath — which is what the leak test opposite
+    this one checks.
+  */
   const ch = characteristicsOf(state, inst);
   return {
     ...identified,
