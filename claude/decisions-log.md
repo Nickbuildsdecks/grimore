@@ -5369,6 +5369,18 @@ Skyward Writ takes those games off them (18-6 became 16-8; 17-7 became 15-9). D1
 deck-table percentage being a statement about a field now has an example *inside a single run*
 rather than across two.
 
+**One CI failure in this stretch, and it is recorded here because it was not fixed.** The run on
+the lords commit failed `legacy-postgres` with 25 of 26 tests passing; the next run of the same job,
+on a superset of that code, passed. The commit touched the rules engine, apps/web and docs and not
+`server.js`, `db.js` or `test/`, so it cannot have caused it, and the suite passes three times out of
+three locally. The lead is in the Postgres container log — `duplicate key value violates unique
+constraint "players_pkey", Key (id)=(p_admin)` — and `test/postgres-write-paths.test.js` already
+carries a comment about that exact hazard: registering a player seeds a zeroed `player_stats` row for
+whatever season is active, so one test's row-count assertion depends on which season a previous test
+left open. A test that is commented about rather than made independent is a test that will do this
+again, so it is a task rather than a shrug — and **not** a retry, which would hide it for good.
+
+
 
 And a test that had been passing on a false premise: "will not cast a ritual with nothing to spend
 it on" built its board with `position(['Dark Ritual'], ['Swamp'], [], 'ashen-rite')` and asserted
