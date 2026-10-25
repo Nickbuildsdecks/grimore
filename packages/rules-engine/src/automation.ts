@@ -432,6 +432,9 @@ function triggerMatches(
     }
     case 'becomes-tapped':
     case 'leaves':
+    // Narrowed to its own permanent by `raise`, like the two above: a morph turning over is its
+    // own business, and the one thing worth checking is already checked by being in that list.
+    case 'turned-face-up':
       return true;
     // Its own permanent only, which `raise` has already narrowed the watcher list to.
     case 'combat-damage':
@@ -509,7 +512,9 @@ function raise(
   // `triggerMatches` decides from each trigger's own `who` whether it wants it. The subject is
   // always included: it may be the watcher, and for a death it is in a graveyard by now rather
   // than on the battlefield.
-  const selfOnly = new Set(['becomes-tapped', 'leaves', 'combat-damage', 'targeted']);
+  const selfOnly = new Set([
+    'becomes-tapped', 'leaves', 'combat-damage', 'targeted', 'turned-face-up',
+  ]);
   const everyBattlefield = apnapSeats(next).flatMap((seat) => {
     const mine = [...listAt(next, zoneKey(seat, 'battlefield'))].filter((id) => id !== subject);
     // The subject goes with its own controller rather than ahead of everybody: it may be the only

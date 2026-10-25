@@ -381,6 +381,38 @@ const BATTERING_CRAGHORN: CardDef = {
   colors: ['R'],
 };
 
+/*
+  The two morphs with text on the back, which is what the turned-face-up trigger is for.
+
+  Three cards already prove the mechanic with keywords alone, and these two prove the other half of
+  it: a morph is a card you hold *because* of what turning it up does. Ainok Survivalist is the
+  answer you did not have to telegraph — a 2/2 on turn three that is removal on any later turn, with
+  no window for the artifact's controller to do anything about it. Master of Pearls is the one that
+  wins a combat out of nowhere: six creatures attack into a board that can block two of them, and
+  the whole team is suddenly two bigger.
+*/
+const AINOK_SURVIVALIST: CardDef = {
+  name: 'Ainok Survivalist',
+  typeLine: 'Creature — Hound Shaman',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'Morph {1}{G}\nWhen Ainok Survivalist is turned face up, destroy target artifact or enchantment an opponent controls.',
+  colors: ['G'],
+};
+
+const MASTER_OF_PEARLS: CardDef = {
+  name: 'Master of Pearls',
+  typeLine: 'Creature — Human Monk',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Morph {2}{W}{W}\nWhen Master of Pearls is turned face up, creatures you control get +2/+2 until end of turn.',
+  colors: ['W'],
+};
+
 const CONCLAVE_TRIBUNAL: CardDef = {
   name: 'Conclave Tribunal',
   typeLine: 'Enchantment',
@@ -2017,7 +2049,22 @@ export const VERDANT_GUARD: DeckSpec = {
     // with four other mana sources on one and two does not need a third copy of the ramp.
     { card: RAMPANT_GROWTH, count: 2 },
     { card: GARRUK_WILDSPEAKER, count: 1 },
-    { card: SOUL_WARDEN, count: 2 },
+    { card: SOUL_WARDEN, count: 1 },
+    /*
+      Ainok Survivalist for the second Soul Warden, and the first morph in the pool with text on its
+      back.
+
+      A {1}{G} 2/1 that is also a {3} 2/2 on turn three and removal on any turn after that — and the
+      removal half cannot be played around, because turning a permanent face up uses no stack. This
+      deck already answers an artifact with a Naturalize it has to be holding *as* a Naturalize; the
+      Ainok is the same answer attached to a body, held as a creature and revealed as the answer at
+      the moment it is wanted.
+
+      The second Soul Warden, because one is already as much lifegain as this deck's one payoff for
+      it — a single Ajani's Pridemate — can use, and a 1/1 that gains a life per creature is the
+      weakest body on a curve that wants to be attacking.
+    */
+    { card: AINOK_SURVIVALIST, count: 1 },
     // Both copies, pinned: `playout.test.ts` asks whether a death reaches its trigger in a real
     // game, and the Spirit it watches for is this card's.
     { card: DOOMED_TRAVELER, count: 2 },
@@ -2474,7 +2521,22 @@ export const SKYWARD_WRIT: DeckSpec = {
       blockers for two mana at instant speed, and a one-drop that gains a life for every creature
       anybody plays. The answers were never the problem; having nothing alive to answer *with* was.
     */
-    { card: SOUL_WARDEN, count: 2 },
+    { card: SOUL_WARDEN, count: 1 },
+    /*
+      Master of Pearls for the second Soul Warden, and the other half of what a morph is for.
+
+      This deck wins in the air with small fliers, which means it wins by attacking into a board it
+      cannot profitably attack into — and a 2/2 that turns up for {2}{W}{W} and makes the whole team
+      two bigger is exactly the card that turns that attack from bad to lethal. Nothing in it could
+      do that before: Overrun is green and the deck's only mass effect was a Holy Day.
+
+      Held face down it is also a blocker, which is the trade the card asks you to think about and
+      the reason it belongs in a deck that is usually the one being attacked.
+
+      The second Soul Warden, because one is already more lifegain than this deck's plan needs and
+      the card's own payoff, Ajani's Pridemate, is not in this list at all.
+    */
+    { card: MASTER_OF_PEARLS, count: 1 },
     // A one-drop that blocks in the air and gains the life back, which is what the matchups this
     // deck loses actually ask for.
     { card: HEALERS_HAWK, count: 2 },

@@ -2050,6 +2050,59 @@ const BATTERING_CRAGHORN: CardScript = {
   morph: { cost: '{4}{R}' },
 };
 
+/*
+  The two morphs whose back has text on it, and the whole reason `turned-face-up` exists.
+
+  Neither could be written with an entry trigger. A morph enters the battlefield **face down**, with
+  no abilities at all, so an `etb` has already come and gone by the time the card is itself — and
+  turning it up is not a new object, so it will not come round again (CR 702.37d). That is the gap
+  this event fills, and it is also what makes the cards good: the trigger happens at a moment the
+  controller chooses, with no window for an opponent to act before it goes on the stack.
+
+  Only the trigger's resolution can be responded to, which is the right half to be able to answer.
+*/
+const AINOK_SURVIVALIST: CardScript = {
+  name: 'Ainok Survivalist',
+  morph: { cost: '{1}{G}' },
+  triggers: [{
+    on: { kind: 'turned-face-up' },
+    description: 'destroy target artifact or enchantment an opponent controls',
+    /*
+      An opponent's, which the printed card says and which matters here more than it does on a
+      Naturalize: this trigger is **mandatory**, so without the clause a morph turned up on a board
+      with nothing else on it would have to destroy its controller's own Sol Ring.
+
+      A trigger with no legal target never reaches the stack, which is what makes turning it up for
+      the body alone a legal and sometimes correct play.
+    */
+    targets: [{
+      kind: 'permanent',
+      description: "target artifact or enchantment an opponent controls",
+      filter: (state, candidate, chooser) => {
+        if (candidate.kind !== 'card') return false;
+        const inst = state.instances[candidate.id];
+        if (inst === undefined || inst.zoneSeat === chooser) return false;
+        const types = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+        return hasType(types, 'artifact') || hasType(types, 'enchantment');
+      },
+    }],
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      return id === null ? c.state : destroy(c.state, id);
+    },
+  }],
+};
+
+const MASTER_OF_PEARLS: CardScript = {
+  name: 'Master of Pearls',
+  morph: { cost: '{2}{W}{W}' },
+  triggers: [{
+    on: { kind: 'turned-face-up' },
+    description: 'creatures you control get +2/+2 until end of turn',
+    effect: (c) => pumpTeam(c.state, c.source, c.controller, { power: 2, toughness: 2 }),
+  }],
+};
+
 const CONCLAVE_TRIBUNAL: CardScript = {
   ...exileUntilItLeaves('Conclave Tribunal', {
     kind: 'permanent',
@@ -3084,7 +3137,7 @@ const ALL: readonly CardScript[] = [
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
-  ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN,
+  ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

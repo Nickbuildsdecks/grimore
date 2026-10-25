@@ -4921,3 +4921,67 @@ nowhere on their board, and turning it back up tells them what it was. The first
 leak check asserted over the whole page and failed on **the log** — "Nick moved Shock to Nick's
 battlefield", a public move that happened before the card was turned over. The log is right and the
 check was wrong, which is the same lesson the engine's own leak test learned two entries ago.
+
+## D124 — The turned-face-up trigger, and the number it moved
+
+Morph's one missing hook, and the entry it belongs beside is D123's last paragraph, which said what
+it would be for: the morphs with text on the back. `turned-face-up` is a new trigger event raised
+from `turnUp` with the permanent as its subject, in the `selfOnly` set beside `becomes-tapped` and
+`leaves`, and the two cards that wanted it are **Ainok Survivalist** (destroy target artifact or
+enchantment an opponent controls) and **Master of Pearls** (creatures you control get +2/+2 until
+end of turn).
+
+**It had to be its own event, and that is the whole point of it.** A morph *enters* the battlefield
+face down with no abilities at all, so an entry trigger has already come and gone by the time the
+card is itself — and turning it up is not a new object (CR 702.37d), so an `etb` will not come round
+again. The two are a pair of opposites worth saying out loud: an entry trigger on a morph fires
+while the card has no abilities to fire it, and this one fires when the card gets them. A test
+asserts both halves on one card.
+
+**Raised before `settle`, which is what gives the opponent their one window.** Turning a permanent
+face up uses no stack and cannot be answered — but what it *triggers* goes on the stack like
+anything else, and both players get priority at it. So the unanswerable half of morph is the
+reveal and the answerable half is the effect, which is the right way round: a Master of Pearls
+turned up after blockers cannot be stopped from being a 4/4, and the +2/+2 can be countered.
+
+**"An opponent controls" is load-bearing, not flavour.** The Ainok's trigger is mandatory, so
+without that clause a morph turned up on an otherwise empty board would have to destroy its own
+controller's Sol Ring. With it, a trigger that finds no legal target never reaches the stack
+(CR 603.3d) and turning the card up for the body alone stays a legal and sometimes correct play —
+which is its own test.
+
+**The prediction, and it held.** D123 recorded that the bot turns up only 15–50% of the morphs it
+casts face down, because `simulate` stops when the stack empties and "turn it up and win the
+combat" is past that horizon. A trigger is immediate value the search *can* see, so the prediction
+was that these two would be turned up far more often. Over 168 games on each of two seed sets:
+
+```
+                      cast face down    turned back up
+Ainok Survivalist      16/17, 8/9        16 of 16, 8 of 8   (100%, 100%)
+Master of Pearls        9/17, 17/19       4 of 9, 13 of 17  (44%, 76%)
+Dirgur Nemesis         20/24, 4/6         3 of 20, 1 of 4   (15%, 25%)
+Battering Craghorn      8/18, 6/18        4 of 8, 2 of 6    (50%, 33%)
+```
+
+**Every single Ainok Survivalist the bot ever turned down, it turned back up** — 24 of 24 across
+both sets, about one turn later (mean turn 11.2 down, 12.5 up: the next turn's mana). The two cards
+with text are the two the bot uses properly, and the mechanism is exactly the one D123 named. That
+is the most useful thing in this entry: it is not that the bot got better, it is that **a mechanic
+the one-ply search cannot price became one it can, by giving the moment an effect**.
+
+**The slot changes measure as nothing, with consistent signs worth writing down rather than
+rounding away.** Skyward Writ with Master of Pearls against Skyward Writ with a second Soul Warden:
+**106-132 vs 104-134** and **86-151 vs 77-160** — up 2 and up 9 in 238. Verdant Guard with Ainok
+Survivalist against the same trade: **151-87 vs 155-83** and **141-97 vs 145-93** — down 4, and
+down 4 again. Both are a fraction of the eighteen-game noise floor, so neither is a result; but one
+is consistently up and the other consistently down, and the second has a mechanism.
+
+**Why the Ainok is slightly down, which is a fact about the bot and not the card.** It casts it face
+down **94% and 89%** of the time — a {1}{G} 2/1 paid for with {3}, a mana wasted every single time,
+and then {1}{G} again to turn it up. The search prefers the face-down cast because a face-down 2/2
+scores above a 2/1 and **unspent mana scores as nothing at all**, which is the term D119 re-asked on
+the fixed search and measured as exactly level. So the blind spot is known, already measured, and
+not worth another attempt: a person holding this card casts it face up when they want the body and
+face down when they want the surprise, and the bot only knows one of those two reasons. The card
+stays, because the mechanic is what it is in the deck for and the cost of the bot misplaying it is a
+quarter of the noise floor.

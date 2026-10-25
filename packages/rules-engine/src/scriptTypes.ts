@@ -146,6 +146,20 @@ export type TriggerEvent =
   | { readonly kind: 'leaves' }
   | { readonly kind: 'becomes-tapped' }
   /**
+   * "When this permanent is turned face up" — morph's own trigger (CR 702.37d).
+   *
+   * Its own permanent only, like `becomes-tapped`: a card that watched somebody *else's* morph
+   * turn over would be reading the board, and nothing is printed that does.
+   *
+   * It is **not** an entry trigger, and that is the whole reason it exists as its own kind. A
+   * morph entered the battlefield face down, turns after the fact, and is not a new object when it
+   * does — so an `etb` trigger has already fired and will not fire again, and a card whose text
+   * only works once it is face up has nowhere else to hang. The two are a pair of opposites worth
+   * saying out loud: an entry trigger on a morph fires while the card has no abilities to fire it,
+   * and this one fires when the card gets them.
+   */
+  | { readonly kind: 'turned-face-up' }
+  /**
    * "Whenever ~ deals combat damage to a player."
    *
    * To a *player*, always: that is the half of the templating the cards in this pool use and the

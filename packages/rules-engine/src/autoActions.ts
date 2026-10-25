@@ -419,6 +419,16 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
     lethal damage on it from combat dies the moment it turns up smaller, and one that turns up
     bigger survives damage it was already holding.
   */
+  /*
+    And its own trigger, which is the one hook morph needs and an entry trigger cannot give it
+    (CR 702.37d).
+
+    Raised before `settle` rather than after, so the ability goes on the stack and `settle` puts the
+    priority back where a trigger leaves it: the turn-up itself cannot be answered, but what it
+    *triggers* goes on the stack like anything else and both players get a window at it. That is
+    the rule and it is also the only part of morph an opponent can interact with.
+  */
+  next = raise(next, { kind: 'turned-face-up' }, action.by, inst.id);
   next = settle(next, state);
   const now = characteristicsOf(next, requireInstance(next, inst.id));
   return {

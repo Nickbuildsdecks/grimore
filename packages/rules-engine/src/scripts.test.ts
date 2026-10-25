@@ -6908,6 +6908,131 @@ describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.
     }
   });
 
+  it('fires a turned-face-up trigger, which an entry trigger could never have been', () => {
+    /*
+      The hook morph needs and `etb` cannot give it (CR 702.37d).
+
+      A morph *enters* face down, with no abilities at all, so an entry trigger has already come and
+      gone by the time the card is itself — and turning it up is not a new object, so it will not
+      come round again. The assertion that matters is the pair: the trigger does not fire when the
+      permanent arrives, and it does fire when it is turned over.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+      hands: { 1: ['Ainok Survivalist'] },
+      battlefield: {
+        0: ['Sol Ring'],
+        1: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const card = find(s, 1, 'hand', 'Ainok Survivalist');
+    const ring = find(s, 0, 'battlefield', 'Sol Ring');
+
+    // Arriving face down triggers nothing: it has no abilities to trigger while it is down.
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card, faceDown: true }));
+    expect(s.instances[card]!.faceDown).toBe(true);
+    expect(s.instances[ring]!.zone).toBe('battlefield');
+    expect(s.stackOrder).toHaveLength(0);
+
+    // Turning it up puts the trigger on the stack — the one part of morph an opponent may answer,
+    // because the turn-up itself used no stack at all.
+    s = apply(s, { type: 'auto:turnUp', by: 1, card });
+    expect(s.instances[card]!.faceDown).toBe(false);
+    expect(stackNames(s).join(' ')).toContain('artifact or enchantment');
+    s = drain(passBoth(s));
+    expect(s.instances[ring]!.zone).toBe('graveyard');
+  });
+
+  it('is turned up for the body alone when the trigger has nothing to hit', () => {
+    /*
+      The trigger is **mandatory** and targets an opponent's artifact or enchantment, so on a board
+      with none it never reaches the stack at all (CR 603.3d) — and turning the card up is still
+      legal, because the body is worth something on its own. Without the "an opponent controls"
+      clause this would have had to destroy its controller's own Sol Ring.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+      hands: { 1: ['Ainok Survivalist'] },
+      battlefield: { 1: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Glorious Anthem'] },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const card = find(s, 1, 'hand', 'Ainok Survivalist');
+    const mine = find(s, 1, 'battlefield', 'Glorious Anthem');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card, faceDown: true }));
+    s = drain(apply(s, { type: 'auto:turnUp', by: 1, card }));
+
+    expect(s.instances[card]!.faceDown).toBe(false);
+    // Nothing went on the stack, and its controller's own enchantment is untouched.
+    expect(s.stackOrder).toHaveLength(0);
+    expect(s.instances[mine]!.zone).toBe('battlefield');
+    // A 2/1 again, with the anthem lifting it.
+    expect(characteristicsOf(s, s.instances[card]!).power).toBe(3);
+  });
+
+  it('wins the combat it is turned up in, which is what the trigger is held for', () => {
+    /*
+      Master of Pearls, and the reason a turned-face-up trigger is worth more than its text.
+
+      Two 2/2s attack into two 2/2 blockers, which is a trade either way — and then the Master
+      turns up after blockers are declared and the whole team is a 4/4. No window to answer it: the
+      turn-up uses no stack, so by the time anybody holds priority again the trigger is already on
+      it and the blocks are already locked in.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'skyward-writ' },
+      hands: { 1: ['Master of Pearls'] },
+      battlefield: {
+        0: ['Grizzly Bears', 'Centaur Courser'],
+        1: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains', 'Plains', 'Plains', 'Leonin Skyhunter'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const card = find(s, 1, 'hand', 'Master of Pearls');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card, faceDown: true }));
+
+    // A turn later so the 2/2 can attack, and the Skyhunter goes with it.
+    s = advanceTo(nextTurn(nextTurn(s)), 'declare-attackers');
+    const hunter = find(s, 1, 'battlefield', 'Leonin Skyhunter');
+    s = apply(s, {
+      type: 'auto:attack', by: 1,
+      attackers: [{ attacker: card, defender: 0 }, { attacker: hunter, defender: 0 }],
+    });
+    s = advanceTo(s, 'declare-blockers');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: bears, attacker: card }] });
+    if (!legalActions(s, 1).hasPriority) s = apply(s, { type: 'auto:pass', by: 0 });
+
+    s = drain(apply(s, { type: 'auto:turnUp', by: 1, card }));
+    // +2/+2 to the team, the attacker and the unblocked flier alike.
+    expect(characteristicsOf(s, s.instances[card]!).power).toBe(4);
+    expect(characteristicsOf(s, s.instances[hunter]!).power).toBe(4);
+
+    s = drain(advanceTo(s, 'end-combat'));
+    // The 2/2 blocker is dead, the 4/4 that killed it lives, and the flier hit for four.
+    expect(countOf(s, 0, 'graveyard', 'Grizzly Bears')).toBe(1);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(life(s, 0)).toBe(16);
+  });
+
+  it('does not fire for a card that was never face down', () => {
+    // Cast for its printed cost, the Master is a 2/2 and nothing else: there is no entry trigger on
+    // it, and `turned-face-up` is not an entry. A card that reads the trigger as "when this enters"
+    // would give the team +2/+2 here, which is the mistake this test exists to catch.
+    let s = advanceTo(arena({
+      decks: { 1: 'skyward-writ' },
+      hands: { 1: ['Master of Pearls'] },
+      battlefield: { 1: ['Plains', 'Plains', 'Leonin Skyhunter'] },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const card = find(s, 1, 'hand', 'Master of Pearls');
+    const hunter = find(s, 1, 'battlefield', 'Leonin Skyhunter');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card })));
+    expect(s.instances[card]!.faceDown).toBe(false);
+    expect(characteristicsOf(s, s.instances[card]!).power).toBe(2);
+    expect(characteristicsOf(s, s.instances[hunter]!).power).toBe(2);
+  });
+
   it('refuses a face-down cast of a card with no morph, and a turn-up of what is not yours', () => {
     const s = holding(1, 'Man-o\'-War', 'tidal-mind', ['Island', 'Island', 'Island', 'Island']);
     const manowar = find(s, 1, 'hand', "Man-o'-War");

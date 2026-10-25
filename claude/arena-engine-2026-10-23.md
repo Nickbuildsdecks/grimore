@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 180 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 182 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2683,17 +2683,49 @@ were somebody's hidden hand; wrong the moment one sat on the battlefield, where 
 entitled to read the 2/2. The back now carries both, and five checks in the tabletop suite turn a
 permanent over in two real browsers and assert each half of what the two players should see.
 
+### The turned-face-up trigger, and the number it moved
+
+Morph's one missing hook, and the last paragraph of the entry above said what it would be for. A new
+trigger event raised from the turn-up, and the two cards that wanted it: Ainok Survivalist (destroy
+target artifact or enchantment an opponent controls) and Master of Pearls (creatures you control get
++2/+2 until end of turn).
+
+It had to be its own event. A morph enters the battlefield face down with no abilities at all, so an
+entry trigger has already come and gone by the time the card is itself — and turning it up is not a
+new object, so an `etb` never comes round again. An entry trigger on a morph fires while the card
+has no abilities to fire it; this one fires when the card gets them.
+
+Raised before `settle`, which is what gives the opponent their one window: the reveal uses no stack
+and cannot be answered, but what it triggers goes on the stack like anything else. A Master of
+Pearls turned up after blockers cannot be stopped from being a 4/4, and the +2/+2 can be countered.
+That is the right way round.
+
+**The prediction held.** The entry above recorded that the bot turns up only 15–50% of the morphs it
+casts face down, because `simulate` stops when the stack empties and "turn it up and win the combat"
+is past that horizon. A trigger is immediate value the search *can* see. Over 168 games on each of
+two seed sets, **every single Ainok Survivalist the bot turned down it turned back up** — 24 of 24,
+about one turn later — and Master of Pearls came back at 44% and 76%, against 15–25% for Dirgur
+Nemesis and 33–50% for Battering Craghorn. Not that the bot got better: a mechanic the one-ply
+search could not price became one it can, by giving the moment an effect.
+
+The slot changes measure as nothing, with signs worth writing down. Master of Pearls is up 2 and up
+9 in 238; Ainok Survivalist is down 4, and down 4 again. Both a fraction of the noise floor. The
+second has a mechanism, and it is about the bot rather than the card: it casts the Ainok face down
+94% and 89% of the time, paying {3} for a {1}{G} 2/1 and wasting a mana every time, because a
+face-down 2/2 scores above a 2/1 and unspent mana scores as nothing — the term D119 measured as
+exactly level. A person casts it face up when they want the body. The bot knows one of the two
+reasons to play the card.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
    it, and the four ways a card can ask a player something — a mode, targets, a cost, a
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. Every
    keyword and every static scope now has a card behind it; `becomes-tapped` is the one trigger
-   left without one, and deliberately so (see the entry above). The one hook morph wants and does
-   not have is **"when this is turned face up"**, which the morphs with text on the back need —
-   Ainok Survivalist, Master of Pearls, Willbender. It has an obvious home (a new event raised from
-   `turnUp`) and no card in the pool wants it yet, so it is not there; megamorph and a morph cost
-   that is not mana are the same answer.
+   left without one, and deliberately so (see the entry above). `turned-face-up` was the last one
+   added and has two cards behind it. What morph still does not have is **megamorph**, a morph cost
+   that is not mana (Zombie Cutthroat pays three life), and the one card that needs target
+   redirection rather than a new trigger — Willbender.
 2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
    `deck:load` already resolves any deck handed to it, but a real list needs card data — type
    lines, mana costs, oracle text — and the `cards` table has never been populated while this
