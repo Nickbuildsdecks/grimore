@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STARTER_DECKS, canBlock, characteristicsOf, hasType, legalActions, parseTypeLine,
+  STARTER_DECKS, addCounters, canBlock, characteristicsOf, hasType, legalActions, parseTypeLine,
   pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor, scriptedCardNames,
   staticEffect, viewFor,
   type ContinuousEffect,
@@ -571,8 +571,15 @@ describe('blue-black control', () => {
     expect(s.seats[0]!.eliminated).toBe(true);
   });
 
+  // Tome Scour moved to Hollow Tide, which is the deck whose plan it is, so the test went with it.
   it('Tome Scour mills five', () => {
-    let s = control(['Tome Scour'], ['Island']);
+    let s = arena({
+      decks: { 1: 'hollow-tide' },
+      hands: { 1: ['Tome Scour'] }, battlefield: { 1: ['Island'] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 1);
     const library = ids(s, 0, 'library').length;
     s = cast(s, 1, 'Tome Scour', [{ kind: 'player', seat: 0 }]);
     expect(ids(s, 0, 'library').length).toBe(library - 5);
@@ -600,8 +607,15 @@ describe('blue-black control', () => {
   });
 
   it('Talrand makes a Drake for an instant, and not for a creature', () => {
-    let s = control(['Tome Scour', 'Child of Night'], ['Island', 'Island', 'Swamp'], ['Talrand, Sky Summoner']);
-    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Tome Scour'), targets: [{ kind: 'player', seat: 0 }] });
+    // Dive Down rather than Tome Scour, which now lives in Hollow Tide: the trigger is about any
+    // instant or sorcery, so which one is immaterial as long as it is cheap enough to leave the
+    // creature spell below it castable.
+    let s = control(['Dive Down', 'Child of Night'], ['Island', 'Island', 'Swamp'], ['Talrand, Sky Summoner']);
+    const talrand = find(s, 1, 'battlefield', 'Talrand, Sky Summoner');
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Dive Down'),
+      targets: [{ kind: 'card', id: talrand }],
+    });
     expect(s.stackOrder.length).toBe(2); // the spell and the trigger
     s = passBoth(s);
     expect(countOf(s, 1, 'battlefield', 'Drake')).toBe(1);
@@ -4183,6 +4197,142 @@ describe('eleven more cards', () => {
     // Removed before damage, so nothing got through.
     t = advanceTo(t, 'postcombat-main', 120);
     expect(life(t, 0)).toBe(20);
+  });
+});
+
+describe('setting what a creature is, and copying it', () => {
+  /*
+    The two cards that needed layers, and the four assertions that are *about* the layers rather
+    than about the cards.
+
+    Everything else in this pool adds to a creature. A +3/+3 and a -1/-1 can be summed in any
+    order; "becomes 1/1" cannot be summed at all — it replaces the base the pumps then apply to,
+    which is layer 7b against 7c (CR 613.4c). And "loses all abilities" is the one layer where the
+    timestamp is the rule rather than a tie-break: what it took away stays gone, and what is
+    granted after it survives.
+  */
+  const frogged = (extra: readonly string[] = []): GameState => arena({
+    decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+    hands: { 0: ['Turn to Frog', ...extra] },
+    battlefield: {
+      0: ['Island', 'Island', 'Island', 'Island', 'Island'],
+      1: ['Giant Spider'],
+    },
+    turn: 4, firstSeat: 0,
+  });
+
+  it('turns a 2/4 reach blocker into a 1/1 with nothing', () => {
+    let s = advanceTo(frogged(), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const spider = find(s, 1, 'battlefield', 'Giant Spider');
+    expect(characteristicsOf(s, s.instances[spider]!).keywords.has('reach')).toBe(true);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Turn to Frog'),
+      targets: [{ kind: 'card', id: spider }],
+    })));
+    const ch = characteristicsOf(s, s.instances[spider]!);
+    expect([ch.power, ch.toughness]).toEqual([1, 1]);
+    expect(ch.keywords.size).toBe(0);
+    // Still a creature, still on the battlefield: this is not removal, it is a 1/1.
+    expect(s.instances[spider]!.zone).toBe('battlefield');
+  });
+
+  it('and a pump already on it still applies, because modifying comes after setting', () => {
+    // Giant Growth first, then the Frog. The printed base is replaced; the +3/+3 is not, because
+    // layer 7c runs after 7b whatever the timestamps say — so the Frog is a 4/4, not a 1/1.
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      hands: { 0: ['Turn to Frog'], 1: ['Giant Growth'] },
+      battlefield: {
+        0: ['Island', 'Island'],
+        1: ['Giant Spider', 'Forest'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const spider = find(s, 1, 'battlefield', 'Giant Spider');
+    s = tapAllLands(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: spider }],
+    })));
+    expect(characteristicsOf(s, s.instances[spider]!).power).toBe(5);
+
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Turn to Frog'),
+      targets: [{ kind: 'card', id: spider }],
+    })));
+    // A fresh turn, so the Growth has worn off and the Frog is alone: 1/1.
+    const ch = characteristicsOf(s, s.instances[spider]!);
+    expect([ch.power, ch.toughness]).toEqual([1, 1]);
+  });
+
+  it('counters are added after the setting, which is layer 7d after 7b', () => {
+    let s = advanceTo(frogged(), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const spider = find(s, 1, 'battlefield', 'Giant Spider');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Turn to Frog'),
+      targets: [{ kind: 'card', id: spider }],
+    })));
+    s = addCounters(s, spider, '+1/+1', 2);
+    const ch = characteristicsOf(s, s.instances[spider]!);
+    expect([ch.power, ch.toughness]).toEqual([3, 3]);
+  });
+
+  it('an ability granted after it survives, and one granted before it does not', () => {
+    const board = (): GameState => arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      battlefield: { 0: [], 1: ['Grizzly Bears'] },
+      turn: 4, firstSeat: 0,
+    });
+    const bears = (state: GameState): string => find(state, 1, 'battlefield', 'Grizzly Bears');
+
+    // Granted first, then frogged: gone (CR 613.1f).
+    let before = board();
+    const id = bears(before);
+    before = pump(before, [id], id, 1, { keywords: ['flying'] });
+    before = pump(before, [id], id, 0, { setPower: 1, setToughness: 1, losesAllAbilities: true });
+    expect(characteristicsOf(before, before.instances[id]!).keywords.has('flying')).toBe(false);
+
+    // Frogged first, then granted: still flies.
+    let after = board();
+    const other = bears(after);
+    after = pump(after, [other], other, 0, { setPower: 1, setToughness: 1, losesAllAbilities: true });
+    after = pump(after, [other], other, 1, { keywords: ['flying'] });
+    const ch = characteristicsOf(after, after.instances[other]!);
+    expect(ch.keywords.has('flying')).toBe(true);
+    // And it is still a 1/1: layer 6 and layer 7b are different layers.
+    expect([ch.power, ch.toughness]).toEqual([1, 1]);
+  });
+
+  it("Cackling Counterpart copies the printed card and nothing else", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      hands: { 0: ['Cackling Counterpart'] },
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Fog Bank'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const bank = find(s, 0, 'battlefield', 'Fog Bank');
+    // Two +1/+1 counters and a pump on the original, none of which a copy copies (CR 707.2).
+    s = addCounters(s, bank, '+1/+1', 2);
+    s = pump(s, [bank], bank, 0, { power: 3, toughness: 3 });
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cackling Counterpart'),
+      targets: [{ kind: 'card', id: bank }],
+    })));
+    const copies = [...ids(s, 0, 'battlefield')].filter((c) => nameOf(s, c) === 'Fog Bank' && c !== bank);
+    expect(copies.length).toBe(1);
+    const token = copies[0]!;
+    expect(s.instances[token]!.isToken).toBe(true);
+    const ch = characteristicsOf(s, s.instances[token]!);
+    expect([ch.power, ch.toughness]).toEqual([0, 2]);
+    expect(s.instances[token]!.counters['+1/+1']).toBeUndefined();
+    // And it has the copied card's own abilities, because its name is what `scriptFor` reads: a
+    // token copy of a Fog Bank prevents damage, which is a static the arrivals pass installed.
+    expect(s.effects.some((e) => e.source === token && e.preventsCombatDamage === true)).toBe(true);
   });
 });
 

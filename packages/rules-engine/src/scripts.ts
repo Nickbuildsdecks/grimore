@@ -26,7 +26,7 @@ import {
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
-  exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage,
+  exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type { CardScript, DecisionSpec, TargetSpec } from './scriptTypes.js';
@@ -1318,6 +1318,62 @@ const FLESHBAG_MARAUDER: CardScript = {
       effect: (c) => c.decisions.reduce((state, answer) => moveToGraveyard(state, answer.ids), c.state),
     },
   ],
+};
+
+// ── The two cards that needed layers ─────────────────────────────────────────────────────────────
+
+/*
+  Everything else in this pool adds to what a creature is. These two replace it.
+
+  A +3/+3 and a -1/-1 can be summed in any order; "becomes 1/1" cannot be summed with anything,
+  because it replaces the base that the pumps then apply to — which is layer 7b against layer 7c
+  (CR 613.4c), and the reason `characteristicsOf` now runs the layers in order rather than making
+  one pass. A copy is layer 1, and the engine makes one by pointing the new permanent at the copied
+  card's *printed* definition, which is what a copy is.
+*/
+
+/**
+ * Turn to Frog: removal that leaves the body behind.
+ *
+ * Two mana at instant speed turns a 6/6 flying trampler into a 1/1 with nothing — and the *order*
+ * is the rule worth testing: a Giant Growth already on it still applies, because modifying is 7c
+ * and happens after setting whatever the timestamps say, so the Frog is a 4/4. A trample granted
+ * *after* it survives too, for the same reason read the other way: layer 6 takes away what was
+ * there when it resolved and nothing later.
+ */
+const TURN_TO_FROG: CardScript = {
+  name: 'Turn to Frog',
+  targets: [TARGET_CREATURE],
+  // It wears off, so the bot should hold it for a combat rather than spend it on its own turn.
+  expiresAtEndOfTurn: true,
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : pump(c.state, [id], c.source, c.controller, {
+      setPower: 1,
+      setToughness: 1,
+      losesAllAbilities: true,
+    });
+  },
+};
+
+/**
+ * Cackling Counterpart: a second copy of your own best creature.
+ *
+ * Printed values only (CR 707.2), which is the whole of what a copy is and also what makes the card
+ * honest: copying a Grizzly Bears under two Giant Growths gives a 2/2, and copying a Fog Bank gives
+ * something that prevents damage because the token's abilities come from the copied card's name.
+ *
+ * The printed card has flashback, which this engine has no vocabulary for — casting a spell from a
+ * graveyard is a whole mechanism rather than a cost — so the card here is the front half only, and
+ * that is said rather than implied.
+ */
+const CACKLING_COUNTERPART: CardScript = {
+  name: 'Cackling Counterpart',
+  targets: [{ ...TARGET_CREATURE, description: 'target creature you control', filter: creatureYouControl }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : copyAsToken(c.state, c.controller, id);
+  },
 };
 
 // ── The library as the thing you attack ──────────────────────────────────────────────────────────
@@ -2681,6 +2737,7 @@ const ALL: readonly CardScript[] = [
   WALL_OF_AIR, HANNA,
   LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,
   DARK_RITUAL, BORDERLAND_MARAUDER, PREY_UPON, DIVINE_VERDICT,
+  TURN_TO_FROG, CACKLING_COUNTERPART,
   MIRKO_VOSK, THIEVING_MAGPIE, MIND_SCULPT, THOUGHT_SCOUR, COMPELLING_ARGUMENT,
   RETURNED_CENTAUR, NEMESIS_OF_REASON, PSYCHIC_STRIKE, JACE_MEMORY_ADEPT,
   FOG, HOLY_DAY, SAMITE_HEALER, HEALING_SALVE, MAZE_OF_ITH, FOG_BANK, CITY_OF_BRASS,

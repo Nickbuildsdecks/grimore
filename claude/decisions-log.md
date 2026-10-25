@@ -3792,3 +3792,53 @@ Nemesis of Reason (ten a swing, blocked or not), Psychic Strike (a Counterspell 
 Memory Adept. Around them the deck is almost entirely cards the pool already had: blockers that
 never attack, four counterspells, four removal spells. The dead-card audit over every pairing says
 every card in it gets cast — no dead slots, no rare ones.
+
+## D105 — The layers, and the two cards that needed them
+
+`characteristicsOf` made one pass: printed values, then every continuous effect summed, then
+counters. That is right for every card the pool had, and its own comment said why it would not stay
+right — "an effect that *sets* power would not be". Two cards now set one.
+
+**Layer 7b against 7c is the whole of it.** A +3/+3 and a -1/-1 can be summed in any order and come
+to the same answer. "Becomes 1/1" cannot be summed with anything: it replaces the base that the
+modifications then apply to, and it does so *by layer rather than by timestamp* (CR 613.4c). So a
+Giant Growth cast before a Turn to Frog leaves a 4/4, not a 1/1 — which looks like a bug until the
+layers are written down, and is the assertion the second test makes. The loop collects setting and
+modifying separately now and applies 7b → 7c → 7d, with two settings resolving last-one-wins
+because `state.effects` is in timestamp order.
+
+**Layer 6 is the one place the order of the list is the rule.** "Loses all abilities" takes away
+what the creature has when it resolves — printed keywords included, which is what makes a Turn to
+Frog answer a flier — and leaves anything granted *afterwards* alone (CR 613.1f). That falls out of
+clearing in the loop rather than setting a flag read at the end, and the control that applies it at
+the end instead fails exactly the test about grants after it.
+
+**Layer 1 needs no layer at all.** A copy copies a card's *printed* characteristics (CR 707.2), so
+the engine makes one by pointing the new permanent at the copied card's own definition — and
+everything follows for free: the token's abilities come from `scriptFor(name)`, and its statics are
+installed by the same arrivals pass as any other permanent's, so a token copy of a Fog Bank prevents
+damage. Nothing of what is *not* printed comes along: no counters, no damage, no auras, no effects
+on the original. The test copies a Fog Bank carrying two +1/+1 counters and a +3/+3 and asserts a
+0/2 with a prevention effect of its own.
+
+The cards are **Turn to Frog** ({1}{U}: target creature becomes 1/1 and loses all abilities — two
+mana of instant-speed removal that leaves the body behind) and **Cackling Counterpart** ({1}{U}{U}:
+a token copy of a creature you control). The printed Counterpart has flashback, which this engine
+has no vocabulary for — casting from a graveyard is a mechanism, not a cost — so what is here is the
+front half, said rather than implied.
+
+They went into Tidal Mind, which wanted tricks, costing the Tome Scour (Hollow Tide's card rather
+than this deck's) and the second Preordain. Measured over 240 paired duels against the rest of the
+pool on two seed sets: 81-159 → 82-158 and 80-160 → 82-158. One and two games, which is as close to
+"no effect" as this instrument can report, and the honest reading of two cards in a sixty: the
+layers are the increment and the deck slot is where they are reachable from.
+
+The first version of the slot cut the Wind Drake instead, and measured 96-144 and 80-160 — a bigger
+move on one seed set and none on the other, so not a difference worth believing. It was changed for
+a different reason: cutting the Drake left it in **no deck at all**, which the suite caught as an
+orphaned script, and two tests that used tidal-mind's Tome Scour and Wind Drake went with their
+cards rather than being patched around.
+
+**Three layers are still named rather than faked**: type-changing (4), colour-changing (5) and
+characteristic-defining abilities (7a). Nothing in the pool needs them, and a card that does is not
+scriptable rather than approximated.

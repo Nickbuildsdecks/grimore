@@ -226,6 +226,33 @@ export interface ContinuousEffect {
    * creature deathtouched, because none of it was dealt.
    */
   readonly preventsDamageAmount?: number;
+  /**
+   * Power and toughness **set** to these, rather than added to: layer 7b (CR 613.4c).
+   *
+   * The difference from `power`/`toughness` is the whole of why this engine needed layers at all.
+   * A +3/+3 and a -1/-1 can be summed in any order and come to the same answer; "becomes 1/1"
+   * cannot be summed with anything — it replaces the base, and every modification applies *after*
+   * it however early it was cast. A Giant Growth cast before a Turn to Frog leaves a 4/4, not a
+   * 1/1, and that is not a quirk: setting is layer 7b and modifying is 7c, and the layers run in
+   * order regardless of timestamps.
+   *
+   * Two settings on one creature resolve by timestamp, last one wins, which `characteristicsOf`
+   * gets for free by reading `state.effects` in the order they were created.
+   */
+  readonly setPower?: number;
+  readonly setToughness?: number;
+  /**
+   * "Loses all abilities": layer 6 (CR 613.1f), and the one layer where timestamps are the rule
+   * rather than a tie-break.
+   *
+   * An ability granted *before* this effect is gone; one granted *after* it survives. That is why
+   * abilities are accumulated in effect order and this clears what has been collected so far
+   * rather than setting a flag read at the end — the order of the list is the timestamp order, so
+   * the rule falls out of the loop instead of needing a second pass.
+   *
+   * Printed keywords go too, which is what makes a Turn to Frog answer a flier.
+   */
+  readonly losesAllAbilities?: boolean;
   readonly duration: EffectDuration;
   readonly createdTurn: number;
   /**
@@ -296,18 +323,36 @@ function effectApplies(effect: ContinuousEffect, instance: CardInstance, creatur
 /**
  * What this permanent currently is.
  *
- * Order: printed values, then continuous effects, then counters. Counters last because `+1/+1`
- * counters apply in layer 7d, after the pumps in 7c — so a 1/1 with a +1/+1 counter that also has
- * "+3/+3 until end of turn" is 5/5 either way, but an effect that *sets* power would not be, and
- * keeping the order right now means that case can be added without re-deriving everything.
+ * **The layers, in the order CR 613 runs them**, for the four this engine has cards for:
+ *
+ *  1. **copy** (613.1a) — not computed here at all. A copy is a copy of a *printed* card, so the
+ *     engine makes one by pointing the instance at the copied card's definition: by the time this
+ *     function runs there is nothing left to apply, and `scriptFor` finds the copied card's
+ *     abilities for free. That is also why a token copy of a Fog Bank prevents damage.
+ *  2. **abilities** (613.1f) — keywords granted and removed, and "loses all abilities", which
+ *     clears everything collected *before* it and lets later grants through. Accumulated in effect
+ *     order, which is timestamp order, so the rule needs no second pass.
+ *  3. **setting power and toughness** (7b, 613.4c) — replaces the printed base; two of them resolve
+ *     last-one-wins.
+ *  4. **modifying power and toughness** (7c) — every pump and anthem, summed, applied *after* any
+ *     setting however early it was cast.
+ *  5. **counters** (7d) — `+1/+1` and `-1/-1`, last of all.
+ *
+ * The three the pool has no card for are named rather than faked: type-changing (layer 4),
+ * colour-changing (5) and characteristic-defining abilities (7a). A card needing one is not
+ * scriptable yet, and `scripts.ts` says so.
  */
 export function characteristicsOf(state: GameState, instance: CardInstance): Characteristics {
   const def = state.cardDefs[instance.defKey];
   const typeLine = parseTypeLine(def?.typeLine);
   const creature = hasType(typeLine, 'creature');
 
-  let power = numeric(def?.power);
-  let toughness = numeric(def?.toughness);
+  // Layer 7b and 7c are collected separately, because the first replaces the base and the second
+  // adds to whatever the base ended up being.
+  let setPower: number | null = null;
+  let setToughness: number | null = null;
+  let modPower = 0;
+  let modToughness = 0;
   const keywords = new Set<Keyword>(printedKeywords(def?.oracleText));
   let cantAttack = false;
   let cantBlock = false;
@@ -329,8 +374,28 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
 
   for (const effect of state.effects ?? []) {
     if (!effectApplies(effect, instance, creature)) continue;
-    power += effect.power ?? 0;
-    toughness += effect.toughness ?? 0;
+    /*
+      Layer 6, and the one place the order of this loop is load-bearing.
+
+      "Loses all abilities" takes away what the creature has *now* — its printed keywords and
+      anything granted before this effect — and leaves anything granted after it alone (CR 613.1f).
+      `state.effects` is in creation order, so clearing here is exactly that rule: a Turn to Frog
+      cast after a Giant Growth's trample still removes it, and a trample granted after the Frog
+      still flies.
+    */
+    if (effect.losesAllAbilities === true) {
+      keywords.clear();
+      cantAttack = false;
+      cantBlock = false;
+      mustAttack = false;
+      cantBeBlockedByWalls = false;
+      goadedBy = null;
+      protectionFrom = null;
+    }
+    if (effect.setPower !== undefined) setPower = effect.setPower;
+    if (effect.setToughness !== undefined) setToughness = effect.setToughness;
+    modPower += effect.power ?? 0;
+    modToughness += effect.toughness ?? 0;
     for (const k of effect.keywords ?? []) keywords.add(k);
     for (const k of effect.removeKeywords ?? []) keywords.delete(k);
     if (effect.cantAttack) cantAttack = true;
@@ -347,10 +412,12 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     }
   }
 
+  // 7b, then 7c, then 7d: the base is whatever the last setting effect said (or the printed
+  // value), every modification lands on top of it, and counters land on top of those.
   const plus = instance.counters['+1/+1'] ?? 0;
   const minus = instance.counters['-1/-1'] ?? 0;
-  power += plus - minus;
-  toughness += plus - minus;
+  const power = (setPower ?? numeric(def?.power)) + modPower + plus - minus;
+  const toughness = (setToughness ?? numeric(def?.toughness)) + modToughness + plus - minus;
 
   if (hasType(typeLine, 'creature') && keywords.has('defender')) cantAttack = true;
 

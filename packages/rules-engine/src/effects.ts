@@ -506,6 +506,28 @@ export function addCounters(state: GameState, id: string, key: string, amount: n
   return withInstance(state, id, { counters });
 }
 
+/**
+ * "Create a token that's a copy of target creature" — layer 1, done by pointing at the printed card.
+ *
+ * A copy copies the card's **printed** characteristics, not what the creature currently is: a token
+ * copy of a Grizzly Bears under three Giant Growths is a 2/2 (CR 707.2). So the copy is made by
+ * handing `createToken` the copied card's own definition, and everything else follows without a
+ * line of new rules — the token's abilities are the copied card's abilities because `scriptFor`
+ * reads the name, and its statics are installed by the arrivals pass like any other permanent's.
+ *
+ * What this does *not* copy is everything that is not printed on the card: counters, damage, auras,
+ * equipment and any effect on the original. That is the rule rather than a shortcut.
+ */
+export function copyAsToken(
+  state: GameState, seat: SeatIndex, source: string, count = 1,
+): GameState {
+  const inst = state.instances[source];
+  if (inst === undefined) return state;
+  const def = state.cardDefs[inst.defKey];
+  if (def === undefined) return state;
+  return createToken(state, seat, def, count);
+}
+
 export function createToken(state: GameState, seat: SeatIndex, card: CardDef, count = 1): GameState {
   const def = normaliseDef(card);
   const key = defKeyFor(def);
@@ -590,6 +612,11 @@ export interface PumpOptions {
   readonly mustAttackAnotherPlayer?: boolean;
   /** See `ContinuousEffect.protectionFrom` — protection from a colour (CR 702.16). */
   readonly protectionFrom?: readonly Color[];
+  /** See `ContinuousEffect.setPower` — layer 7b, "becomes 1/1" rather than "gets +1/+1". */
+  readonly setPower?: number;
+  readonly setToughness?: number;
+  /** See `ContinuousEffect.losesAllAbilities` — layer 6. */
+  readonly losesAllAbilities?: boolean;
   readonly duration?: EffectDuration;
 }
 
@@ -623,6 +650,9 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
     ...(opts.mustAttackAnotherPlayer ? { mustAttackAnotherPlayer: true } : {}),
     ...(opts.protectionFrom ? { protectionFrom: opts.protectionFrom } : {}),
+    ...(opts.setPower === undefined ? {} : { setPower: opts.setPower }),
+    ...(opts.setToughness === undefined ? {} : { setToughness: opts.setToughness }),
+    ...(opts.losesAllAbilities ? { losesAllAbilities: true } : {}),
   };
 }
 

@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 164 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 166 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -223,10 +223,16 @@ bug rather than a board.
   and can sit on a player. That was the last of the named gaps in this family; what is left is
   redirection ("the next time ~ would deal damage, it deals it to ~ instead"), which nothing in the
   pool needs and which is not approximated.
-- **Copy effects** and **characteristic-setting effects**: still no vocabulary for either.
-- **True layer interaction** (CR 613). What is here is a fixed order — printed, then effects, then
-  counters — which is right for every effect the card pool produces. Characteristic-setting and copy
-  effects need the real thing.
+- ~~**Copy effects** and **characteristic-setting effects**~~: both in now, as a token copy of a
+  printed card and as "becomes 1/1 and loses all abilities". What is still missing is a copy effect
+  that *chooses* its subject as it enters, like a Clone — the engine can only ask a player to choose
+  a card in one of their own zones, so a choice among every creature on the battlefield is a
+  mechanism rather than a card.
+- **Three of the layers** (CR 613). Four are in — copy (1), abilities (6), setting power and
+  toughness (7b) and modifying it (7c, with counters in 7d) — which is what characteristic-setting
+  and copy effects needed and what "The layers, and the two cards that needed them" below is about.
+  Type-changing (4), colour-changing (5) and characteristic-defining abilities (7a) are not, because
+  nothing in the pool needs them; a card that does is not scriptable rather than approximated.
 - **A stronger bot.** It attacks with everything, blocks when the trade is good, and casts the
   biggest thing it can afford. A better opponent needs a search, and a search needs a position
   evaluator, and neither was worth writing before the rules underneath them were trustworthy.
@@ -2197,6 +2203,36 @@ Centaur, Nemesis of Reason (ten cards a swing, blocked or not), Psychic Strike (
 mills the *spell's* controller, read off the stack rather than assumed to be the only opponent) and
 Jace, Memory Adept. The dead-card audit over every pairing says every card in the deck gets cast,
 and a 200-pod soak with eight decks finished all 200 with nothing refused and nothing stalled.
+
+### The layers, and the two cards that needed them
+
+`characteristicsOf` made one pass — printed values, every effect summed, then counters — and its
+own comment said why that would not last: "an effect that *sets* power would not be" right under it.
+Two cards now set one, and the function runs the layers in order instead.
+
+The difference is not a detail. A +3/+3 and a -1/-1 can be summed in any order; "becomes 1/1"
+replaces the base that modifications then apply to, *by layer rather than by timestamp* (CR 613.4c),
+so a Giant Growth cast before a Turn to Frog leaves a 4/4. "Loses all abilities" is the opposite
+case: there the timestamp *is* the rule, and what it took away stays gone while anything granted
+after it survives (CR 613.1f) — which falls out of clearing inside the loop rather than at the end.
+And a copy needs no layer at all, because a copy copies the *printed* card: the engine makes one by
+pointing the new permanent at the copied card's definition, and the token's abilities and statics
+then arrive by themselves.
+
+**Turn to Frog** ({1}{U}) turns a 6/6 flying trampler into a 1/1 with nothing until end of turn —
+removal that leaves the body behind. **Cackling Counterpart** ({1}{U}{U}) makes a token copy of your
+own best creature, printed values only: copying a Fog Bank under two +1/+1 counters and a +3/+3
+gives a 0/2 that prevents damage. Five tests, each about a layer boundary rather than a card, and
+two control runs red — one with setting treated as a modification (four tests fail), one with "loses
+all abilities" applied at the end (the grant-after test fails).
+
+They went into Tidal Mind for a Tome Scour and the second Preordain, measured at 81-159 → 82-158
+and 80-160 → 82-158 over 240 paired duels on two seed sets: one and two games, which is as close to
+"no effect" as the instrument reports and the honest reading of two cards in a sixty. (The first
+version of the slot cut a Wind Drake, which left that card in no deck at all — caught by the
+orphaned-script check, and the reason the cut moved rather than the measurement.) Three layers
+remain named rather than faked — type-changing, colour-changing and characteristic-defining
+abilities — and a card needing one is still not scriptable rather than approximated.
 
 ## Next
 

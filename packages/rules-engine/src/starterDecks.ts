@@ -693,6 +693,24 @@ const JACE_BELEREN: CardDef = {
   and which nothing until now has ever tried to do on purpose.
 */
 
+const TURN_TO_FROG: CardDef = {
+  name: 'Turn to Frog',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  oracleText: 'Target creature loses all abilities and becomes 1/1 until end of turn.',
+  colors: ['U'],
+};
+
+const CACKLING_COUNTERPART: CardDef = {
+  name: 'Cackling Counterpart',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}{U}',
+  cmc: 3,
+  oracleText: "Create a token that's a copy of target creature you control.",
+  colors: ['U'],
+};
+
 const MIRKO_VOSK: CardDef = {
   name: 'Mirko Vosk, Mind Drinker',
   typeLine: 'Legendary Creature \u2014 Vampire',
@@ -1880,8 +1898,20 @@ export const TIDAL_MIND: DeckSpec = {
     { card: TORMODS_CRYPT, count: 1 },
     // Five cards off the top for one mana, which is not what this deck is for — it is what makes
     // a Drake for free, and it is the spell Talrand's own test is written against.
-    { card: TOME_SCOUR, count: 1 },
-    { card: PREORDAIN, count: 2 },
+    /*
+      The two cards that needed layers, in the deck that wants tricks.
+
+      Turn to Frog is the pool's first effect that *sets* power and toughness rather than adding to
+      it — a 5/5 attacker becomes a 1/1 with no flying, no deathtouch and no trample for the turn,
+      which is removal that costs two mana and leaves the body behind. Cackling Counterpart is its
+      first copy effect: a second one of your own best creature, printed values only.
+
+      They cost the Tome Scour, which belongs to Hollow Tide's plan rather than this one, and the
+      second Preordain, which is the cheapest card in the deck to be holding one fewer of.
+    */
+    { card: TURN_TO_FROG, count: 1 },
+    { card: CACKLING_COUNTERPART, count: 1 },
+    { card: PREORDAIN, count: 1 },
     // One mana that makes a creature untouchable by anybody, its own controller included — the
     // deck's way of protecting a flier it intends to win with, at the cost of never touching it
     // again.
