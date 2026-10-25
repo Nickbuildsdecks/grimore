@@ -414,6 +414,17 @@ export interface CardScript {
    */
   readonly preventsDamage?: boolean;
   /**
+   * "This card's whole point is to become a copy of a creature" — a Clone.
+   *
+   * The sixth of the family, and the one whose waste is the most literal: a Clone cast with nothing
+   * on the battlefield to copy is a 0/0 that dies as it arrives, four mana for a card in the
+   * graveyard. The search should see that — it plays the cast out and the state-based actions kill
+   * it inside the same action — and measured over 24 duels it mostly does: nine Clones cast, eight
+   * of them with a creature on the table and one into an empty board. The one is the auto-pass trap
+   * again, so the board is asked instead of the state after.
+   */
+  readonly copiesACreature?: boolean;
+  /**
    * "This spell's whole effect is to keep one of your own creatures alive" — a protection trick.
    *
    * The third of the family, and the one whose measurement was the most lopsided: 64 cast across

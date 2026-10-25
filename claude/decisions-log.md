@@ -3842,3 +3842,55 @@ cards rather than being patched around.
 **Three layers are still named rather than faked**: type-changing (4), colour-changing (5) and
 characteristic-defining abilities (7a). Nothing in the pool needs them, and a card that does is not
 scriptable rather than approximated.
+
+## D106 — A question about the whole table, and the Clone that asks it
+
+Every mid-resolution question this engine could ask looked in one of the chooser's **own** zones:
+your library (a tutor), your hand (a discard), your graveyard (a Raise Dead), your battlefield.
+"Any creature on the battlefield" is a question about the table, and until now that made a whole
+family of cards — Clone and everything printed like it — unscriptable rather than approximated.
+
+`DecisionZone` has `any-battlefield` now, and it is a zone rather than a flag on purpose: the
+candidate list *is* the authorisation the answer is checked against, so a question that looked at
+one battlefield and accepted an answer from another would be a hole. Keeping both in
+`decisionCandidates` is what makes that impossible rather than merely unlikely.
+
+**The copy needed almost nothing.** `completeResolution` runs a spell's script *before* it moves the
+permanent, so a Clone that points its own instance at the copied card's definition **enters** as
+the copy: the arrivals pass then installs the copied card's statics and raises the copied card's own
+entry trigger, and `scriptFor` gives it the copied card's abilities, because what gives a permanent
+its abilities here is the name on it. The only new state is `CardInstance.printedDefKey`, and the
+only new rule is that `relocate` — the one place a card changes zone — puts `defKey` back when the
+permanent leaves the battlefield. A Clone that copied a Shivan Dragon is a Clone again in the
+graveyard, which is what Zombify would bring back. That is CR 613.1a rather than a nicety.
+
+**The sixth "spent on nothing" rule.** A Clone cast with an empty battlefield is a 0/0 that dies as
+it arrives: four mana for a card in the graveyard. The search should see it — it plays the cast out
+and state-based actions kill the 0/0 inside the same action — and mostly does: over 24 duels, nine
+Clones cast, eight with a creature on the table and **one into nothing**. That one is the auto-pass
+trap again, so the board is asked instead of the state after, exactly as for the Fog, the ritual,
+the pump, the goad and the shield. After: eight casts, none into an empty board, and the control run
+with the rule removed casts it into an empty board in the test that proves it.
+
+**The card is the best deck change measured this session.** Clone cost Tidal Mind its second Cancel,
+and over 240 paired duels against the rest of the pool: 82-158 → 101-139 on one seed set and
+82-158 → 94-146 on the other. Nineteen and twelve games — the first above the 18-game noise floor,
+both in the same direction, which is more than any other card swap this session could claim. The
+reason is not subtle: in a deck with four counterspells and four removal spells, the best creature
+on the table is usually the opponent's, and copying it is removal that leaves you the creature.
+
+**And two tests that had quietly stopped being true.** Both failed on this increment and neither
+was this increment's fault.
+
+*"Does not throw creatures away"* asserted fewer than 1.5 dead attackers **per game**. Written when
+the pool was four decks, it measured 0.8; today it measures 1.4 at HEAD and 1.65 with this change,
+because eight decks and a hundred and sixty-seven cards make longer boards and more combat. The
+count is what the deck list controls; the **rate** is what the policy controls, so the claim is a
+rate now — 33 of 350 attackers, 9.4%, against the 13.7% the old policy lost and the 6.7% the fix
+measured. Six of the 33 are Ball Lightnings, which sacrifice themselves at end of turn anyway.
+
+*"Answers the questions cards ask mid-resolution"* required a Diabolic Tutor to be cast in twelve
+specific games. A Tutor is one card in a sixty, and after a two-card deck change the shuffle simply
+did not deal one: the test failed for twelve games that were fine. It plays twenty-four now, which
+saw two — the same lesson as the sampled checks in the browser suites, answered by playing more
+games rather than by asserting less.

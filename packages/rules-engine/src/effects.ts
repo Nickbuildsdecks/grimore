@@ -528,6 +528,31 @@ export function copyAsToken(
   return createToken(state, seat, def, count);
 }
 
+/**
+ * "Enters the battlefield as a copy of any creature" — layer 1, applied to a permanent.
+ *
+ * The same move as `copyAsToken` from the other end: instead of making a new object from the copied
+ * card, an existing one is pointed at it. `defKey` is the one field everything downstream reads —
+ * characteristics, the script that gives it its abilities, the definition the table draws — so
+ * nothing else in the engine has to learn that copying exists.
+ *
+ * `printedDefKey` remembers what the card actually is, and `relocate` puts it back when the
+ * permanent leaves the battlefield, because that is when a copy effect ends. Called while the spell
+ * is still on the stack, which is what "enters as" means: `completeResolution` runs the script
+ * before it moves the permanent, so the copy is what arrives, and the arrivals pass installs the
+ * copied card's statics and raises the copied card's entry trigger.
+ */
+export function becomeCopyOf(state: GameState, id: string, copying: string): GameState {
+  const self = state.instances[id];
+  const other = state.instances[copying];
+  if (self === undefined || other === undefined) return state;
+  if (state.cardDefs[other.defKey] === undefined) return state;
+  return withInstance(state, id, {
+    defKey: other.defKey,
+    printedDefKey: self.printedDefKey ?? self.defKey,
+  });
+}
+
 export function createToken(state: GameState, seat: SeatIndex, card: CardDef, count = 1): GameState {
   const def = normaliseDef(card);
   const key = defKeyFor(def);

@@ -4307,6 +4307,54 @@ describe('setting what a creature is, and copying it', () => {
     expect([ch.power, ch.toughness]).toEqual([1, 1]);
   });
 
+  it('Clone enters as a copy of anything on the table, and is a Clone again when it dies', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'ember-rush' },
+      hands: { 0: ['Clone'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Island'],
+        1: ['Shivan Dragon', 'Raging Goblin'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const clone = find(s, 0, 'hand', 'Clone');
+    s = apply(s, { type: 'auto:cast', by: 0, card: clone });
+    s = passBoth(s);
+
+    // The question is about the whole board: both of the opponent's creatures are offered, which
+    // is the only question in the engine that crosses the table.
+    const ask = legalActions(s, 0).mustDecide;
+    expect(ask?.from).toBe('any-battlefield');
+    expect(ask?.candidates).toContain(find(s, 1, 'battlefield', 'Shivan Dragon'));
+    expect(ask?.candidates).toContain(find(s, 1, 'battlefield', 'Raging Goblin'));
+
+    s = drain(apply(s, {
+      type: 'auto:decide', by: 0, cards: [find(s, 1, 'battlefield', 'Shivan Dragon')],
+    }));
+    // It arrived as the Dragon: the copy is what entered, so it is a 5/5 that flies and has the
+    // Dragon's own firebreathing ability, under seat 0's control.
+    const copy = s.instances[clone]!;
+    expect(copy.zone).toBe('battlefield');
+    expect(copy.zoneSeat).toBe(0);
+    const ch = characteristicsOf(s, copy);
+    expect(ch.name).toBe('Shivan Dragon');
+    expect([ch.power, ch.toughness]).toEqual([5, 5]);
+    expect(ch.keywords.has('flying')).toBe(true);
+    // And the copied card's abilities are its abilities, because what gives a permanent its
+    // abilities is the name on it. (Not asserted through `legalActions`: the Dragon's
+    // firebreathing costs {R} and this deck has nothing but Islands, so the engine is right not to
+    // offer it.)
+    expect(scriptFor(ch.name)?.abilities?.[0]?.description).toContain('+1/+0');
+
+    // And when it dies it is a Clone again, because a copy effect lasts as long as the permanent
+    // (CR 613.1a) — which is what Zombify would bring back. Moved by hand rather than killed with
+    // a spell: what is being tested is the zone change, which is where the engine restores it.
+    s = drain(apply(s, { type: 'card:move', by: 0, card: clone, toZone: 'graveyard' }));
+    expect(s.instances[clone]!.zone).toBe('graveyard');
+    expect(nameOf(s, clone)).toBe('Clone');
+  });
+
   it("Cackling Counterpart copies the printed card and nothing else", () => {
     let s = advanceTo(arena({
       decks: { 0: 'tidal-mind', 1: 'verdant-guard' },

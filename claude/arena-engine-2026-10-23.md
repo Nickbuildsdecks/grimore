@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 166 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 167 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -223,11 +223,11 @@ bug rather than a board.
   and can sit on a player. That was the last of the named gaps in this family; what is left is
   redirection ("the next time ~ would deal damage, it deals it to ~ instead"), which nothing in the
   pool needs and which is not approximated.
-- ~~**Copy effects** and **characteristic-setting effects**~~: both in now, as a token copy of a
-  printed card and as "becomes 1/1 and loses all abilities". What is still missing is a copy effect
-  that *chooses* its subject as it enters, like a Clone — the engine can only ask a player to choose
-  a card in one of their own zones, so a choice among every creature on the battlefield is a
-  mechanism rather than a card.
+- ~~**Copy effects** and **characteristic-setting effects**~~: both in, as a token copy of a printed
+  card, as "becomes 1/1 and loses all abilities", and — since `DecisionZone` grew
+  `any-battlefield` — as a Clone that chooses what to enter as. What is left of the family is a copy
+  effect that keeps copying something as it *changes*, which needs layer 1 recomputed rather than
+  applied once; nothing in the pool asks for it.
 - **Three of the layers** (CR 613). Four are in — copy (1), abilities (6), setting power and
   toughness (7b) and modifying it (7c, with counters in 7d) — which is what characteristic-setting
   and copy effects needed and what "The layers, and the two cards that needed them" below is about.
@@ -2233,6 +2233,42 @@ version of the slot cut a Wind Drake, which left that card in no deck at all —
 orphaned-script check, and the reason the cut moved rather than the measurement.) Three layers
 remain named rather than faked — type-changing, colour-changing and characteristic-defining
 abilities — and a card needing one is still not scriptable rather than approximated.
+
+### A question about the whole table, and the Clone that asks it
+
+Every mid-resolution question the engine could ask looked in one of the chooser's own zones — your
+library, your hand, your graveyard, your battlefield. "Any creature on the battlefield" is a
+question about the *table*, and until now that made Clone and everything printed like it
+unscriptable. `DecisionZone` has `any-battlefield`, and it is a zone rather than a flag because the
+candidate list is also the authorisation the answer is checked against: one place, so a question
+that looked at one battlefield and took an answer from another cannot happen.
+
+The copy itself needed almost nothing. A spell's script runs *before* the permanent moves, so a
+Clone that points its own instance at the copied card's definition **enters** as the copy — the
+arrivals pass installs the copied card's statics, raises its entry trigger, and `scriptFor` gives it
+its abilities, because what gives a permanent its abilities here is the name on it. The one piece of
+new state is `printedDefKey`, and the one new rule is that `relocate` puts the printed card back
+when the permanent leaves the battlefield: a Clone that copied a Shivan Dragon is a Clone in the
+graveyard, which is what Zombify brings back.
+
+It also needed the **sixth** "spent on nothing" rule, and for the most literal waste yet: a Clone
+cast with an empty battlefield is a 0/0 that dies as it arrives. Over 24 duels the search mostly saw
+that for itself — nine casts, eight with something to copy — and the one that was not is the
+auto-pass trap, so the board is asked instead of the state after. Eight casts after, none into
+nothing.
+
+**It is also the best deck change measured this session.** Clone cost Tidal Mind its second Cancel:
+82-158 → 101-139 and 82-158 → 94-146 over 240 paired duels on two seed sets, nineteen and twelve
+games in the same direction, the first above the noise floor. In a deck with four counterspells and
+four removal spells the best creature on the table is usually the opponent's, and copying it is
+removal that leaves you the creature.
+
+And two tests that had quietly stopped being true, both failing here and neither this increment's
+fault: "does not throw creatures away" counted dead attackers *per game*, which grows with the deck
+list rather than with the policy (it is a rate now — 9.4% of attackers, against 13.7% for the policy
+it replaced), and "answers the questions cards ask mid-resolution" needed a one-of Diabolic Tutor to
+turn up in twelve specific games, which after a two-card deck change it did not. It plays
+twenty-four now.
 
 ## Next
 

@@ -75,6 +75,17 @@ function decideCards(
       .filter((id) => /land/i.test(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine ?? ''))
       .slice(0, ask.max);
   }
+  /*
+    "Choose any creature on the battlefield", which is a different question from every other one
+    here: the answer is not a card to keep or discard but a creature to *become*, so it is judged
+    the way the search judges a creature — body plus keywords — rather than by mana value. A Clone
+    copying the biggest thing on the table is also the whole reason the card is good.
+  */
+  if (ask.from === 'any-battlefield') {
+    return [...ask.candidates]
+      .sort((a, b) => creatureValue(state, b) - creatureValue(state, a))
+      .slice(0, Math.max(ask.min, Math.min(1, ask.max)));
+  }
   const gaining = ask.from === 'library' || ask.from === 'graveyard';
   const ranked = [...ask.candidates].sort((a, b) => cardWorth(state, b) - cardWorth(state, a));
   const take = gaining ? ask.max : ask.min;
@@ -1375,6 +1386,31 @@ function castsAPrevention(state: GameState, action: Action): boolean {
   return modesOf(script, action.modes).some((mode) => mode.preventsDamage === true);
 }
 
+/** Whether this action casts a card whose point is to become a copy of a creature. */
+function castsACopy(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return name !== undefined && scriptFor(name)?.copiesACreature === true;
+}
+
+/**
+ * Whether there is anything on the table to copy.
+ *
+ * Any creature, anybody's — a Clone copies "any creature on the battlefield", and copying the
+ * opponent's best one is what the card is for. Asked of the board rather than of the state after
+ * the cast, for the reason the whole family exists: with auto-pass on, the state after a cast can
+ * be a turn later, and by then the 0/0 has died and the position has moved on.
+ */
+function somethingToCopy(state: GameState): boolean {
+  for (const seat of state.seats) {
+    for (const id of listAt(state, zoneKey(seat.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst !== undefined && characteristicsOf(state, inst).isCreature) return true;
+    }
+  }
+  return false;
+}
+
 /** Whether this action casts a spell whose whole effect is keeping one of your creatures alive. */
 function castsAProtection(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -1687,6 +1723,13 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     */
     if (castsAnExpiringPump(state, option.action)
       && !expiringPumpCanMatter(state, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And a Clone with nothing to copy, which is a 0/0 that dies as it arrives.
+    */
+    if (castsACopy(state, option.action) && !somethingToCopy(state)) {
       dropped += 1;
       continue;
     }

@@ -207,6 +207,17 @@ export function relocate(
     attachedTo: toZone === 'battlefield' ? inst.attachedTo : null,
     faceDown: toZone === 'battlefield' || toZone === 'exile' ? inst.faceDown : false,
     revealed: false,
+    /*
+      A copy stops being a copy when the permanent leaves the battlefield.
+
+      `defKey` is where a copy effect lives (see `CardInstance.printedDefKey`), so this is where it
+      has to end — in the one place a card changes zone, like `died` and `entered`. A Clone that
+      copied a Shivan Dragon is a Clone again in the graveyard, and a Clone is what Zombify brings
+      back: layer 1 applies to the permanent, and the permanent is gone.
+    */
+    ...(toZone !== 'battlefield' && inst.printedDefKey !== undefined
+      ? { defKey: inst.printedDefKey, printedDefKey: undefined }
+      : {}),
   });
   return detachAllFrom(next, inst.id);
 }

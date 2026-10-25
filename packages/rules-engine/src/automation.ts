@@ -1071,7 +1071,11 @@ export function decisionCandidates(
   // reaching the rest of the deck.
   const inZone = spec.from === 'library-top'
     ? listAt(state, zoneKey(chooser, 'library')).slice(0, Math.max(0, spec.look ?? 1))
-    : listAt(state, zoneKey(chooser, spec.from));
+    // The one question that crosses the table: every battlefield, in seat order, which is the
+    // order the table reads in. See `DecisionZone`.
+    : spec.from === 'any-battlefield'
+      ? state.seats.flatMap((seat) => listAt(state, zoneKey(seat.index, 'battlefield')))
+      : listAt(state, zoneKey(chooser, spec.from));
   return inZone.filter((id) => {
     if (state.instances[id] === undefined) return false;
     return spec.filter === undefined || spec.filter(state, id, chooser);

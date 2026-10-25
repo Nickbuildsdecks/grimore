@@ -366,7 +366,20 @@ export interface AutomationState {
  * the other way a player ever sees their own library: the top few cards, face up to them and to
  * nobody else, which is scry and everything shaped like it.
  */
-export type DecisionZone = 'library' | 'library-top' | 'hand' | 'graveyard' | 'battlefield';
+/**
+ * Where a mid-resolution question looks.
+ *
+ * All but the last are the **chooser's own** zone, which is what every card asking one of these
+ * questions means: your library, your hand, your graveyard, your battlefield.
+ *
+ * `any-battlefield` is the exception and the only one that crosses the table: "choose any creature
+ * on the battlefield" is a question about the whole board, which is what a Clone asks. It is its
+ * own zone rather than a flag because the candidate list *is* the authorisation the answer is
+ * checked against — a question that looked at one battlefield and accepted an answer from another
+ * would be a hole, and keeping the two in the same place is what stops that.
+ */
+export type DecisionZone =
+  | 'library' | 'library-top' | 'hand' | 'graveyard' | 'battlefield' | 'any-battlefield';
 
 /** One answered decision, in the order the card asked. */
 export interface DecisionAnswer {

@@ -92,6 +92,18 @@ export interface CardInstance {
   readonly isToken: boolean;
   readonly isCommander: boolean;
   /**
+   * The card this instance is printed as, when a copy effect has made it something else.
+   *
+   * A copy effect is layer 1 (CR 613.1a), and the engine applies it by pointing `defKey` at the
+   * copied card: everything downstream — characteristics, the script that gives it abilities, the
+   * definition the table draws — then reads the copy without a single one of them having to know
+   * that copying exists. This is what makes that honest rather than permanent. A copy effect from
+   * "enters as a copy" lasts as long as the permanent does, so `relocate` — the one place a card
+   * changes zone — puts `defKey` back when it leaves the battlefield. A Clone that copied a Shivan
+   * Dragon is a Clone again in the graveyard, which is what can be reanimated.
+   */
+  readonly printedDefKey?: string;
+  /**
    * How many times this card has changed zones: the same card, a different **object** (CR 400.7).
    *
    * The engine keeps one id per physical card, which is what lets the table animate a card from a

@@ -693,6 +693,17 @@ const JACE_BELEREN: CardDef = {
   and which nothing until now has ever tried to do on purpose.
 */
 
+const CLONE: CardDef = {
+  name: 'Clone',
+  typeLine: 'Creature \u2014 Shapeshifter',
+  manaCost: '{3}{U}',
+  cmc: 4,
+  power: '0',
+  toughness: '0',
+  oracleText: 'You may have Clone enter the battlefield as a copy of any creature on the battlefield.',
+  colors: ['U'],
+};
+
 const TURN_TO_FROG: CardDef = {
   name: 'Turn to Frog',
   typeLine: 'Instant',
@@ -1882,7 +1893,18 @@ export const TIDAL_MIND: DeckSpec = {
     { card: COUNTERSPELL, count: 2 },
     // A third counter that is not a fourth Counterspell: a hand of answers should not be three
     // copies of one card.
-    { card: CANCEL, count: 2 },
+    { card: CANCEL, count: 1 },
+    /*
+      Clone, which is the first card here that asks a question about the *whole* board.
+
+      Every other mid-resolution question this engine asks looks in one of the chooser's own zones —
+      your library, your hand, your graveyard. "Any creature on the battlefield" is a question about
+      the table, and in a deck holding four counterspells and four removal spells the answer is
+      usually whatever the opponent just resolved: the card is removal that leaves you the creature.
+
+      It cost the second Cancel, which is the most replaceable of this deck's five counterspells.
+    */
+    { card: CLONE, count: 1 },
     { card: NEGATE, count: 1 },
     // The narrow counter, which answers the half of the format the Negates cannot.
     { card: ESSENCE_SCATTER, count: 2 },

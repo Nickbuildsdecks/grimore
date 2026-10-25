@@ -27,6 +27,7 @@ import {
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
+  becomeCopyOf,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type { CardScript, DecisionSpec, TargetSpec } from './scriptTypes.js';
@@ -1331,6 +1332,41 @@ const FLESHBAG_MARAUDER: CardScript = {
   one pass. A copy is layer 1, and the engine makes one by pointing the new permanent at the copied
   card's *printed* definition, which is what a copy is.
 */
+
+/**
+ * Clone: a 0/0 that enters as whatever is best on the table.
+ *
+ * The first card in the pool that asks a question about the **whole board** rather than about one
+ * of the chooser's own zones, which is why `DecisionZone` grew `any-battlefield` for it. The copy
+ * itself needs no new rules: `becomeCopyOf` points the instance at the copied card, and because
+ * `completeResolution` runs a spell's script *before* it moves the permanent, what arrives is
+ * already the copy — so the arrivals pass installs the copied card's statics and raises the copied
+ * card's own entry trigger, which is exactly what the printed card does.
+ *
+ * `min: 0` is the printed "you may": declining is legal, and a Clone that copies nothing is a 0/0
+ * that dies as it arrives. That is the card rather than a trap — it is the reason the real Clone
+ * says "may" — and the engine will not be asked when there is nothing on the board to copy.
+ */
+const CLONE: CardScript = {
+  name: 'Clone',
+  // Declared for the bot, like `preventsDamage` and `makesMana`: see `CardScript.copiesACreature`.
+  copiesACreature: true,
+  decisions: [{
+    who: 'controller',
+    from: 'any-battlefield',
+    prompt: 'Choose a creature to enter as a copy of',
+    min: 0,
+    max: 1,
+    filter: (state, id) => {
+      const inst = state.instances[id];
+      return inst !== undefined && characteristicsOf(state, inst).isCreature;
+    },
+  }],
+  onResolve: (c) => {
+    const chosen = c.decisions[0]?.ids[0];
+    return chosen === undefined ? c.state : becomeCopyOf(c.state, c.source, chosen);
+  },
+};
 
 /**
  * Turn to Frog: removal that leaves the body behind.
@@ -2737,7 +2773,7 @@ const ALL: readonly CardScript[] = [
   WALL_OF_AIR, HANNA,
   LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,
   DARK_RITUAL, BORDERLAND_MARAUDER, PREY_UPON, DIVINE_VERDICT,
-  TURN_TO_FROG, CACKLING_COUNTERPART,
+  CLONE, TURN_TO_FROG, CACKLING_COUNTERPART,
   MIRKO_VOSK, THIEVING_MAGPIE, MIND_SCULPT, THOUGHT_SCOUR, COMPELLING_ARGUMENT,
   RETURNED_CENTAUR, NEMESIS_OF_REASON, PSYCHIC_STRIKE, JACE_MEMORY_ADEPT,
   FOG, HOLY_DAY, SAMITE_HEALER, HEALING_SALVE, MAZE_OF_ITH, FOG_BANK, CITY_OF_BRASS,
