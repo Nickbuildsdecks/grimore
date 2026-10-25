@@ -9,7 +9,7 @@
  * Every case ends by calling `settle`, which runs state-based actions and raises triggers until the
  * game stops changing. Nothing else in here has to remember that something might have died.
  */
-import { zoneKey } from './cards.js';
+import { zoneKey, type CardInstance } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
 import { characteristicsOf, hasType } from './characteristics.js';
 import {
@@ -27,11 +27,14 @@ import { addToPool, counterSpell, loseLife, poolOf } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
-import type { CardScript, TargetSpec } from './scriptTypes.js';
+import { MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import { convokePlan, legalActions, manaSources } from './legalActions.js';
-import { EMPTY_COMBAT, MAIN_STEPS, type CombatAttack, type StackObject, type Target } from './turnTypes.js';
+import {
+  EMPTY_COMBAT, MAIN_STEPS, type CombatAttack, type StackObject, type Target,
+  type AutoTurnUpAction,
+} from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
 
 const requirePriority = (state: GameState, seat: SeatIndex): void => {
@@ -47,6 +50,8 @@ const handOf = (state: GameState, seat: SeatIndex): readonly string[] => listAt(
 /** The script's targets for a spell, which for an Aura is what it enchants. */
 const spellTargets = (script: CardScript | undefined): readonly TargetSpec[] =>
   script?.targets ?? (script?.aura ? [script.aura.target] : []);
+
+
 
 // ── Casting ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -75,6 +80,17 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (fromCommand && inst.zoneSeat !== action.by) {
     throw new EngineError('FORBIDDEN', 'that is not your commander');
   }
+  /*
+    Morph, which is a different spell rather than a different cost: nothing below this line applies
+    to it, so it is cast by its own function rather than by threading a flag through forty lines
+    about modes, X, kickers and targets that a face-down spell cannot have.
+
+    **Above** the land check, which is the whole of why Zoetic Cavern is in the pool. Morph does not
+    care what the card is (CR 702.37a): a land card cast face down is a 2/2 creature spell, and a
+    check that refused it for being a land would be reading the card this spell is deliberately not.
+  */
+  if (action.faceDown === true) return castFaceDown(state, action, inst, script);
+
   const characteristics = characteristicsOf(state, inst);
   if (characteristics.isLand) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'play a land with auto:playLand; lands are not cast');
@@ -276,6 +292,140 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       ...(kicked ? { kicked: true } : {}),
       ...(sacrificed === null ? {} : { sacrificed, sacrificedName }),
     },
+  };
+}
+
+/**
+ * Casting a card face down as a 2/2 creature spell for {3} (CR 702.37a).
+ *
+ * Its own function, called out of `castSpell` before anything else happens, because a face-down
+ * spell has **no text**: no modes to choose, no {X} to announce, no kicker, no additional cost, no
+ * convoke and nothing to target. Each of those is refused rather than quietly dropped — an action
+ * carrying one has misread the card, and a stack object carrying a mode or an X that the spell has
+ * no text to read would be a lie the resolution could act on.
+ *
+ * It is a creature spell and nothing has given it flash, so it is a sorcery-speed play. Which is
+ * also the rules answer rather than a simplification: morph grants no timing of its own.
+ */
+function castFaceDown(
+  state: GameState, action: AutoCastAction, inst: CardInstance, script: CardScript | undefined,
+): Outcome {
+  const def = state.cardDefs[inst.defKey];
+  if (script?.morph === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no morph`);
+  }
+  // From hand only. Morph is "you may cast this card as a 2/2 face-down creature spell", and the
+  // card it says that about is the one in your hand.
+  if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
+  }
+  if (action.flashback === true || action.kicked === true || action.x !== undefined
+    || (action.modes !== undefined && action.modes.length > 0) || action.sacrifice !== undefined
+    || (action.targets !== undefined && action.targets.length > 0)) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      'a face-down spell has no text: no modes, no X, no kicker and nothing to target');
+  }
+  if (!atSorcerySpeed(state, action.by)) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      'a face-down creature spell can only be cast in your main phase with an empty stack');
+  }
+
+  const paid = payFrom(state, action.by, MORPH_COST, 0, 0);
+  // Face down *before* it moves, so `relocate` carries the bit to the stack rather than the card
+  // arriving there face up for an instant that the view could have been taken in.
+  let next = withInstance(paid.state, inst.id, { faceDown: true });
+  next = relocate(next, requireInstance(next, inst.id), 'stack', action.by, 'bottom');
+  /*
+    The description is what the opponent reads, and it has to be the 2/2 rather than the card.
+
+    `characteristicsOf` already answers this — a face-down object is a 2/2 with no name — so the
+    description is taken from it rather than written out here, which is what keeps the two from
+    drifting: if the face-down profile ever changes, the stack says the new thing.
+  */
+  const anonymous = characteristicsOf(next, requireInstance(next, inst.id));
+  const object: StackObject = {
+    id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
+    cardKey: inst.defKey, targets: [], targetSeqs: {},
+    description: `${anonymous.name} (2/2)`,
+  };
+  next = {
+    ...next,
+    stackObjects: { ...next.stackObjects, [object.id]: object },
+    stackOrder: [...next.stackOrder, object.id],
+  };
+  // A creature spell was cast, which is all a prowess or a "whenever an opponent casts a creature
+  // spell" may know about it — the types come from the face-down profile, not from the card.
+  next = raise(next, {
+    kind: 'spell-cast',
+    spell: 'creature',
+    types: anonymous.typeLine.types.map((t) => t.toLowerCase()),
+  }, action.by);
+  next = resetPriority(settle(next, state), action.by);
+  return {
+    state: next,
+    message: `${seatName(state, action.by)} casts a face-down creature`,
+    data: { card: inst.id, name: anonymous.name, tapped: [...paid.tapped], faceDown: true },
+  };
+}
+
+/**
+ * Turning your own face-down permanent face up for its morph cost (CR 702.37b).
+ *
+ * A special action: it uses no stack and nobody gets priority in between, so there is no window to
+ * answer it. That is the whole reason a player holds a morph rather than casting the creature —
+ * two mana held up and a 2/2 that becomes something else in the middle of combat.
+ *
+ * It is **not** a new object (CR 702.37d). Nothing is relocated and nothing is reset: the creature
+ * keeps its damage, its counters, whether it is tapped, what is attached to it and when it arrived,
+ * so a morph that has been down since last turn can attack the moment it is turned up. One field
+ * changes, and the abilities follow from the field because every one of them is computed from it
+ * rather than installed — which is what the face-down work before this was for.
+ */
+function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
+  requireAutomated(state);
+  requirePriority(state, action.by);
+  const inst = requireInstance(state, action.card);
+  if (inst.zone !== 'battlefield' || inst.zoneSeat !== action.by) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that is not a permanent you control');
+  }
+  if (!inst.faceDown) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that permanent is already face up');
+  }
+  const def = state.cardDefs[inst.defKey];
+  // `scriptFor` by name rather than `scriptOf` by id, which would be undefined: the whole point of
+  // `scriptOf` is that a face-down permanent has no abilities, and this is the one place that has
+  // to read the card underneath anyway.
+  const script = scriptFor(def?.name);
+  if (script?.morph === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that permanent has no morph cost to pay');
+  }
+  const paid = payFrom(state, action.by, script.morph.cost, 0, 0);
+  let next = withInstance(paid.state, inst.id, { faceDown: false });
+  /*
+    Its static abilities, installed here, because `settle` installs them only for a permanent that
+    *arrived* — and this one arrived face down, with no abilities to install.
+
+    Guarded the same way the arrivals loop guards it, on there being no effect with this source
+    already, which is what keeps a permanent that was turned face up, face down and face up again
+    from handing out its anthem twice.
+  */
+  if (!next.effects.some((effect) => effect.source === inst.id)) {
+    next = applyStatics(next, inst.id, inst.zoneSeat, script);
+  }
+  /*
+    `settle` rather than a bare return, because turning a permanent face up changes the board in
+    ways other cards were already watching: its own statics have to be installed, and a 2/2 that
+    becomes a 5/5 or stops being a creature may settle a state-based action — a creature with
+    lethal damage on it from combat dies the moment it turns up smaller, and one that turns up
+    bigger survives damage it was already holding.
+  */
+  next = settle(next, state);
+  const now = characteristicsOf(next, requireInstance(next, inst.id));
+  return {
+    state: next,
+    // Named, because this is the moment everybody else finds out what it was.
+    message: `${seatName(state, action.by)} turns ${now.name} face up`,
+    data: { card: inst.id, name: now.name, tapped: [...paid.tapped] },
   };
 }
 
@@ -1135,6 +1285,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:choose': return chooseTargets(state, action);
     case 'auto:decide': return decide(state, action);
     case 'auto:pay': return payWard(state, action);
+    case 'auto:turnUp': return turnUp(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);

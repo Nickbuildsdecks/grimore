@@ -1,10 +1,10 @@
 # The instrument
 
-Three harnesses that measure the starter decks against each other, using the engine's own bot for
+Harnesses that measure the starter decks against each other, using the engine's own bot for
 both seats. They are here rather than in a scratch directory because `claude/decisions-log.md`
 quotes their numbers: a measurement nobody can re-run is an anecdote.
 
-All three read `packages/rules-engine/dist/index.js`, so **build first** and rebuild after any
+All of them read `packages/rules-engine/dist/index.js`, so **build first** and rebuild after any
 engine or deck change:
 
 ```sh
@@ -22,6 +22,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `bot-duel.mjs` | what is this change to the *opponent* worth? | `TESTED='{"lookahead":false}' SEEDS=3 node scripts/measure/bot-duel.mjs` |
 | `disagree.mjs` | does that change alter any decisions at all? | `TESTED='{"lookahead":false}' SEEDS=2 node scripts/measure/disagree.mjs` |
 | `step-drift.mjs` | how far does the table move on one action? | `SEEDS=2 node scripts/measure/step-drift.mjs` |
+| `morph-use.mjs` | which half of a morph does the bot take, and does it follow through? | `SEEDS=3 node scripts/measure/morph-use.mjs` |
 
 A `CHANGE` has to keep the deck at sixty cards, and `deck-probe` says so rather than quietly
 measuring deck size instead of the change: a name it cannot find in the subject deck is looked up
@@ -47,6 +48,12 @@ been wrong about what was measured.
 
 **Run two seed sets, not one.** `SEED0=3300` and `SEED0=8800` are the two used so far. A change
 that helps on one and not the other has not been measured; it has been sampled once.
+
+**A card with two ways to cast it needs more than a cast count.** `cast-counts.mjs` reads a morph
+at 107% and says nothing about whether the mechanic was ever used, because every one of those casts
+could have been the printed cost. `morph-use.mjs` is the split, and the number that matters in it is
+not how often the bot casts face down — it is how often it then **turns the card up**, because a 2/2
+that stays down for the rest of the game is three mana spent on a card the bot forgot about.
 
 **Read `deck-probe`'s per-opponent split before believing the total.** A trim that wins ten games
 each against the slow decks and none at all against the fast ones is a change about having a clock,

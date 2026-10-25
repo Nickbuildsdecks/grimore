@@ -4820,3 +4820,91 @@ bot games exercises any of this; a games-played figure here would be measuring n
 is instead: six tests that each name the rule they pin, 649 in the package, and the five browser
 suites (54, 53, 41, 21, 23 checks) on the rebuilt stack. Morph is now unblocked, but the fix was
 worth doing on its own — the table offered the move already, and what it did with it was wrong.
+
+## D123 — Morph, and the pack that was dropping a field
+
+Morph (CR 702.37) went in on top of the face-down work in D122, and the shape of the change is the
+argument for having done that first: three cards, one script field each, and no new rules. A card
+with morph may be cast face down as a 2/2 creature spell for {3}, and its controller may turn it up
+later for the cost printed on it. What a face-down thing *is* was already answered.
+
+**Two actions, not one, because they are two different things.** The face-down cast is
+`auto:cast` with `faceDown: true` and the turn-up is `auto:turnUp`, a **special action**: no stack,
+no priority window, nothing an opponent may do about it (CR 702.37b). That is not a detail — it is
+the reason a player holds a morph instead of casting the creature, and a table that drew the
+turn-up as an activated ability would be promising a window to respond that does not exist. It is
+`kind: 'turnUp'` in `legalActions` for the same reason, and `activatablePlays` builds it in a loop
+of its own, because the ability loop skips face-down permanents by design.
+
+**The face-down cast is its own function.** `castFaceDown` is called out of `castSpell` before
+anything else happens, because a face-down spell has no text: no modes, no {X}, no kicker, no
+additional cost, no convoke and nothing to target. Each of those is refused rather than dropped —
+an action carrying one has misread the card, and a stack object carrying a mode the spell has no
+text to read would be a lie the resolution could act on. Threading a `faceDown` flag through forty
+lines about targets and modes was the alternative and it would have been worse at every line.
+
+**Offered before affordability, which is the whole point.** The morph play is pushed in
+`castablePlays` *above* the check that skips a spell the lands cannot pay for. A morph you cannot
+afford is still castable face down — that is what the mechanic is for, a five-mana creature on turn
+three — and a block placed after that check would have hidden the one play the card is in the deck
+for. It is above the land branch as well, which is how Zoetic Cavern works at all.
+
+**Zoetic Cavern is in the pool to prove the rule rather than to use it.** A *land* cast as a 2/2
+creature spell, which is legal because morph does not read the card (CR 702.37a) and because a
+face-down permanent has no types of its own. It is the single best test of the D122 design: a
+face-down Cavern taps for nothing, does not use the land drop, and turning it up gives back a land
+that is not a creature. A patch rather than a substitution would have needed a special case for
+each of those three sentences.
+
+**Four places had to learn that a face-down spell has no script.** `scriptOnStack` is the stack's
+counterpart to `scriptOf`, and all four readers of a stack object's script go through it — targets,
+decisions, the before-decisions half and the resolution — because a face-down spell that resolved
+with its card's `onResolve` would be a morph that did the card's trick for {3} and then sat there as
+a 2/2. The arrivals loop in `settle` learned the same thing for `entersTapped` and for statics, and
+`turnUp` installs the statics itself, because `settle` installs them only for a permanent that
+*arrived* and this one arrived with no abilities to install.
+
+**The bug this turned up was in the wire, not in morph.** `packView` leaves out an empty keyword
+list — `"keywords":[]` on three hundred cards is four kilobytes — and `unpackView` puts it back
+under a condition that read "a battlefield card whose definition travelled". Morph broke it twice
+over: a face-down permanent has characteristics and **no** definition, and a face-down spell has
+them while it is still on the stack. The whole-game round-trip assertion in `playout.test.ts` caught
+it on the first game, twice — the second time because `power` looked like a tidier signal than the
+zone and is not, since a land has keywords and no power. The condition now reads exactly the one
+`redact` uses to decide whether to compute characteristics at all, which is the only version of it
+that cannot drift, and there is a test beside the morph tests as well as the one in the playout.
+
+**Measured, and the honest split.** Over 168 games on two seed sets the bot cast **20 of 23 Dirgur
+Nemesis face down (87%) and 4 of 7 (57%)**, and **8 of 18 Battering Craghorn (44%) and 6 of 18
+(33%)** — the mechanic is used, and used more by the card whose printed cost is further out of
+reach, which is the right shape. The number that matters more is the follow-through, and it is
+lower: **4 of 20 face-down Nemesis were turned up, and 3 of 8 Craghorn**. A 2/2 that stays down is
+three mana spent on a card the bot forgot about, and the reason is the one this file keeps coming
+back to — `simulate` stops when the stack empties, so "turn it up and win the combat" is past the
+horizon unless the combat is already happening. It needed no teaching to use morph at all; what it
+cannot do is price the moment.
+
+**The slot changes are a wash, as the convoke ones were.** Tidal Mind with the two morph cards
+against Tidal Mind without them: **77-161 vs 75-163** on one seed set and **84-153 vs 73-165** on
+the other — +2 and +11 in 238, positive on both and under the eighteen-game noise floor on either.
+Ashen Rite with Battering Craghorn against without: **114-124 vs 112-126** and **115-123 vs
+112-126**, +2 and +3. The per-opponent split is where the games are: +6 against Rot Harvest on one
+set, +7 against Ashen Rite and +5 against Forge Alliance on the other, and nothing at all against
+Ember Rush or Verdant Guard either time. A cheap blocker that becomes a wall is worth games against
+the decks a control deck can beat and nothing against the ones that are faster than it.
+
+**One rule was written and reverted.** Play a land with morph last of all, because a Zoetic Cavern
+spent as a land while an Island is in hand throws a choice away for nothing. The reasoning is sound;
+the measurement is three casts in 336 games — face-down Cavern casts went from 1 to 2 on one seed
+set and 3 to 4 on the other. That is not a change this instrument can price, so the branch came out
+of `botAction` and the number is here instead, which is what D108 and D118 established the habit
+for. The cause is upstream of any tie-break anyway: the land drop is taken *before* the search,
+because leaving it in lost every game in the measurement, so the bot never weighs the Cavern's two
+halves against each other. **Zoetic Cavern's face-down half is a person's option rather than the
+computer's**, and that is worth knowing about the card rather than hiding.
+
+**What is not built.** A "when this is turned face up" trigger, which is what the morphs with text
+on the back need — Ainok Survivalist, Master of Pearls, Willbender. The hook has an obvious home
+(`raise` with a new event kind, off `turnUp`) and no card in the pool wants it yet, so it is not
+there: three cards whose face-up side is keywords prove the mechanic without it. Megamorph, and a
+morph cost that is not mana (Zombie Cutthroat pays three life), are the same answer.

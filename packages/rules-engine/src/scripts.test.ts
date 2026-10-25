@@ -16,8 +16,9 @@ import {
   hasType,
   legalActions,
   parseTypeLine,
-  pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor, scriptedCardNames,
-  staticEffect, viewFor,
+  packView, pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor,
+  scriptedCardNames,
+  staticEffect, unpackView, viewFor,
   type ContinuousEffect,
 } from './index.js';
 import {
@@ -561,8 +562,22 @@ describe('blue-black control', () => {
     expect(ids(s, 1, 'hand').length).toBe(before - 1 + 2);
   });
 
+  /*
+    Sign in Blood moved to Hollow Tide, so these two moved with it — the same reason the Tome Scour
+    test below says it moved. Tidal Mind traded the slot for a Dirgur Nemesis, because two cards
+    for two life is the most replaceable thing in a deck that already holds four other ways to draw.
+  */
+  const draws = (hand: readonly string[], lands: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 1: 'hollow-tide' },
+      hands: { 1: [...hand] }, battlefield: { 1: [...lands] },
+      turn: 2, firstSeat: 1,
+    }), 'precombat-main');
+    return tapAllLands(s, 1);
+  };
+
   it('Sign in Blood draws two and costs two life', () => {
-    let s = control(['Sign in Blood'], ['Swamp', 'Swamp']);
+    let s = draws(['Sign in Blood'], ['Swamp', 'Swamp']);
     const before = ids(s, 1, 'hand').length;
     s = cast(s, 1, 'Sign in Blood', [{ kind: 'player', seat: 1 }]);
     expect(ids(s, 1, 'hand').length).toBe(before - 1 + 2);
@@ -570,7 +585,7 @@ describe('blue-black control', () => {
   });
 
   it('Sign in Blood can be aimed at an opponent, which is what makes it removal', () => {
-    let s = control(['Sign in Blood'], ['Swamp', 'Swamp']);
+    let s = draws(['Sign in Blood'], ['Swamp', 'Swamp']);
     s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 2 } : seat)) };
     s = cast(s, 1, 'Sign in Blood', [{ kind: 'player', seat: 0 }]);
     expect(s.seats[0]!.eliminated).toBe(true);
@@ -6648,5 +6663,288 @@ describe('a face-down permanent is a 2/2 with no abilities (CR 707.2)', () => {
     expect(viewFor(s, 0).cards[giant]?.card?.name).toBe('Hill Giant');
     // Still a 2/2 to its controller as well: the rules do not care who is looking.
     expect(viewFor(s, 0).cards[giant]?.power).toBe(2);
+  });
+});
+
+describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.37)', () => {
+  /*
+    Three cards, one per half of the mechanic, and the tests below are grouped the same way.
+
+    Zoetic Cavern is the one that proves the rule rather than using it: a *land* cast as a creature
+    spell. Dirgur Nemesis is the one turned up to survive a combat it is already in. Battering
+    Craghorn is the one turned up *during* combat, which is what a special action is for.
+
+    What is deliberately not here is any assertion that a face-down permanent is a 2/2 with no
+    abilities — that is the block above this one, and it is the reason this block is five lines of
+    script across three cards rather than a mechanic.
+  */
+
+  /** A seat in its main phase holding `name`, with `lands` of its own basic tapped for mana. */
+  const holding = (
+    seat: SeatIndex, name: string, deck: string, lands: readonly string[],
+  ): GameState => {
+    let s = advanceTo(arena({
+      decks: { [seat]: deck }, hands: { [seat]: [name] }, battlefield: { [seat]: [...lands] },
+      turn: 4, firstSeat: seat,
+    }), 'precombat-main');
+    return tapAllLands(s, seat);
+  };
+
+  it('is offered for {3} on a board that cannot pay the printed cost', () => {
+    // Three Islands, and Dirgur Nemesis costs {4}{U}. The face-down play is the only one there is,
+    // which is the whole reason morph is in a deck: a five-mana card on turn three.
+    const s = holding(1, 'Dirgur Nemesis', 'tidal-mind', ['Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Dirgur Nemesis');
+    const plays = legalActions(s, 1).plays.filter((p) => p.card === card);
+    expect(plays).toHaveLength(1);
+    expect(plays[0]?.faceDown).toBe(true);
+    expect(plays[0]?.manaCost).toBe('{3}');
+    expect(plays[0]?.description).toContain('face down');
+  });
+
+  it('is offered beside the printed cast once that can be paid for', () => {
+    const s = holding(1, 'Dirgur Nemesis', 'tidal-mind',
+      ['Island', 'Island', 'Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Dirgur Nemesis');
+    const plays = legalActions(s, 1).plays.filter((p) => p.card === card);
+    expect(plays).toHaveLength(2);
+    expect(plays.filter((p) => p.faceDown === true)).toHaveLength(1);
+    expect(plays.find((p) => p.faceDown === undefined)?.manaCost).toBe('{4}{U}');
+  });
+
+  it('waits on the stack as a 2/2 creature spell with no name, and the opponent cannot read it', () => {
+    let s = holding(1, 'Dirgur Nemesis', 'tidal-mind', ['Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Dirgur Nemesis');
+    s = apply(s, { type: 'auto:cast', by: 1, card, faceDown: true });
+
+    // A creature spell, to anything that reads the stack: Essence Scatter can counter it, and
+    // nothing can tell which creature it is.
+    expect(s.instances[card]!.zone).toBe('stack');
+    const onStack = characteristicsOf(s, s.instances[card]!);
+    expect(onStack.isCreature).toBe(true);
+    expect(onStack.power).toBe(2);
+    expect(onStack.toughness).toBe(2);
+    expect(onStack.name).not.toContain('Dirgur');
+    expect(stackNames(s).join(' ')).not.toContain('Dirgur');
+
+    /*
+      And the leak test, on the stack this time rather than on the battlefield.
+
+      The card entry and the stack row, not the whole payload: `arena` builds a board by moving
+      cards about with `card:move`, which logs what it moved by name, so the opponent's log has
+      said "Friend moved Dirgur Nemesis to Friend's hand" since before the game started. That is
+      the testkit's setup rather than the table's, and asserting over the log would be asserting
+      about the harness.
+    */
+    for (const viewer of [0, null] as const) {
+      const theirs = viewFor(s, viewer);
+      expect(JSON.stringify(theirs.cards[card])).not.toContain('Dirgur Nemesis');
+      expect(theirs.cards[card]?.card).toBeUndefined();
+      expect(theirs.cards[card]?.power).toBe(2);
+      expect(JSON.stringify(theirs.automation?.stack)).not.toContain('Dirgur Nemesis');
+    }
+    // Its controller may read their own card, which is the one view that may.
+    expect(viewFor(s, 1).cards[card]?.card?.name).toBe('Dirgur Nemesis');
+
+    // It arrives face down, still a 2/2, and three mana was what it cost.
+    s = passBoth(s);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(s.instances[card]!.faceDown).toBe(true);
+    expect(characteristicsOf(s, s.instances[card]!).toughness).toBe(2);
+  });
+
+  it('keeps its damage when it is turned up, which is how a 2/2 becomes a 2/6 and lives', () => {
+    /*
+      The rule that makes morph more than a discount: turning face up is not a new object
+      (CR 702.37d), so nothing about the permanent resets. A 2/2 holding two damage from blocking
+      is a 2/6 holding two damage, and state-based actions let it live.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: { 1: ['Dirgur Nemesis'] },
+      battlefield: {
+        0: ['Hill Giant'],
+        1: ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Swamp', 'Swamp'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const card = find(s, 1, 'hand', 'Dirgur Nemesis');
+    /*
+      Nothing is tapped by hand here, and the land count is why: the turn-up happens on the
+      *opponent's* turn, when seat 1's lands have not untapped since it cast the morph. Nine lands
+      so that paying {3} leaves the six the {5}{U} needs — which is also what the card asks of a
+      real deck, and the reason morph is a thing a control deck does on turn three.
+    */
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card, faceDown: true }));
+    expect(s.instances[card]!.faceDown).toBe(true);
+
+    // Seat 0 attacks into it with a 3/3 and the 2/2 blocks: three damage on a two-toughness body.
+    s = advanceTo(nextTurn(s), 'declare-attackers');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: giant, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: card, attacker: giant }] });
+    // Priority after blockers goes to the attacking player first (CR 509.4), so seat 1 gets its
+    // window once seat 0 has passed — which is also the window a real player would use.
+    if (!legalActions(s, 1).hasPriority) s = apply(s, { type: 'auto:pass', by: 0 });
+
+    // Turned up before damage, with the mana that was left. It is now a 2/6, and three damage is
+    // not lethal to a 2/6.
+    s = apply(s, { type: 'auto:turnUp', by: 1, card });
+    expect(s.instances[card]!.faceDown).toBe(false);
+    expect(characteristicsOf(s, s.instances[card]!).toughness).toBe(6);
+    s = drain(advanceTo(s, 'combat-damage'));
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(damageOn(s, card)).toBe(3);
+    // The damage it dealt back killed nothing: a 2/6 against a 3/3 trades neither way.
+    expect(s.instances[giant]!.zone).toBe('battlefield');
+  });
+
+  it('turns up during combat, after blockers, with nothing an opponent can do about it', () => {
+    /*
+      The headline: a 2/2 blocked by a 2/2 becomes a 3/1 with first strike, and the blocker dies
+      without dealing damage back. Turning face up is a special action and uses no stack
+      (CR 702.37b), so there is no priority window between the declaration and the trick — which
+      is the one unanswerable play in this pool.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+      hands: { 0: ['Battering Craghorn'] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'],
+        1: ['Grizzly Bears'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Battering Craghorn');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card, faceDown: true }));
+
+    // A turn later, so it can attack: it arrived face down and summoning sickness is about when it
+    // arrived, not about which side is showing.
+    s = advanceTo(nextTurn(nextTurn(s)), 'declare-attackers');
+    // The mana is left where it is: `payFrom` taps for the turn-up at the moment it is paid, and
+    // tapping everything up front would have spent the mana a step before it was needed — the
+    // pool empties at the end of every step (CR 500.4), which is exactly the trap a player falls
+    // into by tapping lands early at a real table.
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: card, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: card }] });
+    if (!legalActions(s, 0).hasPriority) s = apply(s, { type: 'auto:pass', by: 1 });
+
+    // The trick. No stack object, which is what "special action" means.
+    const stackBefore = s.stackOrder.length;
+    s = apply(s, { type: 'auto:turnUp', by: 0, card });
+    expect(s.stackOrder.length).toBe(stackBefore);
+    const ch = characteristicsOf(s, s.instances[card]!);
+    expect(ch.power).toBe(3);
+    expect([...ch.keywords]).toContain('first strike');
+
+    s = drain(advanceTo(s, 'end-combat'));
+    // First strike: the 2/2 blocker is dead before it deals its damage, so the 3/1 lives.
+    expect(countOf(s, 1, 'graveyard', 'Grizzly Bears')).toBe(1);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(damageOn(s, card)).toBe(0);
+  });
+
+  it('casts a land as a creature spell, because morph does not read the card', () => {
+    /*
+      Zoetic Cavern, which is in the pool to prove exactly this: the face-down cast is offered and
+      paid for before anything asks what the card is (CR 702.37a). A land cast this way is a 2/2
+      creature and not a land at all — it taps for nothing — and turning it up gives back a land
+      that is not a creature.
+    */
+    let s = holding(1, 'Zoetic Cavern', 'tidal-mind',
+      ['Island', 'Island', 'Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Zoetic Cavern');
+    const plays = legalActions(s, 1).plays.filter((p) => p.card === card);
+    // Both: play it as a land, or cast it face down. Two different things to do with one card.
+    expect(plays.map((p) => p.kind).sort()).toEqual(['cast', 'land']);
+    expect(plays.find((p) => p.kind === 'cast')?.faceDown).toBe(true);
+
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card, faceDown: true }));
+    const down = characteristicsOf(s, s.instances[card]!);
+    expect(down.isCreature).toBe(true);
+    expect(down.isLand).toBe(false);
+    // Nothing to tap it for: a face-down land has no mana ability.
+    expect(legalActions(s, 1).plays.some((p) => p.card === card && p.isManaAbility)).toBe(false);
+    // And it did not use the land drop, because it was never played as a land.
+    expect(s.landsPlayed[1] ?? 0).toBe(0);
+
+    // {2} turns it up, and it is a land again — and no longer a creature.
+    s = apply(s, { type: 'auto:turnUp', by: 1, card });
+    const up = characteristicsOf(s, s.instances[card]!);
+    expect(up.isLand).toBe(true);
+    expect(up.isCreature).toBe(false);
+    expect(up.name).toBe('Zoetic Cavern');
+  });
+
+  it('survives the wire in both places it can be face down', () => {
+    /*
+      Packing has to be invisible, and twice now it has not been.
+
+      `packView` leaves out an empty keyword list because `"keywords":[]` on three hundred cards is
+      four kilobytes, and `unpackView` puts it back — but the condition it used to put it back
+      under was "a battlefield card whose definition travelled", and a face-down card has no
+      definition to travel. The whole-game assertion in `playout.test.ts` caught it; this is the
+      same check written where somebody reading morph will find it, for the permanent *and* for the
+      spell still on the stack.
+    */
+    let s = holding(1, 'Dirgur Nemesis', 'tidal-mind', ['Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Dirgur Nemesis');
+    s = apply(s, { type: 'auto:cast', by: 1, card, faceDown: true });
+    for (const viewer of [0, 1, null] as const) {
+      const view = viewFor(s, viewer);
+      expect(unpackView(packView(view))).toEqual(view);
+    }
+    s = passBoth(s);
+    for (const viewer of [0, 1, null] as const) {
+      const view = viewFor(s, viewer);
+      expect(unpackView(packView(view))).toEqual(view);
+      // And it is still anonymous after the round trip, which is the half that matters.
+      expect(JSON.stringify(unpackView(packView(view)).cards[card]))
+        .toContain(viewer === 1 ? 'Dirgur Nemesis' : '"power":2');
+    }
+  });
+
+  it('refuses a face-down cast of a card with no morph, and a turn-up of what is not yours', () => {
+    const s = holding(1, 'Man-o\'-War', 'tidal-mind', ['Island', 'Island', 'Island', 'Island']);
+    const manowar = find(s, 1, 'hand', "Man-o'-War");
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: manowar, faceDown: true }))
+      .toContain('has no morph');
+    // And it is not offered, which is the half a player sees.
+    expect(legalActions(s, 1).plays.filter((p) => p.card === manowar && p.faceDown === true))
+      .toHaveLength(0);
+
+    let board = holding(1, 'Dirgur Nemesis', 'tidal-mind', ['Island', 'Island', 'Island']);
+    const card = find(board, 1, 'hand', 'Dirgur Nemesis');
+    board = passBoth(apply(board, { type: 'auto:cast', by: 1, card, faceDown: true }));
+    /*
+      The opponent cannot turn it up, whatever they are holding: it is not their permanent.
+
+      Asked on seat 0's own turn, because `turnUp` checks priority before it checks whose permanent
+      it is — and that order is right: "you do not have priority" is the truer answer while it is
+      somebody else's turn, and it is the one a table should say.
+    */
+    board = advanceTo(nextTurn(board), 'precombat-main');
+    expect(refusal(board, { type: 'auto:turnUp', by: 0, card }))
+      .toContain('not a permanent you control');
+    // And it is not offered to them either.
+    expect(legalActions(board, 0).plays.some((p) => p.kind === 'turnUp')).toBe(false);
+  });
+
+  it('is not offered a turn-up it cannot pay for, and refuses one that is already face up', () => {
+    // Three Islands, all spent on the face-down cast: {5}{U} is a long way off.
+    let s = holding(1, 'Dirgur Nemesis', 'tidal-mind', ['Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Dirgur Nemesis');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card, faceDown: true }));
+    expect(legalActions(s, 1).plays.some((p) => p.kind === 'turnUp')).toBe(false);
+    expect(refusal(s, { type: 'auto:turnUp', by: 1, card })).toContain('cannot pay {5}{U}');
+
+    // Face up already: there is nothing to turn.
+    const up = holding(1, "Man-o'-War", 'tidal-mind', ['Island', 'Island', 'Island']);
+    const other = find(up, 1, 'battlefield', 'Island');
+    expect(refusal(up, { type: 'auto:turnUp', by: 1, card: other })).toContain('already face up');
   });
 });

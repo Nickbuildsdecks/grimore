@@ -26,7 +26,7 @@ import {
   type ManaCost, type ManaPool, type ManaType,
 } from './mana.js';
 import { scriptFor } from './scripts.js';
-import type { AbilityDef, CardScript, TargetSpec } from './scriptTypes.js';
+import { MORPH_COST, type AbilityDef, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { legalTargets } from './targeting.js';
 import { PACT_KINDS } from './pacts.js';
 import { MAIN_STEPS, type DecisionZone, type Step, type Target } from './turnTypes.js';
@@ -34,7 +34,12 @@ import type { GameState, PactKind, SeatIndex } from './types.js';
 
 /** One thing a player could do, with everything the UI needs to offer it. */
 export interface LegalPlay {
-  readonly kind: 'land' | 'cast' | 'activate';
+  /**
+   * `turnUp` is the odd one: a special action rather than a cast or an ability (CR 702.37b), which
+   * is exactly why it is its own kind — it uses no stack, so a table that drew it as an ability
+   * would be promising a window to respond that does not exist.
+   */
+  readonly kind: 'land' | 'cast' | 'activate' | 'turnUp';
   readonly card: string;
   readonly name: string;
   readonly description: string;
@@ -74,6 +79,14 @@ export interface LegalPlay {
    * table draws it in a different row — the graveyard — and the cost shown is not the printed one.
    */
   readonly flashback?: boolean;
+  /**
+   * Set on the play that casts a morph card face down as a 2/2 for {3} (CR 702.37a).
+   *
+   * A second play on the same card, like the kicker's, rather than a flag the table has to combine
+   * with something: the cost shown is {3} and nothing on the card, and the two plays are offered
+   * independently — a morph you cannot pay the printed cost for still offers this one.
+   */
+  readonly faceDown?: boolean;
   /**
    * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
    *
@@ -491,6 +504,32 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const ch = characteristicsOf(state, inst);
     const script = scriptFor(def?.name);
 
+    /*
+      Morph: the same card offered a second time, as a {3} face-down 2/2 (CR 702.37a).
+
+      Offered **here**, before the printed cost is looked at, which is the whole point: a morph you
+      cannot afford is still castable face down, and a block placed after the affordability check
+      below would have hidden the one play the card is in the deck for. A seven-mana creature on
+      turn three is a 2/2 for {3} — that is what morph is, and a table that only offered it when
+      the real cost was payable would have offered it exactly when nobody wants it.
+
+      From hand only, and never with the flashback or commander-zone pass: morph is about the card
+      in your hand, and nothing in this pool has both.
+    */
+    if (script?.morph !== undefined && !flashback && !fromCommand && sorcerySpeed) {
+      const faceDownCost = parseManaCost(MORPH_COST);
+      if (canAfford(poolOf(state, seat), faceDownCost, sources)) {
+        out.push({
+          kind: 'cast', card: id, name: ch.name, faceDown: true,
+          // Named for the player's own benefit: only they can see which card it is, and a menu of
+          // three identical "Cast face down" rows would be unusable.
+          description: `Cast ${ch.name} face down (${MORPH_COST}, a 2/2)`,
+          manaCost: MORPH_COST, targetSpecs: [], candidates: [],
+          isManaAbility: false, sacrificeOptions: [],
+        });
+      }
+    }
+
     if (ch.isLand) {
       // A land commander would be *played*, not cast, and nothing in the pool is one; refusing to
       // offer it is better than offering a land drop out of the command zone.
@@ -713,6 +752,36 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         sacrificeOptions: victims,
       });
     }
+  }
+
+  /*
+    Turning a morph face up (CR 702.37b), which is why this is a loop of its own.
+
+    Not an ability — the loop above would have skipped it anyway, because a face-down permanent has
+    none — but a **special action**: no stack, no priority in between, nothing an opponent may do
+    about it. Any time its controller holds priority, which includes the middle of combat after
+    blockers are declared, and that is what players hold a morph for.
+
+    The card is read by name here, from under the face-down permanent, which is the one place in
+    the engine that deliberately looks at what a face-down thing is. That is safe because this list
+    is built per seat: `legalActions(state, seat)` is only ever asked about the seat being told its
+    own options, so the morph cost shown is the controller reading their own card.
+  */
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || !inst.faceDown) continue;
+    const def = state.cardDefs[inst.defKey];
+    const morph = scriptFor(def?.name)?.morph;
+    if (morph === undefined) continue;
+    const cost = parseManaCost(morph.cost);
+    if (cost.unsupported !== undefined) continue;
+    if (!canAfford(poolOf(state, seat), cost, sources)) continue;
+    out.push({
+      kind: 'turnUp', card: id, name: def?.name ?? 'that card',
+      description: `Turn ${def?.name ?? 'it'} face up (morph ${morph.cost})`,
+      manaCost: morph.cost, targetSpecs: [], candidates: [],
+      isManaAbility: false, sacrificeOptions: [],
+    });
   }
   return out;
 }

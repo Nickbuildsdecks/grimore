@@ -578,6 +578,30 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Morph: cast this face down as a 2/2 for {3}, and turn it up later for this cost (CR 702.37).
+   *
+   * Only the *turn-up* cost lives here. The face-down casting costs {3} for every card that has
+   * morph, which is printed in the rule rather than on the card, so the engine holds it as a
+   * constant and a script that tried to name a different one would be describing a card that does
+   * not exist.
+   *
+   * What makes morph more than two costs is that both halves are already built: a face-down
+   * permanent is a 2/2 with no abilities (CR 707.2), which `characteristicsOf` does by substituting
+   * a profile for the card, and `isFaceDownPermanent` keeps its triggers, mana and abilities from
+   * applying. Morph is the card-facing half of that — the cast, and the special action that turns
+   * it over.
+   *
+   * Turning it face up is **not** casting it and does not use the stack (CR 702.37b): nobody may
+   * respond, which is the point of the mechanic. It is also not a new object, so the creature keeps
+   * its damage, its counters, whether it is tapped, what is attached to it, and how long it has
+   * been on the battlefield — a morph that has been down since last turn can attack the moment it
+   * is turned up.
+   */
+  readonly morph?: {
+    /** The whole turn-up cost, in the printed `{2}{U}` form. */
+    readonly cost: string;
+  };
+  /**
    * An additional cost that is not optional: "As an additional cost to cast this spell, sacrifice
    * a creature."
    *
@@ -646,3 +670,12 @@ export interface ReplacementContext {
 }
 
 export const targetCount = (spec: TargetSpec): number => Math.max(1, spec.count ?? 1);
+
+/**
+ * What every morph costs to cast face down: {3} (CR 702.37a).
+ *
+ * In the rule rather than on the card, so it is one constant rather than a field on each script —
+ * and a constant both halves read, because `legalActions` offers the play and `castSpell` pays for
+ * it, and this file exists to keep an offer and a payment from disagreeing.
+ */
+export const MORPH_COST = '{3}';

@@ -45,8 +45,19 @@ const MAX_PER_UPDATE = 2
 const isLand = (view: GameView, id: string): boolean =>
   /land/i.test(view.cards[id]?.card?.typeLine ?? "")
 
-const isCreature = (view: GameView, id: string): boolean =>
-  /creature/i.test(view.cards[id]?.card?.typeLine ?? "")
+/*
+  A creature spell, including one nobody may read.
+
+  A morph cast face down has no `card` for anybody but its controller — that is the point of it —
+  but it is publicly a 2/2 creature spell, and the view carries the power and toughness to say so.
+  Without the second clause the table made a *spell* noise for the opponent and a *creature* noise
+  for its controller, over the same card, which is the one thing a sound cue must never do.
+*/
+const isCreature = (view: GameView, id: string): boolean => {
+  const card = view.cards[id]
+  if (card === undefined) return false
+  return /creature/i.test(card.card?.typeLine ?? "") || (card.faceDown && card.power !== undefined)
+}
 
 /** Every card on anybody's battlefield, which is where a land arriving and a land tapping show up. */
 function battlefield(view: GameView): readonly string[] {

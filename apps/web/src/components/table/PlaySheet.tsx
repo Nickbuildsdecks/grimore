@@ -84,9 +84,15 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
               // of the same card with no ability index — so the mode has to be part of the key or
               // three Charm modes share one id, which breaks React and every selector that reads
               // it. `index` alone would be stable enough but says nothing; the modes say which.
-              const slug = play.modes === undefined
-                ? String(play.abilityIndex ?? 0)
-                : `mode-${play.modes.join('-')}`
+              // And the same again for morph: the face-down cast and the printed cast are both a
+              // `cast` of one card with no ability index and no modes, so without this the two
+              // rows share a test id and a selector cannot tell "Cast it" from "Cast it face
+              // down" — which are the two most different things you can do with the card.
+              const slug = play.faceDown === true
+                ? 'facedown'
+                : play.modes === undefined
+                  ? String(play.abilityIndex ?? 0)
+                  : `mode-${play.modes.join('-')}`
               return (
                 <Button
                   key={`${play.kind}-${slug}-${index}`}

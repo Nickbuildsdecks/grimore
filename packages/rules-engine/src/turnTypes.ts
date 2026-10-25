@@ -489,6 +489,25 @@ export interface AutoCastAction {
   readonly flashback?: boolean;
   /** The creature sacrificed for an additional cost, when the spell asks for one. */
   readonly sacrifice?: string;
+  /**
+   * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
+   *
+   * No targets, no modes, no X and no kicker travel with it, and each of those is refused rather
+   * than ignored: a face-down spell has no text, so there is nothing on it for any of them to be
+   * about.
+   */
+  readonly faceDown?: boolean;
+}
+/**
+ * Turn your own face-down permanent face up for its morph cost (CR 702.37b).
+ *
+ * A **special action**, not an ability and not a cast: it uses no stack, so there is no window in
+ * which an opponent may answer it, which is most of what players use morph for. All it needs is
+ * the card — the cost is the one printed on it, and a client naming its own cost would be a client
+ * deciding what the card says.
+ */
+export interface AutoTurnUpAction {
+  readonly type: 'auto:turnUp'; readonly by: SeatIndex; readonly card: string;
 }
 export interface AutoActivateAction {
   readonly type: 'auto:activate'; readonly by: SeatIndex; readonly card: string;
@@ -541,12 +560,13 @@ export interface AutoKeepAction {
 export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
-  | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction;
+  | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction
+  | AutoTurnUpAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
   'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
-  'auto:decide', 'auto:pay',
+  'auto:decide', 'auto:pay', 'auto:turnUp',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

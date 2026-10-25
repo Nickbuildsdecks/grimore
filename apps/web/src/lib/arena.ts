@@ -250,12 +250,27 @@ function playAction(
     reached this function. The engine's own tests all passed, because they build the action by hand.
   */
   const withFlashback = play.flashback === true ? { flashback: true } : {}
+  /*
+    And morph, for the same reason a third time: the face-down cast is a separate play on the same
+    card, so a cast sent without the flag is the printed one — which the engine refuses for want of
+    mana on exactly the turn the player reached for the 2/2.
+  */
+  const withFaceDown = play.faceDown === true ? { faceDown: true } : {}
+  /*
+    Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
+    is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
+    answer in. One tap, and the 2/2 is whatever it was all along.
+  */
+  if (play.kind === "turnUp") {
+    return { type: "auto:turnUp", card: play.card }
+  }
   if (play.kind === "cast") {
     // A cast can have a cost of its own to pay now: "sacrifice a creature" is an additional cost,
     // not something the spell asks for on resolution, so it travels with the cast.
     return {
       type: "auto:cast", card: play.card,
-      ...withModes, ...withX, ...withKicker, ...withFlashback, ...withSacrifice, ...withTargets,
+      ...withModes, ...withX, ...withKicker, ...withFlashback, ...withFaceDown,
+      ...withSacrifice, ...withTargets,
     }
   }
   return {

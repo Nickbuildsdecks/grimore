@@ -24,7 +24,7 @@
 import {
   characteristicsOf, expireEffects, hasSubtype, hasType, type ContinuousEffect,
 } from './characteristics.js';
-import { isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
+import { isFaceDownObject, isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance, withZones } from './cardActions.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, dealCombatDamage,
@@ -166,6 +166,24 @@ const scriptOf = (state: GameState, instanceId: string): CardScript | undefined 
   const inst = state.instances[instanceId];
   if (inst === undefined || isFaceDownPermanent(inst)) return undefined;
   return scriptFor(state.cardDefs[inst.defKey]?.name);
+};
+
+/**
+ * The script of what a stack object is, or none while it is a face-down spell (CR 707.4).
+ *
+ * The stack's counterpart to `scriptOf`, and for the same reason: a face-down creature spell has no
+ * text, so it has no targets to check, no questions to ask, no effect to run on resolution and no
+ * "enters with counters" clause. Four readers in this file ask for a stack object's script and all
+ * four go through here, because a face-down spell that resolved with its card's `onResolve` would
+ * be a morph that did the card's trick for {3} and then sat there as a 2/2.
+ *
+ * An ability on the stack is never face down: it has no card of its own, and `instances[object.id]`
+ * is undefined for it, which is why the check is on the instance rather than on the kind.
+ */
+const scriptOnStack = (state: GameState, object: StackObject): CardScript | undefined => {
+  const inst = state.instances[object.id];
+  if (inst !== undefined && isFaceDownObject(inst)) return undefined;
+  return scriptFor(state.cardDefs[object.cardKey]?.name);
 };
 
 /** Sorcery timing: your own main phase, empty stack, and you hold priority. */
@@ -902,7 +920,11 @@ function settle(state: GameState, before: GameState): GameState {
         engine computes in one action can be — and the only way to be closer is a replacement
         layer the rest of the engine has no use for yet.
       */
-      if (!arrival.tapped && scriptFor(next.cardDefs[arrival.defKey]?.name)?.entersTapped === true) {
+      // A face-down permanent has no abilities, so it has no replacement effect either: a morph
+      // of a card that would enter tapped does not, because nothing on it says so (CR 707.2).
+      const arrivalScript = isFaceDownPermanent(arrival) ? undefined
+        : scriptFor(next.cardDefs[arrival.defKey]?.name);
+      if (!arrival.tapped && arrivalScript?.entersTapped === true) {
         next = withInstance(next, id, { tapped: true });
       }
       /*
@@ -922,7 +944,7 @@ function settle(state: GameState, before: GameState): GameState {
         the aura effect a resolving aura installs with its own id as the source.
       */
       if (!next.effects.some((effect) => effect.source === id)) {
-        next = applyStatics(next, id, arrival.zoneSeat, scriptFor(next.cardDefs[arrival.defKey]?.name));
+        next = applyStatics(next, id, arrival.zoneSeat, arrivalScript);
       }
       next = raise(next, { kind: 'etb' }, next.instances[id]?.zoneSeat, id);
     }
@@ -1144,7 +1166,7 @@ function runModes(
  * about cards in a hidden zone, and never answerable by an opponent. See `DecisionSpec`.
  */
 function decisionSpecsFor(state: GameState, object: StackObject): readonly DecisionSpec[] {
-  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
+  const script = scriptOnStack(state, object);
   if (object.kind !== 'spell') return abilityOrTrigger(script, object)?.decisions ?? [];
   const modes = modesOf(script, object.modes);
   if (modes.length > 0) return modes.flatMap((mode) => [...(mode.decisions ?? [])]);
@@ -1153,7 +1175,7 @@ function decisionSpecsFor(state: GameState, object: StackObject): readonly Decis
 
 /** The half of a card that runs before its questions are asked. Spell-level only. */
 function beforeDecisionsFor(state: GameState, object: StackObject): EffectFn | undefined {
-  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
+  const script = scriptOnStack(state, object);
   if (object.kind === 'spell') return script?.beforeDecisions;
   return abilityOrTrigger(script, object)?.beforeDecisions;
 }
@@ -1365,7 +1387,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
   let object = stackTop(state);
   if (object === undefined) return { state, message: 'nothing to resolve' };
 
-  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
+  const script = scriptOnStack(state, object);
   const specs = targetSpecsFor(state, script, object);
 
   /*
@@ -1420,7 +1442,7 @@ function completeResolution(
   state: GameState, object: StackObject, answers: readonly DecisionAnswer[],
 ): { state: GameState; message: string } {
   let next = popStack({ ...state, pendingDecision: null }, object.id);
-  const script = scriptFor(next.cardDefs[object.cardKey]?.name);
+  const script = scriptOnStack(next, object);
 
   const ctx: EffectContext = {
     state: next,

@@ -15,7 +15,7 @@
  * ordering) is not scriptable yet, and `scripts/` says so rather than producing a plausible wrong
  * number.
  */
-import { isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
+import { isFaceDownObject, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 
@@ -421,8 +421,9 @@ function withAddedTypes(
 /**
  * What a face-down permanent is, instead of what its card says (CR 707.2).
  *
- * A 2/2 creature with no name, no mana cost, no creature types and no abilities. Substituted for
- * the card at the top of `characteristicsOf` rather than special-cased through it, so every layer
+ * A 2/2 creature with no name, no mana cost, no creature types and no abilities, whether it is on
+ * the battlefield or still a spell on the stack (CR 707.4). Substituted for the card at the top of
+ * `characteristicsOf` rather than special-cased through it, so every layer
  * below applies to *this* instead: a Giant Growth on a face-down creature still makes it a 5/5, a
  * +1/+1 counter still makes it a 3/3, and an anthem still lifts it, which is the rule.
  *
@@ -492,11 +493,12 @@ function silenced(state: GameState, source: string | undefined): boolean {
  */
 export function characteristicsOf(state: GameState, instance: CardInstance): Characteristics {
   /*
-    Face down only matters on the battlefield. A card face down in exile is a card nobody can read,
-    which is what `viewFor` is for; it has no characteristics to get wrong because nothing fights
-    it, and treating it as a 2/2 creature there would make exile a battlefield.
+    Face down matters on the battlefield and on the stack, and nowhere else. A card face down in
+    exile is a card nobody can read, which is what `viewFor` is for; it has no characteristics to
+    get wrong because nothing fights it, and treating it as a 2/2 creature there would make exile
+    a battlefield.
   */
-  const def = isFaceDownPermanent(instance) ? FACE_DOWN : state.cardDefs[instance.defKey];
+  const def = isFaceDownObject(instance) ? FACE_DOWN : state.cardDefs[instance.defKey];
   const printed = parseTypeLine(def?.typeLine);
   /*
     Layer 4 first, in a pass of its own (CR 613.1c).

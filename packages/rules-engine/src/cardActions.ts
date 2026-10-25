@@ -215,7 +215,18 @@ export function relocate(
       ? {}
       : entersWithLoyalty ? { ...inst.counters, loyalty: printedLoyalty } : inst.counters,
     attachedTo: toZone === 'battlefield' ? inst.attachedTo : null,
-    faceDown: toZone === 'battlefield' || toZone === 'exile' ? inst.faceDown : false,
+    /*
+      Three zones keep an orientation, and the stack is the one that is not obvious.
+
+      A morph is cast face down and stays face down through the stack and onto the battlefield, so
+      the stack has to carry the bit; without it the spell turned itself face up on the way to the
+      stack and the opponent read the card. Everywhere else it clears, which is also the rule: a
+      face-down spell that is countered goes to the graveyard face up, and so does a face-down
+      creature that dies.
+    */
+    faceDown: toZone === 'battlefield' || toZone === 'exile' || toZone === 'stack'
+      ? inst.faceDown
+      : false,
     revealed: false,
     /*
       A copy stops being a copy when the permanent leaves the battlefield.

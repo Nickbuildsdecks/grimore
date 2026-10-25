@@ -148,6 +148,21 @@ export interface CardInstance {
 export const isFaceDownPermanent = (inst: CardInstance): boolean =>
   inst.faceDown && inst.zone === 'battlefield';
 
+/**
+ * A face-down *object*: a permanent, or a spell waiting on the stack (CR 707.2, 707.4).
+ *
+ * The wider of the two predicates, and the one `characteristicsOf` uses, because what a face-down
+ * thing *is* has the same answer in both places — a 2/2 creature with no name. The narrower
+ * `isFaceDownPermanent` is about abilities not applying, and every one of those questions is
+ * asked about the battlefield.
+ *
+ * The stack is here for morph: a face-down creature spell is anonymous on the way down as well as
+ * once it lands, so an opponent holding Essence Scatter can see a creature spell to counter and
+ * cannot see which one.
+ */
+export const isFaceDownObject = (inst: CardInstance): boolean =>
+  inst.faceDown && (inst.zone === 'battlefield' || inst.zone === 'stack');
+
 /** Key into `GameState.zones`. The stack is shared, so it is not seat-scoped. */
 export function zoneKey(seat: SeatIndex, zone: ZoneId): string {
   return zone === 'stack' ? 'stack' : `${seat}:${zone}`;

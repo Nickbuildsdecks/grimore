@@ -80,6 +80,7 @@ const HOW_TO_ARENA: [string, string][] = [
   ["A planeswalker", "Tap it and take one of its loyalty abilities: one a turn each, your main phase only, and a minus you cannot pay for is not offered."],
   ["Questions mid-spell", "Some cards stop and ask — a search, a discard, a scry. The cards you may choose light up, and nothing else happens until you answer."],
   ["Being asked less", "The skipping toggle passes for you whenever passing is your only legal move, which is most of a game. Turn it off to be offered every priority."],
+  ["A card you play face down", "A card with morph offers two plays: cast it for its printed cost, or \"face down\" for {3}. Face down it is a 2/2 with no name and no abilities, and nobody else can see what it is. Tap it later → Turn face up, pay its morph cost, and it is itself again — keeping its damage, its counters and whether it is tapped. Nobody gets a chance to respond to that, which is the point: it can be done in the middle of a combat."],
   ["Something it does not know", "Tap the card → Move by hand. The tabletop's full move list is underneath, and the log says the card was not automated."],
   ["Leaving", "Concede takes two taps. The rest of the table plays on without you."],
 ]

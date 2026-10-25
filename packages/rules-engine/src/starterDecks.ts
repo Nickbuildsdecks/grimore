@@ -331,6 +331,56 @@ const SIEGE_WURM: CardDef = {
   colors: ['G'],
 };
 
+/*
+  Morph: three cards, one per half of what the mechanic is for (CR 702.37).
+
+  All three are cast the same way — {3}, face down, a 2/2 with no name — and what separates them is
+  what turning them up is *worth*, which is the only decision morph asks a player to make.
+
+  Zoetic Cavern is the one that proves the rule rather than using it: a **land** that can be cast as
+  a creature spell, which is legal because morph does not care what the card is (CR 702.37a) and
+  because a face-down permanent is a 2/2 with no types of its own. A land when the hand is short of
+  them and a body when it is not, out of the deck whose documented problem is having nothing to do
+  with its twenty-second land.
+
+  Dirgur Nemesis is the one you turn up to *survive*: a 2/2 holding two damage from combat becomes a
+  2/6 and lives, because turning face up is not a new object and the damage stays where it was.
+
+  Battering Craghorn is the one you turn up *during* combat. First strike on a 3/1, for {4}{R},
+  after blockers are declared and with nothing an opponent can do about it — which is what makes
+  morph a special action rather than an ability.
+*/
+const ZOETIC_CAVERN: CardDef = {
+  name: 'Zoetic Cavern',
+  typeLine: 'Land',
+  manaCost: '',
+  cmc: 0,
+  oracleText: '{T}: Add {C}.\nMorph {2}',
+  colors: [],
+};
+
+const DIRGUR_NEMESIS: CardDef = {
+  name: 'Dirgur Nemesis',
+  typeLine: 'Creature — Serpent',
+  manaCost: '{4}{U}',
+  cmc: 5,
+  power: '2',
+  toughness: '6',
+  oracleText: 'Defender\nMorph {5}{U}',
+  colors: ['U'],
+};
+
+const BATTERING_CRAGHORN: CardDef = {
+  name: 'Battering Craghorn',
+  typeLine: 'Creature — Goat Beast',
+  manaCost: '{2}{R}{R}',
+  cmc: 4,
+  power: '3',
+  toughness: '1',
+  oracleText: 'First strike\nMorph {4}{R}',
+  colors: ['R'],
+};
+
 const CONCLAVE_TRIBUNAL: CardDef = {
   name: 'Conclave Tribunal',
   typeLine: 'Enchantment',
@@ -2046,10 +2096,20 @@ export const TIDAL_MIND: DeckSpec = {
   description: 'Blue-black control. Counter what matters, kill what lands, and win in the air.',
   commander: TALRAND,
   cards: [
-    { card: ISLAND, count: 8 },
-    { card: SWAMP, count: 8 },
+    { card: ISLAND, count: 7 },
+    { card: SWAMP, count: 7 },
     { card: DIMIR_GUILDGATE, count: 2 },
     { card: LONELY_SANDBAR, count: 2 },
+    /*
+      Two lands that are also creatures, for an Island and a Swamp.
+
+      Twenty-one lands either way, so the mana is one source of each colour thinner and nothing
+      else has moved. What it buys is the thing this deck's own notes keep coming back to: it
+      survives and then has nothing to win with, and it floods doing it. A Zoetic Cavern is a land
+      on the turn the hand is short of one and a {3} 2/2 on the turn it is not — the cheapest clock
+      this deck has ever had, and the only card in the pool that is whichever of the two you need.
+    */
+    { card: ZOETIC_CAVERN, count: 2 },
     // A land that answers an attacker every turn and never taps for mana, which is a trade a
     // control deck is happy to make and nothing else in this pool is. It cost an Island, so the
     // deck is on twenty sources rather than twenty-one.
@@ -2135,7 +2195,20 @@ export const TIDAL_MIND: DeckSpec = {
     { card: DIVINATION, count: 1 },
     { card: MIND_SPRING, count: 1 },
     { card: EXSANGUINATE, count: 1 },
-    { card: SIGN_IN_BLOOD, count: 1 },
+    /*
+      Dirgur Nemesis for the Sign in Blood: a 2/2 on turn three that becomes a 2/6 when it has to.
+
+      The card this deck wanted and the pool did not have. Its documented loss is to the fastest
+      red deck, 0-15 at the time, for want of anything that can stand in front of a creature twice
+      — and morph is how a five-mana wall gets onto the board on turn three. Turning it up is also
+      the one trick in the deck that cannot be answered: a 2/2 holding two damage goes to 2/6 and
+      lives, because turning face up is not a new object and the damage stays where it was.
+
+      Sign in Blood rather than a counterspell or a removal spell, because two cards for two life
+      is the most replaceable thing in a deck already holding a Phyrexian Arena, a Divination, a
+      Mind Spring and a Read the Bones' worth of drawing. The script keeps its other home.
+    */
+    { card: DIRGUR_NEMESIS, count: 1 },
     { card: MIND_ROT, count: 1 },
     { card: DIABOLIC_TUTOR, count: 1 },
     { card: SOUL_MANIPULATION, count: 1 },
@@ -2319,7 +2392,22 @@ export const ASHEN_RITE: DeckSpec = {
     { card: BLOOD_ARTIST, count: 3 },
     { card: ZULAPORT_CUTTHROAT, count: 2 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },
-    { card: BLOODTHRONE_VAMPIRE, count: 2 },
+    { card: BLOODTHRONE_VAMPIRE, count: 1 },
+    /*
+      Battering Craghorn for the second Bloodthrone Vampire, and the half of morph the other two
+      cards do not show: turning one up **during** combat.
+
+      3/1 first strike, face down as a 2/2 for {3}, and {4}{R} after blockers are declared. There
+      is no window for an answer because turning face up is a special action and uses no stack
+      (CR 702.37b) — which is the only unanswerable trick in the pool, and the reason a player
+      holds a morph instead of casting the creature.
+
+      In this deck rather than one of the two fast red ones, which are already the top of the
+      table: a cheap body that trades up in combat is what an aristocrats deck wants, and what it
+      cannot trade it feeds to a Blood Artist. The second Bloodthrone Vampire was the most
+      redundant card in it — a third sacrifice outlet behind two others with better text.
+    */
+    { card: BATTERING_CRAGHORN, count: 1 },
     { card: FLESHBAG_MARAUDER, count: 1 },
     { card: VAMPIRE_NIGHTHAWK, count: 1 },
     { card: FLAMETONGUE_KAVU, count: 2 },

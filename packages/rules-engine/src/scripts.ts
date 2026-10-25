@@ -2022,6 +2022,34 @@ const SIEGE_WURM: CardScript = {
   convoke: true,
 };
 
+/*
+  The three morphs (CR 702.37). One field each, because both halves of the mechanic are already
+  built: the engine knows a face-down permanent is a 2/2 with no abilities, so a script's whole job
+  here is to say what turning it up costs.
+
+  Which is the point worth noticing about this entry. Nothing below mentions the {3} — that is in
+  the rule, not on the card — and nothing below says "and then it has first strike", because the
+  keywords are the card's own and apply the moment it is no longer face down. A mechanic that is
+  five lines of script across three cards is a mechanic the engine was already shaped for.
+*/
+const ZOETIC_CAVERN: CardScript = {
+  name: 'Zoetic Cavern',
+  abilities: [{ cost: { tap: true }, description: '{T}: Add {C}.', produces: ['C'] }],
+  morph: { cost: '{2}' },
+};
+
+const DIRGUR_NEMESIS: CardScript = {
+  name: 'Dirgur Nemesis',
+  keywords: ['defender'],
+  morph: { cost: '{5}{U}' },
+};
+
+const BATTERING_CRAGHORN: CardScript = {
+  name: 'Battering Craghorn',
+  keywords: ['first strike'],
+  morph: { cost: '{4}{R}' },
+};
+
 const CONCLAVE_TRIBUNAL: CardScript = {
   ...exileUntilItLeaves('Conclave Tribunal', {
     kind: 'permanent',
@@ -3056,6 +3084,7 @@ const ALL: readonly CardScript[] = [
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
+  ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

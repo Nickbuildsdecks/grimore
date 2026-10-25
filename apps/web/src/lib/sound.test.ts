@@ -128,6 +128,20 @@ describe("the stack", () => {
     )).toEqual(["spell_cast"])
   })
 
+  it("hears a face-down creature spell as a creature, with no type line to read", () => {
+    /*
+      A morph cast face down carries no card for anybody but its controller, so the type line is
+      not there to read — but it is publicly a 2/2 creature spell, and the opponent must hear the
+      same thing its controller does. Two different noises over one card is the one mistake a cue
+      cannot make.
+    */
+    const cards = { m: ({ faceDown: true, power: 2, toughness: 2 }) as unknown as VisibleCard }
+    expect(step(
+      { cards, automation: automation() },
+      { cards, automation: automation({ stack: [onStack("o1", "m")] }) },
+    )).toEqual(["creature_cast"])
+  })
+
   it("is silent for a triggered ability, however many of them land at once", () => {
     // A sacrifice deck puts two or three abilities on the stack for one creature dying, and a cue
     // for each of them is the fastest way to make a table unusable.

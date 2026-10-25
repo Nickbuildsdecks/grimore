@@ -342,10 +342,21 @@ export function unpackView(packed: PackedView): GameView {
       ...(card.damage === undefined ? {} : { damage: card.damage }),
       ...(card.power === undefined ? {} : { power: card.power }),
       ...(card.toughness === undefined ? {} : { toughness: card.toughness }),
-      // Restored as an empty list for a battlefield card, because `redact` sends one for every
-      // permanent and a consumer reading `keywords.length` must not meet an undefined.
+      /*
+        Restored as an empty list wherever the card carries characteristics at all, because `redact`
+        sends one with them and a consumer reading `keywords.length` must not meet an undefined.
+
+        The condition is the same one `redact` uses to decide whether to compute them at all, which
+        is the only version of this that cannot drift: it used to read "a battlefield card whose
+        definition travelled", and morph broke it twice over — a face-down permanent has
+        characteristics and **no** definition, and a face-down spell has them while it is still on
+        the stack. `power` looked like a tidier signal and is not: a land has keywords and no power.
+        The round-trip assertion in `playout.test.ts` caught both versions on the first game, which
+        is what it is there for — packing has to be invisible, and each time it was dropping a field.
+      */
       ...(card.keywords !== undefined ? { keywords: card.keywords }
-        : card.zone === 'battlefield' && card.def !== undefined ? { keywords: [] } : {}),
+        : card.zone === 'battlefield' || (card.zone === 'stack' && card.faceDown === true)
+          ? { keywords: [] } : {}),
       ...(card.cantAttack === true ? { cantAttack: true } : {}),
       ...(card.cantBlock === true ? { cantBlock: true } : {}),
       ...(card.damagePrevented === true ? { damagePrevented: true } : {}),
@@ -380,11 +391,13 @@ function canIdentify(state: GameState, inst: CardInstance, viewer: SeatIndex | n
     }
     case 'battlefield':
     case 'exile':
-      // Face down hides a card from everyone except the seat it sits with.
+    case 'stack':
+      // Face down hides a card from everyone except the seat it sits with. The stack is here for
+      // morph: a face-down creature spell is anonymous while it waits to resolve, so the opponent
+      // deciding whether to counter it can see a creature spell and not which one (CR 707.4).
       return !inst.faceDown || isOwnSide;
     case 'graveyard':
     case 'command':
-    case 'stack':
       return true;
     default:
       return false;
@@ -409,8 +422,9 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
   const card = state.cardDefs[inst.defKey];
   const known = canIdentify(state, inst, viewer) && card !== undefined;
   const identified: VisibleCard = known ? { ...base, card } : base;
-  // Only a permanent on the battlefield has current characteristics at all.
-  if (inst.zone !== 'battlefield') return identified;
+  // A permanent on the battlefield has current characteristics, and so does a face-down spell on
+  // the stack: a 2/2 is what the opponent is looking at in both places.
+  if (inst.zone !== 'battlefield' && !(inst.zone === 'stack' && inst.faceDown)) return identified;
   /*
     Characteristics even for a card this viewer cannot identify, which is the point rather than an
     oversight: a face-down creature is publicly a 2/2 (CR 707.2), and a table that sent its

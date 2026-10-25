@@ -810,6 +810,19 @@ function candidateActions(
     if (play.xMax === 0) continue;
     // Lands are taken by the rule above, before the search sees them.
     if (play.kind === 'land') continue;
+    /*
+      Turning a morph face up: one action, no targets, nothing to choose.
+
+      Offered to the search like any other play rather than ruled on here, which is the whole
+      reason it needed no teaching: `simulate` scores the board with the creature turned up, so the
+      bot pays two mana to make a 2/2 into a 5/5 when that wins the combat and holds the mana when
+      it does not. A special action is also the only play in this list that cannot be answered, and
+      the search gets that for free — there is no window for the opponent's reply to be searched.
+    */
+    if (play.kind === 'turnUp') {
+      out.push({ action: { type: 'auto:turnUp', by: seat, card: play.card } });
+      continue;
+    }
     for (const targets of aimings(state, seat, play)) {
       if (play.kind === 'cast') {
         /*
@@ -845,6 +858,11 @@ function candidateActions(
             // cost: without this the engine would be told to cast a card that is in a graveyard
             // as though it were in hand, and would refuse its own offer.
             ...(play.flashback === true ? { flashback: true } : {}),
+            // And morph, for the third time and the same reason: the face-down cast is a separate
+            // play on the same card, so a cast sent without this flag is the printed one — which
+            // the engine then refuses for want of mana, on turn three, which is exactly when the
+            // bot wanted the 2/2.
+            ...(play.faceDown === true ? { faceDown: true } : {}),
             ...(fodder === null ? {} : { sacrifice: fodder }),
             // X as large as the mana allows. The search sees what that buys, which is new: it
             // will not cast a Hurricane for eight into a board of its own fliers any more.
@@ -1938,6 +1956,21 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
   */
   const lands = actions.plays.filter((p) => p.kind === 'land');
   if (lands.length > 0) {
+    /*
+      Between two lands it plays the one that is ready now, and that is the only tie-break here.
+
+      A second one was tried and reverted: play a land with **morph** last, because Zoetic Cavern
+      is a land *or* a {3} 2/2 and spending it as a land while an Island is in hand throws the
+      choice away for nothing. The reasoning is sound and the measurement is not — over two seed
+      sets of 168 games it moved the number of face-down Cavern casts from 1 to 2 and from 3 to 4.
+      Three casts in 336 games is not a change this instrument can price, so the branch came out
+      and the number went into `claude/decisions-log.md` (D123) instead.
+
+      The cause is upstream of any tie-break: the land drop is taken *before* the search, because
+      leaving it in lost every game in the measurement (see above), so the bot never weighs the
+      Cavern's two halves against each other at all. Its face-down half is a person's option rather
+      than the computer's, and that is worth writing down rather than papering over.
+    */
     const ready = lands.find((p) => scriptFor(state.cardDefs[state.instances[p.card]!.defKey]?.name)?.entersTapped !== true);
     return { type: 'auto:playLand', by: seat, card: (ready ?? lands[0]!).card };
   }

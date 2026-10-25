@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 177 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 180 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2630,13 +2630,64 @@ permanent face down, so no number of bot games touches any of it. Six tests, 649
 the five browser suites on the rebuilt stack. Morph is unblocked, but the fix stands on its own —
 the table offered the move already and did the wrong thing with it.
 
+### Morph, and the pack that was dropping a field
+
+Three cards, one script field each, and no new rules — which is the argument for having done the
+face-down work first. A card with morph may be cast face down as a 2/2 creature spell for {3} and
+turned up later for the cost printed on it; what a face-down thing *is* was already answered.
+
+Two actions, because they are two different things. The face-down cast is a `cast` with a flag; the
+turn-up is a **special action** — no stack, no priority window, nothing an opponent may do about it
+(CR 702.37b). That is the reason a player holds a morph instead of casting the creature, and a table
+that drew it as an ability would promise a window to respond that does not exist.
+
+The face-down cast is its own function, called before anything else in `castSpell`, because a
+face-down spell has no text: no modes, no {X}, no kicker, no convoke, nothing to target. Each is
+refused rather than dropped. And the play is offered *above* the affordability check, which is the
+whole point — a morph you cannot afford is still castable face down, and that is what the mechanic
+is for.
+
+Zoetic Cavern is in the pool to prove the rule rather than to use it: a **land** cast as a 2/2
+creature spell, legal because morph does not read the card. A face-down Cavern taps for nothing,
+does not use the land drop, and turning it up gives back a land that is not a creature — three
+sentences that a patch would have needed a special case for each of.
+
+The bug this turned up was in the wire. `packView` leaves out an empty keyword list and
+`unpackView` put it back under a condition that read "a battlefield card whose definition
+travelled"; a face-down permanent has characteristics and no definition, and a face-down spell has
+them on the stack. The whole-game round-trip assertion caught it on the first game, twice — the
+second time because `power` looked like a tidier signal and is not, since a land has keywords and no
+power. It now reads the same condition `redact` uses, which is the only version that cannot drift.
+
+Measured: over 168 games on two seed sets the bot cast 20 of 23 Dirgur Nemesis face down (87%) and
+4 of 7 (57%), and 8 of 18 Battering Craghorn (44%) and 6 of 18 (33%) — used, and used more by the
+card whose printed cost is further out of reach. The follow-through is lower and is the honest
+number: 4 of 20 face-down Nemesis were turned up, 3 of 8 Craghorn. `simulate` stops when the stack
+empties, so "turn it up and win the combat" is past the horizon unless the combat is already
+happening.
+
+The slot changes are a wash, as convoke's were: Tidal Mind with the morphs against without is
+77-161 vs 75-163 on one seed set and 84-153 vs 73-165 on the other, Ashen Rite 114-124 vs 112-126
+and 115-123 vs 112-126. The games are in the split — +6 against Rot Harvest, +7 against Ashen Rite,
++5 against Forge Alliance, and nothing against the two fastest decks either time.
+
+One rule was written and reverted: play a morph land last, so a Zoetic Cavern is not spent as a land
+while an Island is in hand. Sound reasoning, three casts in 336 games, so it came out and the number
+went into the log. The cause is upstream — the land drop is taken before the search, so the bot
+never weighs the Cavern's two halves at all. That half of the card is a person's option rather than
+the computer's.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
    it, and the four ways a card can ask a player something — a mode, targets, a cost, a
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. Every
    keyword and every static scope now has a card behind it; `becomes-tapped` is the one trigger
-   left without one, and deliberately so (see the entry above).
+   left without one, and deliberately so (see the entry above). The one hook morph wants and does
+   not have is **"when this is turned face up"**, which the morphs with text on the back need —
+   Ainok Survivalist, Master of Pearls, Willbender. It has an obvious home (a new event raised from
+   `turnUp`) and no card in the pool wants it yet, so it is not there; megamorph and a morph cost
+   that is not mana are the same answer.
 2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
    `deck:load` already resolves any deck handed to it, but a real list needs card data — type
    lines, mana costs, oracle text — and the `cards` table has never been populated while this
