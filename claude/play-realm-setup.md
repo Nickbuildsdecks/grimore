@@ -154,14 +154,14 @@ so neither of you needs this page open while playing.
 The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
 anybody's turn, which is what makes instants and responses work at all.
 
-### Six starter decks
+### Eight starter decks
 
 **Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange), **Tidal Mind**
 (blue-black control, with counterspells) and **Rot Harvest** (green-black, built on getting
 creatures back out of the graveyard and on feeding them to sacrifice outlets), 60 cards each plus a
 commander, so a table can start with no setup at all. **Forge Alliance** (red-white) is the fifth:
 a board of small creatures and a sword for one of them, with Balan — who pulls every Equipment you
-control onto himself — as its commander. **Ashen Rite** (black-red) is the newest, and the first
+control onto himself — as its commander. **Ashen Rite** (black-red) is the first
 deck whose costs are decisions: cycling lands that are a land early and a card late, spells with a
 kicker you may pay for a bigger version of the same card, and removal whose cost is one of your own
 creatures. Judith leads it, and makes every creature you lose a Shock on the way out.
