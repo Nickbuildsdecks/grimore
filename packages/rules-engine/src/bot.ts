@@ -887,7 +887,10 @@ function answerPending(state: GameState): Action | null {
  * attacking costs something — was tried and *lost* games: a one-point bonus changed nothing, two
  * points cost 26 games in 400, and four points made the bot worse than the one it replaced. In
  * this pool, attacking is right, and a bot that keeps blockers home is a bot that never closes.
- * Holding back needs to be chosen by seeing the swing back, which is the second ply.
+ *
+ * Nobody answers inside it either. Letting the defender cast its Fog, its pump or its removal here
+ * was built and measured: it holds a creature back exactly where a player would, and it wins
+ * nothing — D110 has the numbers and the reason it was reverted anyway.
  */
 function throughCombat(state: GameState): GameState {
   let next = state;
@@ -1745,9 +1748,15 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     keep the position it likes best. Doing nothing is one of the options, which is what makes the
     bot capable of holding a card back rather than spending it on nothing.
 
-    It is one ply and no further. A second ply needs to model the opponent's reply, which needs an
-    opponent model, and the honest version of that is this same function recursing — worth doing
-    only once there is a reason to believe the evaluation below is any good.
+    It is one ply and no further, and that is now a measurement rather than a plan. The reply was
+    built — each other seat answering inside the simulated line, greedily, gated on having
+    something to answer and the mana to do it with — and it is level: 120-120 over 240 paired duels
+    on identical seeds, at a quarter more time per decision in a pod. It changed real decisions (it
+    declines to attack a Serra Angel into an untapped Doom Blade, which this bot does attack) and
+    won nothing by it. See `claude/decisions-log.md`, D110, which also records why it should not be
+    kept even if it had won: `botAction` takes the whole state, so a reply reads the opponent's hand
+    and the bot plays around a card it cannot see. The honest version reasons from `viewFor` plus a
+    model of what the deck could hold, which is a different piece of work from a deeper search.
   */
   /*
     The land drop is a rule, not a judgement.

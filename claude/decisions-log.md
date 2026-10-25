@@ -3975,7 +3975,8 @@ So both terms are gone, which keeps the bot's evaluation at six honest weights r
 decorative ones, and the lesson is written here instead: **the Salve's two halves are worth the same
 to this bot, and taking the life is a defensible play rather than a bug.** The next person to want
 the shield half chosen needs a deeper search, not a bigger number — and the measurement that proves
-it takes twenty minutes, which is cheaper than the weight.
+it takes twenty minutes, which is cheaper than the weight. (That deeper search has since been built
+and measured as well, and it is level: see D110.)
 
 ## D109 — A deal at the table, and the one thing it does not do
 
@@ -4048,3 +4049,68 @@ Deals cost the table attacks and time, which is what they are for: 672 declarati
 no deals on the same seeds, and 24 of 30 games finished inside the 500-move budget against 28. Of
 495 offers the bots accepted 457 and declined 25 — the declines being the seats that could have
 killed the offerer that turn.
+
+## D110 — The reply, built and measured: level, and clairvoyant
+
+Three entries in this log end at the same wall. The pump cast at the wrong time, the ritual spent on
+nothing, the shield never chosen — each one was solved by asking the board a question instead of
+weighting the position, and each write-up says the real fix is *the reply*: the search plays every
+line out against an opponent who does nothing, so a Doom Blade always resolves and an attack is
+never answered. D108 named it as the thing a weight cannot substitute for. So it was built.
+
+**What was built.** `simulate` and `throughCombat` drained a line by passing priority for everybody;
+they now hand priority to each other seat once per line and let it take its best answer. The answer
+is chosen greedily — every candidate played out, scored from *that* seat's side, with nobody
+answering the answer — because a nested search is the search inside the search that D62 and the
+damage-order code both refused. The baseline is silence, so an answer has to beat letting the spell
+resolve. Two gates kept the cost down: there has to be something to answer (a spell on the stack, or
+an attack whose damage has not happened), and the seat has to have an untapped permanent to pay with.
+
+**It worked, and it is taken.** Over 240 paired duels an answer was chosen 398 times — Negate 67,
+Titanic Growth 67, Counterspell 40, Turn to Frog 37, Dive Down 30, Blossoming Defense 31, Essence
+Scatter 25, Inspired Charge 27, Maze of Ith 12, Samite Healer 13, Divine Verdict 3 — which is a list
+of exactly the cards a player holds up. And it changes decisions: on a board with a Serra Angel
+against two untapped Swamps and a Doom Blade, the bot with the reply **attacks with nothing** and the
+bot without **attacks with the Angel**. That is the hold-a-creature-back behaviour three entries in
+this log have called for.
+
+**One gate bug worth recording**, because it is the shape of mistake that makes a feature look
+useless. `combat.attackersDeclared` is set by an *empty* declaration too, so the first version let
+the defender cast its removal in both futures — the Angel died whether it attacked or not, the two
+plans scored the same, and the reply changed nothing it had been built to change. Asking for
+`attacks.length > 0` is what made the Angel test flip.
+
+**And the record says it is worth nothing.** Paired duels on identical seeds, each matchup played
+twice with the sides swapped, the answering bot against the silent one:
+
+| | wins | answers taken | mean per decision |
+| --- | --- | --- | --- |
+| answers to spells only | 121-119 | 322 | 2.72ms vs 2.46ms |
+| spells and attacks, gate bug | 121-119 | 394 | 2.92ms vs 2.55ms |
+| spells and attacks, fixed | **120-120** | 398 | 2.66ms vs 2.35ms |
+
+Dead level, three ways, at a sample where the noise floor is 18 games. In a pod it costs more: 30
+pods on the same seeds finished 30/30 in both arms with nothing stalled or refused, at a mean of
+10.39ms per decision against 8.40ms, p95 40.2 against 30.9, and a worst case of 3.0s against 2.5s.
+
+So the reply is reverted, and this is its place instead. That is the third time depth has been
+measured at zero in this engine — D62's projected second attack, the hold-mana weight, and now the
+reply — and the pattern is consistent enough to state: **this evaluation is the limit, not the
+depth.** A position two plies away is scored by the same six weights that cannot see what a shield
+saves or what a card in hand buys, so looking further mostly finds more positions to misjudge.
+
+### The reason it should not be kept even if it had won
+
+`botAction` takes the whole `GameState`, so `reply` calls `legalActions` for the *opponent* and reads
+their hand. A bot that declines to attack because of the exact card you are holding is not a better
+opponent; it is a cheating one, and it would feel like cheating from the other side of the table —
+which is the half of this that a win rate cannot measure and the 120-120 makes moot anyway.
+
+Anyone coming back to this needs to know the shape of the honest version. The search must reason
+from `viewFor(state, seat)` — the same redacted view a person gets — plus a model of what the
+opponent's deck could be holding and whether their open mana pays for it. That is a different piece
+of work from a deeper search, and it is the piece that is actually missing. The one subset that is
+honest today is answers from the *battlefield*, since a permanent's activated ability is public: an
+attack walking into an untapped Maze of Ith or Icy Manipulator is a real blind spot. It accounted for
+about 19 of the 398 answers above, which is far below anything this instrument could price, so it
+was not kept either.

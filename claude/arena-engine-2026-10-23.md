@@ -2351,6 +2351,33 @@ What is still only the chat panel's: anything said beyond those three sentences,
 who was on whose side. Three preset deals is not a conversation; it is the part of one that can be
 pointed at three turns later.
 
+### The reply, built and measured
+
+Three entries above end at the same wall: the search plays every line out against an opponent who
+does nothing, so a removal spell always resolves and an attack is never answered. The pump, the
+ritual and the shield were each solved by asking the board a question instead, and each write-up
+says the real fix is the reply. So it was built — each other seat gets priority once per simulated
+line and takes its best answer, chosen greedily and scored from its own side, gated on there being
+something to answer and the mana to answer it with.
+
+It works. Over 240 paired duels an answer was taken 398 times, and the list reads like a player's
+hand: Negate 67, Titanic Growth 67, Counterspell 40, Turn to Frog 37, Maze of Ith 12. It changes
+decisions, including the one three entries have asked for — a Serra Angel against two untapped
+Swamps and a Doom Blade is **not attacked with** by the bot that can see the answer coming, and is
+attacked with by the bot that cannot.
+
+And it wins nothing. 120-120 over 240 paired duels on identical seeds with the sides swapped, after
+121-119 for two earlier versions, against an 18-game noise floor — at a quarter more time per
+decision in a pod (10.39ms against 8.40ms mean, worst case 3.0s against 2.5s). So it is reverted,
+and the finding is D110: this is the third time depth has been measured at zero here, and the
+evaluation is the limit rather than the depth.
+
+The write-up also records the reason it should not be kept even if it had won. `botAction` takes the
+whole game state, so the reply reads the opponent's *hand*: a bot that declines to attack because of
+the exact card you are holding is a cheating opponent rather than a better one. An honest version
+has to reason from the same redacted view a person gets, plus a model of what the deck could hold —
+which is a different piece of work from a deeper search, and the one that is actually missing.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -2373,7 +2400,11 @@ pointed at three turns later.
    board rather than a weight, because the weight cannot be made to work. All three need the *reply*,
    which is this same function recursing with the opponent choosing against it — and the cheap
    substitute for the first of them (scoring an untapped creature above a tapped one) was tried and
-   measurably lost games, which is written up in `claude/decisions-log.md`.
+   measurably lost games, which is written up in `claude/decisions-log.md`. The reply itself has now
+   been built and measured too — level over 240 paired duels, at a quarter more time per decision,
+   and clairvoyant into the bargain because the search reads the whole game state (D110). What is
+   missing is not depth: it is an evaluation worth searching with, and a search that reasons from
+   the redacted view a person gets rather than from everybody's hand.
 4. The pod interface beyond "it works". Three opponents side by side, combat drawn rather than
    described, a threat read on every seat and on every button that sends an attack, one press to
    send the whole swing at one player, and three preset deals that the table records and never
