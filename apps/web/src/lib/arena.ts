@@ -695,6 +695,21 @@ export function attackRead(
   }
 }
 
+/**
+ * Why a seat is out, in words a player uses.
+ *
+ * The engine's own reasons are field names — `commanderDamage`, `library` — and the table had been
+ * printing them raw, so a seat that decked out said "out (library)" and one that took
+ * twenty-one from a commander said "out (commanderDamage)". Three of the five are worth saying
+ * properly, and the two that already read as English are left alone.
+ */
+export function eliminatedLabel(reason: string | null): string {
+  if (reason === null) return "out"
+  if (reason === "commanderDamage") return "out (commander damage)"
+  if (reason === "library") return "out (empty library)"
+  return `out (${reason})`
+}
+
 /** Short badges for a permanent: its current body, marked damage, and why it cannot fight. */
 export function cardBadges(view: GameView, card: VisibleCard): string[] {
   const out: string[] = []

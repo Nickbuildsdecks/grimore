@@ -5,7 +5,15 @@ import type { AutoAction, AutomationState } from './turnTypes.js';
 /** Zero-based seat index at the table. */
 export type SeatIndex = number;
 
-export type EliminatedReason = 'life' | 'poison' | 'commanderDamage' | 'concede';
+/**
+ * Why a seat is out. `library` is a player who tried to draw from an empty library (CR 704.5b).
+ *
+ * That one was missing until a deck was built to cause it: the state-based action has enforced the
+ * loss since it was written, and recorded it as `life` — so a table that decked somebody out said
+ * they died at zero life while their life total sat at nineteen. Nobody noticed because nothing in
+ * the pool had ever tried to win that way.
+ */
+export type EliminatedReason = 'life' | 'poison' | 'commanderDamage' | 'concede' | 'library';
 
 export interface Seat {
   readonly index: SeatIndex;

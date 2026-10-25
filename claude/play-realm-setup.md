@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — a hundred and fifty-five, today, across seven starter decks. A
+cards somebody has scripted — a hundred and sixty-four, today, across eight starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -163,13 +163,18 @@ control onto himself — as its commander. **Ashen Rite** (black-red) is the new
 deck whose costs are decisions: cycling lands that are a land early and a card late, spells with a
 kicker you may pay for a bigger version of the same card, and removal whose cost is one of your own
 creatures. Judith leads it, and makes every creature you lose a Shock on the way out.
-**Skyward Writ** (white-blue) is the newest and the first deck whose plan is not to have the best
+**Skyward Writ** (white-blue) is the first deck whose plan is not to have the best
 board: Walls that hold the ground and attack nowhere, three different counterspells because what
 needs countering changes, and fliers to win over the top. Hanna leads it and buys an artifact or
-enchantment back out of your graveyard once a turn.
+enchantment back out of your graveyard once a turn. **Hollow Tide** (blue-black) is the newest, and
+the first deck in the pool that **does not care about your life total**: it wins by emptying your
+library, which the engine has always enforced as a loss (CR 704.5b) and which nothing had ever tried
+to do on purpose. Blockers that never attack, four counterspells and four removal spells to survive
+the early turns, and then ten cards a swing from a Nemesis of Reason, ten a turn from Jace, or
+eleven a connection from Mirko Vosk, who leads it.
 
 Each two-colour deck runs a pair or three of Guildgates: one mana of either colour, and they come in
-tapped, and five of the seven also run a pair of cycling lands. Any pairing works, including a deck
+tapped, and six of the eight also run a pair of cycling lands. Any pairing works, including a deck
 against itself. They are also the only decks right now — see *What is not done* below.
 
 A note on what to expect from each: played against each other by the engine's own opponent, the
@@ -178,7 +183,7 @@ slower decks comfortably and losing to the fastest ones — and a good part of t
 rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
 A person plays it better.
 
-The decks share a pool of a hundred and fifty-five scripted cards, which now includes a wrath, a
+The decks share a pool of a hundred and sixty-four scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -310,7 +315,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (567 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (574 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (171 tests, the interaction reducer behind every prompt) and
 `apps/realtime`
@@ -319,11 +324,11 @@ playing the server).
 
 ## What is not done
 
-- **Only the seven starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
+- **Only the eight starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows a hundred and fifty-five cards.** Everything in the seven starter decks. It
+- **The engine knows a hundred and sixty-four cards.** Everything in the eight starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

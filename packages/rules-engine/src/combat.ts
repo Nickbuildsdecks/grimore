@@ -273,6 +273,38 @@ function defenderTarget(state: GameState, attack: CombatAttack): Target {
 const sameObject = (state: GameState, id: string, seq: number | undefined): boolean =>
   seq === undefined || (state.instances[id]?.objectSeq ?? 0) === seq;
 
+/**
+ * Combat damage aimed at a player, recorded when it actually lands.
+ *
+ * "Whenever ~ deals combat damage to a player" needs two things nothing else in the engine knows:
+ * which creature dealt it, and to whom. A life total going down says neither — so unlike a death,
+ * an arrival or a tap, this one is **recorded** here rather than found by comparing, and `settle`
+ * announces it the way it announces the other three.
+ *
+ * Recorded only if the life total moved, which is the whole of "deals damage": a swing stopped by
+ * a Fog, eaten by a prevention shield or turned aside by protection deals nothing, and a Thieving
+ * Magpie whose damage was prevented draws no card. The seat is read from the target rather than
+ * from the attack, so a trample over a blocker in front of a *planeswalker* records nothing —
+ * loyalty is not a player.
+ */
+function hit(
+  state: GameState,
+  target: Target,
+  amount: number,
+  opts: Parameters<typeof dealDamage>[3],
+  attacker: string,
+): GameState {
+  const next = dealDamage(state, target, amount, opts);
+  if (target.kind !== 'player') return next;
+  const before = state.seats[target.seat]?.life;
+  const after = next.seats[target.seat]?.life;
+  if (before === undefined || after === undefined || after >= before) return next;
+  return {
+    ...next,
+    dealtCombatDamage: [...next.dealtCombatDamage, { creature: attacker, defender: target.seat }],
+  };
+}
+
 export function dealCombatDamage(state: GameState, firstStrike: boolean): GameState {
   let next = state;
   /*
@@ -302,9 +334,9 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
 
       if (attack.blockers.length === 0) {
         // `combatFrom` is what makes commander damage accumulate; see `dealDamage`.
-        next = dealDamage(next, defenderTarget(next, attack), attacker.ch.power, {
+        next = hit(next, defenderTarget(next, attack), attacker.ch.power, {
           deathtouch, lifelink, controller, combatFrom: attack.attacker, source: attack.attacker,
-        });
+        }, attack.attacker);
       } else {
         let remaining = attacker.ch.power;
         for (const blockerId of livingBlockers) {
@@ -334,9 +366,9 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
           // Trample damage to a player is still combat damage from the attacker, so a trampling
           // commander counts towards twenty-one just as an unblocked one does. Trampling over a
           // blocker in front of a planeswalker hits the planeswalker, for the same reason.
-          next = dealDamage(next, defenderTarget(next, attack), remaining, {
+          next = hit(next, defenderTarget(next, attack), remaining, {
             deathtouch, lifelink, controller, combatFrom: attack.attacker, source: attack.attacker,
-          });
+          }, attack.attacker);
         }
       }
     }

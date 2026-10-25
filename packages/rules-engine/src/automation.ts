@@ -398,6 +398,9 @@ function triggerMatches(
     case 'becomes-tapped':
     case 'leaves':
       return true;
+    // Its own permanent only, which `raise` has already narrowed the watcher list to.
+    case 'combat-damage':
+      return isSubject;
     default:
       return false;
   }
@@ -471,7 +474,7 @@ function raise(
   // `triggerMatches` decides from each trigger's own `who` whether it wants it. The subject is
   // always included: it may be the watcher, and for a death it is in a graveyard by now rather
   // than on the battlefield.
-  const selfOnly = new Set(['becomes-tapped', 'leaves']);
+  const selfOnly = new Set(['becomes-tapped', 'leaves', 'combat-damage']);
   const everyBattlefield = apnapSeats(next).flatMap((seat) => {
     const mine = [...listAt(next, zoneKey(seat, 'battlefield'))].filter((id) => id !== subject);
     // The subject goes with its own controller rather than ahead of everybody: it may be the only
@@ -501,8 +504,18 @@ function raise(
       const trigger = script.triggers[i]!;
       if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor, id === subject)) continue;
       const specs = trigger.targets ?? [];
-      // Only an attack trigger has one, and only it needs one. See `StackObject.attacked`.
-      const attacked = event.kind === 'attacks' ? event.attacked : undefined;
+      /*
+        Which player this event was about, for the two events that are about one.
+
+        An attack trigger says who was attacked; a combat-damage trigger says who was hit. They are
+        the same question — "the player this ability's event happened to" — so they travel the same
+        way rather than growing a second field for the second card that needs it. See
+        `StackObject.attacked`.
+      */
+      const attacked = event.kind === 'attacks' ? event.attacked
+        : event.kind === 'combat-damage' && event.defender !== undefined
+          ? { defender: event.defender }
+          : undefined;
       if (specs.length === 0) {
         next = pushAbility(next, id, inst.zoneSeat, i, [], 'triggered', trigger.description, attacked);
         continue;
@@ -598,8 +611,10 @@ export function stateBasedActions(state: GameState): GameState {
 
     for (const seat of next.seats) {
       if (seat.eliminated) continue;
+      // Said as what it is: an empty library, not zero life (CR 704.5b). It used to say `life`,
+      // which put "out (life)" on a table beside a nineteen.
       if (next.drewFromEmpty.includes(seat.index)) {
-        next = replaceSeat(next, seat.index, { eliminated: true, eliminatedReason: 'life' });
+        next = replaceSeat(next, seat.index, { eliminated: true, eliminatedReason: 'library' });
         changed = true;
       }
     }
@@ -772,7 +787,8 @@ function settle(state: GameState, before: GameState): GameState {
   // something behind should see the death trigger go on the stack first.
   for (
     let pass = 0;
-    pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0);
+    pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0
+      || next.dealtCombatDamage.length > 0);
     pass++
   ) {
     const replaced = replaceDeaths(next, next.died);
@@ -780,7 +796,19 @@ function settle(state: GameState, before: GameState): GameState {
     const dead = replaced.died;
     const gone = next.left;
     const arrived = next.entered;
-    next = { ...next, died: [], left: [], entered: [] };
+    const connected = next.dealtCombatDamage;
+    next = { ...next, died: [], left: [], entered: [], dealtCombatDamage: [] };
+    /*
+      Damage before deaths, because that is the order the two happened in: combat damage is dealt,
+      and only then do state-based actions notice what it killed. Both triggers go on the stack
+      together in the rules (CR 603.3b), and for one player's abilities the order within that is
+      their own choice — so the engine takes the one that matches the sequence a player watched.
+    */
+    for (const { creature, defender } of connected) {
+      next = raise(
+        next, { kind: 'combat-damage', defender }, next.instances[creature]?.zoneSeat, creature,
+      );
+    }
     for (const id of dead) next = raise(next, { kind: 'dies' }, next.instances[id]?.zoneSeat, id);
     // Leaving comes after dying, so a card that does both raises the narrower event first and its
     // death trigger goes on the stack under the leave trigger — which is the order the rules put

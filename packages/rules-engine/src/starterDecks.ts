@@ -685,6 +685,104 @@ const JACE_BELEREN: CardDef = {
   colors: ['U'],
 };
 
+/*
+  Hollow Tide's own cards: the library as the thing you attack.
+
+  Everything else in the pool measures a game in life totals. These measure it in cards, which the
+  engine has always been able to end a game over — a player who cannot draw has lost (CR 704.5b) —
+  and which nothing until now has ever tried to do on purpose.
+*/
+
+const MIRKO_VOSK: CardDef = {
+  name: 'Mirko Vosk, Mind Drinker',
+  typeLine: 'Legendary Creature \u2014 Vampire',
+  manaCost: '{2}{U}{B}',
+  cmc: 4,
+  power: '2',
+  toughness: '4',
+  oracleText: 'Flying\nWhenever Mirko Vosk, Mind Drinker deals combat damage to a player, that player mills until they reveal four land cards.',
+  colors: ['U', 'B'],
+};
+
+const THIEVING_MAGPIE: CardDef = {
+  name: 'Thieving Magpie',
+  typeLine: 'Creature \u2014 Bird',
+  manaCost: '{2}{U}{U}',
+  cmc: 4,
+  power: '1',
+  toughness: '3',
+  oracleText: 'Flying\nWhenever Thieving Magpie deals combat damage to a player, draw a card.',
+  colors: ['U'],
+};
+
+const MIND_SCULPT: CardDef = {
+  name: 'Mind Sculpt',
+  typeLine: 'Sorcery',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  oracleText: 'Target player mills seven cards.',
+  colors: ['U'],
+};
+
+const THOUGHT_SCOUR: CardDef = {
+  name: 'Thought Scour',
+  typeLine: 'Instant',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: 'Target player mills two cards. Draw a card.',
+  colors: ['U'],
+};
+
+const COMPELLING_ARGUMENT: CardDef = {
+  name: 'Compelling Argument',
+  typeLine: 'Sorcery',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  oracleText: 'Target player mills three cards.\nCycling {U} ({U}, Discard this card: Draw a card.)',
+  colors: ['U'],
+};
+
+const RETURNED_CENTAUR: CardDef = {
+  name: 'Returned Centaur',
+  typeLine: 'Creature \u2014 Zombie Centaur',
+  manaCost: '{3}{U}',
+  cmc: 4,
+  power: '2',
+  toughness: '4',
+  oracleText: 'When Returned Centaur enters the battlefield, target player mills four cards.',
+  colors: ['U'],
+};
+
+const NEMESIS_OF_REASON: CardDef = {
+  name: 'Nemesis of Reason',
+  typeLine: 'Creature \u2014 Leviathan Horror',
+  manaCost: '{4}{U}{B}',
+  cmc: 6,
+  power: '3',
+  toughness: '7',
+  oracleText: 'Whenever Nemesis of Reason attacks, defending player mills ten cards.',
+  colors: ['U', 'B'],
+};
+
+const PSYCHIC_STRIKE: CardDef = {
+  name: 'Psychic Strike',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}{B}',
+  cmc: 3,
+  oracleText: "Counter target spell. Its controller mills two cards.",
+  colors: ['U', 'B'],
+};
+
+const JACE_MEMORY_ADEPT: CardDef = {
+  name: 'Jace, Memory Adept',
+  typeLine: 'Legendary Planeswalker \u2014 Jace',
+  manaCost: '{3}{U}{U}',
+  cmc: 5,
+  loyalty: '4',
+  oracleText: '+1: Target player mills ten cards.\n0: Draw a card.',
+  colors: ['U'],
+};
+
 const MIND_SPRING: CardDef = {
   name: 'Mind Spring',
   typeLine: 'Sorcery',
@@ -2076,6 +2174,72 @@ export const SKYWARD_WRIT: DeckSpec = {
   ],
 };
 
+/**
+ * Hollow Tide: the deck that never looks at your life total.
+ *
+ * Seven decks measure a game in damage. This one measures it in cards, and the engine has always
+ * been able to end a game that way — a player who cannot draw has lost (CR 704.5b) — so what this
+ * deck really is is a win condition the rules already enforced and nobody had ever aimed at.
+ *
+ * It needs three things to work and all three are the deck list. **A clock**: a Nemesis of Reason
+ * is ten cards a swing whether it is blocked or not, Mirko Vosk is eleven or so a connection, and
+ * Jace is ten a turn for as long as he is left alone. **Something to do with the early turns**,
+ * which is where a mill deck dies — so every cheap creature here blocks rather than attacks (a 0/2
+ * Fog Bank, a 1/3 Wall, two 1/3 Magpies that happen to fly, a 2/4 Centaur) and the mill spells are
+ * one and two mana. And **answers**, because the one thing that beats this deck is a creature it
+ * cannot stop: four counterspells, four pieces of removal and a Man-o'-War.
+ *
+ * Mirko Vosk is the commander because the deck's problem is reach: its spells can mill about forty
+ * cards across a whole game, and sixty minus forty is still a deck. A flier that takes eleven on
+ * every connection and comes back from the command zone when it dies is the half the spells cannot
+ * do.
+ */
+export const HOLLOW_TIDE: DeckSpec = {
+  id: 'hollow-tide',
+  name: 'Hollow Tide',
+  description: 'Blue-black mill. Block the early turns, answer the one threat, and take the game from the top of their library.',
+  commander: MIRKO_VOSK,
+  cards: [
+    { card: ISLAND, count: 8 },
+    { card: SWAMP, count: 7 },
+    { card: DIMIR_GUILDGATE, count: 3 },
+    // Two cycling lands in each colour: a mill deck's flood is worse than most, because a land it
+    // does not need is a card it could have milled with.
+    { card: LONELY_SANDBAR, count: 2 },
+    { card: BARREN_MOOR, count: 2 },
+    // The clock. Ten cards a swing, blocked or not, is this deck's Serra Angel.
+    { card: NEMESIS_OF_REASON, count: 1 },
+    { card: JACE_MEMORY_ADEPT, count: 1 },
+    // The payload, all of it cheap enough to cast on a turn that also does something else.
+    { card: TOME_SCOUR, count: 2 },
+    { card: MIND_SCULPT, count: 3 },
+    { card: THOUGHT_SCOUR, count: 2 },
+    { card: COMPELLING_ARGUMENT, count: 2 },
+    { card: RETURNED_CENTAUR, count: 2 },
+    // The ground, which is the half of a mill deck that is not the mill. None of these want to
+    // attack and all of them are happy to block for ever.
+    { card: FOG_BANK, count: 2 },
+    { card: WALL_OF_AIR, count: 2 },
+    { card: OMENSPEAKER, count: 2 },
+    { card: THIEVING_MAGPIE, count: 2 },
+    { card: VAMPIRE_NIGHTHAWK, count: 2 },
+    // The answers. Four counters, four removal spells and two Man-o'-Wars, because the thing that
+    // beats this deck is one creature it cannot block.
+    { card: COUNTERSPELL, count: 2 },
+    { card: PSYCHIC_STRIKE, count: 2 },
+    { card: ESSENCE_SCATTER, count: 1 },
+    { card: NEGATE, count: 1 },
+    { card: DOOM_BLADE, count: 2 },
+    { card: MURDER, count: 1 },
+    { card: AGONIZING_DEMISE, count: 1 },
+    { card: MAN_O_WAR, count: 2 },
+    // And enough card flow to find the clock, since the deck wins with about four cards.
+    { card: PREORDAIN, count: 1 },
+    { card: DIVINATION, count: 1 },
+    { card: SIGN_IN_BLOOD, count: 1 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
@@ -2084,6 +2248,7 @@ export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [FORGE_ALLIANCE.id]: FORGE_ALLIANCE,
   [ASHEN_RITE.id]: ASHEN_RITE,
   [SKYWARD_WRIT.id]: SKYWARD_WRIT,
+  [HOLLOW_TIDE.id]: HOLLOW_TIDE,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

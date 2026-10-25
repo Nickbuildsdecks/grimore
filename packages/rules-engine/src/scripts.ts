@@ -1320,6 +1320,196 @@ const FLESHBAG_MARAUDER: CardScript = {
   ],
 };
 
+// ── The library as the thing you attack ──────────────────────────────────────────────────────────
+
+/*
+  Hollow Tide's cards, and the first win condition in this pool that is not damage.
+
+  The engine has been able to end a game this way since state-based actions were written — a player
+  who cannot draw has lost (CR 704.5b) — and nothing had ever tried to do it on purpose. `mill` has
+  existed for as long, for Jace Beleren's ultimate and a Tome Scour nobody built a deck around.
+
+  Two of these carry the trigger that came with them: **"whenever this deals combat damage to a
+  player"**, which is the most-printed trigger in Magic and which this pool simply did not have. It
+  is recorded in `dealCombatDamage` and announced by `settle`, like a death or an arrival, and it
+  fires only when the damage actually landed — so a Magpie stopped by a Fog draws nothing.
+*/
+
+/**
+ * Mirko Vosk: a 2/4 flier that eats a library four lands at a time.
+ *
+ * "Mills until they reveal four land cards" is a loop rather than a number, and the number it comes
+ * to is a fact about their deck: against a 22-land sixty it averages something like eleven cards a
+ * hit, and against a graveyard-light deck that has drawn its lands it can be twenty. The loop is
+ * written out rather than approximated with a count, because the printed card is the loop and the
+ * variance *is* the card.
+ *
+ * Guarded on the library emptying, which is the case the card exists to produce: when the fourth
+ * land never turns up the library simply ends, and losing for it is the draw step's business
+ * (CR 704.5b) rather than this trigger's.
+ */
+const MIRKO_VOSK: CardScript = {
+  name: 'Mirko Vosk, Mind Drinker',
+  keywords: ['flying'],
+  triggers: [
+    {
+      on: { kind: 'combat-damage' },
+      description: 'that player mills until they reveal four land cards',
+      effect: (c) => {
+        if (c.attacked === undefined) return c.state;
+        const seat = c.attacked.defender;
+        let state = c.state;
+        let lands = 0;
+        // A bounded loop over a library that only ever shrinks: sixty is the deck, and a guard
+        // that cannot be reached is still cheaper than a loop that cannot be proved to end.
+        for (let i = 0; i < 200 && lands < 4; i += 1) {
+          const top = listAt(state, zoneKey(seat, 'library'))[0];
+          if (top === undefined) break;
+          const isLand = hasType(parseTypeLine(state.cardDefs[state.instances[top]?.defKey ?? '']?.typeLine), 'land');
+          state = mill(state, seat, 1);
+          if (isLand) lands += 1;
+        }
+        return state;
+      },
+    },
+  ],
+};
+
+/** The same trigger on a one-card-a-hit flier, which is what the shape is usually printed on. */
+const THIEVING_MAGPIE: CardScript = {
+  name: 'Thieving Magpie',
+  keywords: ['flying'],
+  triggers: [
+    {
+      on: { kind: 'combat-damage' },
+      description: 'draw a card',
+      effect: (c) => draw(c.state, c.controller, 1),
+    },
+  ],
+};
+
+const MIND_SCULPT: CardScript = {
+  name: 'Mind Sculpt',
+  targets: [TARGET_PLAYER],
+  onResolve: (c) => {
+    const seat = firstPlayerTarget(c);
+    return seat === null ? c.state : mill(c.state, seat, 7);
+  },
+};
+
+/** Two off the top and one into your hand: the mill card that is never a dead draw. */
+const THOUGHT_SCOUR: CardScript = {
+  name: 'Thought Scour',
+  targets: [TARGET_PLAYER],
+  onResolve: (c) => {
+    const seat = firstPlayerTarget(c);
+    return draw(seat === null ? c.state : mill(c.state, seat, 2), c.controller, 1);
+  },
+};
+
+/**
+ * Three off the top, or a card when three is not what the game needs.
+ *
+ * Cycling on a mill spell is the deck's own answer to its worst problem: a hand of mill against a
+ * board that is killing you. The ability is the one already written for the cycling lands —
+ * `discardSelf`, which carries its own "from the hand" restriction.
+ */
+const COMPELLING_ARGUMENT: CardScript = {
+  name: 'Compelling Argument',
+  targets: [TARGET_PLAYER],
+  onResolve: (c) => {
+    const seat = firstPlayerTarget(c);
+    return seat === null ? c.state : mill(c.state, seat, 3);
+  },
+  abilities: [{
+    cost: { mana: '{U}', discardSelf: true },
+    description: '{U}, Discard this card: Draw a card.',
+    effect: (c) => draw(c.state, c.controller, 1),
+  }],
+};
+
+/** A 2/4 body that mills four on the way in: the blocker this deck needs, attached to its plan. */
+const RETURNED_CENTAUR: CardScript = {
+  name: 'Returned Centaur',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'target player mills four cards',
+      targets: [TARGET_PLAYER],
+      effect: (c) => {
+        const seat = firstPlayerTarget(c);
+        return seat === null ? c.state : mill(c.state, seat, 4);
+      },
+    },
+  ],
+};
+
+/**
+ * Nemesis of Reason: ten cards a swing, and a 3/7 that survives swinging.
+ *
+ * The attack trigger rather than the damage trigger, which is the printed card and a better one:
+ * it does not care whether the attack is blocked, so a chump blocker buys a life total and nothing
+ * else. `c.attacked.defender` is the player this attack was declared against, which in a pod is
+ * not "the opponent".
+ */
+const NEMESIS_OF_REASON: CardScript = {
+  name: 'Nemesis of Reason',
+  triggers: [
+    {
+      on: { kind: 'attacks' },
+      description: 'defending player mills ten cards',
+      effect: (c) => (c.attacked === undefined ? c.state : mill(c.state, c.attacked.defender, 10)),
+    },
+  ],
+};
+
+/**
+ * Psychic Strike: a Counterspell that also takes two cards off the top.
+ *
+ * The two cards come off the *spell's controller*, read from the stack object rather than from
+ * "the opponent" — which matters at a four-player table, where the spell being countered may
+ * belong to any of three players, and which is free because the stack already knows.
+ */
+const PSYCHIC_STRIKE: CardScript = {
+  name: 'Psychic Strike',
+  targets: [TARGET_SPELL],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    if (id === null) return c.state;
+    const owner = c.state.stackObjects[id]?.controller;
+    const countered = counterSpell(c.state, id);
+    return owner === undefined ? countered : mill(countered, owner, 2);
+  },
+};
+
+/**
+ * Jace, Memory Adept: ten cards a turn, for as long as it is left alone.
+ *
+ * The second planeswalker in the pool and the first whose *plus* ability is the win condition
+ * rather than value — which is what a mill deck wants from four mana: a threat an opponent has to
+ * attack rather than a spell they can answer. The zero keeps it useful when milling ten is not what
+ * the turn needs, and gives the search something to compare it against.
+ */
+const JACE_MEMORY_ADEPT: CardScript = {
+  name: 'Jace, Memory Adept',
+  abilities: [
+    {
+      cost: { loyalty: 1 },
+      description: '+1: Target player mills ten cards.',
+      targets: [TARGET_PLAYER],
+      effect: (c) => {
+        const seat = firstPlayerTarget(c);
+        return seat === null ? c.state : mill(c.state, seat, 10);
+      },
+    },
+    {
+      cost: { loyalty: 0 },
+      description: '0: Draw a card.',
+      effect: (c) => draw(c.state, c.controller, 1),
+    },
+  ],
+};
+
 // ── Helpers the scripts above share ──────────────────────────────────────────────────────────────
 
 /** "deals N damage to any target" — the target may be a creature or a player. */
@@ -2491,6 +2681,8 @@ const ALL: readonly CardScript[] = [
   WALL_OF_AIR, HANNA,
   LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,
   DARK_RITUAL, BORDERLAND_MARAUDER, PREY_UPON, DIVINE_VERDICT,
+  MIRKO_VOSK, THIEVING_MAGPIE, MIND_SCULPT, THOUGHT_SCOUR, COMPELLING_ARGUMENT,
+  RETURNED_CENTAUR, NEMESIS_OF_REASON, PSYCHIC_STRIKE, JACE_MEMORY_ADEPT,
   FOG, HOLY_DAY, SAMITE_HEALER, HEALING_SALVE, MAZE_OF_ITH, FOG_BANK, CITY_OF_BRASS,
   MANA_CONFLUENCE, DARK_CONFIDANT,
   guildgate('Azorius Guildgate', 'W', 'U'),

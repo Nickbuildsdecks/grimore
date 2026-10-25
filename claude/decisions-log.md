@@ -3740,3 +3740,55 @@ Doom Blade — and the figures are the same before and after this change, so it 
 fourth aiming. Some of them are defensible (a Swords on your own creature gains you its power in
 life, which the evaluation can see) and some are probably not. It is written down rather than
 guessed at: counting is cheap, and the next person to look should start from the number.
+
+## D104 — A win condition the rules already enforced
+
+The engine has ended games over an empty library since state-based actions were written: a player
+who cannot draw has lost (CR 704.5b), `mill` has existed for as long, and Jace Beleren's ultimate
+milled twenty. Nothing had ever tried to win that way, and building the deck that does found three
+things wrong — one in the rules, one in the engine's own vocabulary, and one in the bot.
+
+**The loss said the wrong thing.** A seat that decked out was eliminated with
+`eliminatedReason: 'life'`, so the table printed "out (life)" beside a life total of nineteen.
+`EliminatedReason` simply had no case for it, because nothing had ever produced one. It is
+`'library'` now, and the web table says "out (empty library)" rather than echoing a field name —
+which also fixed "out (commanderDamage)", which has been wrong on screen since commander damage
+went in.
+
+**The most-printed trigger in Magic was missing.** "Whenever this deals combat damage to a player"
+is on hundreds of cards and on none of ours, because the engine had no event for it. It is recorded
+rather than compared, which is the one departure from the house pattern and a forced one: a death,
+an arrival and a tap can all be found by looking at the board, and a life total going down does not
+say which creature took it there. So `dealCombatDamage` records `{ creature, defender }` and
+`settle` announces it beside the deaths and arrivals, and it records only when the life total
+actually moved — a Magpie whose damage is stopped by a Fog, a prevention shield or protection draws
+nothing, which is what "deals damage" means. The seat travels with the record because the ability
+needs it ("*that player* mills"), and it reaches the ability through the same `attacked` channel an
+attack trigger already uses rather than growing a second way to say the same thing.
+
+**And the bot could not see the win.** `evaluate` counted life, hand, board and loyalty. A library
+was worth nothing, so milling seven was a card spent for no change in the score and the search —
+correctly, by its own lights — declined to do it: over 56 duels the deck won 37 and **not one of
+them by milling**. It won by beating down with Magpies, which is not the deck.
+
+The fix is one weight: `LIBRARY_CARD = 0.3`, linear, counted for every seat the way life is. The
+number is chosen so the pool lands where it should — a Tome Scour (five cards) is worth about a card
+out of hand, a sixty-card library is eighteen points against a twenty-point life total, so "there
+are two clocks and they run at about the same speed". Linear rather than "only the last ten cards
+matter", which was the first shape and the wrong one: under it a mill spell cast at a forty-card
+library scores zero, and a deck that cannot start its plan never finishes it.
+
+With it, the same 56 duels: 38 wins, **24 of them by decking the opponent out**. And it costs the
+other seven decks nothing measurable — the paired reference win rate moved 149-91 → 153-87 and
+147-93 → 147-93, inside the noise floor, which is what a weight that is *true* looks like rather
+than one that is tuned.
+
+**What the deck is.** Nine new cards: Mirko Vosk as the commander (a 2/4 flier that mills until the
+fourth land turns up — a loop rather than a number, because the printed card is a loop and the
+variance is the card), Thieving Magpie, Mind Sculpt, Thought Scour, Compelling Argument (mill with
+cycling, so a hand of mill against a board that is killing you has an out), Returned Centaur,
+Nemesis of Reason (ten a swing, blocked or not), Psychic Strike (a Counterspell that mills the
+*spell's controller*, read off the stack rather than assumed to be the only opponent) and Jace,
+Memory Adept. Around them the deck is almost entirely cards the pool already had: blockers that
+never attack, four counterspells, four removal spells. The dead-card audit over every pairing says
+every card in it gets cast — no dead slots, no rare ones.

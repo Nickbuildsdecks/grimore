@@ -41,8 +41,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  IDLE, arenaReducer, boardRead, candidatesAt, cardBadges, choiceCandidatesAt, playsForCard,
-  reasonCannotPlay, splitBattlefield,
+  IDLE, arenaReducer, boardRead, candidatesAt, cardBadges, choiceCandidatesAt, eliminatedLabel,
+  playsForCard, reasonCannotPlay, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
 import { useTable, type TableAction, type UseTable } from "@/lib/table"
@@ -622,7 +622,9 @@ function SeatStrip({
         {isMe ? " (you)" : ""}
       </span>
       {isActive ? <span className="rounded bg-[var(--g-gold-400)] px-1 text-[9px] font-bold uppercase text-black">turn</span> : null}
-      {seat.eliminated ? <span className="text-[var(--g-mana-r)]">out ({seat.eliminatedReason})</span> : null}
+      {seat.eliminated ? (
+        <span className="text-[var(--g-mana-r)]">{eliminatedLabel(seat.eliminatedReason)}</span>
+      ) : null}
 
       <span className="flex items-center gap-1">
         {/*

@@ -255,6 +255,23 @@ export interface AutomationState {
    */
   readonly replacements: readonly string[];
   /**
+   * Creatures that have dealt combat damage to a *player* and whose damage nobody has announced
+   * yet, with the seat each one hit. Drained by `settle` alongside `died` and `entered`.
+   *
+   * The fourth member of the detect-rather-than-announce family, and it has to be recorded rather
+   * than compared: the other three can be found by looking at the board, and a life total going
+   * down does not say which creature took it there. `dealCombatDamage` is the one place combat
+   * damage is dealt, so it is the one place that knows — and it records a hit only when the damage
+   * actually landed, so a swing stopped by a Fog, a prevention shield or protection raises nothing,
+   * which is what "deals damage" means (CR 702.15a says the same for lifelink).
+   *
+   * The seat travels with it because the ability needs it: "that player mills" is about whoever was
+   * hit, which in a pod is not the only opponent. It is handed to the ability through the same
+   * `attacked` channel an attack trigger uses, so there is one way an ability learns which player
+   * its event was about rather than two.
+   */
+  readonly dealtCombatDamage: readonly { readonly creature: string; readonly defender: SeatIndex }[];
+  /**
    * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
    * Drained by `settle` alongside `died`.
    *

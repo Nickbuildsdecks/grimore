@@ -475,6 +475,25 @@ function settleOpeningHand(state: GameState, seat: SeatIndex): Action {
 */
 const LIFE_WEIGHT = 1.0;
 const CARD_IN_HAND = 1.5;
+/**
+ * A card still in a library, which is the second way a game of Magic ends.
+ *
+ * 0.3 rather than a round number, chosen so that the cards in the pool land where they should: a
+ * Tome Scour (five) is worth about a card out of a hand, a Mind Sculpt (seven) a little more, and
+ * a sixty-card library eighteen points against a twenty-life total of twenty — "there are two
+ * clocks and they run at about the same speed", which is the thing the evaluation has to believe
+ * for either of them to be played towards.
+ *
+ * Linear rather than "only the last ten matter", which was the first shape and the wrong one.
+ * Under it a mill spell cast at a forty-card library scores zero, so the bot would never cast one
+ * until the library was nearly gone — and a deck that cannot start its plan never finishes it.
+ * Linear means every mill is progress, which is how the deck is actually played.
+ *
+ * It values the bot's own library too, and that is correct rather than a side effect: drawing is
+ * still worth taking (a card in hand is worth five in the library), self-mill is a real cost, and
+ * a seat on three cards is in trouble the search can now see.
+ */
+const LIBRARY_CARD = 0.3;
 /*
   An answer in hand priced above a generic card: measured, and worth nothing.
 
@@ -544,6 +563,7 @@ const PERMANENT_ON_BOARD = 3;
 function seatValue(state: GameState, seat: SeatIndex): number {
   let total = (state.seats[seat]?.life ?? 0) * LIFE_WEIGHT;
   total += (state.zones[`${seat}:hand`] ?? []).length * CARD_IN_HAND;
+  total += (state.zones[`${seat}:library`] ?? []).length * LIBRARY_CARD;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined) continue;

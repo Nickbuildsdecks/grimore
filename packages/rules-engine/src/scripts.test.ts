@@ -12,8 +12,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STARTER_DECKS, canBlock, characteristicsOf, legalActions, pendingDeclaration, protectedFrom,
-  pump, pumpAll, pumpTeam, scriptFor, scriptedCardNames, staticEffect, viewFor,
+  STARTER_DECKS, canBlock, characteristicsOf, hasType, legalActions, parseTypeLine,
+  pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor, scriptedCardNames,
+  staticEffect, viewFor,
   type ContinuousEffect,
 } from './index.js';
 import {
@@ -4182,6 +4183,189 @@ describe('eleven more cards', () => {
     // Removed before damage, so nothing got through.
     t = advanceTo(t, 'postcombat-main', 120);
     expect(life(t, 0)).toBe(20);
+  });
+});
+
+describe('the library as the thing you attack', () => {
+  /*
+    The eighth deck wins by emptying a library, which the engine has enforced since state-based
+    actions were written (CR 704.5b) and nothing had ever tried to do.
+
+    Two of these cards also carry the trigger that came with them — "whenever this deals combat
+    damage to a player" — which is the most-printed trigger in Magic and which this pool did not
+    have. It is recorded where the damage happens and announced where every other event is, so the
+    two tests that matter are that it fires when the damage lands and **does not** when it does not.
+  */
+  const graveyardSize = (state: GameState, seat: SeatIndex): number => ids(state, seat, 'graveyard').length;
+  const librarySize = (state: GameState, seat: SeatIndex): number => ids(state, seat, 'library').length;
+
+  /** Attacks with everything seat 0 has and plays the combat out. */
+  const swing = (state: GameState): GameState => {
+    let s = advanceTo(state, 'declare-attackers');
+    const attackers = [...ids(s, 0, 'battlefield')]
+      .filter((id) => characteristicsOf(s, s.instances[id]!).isCreature)
+      .map((id) => ({ attacker: id, defender: 1 as SeatIndex }));
+    s = apply(s, { type: 'auto:attack', by: 0, attackers });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    return advanceTo(s, 'postcombat-main', 120);
+  };
+
+  it('a Thieving Magpie that connects draws a card, and one that is blocked does not', () => {
+    const board = (theirs: readonly string[]): GameState => arena({
+      decks: { 0: 'hollow-tide', 1: 'tidal-mind' },
+      battlefield: { 0: ['Thieving Magpie'], 1: [...theirs] },
+      turn: 4, firstSeat: 0,
+    });
+    // Counted from the attack step on, because the turn's own draw is not the trigger's.
+    let s = advanceTo(board([]), 'declare-attackers');
+    const before = ids(s, 0, 'hand').length;
+    const magpie = find(s, 0, 'battlefield', 'Thieving Magpie');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: magpie, defender: 1 }] });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(life(s, 1)).toBe(19);
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+
+    // And blocked by something that can reach it: no damage to the player, so no card.
+    let t = advanceTo(board(['Wind Drake']), 'declare-attackers');
+    const held = ids(t, 0, 'hand').length;
+    const bird = find(t, 0, 'battlefield', 'Thieving Magpie');
+    t = apply(t, { type: 'auto:attack', by: 0, attackers: [{ attacker: bird, defender: 1 }] });
+    t = apply(t, { type: 'auto:pass', by: 0 });
+    t = advanceTo(t, 'declare-blockers');
+    t = drain(apply(t, {
+      type: 'auto:block', by: 1,
+      blocks: [{ blocker: find(t, 1, 'battlefield', 'Wind Drake'), attacker: bird }],
+    }));
+    t = advanceTo(t, 'postcombat-main', 120);
+    expect(life(t, 1)).toBe(20);
+    expect(ids(t, 0, 'hand').length).toBe(held);
+  });
+
+  it('and nothing is drawn when the damage is prevented', () => {
+    // A Fog Bank blocks the Magpie: its combat damage is prevented in both directions, so the
+    // player takes nothing and the trigger — which is about damage *dealt* — never fires.
+    let s = arena({
+      decks: { 0: 'hollow-tide', 1: 'tidal-mind' },
+      battlefield: { 0: ['Thieving Magpie'], 1: ['Fog Bank'] },
+      turn: 4, firstSeat: 0,
+    });
+    // Placed by hand, so its static has to have been installed by the arrivals pass; that is what
+    // makes this a test of prevention rather than of a 0/2 Wall.
+    s = advanceTo(s, 'declare-attackers');
+    const before = ids(s, 0, 'hand').length;
+    const magpie = find(s, 0, 'battlefield', 'Thieving Magpie');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: magpie, defender: 1 }] });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = advanceTo(s, 'declare-blockers');
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1,
+      blocks: [{ blocker: find(s, 1, 'battlefield', 'Fog Bank'), attacker: magpie }],
+    }));
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(life(s, 1)).toBe(20);
+    expect(ids(s, 0, 'hand').length).toBe(before);
+  });
+
+  it('Mirko Vosk mills until the fourth land turns up, and stops there', () => {
+    let s = arena({
+      decks: { 0: 'hollow-tide', 1: 'rot-harvest' },
+      format: 'edh',
+      turn: 4, firstSeat: 0,
+    });
+    // The commander starts in the command zone; put it on the battlefield by hand, which the
+    // arrivals pass treats as an arrival like any other.
+    const mirko = ids(s, 0, 'command')[0]!;
+    s = drain(apply(s, { type: 'card:move', by: 0, card: mirko, toZone: 'battlefield' }));
+    expect(nameOf(s, mirko)).toBe('Mirko Vosk, Mind Drinker');
+    s = advanceTo(s, 'declare-attackers');
+    const before = librarySize(s, 1);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: mirko, defender: 1 }] });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = drain(advanceTo(s, 'postcombat-main', 120));
+    const milled = before - librarySize(s, 1);
+    // It took something, it stopped, and the last card it took was the fourth land.
+    expect(milled).toBeGreaterThan(0);
+    expect(milled).toBeLessThan(before);
+    const yard = [...ids(s, 1, 'graveyard')];
+    const lands = yard.filter((id) =>
+      hasType(parseTypeLine(s.cardDefs[s.instances[id]!.defKey]?.typeLine), 'land'));
+    expect(lands.length).toBe(4);
+    expect(lands[lands.length - 1]).toBe(yard[yard.length - 1]);
+  });
+
+  it('Nemesis of Reason mills ten for attacking, blocked or not', () => {
+    let s = arena({
+      decks: { 0: 'hollow-tide', 1: 'rot-harvest' },
+      battlefield: { 0: ['Nemesis of Reason'], 1: ['Centaur Courser'] },
+      turn: 4, firstSeat: 0,
+    });
+    const before = librarySize(s, 1);
+    s = advanceTo(s, 'declare-attackers');
+    const nemesis = find(s, 0, 'battlefield', 'Nemesis of Reason');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: nemesis, defender: 1 }] }));
+    // The trigger is on the attack, so it has already happened before blockers are even declared.
+    expect(before - librarySize(s, 1)).toBe(10);
+  });
+
+  it('Psychic Strike counters the spell and takes two off its own controller', () => {
+    let s = arena({
+      decks: { 0: 'hollow-tide', 1: 'ember-rush' },
+      hands: { 0: ['Psychic Strike'], 1: ['Hill Giant'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Swamp'],
+        1: ['Mountain', 'Mountain', 'Mountain', 'Mountain'],
+      },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 1);
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Hill Giant') });
+    // The caster holds priority first; the answer comes after they let go of it.
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = tapAllLands(s, 0);
+    const before = librarySize(s, 1);
+    const spell = s.stackOrder[s.stackOrder.length - 1]!;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Psychic Strike'),
+      targets: [{ kind: 'card', id: spell }],
+    })));
+    expect(countOf(s, 1, 'graveyard', 'Hill Giant')).toBe(1);
+    expect(before - librarySize(s, 1)).toBe(2);
+  });
+
+  it("Jace's plus ability mills ten, and the deck loses the game when it runs out", () => {
+    let s = arena({
+      decks: { 0: 'hollow-tide', 1: 'ember-rush' },
+      battlefield: { 0: ['Jace, Memory Adept'] },
+      turn: 4, firstSeat: 0,
+    });
+    const jace = find(s, 0, 'battlefield', 'Jace, Memory Adept');
+    // It arrives with its printed loyalty, which the arrivals pass puts on it.
+    expect(s.instances[jace]!.counters['loyalty']).toBe(4);
+
+    // Thin seat 1's library down to five cards, so one activation empties it.
+    for (const id of [...ids(s, 1, 'library')].slice(5)) {
+      s = apply(s, { type: 'card:move', by: 1, card: id, toZone: 'graveyard', position: 'bottom' });
+    }
+    expect(librarySize(s, 1)).toBe(5);
+    s = advanceTo(s, 'precombat-main');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: jace, abilityIndex: 0,
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(librarySize(s, 1)).toBe(0);
+    expect(s.instances[jace]!.counters['loyalty']).toBe(5);
+    expect(s.finished).toBe(false);
+
+    // And the loss happens where the rules put it: on the draw they cannot make.
+    s = advanceTo(nextTurn(s), 'draw', 30);
+    expect(s.seats[1]!.eliminated).toBe(true);
+    // As an empty library rather than as zero life, which is what it used to say.
+    expect(s.seats[1]!.eliminatedReason).toBe('library');
+    expect(s.finished).toBe(true);
+    expect(s.winnerSeat).toBe(0);
+    expect(graveyardSize(s, 1)).toBeGreaterThan(0);
   });
 });
 

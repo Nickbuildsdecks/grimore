@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 155 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 164 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2158,6 +2158,45 @@ handful of times per 60 duels — four Swords to Plowshares, three Murders, a Do
 same figures before and after, so it is older than this change. A Swords on your own creature gains
 you its power in life and the evaluation can see that; the rest are probably mistakes. Written down
 with a number rather than guessed at.
+
+### An eighth deck, and a win condition the rules already enforced
+
+**Hollow Tide** is blue-black, and the first deck in the pool that never looks at your life total.
+It wins by emptying your library — which the engine has enforced as a loss since state-based actions
+were written (CR 704.5b), which `mill` has been able to cause for just as long, and which nothing
+had ever tried to do on purpose. Building the deck that does found three things wrong.
+
+**The loss said the wrong thing.** A seat that decked out was eliminated with reason `life`, so the
+table printed "out (life)" beside a life total of nineteen. `EliminatedReason` had no case for an
+empty library because nothing had ever produced one; it does now, and the table says "out (empty
+library)" instead of echoing a field name — which also fixed "out (commanderDamage)", wrong on
+screen since commander damage went in.
+
+**The most-printed trigger in Magic was missing.** "Whenever this deals combat damage to a player"
+is on hundreds of cards and on none of ours. It is recorded in `dealCombatDamage` and announced by
+`settle`, beside the deaths and the arrivals — recorded rather than compared, which is the one
+departure from the house pattern and a forced one: a life total going down does not say which
+creature took it there. It fires only when the damage actually landed, so a Magpie stopped by a Fog,
+a prevention shield or protection draws nothing, and the seat that was hit travels with it through
+the same channel an attack trigger already uses.
+
+**And the bot could not see the win.** `evaluate` counted life, hand, board and loyalty; a library
+was worth nothing, so milling seven cards was a card spent for no change in the score — and the
+search declined, correctly by its own lights. Over 56 duels the deck won 37 games and *not one of
+them by milling*: it won by beating down with Magpies, which is not the deck. One weight fixes it
+(a card in a library is worth 0.3, linear, counted like life, so a sixty-card library is worth about
+a twenty-point life total): the same 56 duels become 38 wins with **24 of them by decking the
+opponent out**, and the other seven decks lose nothing measurable — the paired reference win rate
+moved 149-91 → 153-87 and 147-93 → 147-93, inside the noise floor.
+
+Nine new cards, with the rest of the deck drawn from what the pool already had: Mirko Vosk as the
+commander (a 2/4 flier that mills until the fourth land turns up — a loop rather than a number,
+because the variance is the card), Thieving Magpie, Mind Sculpt, Thought Scour, Compelling Argument
+(mill with cycling, so a hand of mill against a board that is killing you has an out), Returned
+Centaur, Nemesis of Reason (ten cards a swing, blocked or not), Psychic Strike (a Counterspell that
+mills the *spell's* controller, read off the stack rather than assumed to be the only opponent) and
+Jace, Memory Adept. The dead-card audit over every pairing says every card in the deck gets cast,
+and a 200-pod soak with eight decks finished all 200 with nothing refused and nothing stalled.
 
 ## Next
 

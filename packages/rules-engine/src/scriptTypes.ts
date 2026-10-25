@@ -145,6 +145,23 @@ export type TriggerEvent =
    */
   | { readonly kind: 'leaves' }
   | { readonly kind: 'becomes-tapped' }
+  /**
+   * "Whenever ~ deals combat damage to a player."
+   *
+   * To a *player*, always: that is the half of the templating the cards in this pool use and the
+   * half the engine records. Damage to a creature or a planeswalker raises nothing, which is said
+   * out loud here because the shorter name would promise more than it does.
+   *
+   * Its own permanent only — like `becomes-tapped` and unlike a death, which the whole battlefield
+   * may watch. Nothing is printed that watches somebody *else's* creature connect, and a trigger
+   * nothing fires is worse than no trigger at all.
+   *
+   * The seat that was hit reaches the ability through `EffectContext.attacked`, the same channel an
+   * attack trigger uses: `c.attacked.defender` is "the player this event was about". In a duel that
+   * is the only opponent; in a pod it is the one who was actually attacked, which is the whole
+   * reason it travels rather than being worked out.
+   */
+  | { readonly kind: 'combat-damage'; readonly defender?: SeatIndex }
   | {
       readonly kind: 'spell-cast';
       readonly by?: 'you' | 'opponent' | 'any';
