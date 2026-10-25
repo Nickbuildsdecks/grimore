@@ -49,6 +49,13 @@ been wrong about what was measured.
 **Run two seed sets, not one.** `SEED0=3300` and `SEED0=8800` are the two used so far. A change
 that helps on one and not the other has not been measured; it has been sampled once.
 
+**And the floor is not the same height for every deck.** Eighteen games in two hundred and forty was
+established on decks in the middle of the table. Tidal Mind, at the bottom, returned +11 and -10 for
+one card and then +5 and -2 for a different cut of the same card — while its *unchanged* list came
+back two games apart on the same two sets (D131). A deck that wins 29% of its games wins most of
+those narrowly, so one slot moves more of them in both directions. Treat a result from the bottom
+of the table as needing more games than one from the middle, or treat it as unknown and say so.
+
 **A card with two ways to cast it needs more than a cast count.** `cast-counts.mjs` reads a morph
 at 107% and says nothing about whether the mechanic was ever used, because every one of those casts
 could have been the printed cost. `morph-use.mjs` is the split, and the number that matters in it is

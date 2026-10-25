@@ -2245,6 +2245,28 @@ export const VERDANT_GUARD: DeckSpec = {
   ],
 };
 
+// ── The two cards that change what a spell is pointed at ────────────────────────────────────────
+
+const WILLBENDER: CardDef = {
+  name: 'Willbender',
+  typeLine: 'Creature — Human Wizard',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Morph {1}{U}\nWhen Willbender is turned face up, change the target of target spell or ability with a single target.',
+  colors: ['U'],
+};
+
+const SWERVE: CardDef = {
+  name: 'Swerve',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}{R}',
+  cmc: 3,
+  oracleText: 'Change the target of target instant or sorcery spell with a single target.',
+  colors: ['U', 'R'],
+};
+
 export const TIDAL_MIND: DeckSpec = {
   id: 'tidal-mind',
   name: 'Tidal Mind',
@@ -2392,7 +2414,20 @@ export const TIDAL_MIND: DeckSpec = {
       both slots are in this deck so one measurement covers the mechanic.
     */
     { card: THINK_TWICE, count: 1 },
-    { card: DIVE_DOWN, count: 1 },
+    /*
+      Willbender for the Dive Down, which is one trick for another and not an even trade.
+
+      The Dive Down saves a creature; this saves a creature *and* is one. Face down for {3} it is a
+      2/2 blocker on a turn this deck has nothing else to do, and turned up for {1}{U} it sends the
+      removal that was aimed at that blocker somewhere else entirely — which is the half D114 said
+      this deck was short of, since a deck that answers everything and kills nobody loses the long
+      game. It is also the third morph here, after two Zoetic Caverns and a Dirgur Nemesis, so a
+      face-down 2/2 on this side of the table is already a question the opponent cannot answer.
+
+      Dive Down stays in Skyward Writ, so the protection trick and the bot rule that fires it are
+      both still exercised.
+    */
+    { card: WILLBENDER, count: 1 },
     { card: RAVENOUS_RATS, count: 1 },
     { card: CHILD_OF_NIGHT, count: 1 },
     { card: WIND_DRAKE, count: 1 },
@@ -3193,7 +3228,18 @@ export const ARC_TEMPEST: DeckSpec = {
     { card: COUNTERSPELL, count: 2 },
     { card: ESSENCE_SCATTER, count: 1 },
     { card: SAW_IT_COMING, count: 1 },
-    { card: NEGATE, count: 1 },
+    /*
+      Swerve for the Negate, and the difference is what the deck does with the half-turn.
+
+      A Negate stops a removal spell. A Swerve sends it at something of theirs — so against the two
+      decks that beat this one, a card that was going to kill a Guttersnipe kills one of their own
+      creatures instead, which is a two-card swing out of one {1}{U}{R}. It is also the only card in
+      these colours that answers a *burn spell aimed at the face*, by aiming it back.
+
+      Negate was this deck's least-cast answer at 62%, and Hollow Tide and Skyward Writ both keep
+      their copies.
+    */
+    { card: SWERVE, count: 1 },
   ],
 };
 

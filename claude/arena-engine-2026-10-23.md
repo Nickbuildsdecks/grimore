@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 201 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 203 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -3020,6 +3020,67 @@ Skyward Writ takes those games off them (18-6 became 16-8; 17-7 became 15-9). D1
 deck-table percentage being a statement about a field now has an example *inside a single run*
 rather than across two.
 
+
+### Changing what a spell is pointed at, and a deck the instrument cannot price
+
+The last thing on this file's own "Next" list that was neither blocked nor open-ended, and a
+different *kind* of work from everything above it. Every effect in the engine reads the board and
+changes the board. This one reaches into an object already on the stack and alters a choice its
+controller made.
+
+`retarget` lives in `targeting.ts` beside the legality rules rather than in `effects.ts` with the
+things that deal damage, because that is what it is about, and three rules travel with it:
+
+- The new target must be legal **for that spell**, judged with the spell's *own* controller as the
+  chooser (CR 114.6c). Not "may the Willbender's controller target that" — "may the Doom Blade".
+- It must be a *different* target, or "change the target" changed nothing.
+- If either fails, **nothing happens**: the spell keeps the target it had (CR 115.7b). It is not an
+  error and it is not a counter.
+
+**The second target is declared wider than the spell's own spec, on purpose.** Both cards ask for
+two targets — the spell, and where it is going — which nothing in the pool had done before, and the
+second is `any`. So a player *may* point a Doom Blade at a player, the engine accepts the choice,
+and `retarget` then declines to make the change. That is CR 115.7b rather than a leniency, and it
+has a test: the Doom Blade resolves against the creature it was always aimed at.
+
+**The offer and the effect agree**, which is the rule convoke, crew and morph are all built on:
+`soleTargetSpecOf` returns `null` for an ability, a spell with no targets or several, and a modal
+spell whose targets belong to the mode rather than the card — and a spell it returns `null` for is
+not *offered* as a target rather than being offered and quietly failing. The same filter also
+requires there be **somewhere else to send it**: at least one legal target for that spell other than
+the one it already has. A Flame Slash aimed at the only creature on the table is not a Swerve
+target, because changing it would change nothing.
+
+**Spells, and not abilities.** Willbender is printed "target spell **or ability** with a single
+target" and the engine does the spell half. The reason is the shape of a `Target`, which is a card
+or a player: a spell on the stack *is* a card, while a triggered or activated ability has a
+synthetic id and no card anywhere, so naming one needs a third kind of `Target` threaded through
+some thirty call sites for one clause. Said out loud rather than approximated — the same decision
+the magecraft cards' "or copy" half got — and **Move by hand** covers it meanwhile.
+
+**The bot needed no teaching and the number says why.** `morph-use.mjs`: Willbender is cast 27
+times in 432 games, 85% of them face down, and **turned up 17 of 23 (74%)** — second only to Zombie
+Cutthroat's 100%. That is a sharper number than it looks, because turning a Willbender up makes it
+*smaller*: a face-down 2/2 becomes a 1/1. The only reason to do it is the redirect, the trigger only
+exists when a redirect is available, and the one-ply search can see what the redirected spell does.
+
+**And the honest part. Tidal Mind is a deck this instrument cannot price.** Willbender for the Dive
+Down measured **+11 and −10** on the two seed sets — opposite signs, so by this file's own rule it
+has been sampled twice rather than measured. Re-asking the cut, as D127's rule says to, gave **+5
+and −2** for taking the Behold the Multiverse instead: also opposite signs. Three results, all
+inside the eighteen-game floor, none with a consistent direction. So the shipped arrangement stays
+and the number is written down as *unknown*.
+
+The interesting part is why. The same unchanged list came back 69-170 and 71-169 on the two sets —
+two games apart — while its one-card variants came back 58-182 and 81-159, which is a **23-game
+spread for a single slot**. The deck at the bottom of the table has the least reliable record in the
+pool, and that is not a coincidence: a deck that wins 29% of its games wins most of the ones it wins
+narrowly, so a single card moves more of them either way. **A noise floor established on the pool's
+average deck is too generous for the pool's worst one** — which is a limit on the instrument that
+this entry found and did not fix.
+
+Swerve, in a deck at 46%, behaved exactly as the others have: **+1 and −2** for the Negate, which is
+a wash, and it ships because it is the second reader of the primitive.
 
 ## Next
 

@@ -190,6 +190,48 @@ export function targetSeqsFor(
 }
 
 /**
+ * Changes what a stack object is pointed at (CR 114.6).
+ *
+ * The first thing in this engine that reaches into an object *already on the stack* and alters a
+ * choice its controller made. Everything else reads the board and changes the board; this changes
+ * what somebody else's spell is about, which is why it is here beside the legality rules rather
+ * than in `effects.ts` with the things that deal damage.
+ *
+ * Three rules travel with it and all three are the rule rather than a policy:
+ *
+ * - The new target must be legal **for that spell**, judged with the spell's *own* controller as
+ *   the chooser (CR 114.6c). A Doom Blade redirected onto a black creature does not change, and a
+ *   hexproof creature is hexproof against the spell's controller, not against whoever is doing the
+ *   redirecting.
+ * - It must be a *different* target. "Change the target" is not satisfied by choosing the one it
+ *   already has, and a card that let you would be a card that did nothing.
+ * - If either fails, **nothing happens** — the spell keeps the target it had (CR 115.7b). It is not
+ *   an error, and it is not a counter: a redirect that cannot land is a redirect that did not.
+ *
+ * Returns `null` for all three cases so the caller can say so in the log, rather than silently
+ * handing back a state that looks changed.
+ */
+export function retarget(
+  state: GameState, stackId: string, next: Target, spec: TargetSpec,
+): GameState | null {
+  const object = state.stackObjects[stackId];
+  if (object === undefined || object.targets.length !== 1) return null;
+  const current = object.targets[0];
+  if (current === undefined || targetKey(current) === targetKey(next)) return null;
+  // The spell's controller is the chooser, which is the half that is easy to get wrong: this is
+  // not "may the Willbender's controller target that", it is "may the Doom Blade".
+  if (!isLegalTarget(state, spec, next, object.controller, stackId)) return null;
+  const targets: readonly Target[] = [next];
+  return {
+    ...state,
+    stackObjects: {
+      ...state.stackObjects,
+      [stackId]: { ...object, targets, targetSeqs: targetSeqsFor(state, targets) },
+    },
+  };
+}
+
+/**
  * The chosen targets that are still the objects they were chosen as.
  *
  * A card that has changed zones since — exiled and returned by a Cloudshift, bounced and replayed

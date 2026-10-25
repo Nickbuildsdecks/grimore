@@ -32,7 +32,8 @@ import {
 } from './effects.js';
 import type { CardScript, DecisionSpec, TargetSpec, TriggerDef } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
-import type { Target } from './turnTypes.js';
+import { legalTargets, retarget } from './targeting.js';
+import { targetKey, type Target } from './turnTypes.js';
 
 // ── Target specs used by more than one card ──────────────────────────────────────────────────────
 
@@ -3462,6 +3463,119 @@ const IMPERIOUS_PERFECT: CardScript = {
   ],
 };
 
+// ── Changing what a spell is pointed at ─────────────────────────────────────────────────────────
+
+/*
+  The first effect here that reaches into an object already on the stack.
+
+  Everything else in this file reads the board and changes the board. These two read somebody
+  else's *spell* and change a choice its controller made, which needs three things the engine did
+  not have: a way to say "a spell with a single target" in a `TargetSpec`, a way to replace a stack
+  object's target, and the rule that decides when the change is allowed (CR 114.6). The second of
+  those lives in `targeting.ts` beside the legality rules rather than in `effects.ts` with the
+  things that deal damage, because that is what it is about.
+
+  **Spells, and not abilities.** Willbender is printed "target spell or ability with a single
+  target" and what is below redirects spells only. The reason is the shape of a `Target`, which is
+  either a card or a player: a spell on the stack *is* a card and so can be targeted today, while a
+  triggered or activated ability has a synthetic id and no card anywhere, so naming one would need a
+  third kind of `Target` threaded through thirty-odd call sites for one clause. Said out loud rather
+  than silently approximated, which is the same decision the two magecraft cards' "or copy" half
+  got: the day that third shape exists, this comment is the line that is wrong. **Move by hand**
+  covers it meanwhile.
+
+  Both cards also ask for *two* targets, which nothing in the pool had done before — the spell, and
+  where it is going. The second is declared `any`, which is wider than the spell's own spec, and
+  that is deliberate: CR 115.7b says a change that cannot be made legally simply is not made, so
+  `retarget` is the thing that judges it and a target it refuses leaves the spell exactly as it was.
+*/
+
+/**
+ * The single target spec a spell on the stack has, when it unambiguously has one.
+ *
+ * `null` for everything that cannot be redirected *soundly*: an ability rather than a spell, a
+ * spell with no targets or several, and a modal spell, whose targets belong to the mode it was cast
+ * with rather than to the card. A spell this returns `null` for is not offered as a target at all,
+ * rather than being offered and then quietly failing — which is the "one planner for the offer and
+ * the payment" rule this engine uses for convoke, crew and morph.
+ */
+function soleTargetSpecOf(state: GameState, id: string): TargetSpec | null {
+  const object = state.stackObjects[id];
+  if (object === undefined || object.kind !== 'spell' || object.targets.length !== 1) return null;
+  const inst = state.instances[id];
+  const script = scriptFor(state.cardDefs[inst?.defKey ?? '']?.name);
+  if (script === undefined || script.modal !== undefined) return null;
+  const specs = script.targets ?? [];
+  return specs.length === 1 ? specs[0] ?? null : null;
+}
+
+/**
+ * "Target spell with a single target", with the clause that makes it worth casting.
+ *
+ * A spell is only offered when there is **somewhere else to send it**: `legalTargets` is asked for
+ * the spell's own spec, with the spell's own controller as the chooser, and at least one answer has
+ * to be something other than the target it already has. Without that the card is castable into a
+ * board where the only legal target is the current one, which is a card thrown away — the same
+ * judgement the bot's "spent on nothing" rules make, made here instead because it is a fact about
+ * legality rather than a preference.
+ */
+const redirectableSpell = (
+  description: string,
+  also?: (state: GameState, id: string) => boolean,
+): TargetSpec => ({
+  kind: 'spell',
+  description,
+  filter: (state, candidate) => {
+    if (candidate.kind !== 'card') return false;
+    if (also !== undefined && !also(state, candidate.id)) return false;
+    const spec = soleTargetSpecOf(state, candidate.id);
+    if (spec === null) return false;
+    const object = state.stackObjects[candidate.id];
+    const current = object?.targets[0];
+    if (object === undefined || current === undefined) return false;
+    return legalTargets(state, spec, object.controller, candidate.id)
+      .some((t) => targetKey(t) !== targetKey(current));
+  },
+});
+
+/** The second choice both cards ask for: where the spell is going instead. */
+const NEW_TARGET: TargetSpec = { kind: 'any', description: 'the new target' };
+
+/** The shared body: `targets[0]` is the spell, `targets[1]` is where it goes. */
+const redirect = (c: EffectContext): GameState => {
+  const spell = c.targets[0];
+  const next = c.targets[1];
+  if (spell === undefined || spell.kind !== 'card' || next === undefined) return c.state;
+  const spec = soleTargetSpecOf(c.state, spell.id);
+  if (spec === null) return c.state;
+  return retarget(c.state, spell.id, next, spec) ?? c.state;
+};
+
+const isInstantOrSorcerySpell = (state: GameState, id: string): boolean => {
+  const line = parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
+  return hasType(line, 'instant') || hasType(line, 'sorcery');
+};
+
+const WILLBENDER: CardScript = {
+  name: 'Willbender',
+  morph: { cost: { mana: '{1}{U}' } },
+  triggers: [{
+    on: { kind: 'turned-face-up' },
+    description: 'change the target of target spell with a single target',
+    targets: [redirectableSpell('target spell with a single target'), NEW_TARGET],
+    effect: redirect,
+  }],
+};
+
+const SWERVE: CardScript = {
+  name: 'Swerve',
+  targets: [
+    redirectableSpell('target instant or sorcery spell with a single target', isInstantOrSorcerySpell),
+    NEW_TARGET,
+  ],
+  onResolve: redirect,
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -3630,6 +3744,7 @@ const ALL: readonly CardScript[] = [
   ADELIZ, STORMCHASER_MAGE, YOUNG_PYROMANCER, GUTTERSNIPE, GELECTRODE, ENIGMA_DRAKE,
   STROMKIRK_CAPTAIN, KNIGHT_EXEMPLAR, IMPERIOUS_PERFECT,
   ZOMBIE_CUTTHROAT, HIDDEN_DRAGONSLAYER,
+  WILLBENDER, SWERVE,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

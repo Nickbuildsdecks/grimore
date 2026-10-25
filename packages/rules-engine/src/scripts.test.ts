@@ -629,15 +629,19 @@ describe('blue-black control', () => {
   });
 
   it('Talrand makes a Drake for an instant, and not for a creature', () => {
-    // Dive Down rather than Tome Scour, which now lives in Hollow Tide: the trigger is about any
-    // instant or sorcery, so which one is immaterial as long as it is cheap enough to leave the
-    // creature spell below it castable.
-    let s = control(['Dive Down', 'Child of Night'], ['Island', 'Island', 'Swamp'], ['Talrand, Sky Summoner']);
-    const talrand = find(s, 1, 'battlefield', 'Talrand, Sky Summoner');
-    s = apply(s, {
-      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Dive Down'),
-      targets: [{ kind: 'card', id: talrand }],
-    });
+    /*
+      Think Twice, which is the third card to hold this slot: Tome Scour went to Hollow Tide and
+      Dive Down went to Skyward Writ when Willbender took its place here. The trigger is about any
+      instant or sorcery, so which one is immaterial — it only has to be cheap enough to leave the
+      creature spell below it castable, and to need no target, since Talrand is the only creature
+      on the table and bouncing it would be testing something else.
+    */
+    let s = control(
+      ['Think Twice', 'Child of Night'],
+      ['Island', 'Island', 'Island', 'Swamp'],
+      ['Talrand, Sky Summoner'],
+    );
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Think Twice') });
     expect(s.stackOrder.length).toBe(2); // the spell and the trigger
     s = passBoth(s);
     expect(countOf(s, 1, 'battlefield', 'Drake')).toBe(1);
@@ -5543,15 +5547,17 @@ describe('answering a permanent, and answering an answer', () => {
   });
 
   it('Dive Down is the same card in blue, and saves a flier from a burn spell', () => {
+    // Skyward Writ rather than Tidal Mind, which traded its copy for the Willbender: a 1/1 Hawk
+    // under +0/+3 is a 1/4, which is the same point a 2/2 Drake made and makes it more sharply.
     let s = arena({
-      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      decks: { 0: 'ember-rush', 1: 'skyward-writ' },
       hands: { 0: ['Lightning Bolt'], 1: ['Dive Down'] },
-      battlefield: { 0: ['Mountain'], 1: ['Island', 'Wind Drake'] },
+      battlefield: { 0: ['Mountain'], 1: ['Island', "Healer's Hawk"] },
       turn: 3, firstSeat: 0,
     });
     s = advanceTo(s, 'precombat-main');
     s = tapAllLands(s, 0);
-    const drake = find(s, 1, 'battlefield', 'Wind Drake');
+    const drake = find(s, 1, 'battlefield', "Healer's Hawk");
     s = apply(s, {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
       targets: [{ kind: 'card', id: drake }],
@@ -5562,10 +5568,11 @@ describe('answering a permanent, and answering an answer', () => {
       targets: [{ kind: 'card', id: drake }],
     });
     s = drain(passBoth(passBoth(s)));
-    expect(namesIn(s, 1, 'battlefield')).toContain('Wind Drake');
-    // +0/+3 rather than +2/+2: the toughness is what beats a burn spell that did resolve.
-    expect(power(s, drake)).toBe(2);
-    expect(toughness(s, drake)).toBe(5);
+    expect(namesIn(s, 1, 'battlefield')).toContain("Healer's Hawk");
+    // +0/+3 rather than +2/+2: the toughness is what beats a burn spell that did resolve. A 1/1
+    // Hawk comes out of it a 1/4, which three damage does not kill.
+    expect(power(s, drake)).toBe(1);
+    expect(toughness(s, drake)).toBe(4);
   });
 });
 
@@ -8013,5 +8020,190 @@ describe('megamorph, and a morph cost that is not mana (CR 702.37a, 702.37c)', (
     expect(power(s, card)).toBe(3);
     expect(s.instances[goblin]!.zone).toBe('battlefield');
     expect(s.pendingDecision).toBeNull();
+  });
+});
+
+describe('changing what a spell is pointed at (CR 114.6)', () => {
+  /*
+    The first effect in this engine that reaches into an object already on the stack.
+
+    Everything else reads the board and changes the board. These two read somebody else's spell and
+    change a choice its controller made, and the three rules that travel with it are all CR 114.6:
+    the new target must be legal **for that spell**, judged with the spell's own controller as the
+    chooser; it must be a different target; and if either fails the spell keeps the target it had
+    rather than being countered or erroring (CR 115.7b).
+
+    They are also the first two cards in the pool that ask for *two* targets — the spell, and where
+    it is going.
+  */
+
+  /**
+   * A Willbender already face down on seat 1's side, on seat 0's turn with seat 0's mana up.
+   *
+   * Two turns rather than one, because that is the only order the rules allow: a creature spell is
+   * sorcery-speed, so the morph goes down on its controller's own turn, and the removal it answers
+   * arrives on somebody else's. Which is also the shape of the play at a real table.
+   */
+  const facedownBender = (theirs: readonly string[]): { s: GameState; bender: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: ['Doom Blade'], 1: ['Willbender'] },
+      battlefield: {
+        0: ['Swamp', 'Swamp'],
+        // Five Islands, and seat 1's lands are deliberately *not* all tapped: three pay for the
+        // face-down cast and the other two have to still be up on somebody else's turn, which is
+        // the whole shape of holding a trick. A land tapped on your own turn stays tapped until
+        // your next untap step, so a test that drained the pool here could not turn the morph up.
+        1: ['Island', 'Island', 'Island', 'Island', 'Island', "Man-o'-War"],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Willbender'), faceDown: true,
+    })));
+    const bender = find(s, 1, 'battlefield', 'Willbender');
+    // Seat 0's own creatures, put straight onto the battlefield: somewhere else for its own
+    // removal to go.
+    for (const name of theirs) {
+      s = apply(s, {
+        type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'battlefield',
+      });
+    }
+    return { s: tapAllLands(advanceTo(nextTurn(s), 'precombat-main'), 0), bender };
+  };
+
+  /** Seat 0 aims its Doom Blade at seat 1's creature and passes, which opens the window. */
+  const bladeAt = (state: GameState, victim: string): { s: GameState; blade: string } => {
+    const blade = find(state, 0, 'hand', 'Doom Blade');
+    let s = apply(state, {
+      type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: victim }],
+    });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    return { s, blade };
+  };
+
+  it('sends a Doom Blade back at a creature its own caster could legally have hit', () => {
+    let { s, bender } = facedownBender(['Centaur Courser']);
+    const mine = find(s, 1, 'battlefield', "Man-o'-War");
+    const theirs = find(s, 0, 'battlefield', 'Centaur Courser');
+    const cast = bladeAt(s, mine);
+    s = cast.s;
+    expect(s.stackObjects[cast.blade]?.targets).toEqual([{ kind: 'card', id: mine }]);
+
+    // Turning it up is the special action nobody may respond to; the trigger it raises is what
+    // asks for the two targets.
+    s = apply(s, { type: 'auto:turnUp', by: 1, card: bender });
+    expect(s.instances[bender]!.faceDown).toBe(false);
+    s = apply(s, {
+      type: 'auto:choose', by: 1,
+      targets: [{ kind: 'card', id: cast.blade }, { kind: 'card', id: theirs }],
+    });
+    expect(s.stackObjects[cast.blade]?.targets).toEqual([{ kind: 'card', id: mine }]);
+    s = drain(passBoth(passBoth(s)));
+
+    // The Doom Blade killed their Courser and left the Man-o'-War alone.
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+    expect(s.instances[mine]!.zone).toBe('battlefield');
+  });
+
+  it('leaves the spell where it was when the new target is illegal for it', () => {
+    /*
+      CR 115.7b. The trigger's second target is declared `any`, which is wider than the spell's own
+      spec on purpose: a *player* is a perfectly legal answer to "any target" and can never be a
+      legal answer to a Doom Blade's "target creature". So the choice is accepted, the change is
+      declined, and the Doom Blade resolves against the creature it was always aimed at — not
+      countered, not an error.
+
+      Which is also the half that is easy to get wrong in the other direction: legality is judged
+      for the *spell*, with the spell's own controller as the chooser, not for the player doing the
+      redirecting.
+    */
+    let { s, bender } = facedownBender(['Centaur Courser']);
+    const mine = find(s, 1, 'battlefield', "Man-o'-War");
+    const cast = bladeAt(s, mine);
+    s = cast.s;
+
+    s = apply(s, { type: 'auto:turnUp', by: 1, card: bender });
+    s = apply(s, {
+      type: 'auto:choose', by: 1,
+      targets: [{ kind: 'card', id: cast.blade }, { kind: 'player', seat: 0 }],
+    });
+    s = drain(passBoth(passBoth(s)));
+    expect(life(s, 0)).toBe(20);
+    expect(s.instances[mine]!.zone).toBe('graveyard');
+  });
+
+  /**
+   * Seat 0 on ember-rush with `theirs` in hand, seat 1 on arc-tempest holding a Swerve.
+   *
+   * Only seat 0's lands are tapped. Seat 1's are left up and the engine pays for the Swerve out of
+   * them when it is cast, because tapping somebody else's lands is not a move available on this
+   * turn: a mana ability needs priority like anything else.
+   */
+  const swerveTable = (theirs: readonly string[], mine: readonly string[]): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'arc-tempest' },
+      hands: { 0: [...theirs], 1: ['Swerve'] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'],
+        1: ['Island', 'Island', 'Mountain', ...mine],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  it('is not offered a spell with nowhere else to send it', () => {
+    /*
+      "Change the target" with one legal target on the table changes nothing, so the spell is not
+      offered as a target at all — the offer and the effect agree, which is the rule convoke, crew
+      and morph are all built on.
+
+      Swerve rather than Willbender for this one, and the reason is the better half of the test: a
+      Willbender is *itself* a creature while it waits, face down or face up, so a board with a
+      Willbender on it always has somewhere to send a removal spell. Which is a real thing about
+      the card and would have made this assertion impossible to write.
+    */
+    let s = swerveTable(['Flame Slash'], ['Monastery Swiftspear']);
+    const mine = find(s, 1, 'battlefield', 'Monastery Swiftspear');
+    const blade = find(s, 0, 'hand', 'Flame Slash');
+    s = apply(s, { type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: mine }] });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+
+    const swerve = legalActions(s, 1).plays.find((p) => p.name === 'Swerve');
+    expect(swerve?.candidates[0] ?? []).toEqual([]);
+    s = drain(passBoth(s));
+    expect(s.instances[mine]!.zone).toBe('graveyard');
+  });
+
+  it('Swerve sends a burn spell back at the player who cast it', () => {
+    let s = swerveTable(['Lightning Bolt'], ['Monastery Swiftspear']);
+    const mine = find(s, 1, 'battlefield', 'Monastery Swiftspear');
+    const bolt = find(s, 0, 'hand', 'Lightning Bolt');
+    s = apply(s, { type: 'auto:cast', by: 0, card: bolt, targets: [{ kind: 'card', id: mine }] });
+    // Seat 0 passes, which is the window a trick is cast in.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+
+    const before = life(s, 0);
+    s = drain(passBoth(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Swerve'),
+      targets: [{ kind: 'card', id: bolt }, { kind: 'player', seat: 0 }],
+    }))));
+    // Three to the face of the player who paid for it, and the creature untouched. "Any target"
+    // includes a player, which is the half a creature-only redirect would have missed.
+    expect(life(s, 0)).toBe(before - 3);
+    expect(s.instances[mine]!.zone).toBe('battlefield');
+  });
+
+  it('and will not touch a creature spell, whatever else is true of the board', () => {
+    // The printed line is "target instant or sorcery spell", and a Hill Giant on the stack is a
+    // spell with no targets at all — so it fails twice over and is not offered either time.
+    let s = swerveTable(['Hill Giant'], ['Monastery Swiftspear']);
+    const giant = find(s, 0, 'hand', 'Hill Giant');
+    s = apply(s, { type: 'auto:cast', by: 0, card: giant });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    const swerve = legalActions(s, 1).plays.find((p) => p.name === 'Swerve');
+    expect(swerve?.candidates[0] ?? []).not.toContainEqual({ kind: 'card', id: giant });
+    expect(swerve?.candidates[0] ?? []).toEqual([]);
   });
 });

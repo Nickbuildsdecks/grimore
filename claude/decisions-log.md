@@ -5401,3 +5401,63 @@ morph in that deck made a face-down 2/2 for {3} castable off the ritual's own ma
 rule working**, and the test called it a regression. The hand is now emptied explicitly down to the
 one card the premise names. A test whose setup is "and whatever else turned up" cannot tell a
 regression from the feature it is testing.
+
+## D131 — Redirection, and the deck whose record this instrument cannot read
+
+**Decision: `retarget` lives in `targeting.ts` beside the legality rules, the second target is
+declared wider than the spell's own spec on purpose, and Willbender ships for spells only with the
+ability half named rather than approximated.**
+
+The last item on the engine doc's "Next" list that was neither blocked nor open-ended, and a
+different kind of work from everything before it: every other effect in this engine reads the board
+and changes the board, while this one reaches into an object already on the stack and alters a
+choice its controller made.
+
+Three rules travel with it, all CR 114.6: the new target must be legal **for that spell**, judged
+with the spell's own controller as the chooser; it must be a *different* target; and if either fails
+**nothing happens** — the spell keeps the target it had (CR 115.7b), rather than erroring or being
+countered.
+
+**The second target is `any`, which is wider than the spell's own spec, and that is the design.**
+Both cards ask for two targets — the spell, and where it is going — which nothing in the pool had
+done before. A player may therefore point a Doom Blade at a player: the engine accepts the choice
+and `retarget` declines to make the change. Narrowing the second spec to the first target's spec
+would have been possible and would have been wrong, because the rule that governs this is CR 115.7b
+and not target legality, and a card that refused the *choice* would be telling the player something
+the rules do not say.
+
+**What is narrowed instead is which spells may be named**, so the offer and the effect cannot
+disagree — the rule convoke, crew and morph are all built on. `soleTargetSpecOf` returns `null` for
+an ability, for a spell with no targets or several, and for a modal spell whose targets belong to the
+mode rather than the card; and the filter additionally requires **somewhere else to send it**, at
+least one legal target other than the one the spell already has. A Flame Slash aimed at the only
+creature on the table is not a Swerve target at all.
+
+**Spells, and not abilities, with the reason recorded.** Willbender is printed "target spell *or
+ability* with a single target". A `Target` is a card or a player; a spell on the stack is a card,
+while a triggered or activated ability has a synthetic id and no card anywhere — so the ability half
+needs a third `Target` shape threaded through some thirty call sites, for one clause. Said out loud
+rather than silently approximated, which is the decision the magecraft cards' "or copy" half got,
+and **Move by hand** covers it meanwhile.
+
+**The bot needed no rule at all, and the number is the argument.** `morph-use.mjs` over 432 games:
+Willbender cast 27 times, 85% face down, **turned up 17 of 23 (74%)** — second only to the Zombie
+Cutthroat. That is sharper than it reads, because turning a Willbender up makes it *smaller*: a
+face-down 2/2 becomes a 1/1, so the only reason to do it is the redirect, and the trigger only
+exists when a redirect is available. The one-ply search can see what the redirected spell does, so
+the legality clause did the teaching.
+
+**The finding worth keeping is a limit on the instrument, not on the card.** Willbender for the Dive
+Down measured **+11 and −10** across the two seed sets — opposite signs, so unmeasured by this log's
+own rule. Re-asking the cut per D127 gave **+5 and −2** for taking the Behold the Multiverse
+instead: also opposite signs. Three results, none with a consistent direction, all inside the floor.
+
+Why becomes clear from the arms themselves. The *unchanged* Tidal Mind list came back 69-170 and
+71-169 on the two sets, two games apart — while its one-card variants came back 58-182 and 81-159, a
+**23-game spread for a single slot**. The deck at the bottom of the table has the least reliable
+record in the pool, and not by accident: a deck that wins 29% of its games wins most of those
+narrowly, so one card moves more of them in both directions. **The eighteen-game noise floor was
+established on the pool's average deck and is too generous for its worst one.** Nothing here fixes
+that; the honest move was to ship the arrangement that was already in place, write the number down
+as unknown, and stop pretending a sign that flips is a result. Swerve, in a deck at 46%, measured
++1 and −2 — a clean wash, the way almost every slot in that band has.
