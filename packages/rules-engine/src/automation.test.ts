@@ -1134,12 +1134,24 @@ describe('redaction still holds with the engine running', () => {
     // Asserted rather than assumed, because the cost of being wrong is a leak.
     expect(JSON.stringify(view)).not.toContain('"died"');
     expect(JSON.stringify(packed)).not.toContain('"died"');
+    // And the same for `vanished`, which is the newest piece of engine bookkeeping on the state:
+    // a map of tokens that have stopped existing, kept only long enough to raise their triggers.
+    expect(JSON.stringify(view)).not.toContain('"vanished"');
+    expect(JSON.stringify(packed)).not.toContain('"vanished"');
 
     const inline = JSON.stringify(view).length;
     const wire = JSON.stringify(packed).length;
-    // Roughly half, measured rather than pinned: the exact ratio moves with how repetitive the
-    // deck is, and an assertion tight enough to break when a deck list is edited is noise.
-    expect(wire).toBeLessThan(inline * 0.6);
+    /*
+      Roughly two thirds, measured rather than pinned: the exact ratio moves with how repetitive
+      the deck is, and an assertion tight enough to break when a deck list is edited is noise.
+
+      It moved from 0.6 when the pool gained cards with long oracle text that every deck runs one
+      of. Dedup saves nothing on a singleton — its definition is sent once either way — so each
+      one-of with a paragraph of rules text pushes this ratio towards 1 while changing nothing
+      about whether the mechanism works. The two assertions either side of it are the ones that
+      do: fewer definitions than cards, and twice this payload still inside the cap.
+    */
+    expect(wire).toBeLessThan(inline * 0.7);
     // And the headroom this was for: a 100-card Commander library is roughly twice this one, and
     // the cap is WIRE_CAP. Asserted on the measurement rather than on faith.
     expect(wire * 2).toBeLessThan(WIRE_CAP);

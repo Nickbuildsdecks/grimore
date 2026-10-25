@@ -11,7 +11,7 @@
  * `legalActions.attackers`, and the mana comes from the pool the server sent.
  */
 import { useState } from "react"
-import { Check, FastForward, Hand, Handshake, Skull, Swords, X } from "lucide-react"
+import { Check, FastForward, Hand, Handshake, Shield, Skull, Swords, X } from "lucide-react"
 import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -453,6 +453,35 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
               onClick={() => onAct({ type: "pact:respond", pact: asked.id, accept: false })}
             >
               <X className="size-3.5" /> No deal
+            </Button>
+          </span>
+        </div>
+      ) : null}
+
+      {/*
+        A ward, and the two answers to it (CR 702.21b).
+
+        Above the primary action and unlike the deal above, this one *is* the engine waiting: the
+        spell is on the stack, nobody holds priority, and the table does nothing else until one of
+        these is pressed. Two buttons rather than one because declining is a real answer — often
+        the right one — and a single "Pay" button with no way past it would be a table that has
+        stopped rather than a choice.
+      */}
+      {you.mustPay !== null ? (
+        <div data-testid="ward-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <Shield className="size-3.5 text-[var(--g-gold-400)]" />
+          <span className="font-semibold text-[var(--g-text-high)]">{you.mustPay.prompt}</span>
+          <span className="ml-auto flex gap-1.5">
+            <Button size="sm" data-testid="ward-pay" onClick={() => onAct({ type: "auto:pay", pay: true })}>
+              <Check className="size-3.5" /> Pay {you.mustPay.cost}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="ward-decline"
+              onClick={() => onAct({ type: "auto:pay", pay: false })}
+            >
+              <X className="size-3.5" /> Let it be countered
             </Button>
           </span>
         </div>

@@ -48,6 +48,11 @@ export interface EffectContext {
    * "the player or planeswalker it's attacking". Undefined for everything else.
    */
   readonly attacked?: AttackedTarget;
+  /**
+   * The object on the stack this trigger is about, for a ward that has to say "counter **it**".
+   * Undefined for everything else. See `StackObject.answering`.
+   */
+  readonly answering?: string;
 }
 
 export type EffectFn = (ctx: EffectContext) => GameState;
@@ -446,6 +451,49 @@ export function counterSpell(state: GameState, id: string): GameState {
   if (object.kind !== 'spell' || inst === undefined) return next;
   // Exiled rather than buried when it was cast with flashback, countered or not (CR 702.33a).
   return spellLeavesStack(next, object, inst);
+}
+
+/**
+ * Ward (CR 702.21b): counter the spell or ability that targeted this, unless its controller pays.
+ *
+ * Two things happen here and only one of them is a choice. **The payment is a choice**, so the
+ * table stops and asks: `pendingPayment` names who is being asked, what for, and which object goes
+ * away if the answer is no, because by the time the answer arrives this ability has left the stack
+ * and nothing else remembers what it was about.
+ *
+ * **Not being able to pay is not a choice**, so it is not offered as one. A player with one
+ * untapped land facing a Ward {3} has exactly one outcome available, and asking them to confirm it
+ * would be a prompt with a single button — the same rule that keeps a trigger with no legal
+ * targets off the stack entirely. That half is `settlePayment` in `automation.ts` rather than here:
+ * answering "can this be afforded" needs the list of what is left to tap, which is `manaSources`,
+ * and this module is below that one. Nothing can change between the two points — nobody holds
+ * priority while a ward is outstanding — so where the question is asked does not change the answer.
+ *
+ * And a ward whose object has already left the stack does nothing at all: something else countered
+ * the spell first, or it resolved, which is the ordinary "its target is gone" case one level up.
+ */
+export function wardAsks(ctx: EffectContext, cost: string, name: string): GameState {
+  const { state } = ctx;
+  const id = ctx.answering;
+  if (id === undefined) return state;
+  const object = state.stackObjects[id];
+  if (object === undefined) return state;
+  const payer = object.controller;
+  return {
+    ...state,
+    // Nobody holds priority while the question is outstanding, for the reason `pendingChoice` and
+    // `pendingDecision` do it: a seat named here is a seat whose table offers a pass the engine
+    // then refuses.
+    priority: null,
+    passed: [],
+    pendingPayment: {
+      seat: payer,
+      cost,
+      prompt: `Pay ${cost} or ${object.description} is countered by ${name}'s ward`,
+      counters: id,
+      source: ctx.source,
+    },
+  };
 }
 
 /** Puts the top `count` cards of a library into its owner's graveyard. */

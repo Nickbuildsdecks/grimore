@@ -4385,3 +4385,108 @@ unplayable rather than to make every deck 50%, and with the floor at 34% that is
 every number quoted in this log up to here was produced by a tool nobody can re-run. They are now
 in `scripts/measure/` with a README that states the noise floor, the two seed sets, and the one rule
 this entry exists to prove: read the per-opponent split before believing the total.
+
+## D115 — Ward, and the three places a token that does not exist still had to be found
+
+Ward was the one evergreen keyword `KEYWORDS` did not have, and it could not be one: a keyword with
+a cost in it is not a flag. "Ward {2}" is shorthand for *whenever this permanent becomes the target
+of a spell or ability an opponent controls, counter it unless that player pays {2}* (CR 702.21b), so
+it went in as the triggered ability it abbreviates — `ward(name, cost)` in `scripts.ts` returns a
+`TriggerDef` and nothing about the mechanic is special-cased anywhere else.
+
+**The question belongs to the wrong player, and that is the whole design problem.** Every
+mid-resolution question this engine had asked belonged to whoever was resolving something: the
+caster searching a library, the controller aiming a trigger, the player discarding to their own
+Mind Rot. `pendingDecision.seat` is a chooser *inside* somebody else's resolution. A ward's ability
+belongs to the warded creature's controller and the question it asks belongs to the player who did
+the targeting — so it could not be folded in, and `pendingPayment` is its own field with its own
+action. Two consequences fall out of that one fact:
+
+- The authorisation check in `payWard` is `pending.seat !== action.by` written out rather than
+  `assertMayActFor`, which permits a host override. The host may drive a seat's own decisions; this
+  is not one of them. Same reasoning as a deal offered to another player (D109).
+- It is **two** answers, not one, so it is a row on the control bar rather than the primary button —
+  and `primaryMove` deliberately returns nothing for it. A single "Pay" button with no way past it
+  would be a stopped table dressed as a choice.
+
+**Not being able to pay is not a choice, so it is not offered as one.** A player with one untapped
+land facing Ward {3} has exactly one outcome available, and a prompt with one button is the
+stuck-table bug that "a trigger with no legal targets never goes on the stack" exists to prevent.
+That half is `settlePayment` in `automation.ts` rather than in the effect, because "can this be
+afforded" is answered from `manaSources`, which lives above `effects.ts` — and nothing can change
+between the two points, because nobody holds priority while a ward is outstanding. It uses
+`canAfford`, not a second opinion about the pool, for the reason `legalActions` does: two answers to
+"can this be paid" is how a table comes to offer a payment the engine then refuses.
+
+That path also produced the one genuine UX hole in the feature, found by counting rather than by
+reading: **six of the eleven wards in a 224-game soak were never shown to anybody**, because nobody
+could pay them. The spell left the stack with no prompt and no message — a removal spell that simply
+vanishes. It now writes a line through the same `replacements` channel a replaced death uses, which
+is the same fix for the same bug: a card the player cannot see working.
+
+**Where ward triggers from is four call sites, and the fourth is the one that mattered.** An object
+on the stack gains targets in four places — a spell being cast, an activated ability, a triggered
+ability the engine could aim itself, and that same one once its controller has chosen. One helper
+(`raiseWard`) is called from all four, rather than from inside `pushAbility`, which this module's
+own trigger loop calls while walking its watcher list. The fourth site is not completeness for its
+own sake: **Flametongue Kavu's arrival deals its damage to a *target* creature**, so without it a
+Ward {1} would have answered a Doom Blade and not a Kavu, which a player reads as a bug rather than
+as a rule. The event defaults to `by: 'opponent'` — the opposite of every other trigger here —
+because ward never fires off its own controller's spells, and a default that is wrong for the only
+caller is not a default.
+
+**Then Sedgemoor Witch's Pest found three bugs that had been sitting there in writing.** `relocate`
+said, of a token leaving the battlefield: *"A token is recorded too and then ceases to exist below,
+so its trigger finds no source and does not fire — a real limitation, and no token in the pool has
+one."* A 1/1 that says "when this creature dies, you gain 1 life" is a token with one. The rules are
+unambiguous that it should fire (CR 603.6d: a leave-the-battlefield ability triggers from the game
+state as it was *before* the event), so the limitation had to go — and it turned out to be three
+separate reads of a thing that was no longer there, each of which had to be found by instrumenting
+rather than by reasoning:
+
+1. `raise` computed the subject's seat from `instances`, so a vanished token was not in **anybody's**
+   watcher list to be asked.
+2. `pushAbility` read the source's `defKey` from `instances`, so the ability reached the stack with
+   an empty `cardKey` and resolved as nothing.
+3. The watcher loop called `scriptOf(state, id)`, which looks up `instances` again.
+
+The fix is `GameState.vanished`: the token is removed from its zone and detached at once, because
+nothing should ever see a token sitting in a graveyard, and its last state is kept just long enough
+for `settle` to raise its events. Three reads, one map, and `TOKEN_DEFS` so the deck-coverage test
+can tell a token script from an orphan rather than being loosened.
+
+**The invariant test earned its keep.** `playout.test.ts` has a list of every way the engine can be
+waiting on a seat, with a comment saying the list is exhaustive on purpose because a new one is a
+deadlock as far as a client is concerned. Adding `pendingPayment` broke it immediately. That is the
+test working: the engine had grown a new way to stop and the client had no answer for it.
+
+**Measured.** Two cards, both printed with ward and magecraft, both halves scripted (the "or copy"
+half of magecraft is not, and says so in `scripts.ts`, because nothing in this pool copies an
+instant):
+
+- **Dragonsguard Elite** ({1}{G}, 2/2, Ward {1}) into Verdant Guard for the second Naturalize:
+  151-87 with it against 148-90 without, over 238 games. Three games — a wash.
+- **Sedgemoor Witch** ({2}{B}{B}, 3/2, menace, Ward {3}) into Ashen Rite for the second Boggart
+  Brute, in the deck whose Blood Artists and Cutthroats want the Pests: 105-133 either way. The
+  same record to the game.
+
+Both washes, which is the right outcome for a mechanic rather than a power addition: the engine
+gained a keyword and the pool did not move. Over 224 games the bot cast 22 Elites and 20 Witches,
+answered 11 wards (5 paid, 6 unpayable), made 5 Pests, and **finished every one of the 224** — which
+is the number that mattered, because a new way for the engine to stop and wait is a new way for a
+table to hang.
+
+**What the bot does with it is the cheap rule, said out loud.** It pays whenever it can. Declining
+throws the whole card away, the spell's own cost is already spent, and this bot casts greedily down
+its curve, so by the time a ward is on the table there is rarely anything left it was saving for.
+What it cannot weigh is the case where the mana was worth more than the spell — holding two up for
+a counterspell, which is the same thing the search has never been able to price (D110). Over the
+soak it declined zero times, which is this rule being honest about what it is rather than evidence
+that it is right.
+
+**And the browser suites can only sample it.** Eleven wards in 224 games is about one game in
+twenty, so the arena suite reports "no ward came up" far more often than not, and says so rather
+than passing silently. The deterministic coverage is seven engine tests — paid, declined, cannot
+pay, not off your own spells, off an activated ability, off a triggered ability, and the Pest's own
+death trigger — plus a web test on the shape the control bar reads, which is the layer the flashback
+bug lived in (D113).

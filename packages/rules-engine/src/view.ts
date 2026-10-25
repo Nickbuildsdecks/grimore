@@ -135,11 +135,13 @@ export interface AutomationView {
   readonly combat: CombatState;
   /** Who the engine is waiting on, and for what. */
   readonly awaiting: {
-    readonly kind: 'attackers' | 'blockers' | 'order' | 'discard' | 'mulligan' | 'choose' | 'decide';
+    readonly kind: 'attackers' | 'blockers' | 'order' | 'discard' | 'mulligan' | 'choose' | 'decide' | 'pay';
     readonly seats: readonly SeatIndex[];
     /**
-     * What is being asked, when it is a mid-resolution decision. Public on purpose: the other
-     * player should see "Searching their library" rather than a table that has silently stopped.
+     * What is being asked, when it is a mid-resolution decision or a ward. Public on purpose: the
+     * other player should see "Searching their library" rather than a table that has silently
+     * stopped, and a ward is the clearest case of it — the player who cast the spell is deciding,
+     * and the player whose creature was targeted is the one waiting to find out.
      * Only the prompt travels — never the cards it is choosing between.
      */
     readonly prompt?: string;
@@ -451,6 +453,8 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
     : state.pendingDecision !== null
       ? { kind: 'decide', seats: [state.pendingDecision.seat], prompt: state.pendingDecision.prompt }
     : state.pendingChoice !== null ? { kind: 'choose', seats: [state.pendingChoice.seat] }
+    : state.pendingPayment !== null
+      ? { kind: 'pay', seats: [state.pendingPayment.seat], prompt: state.pendingPayment.prompt }
     : pending !== null ? { kind: 'discard', seats: [pending.seat] }
     : owed !== null ? { kind: owed.kind, seats: owed.seats }
     : null;

@@ -174,6 +174,23 @@ export type TriggerEvent =
       /** Set by the engine when it raises the event: the spell's card types, lowercased. */
       readonly types?: readonly string[];
     }
+  /**
+   * "Whenever this permanent becomes the target of a spell or ability" (CR 115.7, CR 702.21b).
+   *
+   * Its own permanent only, like `becomes-tapped`: a card that watched *another* permanent being
+   * targeted would be watching the stack rather than itself, and nothing is printed that does.
+   *
+   * `by` is the half that matters, and it defaults to `opponent` rather than to `you` — the
+   * opposite of every other event here. Ward is the only reason this exists and ward never
+   * triggers off its own controller's spells, so the default is the one that is right for the one
+   * caller; a card that wanted both would say `any` out loud.
+   */
+  | {
+      readonly kind: 'targeted';
+      readonly by?: 'you' | 'opponent' | 'any';
+      /** Set by the engine when it raises the event: the stack object that did the targeting. */
+      readonly object?: string;
+    }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
   | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' };
 

@@ -17,12 +17,13 @@ import {
   canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, forcedAttackers, legalAttackers,
   legalBlockers, menaceSatisfied, payFrom, pendingDeclaration,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
-  resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop, stateBasedActions,
+  raiseWard, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
+  stateBasedActions,
   stillDeciding, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
   type AutoOrderAction,
 } from './automation.js';
-import { addToPool, loseLife, poolOf } from './effects.js';
+import { addToPool, counterSpell, loseLife, poolOf } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
@@ -229,6 +230,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     spell: spellKind,
     types: characteristics.typeLine.types.map((t) => t.toLowerCase()),
   }, action.by);
+  // And ward, off the same cast, for everything the spell took aim at. After the cast triggers
+  // rather than before: both happen as the spell is cast and go on the stack together, and this is
+  // the order a player watched them in — the spell, then what it is pointed at answering.
+  next = raiseWard(next, object.id);
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
@@ -406,6 +411,9 @@ function activate(
   }
 
   next = pushAbility(next, inst.id, action.by, action.abilityIndex, chosen, 'activated', `${ch.name}: ${ability.description}`);
+  // Ward triggers off an ability as readily as off a spell (CR 702.21b) — an Icy Manipulator aimed
+  // at a warded creature is exactly the case the keyword is printed for. See `raiseWard`.
+  next = raiseWard(next, next.stackOrder[next.stackOrder.length - 1]!);
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
@@ -428,6 +436,9 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
   }
   if (state.pendingDecision !== null) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${state.pendingDecision.prompt} must be answered first`);
+  }
+  if (state.pendingPayment !== null) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${state.pendingPayment.prompt} must be answered first`);
   }
   const owed = pendingDeclaration(state);
   if (owed !== null) {
@@ -857,11 +868,59 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
     },
     pendingChoice: null,
   };
+  // The ability has its targets now, which is the moment ward's event happens for a trigger the
+  // engine could not aim on its own. See `raiseWard`.
+  next = raiseWard(next, object.id);
   next = resetPriority(settle(next, state));
   return {
     state: next,
     message: `${seatName(state, action.by)} aims ${object.description}`,
     data: { ability: object.id, targets: action.targets.length },
+  };
+}
+
+/**
+ * Answers a ward: pay the cost, or let the spell or ability be countered (CR 702.21b).
+ *
+ * The one question in this engine asked of a player because of somebody else's permanent, which is
+ * why the authorisation check here is `pending.seat !== action.by` written out rather than
+ * `assertMayActFor`: the host may drive a seat's own decisions, and this is not one of them — it
+ * belongs to whoever did the targeting, and nobody else gets to answer it for them. The same
+ * reasoning as a deal offered to another player.
+ *
+ * Declining is a real answer. A player who would rather keep the mana says so and the spell is
+ * countered, which is the whole point of ward being a cost rather than hexproof: the removal is
+ * still answered, but it cost the warded creature's controller nothing and the attacker a card.
+ *
+ * `payFrom` taps for the shortfall, so the answer really is one button. By the time it arrives
+ * `settlePayment` has already ruled out the case where the cost cannot be met at all, so a refusal
+ * here means the state moved underneath the table rather than that the player is short.
+ */
+function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Outcome {
+  requireAutomated(state);
+  const pending = state.pendingPayment;
+  if (pending === null) throw new EngineError('RULE_NOT_APPLICABLE', 'nothing is waiting to be paid');
+  if (pending.seat !== action.by) throw new EngineError('FORBIDDEN', 'that payment is not yours to make');
+  if (typeof action.pay !== 'boolean') throw new EngineError('INVALID_ACTION', 'say whether you are paying');
+  const warded = state.cardDefs[state.instances[pending.source]?.defKey ?? '']?.name ?? 'a ward';
+  const object = state.stackObjects[pending.counters];
+  const spell = object?.description ?? 'it';
+
+  let next: GameState = { ...state, pendingPayment: null };
+  if (action.pay) {
+    const paid = payFrom(next, action.by, pending.cost, 0);
+    next = resetPriority(settle(paid.state, state));
+    return {
+      state: next,
+      message: `${seatName(state, action.by)} pays ${pending.cost} for ${warded}'s ward`,
+      data: { ward: pending.source, cost: pending.cost, paid: true, tapped: [...paid.tapped] },
+    };
+  }
+  next = resetPriority(settle(counterSpell(next, pending.counters), state));
+  return {
+    state: next,
+    message: `${seatName(state, action.by)} does not pay ${pending.cost}: ${spell} is countered by ${warded}'s ward`,
+    data: { ward: pending.source, cost: pending.cost, paid: false, countered: pending.counters },
   };
 }
 
@@ -1013,7 +1072,7 @@ function autoPass(state: GameState): { state: GameState; passes: number } {
   for (let guard = 0; guard < 64; guard++) {
     if (next.finished || !next.automated || next.openingHands) break;
     if (next.pendingDiscard !== null || next.pendingChoice !== null) break;
-    if (next.pendingDecision !== null) break;
+    if (next.pendingDecision !== null || next.pendingPayment !== null) break;
     if (pendingDeclaration(next) !== null) break;
     const seat = next.priority;
     if (seat === null) break;
@@ -1046,6 +1105,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:keep': return keepHand(state, action);
     case 'auto:choose': return chooseTargets(state, action);
     case 'auto:decide': return decide(state, action);
+    case 'auto:pay': return payWard(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);

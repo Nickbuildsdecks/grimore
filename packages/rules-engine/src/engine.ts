@@ -146,9 +146,11 @@ export function createGame(options: CreateGameOptions): GameState {
     kept: [],
     openingHands: false,
     pendingChoice: null,
+    pendingPayment: null,
     pendingDecision: null,
     died: [],
     left: [],
+    vanished: {},
     replacements: [],
     entered: [],
     dealtCombatDamage: [],
@@ -280,7 +282,7 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
    * Untap and cleanup are the two steps where nobody holds priority on purpose (CR 502, CR 514).
    */
   const blockedByAQuestion = next.openingHands || next.pendingDecision !== null
-    || next.pendingChoice !== null || next.pendingDiscard !== null
+    || next.pendingChoice !== null || next.pendingPayment !== null || next.pendingDiscard !== null
     || pendingDeclaration(next) !== null;
   if (
     !next.finished && next.started && next.automated && next.priority === null
@@ -310,6 +312,8 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
       passed: [],
       pendingDecision: null,
       pendingChoice: null,
+      // A ward outstanding when the game ends is a question with nobody left to answer it.
+      pendingPayment: null,
       pendingDiscard: null,
     };
   }
@@ -660,9 +664,11 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         kept: [],
         openingHands: false,
         pendingChoice: null,
+        pendingPayment: null,
         pendingDecision: null,
         died: [],
         left: [],
+        vanished: {},
         replacements: [],
         entered: [],
         dealtCombatDamage: [],

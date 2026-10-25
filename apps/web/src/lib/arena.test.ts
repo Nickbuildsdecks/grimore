@@ -929,12 +929,57 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
       seat: 0, step: "precombat-main", hasPriority: true, isActivePlayer: true, canPass: true,
       passLabel: "Pass", plays: [], attackers: [], mustAttack: [], attackAims: [], blockers: [],
       mustOrder: [], mustDiscard: 0, mustDeclare: null,
-      mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null, blocked: [],
+      mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null, mustPay: null,
+      blocked: [],
       pacts: { offer: [], answer: [] },
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     },
     ...over,
   }) as GameView["automation"]
+
+describe("a ward waiting to be paid", () => {
+  /*
+    The engine carries this per seat, and it is the only question in the view whose seat is not the
+    seat resolving something — so the one thing worth pinning on the client side is that it reaches
+    the player it belongs to and nobody else.
+
+    The two buttons themselves live in `ArenaBar`; what a unit test can hold is the shape the bar
+    reads. `primaryMove` deliberately returns nothing for it: a ward is two answers, and the
+    primary action is one button.
+  */
+  const warded = (over: Record<string, unknown> = {}) =>
+    automation({
+      you: {
+        ...automation()!.you!,
+        hasPriority: false,
+        canPass: false,
+        passLabel: "Pay {1}",
+        mustPay: {
+          prompt: "Pay {1} or Doom Blade is countered by Dragonsguard Elite's ward",
+          cost: "{1}",
+          ward: "c9",
+          spell: "Doom Blade",
+        },
+        ...over,
+      },
+    })
+
+  it("reaches the seat being asked, with the cost and what it loses", () => {
+    const you = warded()!.you!
+    expect(you.mustPay?.cost).toBe("{1}")
+    expect(you.mustPay?.spell).toBe("Doom Blade")
+    expect(you.mustPay?.prompt).toContain("Dragonsguard Elite")
+    // Nobody holds priority while it stands, so the bar must not also offer a pass.
+    expect(you.canPass).toBe(false)
+  })
+
+  it("is not the primary action, because it is two answers and not one", () => {
+    // Nothing on the primary button: a ward is pay-or-decline, and `ArenaBar` draws it as its own
+    // row. The driver's "is it my move" check knows to look for that row rather than for a primary
+    // action, which is the half of this that a browser suite would otherwise hang on.
+    expect(primaryMove(view({ automation: warded() }))).toBeNull()
+  })
+})
 
 describe("primaryMove", () => {
   it("is nothing on a manual table", () => {

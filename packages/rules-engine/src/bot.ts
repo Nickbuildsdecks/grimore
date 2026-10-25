@@ -869,6 +869,9 @@ function answerPending(state: GameState): Action | null {
     const ask = legalActions(state, seat).mustDecide;
     return ask === null ? null : { type: 'auto:decide', by: seat, cards: decideCards(state, seat, ask) };
   }
+  if (state.pendingPayment !== null) {
+    return { type: 'auto:pay', by: state.pendingPayment.seat, pay: true };
+  }
   return null;
 }
 
@@ -1770,6 +1773,25 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
   const choice = actions.mustChoose;
   if (choice !== null) return aimPending(state, seat, choice);
 
+  /*
+    A ward, paid whenever it can be.
+
+    The cheap rule, and the one the shape of this bot makes right rather than merely convenient.
+    Declining throws the whole card away: the spell is already cast and its own cost already paid,
+    so the only thing the ward mana buys is whatever else this seat would have done with it this
+    turn — and this bot casts greedily down its curve, so by the time a ward is on the table there
+    is usually nothing left it was saving for. `settlePayment` has already handled the case where
+    the cost cannot be met, so reaching here means paying is available.
+
+    What it cannot weigh is the case where the mana was worth more than the spell: holding two up
+    for a counterspell is the example, and it is the same thing the search has never been able to
+    price (D110). Worth revisiting when there is an evaluation that can, and measured as it stands:
+    over a pod soak the bot declined a ward zero times, which is this rule being honest about what
+    it is rather than evidence that it is right.
+  */
+  const ward = actions.mustPay;
+  if (ward !== null) return { type: 'auto:pay', by: seat, pay: true };
+
   if (actions.mustDiscard > 0) {
     // Pitch the most expensive thing, which is the card least likely to be castable.
     const worst = handByCost(state, seat)[0];
@@ -2016,6 +2038,8 @@ export function seatsToAct(state: GameState): SeatIndex[] {
   // So does a resolution that stopped to ask a question, and a trigger waiting for its targets.
   if (state.pendingDecision !== null) return [state.pendingDecision.seat];
   if (state.pendingChoice !== null) return [state.pendingChoice.seat];
+  // And a ward, which stops the table for the player who is not resolving anything.
+  if (state.pendingPayment !== null) return [state.pendingPayment.seat];
   if (state.pendingDiscard !== null) return [state.pendingDiscard.seat];
   const owed = pendingDeclaration(state);
   if (owed !== null) return [...owed.seats, ...offeredSeats(state, owed.seats)];

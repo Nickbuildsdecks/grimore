@@ -27,10 +27,10 @@ import {
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
-  becomeCopyOf,
+  becomeCopyOf, wardAsks,
   type EffectContext, type PumpOptions,
 } from './effects.js';
-import type { CardScript, DecisionSpec, TargetSpec } from './scriptTypes.js';
+import type { CardScript, DecisionSpec, TargetSpec, TriggerDef } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 
@@ -2865,6 +2865,102 @@ const DISRUPT_DECORUM: CardScript = {
 
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Ward (CR 702.21), as a triggered ability — because that is exactly what the keyword is.
+ *
+ * "Ward [cost]" means "whenever this permanent becomes the target of a spell or ability an
+ * opponent controls, counter it unless that player pays [cost]", and writing it out as the trigger
+ * it abbreviates is what lets it use the machinery already here: the event comes from
+ * `raiseWard`, the ability goes on the stack above the spell and resolves first, and the question
+ * it asks is `wardAsks`. Nothing about ward is a static ability and nothing about it is a
+ * replacement effect, which is the mistake worth not making — a warded creature can be targeted
+ * all day, and the spell is answered on the stack rather than prevented from being aimed.
+ *
+ * The `name` is passed in rather than read from the source because the message a player reads
+ * should say which creature did this, and by the time the ward resolves the only thing that knows
+ * is the ability itself.
+ */
+function ward(name: string, cost: string): TriggerDef {
+  return {
+    on: { kind: 'targeted', by: 'opponent' },
+    description: `Ward ${cost}`,
+    effect: (c) => wardAsks(c, cost, name),
+  };
+}
+
+/**
+ * A 1/1 Pest that pays its controller a life when it dies — Sedgemoor Witch's token.
+ *
+ * The first token in the pool with an ability of its own, which needs nothing new: `scriptFor`
+ * finds a script by name and a token has a name, so the script below is found for the token the
+ * same way a printed card's is, and `settle`'s arrivals pass installs it like any other
+ * permanent's. See the note at `applyStatics` about every way onto the battlefield.
+ */
+export const PEST_TOKEN: CardDef = {
+  name: 'Pest', typeLine: 'Token Creature — Pest', manaCost: '', cmc: 0,
+  power: '1', toughness: '1',
+  oracleText: 'When this creature dies, you gain 1 life.', colors: ['B'],
+};
+
+const PEST: CardScript = {
+  name: 'Pest',
+  triggers: [
+    {
+      on: { kind: 'dies', who: 'self' },
+      description: 'you gain 1 life',
+      effect: (c) => gainLife(c.state, c.controller, 1),
+    },
+  ],
+};
+
+/*
+  The two ward cards, and the one thing about them that is not scripted.
+
+  Both are printed "Magecraft — Whenever you cast **or copy** an instant or sorcery spell", and the
+  copy half is not here: the engine's cast event fires on casting, and nothing in this pool copies
+  an instant or a sorcery, so a `spell-cast` trigger is the whole of what these cards do at this
+  table. Said out loud rather than silently approximated, because the day something does copy one
+  this is the line that is wrong.
+*/
+const DRAGONSGUARD_ELITE: CardScript = {
+  name: 'Dragonsguard Elite',
+  triggers: [
+    ward('Dragonsguard Elite', '{1}'),
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      description: 'put two +1/+1 counters on Dragonsguard Elite',
+      effect: (c) => addCounters(c.state, c.source, '+1/+1', 2),
+    },
+  ],
+};
+
+const SEDGEMOOR_WITCH: CardScript = {
+  name: 'Sedgemoor Witch',
+  keywords: ['menace'],
+  triggers: [
+    ward('Sedgemoor Witch', '{3}'),
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      description: 'create a 1/1 black Pest creature token',
+      effect: (c) => createToken(c.state, c.controller, PEST_TOKEN, 1),
+    },
+  ],
+};
+
+/**
+ * Every token this pool can put onto the battlefield.
+ *
+ * Here so the deck-coverage test can tell a token script from an orphan. "A script registered
+ * under a name no deck contains can never fire" is the rule that test enforces, and it was right
+ * until a token had a script of its own: a Pest is never in anybody's deck and its death trigger
+ * fires every game Sedgemoor Witch connects with an instant. Listing the tokens makes the test
+ * sharper rather than weaker — it now also catches a token script with no token to go with it.
+ */
+export const TOKEN_DEFS: readonly CardDef[] = [
+  GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN,
+  SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN,
+];
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -2925,6 +3021,7 @@ const ALL: readonly CardScript[] = [
     'equipped creature is indestructible'),
   guildgate('Rakdos Guildgate', 'B', 'R'),
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
+  DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

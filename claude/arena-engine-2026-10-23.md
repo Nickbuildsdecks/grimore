@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 172 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 175 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2491,6 +2491,41 @@ is not a measurement.
 Three harnesses moved into `scripts/measure/` with a README that states the noise floor and the two
 seed sets. They had lived in a scratch directory, which means every number this document has quoted
 up to here was produced by a tool nobody could re-run.
+
+### Ward, and the three places a token that does not exist still had to be found
+
+Ward was the last evergreen keyword the engine did not have, and it could not be a keyword at all: a
+keyword with a cost in it is not a flag. It is shorthand for a triggered ability — *whenever this
+becomes the target of a spell or ability an opponent controls, counter it unless that player pays* —
+so it went in as the ability it abbreviates, and nothing about it is special-cased anywhere else.
+
+The interesting part is whose question it is. Every mid-resolution question the engine had asked
+belonged to whoever was resolving something; a ward's ability belongs to the warded creature's
+controller and the question belongs to the player who did the targeting. So it is its own pending
+state with its own action, the authorisation check is written out rather than reusing the one that
+lets a host drive a seat, and it is two buttons on the control bar rather than the primary one —
+because declining is a real answer and often the right one.
+
+A ward nobody can pay is not a question, so it is not asked. That turned out to be the common case:
+**six of the eleven wards in a 224-game soak were never shown to anybody**, and the spell simply
+vanished off the stack with no prompt and no message. It now says so in the log, through the same
+channel a replaced death uses.
+
+Then Sedgemoor Witch's 1/1 Pest — "when this creature dies, you gain 1 life" — walked straight into
+a limitation the code had written down in advance: *"a token is recorded too and then ceases to
+exist below, so its trigger finds no source and does not fire — a real limitation, and no token in
+the pool has one."* Now one does. It was three separate reads of a thing that was no longer there
+(the watcher list's subject seat, the stack object's card key, and the script lookup), each found by
+instrumenting rather than by reasoning, and all three fixed by keeping the token's last state just
+long enough for its own events to be raised.
+
+The deadlock invariant in `playout.test.ts` — a list of every way the engine can be waiting on a
+seat, exhaustive on purpose — broke the moment the new pending state existed. That is the test
+doing its job: the engine had grown a new way to stop and the client had no answer for it.
+
+Both cards measured as washes: +3 games on 238 for Dragonsguard Elite, and the same record to the
+game for Sedgemoor Witch. That is the right outcome for a mechanic rather than a power addition —
+the engine gained a keyword and the pool did not move. 224 games, 224 finished.
 
 ## Next
 

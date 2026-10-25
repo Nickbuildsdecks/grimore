@@ -32,13 +32,14 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  REGENERATION, addCounters, destroy, draw, loseLife, modsFrom, poolOf, removeEffectsFrom,
-  setPool, spellLeavesStack, spendRegeneration, untapAll, type EffectContext, type EffectFn,
+  REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, modsFrom, poolOf,
+  removeEffectsFrom, setPool, spellLeavesStack, spendRegeneration, untapAll,
+  type EffectContext, type EffectFn,
 } from './effects.js';
 import { manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
 import {
-  EMPTY_POOL, addMana, canPay, parseManaCost, payCost, solveTap,
+  EMPTY_POOL, addMana, canAfford, canPay, parseManaCost, payCost, solveTap,
   type ManaPick, type ManaPool, type ManaType,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
@@ -191,6 +192,7 @@ export function atSorcerySpeed(state: GameState, seat: SeatIndex): boolean {
  */
 function resetPriority(state: GameState, to: SeatIndex = state.activeSeat): GameState {
   const blocked = state.openingHands || state.pendingDecision !== null || state.pendingChoice !== null
+    || state.pendingPayment !== null
     || state.pendingDiscard !== null || pendingDeclaration(state) !== null;
   if (blocked) return { ...state, priority: null, passed: [] };
   return { ...state, priority: to, passed: [] };
@@ -395,6 +397,20 @@ function triggerMatches(
       if (e.subjectSeat === undefined) return false;
       return of === 'you' ? e.subjectSeat === sourceSeat : e.subjectSeat !== sourceSeat;
     }
+    /*
+      Ward's event, and the one filter it needs: whose spell or ability did the targeting.
+
+      `raise` has already narrowed the watchers to the permanent that was targeted, so there is no
+      `who` to ask about — but there is very much a `by`, and it defaults to `opponent` rather than
+      to `you`. Without that default a Ward {2} would counter its own controller's Giant Growth,
+      which is the one thing ward never does.
+    */
+    case 'targeted': {
+      const by = want.by ?? 'opponent';
+      if (by === 'any') return true;
+      if (actorSeat === undefined) return false;
+      return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
+    }
     case 'becomes-tapped':
     case 'leaves':
       return true;
@@ -474,13 +490,17 @@ function raise(
   // `triggerMatches` decides from each trigger's own `who` whether it wants it. The subject is
   // always included: it may be the watcher, and for a death it is in a graveyard by now rather
   // than on the battlefield.
-  const selfOnly = new Set(['becomes-tapped', 'leaves', 'combat-damage']);
+  const selfOnly = new Set(['becomes-tapped', 'leaves', 'combat-damage', 'targeted']);
   const everyBattlefield = apnapSeats(next).flatMap((seat) => {
     const mine = [...listAt(next, zoneKey(seat, 'battlefield'))].filter((id) => id !== subject);
     // The subject goes with its own controller rather than ahead of everybody: it may be the only
     // watcher, and after a death it is in a graveyard rather than on a battlefield, so it would
     // otherwise be missed. Put first within that seat, which is where it was.
-    const subjectSeat = subject === undefined ? undefined : next.instances[subject]?.zoneSeat;
+    // With the `vanished` fallback: a token that has ceased to exist is still the subject of its
+    // own death, and without this it is not in anybody's watcher list to be asked.
+    const subjectSeat = subject === undefined
+      ? undefined
+      : (next.instances[subject] ?? next.vanished[subject])?.zoneSeat;
     return subjectSeat === seat ? [subject as string, ...mine] : mine;
   });
   const watchers = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
@@ -490,7 +510,12 @@ function raise(
       : everyBattlefield;
 
   for (const id of watchers) {
-    const inst = next.instances[id];
+    /*
+      A token that has ceased to exist is still the subject of its own death: its last state is in
+      `vanished` for exactly this read (CR 603.6d). Only for the subject — a vanished token is not
+      on anybody's battlefield and so is not watching anything else.
+    */
+    const inst = next.instances[id] ?? (id === subject ? next.vanished[id] : undefined);
     if (inst === undefined) continue;
     // A `dies` trigger fires from the graveyard, but only for the creature that died: any other
     // watcher has to still be on the battlefield to be watching.
@@ -498,7 +523,9 @@ function raise(
     // permanent it happened to: any other watcher has to still be on the battlefield.
     const fromGraveyard = (event.kind === 'dies' || event.kind === 'leaves') && id === subject;
     if (!fromGraveyard && inst.zone !== 'battlefield') continue;
-    const script = scriptOf(next, id);
+    // From the instance resolved above rather than by id, so a vanished token's own script is
+    // still found: `scriptOf` reads `instances`, and a token that ceased to exist is not in it.
+    const script = scriptFor(next.cardDefs[inst.defKey]?.name);
     if (script?.triggers === undefined) continue;
     for (let i = 0; i < script.triggers.length; i++) {
       const trigger = script.triggers[i]!;
@@ -516,8 +543,13 @@ function raise(
         : event.kind === 'combat-damage' && event.defender !== undefined
           ? { defender: event.defender }
           : undefined;
+      // And which object the event was about, for the one event that is about an object on the
+      // stack rather than about a permanent or a player. See `StackObject.answering`.
+      const answering = event.kind === 'targeted' ? event.object : undefined;
       if (specs.length === 0) {
-        next = pushAbility(next, id, inst.zoneSeat, i, [], 'triggered', trigger.description, attacked);
+        next = pushAbility(
+          next, id, inst.zoneSeat, i, [], 'triggered', trigger.description, attacked, answering,
+        );
         continue;
       }
       // A trigger that needs targets and has none legal is never put on the stack (CR 603.3c).
@@ -525,8 +557,14 @@ function raise(
       const auto = obviousTargets(next, specs, inst.zoneSeat, id);
       next = pushAbility(
         next, id, inst.zoneSeat, i, auto ?? [], 'triggered', trigger.description, attacked,
+        answering,
       );
-      if (auto !== null) continue;
+      if (auto !== null) {
+        // An ability the engine aimed for its controller has its targets now, so anything it took
+        // aim at that wards gets to say so. See `raiseWard`.
+        next = raiseWard(next, next.stackOrder[next.stackOrder.length - 1]!);
+        continue;
+      }
       // Otherwise the controller chooses, and nothing happens until they do.
       const stackId = next.stackOrder[next.stackOrder.length - 1]!;
       next = {
@@ -572,19 +610,57 @@ function obviousTargets(
   return chosen;
 }
 
+/**
+ * Raises ward's event for every opposing permanent a stack object just took aim at (CR 115.7).
+ *
+ * One function for one rule, called from each of the four places an object on the stack *gains*
+ * targets: a spell being cast, an activated ability, a triggered ability whose targets were
+ * obvious enough for the engine to fill in, and the same one once its controller has chosen them.
+ * Four call sites is three more than anybody wants, but the alternative is folding it into
+ * `pushAbility`, which is called from inside this module's own trigger loop — and a function that
+ * raises triggers while a trigger loop is walking its watcher list is a reentrancy bug waiting for
+ * a card to find it.
+ *
+ * The triggered-ability case is not completeness for its own sake: Flametongue Kavu's arrival
+ * deals its damage to a *target* creature, so without it a Ward {1} would stop a Doom Blade and
+ * not a Kavu, which is the kind of inconsistency a player reads as a bug rather than a rule.
+ *
+ * Only the controller's *opponents'* permanents are offered the event, and only permanents: a
+ * player target has no abilities, and a target in a graveyard is not on the battlefield to ward
+ * anything. `triggerMatches` makes the same check from the trigger's side — this one keeps the
+ * engine from walking every target of every spell through the whole watcher machinery.
+ */
+export function raiseWard(state: GameState, objectId: string): GameState {
+  const object = state.stackObjects[objectId];
+  if (object === undefined) return state;
+  let next = state;
+  for (const target of object.targets) {
+    if (target.kind !== 'card') continue;
+    const inst = next.instances[target.id];
+    if (inst === undefined || inst.zone !== 'battlefield') continue;
+    if (inst.zoneSeat === object.controller) continue;
+    next = raise(next, { kind: 'targeted', object: objectId }, object.controller, target.id);
+  }
+  return next;
+}
+
 function pushAbility(
   state: GameState, source: string, controller: SeatIndex, abilityIndex: number,
   targets: readonly Target[], kind: 'activated' | 'triggered', description: string,
-  attacked?: AttackedTarget,
+  attacked?: AttackedTarget, answering?: string,
 ): GameState {
   const seq = state.autoSeq + 1;
   const id = `ab${seq}`;
-  const inst = state.instances[source];
+  // `vanished` as the fallback, so a token's own death trigger still carries the card it came
+  // from: the object on the stack is identified by `cardKey`, and without it the ability would
+  // resolve as nothing at all. See `GameState.vanished`.
+  const inst = state.instances[source] ?? state.vanished[source];
   const object: StackObject = {
     id, kind, source, controller,
     cardKey: inst?.defKey ?? '',
     abilityIndex, targets: [...targets], description,
     ...(attacked === undefined ? {} : { attacked }),
+    ...(answering === undefined ? {} : { answering }),
     targetSeqs: targetSeqsFor(state, targets),
   };
   return {
@@ -877,7 +953,49 @@ function settle(state: GameState, before: GameState): GameState {
     if (was === undefined || seat.eliminated) continue;
     if (seat.life > was.life) next = raise(next, { kind: 'life-gained' }, seat.index);
   }
-  return stateBasedActions(next);
+  /*
+    And the tokens that stopped existing are now finished with: their triggers are on the stack, so
+    nothing needs their last state any more. Cleared here rather than left to grow, for the reason
+    `died` and `left` are drained — a transient list that nobody empties is a memory leak with a
+    game attached. An ability still resolving reads its source from the stack object, not from here.
+  */
+  if (Object.keys(next.vanished).length > 0) next = { ...next, vanished: {} };
+  return stateBasedActions(settlePayment(next));
+}
+
+/**
+ * A ward nobody can pay is not a question (CR 702.21b).
+ *
+ * `wardAsks` sets the question and this answers the half of it that is not a choice: a player who
+ * cannot produce the ward cost has one outcome available, and offering it as a button would be the
+ * stuck-table bug the trigger-with-no-legal-targets rule exists to prevent. The check is here
+ * rather than in `effects.ts` because "can this be afforded" is answered from `manaSources`, which
+ * lives above that module — and nothing can change between the two points, because nobody holds
+ * priority while a ward is outstanding.
+ *
+ * It is `canAfford` and not a second opinion about the pool, for the reason `legalActions` is: two
+ * answers to "can this be paid" is how a table comes to offer a payment the engine then refuses.
+ */
+function settlePayment(state: GameState): GameState {
+  const pending = state.pendingPayment;
+  if (pending === null) return state;
+  const cost = parseManaCost(pending.cost);
+  if (canAfford(poolOf(state, pending.seat), cost, manaSources(state, pending.seat))) return state;
+  /*
+    And said in words, through the channel a replacement effect uses.
+
+    This is the one path where a spell is answered without anybody pressing anything: no prompt was
+    shown, because there was only one outcome, so without a note the player's removal simply
+    vanishes off the stack. "A card the player cannot see working" is the same bug the replacement
+    notes exist for, and the same fix.
+  */
+  const warded = state.cardDefs[state.instances[pending.source]?.defKey ?? '']?.name ?? 'a ward';
+  const spell = state.stackObjects[pending.counters]?.description ?? 'it';
+  const note = `${warded}: ward ${pending.cost} was not paid — ${spell} is countered`;
+  return counterSpell(
+    { ...state, pendingPayment: null, replacements: [...state.replacements, note] },
+    pending.counters,
+  );
 }
 
 // ── Casting, activating, resolving ───────────────────────────────────────────────────────────────
@@ -1281,7 +1399,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     const ready = first === undefined ? state : first({
       state, source: object.kind === 'spell' ? object.id : object.source,
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
-      kicked: object.kicked === true, attacked: object.attacked,
+      kicked: object.kicked === true, attacked: object.attacked, answering: object.answering,
     });
     return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
   }
@@ -1304,6 +1422,8 @@ function completeResolution(
     decisions: answers,
     kicked: object.kicked === true,
     attacked: object.attacked,
+    // What this ability is about, for a ward that has to counter a particular object.
+    answering: object.answering,
   };
 
   if (object.kind === 'spell') {

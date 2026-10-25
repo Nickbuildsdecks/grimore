@@ -164,6 +164,23 @@ export interface LegalActions {
     readonly max: number;
   } | null;
   /**
+   * A ward this seat is being asked to pay (CR 702.21b), and what it loses by declining.
+   *
+   * Offered to the seat *paying*, which is never the controller of the ability that asked — so
+   * unlike `mustChoose` and `mustDecide`, the seat this appears for is the one whose spell is at
+   * risk rather than the one resolving something. `canPay` is always true when this is non-null:
+   * `settlePayment` has already resolved the case where the cost cannot be met, so the table never
+   * has to draw a button it would have to grey out.
+   */
+  readonly mustPay: {
+    readonly prompt: string;
+    readonly cost: string;
+    /** The warded permanent, so the table can point at what is doing this. */
+    readonly ward: string;
+    /** The spell or ability that is countered by declining, in the words the stack uses. */
+    readonly spell: string;
+  } | null;
+  /**
    * A declaration this seat owes before play continues. Separate from `hasPriority` because
    * declaring attackers or blockers is a turn-based action, so the seat that owes one holds no
    * priority — a UI keyed on priority alone would show the defender nothing to do.
@@ -619,6 +636,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
    */
   const hasPriority = state.automated && state.priority === seat
     && !state.openingHands && state.pendingDecision === null && state.pendingChoice === null
+    && state.pendingPayment === null
     && state.pendingDiscard === null && pendingDeclaration(state) === null;
   const potential = potentialMana(state, seat);
   // What could still be tapped, which is what decides affordability. `potential` above is the
@@ -666,12 +684,23 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
       }
     : null;
 
+  const payment = state.pendingPayment;
+  const mustPay: LegalActions['mustPay'] = payment !== null && payment.seat === seat
+    ? {
+        prompt: payment.prompt,
+        cost: payment.cost,
+        ward: payment.source,
+        spell: state.stackObjects[payment.counters]?.description ?? 'it',
+      }
+    : null;
+
   const empty: LegalActions = {
     seat, step: state.step, hasPriority, isActivePlayer: state.activeSeat === seat,
     canPass: false, passLabel: '', plays: [], attackers: [], mustAttack: [], attackAims: [],
     blockers: [], mustOrder: [],
     mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat), mustChoose,
-    mustDecide, blocked: [], pacts: pactOptions(state, seat), pool: poolOf(state, seat), potential,
+    mustDecide, mustPay, blocked: [], pacts: pactOptions(state, seat), pool: poolOf(state, seat),
+    potential,
   };
   if (!state.automated || state.finished) return empty;
   // Opening hands come before anything else, including priority.
@@ -681,6 +710,9 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   // And so does a spell that stopped mid-resolution to ask somebody a question. It is still on the
   // stack; nobody holds priority until it is answered, including the player who cast it.
   if (decision !== null) return mustDecide === null ? empty : { ...empty, passLabel: 'Choose' };
+  // And so does a ward: the spell is on the stack, nobody holds priority, and the only move at the
+  // table is the one answer this seat owes.
+  if (payment !== null) return mustPay === null ? empty : { ...empty, passLabel: `Pay ${payment.cost}` };
   if (mustDiscard > 0) return { ...empty, passLabel: `Discard ${mustDiscard}` };
   // A declaration comes before priority, so it is offered to the seat that owes it even though
   // nobody holds priority while it is outstanding.

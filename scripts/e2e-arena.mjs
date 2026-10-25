@@ -563,6 +563,18 @@ async function main() {
       console.log('      (no card stopped to ask a question in this game — scripts.test.ts covers '
         + 'that path on a fixed board)');
     }
+    /*
+      A ward paid through the real UI, which is the one prompt a player answers because of
+      somebody *else's* permanent. Sampled like the two above: it needs the warded creature in
+      play and an opponent holding something that targets it, and `scripts.test.ts` asserts the
+      pay, the decline and the cannot-pay cases on a fixed board.
+    */
+    if (seen.ward) {
+      check('a ward stops a spell and the other player can pay it from the table', true);
+    } else {
+      console.log('      (no ward came up in this game — scripts.test.ts asserts all three of its '
+        + 'outcomes deterministically)');
+    }
     if (seen.countered) {
       check('a spell on the stack can be targeted', true);
     } else if (DECK_A === 'tidal-mind' || DECK_B === 'tidal-mind') {

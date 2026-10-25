@@ -1157,7 +1157,10 @@ describe('what the engine tells a client', () => {
       const hasSomething =
         actions.canPass || actions.plays.length > 0 || actions.mustDiscard > 0 ||
         actions.mustDeclare !== null || actions.mustSettleHand ||
-        actions.mustChoose !== null || actions.mustDecide !== null;
+        actions.mustChoose !== null || actions.mustDecide !== null ||
+        // A ward waiting to be paid: the newest way to be waiting on somebody, and this list is
+        // how it was noticed that a client had no answer for it.
+        actions.mustPay !== null;
       if (!hasSomething) stuck.push(`seat ${seat} at ${s.step} on turn ${s.turn}`);
       const before = s.stateVersion;
       s = stepOnce(s, seat);

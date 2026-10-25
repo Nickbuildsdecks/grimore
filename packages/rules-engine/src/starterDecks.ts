@@ -282,6 +282,37 @@ const LLANOWAR_ELVES: CardDef = {
   colors: ['G'],
 };
 
+/*
+  The two cards with ward, which is the one evergreen keyword the engine did not have.
+
+  Both are printed with magecraft as well, and both halves are scripted: ward is a triggered
+  ability that asks the *other* player for mana (CR 702.21b), and magecraft is the `spell-cast`
+  trigger the engine already had for Talrand. The "or copy" half of magecraft is not scripted,
+  because nothing in this pool copies an instant — said out loud in `scripts.ts` rather than
+  quietly approximated.
+*/
+const DRAGONSGUARD_ELITE: CardDef = {
+  name: 'Dragonsguard Elite',
+  typeLine: 'Creature — Human Wizard',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Ward {1}\nMagecraft — Whenever you cast or copy an instant or sorcery spell, put two +1/+1 counters on Dragonsguard Elite.',
+  colors: ['G'],
+};
+
+const SEDGEMOOR_WITCH: CardDef = {
+  name: 'Sedgemoor Witch',
+  typeLine: 'Creature — Human Warlock',
+  manaCost: '{2}{B}{B}',
+  cmc: 4,
+  power: '3',
+  toughness: '2',
+  oracleText: "Menace, ward {3}\nMagecraft — Whenever you cast or copy an instant or sorcery spell, create a 1/1 black Pest creature token with \"When this creature dies, you gain 1 life.\"",
+  colors: ['B'],
+};
+
 const GRIZZLY_BEARS: CardDef = {
   name: 'Grizzly Bears',
   typeLine: 'Creature — Bear',
@@ -1913,6 +1944,15 @@ export const VERDANT_GUARD: DeckSpec = {
     // Both copies, pinned: `playout.test.ts` asks whether a death reaches its trigger in a real
     // game, and the Spirit it watches for is this card's.
     { card: DOOMED_TRAVELER, count: 2 },
+    /*
+      The pool's first card with ward, in the deck whose instants make it grow: a 2/2 for two that
+      an opponent has to pay a mana to touch, and a 4/4 the moment you cast a Giant Growth.
+
+      It cost the second Naturalize, which is the most situational card this deck ran — in a pool
+      with four artifacts and a handful of enchantments across eight decks, the first copy is
+      already more than it needs.
+    */
+    { card: DRAGONSGUARD_ELITE, count: 1 },
     // A plain 2/2 with no text, kept at one copy on purpose: `testkit.ts` builds its boards by
     // pulling named cards out of a real deck, so the vanilla creature two dozen tests use as
     // their fixture has to be *in* a deck to be reachable. Cutting it breaks them all at once.
@@ -1947,7 +1987,7 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: PACIFISM, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
     // The deck with the most to lose to an aura, and the one that can answer it.
-    { card: NATURALIZE, count: 2 },
+    { card: NATURALIZE, count: 1 },
     { card: BLOSSOMING_DEFENSE, count: 1 },
     { card: HARMONIZE, count: 1 },
     { card: OVERRUN, count: 1 },
@@ -2225,7 +2265,17 @@ export const ASHEN_RITE: DeckSpec = {
     { card: DOOMED_DISSENTER, count: 2 },
     // A body one blocker cannot stop, in the deck that is happy either way: it gets through, or it
     // eats two creatures and feeds the drains on the way out.
-    { card: BOGGART_BRUTE, count: 2 },
+    { card: BOGGART_BRUTE, count: 1 },
+    /*
+      Ward {3} in the deck that least wants its creatures answered — and, more to the point, the
+      deck that turns the Pests into damage. Every instant and sorcery here makes a 1/1 that Blood
+      Artist, Zulaport Cutthroat, Bloodthrone Vampire and Vampire Aristocrat all already know what
+      to do with, which is why the Witch is in this deck rather than in Tidal Mind.
+
+      It cost the second Boggart Brute: the same three power with menace, for a card that also
+      wards and also builds a board.
+    */
+    { card: SEDGEMOOR_WITCH, count: 1 },
     { card: BLOOD_ARTIST, count: 3 },
     { card: ZULAPORT_CUTTHROAT, count: 2 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },

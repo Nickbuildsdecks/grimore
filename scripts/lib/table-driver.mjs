@@ -241,6 +241,7 @@ export async function isMyMove(page) {
   if (await has(page, 'block-prompt')) return true;
   if (await has(page, 'order-prompt')) return true;
   if (await has(page, 'discard-prompt')) return true;
+  if (await has(page, 'ward-prompt')) return true;
   return has(page, 'primary-move');
 }
 /**
@@ -280,6 +281,20 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     }
     await press(page, 'primary-move');
     return 'kept the opening hand';
+  }
+
+  /*
+    A ward, answered before anything else for the same reason a mid-resolution question is: the
+    spell is on the stack and nobody holds priority until this is settled.
+
+    Paid rather than declined, because a driver that always declines would never once exercise the
+    payment — and the payment is the half with mana in it. The engine's own tests cover declining
+    and cover the case where the cost cannot be met at all.
+  */
+  if (await has(page, 'ward-prompt')) {
+    const prompt = await text(page, 'ward-prompt');
+    await press(page, 'ward-pay');
+    return `paid a ward: ${prompt}`;
   }
 
   // A card that stopped mid-resolution to ask this player something blocks everything, including
@@ -546,6 +561,13 @@ export async function noteMove(seen, page, did) {
   if (/from your graveyard/.test(did) && seen.flashback !== true) {
     seen.flashback = true;
     await shot(page, 'cast-out-of-the-graveyard');
+  }
+  // A ward paid, which is the one prompt in the game that belongs to the player who did *not*
+  // stop the table. Sampled for the same reason flashback is: it needs the warded creature on the
+  // board and an opponent with something that targets it.
+  if (/^paid a ward/.test(did) && seen.ward !== true) {
+    seen.ward = true;
+    await shot(page, 'a-ward-being-paid');
   }
   /*
     The damage assignment order (CR 509.2), which only happens when a creature is blocked by two or

@@ -6,6 +6,7 @@
  * whole of its turn structure — and a table running in manual mode leaves every one of these at its
  * empty value.
  */
+import type { CardInstance } from './cards.js';
 import type { ContinuousEffect } from './characteristics.js';
 import type { ManaPool } from './mana.js';
 import type { SeatIndex } from './types.js';
@@ -81,6 +82,16 @@ export interface StackObject {
   /** Which of the source's abilities, for activated and triggered objects. */
   readonly abilityIndex?: number;
   readonly targets: readonly Target[];
+  /**
+   * The stack object this triggered ability is *about*, for a trigger that watched something
+   * happen to an object rather than to a player or a permanent.
+   *
+   * Ward is the only thing that needs it and needs it absolutely: "counter it unless that player
+   * pays" has no referent at all without knowing which `it`, and by the time the ward ability
+   * resolves the spell is one of several on the stack. It travels on the object for exactly the
+   * reason `attacked` does — the event is gone by the time anything reads it.
+   */
+  readonly answering?: string;
   /**
    * Which **object** each card target was when it was chosen, by instance id (CR 400.7).
    *
@@ -253,6 +264,23 @@ export interface AutomationState {
    */
   readonly left: readonly string[];
   /**
+   * Tokens that have ceased to exist since the last `settle`, kept just long enough to raise their
+   * own triggers (CR 111.7, CR 603.6d).
+   *
+   * A token that leaves the battlefield stops existing immediately, which used to mean its death
+   * trigger found no source and never fired — written down in `relocate` as "a real limitation,
+   * and no token in the pool has one", and true right up until Sedgemoor Witch's Pest. The rules
+   * are clear that it should fire: a leave-the-battlefield ability triggers from the game state as
+   * it was *before* the event, so a 1/1 that says "when this dies, you gain 1 life" pays the life
+   * even though nothing is left to point at.
+   *
+   * So the instance is removed from its zone and detached immediately, as it must be — nothing
+   * should see a token sitting in a graveyard — and its last state is kept here for `raise` to
+   * read. `settle` clears the list once it has drained `died` and `left`, which is the moment the
+   * token has no further business in the game.
+   */
+  readonly vanished: Readonly<Record<string, CardInstance>>;
+  /**
    * What replacement effects did since the last action was announced, in words.
    *
    * Recorded and drained the way `died` is, and for a reason that is about the *player* rather than
@@ -344,6 +372,31 @@ export interface AutomationState {
    * so far and which question is next — and it is part of the state rather than a closure because
    * the state is serialised to Redis between one action and the next.
    */
+  /**
+   * A ward waiting to be paid (CR 702.21), and the spell or ability it will counter if it is not.
+   *
+   * The third thing that stops the table dead, and the one that stops it for the player who is
+   * *not* resolving anything: a ward's triggered ability belongs to the warded permanent's
+   * controller, but the question it asks belongs to whoever did the targeting. So `seat` here is
+   * never the controller of the ability that set it — which is the whole reason it could not be
+   * folded into `pendingDecision`, whose `seat` is a chooser inside somebody else's resolution.
+   *
+   * `counters` is the stack object that goes away when the answer is no. It is remembered here
+   * rather than worked out later because by the time the answer arrives the ward's own ability has
+   * left the stack, and nothing else on the table says what it was about.
+   */
+  readonly pendingPayment: {
+    /** Who may pay: the controller of the spell or ability that did the targeting. */
+    readonly seat: SeatIndex;
+    /** The ward cost, in the printed `{2}` form. */
+    readonly cost: string;
+    /** Shown to the player paying, in their own words. */
+    readonly prompt: string;
+    /** The stack object countered if they decline, or cannot pay. */
+    readonly counters: string;
+    /** The warded permanent, for the table to point at. */
+    readonly source: string;
+  } | null;
   readonly pendingDecision: {
     /** Who answers. Not always the controller: a discard is chosen by the player discarding. */
     readonly seat: SeatIndex;
@@ -466,6 +519,18 @@ export interface AutoChooseAction {
 export interface AutoDecideAction {
   readonly type: 'auto:decide'; readonly by: SeatIndex; readonly cards: readonly string[];
 }
+/**
+ * Answers a ward (CR 702.21): pay the cost, or let the spell or ability be countered.
+ *
+ * The only question in this engine that is asked of a player because of *somebody else's*
+ * permanent, and the only one whose answer is mana rather than a card — which is why it is its own
+ * action rather than another `auto:decide`. `pay: false` is a real answer and not a refusal to
+ * answer: declining is often right, and the engine has to be able to tell the difference between
+ * "no" and a table that has stopped.
+ */
+export interface AutoPayAction {
+  readonly type: 'auto:pay'; readonly by: SeatIndex; readonly pay: boolean;
+}
 /** Settles on an opening hand, putting back one card for each mulligan taken. */
 export interface AutoKeepAction {
   readonly type: 'auto:keep'; readonly by: SeatIndex;
@@ -476,12 +541,12 @@ export interface AutoKeepAction {
 export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
-  | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction;
+  | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
   'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
-  'auto:decide',
+  'auto:decide', 'auto:pay',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

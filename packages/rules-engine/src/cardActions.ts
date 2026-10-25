@@ -139,8 +139,8 @@ export function relocate(
    * Recorded here rather than announced by whatever caused it, because this is the one place a
    * card changes zone: `settle` drains the list and raises the event. Only on an automated table,
    * since nothing drains it on a tabletop and it would grow for the whole game. A token is
-   * recorded too and then ceases to exist below, so its trigger finds no source and does not
-   * fire — a real limitation, and no token in the pool has one.
+   * recorded too and then ceases to exist below — its last state is kept in `vanished` so that its
+   * own trigger can still fire, which is what the rules say happens (CR 603.6d).
    */
   if (state.automated && inst.zone === 'battlefield' && toZone === 'graveyard') {
     next = { ...next, died: [...next.died, inst.id] };
@@ -162,13 +162,23 @@ export function relocate(
     next = { ...next, entered: [...next.entered, inst.id] };
   }
 
-  // A token that leaves the battlefield ceases to exist, as it does on a real table.
+  /*
+    A token that leaves the battlefield ceases to exist, as it does on a real table.
+
+    Gone from its zone and detached at once, because nothing should ever see a token sitting in a
+    graveyard — but its last state is kept in `vanished`, because a leave-the-battlefield ability
+    triggers from the game state as it was before the event (CR 603.6d). Without that a Pest with
+    "when this creature dies, you gain 1 life" would pay nothing, which is the limitation this used
+    to carry and the one the first token with an ability of its own made real. `settle` clears the
+    map once it has raised the events.
+  */
   if (inst.isToken && toZone !== 'battlefield') {
     const instances = { ...next.instances };
     delete instances[inst.id];
     next = {
       ...next,
       instances,
+      vanished: { ...next.vanished, [inst.id]: { ...inst, zone: toZone, zoneSeat: toSeat } },
       zones: { ...next.zones, [toKey]: listAt(next, toKey).filter((id) => id !== inst.id) },
     };
     return detachAllFrom(next, inst.id);

@@ -12,7 +12,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STARTER_DECKS, addCounters, canAttack, canBlock, characteristicsOf, hasType, legalActions,
+  STARTER_DECKS, TOKEN_DEFS, addCounters, canAttack, canBlock, characteristicsOf, hasType,
+  legalActions,
   parseTypeLine,
   pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor, scriptedCardNames,
   staticEffect, viewFor,
@@ -6170,13 +6171,18 @@ describe('deck coverage', () => {
     expect(missing).toEqual([]);
   });
 
-  it('registers each script under the name of a real card', () => {
-    const printed = new Set(
-      Object.values(STARTER_DECKS).flatMap((deck) =>
+  it('registers each script under the name of a real card or a token the pool makes', () => {
+    const printed = new Set([
+      ...Object.values(STARTER_DECKS).flatMap((deck) =>
         [...deck.cards.map((c) => c.card), deck.commander!].map((c) => c.name),
       ),
-    );
-    // A script registered under a name no deck contains can never fire, and nothing would say so.
+      // A token is in nobody's deck and can still have a script: a Pest's death trigger fires
+      // every game Sedgemoor Witch connects with an instant. `TOKEN_DEFS` is the list of what
+      // this pool can put onto the battlefield without casting it.
+      ...TOKEN_DEFS.map((token) => token.name),
+    ]);
+    // A script registered under a name nothing in the pool has can never fire, and nothing else
+    // would say so.
     const orphans = scriptedCardNames().filter((name) => !printed.has(name));
     expect(orphans).toEqual([]);
   });
@@ -6192,5 +6198,189 @@ describe('deck coverage', () => {
       }
     }
     expect(unpayable).toEqual([]);
+  });
+});
+
+describe('ward: a cost the other player has to pay to touch your creature', () => {
+  /*
+    The first question in this engine asked of a player because of somebody *else's* permanent.
+
+    Every other mid-resolution question belongs to whoever is resolving something — the caster
+    searching a library, the controller aiming a trigger, the player discarding to their own
+    Mind Rot. A ward's triggered ability belongs to the warded creature's controller and the
+    question it asks belongs to the player who did the targeting, which is why it could not be
+    another `pendingDecision` and why the authorisation check in `payWard` is written out rather
+    than reusing `assertMayActFor`.
+
+    The three outcomes are the three tests: paid, declined, and could not pay. The last is not
+    offered as a choice at all, for the reason a trigger with no legal targets never goes on the
+    stack — a prompt with one button is a table that has stopped.
+  */
+  const table = (deck: string, wardCard: string, theirLands: readonly string[], mine: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'tidal-mind', 1: deck },
+    hands: { 0: ['Doom Blade'] },
+    battlefield: { 0: [...theirLands], 1: [...mine, wardCard] },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('stops the removal on the stack and asks the other player to pay', () => {
+    let s = table('verdant-guard', 'Dragonsguard Elite', ['Swamp', 'Swamp', 'Swamp'], ['Forest']);
+    const elite = find(s, 1, 'battlefield', 'Dragonsguard Elite');
+    const blade = find(s, 0, 'hand', 'Doom Blade');
+    s = apply(s, { type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: elite }] });
+
+    // The ward ability is on the stack above the spell, so it resolves first (CR 603.3b).
+    expect(s.stackOrder).toHaveLength(2);
+    s = drain(passBoth(s));
+
+    // And the question is the caster's, not the warded creature's controller's.
+    expect(s.pendingPayment?.seat).toBe(0);
+    expect(s.pendingPayment?.cost).toBe('{1}');
+    expect(legalActions(s, 0).mustPay?.prompt).toContain('Dragonsguard Elite');
+    expect(legalActions(s, 1).mustPay).toBeNull();
+    // Nobody holds priority while it stands, which is what stops the other table offering a pass.
+    expect(s.priority).toBeNull();
+    expect(legalActions(s, 1).canPass).toBe(false);
+
+    // Paid, and the removal resolves as though the ward had never been there.
+    s = drain(apply(s, { type: 'auto:pay', by: 0, pay: true }));
+    expect(s.pendingPayment).toBeNull();
+    expect(namesIn(s, 1, 'graveyard')).toContain('Dragonsguard Elite');
+  });
+
+  it('counters the spell when the cost is declined, and the creature lives', () => {
+    let s = table('verdant-guard', 'Dragonsguard Elite', ['Swamp', 'Swamp', 'Swamp'], ['Forest']);
+    const elite = find(s, 1, 'battlefield', 'Dragonsguard Elite');
+    const blade = find(s, 0, 'hand', 'Doom Blade');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: elite }],
+    })));
+    expect(s.pendingPayment).not.toBeNull();
+
+    s = drain(apply(s, { type: 'auto:pay', by: 0, pay: false }));
+    // The card is spent and the creature is untouched, which is the whole point of ward being a
+    // cost rather than hexproof: the removal was answered and it cost its controller a card.
+    expect(s.instances[elite]!.zone).toBe('battlefield');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Doom Blade');
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('is not offered at all when the cost cannot be paid, and counters the spell itself', () => {
+    // Exactly enough to cast the Doom Blade and nothing over, against Sedgemoor Witch's Ward {3}.
+    let s = table('ashen-rite', 'Sedgemoor Witch', ['Swamp', 'Swamp'], ['Swamp']);
+    const witch = find(s, 1, 'battlefield', 'Sedgemoor Witch');
+    const blade = find(s, 0, 'hand', 'Doom Blade');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: witch }],
+    })));
+
+    // No question was ever asked: there was only one outcome available.
+    expect(s.pendingPayment).toBeNull();
+    expect(legalActions(s, 0).mustPay).toBeNull();
+    expect(s.instances[witch]!.zone).toBe('battlefield');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Doom Blade');
+    // And said out loud in the log, because nobody pressed anything: a spell that leaves the stack
+    // with no prompt and no message is a card the player cannot see working. `reduceAutoAction`
+    // drains the notes onto the message of the action that provoked them, which is why this reads
+    // the log rather than `replacements`.
+    expect(s.log.map((entry) => entry.message).join(' ')).toContain('ward {3} was not paid');
+  });
+
+  it('does not trigger off its own controller’s spells', () => {
+    // Ward defaults to `by: 'opponent'` for this case and only this case: a creature with ward
+    // may be given a Giant Growth by its own controller for free.
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard' },
+      hands: { 0: ['Giant Growth'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Dragonsguard Elite'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const elite = find(s, 0, 'battlefield', 'Dragonsguard Elite');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: elite }],
+    });
+    /*
+      Two objects on the stack and neither is a ward: the Giant Growth, and the Elite's *own*
+      magecraft trigger, which fires off its controller casting an instant. That is the card
+      working — and it is also why this test asserts on what ward did not do rather than on the
+      size of the stack.
+    */
+    expect(s.stackOrder).toHaveLength(2);
+    s = drain(passBoth(s));
+    expect(s.pendingPayment).toBeNull();
+    // 2/2, +3/+3 from the Growth, and two +1/+1 counters from its own magecraft.
+    expect(power(s, elite)).toBe(7);
+  });
+
+  it('triggers off an ability as well as a spell', () => {
+    // An Icy Manipulator aimed at a warded creature is the case the keyword is printed for, and it
+    // is a different code path from a cast: the object on the stack is an activated ability.
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Island', 'Island', 'Icy Manipulator'],
+        1: ['Forest', 'Dragonsguard Elite'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const icy = find(s, 0, 'battlefield', 'Icy Manipulator');
+    const elite = find(s, 1, 'battlefield', 'Dragonsguard Elite');
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: icy, abilityIndex: 0,
+      targets: [{ kind: 'card', id: elite }],
+    });
+    s = drain(passBoth(s));
+    expect(s.pendingPayment?.seat).toBe(0);
+    expect(s.pendingPayment?.cost).toBe('{1}');
+  });
+
+  it('triggers off a triggered ability that targets, which is where it would have been missed', () => {
+    /*
+      Flametongue Kavu's arrival deals its damage to a *target* creature, so it is a triggered
+      ability with a target an opponent chose — the third of the four places an object on the stack
+      gains one. Without `raiseWard` there, a Ward {1} would have answered a Doom Blade and not a
+      Kavu, which reads as a bug rather than as a rule.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+      hands: { 0: ['Flametongue Kavu'] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'],
+        1: ['Forest', 'Dragonsguard Elite'],
+      },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flametongue Kavu'),
+    }));
+    s = drain(s);
+    // The Kavu can shoot its own controller's creatures too, so the choice is a real one and the
+    // engine stops to ask. Aimed at the warded creature, which is what the ward is for.
+    const elite = find(s, 1, 'battlefield', 'Dragonsguard Elite');
+    s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: elite }] }));
+    expect(s.pendingPayment?.seat).toBe(0);
+    expect(s.pendingPayment?.cost).toBe('{1}');
+  });
+
+  it('makes a Pest when its controller casts an instant, and the Pest pays a life when it dies', () => {
+    // Sedgemoor Witch's other half, which is also the pool's first token with an ability of its
+    // own: `scriptFor` finds a token's script by name like any other card's.
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite' },
+      hands: { 0: ['Lightning Bolt'] },
+      battlefield: { 0: ['Mountain', 'Sedgemoor Witch'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Pest');
+
+    const pest = find(s, 0, 'battlefield', 'Pest');
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: pest, toZone: 'graveyard' })));
+    expect(life(s, 0)).toBe(before + 1);
   });
 });
