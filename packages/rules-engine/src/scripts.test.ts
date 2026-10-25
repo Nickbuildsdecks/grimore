@@ -472,7 +472,9 @@ describe('blue-black control', () => {
 
   it('Negate cannot be aimed at a creature spell', () => {
     let s = arena({
-      decks: { 1: 'tidal-mind' },
+      // Hollow Tide rather than Tidal Mind: the deck a named card is drawn from only has to
+      // contain it, and Tidal Mind's counterspell count was cut to three in the balance pass.
+      decks: { 1: 'hollow-tide' },
       hands: { 0: ['Hill Giant'], 1: ['Negate'] },
       battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Island', 'Island'] },
       turn: 2, firstSeat: 0,
@@ -489,7 +491,7 @@ describe('blue-black control', () => {
 
   it('Negate counters a noncreature spell', () => {
     let s = arena({
-      decks: { 1: 'tidal-mind' },
+      decks: { 1: 'hollow-tide' },
       hands: { 0: ['Lightning Bolt'], 1: ['Negate'] },
       battlefield: { 0: ['Mountain'], 1: ['Island', 'Island'] },
       turn: 2, firstSeat: 0,
@@ -513,7 +515,7 @@ describe('blue-black control', () => {
   it('a counterspell with nothing left to counter does not resolve (CR 608.2b)', () => {
     // Both players point at the same spell; the first counter resolves, so the second fizzles.
     let s = arena({
-      decks: { 1: 'tidal-mind' },
+      decks: { 1: 'hollow-tide' },
       hands: { 0: ['Lightning Bolt'], 1: ['Counterspell', 'Negate'] },
       battlefield: { 0: ['Mountain'], 1: ['Island', 'Island', 'Island', 'Island'] },
       turn: 2, firstSeat: 0,

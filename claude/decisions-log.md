@@ -4290,3 +4290,98 @@ And one thing the measurement said that is not about flashback at all: **Tidal M
 games against the rest of the pool on one seed set and 64 on the other** — about a fifth of them,
 where Ember Rush wins three quarters. That is a balance problem with eight decks in it rather than a
 card problem, and it is the next thing worth a measurement of its own.
+
+## D114 — What each deck is worth, and the deck that had no way to win
+
+Eight decks, measured against each other by the engine's own bot on both seats, 168 games each
+(`scripts/measure/deck-table.mjs`, seeds 12 from 4400):
+
+```
+ 80%  134-34  ember-rush
+ 70%  118-50  forge-alliance
+ 57%  96-72   verdant-guard
+ 49%  83-85   skyward-writ
+ 43%  72-96   hollow-tide
+ 38%  64-104  rot-harvest
+ 38%  63-105  ashen-rite
+ 25%  42-126  tidal-mind
+```
+
+Ember Rush beat Tidal Mind 23-1. Tidal Mind beat exactly one deck in the pool, 13-11.
+
+**The first thing measured was not a change but the deck.** The obvious guess about a deck at 25% is
+that some of its sixty cards are dead weight, so `cast-counts.mjs` went in: for every slot, how
+often the bot casts it as a share of the games it reached hand. Tidal Mind's answer was that
+*nothing* is dead. The least-cast spell in the deck is Diabolic Tutor at 35%, then Negate at 38% and
+Cancel at 49%; the counterspells and removal it is supposedly failing to use are at 92% (Counterspell),
+103% (Essence Scatter), 112% (Doom Blade) and 93% (Murder) — over 100% because the figure is per game
+the card reached hand and two copies can each be cast. Ember Rush, at 80%, is the same shape: its
+worst slot is Shivan Dragon at 40%. So is Ashen Rite (Read the Bones, 60%) and Rot Harvest (Zombify,
+64%). **Across four decks spanning fifty-five points of win rate, there is not one dead card.** A
+deck's record in this pool is not explained by cards the bot refuses to cast.
+
+That harness also produced the one honest mistake worth recording. Its first version counted casts
+and land drops only, and reported Lonely Sandbar at 12% — two land slots doing nothing, apparently
+the clearest finding of the day. Counting activated abilities too moved it to 115%: a cycling land
+is *played* or *cycled*, and the harness had been blind to the half of the card the deck actually
+used. A usage number is only as good as its definition of use.
+
+**Then three variants, same instrument, 238 games per arm, two seed sets.** The first was the
+obvious slot change — two three-mana answers out, two cheap blockers in — and it measured as
+nothing: 45-193 → 49-189 and 63-175 → 73-165, four games and ten, both inside the eighteen-game
+noise floor. Same direction twice is not a measurement. It was reverted.
+
+The one that worked was bigger, and it worked for a reason the totals hide. Cutting four of the six
+counterspells for four cheap creatures is worth +42 and +33 on the two seed sets — three times the
+floor, 23% → 38% — and **the per-opponent split says none of it comes from where the hypothesis
+said it would**:
+
+```
+ 3-31 ->  4-30   +1  v ember-rush
+ 5-29 ->  6-28   +1  v verdant-guard
+ 4-30 ->  9-25   +5  v forge-alliance
+11-23 -> 16-18   +5  v hollow-tide
+10-24 -> 20-14  +10  v rot-harvest
+ 8-26 -> 18-16  +10  v skyward-writ
+ 4-30 -> 14-20  +10  v ashen-rite
+```
+
+The hypothesis was "six counterspells and no sweeper cannot answer eighteen one-drops", which
+predicts the gain against the fastest deck. Ember Rush is unmoved: 3-31 before, 4-30 after. Tidal
+Mind is simply dead to it either way, and nothing in a sixty-card list fixes that. Every one of
+those games came from the *slow* half of the pool — including beating Skyward Writ, which it used to
+lose 8-26. **The deck's fault was not that it could not survive. It was that it had no way to win
+the games it survived**: it answered everything, killed nobody, and lost the long game to whoever
+drew a threat last.
+
+A third variant separated the halves of the swap. Keeping all six counterspells and buying the same
+four bodies with two lands and two removal spells is worth +24 of the +42 — so the clock is most of
+it, and converting the redundant answers into that clock is the rest. Both halves are real, and
+every variant shows the same per-opponent shape.
+
+**What shipped is the middle one, not the biggest number**, and the reason is card quality rather
+than measurement. The deepest cut deletes both Counterspells while keeping Cancel, which costs a
+mana more for the same text — nobody would build that. The only counterspells left to trim are
+Cancel and Soul Manipulation, and those are the pool's **only copies of their cards**, so cutting
+them would orphan two scripts. So Tidal Mind goes to three counterspells rather than two: one
+Counterspell for two, one Essence Scatter for two, no Negate (the least-cast spell in the deck, and
+blank against the six of eight decks that win with creatures), paying for a second Fog Bank, a
+second Vampire Nighthawk and a third Man-o'-War. Measured +31 and +25 on the two seed sets: 23% →
+34%, which moves Tidal Mind from the pool's outlier to level with Rot Harvest and Ashen Rite.
+**The pool's structure sets where this stops, not the instrument.**
+
+**Three tests changed deck, and that is all the churn.** Three scripts tests drew a named Negate out
+of Tidal Mind's library; they now draw it out of Hollow Tide, which runs Negate in the same two
+colours. A test that wants a card should load a deck that has one.
+
+**The ceiling was left alone.** Ember Rush at 80% is the other end of the same spread, and nothing
+here touched it: a burn deck with four Lightning Bolts is the easiest thing in this pool for a
+one-ply search to pilot, and a deck that is strong partly because the opponent plays it well is not
+a deck to weaken until the opponent is better (D110). The pass set out to make sure no deck is
+unplayable rather than to make every deck 50%, and with the floor at 34% that is now true.
+
+**And the instrument is in the repository.** `deck-table.mjs`, `deck-probe.mjs` and
+`cast-counts.mjs` lived in a scratch directory for every measurement before this one, which means
+every number quoted in this log up to here was produced by a tool nobody can re-run. They are now
+in `scripts/measure/` with a README that states the noise floor, the two seed sets, and the one rule
+this entry exists to prove: read the per-opponent split before believing the total.

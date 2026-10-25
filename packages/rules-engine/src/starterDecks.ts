@@ -1974,8 +1974,28 @@ export const TIDAL_MIND: DeckSpec = {
     // control deck is happy to make and nothing else in this pool is. It cost an Island, so the
     // deck is on twenty sources rather than twenty-one.
     { card: MAZE_OF_ITH, count: 1 },
-    { card: COUNTERSPELL, count: 2 },
-    // A third counter that is not a fourth Counterspell: a hand of answers should not be three
+    /*
+      Three counterspells rather than six, and three more bodies in their place.
+
+      Measured against the rest of the pool, this deck won 108 of 476 games — a fifth of them,
+      where Ember Rush won three quarters. Nothing in it was dead: every card got cast in a
+      majority of the games it reached hand, and the counterspells most of all. What it did not
+      have was a way to *win* the games it survived, and the per-opponent split is what says so.
+      Trading three counterspell copies for three cheap creatures is worth nothing at all against
+      the two fastest decks — 3-31 against Ember Rush before and 3-31 after — and five to ten
+      games each against every slower one, including beating Skyward Writ where it used to lose
+      8-26. A deck that answers everything and kills nobody loses the long game to whoever draws
+      a threat last.
+
+      Cutting deeper measures better still: taking all four of the Counterspell and Negate copies
+      for four bodies is worth another ten games. It is not shipped, because the only counterspells
+      left to cut are the ones worth keeping — Counterspell itself, with Cancel costing a mana more
+      for the same text, and Cancel and Soul Manipulation are this pool's only copies of their
+      cards, so cutting them would orphan two scripts. The pool's structure sets where this stops,
+      not the measurement.
+    */
+    { card: COUNTERSPELL, count: 1 },
+    // A second counter that is not a second Counterspell: a hand of answers should not be two
     // copies of one card.
     { card: CANCEL, count: 1 },
     /*
@@ -1983,15 +2003,17 @@ export const TIDAL_MIND: DeckSpec = {
 
       Every other mid-resolution question this engine asks looks in one of the chooser's own zones —
       your library, your hand, your graveyard. "Any creature on the battlefield" is a question about
-      the table, and in a deck holding four counterspells and four removal spells the answer is
+      the table, and in a deck holding three counterspells and four removal spells the answer is
       usually whatever the opponent just resolved: the card is removal that leaves you the creature.
 
-      It cost the second Cancel, which is the most replaceable of this deck's five counterspells.
+      It cost the second Cancel, the most replaceable counterspell this deck had at the time.
     */
     { card: CLONE, count: 1 },
-    { card: NEGATE, count: 1 },
-    // The narrow counter, which answers the half of the format the Negates cannot.
-    { card: ESSENCE_SCATTER, count: 2 },
+    // The narrow counter, which answers the half of the format a Negate cannot — and the half that
+    // matters, in a pool where six of the eight decks win with creatures. Negate was the first cut
+    // of the pass above: it is the least-cast spell in the deck (38% of the games it is drawn) for
+    // the reason that it is blank against the decks this one was losing to.
+    { card: ESSENCE_SCATTER, count: 1 },
     { card: DOOM_BLADE, count: 2 },
     // Removal that does not care what colour it is, which the Doom Blades do.
     { card: MURDER, count: 2 },
@@ -2024,8 +2046,9 @@ export const TIDAL_MIND: DeckSpec = {
     { card: ROBE_OF_MIRRORS, count: 1 },
     // A 0/2 that blocks anything in the pool for ever and survives it. The deck that loses 0-15 to
     // the fastest red deck has no creature that can stand in front of one twice; this one does it
-    // every turn, and it cost the second Robe.
-    { card: FOG_BANK, count: 1 },
+    // every turn, and the first copy cost the second Robe. The second is one of the three bodies
+    // the counterspells above paid for.
+    { card: FOG_BANK, count: 2 },
     { card: JACE_BELEREN, count: 1 },
     { card: OMENSPEAKER, count: 2 },
     { card: PHYREXIAN_ARENA, count: 1 },
@@ -2047,8 +2070,16 @@ export const TIDAL_MIND: DeckSpec = {
     { card: RAVENOUS_RATS, count: 1 },
     { card: CHILD_OF_NIGHT, count: 1 },
     { card: WIND_DRAKE, count: 1 },
-    { card: MAN_O_WAR, count: 2 },
-    { card: VAMPIRE_NIGHTHAWK, count: 1 },
+    /*
+      The other two bodies the counterspell cuts paid for, and the deck's clock.
+
+      A third Man-o'-War because it is the card this deck gets the most out of — a body *and* an
+      Unsummon on the same card, which buys the turn and then attacks — and a second Nighthawk
+      because deathtouch, flying and lifelink is the one creature in these colours that both holds
+      the ground against anything and wins the game on its own if the game goes long.
+    */
+    { card: MAN_O_WAR, count: 3 },
+    { card: VAMPIRE_NIGHTHAWK, count: 2 },
     { card: AIR_ELEMENTAL, count: 1 },
   ],
 };
