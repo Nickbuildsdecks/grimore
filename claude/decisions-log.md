@@ -4184,3 +4184,48 @@ toughness exactly when `characteristicsOf` says the permanent is a creature, so 
 moves itself into the creature row and draws its own attack arrow. And Crimson Wisps' colour clause
 is nearly inert in play — 12 casts in 56 games, almost all of them for the haste and the card — which
 is written down rather than dressed up: the layer is right, and the card that needs it is a cantrip.
+
+## D112 — The last layer: a size that is a fact about the board
+
+Characteristic-defining abilities — layer 7a (CR 613.4a) — were the last layer of CR 613 this engine
+had named and not built. **Lhurgoyf** needs one: its power is the number of creature cards in every
+graveyard at the table and its toughness is that plus one. With it, every layer the cards in this
+pool use is implemented.
+
+A CDA is a different kind of thing from everything else in `characteristicsOf`, and the difference
+is worth stating: **nothing resolves.** There is no moment at which the number is decided, so there
+is nothing to store and nothing to invalidate — a creature dies three turns later and the Lhurgoyf
+is bigger, a Tormod's Crypt exiles a graveyard and it is smaller, with no event, no trigger and no
+recomputation anywhere. It is counted fresh on every read, which is the one implementation that
+cannot drift.
+
+**Declared, not computed by the card.** `definesSize` names a count the engine knows how to perform
+rather than carrying a function, because `GameState` is written to Redis and sent down a socket: an
+effect holding a closure is an effect that cannot be saved. And it names exactly *one* count, the
+one the card needs. "Cards in your hand", "lands you control" and the rest are each one line in
+`cdaCount` and one card away, and a clause with no card behind it is a clause nothing has ever run
+— which is D57's warning, and the reason the enum has a single member and a comment rather than
+three members and a hope.
+
+**The ordering is the whole of the rest.** 7a defines the *base*, so:
+
+- a setting effect beats it (613.4c after 613.4a): a Turn to Frog on a Lhurgoyf is a 1/1 however
+  full the graveyards are;
+- modifying and counters land on top: two creature cards buried, a Giant Growth and a +1/+1 counter
+  make a 6/7;
+- and a **copy** of it copies the ability rather than the number (CR 707.2) — a Clone of a
+  four-power Lhurgoyf is a Lhurgoyf, and both of them shrink together when a graveyard is exiled.
+
+Five tests, one per boundary, and the last of them is the one that makes layer 1 and layer 7a agree.
+
+**In play.** It went into Rot Harvest for the second Hurricane — a deck that feeds its own creatures
+to a Blood Artist is a deck whose graveyard only grows — and it is live rather than decorative: cast
+12 times across 42 games, attacking 8 times at a mean power of 4.3 and a maximum of 8. The paired
+reference record moved **104-132 → 107-131 and 93-144 → 103-135** over 238 games per arm on two seed
+sets: three games and ten games up, both inside the 18-game noise floor and both in the same
+direction, which is about what one card in a sixty can honestly claim.
+
+What is left of CR 613 after this: dependency ordering between effects in the same layer (613.8),
+which no two cards in this pool argue about, and layers 2 and 3 — control and text-changing — which
+exist in the engine as *moves* rather than as layers, because control is a change of battlefield and
+nothing here rewrites a card's text.

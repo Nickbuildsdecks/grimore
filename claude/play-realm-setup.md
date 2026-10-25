@@ -184,7 +184,7 @@ slower decks comfortably and losing to the fastest ones — and a good part of t
 rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
 A person plays it better.
 
-The decks share a pool of a hundred and sixty-nine scripted cards, which now includes a wrath, a
+The decks share a pool of a hundred and seventy scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -217,7 +217,12 @@ last when the table pays for a spell on your behalf: it reaches for a basic befo
 your life total. **Dark Confidant** reveals your top card each upkeep and charges you its mana
 value, which over 120 measured games cost its controller 65 life and drew 50 cards.
 
-The two newest are in for the rules rather than for the decks. **Mutavault** is a land that becomes
+The three newest are in for the rules rather than for the decks. **Lhurgoyf** is as big as the
+graveyards are: its power is the number of creature cards in every graveyard at the table and its
+toughness is that plus one, counted fresh every time anybody looks — so it grows when anything dies
+anywhere, shrinks when a graveyard is exiled, and a Clone of it copies the *ability* rather than the
+number. In Rot Harvest, a deck that feeds its own creatures to a Blood Artist, it tends to arrive as
+a four-power attacker and keep going. **Mutavault** is a land that becomes
 a 2/2 creature for {1} until end of turn and stays a land: it attacks, an anthem pumps it, it is
 summoning-sick on the turn you play it, and it dies to a Doom Blade like anything else — and it taps
 for {C} only, which in Ember Rush's deck of {R} costs is the price you pay for the body. Tap it for
@@ -324,7 +329,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (618 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (623 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (176 tests, the interaction reducer behind every prompt) and
 `apps/realtime`

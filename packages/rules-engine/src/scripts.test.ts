@@ -4598,6 +4598,145 @@ describe('a land that becomes a creature, and a creature that changes colour', (
   });
 });
 
+describe('a creature whose size is a fact about the board', () => {
+  /*
+    Layer 7a — a characteristic-defining ability — and the last layer of CR 613 this engine had
+    named and not built.
+
+    What makes it a different kind of thing from every other size effect: nothing resolves. A
+    Lhurgoyf's power is a count of the creature cards in every graveyard, read fresh each time
+    anybody asks, so it changes when the board changes with no event and nothing to recompute. The
+    tests below are about the ordering that follows (7a is a *base*, so 7b replaces it and 7c and
+    7d land on top) and about the count being live.
+  */
+  const goyf = (hand: readonly string[] = ['Lhurgoyf'], theirs: readonly string[] = []): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: [...hand] },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Forest', 'Forest', 'Swamp'],
+        1: [...theirs],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+  /** Casts it and lets it resolve, which is what installs the static that defines its size. */
+  const cast = (state: GameState): { s: GameState; id: string } => {
+    let s = tapAllLands(state, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lhurgoyf') })));
+    return { s, id: find(s, 0, 'battlefield', 'Lhurgoyf') };
+  };
+
+  it('is as big as the graveyards are, and grows when something dies anywhere', () => {
+    // An empty table: a 0/1, which is what the printed `*` and `1+*` come to with nothing buried.
+    let { s, id } = cast(goyf());
+    expect([characteristicsOf(s, s.instances[id]!).power,
+      characteristicsOf(s, s.instances[id]!).toughness]).toEqual([0, 1]);
+
+    // Two creature cards into two different graveyards, one of them the opponent's: "all
+    // graveyards" is the whole table, not your side of it.
+    const mine = find(s, 0, 'library', 'Centaur Courser');
+    s = apply(s, { type: 'card:move', by: 0, card: mine, toZone: 'graveyard' });
+    const theirs = find(s, 1, 'library', 'Omenspeaker');
+    s = apply(s, { type: 'card:move', by: 1, card: theirs, toZone: 'graveyard' });
+    const ch = characteristicsOf(s, s.instances[id]!);
+    expect([ch.power, ch.toughness]).toEqual([2, 3]);
+
+    // And a land in a graveyard is not a creature card, which is the half a count of "cards" would
+    // have got wrong.
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', 'Forest'), toZone: 'graveyard',
+    });
+    expect(characteristicsOf(s, s.instances[id]!).power).toBe(2);
+  });
+
+  it('shrinks again when a graveyard is exiled, with nothing to tell it', () => {
+    /*
+      The point of computing rather than storing. Tormod's Crypt exiles a graveyard; no event in
+      the engine says "a Lhurgoyf somewhere is now smaller", and none needs to.
+    */
+    let { s, id } = cast(goyf(['Lhurgoyf']));
+    for (const name of ['Centaur Courser', 'Gravedigger']) {
+      s = apply(s, {
+        type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'graveyard',
+      });
+    }
+    expect(characteristicsOf(s, s.instances[id]!).power).toBe(2);
+    // Exile the graveyard the long way round, which is the same move the Crypt makes.
+    for (const card of [...ids(s, 0, 'graveyard')]) {
+      s = apply(s, { type: 'card:move', by: 0, card, toZone: 'exile' });
+    }
+    expect(characteristicsOf(s, s.instances[id]!).power).toBe(0);
+  });
+
+  it('and a copy of it has the ability, not the number', () => {
+    /*
+      Layer 1 and layer 7a together. A copy copies printed characteristics (CR 707.2), and what is
+      printed on a Lhurgoyf is the *ability* rather than a size — so a Clone of a four-creature
+      Lhurgoyf is not a 4/5, it is a Lhurgoyf, and both of them shrink when the graveyards do.
+    */
+    let { s, id } = cast(goyf(['Lhurgoyf']));
+    for (const name of ['Centaur Courser', 'Gravedigger']) {
+      s = apply(s, {
+        type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'graveyard',
+      });
+    }
+    // Seat 1's Clone, cast with its own Islands and pointed at the Lhurgoyf.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    for (const name of ['Island', 'Island', 'Island', 'Island']) {
+      s = apply(s, {
+        type: 'card:move', by: 1, card: find(s, 1, 'library', name), toZone: 'battlefield',
+      });
+    }
+    s = apply(s, {
+      type: 'card:move', by: 1, card: find(s, 1, 'library', 'Clone'), toZone: 'hand',
+    });
+    s = tapAllLands(s, 1);
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Clone') });
+    s = passBoth(s);
+    s = decide(s, ['Lhurgoyf']);
+    s = drain(s);
+    const copy = find(s, 1, 'battlefield', 'Lhurgoyf');
+    expect([characteristicsOf(s, s.instances[copy]!).power,
+      characteristicsOf(s, s.instances[copy]!).toughness]).toEqual([2, 3]);
+    // One more creature card buried, and both of them are bigger.
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', 'Blood Artist'), toZone: 'graveyard',
+    });
+    expect(characteristicsOf(s, s.instances[copy]!).power).toBe(3);
+    expect(characteristicsOf(s, s.instances[id]!).power).toBe(3);
+  });
+
+  it('a setting effect beats it, because 7b comes after 7a', () => {
+    // Turn to Frog on a Lhurgoyf is a 1/1 however full the graveyards are (CR 613.4a then 613.4c).
+    let { s, id } = cast(goyf(['Lhurgoyf']));
+    for (const name of ['Centaur Courser', 'Gravedigger', 'Blood Artist']) {
+      s = apply(s, {
+        type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'graveyard',
+      });
+    }
+    expect(characteristicsOf(s, s.instances[id]!).power).toBe(3);
+    const frogged = pump(s, [id], 'fx-frog', 1, {
+      setPower: 1, setToughness: 1, losesAllAbilities: true,
+    });
+    expect([characteristicsOf(frogged, frogged.instances[id]!).power,
+      characteristicsOf(frogged, frogged.instances[id]!).toughness]).toEqual([1, 1]);
+  });
+
+  it('and a pump lands on top of it, because 7c comes after both', () => {
+    let { s, id } = cast(goyf(['Lhurgoyf']));
+    for (const name of ['Centaur Courser', 'Gravedigger']) {
+      s = apply(s, {
+        type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'graveyard',
+      });
+    }
+    const pumped = addCounters(pump(s, [id], 'fx-growth', 0, { power: 3, toughness: 3 }), id, '+1/+1', 1);
+    // 2 from the graveyards, +3 from the pump, +1 from the counter: 6/7.
+    const ch = characteristicsOf(pumped, pumped.instances[id]!);
+    expect([ch.power, ch.toughness]).toEqual([6, 7]);
+  });
+});
+
 describe('the library as the thing you attack', () => {
   /*
     The eighth deck wins by emptying a library, which the engine has enforced since state-based

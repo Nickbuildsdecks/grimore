@@ -514,9 +514,23 @@ async function main() {
       }
       finished = await has(host.page, 'game-over');
     }
-    if (seen.eliminated) {
+    /*
+      Only when a turn *could* have followed it.
+
+      The elimination that ends the game cannot be played on from: the last opponent dying is the
+      win, the banner goes up on that same turn and there is no next turn to take. Asserting it
+      anyway made this a shuffle-dependent failure — "eliminated on turn 68, now turn 68" — which
+      is the suite's own convention broken, since every other situational check here is reported
+      rather than asserted when the game did not produce it.
+    */
+    const atTurn = await readNumber(host.page, 'turn');
+    const couldHavePlayedOn = !finished || seen.eliminatedAt === undefined || atTurn > seen.eliminatedAt;
+    if (seen.eliminated && couldHavePlayedOn) {
       check('the other players keep playing after a seat is out', seen.playedOnAfterElimination,
-        `eliminated on turn ${seen.eliminatedAt ?? '?'}, now turn ${await readNumber(host.page, 'turn')}`);
+        `eliminated on turn ${seen.eliminatedAt ?? '?'}, now turn ${atTurn}`);
+    } else if (seen.eliminated) {
+      console.log('      (the first seat out was the one that ended the game, so no turn could '
+        + 'follow it — playout.test.ts asserts the pod plays on deterministically)');
     }
     check('the pod reaches one survivor through the real UI', finished,
       finished ? '' : `stopped at ${await text(host.page, 'step-label')} turn ${await readNumber(host.page, 'turn')}`);

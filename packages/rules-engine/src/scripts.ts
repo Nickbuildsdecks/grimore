@@ -2598,6 +2598,26 @@ const MAZE_OF_ITH: CardScript = {
 */
 
 /**
+ * Lhurgoyf: the card layer 7a is for, and the last layer of CR 613 this engine had named.
+ *
+ * One static and no effect function, which is what a characteristic-defining ability is: the size
+ * is not set by anything that resolves, it is a count of the board read fresh every time anybody
+ * asks. Something dies anywhere at the table and the Lhurgoyf is bigger; a Tormod's Crypt exiles
+ * a graveyard and it is smaller, with no trigger, no event and nothing to recompute.
+ *
+ * The number is declared rather than computed here — `definesSize` names a count the engine knows
+ * how to perform — because `GameState` is written to Redis and sent down a socket, and an effect
+ * carrying a closure is an effect that cannot be saved.
+ */
+const LHURGOYF: CardScript = {
+  name: 'Lhurgoyf',
+  statics: [{
+    scope: 'self',
+    effect: { definesSize: { count: 'creature-cards-in-graveyards', toughnessPlus: 1 } },
+  }],
+};
+
+/**
  * Mutavault: a land that becomes a creature, which is the whole of layer 4 in one card.
  *
  * The printed card says "with all creature types", and that clause is not here: changeling matters
@@ -2882,7 +2902,7 @@ const ALL: readonly CardScript[] = [
   equipment('Darksteel Plate', '{2}', { keywords: ['indestructible'] },
     'equipped creature is indestructible'),
   guildgate('Rakdos Guildgate', 'B', 'R'),
-  MUTAVAULT, CRIMSON_WISPS,
+  MUTAVAULT, CRIMSON_WISPS, LHURGOYF,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

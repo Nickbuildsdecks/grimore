@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 169 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 170 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -229,13 +229,15 @@ bug rather than a board.
   `any-battlefield` — as a Clone that chooses what to enter as. What is left of the family is a copy
   effect that keeps copying something as it *changes*, which needs layer 1 recomputed rather than
   applied once; nothing in the pool asks for it.
-- ~~**Three of the layers**~~ — **one** (CR 613). Six are in: copy (1), type-changing (4),
-  colour-changing (5), abilities (6), setting power and toughness (7b) and modifying it (7c, with
-  counters in 7d). Type-changing is the one that changed the shape of `characteristicsOf`, which
-  makes two passes now rather than one, because what a permanent *is* decides which other effects
-  apply to it — see "a land that becomes a creature" below. Characteristic-defining abilities (7a)
-  are the one left, because nothing in the pool needs one; a card that does is not scriptable
-  rather than approximated.
+- ~~**Three of the layers**~~ — **none** (CR 613). All seven the cards use are in: copy (1),
+  type-changing (4), colour-changing (5), abilities (6), a defined size (7a), setting power and
+  toughness (7b) and modifying it (7c, with counters in 7d). Type-changing is the one that changed
+  the shape of `characteristicsOf`, which makes two passes now rather than one, because what a
+  permanent *is* decides which other effects apply to it; a defined size is the one that is a
+  *count of the board* rather than a number, read fresh on every ask. What is left of CR 613 is
+  dependency ordering between effects in the same layer (613.8), which no two cards in this pool
+  argue about — and layers 2 and 3 (control and text changes), which exist in the engine as moves
+  rather than as layers: control is a change of battlefield, and nothing rewrites a card's text.
 - **A stronger bot.** It attacks with everything, blocks when the trade is good, and casts the
   biggest thing it can afford. A better opponent needs a search, and a search needs a position
   evaluator, and neither was worth writing before the rules underneath them were trustworthy.
@@ -2406,6 +2408,28 @@ change in a sixty should look like. D111 has the detail.
 
 The table needed nothing: the view sends power and toughness exactly when the engine says the
 permanent is a creature, so an animated land moves into the creature row and draws its own arrow.
+
+### The last layer, and a creature that is as big as the graveyards
+
+Characteristic-defining abilities (CR 613, layer 7a) were the last layer this engine had named and
+not built. Lhurgoyf needs one — power equal to the creature cards in every graveyard, toughness that
+plus one — and with it every layer the cards in this pool use is in.
+
+A CDA is unlike everything else in `characteristicsOf`: nothing resolves. There is no moment at
+which the number is decided, so there is nothing to store and nothing to invalidate — something dies
+anywhere and it is bigger, a graveyard is exiled and it is smaller, with no event anywhere. It is
+counted fresh on every read. The count is *declared* rather than carried as a function, because the
+game state is written to Redis and sent down a socket, and it names exactly one count — the one the
+card needs — rather than three that nothing would ever run (D57).
+
+The ordering is the rest of it, and each boundary has a test: a setting effect beats it (a Turn to
+Frog on a Lhurgoyf is a 1/1 however full the graveyards are), modifying and counters land on top,
+and a Clone of it copies the *ability* rather than the number, so both of them shrink together.
+
+It went into Rot Harvest for the second Hurricane, and it is live rather than decorative: 12 casts in
+42 games, attacking at a mean power of 4.3 and a maximum of 8, with the deck's paired record moving
+**104-132 → 107-131 and 93-144 → 103-135** — three and ten games up, both inside the noise floor.
+D112 has the detail, and what is left of CR 613 with it.
 
 ## Next
 

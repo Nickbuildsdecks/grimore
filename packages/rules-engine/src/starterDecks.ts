@@ -304,6 +304,26 @@ const CENTAUR_COURSER: CardDef = {
   colors: ['G'],
 };
 
+/**
+ * Lhurgoyf, whose size is a fact about the table.
+ *
+ * Printed `*` and `1+*`, which `numeric` reads as zero — correct, because the number does not come
+ * from the card: layer 7a counts the creature cards in every graveyard on every read. In Rot
+ * Harvest, a deck that sacrifices its own creatures to drain, that number only goes up.
+ */
+const LHURGOYF: CardDef = {
+  name: 'Lhurgoyf',
+  typeLine: 'Creature — Lhurgoyf',
+  manaCost: '{3}{G}',
+  cmc: 4,
+  power: '*',
+  toughness: '1+*',
+  oracleText:
+    "Lhurgoyf's power is equal to the number of creature cards in all graveyards and its toughness "
+    + 'is equal to that number plus 1.',
+  colors: ['G'],
+};
+
 const DOOMED_TRAVELER: CardDef = {
   name: 'Doomed Traveler',
   typeLine: 'Creature — Human Soldier',
@@ -2036,8 +2056,11 @@ export const ROT_HARVEST: DeckSpec = {
     { card: DOOM_BLADE, count: 1 },
     { card: LOTLETH_GIANT, count: 1 },
     // Green's X spell. It hits its own controller too, which is the card: a deck of ground
-    // creatures pays nothing and a table of fliers pays everything.
-    { card: HURRICANE, count: 2 },
+    // creatures pays nothing and a table of fliers pays everything. One copy rather than two
+    // since the Lhurgoyf below took the slot — a four-mana creature that grows all game is a
+    // better use of it in a deck that fills graveyards on purpose.
+    { card: HURRICANE, count: 1 },
+    { card: LHURGOYF, count: 1 },
     // One copy, for the same reason as the Grizzly Bears in Verdant Guard: the graveyard tests
     // build their boards out of this deck and need a plain creature to bury.
     { card: CENTAUR_COURSER, count: 1 },

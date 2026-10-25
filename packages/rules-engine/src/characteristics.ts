@@ -15,7 +15,7 @@
  * ordering) is not scriptable yet, and `scripts/` says so rather than producing a plausible wrong
  * number.
  */
-import type { CardDef, CardInstance } from './cards.js';
+import { zoneKey, type CardDef, type CardInstance } from './cards.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 
@@ -265,6 +265,30 @@ export interface ContinuousEffect {
   /** Subtypes this effect adds, for the same layer. */
   readonly addSubtypes?: readonly string[];
   /**
+   * A characteristic-defining ability: layer 7a (CR 613.4a), and the one layer whose answer is a
+   * fact about the board rather than a number somebody wrote down.
+   *
+   * "Lhurgoyf's power is equal to the number of creature cards in all graveyards and its toughness
+   * is equal to that plus 1" — so it shrinks when a graveyard is exiled and grows when anything
+   * dies, with no event anywhere and nothing to recompute. That is why it is a `count` to perform
+   * rather than a closure to call: `GameState` is stored in Redis and sent over a socket, so an
+   * effect carrying a function would be an effect that cannot be saved. The engine owns the
+   * counting; the card says which count it is.
+   *
+   * It defines the *base*, so layer 7b still beats it (a Turn to Frog on a Lhurgoyf is a 1/1) and
+   * 7c and 7d still land on top (a Giant Growth makes it three bigger than whatever it is).
+   */
+  readonly definesSize?: {
+    /**
+     * One count, because one card needs one count. "Cards in your hand", "lands you control" and
+     * the rest are each a line in `cdaCount` and a card away — and a clause with no card behind it
+     * is a clause nothing has ever run (D57), so they are named here rather than written.
+     */
+    readonly count: 'creature-cards-in-graveyards';
+    readonly powerPlus?: number;
+    readonly toughnessPlus?: number;
+  };
+  /**
    * The colours this permanent becomes: layer 5 (CR 613.1d).
    *
    * Setting rather than adding, because that is what the cards say — "becomes red" *replaces* the
@@ -340,6 +364,28 @@ function effectApplies(effect: ContinuousEffect, instance: CardInstance, creatur
 }
 
 /**
+ * What a characteristic-defining ability counts, right now.
+ *
+ * Counted on every read, which is what makes it a CDA rather than an effect: there is no moment at
+ * which the number is decided, so there is nothing to store and nothing to invalidate.
+ */
+function cdaCount(
+  state: GameState, kind: NonNullable<ContinuousEffect['definesSize']>['count'],
+): number {
+  if (kind !== 'creature-cards-in-graveyards') return 0;
+  // Every graveyard at the table, which is what the card says: "in all graveyards".
+  let total = 0;
+  for (const row of state.seats) {
+    for (const id of state.zones[zoneKey(row.index, 'graveyard')] ?? []) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      if (hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'creature')) total += 1;
+    }
+  }
+  return total;
+}
+
+/**
  * The type line with layer 4 applied, or the printed one when nothing changes it.
  *
  * Returns the *same object* when no effect adds a type, which is the common case by a very long
@@ -386,17 +432,20 @@ function withAddedTypes(
  *  4. **abilities** (613.1f) — keywords granted and removed, and "loses all abilities", which
  *     clears everything collected *before* it and lets later grants through. Accumulated in effect
  *     order, which is timestamp order, so the rule needs no second pass.
- *  5. **setting power and toughness** (7b, 613.4c) — replaces the printed base; two of them resolve
+ *  5. **a defined size** (7a, 613.4a) — a characteristic-defining ability, which is a count of
+ *     something on the table rather than a number: it changes when the board does, with no event
+ *     and nothing to recompute. See `cdaCount`.
+ *  6. **setting power and toughness** (7b, 613.4c) — replaces the printed base; two of them resolve
  *     last-one-wins.
- *  6. **modifying power and toughness** (7c) — every pump and anthem, summed, applied *after* any
+ *  7. **modifying power and toughness** (7c) — every pump and anthem, summed, applied *after* any
  *     setting however early it was cast.
- *  7. **counters** (7d) — `+1/+1` and `-1/-1`, last of all.
+ *  8. **counters** (7d) — `+1/+1` and `-1/-1`, last of all.
  *
  * Type-changing (layer 4) and colour-changing (5) are in as well, and layer 4 is the reason this
  * function makes two passes rather than one: a permanent's types decide which *other* effects
  * apply to it, so "becomes a creature" has to be known before the scope of an anthem is judged.
- * Characteristic-defining abilities (7a) are the one left, named rather than faked — a card
- * needing one is not scriptable yet, and `scripts.ts` says so.
+ * Which is all of CR 613 that the cards in this pool need. What is not here is dependency ordering
+ * between effects in the same layer (613.8), which no two cards in the pool argue about.
  */
 export function characteristicsOf(state: GameState, instance: CardInstance): Characteristics {
   const def = state.cardDefs[instance.defKey];
@@ -416,6 +465,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
 
   // Layer 7b and 7c are collected separately, because the first replaces the base and the second
   // adds to whatever the base ended up being.
+  let definedPower: number | null = null;
+  let definedToughness: number | null = null;
   let setPower: number | null = null;
   let setToughness: number | null = null;
   let modPower = 0;
@@ -460,6 +511,13 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       goadedBy = null;
       protectionFrom = null;
     }
+    // Layer 7a before 7b, which is the whole of the ordering: a defined size is a *base*, and a
+    // setting effect replaces it however early the definition was installed (CR 613.4a, 613.4c).
+    if (effect.definesSize !== undefined) {
+      const counted = cdaCount(state, effect.definesSize.count);
+      definedPower = counted + (effect.definesSize.powerPlus ?? 0);
+      definedToughness = counted + (effect.definesSize.toughnessPlus ?? 0);
+    }
     if (effect.setPower !== undefined) setPower = effect.setPower;
     if (effect.setToughness !== undefined) setToughness = effect.setToughness;
     modPower += effect.power ?? 0;
@@ -487,8 +545,12 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   // value), every modification lands on top of it, and counters land on top of those.
   const plus = instance.counters['+1/+1'] ?? 0;
   const minus = instance.counters['-1/-1'] ?? 0;
-  const power = (setPower ?? numeric(def?.power)) + modPower + plus - minus;
-  const toughness = (setToughness ?? numeric(def?.toughness)) + modToughness + plus - minus;
+  // 7a, then 7b, then 7c, then 7d: a defined size replaces the printed one, a setting effect
+  // replaces either, every modification lands on top, and counters land on top of those.
+  const base = setPower ?? definedPower ?? numeric(def?.power);
+  const baseToughness = setToughness ?? definedToughness ?? numeric(def?.toughness);
+  const power = base + modPower + plus - minus;
+  const toughness = baseToughness + modToughness + plus - minus;
 
   if (hasType(typeLine, 'creature') && keywords.has('defender')) cantAttack = true;
 
