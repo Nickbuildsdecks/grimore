@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — a hundred and ninety-six, today, across nine starter decks. A
+cards somebody has scripted — a hundred and ninety-nine, today, across nine starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -120,6 +120,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Drive a **Vehicle** | Three cards are Vehicles: Sky Skiff and Renegade Freighter in Forge Alliance, Consulate Dreadnought in Rot Harvest. A Vehicle is an artifact and **not a creature at all** until it is crewed — it cannot attack, cannot block, and a sweeper that kills every creature leaves it sitting there, which is why its printed body is far above its cost. Tap it → **Crew N**, and the table taps enough of your own untapped creatures to reach N power and tells you how many before you press it (**Crew 2 (tapping 2)**). It picks your smallest creatures, because the big one is the one you want left standing. A creature that arrived this turn can still crew. The Vehicle is a creature until end of turn, and then an artifact again, still on the battlefield. Crewing *is* an activated ability, so unlike turning a morph face up it can be answered — and the creatures are tapped as the cost, so an answer leaves them sideways and the Vehicle inert. The board says **not crewed** on one that nobody is driving. |
 | Play a **Saga** | Two cards are Sagas: The Birth of Meletis in Skyward Writ and The Eldest Reborn in Hollow Tide. A Saga is an enchantment that reads itself out over three turns. It arrives with one lore counter and **chapter I happens immediately** — you do not wait a turn for it — and it gets another counter at the start of each of your own main phases, never on anybody else's turn. Each chapter goes on the stack like any other trigger, so an opponent can answer the chapter even though they cannot stop the counter. Once the last chapter has resolved the Saga is sacrificed and goes to your graveyard; the card shows **lore** counters so you can see which chapter is next. Nothing can be killed in response to a Saga except the Saga: a creature removal spell does not touch it, and in this pool only three cards destroy an enchantment. |
 | **Foretell** a card | Two cards have it, in Tidal Mind and in Arc Tempest: Behold the Multiverse and Saw It Coming. On your own turn, tap the card in hand → **Foretell** and pay {2}; the card goes into exile **face down**, and nobody else can see what it is — only that there is a card there. From your next turn onwards it is a play again, out of exile, for the smaller cost printed on it (**{1}{U}** and **{U}{U}**). You cannot cast it on the turn you foretold it. The point is that it splits a four-mana spell across two turns, so you can hold up a counterspell without holding up the mana — which is the hardest thing in this pool to do and the one thing the computer genuinely cannot. Foretelling cannot be answered: no stack, nothing to respond to. |
+| Work out why your creature is bigger than its card | Three creatures are **lords**: they change the other creatures of their own type. Stromkirk Captain in Ashen Rite gives other **Vampires** +1/+1 and first strike, Knight Exemplar in Skyward Writ gives other **Knights** +1/+1 and indestructible, and Imperious Perfect in Rot Harvest gives other **Elves** +1/+1. None of them pumps itself — "other" is printed on all three. The board always shows the current size, and it changes the instant the lord arrives or leaves, with nothing to click: a Knight with three damage on it that was surviving because of the Exemplar dies the moment the Exemplar does. |
 | Read a creature whose power is a **\*** | Two creatures are printed with a star instead of a number, and what it means is that their power is a count of something, read fresh every time anybody looks. Lhurgoyf in Rot Harvest counts the creature cards in *every* graveyard and its toughness is that plus one; Enigma Drake in Arc Tempest counts the instants and sorceries in *your* graveyard and keeps its printed toughness of 4. In hand the card still shows the star, because that is what the card says; on the battlefield the board shows the number it currently is. It changes with nothing announcing it — including downwards, if a graveyard gets exiled. |
 | Have a creature with **ward** targeted | Two creatures have it: Dragonsguard Elite (ward {1}) in Verdant Guard and Sedgemoor Witch (ward {3}) in Ashen Rite. When an opponent aims a spell or an ability at one, their spell stops on the stack and **they** are asked: pay the ward cost, or let it be countered. Both answers are offered, because declining is often right — the removal is answered either way, and it cost them the card. If they cannot produce the cost at all they are not asked, and the log says the ward was not paid. It never triggers off its own controller's spells, so you can pump your own warded creature for free. |
 | Turn a permanent face down | Tap it on the battlefield → **Turn face down**. Nobody else can read what it is, and at an automated table it stops being that card for the rules too: it is a **2/2 creature with no name, no colours and no abilities** (CR 707.2) until it is turned back up. A face-down Llanowar Elves taps for nothing, a face-down Glorious Anthem stops lifting the team, and a face-down land is not a land. Counters and pumps still apply to it — a +1/+1 counter makes it a 3/3 — and your opponent sees the 2/2 rather than a blank card. No card in the decks does this to itself yet; it is here as a move you can make. |
@@ -166,17 +167,24 @@ anybody's turn, which is what makes instants and responses work at all.
 
 **Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange), **Tidal Mind**
 (blue-black control, with counterspells) and **Rot Harvest** (green-black, built on getting
-creatures back out of the graveyard and on feeding them to sacrifice outlets), 60 cards each plus a
+creatures back out of the graveyard and on feeding them to sacrifice outlets, now with an
+**Imperious Perfect** that taps for an Elf a turn to feed them with), 60 cards each plus a
 commander, so a table can start with no setup at all. **Forge Alliance** (red-white) is the fifth:
 a board of small creatures and a sword for one of them, with Balan — who pulls every Equipment you
 control onto himself — as its commander. **Ashen Rite** (black-red) is the first
 deck whose costs are decisions: cycling lands that are a land early and a card late, spells with a
 kicker you may pay for a bigger version of the same card, and removal whose cost is one of your own
-creatures. Judith leads it, and makes every creature you lose a Shock on the way out.
+creatures. Judith leads it, and makes every creature you lose a Shock on the way out. Eight of its creatures
+are Vampires, which is more of one creature type than any other deck in the pool has, so it is also
+where **Stromkirk Captain** lives: +1/+1 and first strike for the other eight, which turns a row of
+0/1 Blood Artists into 1/2s that kill an attacker and take nothing back.
 **Skyward Writ** (white-blue) is the first deck whose plan is not to have the best
 board: Walls that hold the ground and attack nowhere, three different counterspells because what
 needs countering changes, and fliers to win over the top. Hanna leads it and buys an artifact or
-enchantment back out of your graveyard once a turn. **Hollow Tide** (blue-black) is the newest, and
+enchantment back out of your graveyard once a turn. Its six Knights are the pool's second-deepest
+tribe, and **Knight Exemplar** makes all of them +1/+1 and **indestructible** — with the caveat
+that matters at the table: kill the Exemplar and they are mortal again immediately, including in
+the middle of a combat somebody has already assigned damage in. **Hollow Tide** (blue-black) is the newest, and
 the first deck in the pool that **does not care about your life total**: it wins by emptying your
 library, which the engine has always enforced as a loss (CR 704.5b) and which nothing had ever tried
 to do on purpose. Blockers that never attack, four counterspells and four removal spells to survive
@@ -211,23 +219,31 @@ its plan against the fast decks, and the bot casts it the turn it can afford it.
 other, both seats, 192 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 82%  157-35   ember-rush
- 70%  134-58   forge-alliance
- 58%  112-80   verdant-guard
- 47%   90-102  arc-tempest
+ 81%  156-36   ember-rush
+ 68%  131-61   forge-alliance
+ 59%  113-79   verdant-guard
+ 47%   91-101  arc-tempest
  45%   86-106  ashen-rite
  44%   85-107  skyward-writ
+ 39%   75-117  rot-harvest
  38%   72-120  hollow-tide
- 36%   70-122  rot-harvest
- 29%   56-136  tidal-mind
+ 28%   54-138  tidal-mind
 ```
 
-That run is the first with nine decks in it, and **not one of the other eight changed a card**.
-Four of them still moved by three to six points: Skyward Writ up five, Hollow Tide up two, Rot
-Harvest down three, Tidal Mind down six. All of it is Arc Tempest's own record against them — it
-beats Tidal Mind 19-5 and Rot Harvest 16-8, and it loses to Ember Rush and Forge Alliance 5-19
-each. A deck of cheap removal and counterspells is a bad matchup for the two slowest decks in the
-pool and a hopeless one against the two fastest, which is the shape it was built to have.
+That run is after the three tribal lords went in. **The only deck whose record moved is Rot
+Harvest, up five** — the one whose slot change was re-measured with a different card cut (see
+D129). Ashen Rite and Skyward Writ landed on 86-106 and 85-107 for the second run in a row, which
+is a coincidence rather than a card doing nothing: several of their individual matchups moved by
+one or two games each and the totals happened to come out the same. Which is the caveat below in
+its most literal form.
+
+The run before this one was the first with nine decks in it, and **not one of the other eight
+changed a card** for it. Four of them still moved by three to six points — Skyward Writ up five,
+Hollow Tide up two, Rot Harvest down three, Tidal Mind down six — and all of it was Arc Tempest's
+own record against them. It beats Tidal Mind 19-5 and Rot Harvest 14-10, and loses to Ember Rush
+and Forge Alliance 5-19 each. A deck of cheap removal and counterspells is a bad matchup for the
+slowest decks in the pool and a hopeless one against the two fastest, which is the shape it was
+built to have.
 
 **Read the order, not the individual numbers.** Every deck's record here depends on all eight of
 the others, so a deck moves when its opponents change even if it does not — and the row above is
@@ -252,7 +268,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of a hundred and ninety-six scripted cards, which now includes a wrath, a
+The decks share a pool of a hundred and ninety-nine scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -422,7 +438,7 @@ playing the server, and a deal struck with the server's own seat).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows a hundred and ninety-six cards.** Everything in the nine starter decks. It
+- **The engine knows a hundred and ninety-nine cards.** Everything in the nine starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

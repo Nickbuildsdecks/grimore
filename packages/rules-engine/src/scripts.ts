@@ -3191,8 +3191,9 @@ export const ELEMENTAL_TOKEN: CardDef = {
  * board. "Each Wizard you control" is narrower than any of those, and it does not need a new scope
  * to be: `pump` takes a list of ids, so the filtering is the card's own business and the engine's
  * `controller-creatures` scope stays a scope about control rather than about subtypes. A static
- * effect reading "Wizards you control get +1/+1" could not be written this way and still is not —
- * that is `ContinuousEffect`'s missing subtype scope, and it is a different hole.
+ * effect reading "Wizards you control get +1/+1" could not be written this way at all — that is
+ * `ContinuousEffect`'s subtype scope, a different problem, and it is the one the tribal lords
+ * further down this file went on to build.
  *
  * She is a Wizard herself, which is why she is a clock on an empty board: two spells in a turn and
  * the 2/2 flier that cost {1}{U}{R} is swinging for four.
@@ -3314,6 +3315,92 @@ const ENIGMA_DRAKE: CardScript = {
   }],
 };
 
+// ── Tribal lords: the scope that reads a creature type ──────────────────────────────────────────
+
+/*
+  Three cards for one scope, and the reason there are three is that one would not have proved it.
+
+  Until now `ContinuousEffect` could say "this card", "creatures you control", "other creatures you
+  control" or "all creatures", and nothing narrower. Adeliz got round that because a *one-shot*
+  pump takes a list of ids and may filter however the card likes; a static cannot, because a static
+  is a declarative object that goes to Redis and down a socket, so the filter has to be something
+  the engine can perform from what was stored. Hence `controller-subtype`, with the `other` clause
+  every printed lord carries.
+
+  Three because the three halves worth checking are separate: that the scope carries a **size**
+  (all three), that it carries **keywords** (first strike, indestructible), and that it follows the
+  board rather than a list — a lord that makes its own tribe pumps the tokens it made, and a second
+  copy pumps the first. The cards are in three different decks and three different colours for the
+  same reason the Vehicles ended up split: a card goes where its ratio works.
+
+  **The lord this pool most obviously wanted is deliberately not here.** Goblin Chieftain in Ember
+  Rush, with Krenko making Goblin tokens to pump, is the strongest version of this card in the whole
+  pool — and Ember Rush already wins 82% of its games. A scope is worth proving; handing the best
+  deck a free upgrade is not, and the three decks below sit between 36% and 45%.
+*/
+
+export const ELF_WARRIOR_TOKEN: CardDef = {
+  name: 'Elf Warrior', typeLine: 'Token Creature — Elf Warrior', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: '', colors: ['G'],
+};
+
+/**
+ * Stromkirk Captain: the first lord, and the one that hands out a combat keyword.
+ *
+ * First strike across a board of Blood Artists turns a deck of 0/1s into a deck of 1/2s that kill
+ * a 1/1 blocker without being hit back, which is a different card from +1/+1 — and it is the half
+ * that would have been impossible to write as anything but a static, since combat reads keywords
+ * off the creature at the moment blockers are declared.
+ */
+const STROMKIRK_CAPTAIN: CardScript = {
+  name: 'Stromkirk Captain',
+  keywords: ['first strike'],
+  statics: [{
+    scope: { subtype: 'Vampire', other: true },
+    effect: { power: 1, toughness: 1, keywords: ['first strike'] },
+  }],
+};
+
+/**
+ * Knight Exemplar, which grants the keyword that is hardest to answer.
+ *
+ * Indestructible on somebody else's creature is the sharpest test of the scope's *duration*: the
+ * Knights stop being indestructible the moment the Exemplar leaves, and a sweeper that kills the
+ * Exemplar kills the Knights with it, because the effect is gone before state-based actions look at
+ * lethal damage. That falls out of `duration: 'permanent'` meaning "while the source is on the
+ * battlefield" and needed nothing of its own — which is the point of the note at `expire`.
+ */
+const KNIGHT_EXEMPLAR: CardScript = {
+  name: 'Knight Exemplar',
+  statics: [{
+    scope: { subtype: 'Knight', other: true },
+    effect: { power: 1, toughness: 1, keywords: ['indestructible'] },
+  }],
+};
+
+/**
+ * Imperious Perfect: a lord that makes its own tribe.
+ *
+ * The one that shows the scope reads the board rather than a list. Every token it makes is an Elf,
+ * so every token it makes is pumped by it — and by any other copy — with nothing recomputed and no
+ * event saying a new Elf exists. `other: true` keeps it off itself, so two copies are a pair of
+ * 3/3s rather than two 2/2s that each think they are bigger.
+ */
+const IMPERIOUS_PERFECT: CardScript = {
+  name: 'Imperious Perfect',
+  statics: [{
+    scope: { subtype: 'Elf', other: true },
+    effect: { power: 1, toughness: 1 },
+  }],
+  abilities: [
+    {
+      cost: { mana: '{1}{G}', tap: true },
+      description: '{1}{G}, {T}: Create a 1/1 green Elf Warrior creature token.',
+      effect: (c) => createToken(c.state, c.controller, ELF_WARRIOR_TOKEN, 1),
+    },
+  ],
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -3410,6 +3497,7 @@ const SEDGEMOOR_WITCH: CardScript = {
 export const TOKEN_DEFS: readonly CardDef[] = [
   GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN,
   SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN, ELEMENTAL_TOKEN,
+  ELF_WARRIOR_TOKEN,
 ];
 
 const ALL: readonly CardScript[] = [
@@ -3479,6 +3567,7 @@ const ALL: readonly CardScript[] = [
   SKY_SKIFF, RENEGADE_FREIGHTER, CONSULATE_DREADNOUGHT,
   THE_BIRTH_OF_MELETIS, THE_ELDEST_REBORN, BEHOLD_THE_MULTIVERSE, SAW_IT_COMING,
   ADELIZ, STORMCHASER_MAGE, YOUNG_PYROMANCER, GUTTERSNIPE, GELECTRODE, ENIGMA_DRAKE,
+  STROMKIRK_CAPTAIN, KNIGHT_EXEMPLAR, IMPERIOUS_PERFECT,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

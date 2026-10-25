@@ -7715,3 +7715,159 @@ describe('red-blue: six cards whose job is to read the spells', () => {
     expect(power(s, drake)).toBe(0);
   });
 });
+
+describe('a static effect scoped to a creature type: the pool’s first tribal lords', () => {
+  /*
+    The scope `ContinuousEffect` did not have, and the three cards that are the argument for it.
+
+    Adeliz pumps Wizards without it, because a one-shot pump takes a list of ids and the card may
+    filter however it likes. A *static* cannot: it is a declarative object written to Redis and sent
+    down a socket, so the filter has to be something the engine can perform from the stored scope.
+    `{ kind: 'controller-subtype', subtype, other }` is that, and what these tests check is the
+    three things it has to get right — a size, a keyword, and following the board rather than a list.
+  */
+  const lord = (
+    deck: string, lands: readonly string[], mine: readonly string[], name: string,
+    opponent = 'tidal-mind',
+  ): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: deck, 1: opponent },
+      hands: { 0: [name] },
+      // Seat 1 gets two of its own basics, whatever deck it is on: the opponent only has to exist.
+      battlefield: { 0: [...lands, ...mine], 1: [opponent === 'ember-rush' ? 'Mountain' : 'Island',
+        opponent === 'ember-rush' ? 'Mountain' : 'Island'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  const keywordsOf = (s: GameState, id: string): readonly string[] =>
+    [...characteristicsOf(s, s.instances[id]!).keywords];
+
+  it('lifts the Vampires Stromkirk Captain shares a type with, and hands them first strike', () => {
+    let s = lord('ashen-rite', ['Mountain', 'Swamp'], ['Blood Artist', 'Goblin Arsonist'],
+      'Stromkirk Captain');
+    const artist = find(s, 0, 'battlefield', 'Blood Artist');
+    const goblin = find(s, 0, 'battlefield', 'Goblin Arsonist');
+    expect([power(s, artist), toughness(s, artist)]).toEqual([0, 1]);
+
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Stromkirk Captain'),
+    }));
+    const captain = find(s, 0, 'battlefield', 'Stromkirk Captain');
+
+    // The Vampire grew and can fight; the Goblin is a Goblin.
+    expect([power(s, artist), toughness(s, artist)]).toEqual([1, 2]);
+    expect(keywordsOf(s, artist)).toContain('first strike');
+    expect([power(s, goblin), toughness(s, goblin)]).toEqual([1, 1]);
+    expect(keywordsOf(s, goblin)).not.toContain('first strike');
+
+    /*
+      And the Captain is a 2/2, not a 3/3 — `other: true`.
+
+      Worth a line of its own because it is the half that shows up in combat rather than on the
+      card: a lord that pumped itself attacks a size bigger than it reads, and nobody would notice
+      until a trade went the wrong way. Its own first strike is printed, so it has that.
+    */
+    expect([power(s, captain), toughness(s, captain)]).toEqual([2, 2]);
+    expect(keywordsOf(s, captain)).toContain('first strike');
+  });
+
+  it('makes the Knights indestructible, and mortal again the moment the Exemplar leaves', () => {
+    /*
+      The sharpest version of what `duration: 'permanent'` means: a static exists exactly while its
+      source is on the battlefield, so the damage already marked on a Knight becomes lethal the
+      instant the Exemplar is gone — with no event saying so and nothing recomputed.
+    */
+    /*
+      The Knights belong to the seat that is *not* taking the turn, so the burn spell can be cast by
+      whoever holds priority. The Exemplar starts on the battlefield rather than being cast, which
+      is also worth one assertion of its own: a permanent placed there goes through the same
+      arrivals pass a cast one does, so its static is installed either way.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'skyward-writ' },
+      hands: { 0: ['Lightning Bolt'] },
+      battlefield: {
+        0: ['Mountain'],
+        1: ['Plains', 'Plains', 'Plains', 'Youthful Knight', "Healer's Hawk", 'Knight Exemplar'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const knight = find(s, 1, 'battlefield', 'Youthful Knight');
+    const hawk = find(s, 1, 'battlefield', "Healer's Hawk");
+    const exemplar = find(s, 1, 'battlefield', 'Knight Exemplar');
+
+    expect([power(s, knight), toughness(s, knight)]).toEqual([3, 3]);
+    expect(keywordsOf(s, knight)).toContain('indestructible');
+    // A Bird is not a Knight, and the Exemplar is not one of the *other* Knights.
+    expect(keywordsOf(s, hawk)).not.toContain('indestructible');
+    expect(keywordsOf(s, exemplar)).not.toContain('indestructible');
+
+    // Three damage on the 3/3: lethal for its size, and ignored because it cannot be destroyed.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: knight }],
+    })));
+    expect(s.instances[knight]!.zone).toBe('battlefield');
+    expect(damageOn(s, knight)).toBe(3);
+
+    // And then the lord goes, which makes the damage lethal with nothing else happening at all.
+    s = drain(apply(s, { type: 'card:move', by: 1, card: exemplar, toZone: 'graveyard' }));
+    expect(s.instances[knight]!.zone).toBe('graveyard');
+  });
+
+  it('pumps the Elves Imperious Perfect makes, which is the scope reading the board', () => {
+    /*
+      A lord that grows its own scope. Nothing tells the effect a new Elf exists — the token is an
+      Elf Warrior, the scope is a question asked of the type line every time anybody looks, and so
+      the answer is already right.
+    */
+    let s = lord('rot-harvest', ['Forest', 'Forest', 'Forest'], ['Llanowar Elves'],
+      'Imperious Perfect');
+    const elf = find(s, 0, 'battlefield', 'Llanowar Elves');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Imperious Perfect'),
+    }));
+    const perfect = find(s, 0, 'battlefield', 'Imperious Perfect');
+    expect([power(s, elf), toughness(s, elf)]).toEqual([2, 2]);
+    expect([power(s, perfect), toughness(s, perfect)]).toEqual([2, 2]);
+
+    // Next turn, when it is no longer summoning-sick, it taps for a 1/1 that is immediately a 2/2.
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 0);
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: perfect, abilityIndex: 0 }));
+    const token = find(s, 0, 'battlefield', 'Elf Warrior');
+    expect([power(s, token), toughness(s, token)]).toEqual([2, 2]);
+  });
+
+  it('reads the type line layer 4 produced, not the printed one', () => {
+    /*
+      Ordering rather than a feature: no card in the pool adds a creature type, so this is built on
+      a hand-made effect. It is tested anyway because the ordering is free to get right now and
+      expensive to find later — CR 613.1d (types) before 613.1f (power and toughness), so a
+      permanent that was *given* a type is inside the lord's scope.
+
+      `end-of-turn` on the hand-made effect rather than `permanent`, because a permanent effect
+      lasts only while its source is on the battlefield and `test` is not an instance at all.
+    */
+    let s = lord('rot-harvest', ['Forest', 'Forest', 'Forest'], ['Wall of Blossoms'],
+      'Imperious Perfect');
+    const wall = find(s, 0, 'battlefield', 'Wall of Blossoms');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Imperious Perfect'),
+    }));
+    // A Plant Wall is not an Elf, so the lord does nothing for it.
+    expect([power(s, wall), toughness(s, wall)]).toEqual([0, 4]);
+
+    s = {
+      ...s,
+      effects: [...s.effects, {
+        id: 'elfify', createdTurn: s.turn, source: 'test', controller: 0 as SeatIndex,
+        scope: { kind: 'cards' as const, ids: [wall] },
+        addSubtypes: ['Elf'], duration: 'end-of-turn' as const,
+      }],
+    };
+    expect([power(s, wall), toughness(s, wall)]).toEqual([1, 5]);
+  });
+});

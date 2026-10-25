@@ -694,9 +694,18 @@ export interface CardScript {
   readonly saga?: true;
   readonly triggers?: readonly TriggerDef[];
   readonly abilities?: readonly AbilityDef[];
-  /** Static effects the permanent creates while it is on the battlefield. */
+  /**
+   * Static effects the permanent creates while it is on the battlefield.
+   *
+   * The scope is a bare name for the four that need no argument, and an object for the one that
+   * does: `{ subtype: 'Goblin', other: true }` is every lord ever printed. An object rather than
+   * four more names, because the thing being named is a *parameter* — there is one subtype scope
+   * and sixty creature types, and an enum of them is the mistake D57 is about.
+   */
   readonly statics?: readonly {
-    readonly scope: 'self' | 'controller-creatures' | 'other-controller-creatures' | 'all-creatures';
+    readonly scope:
+      | 'self' | 'controller-creatures' | 'other-controller-creatures' | 'all-creatures'
+      | { readonly subtype: string; readonly other?: boolean };
     readonly effect: PumpOptions;
   }[];
   /**

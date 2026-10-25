@@ -2410,6 +2410,47 @@ export const TIDAL_MIND: DeckSpec = {
   ],
 };
 
+// ── The three tribal lords ──────────────────────────────────────────────────────────────────────
+
+/*
+  One card each for the three deepest creature types in the pool, in the three decks that have
+  them. Together they are what makes a subtype-scoped static effect worth having: a size, two
+  keywords, and a lord that makes more of its own tribe.
+*/
+
+const STROMKIRK_CAPTAIN: CardDef = {
+  name: 'Stromkirk Captain',
+  typeLine: 'Creature — Vampire Soldier',
+  manaCost: '{R}{B}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'First strike\nOther Vampire creatures you control get +1/+1 and have first strike.',
+  colors: ['R', 'B'],
+};
+
+const KNIGHT_EXEMPLAR: CardDef = {
+  name: 'Knight Exemplar',
+  typeLine: 'Creature — Human Knight',
+  manaCost: '{1}{W}{W}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Other Knight creatures you control get +1/+1 and have indestructible.',
+  colors: ['W'],
+};
+
+const IMPERIOUS_PERFECT: CardDef = {
+  name: 'Imperious Perfect',
+  typeLine: 'Creature — Elf Warrior',
+  manaCost: '{2}{G}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Other Elf creatures you control get +1/+1.\n{1}{G}, {T}: Create a 1/1 green Elf Warrior creature token.',
+  colors: ['G'],
+};
+
 export const ROT_HARVEST: DeckSpec = {
   id: 'rot-harvest',
   name: 'Rot Harvest',
@@ -2425,8 +2466,26 @@ export const ROT_HARVEST: DeckSpec = {
     { card: GOLGARI_CHARM, count: 2 },
     { card: NATURALIZE, count: 1 },
     { card: BLOSSOMING_DEFENSE, count: 1 },
+    /*
+      The pool's first tribal lord, and the deck that has the Elves for it.
+
+      Four Elves and a commander who is one, which is not a tribe so much as a rumour — except that
+      the lord makes more. Every token it taps for is an Elf Warrior, so it grows its own scope, and
+      in a deck built on feeding creatures to a Blood Artist a repeatable body is worth more than
+      the +1/+1: this is a sacrifice outlet's fuel supply that happens to pump the Llanowar Elves.
+
+      **The cut was measured twice, and the first answer was wrong.** It went in for the Blossoming
+      Defense first — this deck's least-cast card that can be cut without orphaning a script, since
+      Grim Discovery, Raise Dead, Lhurgoyf, Hurricane and Zombify are each the pool's only copy —
+      and that arrangement measured +2 on one seed set and -8 on the other, which is a change that
+      has not been measured but sampled twice. Taking the **third Blood Artist** instead measures
+      +4 and +13 against it. Three Blood Artists is one more than the deck needs to find one; the
+      Blossoming Defense is the only card in the list that answers a removal spell. See D129, and
+      D127 for the rule that says to ask this question separately.
+    */
+    { card: IMPERIOUS_PERFECT, count: 1 },
     { card: ENDLESS_ONE, count: 2 },
-    { card: BLOOD_ARTIST, count: 3 },
+    { card: BLOOD_ARTIST, count: 2 },
     { card: ZULAPORT_CUTTHROAT, count: 1 },
     /*
       Consulate Dreadnought, for the second Zulaport Cutthroat.
@@ -2569,7 +2628,21 @@ export const ASHEN_RITE: DeckSpec = {
     { card: MIND_STONE, count: 1 },
     // One mana for three, once: the only card in the pool that makes mana from a spell rather
     // than a permanent, and this deck's way to a turn-two Flametongue.
-    { card: DARK_RITUAL, count: 2 },
+    { card: DARK_RITUAL, count: 1 },
+    /*
+      The second Ritual became the pool's deepest tribe's lord.
+
+      Eight Vampires here — three Blood Artists, two Aristocrats, a Bloodthrone, a Nighthawk and
+      Kalitas — which is more creatures of one type than any other deck has of anything. +1/+1 on
+      all eight is the obvious half; first strike is the half that changes what the deck *is*. A
+      board of 0/1 Blood Artists blocks nothing; a board of 1/2 first strikers kills an attacking
+      1/1 and takes nothing back, and each of those deaths is a drain.
+
+      It also reads with the card above it rather than against it: Night of Souls' Betrayal gives
+      everything -1/-1, so with the Captain out the Vampires are level and everything else on the
+      table has shrunk — a one-sided sweeper assembled from two cards that were already here.
+    */
+    { card: STROMKIRK_CAPTAIN, count: 1 },
     // Two cards a turn in a deck that spends them, and a life total it is already paying from.
     // It cost the second Mind Stone, which this deck has the Rituals and the Guildgates for.
     { card: DARK_CONFIDANT, count: 1 },
@@ -2762,9 +2835,25 @@ export const SKYWARD_WRIT: DeckSpec = {
     // Four mana that is dead on your own turn and kills anything that attacks into it. The engine
     // will not even offer it outside combat, which is the card.
     { card: DIVINE_VERDICT, count: 1 },
-    // Cards, and the two artifacts Hanna is happy to buy back.
-    { card: DIVINATION, count: 1 },
+    // Cards, and the artifact Hanna is happy to buy back.
     { card: MIND_STONE, count: 1 },
+    /*
+      Six Knights, and the lord that makes them unkillable.
+
+      Three Leonin Skyhunters, two Paladin en-Vec and a Youthful Knight: the second-deepest tribe in
+      the pool, in the deck whose whole plan is to still be alive later. Indestructible is the
+      keyword that plan actually wants — a Paladin en-Vec already cannot be touched by a red or a
+      black spell, and with the Exemplar out it cannot be killed in combat either.
+
+      The honest caveat is in the same sentence: kill the Exemplar and the Knights are mortal again
+      *immediately*, including in the middle of the combat where somebody has already assigned
+      lethal damage to one. That falls out of a static lasting exactly as long as its source is on
+      the battlefield, and it is the sharpest version of the trade this card is.
+
+      It cost the Divination, this deck's least-cast spell, which Hollow Tide and Arc Tempest both
+      still run.
+    */
+    { card: KNIGHT_EXEMPLAR, count: 1 },
   ],
 };
 

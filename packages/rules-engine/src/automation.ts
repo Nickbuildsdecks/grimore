@@ -1656,7 +1656,12 @@ function applyStatics(
   for (const entry of script?.statics ?? []) {
     const seq = next.autoSeq + 1;
     const scope: ContinuousEffect['scope'] =
-      entry.scope === 'self' ? { kind: 'cards', ids: [id] }
+      typeof entry.scope === 'object'
+        ? {
+            kind: 'controller-subtype', subtype: entry.scope.subtype,
+            ...(entry.scope.other === true ? { other: true as const } : {}),
+          }
+      : entry.scope === 'self' ? { kind: 'cards', ids: [id] }
       : entry.scope === 'controller-creatures' ? { kind: 'controller-creatures' }
       : entry.scope === 'other-controller-creatures' ? { kind: 'other-controller-creatures' }
       : { kind: 'all-creatures' };

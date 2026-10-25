@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 196 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 199 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2837,9 +2837,9 @@ twice the damage, Young Pyromancer is Talrand at a third of the cost, Gelectrode
 Thermo-Alchemist with a target, Stormchaser Mage is prowess on a flier, and Adeliz is a pump with a
 list of ids the card chooses itself. That last one is the useful shape: "each Wizard you control" is
 narrower than any scope `ContinuousEffect` has, and it did not need one, because `pump` takes ids
-and so the filtering is the card's business. A *static* "Wizards you control get +1/+1" still cannot
-be written — that hole is real and is still open — but a one-shot pump reading a subtype never
-needed it.
+and so the filtering is the card's business. A *static* "Wizards you control get +1/+1" could not
+be written at that point — a real hole, and the next entry is the one that closed it — but a
+one-shot pump reading a subtype never needed it.
 
 The sixth card is the one that cost engine work. **Enigma Drake** is printed with a star for power
 and a 4 for toughness, and the pool's only previous characteristic-defining ability — Lhurgoyf —
@@ -2888,6 +2888,83 @@ print what it found, and it came back `["2/2","2/3","7/4"]`, the 7/4 being a Dra
 in its graveyard. This is the third check in this project that was wrong by being broader than its
 own sentence, after the face-down leak check that read the game log and the crew test that asserted
 the wrong arithmetic.
+
+### The scope that reads a creature type, and three lords to prove it
+
+The hole this file had named three times. `ContinuousEffect`'s scope could say "this card",
+"creatures you control", "other creatures you control" or "all creatures", and nothing narrower —
+so "other Goblin creatures you control get +1/+1", which is every tribal lord ever printed, could
+not be written. Adeliz got round it one entry ago because a **one-shot** pump takes a list of ids
+and the card may filter however it likes. A static cannot: it is a declarative object that goes to
+Redis and down a socket, so the filter has to be something the engine can perform from what was
+stored.
+
+`{ kind: 'controller-subtype', subtype, other }`, then — the only scope here that carries a value,
+which is why `other` is a field rather than a second `kind` the way `other-controller-creatures` is.
+A parameterised scope already has to be read rather than matched, so one more field costs nothing,
+where two bare tags would have become four.
+
+**The one judgement call was where to match it.** `effectApplies` is called from three places, and
+only one of them has a type line with layer 4 applied: the main `characteristicsOf` loop. The other
+two are the layer-4 pass itself, which cannot have its own output, and `combatDamagePrevented`.
+So the subtype is matched against the best line each caller has, which is CR 613.1d before 613.1f
+where it matters and the printed line where nothing in the pool cares. `typeLine` is passed in
+rather than derived from the `creature` boolean already being passed, because that boolean is
+computed once per `characteristicsOf` call and this runs once per effect.
+
+**Three cards, because one would not have proved it.** The three halves worth checking are
+separate: that the scope carries a size (all three), that it carries **keywords** (first strike,
+indestructible), and that it follows the board rather than a list — Imperious Perfect makes Elf
+Warrior tokens, so it grows its own scope with nothing recomputed and no event saying a new Elf
+exists, and a second copy pumps the first while neither pumps itself.
+
+Knight Exemplar is the one that tests the *duration*. A Knight carrying three damage survives
+because it is a 3/3 and indestructible; move the Exemplar to the graveyard and the same Knight is a
+2/2 with three damage on it and the next state-based action kills it. That falls out of
+`duration: 'permanent'` meaning "while the source is on the battlefield" and needed nothing of its
+own.
+
+**The lord this pool most obviously wanted is deliberately absent.** Goblin Chieftain in Ember Rush,
+with Krenko making Goblin tokens to pump, is the strongest version of this card anywhere in the
+pool — and Ember Rush already wins 82% of its games. Proving a scope is worth a card; handing the
+best deck in the field a free upgrade is not. The three that shipped are in the three decks between
+36% and 45%.
+
+**What they measure as**, each as a single slot swap *as first arranged*, priced on both seed sets
+at 240 games a side (the Perfect's cut changed afterwards — see below):
+
+```
+Stromkirk Captain  (for the 2nd Dark Ritual, Ashen Rite)   122-117 v 123-116,  118-122 v 117-123
+Knight Exemplar    (for the Divination, Skyward Writ)      107-133 v 102-138,  105-135 v  99-141
+Imperious Perfect  (for the Blossoming Defense, Rot H.)     99-138 v  97-142,  103-137 v 111-127
+```
+
+The first pair in each row is the deck *with* the lord. The Captain is level — one game each way
+across the two seed sets, which is as close to nothing as this instrument reports. The Exemplar is
+**+5 and +6**: consistent in sign on both sets and still under the eighteen-game floor, so it is
+not priced either, and it ships because it is the card that tests keyword-granting rather than
+because of the five games. The Perfect is **+2 and −8** — opposite signs, which by this file's own
+rule means it has not been measured, it has been sampled twice.
+
+**And then the Perfect's own cut was re-asked, which is D127's rule earning its place a second
+time.** The arrangement above has the lord replacing the Blossoming Defense. Taking the **third
+Blood Artist** instead, and keeping the trick, measures **+4 and +13** against it on the two seed
+sets — consistent in sign, with one of them at the floor. So that is what shipped. The mechanism is
+not subtle once seen: three Blood Artists is one more than a deck needs to find one, while the
+Blossoming Defense is the only card in that list that answers a removal spell. Same card added,
+same deck, one different card removed, and a swing of roughly fifteen games — which is the second
+time that has happened in three entries. **Measuring the cut is not an optional extra step; it is
+half of what a slot change is.**
+
+**The full table says the same thing, and says it more sharply.** Re-run over all nine decks (192
+games each), the only record that moved is Rot Harvest's — up five, which is the deck whose cut was
+re-asked. Ashen Rite came back 86-106 and Skyward Writ 85-107, identical totals to the run before
+the lords went in. That is a coincidence rather than a card doing nothing: half a dozen of their
+individual matchups moved by a game or two each and the sums happened to land on the same numbers.
+It is worth stating precisely, because "the total did not change" and "nothing changed" are
+different claims and only the first one is true.
+
+
 
 ## Next
 

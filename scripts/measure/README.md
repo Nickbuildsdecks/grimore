@@ -60,7 +60,10 @@ pair, so a result that looks like "this card is bad" is often "that cut was bad"
 the same two cards added to the same deck measured 13 and 8 games *down* when they replaced the
 deck's cheapest answer and 1 down and 7 up when they replaced a three-mana removal spell instead.
 If a slot change measures worse than it should, re-run it with a different card removed before
-concluding anything about the card added.
+concluding anything about the card added. **It has now happened twice in three entries** — D129's
+Elf lord went from (+2, -8) to (+4, +13) on the same two seed sets by taking a redundant third copy
+of a creature instead of the deck's only protection spell. Treat measuring the cut as half of what a
+slot change is, not as an extra step taken when the first number disappoints.
 
 **A `deck-table` percentage is a statement about a field, not about a deck.** Adding Arc Tempest
 moved four of the other eight decks by three to six games with **not one card of theirs changing**

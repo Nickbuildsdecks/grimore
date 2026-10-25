@@ -131,6 +131,29 @@ export interface ContinuousEffect {
      * 3/2. `source` is what it excludes, which is why a continuous effect keeps it.
      */
     | { readonly kind: 'other-controller-creatures' }
+    /**
+     * Every creature of one type its controller has — "other Goblin creatures you control get
+     * +1/+1", and every tribal lord ever printed.
+     *
+     * The only scope here that carries a value, which is why `other` is a field on it rather than a
+     * second `kind` the way `other-controller-creatures` is: a parameterised scope already has to
+     * be read rather than matched, so one more field costs nothing, where two bare tags would have
+     * become four.
+     *
+     * Matched against the type line **after layer 4** wherever the caller has one (CR 613.1d before
+     * 613.1f), so a permanent that was *given* a creature type is in the scope. No card in the pool
+     * adds a subtype yet, so that half is ordering rather than a feature anything uses — it has a
+     * test built on a hand-made effect, because the ordering is the kind of thing that is free to
+     * get right now and expensive to discover later. The two callers that have only the printed
+     * line are the layer-4 pass itself, which cannot have its own output, and
+     * `combatDamagePrevented`, where nothing in the pool cares.
+     */
+    | {
+        readonly kind: 'controller-subtype';
+        readonly subtype: string;
+        /** "**Other** Goblin creatures", which is how almost every lord is worded. */
+        readonly other?: boolean;
+      }
     | { readonly kind: 'all-creatures' }
     /**
      * One player, rather than any permanent.
@@ -353,7 +376,15 @@ const numeric = (value: string | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-function effectApplies(effect: ContinuousEffect, instance: CardInstance, creature: boolean): boolean {
+/**
+ * `typeLine` is passed separately from `creature` rather than derived from it, because `creature`
+ * is computed once per `characteristicsOf` call and this runs once per effect: re-deriving it here
+ * would put a type-line scan on the hottest loop in the engine for the sake of one scope that
+ * almost nothing uses.
+ */
+function effectApplies(
+  effect: ContinuousEffect, instance: CardInstance, creature: boolean, typeLine: TypeLine,
+): boolean {
   switch (effect.scope.kind) {
     case 'cards':
       return effect.scope.ids.includes(instance.id);
@@ -361,6 +392,10 @@ function effectApplies(effect: ContinuousEffect, instance: CardInstance, creatur
       return creature && instance.zoneSeat === effect.controller;
     case 'other-controller-creatures':
       return creature && instance.zoneSeat === effect.controller && instance.id !== effect.source;
+    case 'controller-subtype':
+      return creature && instance.zoneSeat === effect.controller
+        && !(effect.scope.other === true && instance.id === effect.source)
+        && hasSubtype(typeLine, effect.scope.subtype);
     case 'all-creatures':
       return creature;
     // A seat scope is about the player, not their permanents: nothing on the battlefield is in it.
@@ -418,7 +453,7 @@ function withAddedTypes(
   for (const effect of state.effects ?? []) {
     if (effect.addTypes === undefined && effect.addSubtypes === undefined) continue;
     if (silenced(state, effect.source)) continue;
-    if (!effectApplies(effect, instance, printedCreature)) continue;
+    if (!effectApplies(effect, instance, printedCreature, printed)) continue;
     for (const type of effect.addTypes ?? []) {
       if (hasType(printed, type) || (types !== null && types.includes(type))) continue;
       types = [...(types ?? []), type];
@@ -561,7 +596,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
 
   for (const effect of state.effects ?? []) {
     if (silenced(state, effect.source)) continue;
-    if (!effectApplies(effect, instance, creature)) continue;
+    if (!effectApplies(effect, instance, creature, typeLine)) continue;
     /*
       Layer 6, and the one place the order of this loop is load-bearing.
 
@@ -654,9 +689,11 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
  */
 export function combatDamagePrevented(state: GameState, instance: CardInstance): boolean {
   const def = state.cardDefs[instance.defKey];
-  const creature = hasType(parseTypeLine(def?.typeLine), 'creature');
+  const line = parseTypeLine(def?.typeLine);
+  const creature = hasType(line, 'creature');
   return (state.effects ?? []).some(
-    (effect) => effect.preventsCombatDamage === true && effectApplies(effect, instance, creature),
+    (effect) => effect.preventsCombatDamage === true
+      && effectApplies(effect, instance, creature, line),
   );
 }
 
