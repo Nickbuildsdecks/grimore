@@ -30,7 +30,7 @@ import { scriptFor } from './scripts.js';
 import { MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
-import { convokePlan, legalActions, manaSources } from './legalActions.js';
+import { convokePlan, crewPlan, legalActions, manaSources } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, type CombatAttack, type StackObject, type Target,
   type AutoTurnUpAction,
@@ -555,9 +555,29 @@ function activate(
     sacrificed = action.sacrifice;
   }
 
+  /*
+    Crew, worked out before anything is spent and paid with the mana (CR 702.122a).
+
+    Recomputed by `crewPlan` rather than carried on the action, exactly as convoke is: which
+    creatures get tapped is a fact about the board at this moment, and a client naming its own
+    creatures would be a client choosing which of its permanents the engine taps.
+  */
+  let crewed: readonly string[] = [];
+  if (ability.cost.crew !== undefined) {
+    const plan = crewPlan(state, action.by, ability.cost.crew, inst.id);
+    if (plan === null) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        `you have no creatures untapped with total power ${ability.cost.crew} to crew ${ch.name}`);
+    }
+    crewed = plan;
+  }
+
   // The permanent's own mana is the last mana spent on its own ability. See `payFrom`.
   const paid = payFrom(state, action.by, ability.cost.mana, 0, 0, action.card);
   let next = paid.state;
+  // Tapped as the cost is paid, which is also what makes a "becomes tapped" trigger fire at the
+  // right moment — and what stops those creatures attacking this turn, which is the price.
+  for (const id of crewed) next = withInstance(next, id, { tapped: true });
   if (ability.cost.life !== undefined) next = loseLife(next, action.by, ability.cost.life);
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
   if (ability.cost.loyalty !== undefined) {
@@ -606,12 +626,17 @@ function activate(
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
-    message: sacrificed === null
-      ? `${seatName(state, action.by)} activates ${ch.name}`
-      : `${seatName(state, action.by)} sacrifices ${sacrificedName} and activates ${ch.name}`,
+    message: sacrificed !== null
+      ? `${seatName(state, action.by)} sacrifices ${sacrificedName} and activates ${ch.name}`
+      : crewed.length > 0
+        // Said as a count, because the creatures turning sideways are the cost a player is paying
+        // and the log is where they read what just happened to their board.
+        ? `${seatName(state, action.by)} taps ${crewed.length} to crew ${ch.name}`
+        : `${seatName(state, action.by)} activates ${ch.name}`,
     data: {
       card: inst.id, ability: action.abilityIndex,
       ...(sacrificed === null ? {} : { sacrificed }),
+      ...(crewed.length === 0 ? {} : { crewed: [...crewed] }),
     },
   };
 }

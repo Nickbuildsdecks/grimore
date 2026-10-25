@@ -814,6 +814,54 @@ describe('what looking a move ahead buys', () => {
     expect(searched?.type === 'auto:cast' && searched.kicked === true).toBe(false);
   });
 
+  it('will not crew a Vehicle with more power than the Vehicle has', () => {
+    /*
+      The ninth of the "spent on nothing" family, and the first that is arithmetic rather than an
+      empty board. Crewing taps creatures, and after the crew the Vehicle genuinely is a creature —
+      so the search sees one more attacker and nothing at all for the ones lying sideways.
+
+      A Sky Skiff is a 2/3 and asks for one power. Paid with a Serra Angel that could have attacked,
+      it turns four power of attack into two; paid with a 1/1, it turns one into two.
+    */
+    const crews = (s: GameState): boolean => {
+      const action = botAction(s, 0);
+      return action?.type === 'auto:activate'
+        && action.card === find(s, 0, 'battlefield', 'Sky Skiff');
+    };
+    // Both positions offer the crew — this is about which of them the search takes.
+    const bad = position([], ['Mountain', 'Sky Skiff', 'Serra Angel'], [], 'forge-alliance');
+    expect(legalActions(bad, 0).plays.some((p) => p.description.startsWith('Crew'))).toBe(true);
+    expect(crews(bad)).toBe(false);
+
+    const good = position([], ['Mountain', 'Sky Skiff', 'Doomed Traveler'], [], 'forge-alliance');
+    expect(crews(good)).toBe(true);
+  });
+
+  it('crews for free with a creature that was never going to attack', () => {
+    /*
+      The half of that rule that makes it a fact about the board rather than a weight: only the
+      creatures that *could* have attacked are counted as a cost. A creature that arrived this turn
+      is not going into this combat whatever happens, so tapping it to crew costs nothing — and a
+      7/11 crewed by three summoning-sick bodies is the best thing that can happen to a deck that
+      has just emptied its hand.
+    */
+    let s = arena({
+      decks: { 0: 'forge-alliance' },
+      hands: { 0: ['Serra Angel'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains', 'Sky Skiff'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Serra Angel') }));
+    // A 4/4 that cannot attack, so crewing a 2/3 with it is two power of attack for nothing.
+    const courser = find(s, 0, 'battlefield', 'Serra Angel');
+    expect(s.instances[courser]!.enteredTurn).toBe(s.turn);
+    const searched = botAction(s, 0);
+    expect(searched?.type === 'auto:activate' && searched.card)
+      .toBe(find(s, 0, 'battlefield', 'Sky Skiff'));
+  });
+
   it('will not Fog an empty board, and will Fog a swing', () => {
     // The second card in the "spent on nothing" family. A Fog prevents combat damage until end of
     // turn, so cast in your own main phase it is a card in the graveyard — and the evaluation sees

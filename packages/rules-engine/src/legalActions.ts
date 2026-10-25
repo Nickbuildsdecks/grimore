@@ -314,6 +314,53 @@ interface ManaSourceEntry {
  * Returns null when even convoke cannot cover the cost. `legalActions` and `castSpell` both call
  * this, so there is one answer to "can this be paid for" rather than an offer and a refusal.
  */
+/**
+ * Which creatures to tap to crew a Vehicle, or `null` when the board cannot reach the number.
+ *
+ * Convoke's sibling, and built the same way for the same reason: one planner, called by
+ * `activatablePlays` to decide whether to offer the crew and by `activate` as it pays, so the offer
+ * and the payment can never disagree about whether the Vehicle can be driven. That is the bug class
+ * this file exists to prevent, and it is the second mechanic in a row to come close to growing a
+ * second answer.
+ *
+ * **Smallest creatures first**, which is the opposite of what reads naturally and is what a player
+ * does. "Any number with total power N or greater" could always be satisfied by tapping the biggest
+ * creature on the board, and that is the worst choice available: a tapped creature cannot attack or
+ * block, so the creature you want left standing is the big one. Tapping three 1/1s to crew a
+ * Vehicle costs three bodies that were not attacking for much anyway; tapping the 5/5 costs the
+ * attack. The cost of the greedy rule is that it sometimes taps one creature more than it had to.
+ *
+ * A creature with no power is skipped rather than tapped: it can legally be tapped to crew and it
+ * contributes nothing, so tapping it is a blocker thrown away for no progress.
+ *
+ * Summoning sickness is deliberately not asked about. Tapping a creature to pay a cost is not the
+ * same as that creature activating a {T} ability, so a creature that arrived this turn may crew —
+ * which is most of what makes a Vehicle castable and crewable on the same turn.
+ */
+export function crewPlan(
+  state: GameState, seat: SeatIndex, need: number, vehicle: string,
+): readonly string[] | null {
+  if (need <= 0) return [];
+  const available: { id: string; power: number }[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    if (id === vehicle) continue;
+    const inst = state.instances[id];
+    if (inst === undefined || inst.tapped) continue;
+    const ch = characteristicsOf(state, inst);
+    if (!ch.isCreature || ch.power <= 0) continue;
+    available.push({ id, power: ch.power });
+  }
+  available.sort((a, b) => a.power - b.power);
+  const tapped: string[] = [];
+  let total = 0;
+  for (const entry of available) {
+    if (total >= need) break;
+    tapped.push(entry.id);
+    total += entry.power;
+  }
+  return total >= need ? tapped : null;
+}
+
 export function convokePlan(
   state: GameState, seat: SeatIndex, cost: ManaCost, sources: readonly ManaSourceEntry[],
 ): { readonly tapped: readonly string[]; readonly cost: ManaCost } | null {
@@ -740,12 +787,30 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       const victims = sacrificeOptions(state, seat, id, ability.cost);
       if (ability.cost.sacrifice !== undefined && victims.length === 0) continue;
 
+      /*
+        Crew, asked of the same planner that will pay it (CR 702.122a).
+
+        A Vehicle on a board with nobody to drive it is not offered at all, which is the same rule
+        as the sacrifice above and for the same reason: the alternative is a table offering a crew
+        the engine then refuses.
+      */
+      const crew = ability.cost.crew === undefined
+        ? null
+        : crewPlan(state, seat, ability.cost.crew, id);
+      if (ability.cost.crew !== undefined && crew === null) continue;
+
       const specs = ability.targets ?? [];
       const { ok, candidates } = playableTargets(state, specs, seat, id);
       if (!ok) continue;
 
       out.push({
-        kind: 'activate', card: id, name: ch.name, description: ability.description,
+        kind: 'activate', card: id, name: ch.name,
+        // The count said out loud, exactly as convoke says it: a player about to tap three of their
+        // own creatures should be told it is three before they press the button, and which three is
+        // the engine's business.
+        description: crew === null || crew.length === 0
+          ? ability.description
+          : `${ability.description} (tapping ${crew.length})`,
         manaCost: ability.cost.mana ?? '', abilityIndex: i,
         ...(inHand ? { fromHand: true } : {}),
         targetSpecs: specs, candidates, isManaAbility: ability.produces !== undefined,

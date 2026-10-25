@@ -1113,6 +1113,8 @@ describe("boardRead", () => {
       id, owner: 1, zoneSeat: 1, zone: "battlefield", tapped: false, faceDown: false,
       revealed: false, counters: {}, attachedTo: null, isToken: false, isCommander: false,
       card: { name: "Grizzly Bears", typeLine: "Creature — Bear", manaCost: "{1}{G}", cmc: 2, power: "2", toughness: "2", oracleText: "", colors: ["G"] },
+      // `isCreature` is what the engine computes, not what the card prints — see `VisibleCard`.
+      // A Vehicle has printed power and is not one; a Mutavault is one with no printed power.
       power: 2, toughness: 2, keywords: [], damage: 0,
       ...over,
     }) as VisibleCard
@@ -1177,7 +1179,10 @@ describe("attackRead", () => {
       id, owner: seat, zoneSeat: seat, zone: "battlefield", tapped: false, faceDown: false,
       revealed: false, counters: {}, attachedTo: null, isToken: false, isCommander: false,
       card: { name: "Grizzly Bears", typeLine: "Creature — Bear", manaCost: "{1}{G}", cmc: 2, power: "2", toughness: "2", oracleText: "", colors: ["G"] },
-      power: 2, toughness: 2, keywords: [], damage: 0,
+      // `isCreature` is what the engine computes, not what the card prints — see
+      // `VisibleCard`: a Vehicle has printed power and is not one, and a Mutavault is one
+      // with no printed power at all.
+      power: 2, toughness: 2, keywords: [], damage: 0, isCreature: true,
       ...over,
     }) as VisibleCard
 
@@ -1236,7 +1241,10 @@ describe("cardBadges", () => {
       id: "p1", owner: 0, zoneSeat: 0, zone: "battlefield", tapped: false, faceDown: false,
       revealed: false, counters: {}, attachedTo: null, isToken: false, isCommander: false,
       card: { name: "Grizzly Bears", typeLine: "Creature — Bear", manaCost: "{1}{G}", cmc: 2, power: "2", toughness: "2", oracleText: "", colors: ["G"] },
-      power: 2, toughness: 2, keywords: [], damage: 0,
+      // `isCreature` is what the engine computes, not what the card prints — see
+      // `VisibleCard`: a Vehicle has printed power and is not one, and a Mutavault is one
+      // with no printed power at all.
+      power: 2, toughness: 2, keywords: [], damage: 0, isCreature: true,
       ...over,
     }) as Parameters<typeof cardBadges>[1]
 
@@ -1302,6 +1310,33 @@ describe("cardBadges", () => {
     expect(cardBadges(view({ automation: auto }), permanent())).toContain("not ready")
     // And says nothing outside that step, where it would just be noise.
     expect(cardBadges(view({ automation: automation() }), permanent())).not.toContain("not ready")
+  })
+
+  it("says a Vehicle is not crewed, rather than that it is not ready", () => {
+    /*
+      The one permanent whose printed numbers mean nothing. A 7/11 Vehicle that nobody is driving
+      cannot attack, cannot block and cannot be killed by a sweeper — and the table used to read
+      "has printed power" as "is a creature", so during declare-attackers it told the player their
+      Vehicle was *not ready*, which is the wrong answer to a question nobody asked.
+    */
+    const dreadnought = { name: "Consulate Dreadnought", typeLine: "Artifact — Vehicle", manaCost: "{1}", cmc: 1, power: "7", toughness: "11", oracleText: "Crew 4", colors: [] }
+    const vehicle = permanent({
+      card: dreadnought, power: undefined, toughness: undefined, damage: undefined,
+      isCreature: undefined,
+    })
+    const auto = automation({
+      awaiting: { kind: "attackers", seats: [0] },
+      you: { ...automation()!.you!, mustDeclare: "attackers", attackers: ["other"] },
+    })
+    const badges = cardBadges(view({ automation: auto }), vehicle)
+    expect(badges).toContain("not crewed")
+    expect(badges).not.toContain("not ready")
+
+    // Crewed, it is an ordinary creature and says nothing of the kind.
+    const crewed = cardBadges(view({ automation: auto }), permanent({
+      card: dreadnought, power: 7, toughness: 11, isCreature: true,
+    }))
+    expect(crewed).not.toContain("not crewed")
   })
 
   it("names what an Aura is attached to, which is often on the other side of the table", () => {

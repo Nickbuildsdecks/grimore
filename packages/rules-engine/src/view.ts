@@ -75,6 +75,16 @@ export interface VisibleCard {
   readonly power?: number;
   readonly toughness?: number;
   readonly keywords?: readonly Keyword[];
+  /**
+   * Whether this permanent is **currently** a creature, which is not the same question as whether
+   * its card has power printed on it.
+   *
+   * Present only when true, and only for a battlefield permanent. The view already carries the
+   * computed power, toughness and keywords because a client that read them off `card` would be
+   * wrong; the current types belong with them for the same reason. A Vehicle has a printed 7/11 and
+   * is not a creature until it is crewed; a Mutavault is a creature with no printed power at all.
+   */
+  readonly isCreature?: true;
   readonly cantAttack?: boolean;
   readonly cantBlock?: boolean;
   /**
@@ -239,6 +249,7 @@ export interface PackedCard {
   readonly revealed?: true;
   readonly isToken?: true;
   readonly isCommander?: true;
+  readonly isCreature?: true;
   readonly counters?: Readonly<Record<string, number>>;
   readonly attachedTo?: string;
   readonly exiledBy?: string;
@@ -310,6 +321,7 @@ export function packView(view: GameView): PackedView {
     // An empty keyword list is the common case on a battlefield — every vanilla creature and
     // every land has one — and `"keywords":[]` on three hundred cards is another four kilobytes.
     if (card.keywords !== undefined && card.keywords.length > 0) packed.keywords = card.keywords;
+  if (card.isCreature === true) packed.isCreature = true;
     if (card.cantAttack === true) packed.cantAttack = true;
     if (card.cantBlock === true) packed.cantBlock = true;
     if (card.damagePrevented === true) packed.damagePrevented = true;
@@ -357,6 +369,7 @@ export function unpackView(packed: PackedView): GameView {
       ...(card.keywords !== undefined ? { keywords: card.keywords }
         : card.zone === 'battlefield' || (card.zone === 'stack' && card.faceDown === true)
           ? { keywords: [] } : {}),
+      ...(card.isCreature === true ? { isCreature: true as const } : {}),
       ...(card.cantAttack === true ? { cantAttack: true } : {}),
       ...(card.cantBlock === true ? { cantBlock: true } : {}),
       ...(card.damagePrevented === true ? { damagePrevented: true } : {}),
@@ -439,6 +452,15 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     // Power and toughness only for a creature. A land has neither, and sending the zeroes
     // `characteristicsOf` computes for one makes the table draw every land as a 0/0.
     ...(ch.isCreature ? { damage: inst.damage, power: ch.power, toughness: ch.toughness } : {}),
+    /*
+      And whether it is a creature *now*, which is not what having power printed on it means.
+
+      The two part company in exactly two places and a client cannot derive either: a Vehicle has a
+      printed 7/11 and is not a creature until it is crewed, and a Mutavault is a creature with no
+      printed power at all. Before this the table read "has printed power" as "is a creature", which
+      told a player their uncrewed Vehicle was merely *not ready* to attack.
+    */
+    ...(ch.isCreature ? { isCreature: true as const } : {}),
     keywords: [...ch.keywords],
     ...(ch.cantAttack ? { cantAttack: true } : {}),
     ...(ch.cantBlock ? { cantBlock: true } : {}),

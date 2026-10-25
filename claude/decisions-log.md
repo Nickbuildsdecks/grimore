@@ -4985,3 +4985,64 @@ not worth another attempt: a person holding this card casts it face up when they
 face down when they want the surprise, and the bot only knows one of those two reasons. The card
 stays, because the mechanic is what it is in the deck for and the cost of the bot misplaying it is a
 quarter of the noise floor.
+
+## D125 — Vehicles, the ninth of the family, and a deck placement the instrument refused twice
+
+A Vehicle is an artifact that is not a creature at all until somebody crews it, and almost none of
+that needed new code. `isCreature` comes off the type line, so attacking, blocking, a sweeper's
+"destroy all creatures" and a Doom Blade's target filter all already say no. Crewing is layer 4 —
+`addTypes: ['Creature']` until end of turn — which D93 built for a land that becomes a creature, and
+with no `setPower` because the body is printed on the card. What that buys for free: a Vehicle cast
+this turn is summoning-sick when crewed, it stops being a creature at end of turn and stays on the
+battlefield, and one that dies is an artifact in the graveyard.
+
+**Crew is the third cost here that is not mana, and the second paid by tapping somebody else's
+permanent.** `crewPlan` is convoke's sibling and is built the same way for the same reason: one
+planner, called by `activatablePlays` to decide whether to offer the crew and by `activate` as it
+pays, so the offer and the payment cannot disagree. Two rules travel with the cost rather than being
+asked for separately — summoning sickness does not stop a creature crewing (tapping it is a cost
+being paid, not a {T} ability it is activating), and the Vehicle itself stays untapped, which is the
+whole point because it is about to attack.
+
+**Smallest creatures first, which is the opposite of what reads naturally.** "Any number with total
+power N or greater" could always be satisfied by tapping the biggest creature on the board, and that
+is the worst choice available: a tapped creature cannot attack, so the one you want left standing is
+the big one. The cost of the greedy rule is that it sometimes taps one creature more than it had to
+— three bodies totalling five power to crew a 4, which a subset search would have done in two. A
+test pins both halves: crew 2 off two 1/1s and a 4/4 taps the 1/1s, and crew 4 off the same board
+taps all three because the small ones cannot reach it.
+
+**The ninth member of the "spent on nothing" family, and the first that is arithmetic.**
+`animationCouldMatter` already stopped the bot animating with nothing to attack or block, and it
+covers crew unchanged. What it cannot see is the *price*: after a crew the Vehicle genuinely is a
+creature, so `simulate` scores one more attacker and nothing at all for the creatures now lying
+sideways. `crewBuysMoreThanItCosts` compares the Vehicle's power with the total power of the
+creatures the plan would tap — **counting only the ones that could have attacked**, which is what
+makes it a fact about the board rather than a weight: a creature that arrived this turn was not
+going into this combat anyway, so tapping it is free, and a 7/11 crewed by summoning-sick bodies is
+the best thing that can happen to a deck that has just emptied its hand.
+
+**The instrument refused the first deck placement, twice.** All three Vehicles in Rot Harvest, whose
+board is the widest in the pool and whose creatures it is happy to lose, measured **88-149 against
+95-141** and **77-161 against 97-141** — down 7 and down 20 in 238, the second of those past the
+eighteen-game noise floor. The crew rule above recovered 3 and 5 of those games and left the change
+still negative. The mechanism is the obvious one in hindsight: Rot Harvest's plan is to attack and
+trade with its creatures, and crew taps them.
+
+**The placement that measures as a wash puts each Vehicle where its ratio works.** Consulate
+Dreadnought stayed in Rot Harvest, because seven power of attack for four power of tapping is the
+best ratio in the pool and no other deck can reach crew 4 at all: **85-151 against 93-143** and
+**98-140 against 98-140** — down 8, and then exactly level. Sky Skiff and Renegade Freighter went to
+Forge Alliance, whose creatures are 1/1 Soldier tokens: **150-88 against 141-97** and **161-77
+against 161-77** — up 9, and exactly level. Both decks now sit inside the noise floor, which is what
+the first arrangement did not, and the lesson is not about Vehicles: **a cost paid in creatures is
+priced by what those creatures were going to do**, so the same three cards are a wash in one list
+and twenty games in another.
+
+**What the table had to learn to show.** `VisibleCard` now carries `isCreature`, because the two
+questions "has power printed on it" and "is a creature right now" part company in exactly two places
+and a client cannot derive either: a Vehicle has a printed 7/11 and is not a creature, and a
+Mutavault is a creature with no printed power at all. The table read the first as the second, so
+during declare-attackers it told a player their uncrewed Vehicle was **not ready** — the wrong answer
+to a question nobody asked. It now says **not crewed**, and the Mutavault has been quietly wrong in
+the same place since it was scripted.

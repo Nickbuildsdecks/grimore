@@ -7073,3 +7073,182 @@ describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.
     expect(refusal(up, { type: 'auto:turnUp', by: 1, card: other })).toContain('already face up');
   });
 });
+
+describe('Vehicles and crew: an artifact that is a creature only while somebody drives it', () => {
+  /*
+    Three cards, and almost none of this is new code.
+
+    A Vehicle is an artifact, so `isCreature` is false and every rule that asks — attacking,
+    blocking, a sweeper, a Doom Blade's filter — already says no. Crewing is layer 4, which the
+    land-that-becomes-a-creature built. What is new is the **cost**: tap any number of untapped
+    creatures you control with total power N or greater, which is convoke's shape and uses convoke's
+    discipline — one planner, called by the offer and by the payment.
+  */
+  /*
+    The Vehicles live in two decks, which is a measurement rather than a preference: the Dreadnought
+    is in Rot Harvest, whose board is widest, and the two cheap ones are in Forge Alliance, whose
+    creatures are tokens. See D125. So the helper takes the deck.
+  */
+  const garage = (
+    vehicle: string, bodies: readonly string[],
+    opts: { deck?: string; lands?: readonly string[] } = {},
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'ember-rush', 1: opts.deck ?? 'forge-alliance' },
+    battlefield: { 1: [...(opts.lands ?? ['Plains', 'Mountain']), vehicle, ...bodies] },
+    turn: 4, firstSeat: 1,
+  }), 'precombat-main');
+
+  /** The Dreadnought's home, and the only deck with the bodies to crew it. */
+  const yard = (vehicle: string, bodies: readonly string[]): GameState =>
+    garage(vehicle, bodies, { deck: 'rot-harvest', lands: ['Forest', 'Swamp'] });
+
+  it('is not a creature at all until it is crewed, so it cannot attack and nothing can kill it', () => {
+    let s = yard('Consulate Dreadnought', []);
+    const ship = find(s, 1, 'battlefield', 'Consulate Dreadnought');
+    const ch = characteristicsOf(s, s.instances[ship]!);
+    // The body is printed on the card and is simply not a creature's yet.
+    expect(ch.isCreature).toBe(false);
+    expect([ch.power, ch.toughness]).toEqual([7, 11]);
+    expect(hasType(ch.typeLine, 'artifact')).toBe(true);
+    // `canAttack` returns the reason rather than a boolean, and the reason is the whole card.
+    expect(canAttack(s, ship, 1)?.reason).toContain('not a creature');
+
+    // And with nobody to drive it, the crew is not offered — there is no cost it could pay.
+    expect(legalActions(s, 1).plays.some((p) => p.card === ship)).toBe(false);
+    expect(refusal(s, { type: 'auto:activate', by: 1, card: ship, abilityIndex: 0 }))
+      .toContain('total power 4');
+  });
+
+  it('taps the smallest creatures that reach the number, and says how many before you press it', () => {
+    /*
+      Smallest first, which is the opposite of what reads naturally. "Any number with total power 4
+      or greater" could be paid by tapping the Lhurgoyf alone — and that is the worst choice on the
+      board, because a tapped creature cannot attack. The creature you want left standing is the
+      big one.
+    */
+    // Crew 2, with two 1/1 Doomed Travelers and a 4/4 Serra Angel. The Angel alone would pay it in
+    // one tap; the Travelers pay it in two and leave the Angel standing.
+    let s = garage('Renegade Freighter', ['Doomed Traveler', 'Doomed Traveler', 'Serra Angel']);
+    const ship = find(s, 1, 'battlefield', 'Renegade Freighter');
+    const play = legalActions(s, 1).plays.find((p) => p.card === ship);
+    expect(play?.description).toContain('(tapping 2)');
+
+    s = apply(s, { type: 'auto:activate', by: 1, card: ship, abilityIndex: 0 });
+    const angel = find(s, 1, 'battlefield', 'Serra Angel');
+    expect(s.instances[angel]!.tapped).toBe(false);
+    expect(ids(s, 1, 'battlefield')
+      .filter((id) => nameOf(s, id) === 'Doomed Traveler' && s.instances[id]!.tapped)).toHaveLength(2);
+    // The Vehicle itself is untapped, which is the point: it is about to attack.
+    expect(s.instances[ship]!.tapped).toBe(false);
+
+    /*
+      And the other half of the same rule: when the small creatures cannot reach the number, the big
+      one is tapped because it has to be. Crew 4 off two 1/1s and a 3/3 taps all three — five power
+      for a cost of four, which is the price of the greedy rule and is cheaper than the search for a
+      perfect subset would be worth.
+    */
+    const big = yard('Consulate Dreadnought', ['Llanowar Elves', 'Llanowar Elves', 'Centaur Courser']);
+    const dread = find(big, 1, 'battlefield', 'Consulate Dreadnought');
+    expect(legalActions(big, 1).plays.find((p) => p.card === dread)?.description)
+      .toContain('(tapping 3)');
+  });
+
+  it('becomes a creature on resolution, attacks, and stops being one at end of turn', () => {
+    let s = garage('Sky Skiff', ['Serra Angel']);
+    const skiff = find(s, 1, 'battlefield', 'Sky Skiff');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 1, card: skiff, abilityIndex: 0 }));
+
+    const crewed = characteristicsOf(s, s.instances[skiff]!);
+    expect(crewed.isCreature).toBe(true);
+    expect([crewed.power, crewed.toughness]).toEqual([2, 3]);
+    // Its printed keyword was always there; it just had nothing to fly over.
+    expect([...crewed.keywords]).toContain('flying');
+    expect(canAttack(s, skiff, 1)).toBeNull();
+
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: skiff, defender: 0 }] });
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(life(s, 0)).toBe(18);
+
+    // And it is an artifact again next turn, still on the battlefield.
+    s = nextTurn(s);
+    const after = characteristicsOf(s, s.instances[skiff]!);
+    expect(after.isCreature).toBe(false);
+    expect(s.instances[skiff]!.zone).toBe('battlefield');
+  });
+
+  it('survives the sweeper that kills every creature, because it is not one', () => {
+    /*
+      The card, in one assertion. A 7/11 that a Day of Judgment cannot touch is what you are paying
+      for when you accept that it does nothing on its own.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
+      hands: { 0: ['Day of Judgment'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains'],
+        1: ['Consulate Dreadnought', 'Centaur Courser'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const ship = find(s, 1, 'battlefield', 'Consulate Dreadnought');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Day of Judgment') })));
+    expect(s.instances[courser]!.zone).toBe('graveyard');
+    expect(s.instances[ship]!.zone).toBe('battlefield');
+  });
+
+  it('can be crewed by a creature that only just arrived, and by one the Vehicle just paid for', () => {
+    /*
+      Summoning sickness does not stop a creature crewing (CR 702.122a): tapping it is a cost being
+      paid, not a {T} ability it is activating. That is most of what makes a Vehicle castable and
+      crewable in the same turn — and the rule a table gets wrong by reusing the tap-ability check.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'forge-alliance' },
+      hands: { 1: ['Elite Vanguard'] },
+      battlefield: { 1: ['Plains', 'Plains', 'Sky Skiff'] },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Elite Vanguard') }));
+    const dissenter = find(s, 1, 'battlefield', 'Elite Vanguard');
+    expect(s.instances[dissenter]!.enteredTurn).toBe(s.turn);
+
+    const skiff = find(s, 1, 'battlefield', 'Sky Skiff');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 1, card: skiff, abilityIndex: 0 }));
+    expect(s.instances[dissenter]!.tapped).toBe(true);
+    expect(characteristicsOf(s, s.instances[skiff]!).isCreature).toBe(true);
+    // The Vehicle was already on the battlefield, so it is not summoning-sick: `canAttack` does
+    // not care what the permanent was when it arrived (CR 302.6 via 613.1c).
+    expect(canAttack(s, skiff, 1)).toBeNull();
+  });
+
+  it('is an activated ability, so the opponent gets a window the Vehicle does not survive', () => {
+    // Crew uses the stack (CR 702.122a), unlike turning a morph face up. The creatures are tapped
+    // as the cost is paid, so answering the crew leaves them tapped and the Vehicle inert — which
+    // is exactly the blowout the card accepts in exchange for its body.
+    let s = garage('Renegade Freighter', ['Serra Angel']);
+    const freighter = find(s, 1, 'battlefield', 'Renegade Freighter');
+    const courser = find(s, 1, 'battlefield', 'Serra Angel');
+    s = apply(s, { type: 'auto:activate', by: 1, card: freighter, abilityIndex: 0 });
+    expect(s.stackOrder).toHaveLength(1);
+    expect(s.instances[courser]!.tapped).toBe(true);
+    expect(characteristicsOf(s, s.instances[freighter]!).isCreature).toBe(false);
+  });
+
+  it('gets its attack trigger once it is a creature, and not before', () => {
+    let s = garage('Renegade Freighter', ['Serra Angel']);
+    const freighter = find(s, 1, 'battlefield', 'Renegade Freighter');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 1, card: freighter, abilityIndex: 0 }));
+    expect(characteristicsOf(s, s.instances[freighter]!).power).toBe(4);
+
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: freighter, defender: 0 }] }));
+    // +1/+1 and trample, off its own attack trigger.
+    const swinging = characteristicsOf(s, s.instances[freighter]!);
+    expect([swinging.power, swinging.toughness]).toEqual([5, 4]);
+    expect([...swinging.keywords]).toContain('trample');
+  });
+});

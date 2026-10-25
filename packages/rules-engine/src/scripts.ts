@@ -2103,6 +2103,63 @@ const MASTER_OF_PEARLS: CardScript = {
   }],
 };
 
+/*
+  The three Vehicles, and what the engine already had for them.
+
+  Almost all of this card type is the type line. A Vehicle is an artifact, so `characteristicsOf`
+  reports `isCreature` false and every rule that asks — `canAttack`, `canBlock`, a sweeper's "destroy
+  all creatures", a Doom Blade's target filter — says no without being told about Vehicles. The
+  printed power and toughness sit on the card and are simply not a creature's yet.
+
+  Crewing is then layer 4, which D93 built for a land that becomes a creature: `addTypes: ['Creature']`
+  until end of turn, with no `setPower`, because the body is already printed on the card. What that
+  buys for free is worth listing. A crewed Vehicle is summoning-sick if it arrived this turn, because
+  `canAttack` compares `enteredTurn` and does not care what the permanent was when it arrived. It
+  stops being a creature at end of turn and stays on the battlefield. And a crewed Vehicle that dies
+  is an artifact in the graveyard again.
+
+  `animates: true` on each of them is the bot rule the Mutavault needed: do not press this unless
+  there is an attack or a block to make with it. Without it the search would crew whenever it had
+  spare creatures, because a Vehicle that is a creature scores no better than one that is not.
+*/
+const SKY_SKIFF: CardScript = {
+  name: 'Sky Skiff',
+  keywords: ['flying'],
+  abilities: [{
+    cost: { crew: 1 },
+    description: 'Crew 1',
+    animates: true,
+    effect: (c) => pump(c.state, [c.source], c.source, c.controller, { addTypes: ['Creature'] }),
+  }],
+};
+
+const RENEGADE_FREIGHTER: CardScript = {
+  name: 'Renegade Freighter',
+  abilities: [{
+    cost: { crew: 2 },
+    description: 'Crew 2',
+    animates: true,
+    effect: (c) => pump(c.state, [c.source], c.source, c.controller, { addTypes: ['Creature'] }),
+  }],
+  triggers: [{
+    on: { kind: 'attacks' },
+    description: 'it gets +1/+1 and gains trample until end of turn',
+    effect: (c) => pump(c.state, [c.source], c.source, c.controller, {
+      power: 1, toughness: 1, keywords: ['trample'],
+    }),
+  }],
+};
+
+const CONSULATE_DREADNOUGHT: CardScript = {
+  name: 'Consulate Dreadnought',
+  abilities: [{
+    cost: { crew: 4 },
+    description: 'Crew 4',
+    animates: true,
+    effect: (c) => pump(c.state, [c.source], c.source, c.controller, { addTypes: ['Creature'] }),
+  }],
+};
+
 const CONCLAVE_TRIBUNAL: CardScript = {
   ...exileUntilItLeaves('Conclave Tribunal', {
     kind: 'permanent',
@@ -3138,6 +3195,7 @@ const ALL: readonly CardScript[] = [
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,
+  SKY_SKIFF, RENEGADE_FREIGHTER, CONSULATE_DREADNOUGHT,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

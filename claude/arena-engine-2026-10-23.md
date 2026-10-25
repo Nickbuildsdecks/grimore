@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 182 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 185 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2715,6 +2715,43 @@ second has a mechanism, and it is about the bot rather than the card: it casts t
 face-down 2/2 scores above a 2/1 and unspent mana scores as nothing — the term D119 measured as
 exactly level. A person casts it face up when they want the body. The bot knows one of the two
 reasons to play the card.
+
+### Vehicles, and a deck placement the instrument refused twice
+
+A Vehicle is an artifact that is not a creature at all until somebody crews it, and almost none of
+that needed new code. `isCreature` comes off the type line, so attacking, blocking, a sweeper and a
+Doom Blade's filter already say no; crewing is layer 4, which the land-that-becomes-a-creature built.
+What the engine gets free: a Vehicle cast this turn is summoning-sick when crewed, it stops being a
+creature at end of turn and stays on the battlefield, and one that dies is an artifact again.
+
+Crew is the third cost here that is not mana. `crewPlan` is convoke's sibling, built the same way for
+the same reason — one planner for the offer and the payment — and it taps the **smallest** creatures
+that reach the number, which is the opposite of what reads naturally: the big one is the one you want
+left standing. Summoning sickness does not stop a creature crewing, and the Vehicle stays untapped.
+
+The ninth of the "spent on nothing" family, and the first that is arithmetic rather than an empty
+board: after a crew the Vehicle genuinely is a creature, so the search sees one more attacker and
+nothing for the creatures lying sideways. `crewBuysMoreThanItCosts` compares the Vehicle's power with
+the power the plan would tap, counting only the creatures that *could* have attacked — a creature
+that arrived this turn was not going into this combat anyway.
+
+**The instrument refused the first placement twice.** All three Vehicles in Rot Harvest measured
+88-149 against 95-141 and 77-161 against 97-141 — down 7 and down 20 in 238, the second past the
+noise floor. The crew rule recovered 3 and 5 and left it negative. The mechanism is obvious in
+hindsight: Rot Harvest attacks and trades with its creatures, and crew taps them.
+
+The arrangement that measures as a wash puts each Vehicle where its ratio works. The Dreadnought
+stayed in Rot Harvest, the only deck that can reach crew 4 at all: down 8, then exactly level. Sky
+Skiff and Renegade Freighter went to Forge Alliance, whose creatures are 1/1 tokens: up 9, then
+exactly level. The lesson is not about Vehicles — **a cost paid in creatures is priced by what those
+creatures were going to do**, so the same three cards are a wash in one list and twenty games in
+another.
+
+And the table had to learn a question it could not derive. `VisibleCard` now carries `isCreature`,
+because "has power printed on it" and "is a creature right now" part company in exactly two places:
+a Vehicle has a printed 7/11 and is not one, and a Mutavault is one with no printed power. The board
+read the first as the second, so it told a player their uncrewed Vehicle was *not ready*. It says
+**not crewed** now, and the Mutavault had been quietly wrong there since it was scripted.
 
 ## Next
 

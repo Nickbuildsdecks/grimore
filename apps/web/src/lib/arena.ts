@@ -800,11 +800,21 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
   if (card.cantAttack === true && card.cantBlock === true) out.push("can't fight")
   else if (card.cantAttack === true) out.push("can't attack")
   else if (card.cantBlock === true) out.push("can't block")
+  /*
+    A Vehicle that nobody is driving, which is the one permanent on the board whose printed numbers
+    mean nothing at all.
+
+    It has a 7/11 on its face and is not a creature: it cannot attack, cannot block, and a sweeper
+    cannot touch it. A board that said nothing would leave a player reading a 7/11 and wondering
+    why the game will not let them swing with it — and before `isCreature` travelled on the view,
+    the table said "not ready", which is the wrong answer to a question nobody asked.
+  */
+  const isCreature = card.isCreature === true
+  if (!isCreature && /vehicle/i.test(card.card?.typeLine ?? "")) out.push("not crewed")
   // Summoning sickness is the question players ask most often, and the view carries what answers
   // it: the engine says it cannot attack by leaving it out of `attackers`.
   const attackers = view.automation?.you?.attackers ?? []
   const mine = card.zoneSeat === view.seat
-  const isCreature = card.keywords !== undefined && card.card?.power !== undefined
   if (
     mine && isCreature && view.automation?.awaiting?.kind === "attackers" &&
     !attackers.includes(card.id) && card.tapped === false && card.cantAttack !== true

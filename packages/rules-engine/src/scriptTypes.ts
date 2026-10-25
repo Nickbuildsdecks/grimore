@@ -306,6 +306,21 @@ export interface AbilityCost {
    * resolves (CR 702.29a), which is why the ability's effect must not read its own source.
    */
   readonly discardSelf?: boolean;
+  /**
+   * "Crew N" — tap any number of untapped creatures you control with total power N or greater
+   * (CR 702.122a).
+   *
+   * The third kind of cost in this engine that is not mana, after the sacrifice and the life, and
+   * the second that is paid by tapping somebody else's permanent — convoke was the first. What it
+   * is *not* is a tap cost on the Vehicle: the Vehicle stays untapped, which is the whole point,
+   * because it is about to attack.
+   *
+   * Two rules travel with it rather than being asked for separately. Summoning sickness does not
+   * stop a creature crewing, because tapping it is a cost being paid and not an ability it is
+   * activating (CR 302.6 is about {T} abilities and attacking). And **any number** means the count
+   * is the engine's to choose, like convoke's: see `crewPlan`.
+   */
+  readonly crew?: number;
 }
 
 export interface AbilityDef {

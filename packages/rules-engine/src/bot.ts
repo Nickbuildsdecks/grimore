@@ -14,7 +14,7 @@
  * writing before the rules underneath them are trustworthy.
  */
 import { pactProtects } from './pacts.js';
-import { legalActions, type LegalActions, type LegalPlay } from './legalActions.js';
+import { crewPlan, legalActions, type LegalActions, type LegalPlay } from './legalActions.js';
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import { bottomOwed, modesOf, pendingDeclaration, stillDeciding } from './automation.js';
@@ -1595,6 +1595,52 @@ function animationCouldMatter(state: GameState, seat: SeatIndex, action: Action)
     && (state.step === 'declare-attackers' || state.step === 'declare-blockers');
 }
 
+/** Whether this action activates a crew ability (CR 702.122a). */
+function crewsAVehicle(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:activate') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.cost.crew !== undefined;
+}
+
+/**
+ * Whether crewing this Vehicle puts more power into the combat than it takes out of it.
+ *
+ * The arithmetic the evaluation cannot do. After a crew the Vehicle really is a creature, so
+ * `simulate` scores a board with one more attacker on it and nothing at all for the two creatures
+ * now lying sideways — the cost is invisible in exactly the way a wasted mana is.
+ *
+ * Only the creatures that **could have attacked** are counted as a cost, which is the half that
+ * makes this a fact about the board rather than a weight. A creature that arrived this turn, or is
+ * already tapped, or cannot attack, was not going into this combat anyway: tapping it to crew is
+ * free, and a Vehicle crewed by summoning-sick creatures is the best thing that can happen to a
+ * deck that just emptied its hand.
+ *
+ * Power rather than a fuller measure of what a creature is worth, deliberately: the question is
+ * about one combat, and the thing this rule exists to stop is trading four power of attackers for
+ * four power of Vehicle. An evasive Vehicle is worth more than its power says and this rule does
+ * not know it — Sky Skiff flies, and against a ground board its two power is worth more than two
+ * untapped 1/1s. That is a real limitation and the reason the comparison is strict rather than
+ * generous: it declines the trades that are level.
+ */
+function crewBuysMoreThanItCosts(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (action.type !== 'auto:activate') return false;
+  const inst = state.instances[action.card];
+  if (inst === undefined) return false;
+  const name = state.cardDefs[inst.defKey]?.name;
+  const need = scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.cost.crew;
+  if (need === undefined) return false;
+  const plan = crewPlan(state, seat, need, action.card);
+  if (plan === null) return false;
+  const cost = plan.reduce((total, id) => {
+    const creature = state.instances[id];
+    if (creature === undefined) return total;
+    // Could it have attacked? If not, tapping it costs this combat nothing.
+    if (canAttack(state, id, seat) !== null) return total;
+    return total + characteristicsOf(state, creature).power;
+  }, 0);
+  return characteristicsOf(state, inst).power > cost;
+}
+
 /** Whether this action casts a card whose point is to become a copy of a creature. */
 function castsACopy(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -2081,6 +2127,20 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       attack goad forces comes round on their turn.
     */
     if (castsAGoad(state, option.action) && !goadHasSomewhereToSend(state, seat)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And a crew that costs more than it buys, which is the ninth of the family and the first that
+      is about arithmetic rather than about an empty board.
+
+      `animationCouldMatter` already stops the bot crewing with nothing to attack or block. What it
+      cannot see is the *price*: crewing taps creatures, so making a 4/3 Vehicle swing by tapping a
+      3/3 and a 1/1 is four power of attack bought with four power of attack, plus a card's worth of
+      bodies taken out of the combat. The search scores the board after the crew and the Vehicle is
+      genuinely a creature, so the trade looks free.
+    */
+    if (crewsAVehicle(state, option.action) && !crewBuysMoreThanItCosts(state, seat, option.action)) {
       dropped += 1;
       continue;
     }

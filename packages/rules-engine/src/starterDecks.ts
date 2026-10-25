@@ -413,6 +413,54 @@ const MASTER_OF_PEARLS: CardDef = {
   colors: ['W'],
 };
 
+/*
+  Three Vehicles, and the first card type in this pool that is not a creature, a land, an
+  instant, a sorcery, an enchantment, an artifact or a planeswalker.
+
+  A Vehicle is an artifact that is **not a creature at all** until somebody crews it, which is the
+  whole card: it survives a Day of Judgment sitting on the battlefield, it cannot be hit by a Doom
+  Blade, and it cannot attack or block either. The trade is that its body is far above its cost,
+  and the cost of using it is creatures tapped out of the combat it is joining.
+
+  Three of them because the number on the crew is the card. Sky Skiff asks for one power and gets a
+  2/3 flier out of it, which is almost free. Renegade Freighter asks for two and hits like a 5/4
+  with trample. Consulate Dreadnought is a **7/11 for one mana** and asks for four power, which on
+  most boards is every creature its controller has — a card that is either unplayable or the
+  biggest thing anybody has seen, with nothing in between.
+*/
+const SKY_SKIFF: CardDef = {
+  name: 'Sky Skiff',
+  typeLine: 'Artifact — Vehicle',
+  manaCost: '{2}',
+  cmc: 2,
+  power: '2',
+  toughness: '3',
+  oracleText: 'Flying\nCrew 1',
+  colors: [],
+};
+
+const RENEGADE_FREIGHTER: CardDef = {
+  name: 'Renegade Freighter',
+  typeLine: 'Artifact — Vehicle',
+  manaCost: '{3}',
+  cmc: 3,
+  power: '4',
+  toughness: '3',
+  oracleText: 'Whenever Renegade Freighter attacks, it gets +1/+1 and gains trample until end of turn.\nCrew 2',
+  colors: [],
+};
+
+const CONSULATE_DREADNOUGHT: CardDef = {
+  name: 'Consulate Dreadnought',
+  typeLine: 'Artifact — Vehicle',
+  manaCost: '{1}',
+  cmc: 1,
+  power: '7',
+  toughness: '11',
+  oracleText: 'Crew 4',
+  colors: [],
+};
+
 const CONCLAVE_TRIBUNAL: CardDef = {
   name: 'Conclave Tribunal',
   typeLine: 'Enchantment',
@@ -2301,14 +2349,31 @@ export const ROT_HARVEST: DeckSpec = {
     { card: BLOSSOMING_DEFENSE, count: 1 },
     { card: ENDLESS_ONE, count: 2 },
     { card: BLOOD_ARTIST, count: 3 },
-    { card: ZULAPORT_CUTTHROAT, count: 2 },
+    { card: ZULAPORT_CUTTHROAT, count: 1 },
+    /*
+      Consulate Dreadnought, for the second Zulaport Cutthroat.
+
+      Crew is a cost paid in creatures tapped out of the combat they are joining, so it is cheapest
+      for whoever has the most of them — and this deck's whole plan is a board of small bodies it is
+      happy to lose. A **7/11 for one mana** crewed by creatures it was going to sacrifice anyway is
+      the single largest thing anybody in this pool can put on the table, and is unplayable in six
+      of the other seven decks.
+
+      One Vehicle here rather than three, which is a measurement and not a preference: all three in
+      this list cost the deck 7 and 20 games on two seed sets of 238 (see D125). The Dreadnought is
+      the one with the ratio — seven power of attack for four power of tapping — and the two cheaper
+      ones went to Forge Alliance, whose creatures are tokens.
+
+      The second Zulaport Cutthroat was the cut: a second drain-on-death behind three Blood Artists.
+    */
+    { card: CONSULATE_DREADNOUGHT, count: 1 },
     { card: DOOMED_DISSENTER, count: 2 },
     { card: WALL_OF_BLOSSOMS, count: 2 },
     { card: FLESHBAG_MARAUDER, count: 2 },
-    { card: BLOODTHRONE_VAMPIRE, count: 1 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },
     { card: GRAVEDIGGER, count: 2 },
     { card: BASILISK_COLLAR, count: 2 },
+    { card: BLOODTHRONE_VAMPIRE, count: 1 },
     { card: RAISE_DEAD, count: 1 },
     { card: GRIM_DISCOVERY, count: 1 },
     { card: ZOMBIFY, count: 1 },
@@ -2350,14 +2415,32 @@ export const FORGE_ALLIANCE: DeckSpec = {
     { card: LEONIN_SKYHUNTER, count: 2 },
     // A two-drop that wins the fight it is in rather than trading, which is what a board of small
     // creatures is short of — and the first first-striker in the pool.
-    { card: YOUTHFUL_KNIGHT, count: 2 },
+    { card: YOUTHFUL_KNIGHT, count: 1 },
     { card: FIREBRAND_ARCHER, count: 2 },
     { card: AJANIS_PRIDEMATE, count: 2 },
     { card: SERRA_ANGEL, count: 2 },
     // The card this deck was already built for: every small creature it plays is another damage
     // on the swing, and the tokens from Raise the Alarm and Secure the Wastes count too.
     { card: HELLRIDER, count: 2 },
-    { card: BONESPLITTER, count: 2 },
+    { card: BONESPLITTER, count: 1 },
+    /*
+      The two cheap Vehicles, in the deck whose creatures are tokens.
+
+      Crew is paid in creatures tapped out of the combat they are joining, so the question a Vehicle
+      asks is whether the body it puts in is worth more than the bodies it takes out — and a deck
+      that makes 1/1 Soldiers is the one with the best answer. Two Soldiers crew a Renegade
+      Freighter into a 5/4 with trample; the same two Soldiers attacking are two damage into a
+      blocker.
+
+      A Vehicle is also the one thing in this list that a sweeper cannot touch, which matters in a
+      deck whose board is wide and small.
+
+      For the second Bonesplitter (a +2/+0 behind a Loxodon Warhammer and a Darksteel Plate) and the
+      second Youthful Knight (a 2/1 first striker whose job the Sky Skiff does with flying). Both
+      keep their other homes.
+    */
+    { card: SKY_SKIFF, count: 1 },
+    { card: RENEGADE_FREIGHTER, count: 1 },
     { card: LOXODON_WARHAMMER, count: 2 },
     // The deck's only answer to an Equipment or an enchantment, which is what a board of swords
     // is most afraid of.
