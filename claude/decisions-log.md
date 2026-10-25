@@ -4484,12 +4484,26 @@ a counterspell, which is the same thing the search has never been able to price 
 soak it declined zero times, which is this rule being honest about what it is rather than evidence
 that it is right.
 
-**And the browser suites can only sample it.** Eleven wards in 224 games is about one game in
-twenty, so the arena suite reports "no ward came up" far more often than not, and says so rather
-than passing silently. The deterministic coverage is seven engine tests — paid, declined, cannot
-pay, not off your own spells, off an activated ability, off a triggered ability, and the Pest's own
-death trigger — plus a web test on the shape the control bar reads, which is the layer the flashback
-bug lived in (D113).
+**And the browser suites can only sample it — but it has now been sampled.** Eleven wards in 224
+engine games is about one game in twenty, so the arena suite reports "no ward came up" far more
+often than not, and says so rather than passing silently. The deterministic coverage is seven engine
+tests — paid, declined, cannot pay, not off your own spells, off an activated ability, off a
+triggered ability, and the Pest's own death trigger — plus a web test on the shape the control bar
+reads, which is the layer the flashback bug lived in (D113).
+
+The row itself was unverified in a browser when this entry was first written, which is exactly the
+gap D113's bug came through, so it was hunted rather than left: **eighteen browser games, one ward**,
+in the pairing most likely to produce a payable one (Tidal Mind's removal against Verdant Guard's
+Ward {1}). That one works end to end — a Doom Blade aimed at the Elite, the prompt reaching the
+*caster*, {1} paid, the Elite dying to the removal it did not stop. One in eighteen is the same rate
+as the engine's one in twenty, and it is a real denominator rather than the word "rarely".
+
+One thing in this paragraph is **not** verified, and is written down rather than implied. The
+screenshot that run produced was taken after the payment, so it showed the feed reporting a creature
+that had already died rather than the question being asked. A picture called "a ward being paid"
+should show two buttons and the sentence naming what is countered if you decline, so the driver now
+shoots before it presses — but twelve further runs produced no ward at all, so **no run has yet
+exercised the new ordering.** It is a two-line change in the obvious direction; it is not evidence.
 
 ## D116 — Unblocked power: the fifth term, the fifth deletion, and what the four have in common
 

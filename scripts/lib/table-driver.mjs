@@ -293,6 +293,10 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
   */
   if (await has(page, 'ward-prompt')) {
     const prompt = await text(page, 'ward-prompt');
+    // Shot *before* pressing, because the thing worth a picture is the question: two buttons and
+    // the sentence naming what is countered if you decline. Taken after, the first version of this
+    // caught the feed line reporting a creature that had already died.
+    await shot(page, 'a-ward-being-paid');
     await press(page, 'ward-pay');
     return `paid a ward: ${prompt}`;
   }
@@ -565,10 +569,7 @@ export async function noteMove(seen, page, did) {
   // A ward paid, which is the one prompt in the game that belongs to the player who did *not*
   // stop the table. Sampled for the same reason flashback is: it needs the warded creature on the
   // board and an opponent with something that targets it.
-  if (/^paid a ward/.test(did) && seen.ward !== true) {
-    seen.ward = true;
-    await shot(page, 'a-ward-being-paid');
-  }
+  if (/^paid a ward/.test(did) && seen.ward !== true) seen.ward = true;
   /*
     The damage assignment order (CR 509.2), which only happens when a creature is blocked by two or
     more — so it is a *sampled* observation and not something a run can be required to see.
