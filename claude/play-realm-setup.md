@@ -191,21 +191,28 @@ A person plays it better.
 other, both seats, 168 games each (`node scripts/measure/deck-table.mjs`):
 
 ```
- 78%  131-37   ember-rush
- 71%  120-48   forge-alliance
- 53%   89-79   verdant-guard
- 45%   76-92   skyward-writ
- 42%   70-98   hollow-tide
- 39%   66-102  rot-harvest
- 36%   60-108  tidal-mind
- 36%   60-108  ashen-rite
+ 80%  135-33   ember-rush
+ 71%  119-49   forge-alliance
+ 55%   93-75   verdant-guard
+ 43%   73-95   skyward-writ
+ 43%   73-95   ashen-rite
+ 40%   67-101  rot-harvest
+ 34%   57-111  hollow-tide
+ 33%   55-113  tidal-mind
 ```
+
+**Read the order, not the individual numbers.** Every deck's record here depends on all seven of
+the others, so a deck moves when its opponents change even if it does not. The clearest case is in
+this very table: Hollow Tide fell eight points between one run of it and the next **without a single
+card of its own changing** — the decks around it got better. Row-to-row moves of a dozen games on a
+hundred and sixty-eight are inside the noise anyway. What a table like this is good for is the
+shape: two decks clearly ahead, a long middle, and nothing unplayable at the bottom.
 
 Some of that spread is the decks and some of it is the opponent: a burn deck with four Lightning
 Bolts is the easiest thing in the pool for a one-ply search to pilot, and a control deck that wants
 to hold mana up and answer the right spell is the hardest (see `claude/decisions-log.md`, D108 and
 D110). **If you want an even game against the computer, give it Ember Rush or Forge Alliance and
-take whichever deck you like; if you want an easy one, give it Tidal Mind or Ashen Rite.** Two
+take whichever deck you like; if you want an easy one, give it Tidal Mind or Hollow Tide.** Two
 people playing each other can ignore all of this — these numbers are about how well the *bot*
 pilots each deck, and the two decks it handles worst are the two a person gets the most out of.
 
