@@ -313,6 +313,33 @@ const SEDGEMOOR_WITCH: CardDef = {
   colors: ['B'],
 };
 
+/*
+  The two convoke cards (CR 702.51), both Selesnya, both in the Selesnya deck.
+
+  Convoke is only a discount if there is a board to tap, so it belongs in the deck that makes
+  creatures and nowhere else in this pool. Printed cost is what these say; what they actually cost
+  is four lands and three creatures, or two lands and three creatures.
+*/
+const SIEGE_WURM: CardDef = {
+  name: 'Siege Wurm',
+  typeLine: 'Creature — Wurm',
+  manaCost: '{5}{G}{G}',
+  cmc: 7,
+  power: '5',
+  toughness: '5',
+  oracleText: 'Convoke\nTrample',
+  colors: ['G'],
+};
+
+const CONCLAVE_TRIBUNAL: CardDef = {
+  name: 'Conclave Tribunal',
+  typeLine: 'Enchantment',
+  manaCost: '{3}{W}{W}',
+  cmc: 5,
+  oracleText: 'Convoke\nWhen Conclave Tribunal enters the battlefield, exile target nonland permanent an opponent controls until Conclave Tribunal leaves the battlefield.',
+  colors: ['W'],
+};
+
 const GRIZZLY_BEARS: CardDef = {
   name: 'Grizzly Bears',
   typeLine: 'Creature — Bear',
@@ -1965,7 +1992,13 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: ELVISH_VISIONARY, count: 1 },
     // A 2/4 that stops a flier without being one, which is the one thing a green deck is short of.
     { card: GIANT_SPIDER, count: 1 },
-    { card: SERRA_ANGEL, count: 2 },
+    { card: SERRA_ANGEL, count: 1 },
+    /*
+      Seven mana printed and castable off four lands and three creatures, which is the whole point
+      of convoke and the clearest card in the pool for showing it. It cost the second Serra Angel:
+      the same job at the top of the curve, for a card the deck's own board helps pay for.
+    */
+    { card: SIEGE_WURM, count: 1 },
     // Removal that gives the creature back if you kill the thing holding it, which is the deck's
     // answer to a creature it cannot block rather than a second Pacifism.
     { card: BANISHER_PRIEST, count: 1 },
@@ -1985,7 +2018,14 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: LOXODON_WARHAMMER, count: 1 },
     { card: SELESNYA_CHARM, count: 1 },
     { card: PACIFISM, count: 1 },
-    { card: SWORDS_TO_PLOWSHARES, count: 2 },
+    { card: SWORDS_TO_PLOWSHARES, count: 1 },
+    /*
+      Five mana of removal is unplayable on a creature deck's curve; three is not, and with a board
+      it is sometimes one. It answers anything nonland rather than only a creature, which is the
+      half of the board this deck's other removal cannot touch — and it cost the second Swords to
+      Plowshares, which is the better card and the one there is already a copy of.
+    */
+    { card: CONCLAVE_TRIBUNAL, count: 1 },
     // The deck with the most to lose to an aura, and the one that can answer it.
     { card: NATURALIZE, count: 1 },
     { card: BLOSSOMING_DEFENSE, count: 1 },

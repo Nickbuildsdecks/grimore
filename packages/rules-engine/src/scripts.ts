@@ -2003,6 +2003,39 @@ const BANISHING_LIGHT: CardScript = exileUntilItLeaves('Banishing Light', {
   },
 });
 
+/*
+  Convoke (CR 702.51), and the two cards that carry it.
+
+  A flag rather than a cost: convoke does not change what a spell costs, it changes what may pay
+  for it, and `convokePlan` in `legalActions.ts` is where that lives. Both of these are Selesnya
+  cards in the Selesnya deck, which is where the mechanic is printed and the only place it is worth
+  anything — convoke needs a board of creatures to be a discount at all.
+
+  Siege Wurm is the shape that shows the mechanic plainly: seven mana printed, a 5/5 trample, and
+  castable off four lands and three creatures. Conclave Tribunal is the one that shows what the
+  discount is *for* — five mana of removal is unplayable in a creature deck's curve, and three mana
+  of it is not.
+*/
+const SIEGE_WURM: CardScript = {
+  name: 'Siege Wurm',
+  keywords: ['trample'],
+  convoke: true,
+};
+
+const CONCLAVE_TRIBUNAL: CardScript = {
+  ...exileUntilItLeaves('Conclave Tribunal', {
+    kind: 'permanent',
+    description: 'target nonland permanent an opponent controls',
+    filter: (state, candidate, controller) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined || inst.zoneSeat === controller) return false;
+      return !characteristicsOf(state, inst).isLand;
+    },
+  }),
+  convoke: true,
+};
+
 // ── Kicker, and costs paid with a creature ───────────────────────────────────────────────────────
 
 /**
@@ -3022,6 +3055,7 @@ const ALL: readonly CardScript[] = [
   guildgate('Rakdos Guildgate', 'B', 'R'),
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
+  SIEGE_WURM, CONCLAVE_TRIBUNAL,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

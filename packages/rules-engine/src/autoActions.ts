@@ -25,12 +25,12 @@ import {
 } from './automation.js';
 import { addToPool, counterSpell, loseLife, poolOf } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
-import { canPay, parseManaCost } from './mana.js';
+import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
 import type { CardScript, TargetSpec } from './scriptTypes.js';
 import { hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
-import { legalActions } from './legalActions.js';
+import { convokePlan, legalActions, manaSources } from './legalActions.js';
 import { EMPTY_COMBAT, MAIN_STEPS, type CombatAttack, type StackObject, type Target } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
 
@@ -178,7 +178,36 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const costText = flashback
     ? script?.flashback?.cost
     : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
-  const paid = payFrom(state, action.by, costText, action.x ?? 0, tax);
+  /*
+    Convoke, which widens what may pay rather than changing what it costs (CR 702.51).
+
+    Worked out by the same `convokePlan` that decided whether to offer this cast at all, so the
+    offer and the payment cannot disagree — the rule this file exists to keep. The creatures are
+    tapped here, as the cost is paid, which is also what makes the "became tapped" triggers fire at
+    the right moment: a City of Brass convoked for a spell charges its life now, not on resolution.
+
+    Recomputed rather than carried on the action: it is a fact about the board at the moment of
+    casting, and a client naming its own creatures to tap would be a client choosing which of its
+    permanents the engine taps.
+  */
+  let convoked: readonly string[] = [];
+  let toPay: string | ManaCost | undefined = costText;
+  let taxToPay = tax;
+  if (script?.convoke === true) {
+    const printed = parseManaCost(costText);
+    const full = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
+    const plan = convokePlan(state, action.by, full, manaSources(state, action.by));
+    if (plan === null) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `cannot pay for ${characteristics.name}, even with convoke`);
+    }
+    convoked = plan.tapped;
+    // The plan's cost already carries the tax, so it must not be added a second time.
+    toPay = plan.cost;
+    taxToPay = 0;
+  }
+  let beforePay = state;
+  for (const id of convoked) beforePay = withInstance(beforePay, id, { tapped: true });
+  const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay);
   let next = paid.state;
   if (sacrificed !== null) {
     const victim = requireInstance(next, sacrificed);

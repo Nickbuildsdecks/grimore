@@ -4696,3 +4696,60 @@ weight changed — a swing projection and a second ply, both of which D62 measur
 (276-276 and 276-276) rather than against, and the honest reply D110 measured at 120-120. Those are
 the three where "no difference" might still be an artifact of the old instrument, and re-asking them
 is a different piece of work from adding a term: each one is a search, not a number.
+
+## D121 — Convoke, and the second answer this file nearly grew
+
+Convoke (CR 702.51) is the first cost in this engine that is neither mana nor a sacrifice: each
+creature tapped as the spell is cast pays one generic mana, or one mana of that creature's colour.
+It is a flag on the script rather than a cost, because it does not change what a spell costs — it
+changes what may pay for it.
+
+**It reduces the cost rather than making mana, and that is the whole decision here.** The tempting
+shape was a few lines: a convoked creature is almost exactly a dual land — "one generic or one of my
+colour" — so adding untapped creatures to `manaSources` with `produces: [...colors, 'C']` would have
+worked the solver already there. It is wrong for one reason that cannot be patched afterwards: a
+mana source that over-produces leaves mana floating, convoke cannot do that, and **nothing
+downstream could clean it up** because Dark Ritual is in the pool and floating mana is therefore
+sometimes legitimate. So `convokePlan` works out which creatures to tap and what is *left* of the
+cost, and `payFrom` learned to take a cost that has already been worked out rather than only a
+string to parse.
+
+**One planner, called from both sides.** `legalActions` asks it whether to offer the cast and
+`castSpell` asks it again as it pays — the same function, on the same state, so an offer and a
+refusal cannot disagree. That is the bug class `legalActions` exists to prevent, and convoke is the
+closest this pool has come to growing a second answer to "can this be paid for". The test that
+matters is the sweep: for every board from nought to seven lands and nought to four creatures,
+either the play is offered and the cast reaches the stack, or it is not offered.
+
+**It taps nothing it does not have to.** Mana first, and only the shortfall convoked: a tapped
+creature cannot block, so a spell the lands already cover convokes nobody. The visible consequence
+is a test that reads oddly until you see why — four Forests, a Grizzly Bears, a Centaur Courser and
+a Llanowar Elves casting a {5}{G}{G} Wurm says **"convoking 2"**, not three, because the Elf taps
+for {G} and the planner counts that first. Three creatures end up tapped either way; one of them is
+paying mana.
+
+**Two rules worth getting right, both in the permissive direction.** Summoning sickness does not stop
+convoke — tapping for it is neither attacking nor activating an ability (CR 702.51a) — so a creature
+that arrived this turn may pay for a spell, which a test pins with three tokens made on the turn
+they convoke. And a creature tapped for convoke leaves the mana-source list, because it cannot be
+tapped twice; without that the engine would count one tap as two and offer a cast it then refused.
+
+**Said on the play.** `Cast Siege Wurm (convoking 2)` rather than `Cast Siege Wurm`, because a table
+that offers a seven-mana spell off four lands and gives no reason is a table a player does not
+trust. The count, not the names: which creatures get tapped is the engine's to decide, and three is
+what the player needs to know.
+
+**Two cards, both Selesnya, both in the Selesnya deck** — convoke is only a discount where there is
+a board to tap, and nowhere else in this pool is there one. Siege Wurm ({5}{G}{G}, 5/5 trample) for
+the second Serra Angel, and Conclave Tribunal ({3}{W}{W}, exile a nonland permanent until it leaves)
+for the second Swords to Plowshares. Five mana of removal is unplayable on a creature deck's curve
+and three is not, which is what the mechanic is for.
+
+**Measured.** The slot change is a wash: 149-89 with the two cards against 152-86 without, over 238
+games — three games, inside the noise floor. What is not a wash is how often they get cast. Over 84
+games, **Siege Wurm is cast in 79% of the games it reaches hand and Conclave Tribunal in 88%, where
+the Serra Angel it replaced manages 63%** — the mechanic doing exactly what it is printed to do. And
+over 168 games the bot cast one of the two twenty times and **convoked thirteen of those, tapping
+2.7 creatures a time**; 168 of 168 games finished. The bot needed nothing taught: `legalActions`
+offers the cast and the search prices the tapped creatures, because `simulate` scores the board
+after they are tapped.

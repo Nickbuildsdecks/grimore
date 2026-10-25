@@ -40,7 +40,7 @@ import { manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
 import {
   EMPTY_POOL, addMana, canAfford, canPay, parseManaCost, payCost, solveTap,
-  type ManaPick, type ManaPool, type ManaType,
+  type ManaCost, type ManaPick, type ManaPool, type ManaType,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
 import { scriptFor } from './scripts.js';
@@ -1029,10 +1029,14 @@ function tapSources(state: GameState, seat: SeatIndex, picks: readonly ManaPick[
  * play it had just offered.
  */
 function payFrom(
-  state: GameState, seat: SeatIndex, costText: string | undefined, x: number, extraGeneric = 0,
-  avoid?: string,
+  state: GameState, seat: SeatIndex, costText: string | ManaCost | undefined, x: number,
+  extraGeneric = 0, avoid?: string,
 ): { state: GameState; tapped: readonly string[] } {
-  const printed = parseManaCost(costText);
+  // A cost already worked out, rather than one to parse: convoke hands over what is *left* of a
+  // cost after the creatures it tapped, and re-deriving it from text would lose that.
+  const printed = typeof costText === 'object' && costText !== null
+    ? costText
+    : parseManaCost(costText);
   // `extraGeneric` is the commander tax (CR 903.8): generic mana on top of the printed cost, which
   // the card itself has not changed.
   const cost = extraGeneric > 0 ? { ...printed, generic: printed.generic + extraGeneric } : printed;
@@ -1060,7 +1064,10 @@ function payFrom(
   }
   const result = payCost(poolOf(next, seat), cost, x);
   if (!result.paid) {
-    const shown = extraGeneric > 0 ? `${costText ?? '{0}'} +{${extraGeneric}}` : costText ?? '{0}';
+    const asText = typeof costText === 'string' || costText === undefined ? costText : null;
+    const shown = asText === null
+      ? 'what was left of its cost'
+      : extraGeneric > 0 ? `${asText ?? '{0}'} +{${extraGeneric}}` : asText ?? '{0}';
     throw new EngineError('RULE_NOT_APPLICABLE', `cannot pay ${shown}: ${result.shortfall}`);
   }
   return { state: setPool(next, seat, result.pool as ManaPool), tapped };

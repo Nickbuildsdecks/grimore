@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 175 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 177 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2559,6 +2559,37 @@ and three of the other four deletions are now worth re-asking for the same reaso
 The transferable part is about keeping records: every one of those five entries wrote down its
 numbers, which is the only reason any of this was recoverable. A log that had said "tried valuing
 evasion, didn't work" would have closed the question permanently.
+
+### Convoke, and the second answer this file nearly grew
+
+The first cost in this engine that is neither mana nor a sacrifice. Each creature tapped as the
+spell is cast pays one generic mana, or one of that creature's colour — so a seven-mana Siege Wurm
+is castable off four lands and three creatures.
+
+The tempting implementation was a few lines and wrong. A convoked creature is almost exactly a dual
+land — "one generic or one of my colour" — so adding untapped creatures to the mana-source list
+would have reused the solver already there. It fails for one reason that cannot be patched later: a
+mana source that over-produces leaves mana floating, convoke cannot do that, and nothing downstream
+could clean it up, because Dark Ritual is in the pool and floating mana is therefore sometimes real.
+So convoke reduces the cost instead, and the payment function learned to take a cost already worked
+out rather than only a string to parse.
+
+One planner, called from both sides: `legalActions` asks it whether to offer the cast, `castSpell`
+asks it again as it pays. That is the bug class `legalActions` exists to prevent, and convoke is the
+closest this pool has come to growing a second answer to "can this be paid for" — so the test that
+matters is a sweep over every board from nought to seven lands and nought to four creatures, where
+either the play is offered and the cast reaches the stack or it is not offered at all.
+
+It taps nothing the lands already cover, because a tapped creature cannot block. The visible
+consequence reads oddly until you see it: four Forests, two creatures and a Llanowar Elves casting
+the Wurm says **convoking 2**, because the Elf taps for {G} and the planner counts mana first.
+
+Two cards, both Selesnya, both in the Selesnya deck, because convoke is only a discount where there
+is a board to tap. The slot change is a wash (149-89 against 152-86), but the castability is not:
+Siege Wurm is cast in 79% of the games it reaches hand and Conclave Tribunal in 88%, where the Serra
+Angel the Wurm replaced manages 63%. Over 168 games the bot convoked thirteen of its twenty casts,
+tapping 2.7 creatures a time, and needed nothing taught — the search prices the tapped creatures
+because it scores the board after they are tapped.
 
 ## Next
 

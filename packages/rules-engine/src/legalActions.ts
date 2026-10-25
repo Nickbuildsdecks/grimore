@@ -278,6 +278,72 @@ interface ManaSourceEntry {
  * Lives here rather than in `automation.ts` because `legalActions` is what asks it the question
  * that matters — "can this be paid for at all" — and `automation.ts` already imports this file.
  */
+/**
+ * Convoke (CR 702.51): which creatures to tap for a cost, and what is left of it to pay.
+ *
+ * **It reduces the cost rather than making mana**, which is the one design decision here worth
+ * stating. Modelling a convoked creature as a mana source would have been a few lines — it is
+ * almost exactly a dual land, "one generic or one of my colour" — but a mana source that
+ * over-produces leaves mana floating, and convoke cannot do that. There is no way to clean it up
+ * afterwards either, because a Dark Ritual means floating mana is sometimes legitimate and nothing
+ * downstream could tell the two apart.
+ *
+ * **It taps nothing it does not have to.** Mana first: a spell the lands already cover convokes
+ * nobody, because a tapped creature cannot block and the player would rather keep it. Only the
+ * shortfall is convoked, one pip at a time, coloured pips first while a creature of that colour is
+ * available — a greedy assignment rather than an optimal one, which for convoke is the same thing
+ * often enough and never offers a cast that cannot be paid.
+ *
+ * **Summoning sickness does not stop it.** Tapping for convoke is neither attacking nor activating
+ * an ability, so a creature that arrived this turn may be tapped for it (CR 702.51a) — the one rule
+ * about convoke that is easy to get wrong in the direction of being too strict.
+ *
+ * Returns null when even convoke cannot cover the cost. `legalActions` and `castSpell` both call
+ * this, so there is one answer to "can this be paid for" rather than an offer and a refusal.
+ */
+export function convokePlan(
+  state: GameState, seat: SeatIndex, cost: ManaCost, sources: readonly ManaSourceEntry[],
+): { readonly tapped: readonly string[]; readonly cost: ManaCost } | null {
+  const pool = poolOf(state, seat);
+  if (canAfford(pool, cost, sources)) return { tapped: [], cost };
+
+  /** Untapped creatures, with the colours each could pay for. */
+  const available: { id: string; colors: readonly ManaType[] }[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.tapped) continue;
+    const ch = characteristicsOf(state, inst);
+    if (!ch.isCreature) continue;
+    available.push({ id, colors: ch.colors as readonly ManaType[] });
+  }
+
+  const tapped: string[] = [];
+  let left: ManaCost = cost;
+  let leftSources = [...sources];
+  for (let guard = 0; guard < 24 && available.length > 0; guard += 1) {
+    // A coloured pip first, and only one a creature on the board can actually pay: spending a
+    // green creature on a generic pip while {G} goes unpaid is how a greedy assignment fails.
+    let pick = -1;
+    let paying: ManaType | 'generic' = 'generic';
+    for (let i = 0; i < available.length && pick < 0; i += 1) {
+      for (const color of available[i]!.colors) {
+        if ((left.colors[color] ?? 0) > 0) { pick = i; paying = color; break; }
+      }
+    }
+    if (pick < 0 && left.generic > 0) { pick = 0; paying = 'generic'; }
+    if (pick < 0) break;
+    const chosen = available.splice(pick, 1)[0]!;
+    tapped.push(chosen.id);
+    left = paying === 'generic'
+      ? { ...left, generic: left.generic - 1 }
+      : { ...left, colors: { ...left.colors, [paying]: (left.colors[paying] ?? 0) - 1 } };
+    // A creature tapped for convoke cannot also be tapped for mana, so it leaves the source list.
+    leftSources = leftSources.filter((source) => source.key !== chosen.id);
+    if (canAfford(pool, left, leftSources)) return { tapped, cost: left };
+  }
+  return null;
+}
+
 export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[] {
   const free: ManaSourceEntry[] = [];
   const painful: ManaSourceEntry[] = [];
@@ -473,7 +539,17 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const cost: ManaCost = fromCommand && tax > 0
       ? { ...printed, generic: printed.generic + tax }
       : printed;
-    if (!canAfford(poolOf(state, seat), cost, sources)) {
+    /*
+      Convoke widens what may pay for this one spell, so affordability is asked of the plan rather
+      than of the lands alone — and the plan is what `castSpell` recomputes, so the offer and the
+      payment cannot disagree.
+    */
+    const convoked = script?.convoke === true ? convokePlan(state, seat, cost, sources) : null;
+    if (script?.convoke === true && convoked === null) {
+      why(id, 'not enough mana, counting every land you could tap and every creature you could convoke');
+      continue;
+    }
+    if (convoked === null && !canAfford(poolOf(state, seat), cost, sources)) {
       why(id, 'not enough mana, counting every land you could still tap');
       continue;
     }
@@ -512,11 +588,24 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       continue;
     }
 
+    /*
+      And convoke said out loud on the play, because otherwise the table offers a seven-mana spell
+      off four lands and gives no reason at all.
+
+      The count rather than the names: which creatures get tapped is the engine's to decide (see
+      `convokePlan`), and a player reading "convoking 3" knows what the cast is about to cost them
+      without having to work out which three.
+    */
+    const convokeNote = convoked !== null && convoked.tapped.length > 0
+      ? ` (convoking ${convoked.tapped.length})`
+      : '';
     out.push({
       kind: 'cast', card: id, name: ch.name,
       description: flashback
         ? `Cast ${ch.name} from your graveyard (flashback ${costShown})`
-        : fromCommand && tax > 0 ? `Cast ${ch.name} (+{${tax}} tax)` : `Cast ${ch.name}`,
+        : fromCommand && tax > 0
+          ? `Cast ${ch.name} (+{${tax}} tax)`
+          : `Cast ${ch.name}${convokeNote}`,
       manaCost: costShown, ...taxOn, ...xOn, targetSpecs: specs, candidates,
       ...(flashback ? { flashback: true } : {}),
       isManaAbility: false, sacrificeOptions: victims,

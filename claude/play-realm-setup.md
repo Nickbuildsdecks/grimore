@@ -115,6 +115,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Choose who to attack | The attack prompt lists every player and planeswalker you may send an attack at, and each player's button says their life, their untapped power, and how many of your creatures are already pointed at them — plus **lethal** when that swing would finish them with nothing able to block. Tap a player, then tap the creatures that go at them; tap a different player and the next creatures go there instead. |
 | Send everything at one player | With two or more creatures declared, **All at ⟨name⟩** re-points the whole swing at whoever is selected. For the turn where somebody's life total drops and the plan changes. |
 | Cast a spell out of your graveyard | Three cards have **flashback**: Think Twice, Firebolt and Cackling Counterpart. Once one is in your graveyard, tap it there — it says **playable** like a card in hand — and it offers a second casting for its flashback cost, which replaces the printed one. It keeps its own timing (the Firebolt is still a sorcery), and it is **exiled** rather than buried afterwards, so there is no third casting. |
+| Cast a spell with **convoke** | Two cards have it, both in Verdant Guard: Siege Wurm ({5}{G}{G}) and Conclave Tribunal ({3}{W}{W}). Each creature you tap as you cast it pays one generic mana or one of that creature's colour, so a seven-mana Wurm is castable off four lands and three creatures. The play says how many it will tap — **Cast Siege Wurm (convoking 3)** — and it taps none that your lands already cover, because a tapped creature cannot block. A creature that arrived this turn may still be tapped for it. |
 | Have a creature with **ward** targeted | Two creatures have it: Dragonsguard Elite (ward {1}) in Verdant Guard and Sedgemoor Witch (ward {3}) in Ashen Rite. When an opponent aims a spell or an ability at one, their spell stops on the stack and **they** are asked: pay the ward cost, or let it be countered. Both answers are offered, because declining is often right — the removal is answered either way, and it cost them the card. If they cannot produce the cost at all they are not asked, and the log says the ward was not paid. It never triggers off its own controller's spells, so you can pump your own warded creature for free. |
 | Offer somebody a deal | **Deal** on the bottom bar: pick a player and one of three things to say to them — a truce until their next turn, or not attacking them this turn or next. They see it in those words with **Agree** and **No deal**, and once it is agreed both seat strips carry a badge for as long as it lasts. **Nothing enforces it.** You can attack them anyway; the log says you broke a deal, and their strip says **broke a deal** for the rest of the game. The computer's seats take a deal unless they can kill you right now, and keep every one they take unless a creature that must attack leaves them no choice. |
 | Watch somebody else's game | Put their code in the **Join a table** box and press **Watch** instead of **Join**. You take no seat, it works mid-game, and you see both boards and neither hand. |
@@ -215,7 +216,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of a hundred and seventy-five scripted cards, which now includes a wrath, a
+The decks share a pool of a hundred and seventy-seven scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -360,7 +361,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (636 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (643 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (179 tests, the interaction reducer behind every prompt) and
 `apps/realtime`
@@ -373,7 +374,7 @@ playing the server, and a deal struck with the server's own seat).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows a hundred and seventy-five cards.** Everything in the eight starter decks. It
+- **The engine knows a hundred and seventy-seven cards.** Everything in the eight starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

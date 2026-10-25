@@ -12,7 +12,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STARTER_DECKS, TOKEN_DEFS, addCounters, canAttack, canBlock, characteristicsOf, hasType,
+  SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, canAttack, canBlock, characteristicsOf,
+  hasType,
   legalActions,
   parseTypeLine,
   pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor, scriptedCardNames,
@@ -6382,5 +6383,163 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     const before = life(s, 0);
     s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: pest, toZone: 'graveyard' })));
     expect(life(s, 0)).toBe(before + 1);
+  });
+});
+
+describe('convoke: a cost paid by tapping creatures', () => {
+  /*
+    The first cost in this engine that is neither mana nor a sacrifice.
+
+    Convoke (CR 702.51) does not change what a spell costs; it changes what may pay for it. So it
+    reduces the cost rather than making mana — a convoked creature modelled as a mana source would
+    be almost exactly a dual land, and a dual land that over-produces leaves mana floating, which
+    convoke cannot do and which nothing downstream could clean up because a Dark Ritual means
+    floating mana is sometimes real.
+
+    The test that matters most is the last one: `legalActions` and `castSpell` ask the same function
+    whether a convoke cast can be paid for, which is the one bug this file exists to prevent.
+  */
+  const board = (lands: readonly string[], creatures: readonly string[], hand: readonly string[]): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'verdant-guard' },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...lands, ...creatures] },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+
+  it('taps nobody when the lands already cover it', () => {
+    // Seven lands for a seven-mana Wurm: a tapped creature cannot block, so the planner spends
+    // mana first and convokes only the shortfall.
+    let s = board(
+      ['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Plains', 'Plains'],
+      ['Grizzly Bears', 'Centaur Courser'],
+      ['Siege Wurm'],
+    );
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Siege Wurm') })));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Siege Wurm');
+    expect(s.instances[bears]!.tapped).toBe(false);
+  });
+
+  it('is castable off fewer lands than its cost, by tapping creatures for the rest', () => {
+    // Four lands and three creatures for {5}{G}{G}: two green pips off two Forests, and three
+    // creatures for three of the five generic.
+    let s = board(
+      ['Forest', 'Forest', 'Forest', 'Forest'],
+      ['Grizzly Bears', 'Centaur Courser', 'Llanowar Elves'],
+      ['Siege Wurm'],
+    );
+    const wurm = find(s, 0, 'hand', 'Siege Wurm');
+    const play = legalActions(s, 0).plays.find((p) => p.card === wurm);
+    expect(play).toBeDefined();
+    /*
+      Said on the play, because otherwise the table offers a seven-mana spell off four lands and
+      gives no reason for it.
+
+      "Convoking 2" rather than 3, and that is the planner being right: Llanowar Elves taps for
+      {G}, so four Forests and the Elf cover five of the seven and only two creatures are convoked.
+      Three creatures end up tapped either way — one for mana, two for convoke — which is why the
+      count below is 3 and this one is 2.
+    */
+    expect(play?.description).toBe('Cast Siege Wurm (convoking 2)');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: wurm })));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Siege Wurm');
+    // Three creatures tapped to pay for it, which is what the discount actually costs.
+    const tapped = [...ids(s, 0, 'battlefield')]
+      .filter((id) => s.instances[id]!.tapped && nameOf(s, id) !== 'Forest').length;
+    expect(tapped).toBe(3);
+  });
+
+  it('is not offered when even the creatures cannot cover it', () => {
+    // Two lands and one creature against a seven-mana spell: three mana of seven.
+    const s = board(['Forest', 'Forest'], ['Grizzly Bears'], ['Siege Wurm']);
+    const wurm = find(s, 0, 'hand', 'Siege Wurm');
+    expect(legalActions(s, 0).plays.some((p) => p.card === wurm)).toBe(false);
+    expect(legalActions(s, 0).blocked.find((entry) => entry.card === wurm)?.reason)
+      .toMatch(/convoke/);
+  });
+
+  it('can be paid for by a creature that arrived this turn', () => {
+    /*
+      Tapping for convoke is neither attacking nor activating an ability, so summoning sickness does
+      not stop it (CR 702.51a) — the one rule about convoke that is easy to get wrong in the
+      direction of being too strict. The creature here is put onto the battlefield on this turn.
+    */
+    let s = board(['Forest', 'Forest', 'Forest', 'Forest'], [], ['Siege Wurm', 'Centaur Courser']);
+    // Three creatures that entered this turn: tokens, so `enteredTurn` is this turn by
+    // construction rather than by setup.
+    s = apply(s, { type: 'token:create', by: 0, seat: 0, card: SOLDIER_TOKEN, count: 3 });
+    const fresh = [...ids(s, 0, 'battlefield')].filter((id) => nameOf(s, id) === 'Soldier');
+    expect(fresh).toHaveLength(3);
+    for (const id of fresh) expect(s.instances[id]!.enteredTurn).toBe(s.turn);
+
+    const wurm = find(s, 0, 'hand', 'Siege Wurm');
+    expect(legalActions(s, 0).plays.some((p) => p.card === wurm)).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: wurm })));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Siege Wurm');
+  });
+
+  it('does not tap a creature it also needs for mana', () => {
+    /*
+      Llanowar Elves is both a creature convoke may tap and a source the solver may tap for {G}. It
+      cannot be both, and the planner drops a convoked creature from the source list for exactly
+      this reason — without that the engine would count one tap twice and offer a cast it refused.
+    */
+    let s = board(['Forest', 'Forest', 'Forest', 'Forest', 'Forest'], ['Llanowar Elves'], ['Siege Wurm']);
+    const wurm = find(s, 0, 'hand', 'Siege Wurm');
+    // Five Forests and one Elf is six mana against seven, so this is only castable if the Elf
+    // counts once — as a convoked body or as a mana source, not both.
+    expect(legalActions(s, 0).plays.some((p) => p.card === wurm)).toBe(false);
+  });
+
+  it('exiles a permanent with the Tribunal, convoked down from five mana', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      hands: { 0: ['Conclave Tribunal'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Grizzly Bears', 'Centaur Courser', 'Llanowar Elves'],
+        1: ['Hill Giant'],
+      },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+    const giant = find(s, 1, 'battlefield', 'Hill Giant');
+    const tribunal = find(s, 0, 'hand', 'Conclave Tribunal');
+    expect(legalActions(s, 0).plays.some((p) => p.card === tribunal)).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: tribunal })));
+    // The arrival trigger asks for its target, and there is only one legal one.
+    s = drain(s);
+    expect(s.instances[giant]!.zone).toBe('exile');
+
+    // And it comes back when the Tribunal goes, which is the half that makes it removal rather
+    // than exile.
+    s = drain(passBoth(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Conclave Tribunal'), toZone: 'graveyard',
+    })));
+    expect(s.instances[giant]!.zone).toBe('battlefield');
+  });
+
+  it('never offers a convoke cast the engine then refuses', () => {
+    /*
+      The property the whole design is for, swept over every board size: for each number of lands
+      and creatures, either the play is offered and the cast goes through, or it is not offered.
+      An offer the engine refuses is the one failure mode a second answer to "can this be paid"
+      produces, and convoke is the second answer this file nearly grew.
+    */
+    for (let lands = 0; lands <= 7; lands += 1) {
+      for (let creatures = 0; creatures <= 4; creatures += 1) {
+        // Tokens for the bodies, so the sweep does not depend on how many of any one creature the
+        // deck happens to run — the first version of this test asked for four Grizzly Bears out of
+        // a deck with one.
+        let s = board(Array.from({ length: lands }, () => 'Forest'), [], ['Siege Wurm']);
+        if (creatures > 0) {
+          s = apply(s, { type: 'token:create', by: 0, seat: 0, card: SOLDIER_TOKEN, count: creatures });
+        }
+        const wurm = find(s, 0, 'hand', 'Siege Wurm');
+        const offered = legalActions(s, 0).plays.some((p) => p.card === wurm);
+        if (!offered) continue;
+        s = apply(s, { type: 'auto:cast', by: 0, card: wurm });
+        expect(ids(s, 0, 'stack')).toContain(wurm);
+      }
+    }
   });
 });

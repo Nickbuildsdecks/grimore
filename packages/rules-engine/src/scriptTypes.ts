@@ -388,6 +388,15 @@ export interface CardScript {
   readonly name: string;
   /** Keywords the card has, overriding what would be read from its oracle text. */
   readonly keywords?: readonly Keyword[];
+  /**
+   * Convoke (CR 702.51): each creature tapped as this is cast pays one generic mana, or one mana of
+   * that creature's colour.
+   *
+   * A flag rather than a cost, because it does not change what the spell costs — it changes what
+   * may pay for it. `convokePlan` works out which creatures, and taps none that the lands already
+   * cover.
+   */
+  readonly convoke?: boolean;
   /** What the spell targets when cast. For a modal spell the targets live on each mode. */
   readonly targets?: readonly TargetSpec[];
   /** "Choose one —". See `ModalDef`. */
