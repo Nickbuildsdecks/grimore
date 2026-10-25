@@ -2457,6 +2457,41 @@ one number that is not about flashback: Tidal Mind wins about a fifth of its gam
 of the pool, where Ember Rush wins three quarters. That is a balance problem rather than a card
 problem, and it is the next thing worth measuring.
 
+### What each deck is worth, and the deck that had no way to win
+
+Eight decks, every pairing, both seats, 168 games each. Before this pass the pool ran from Ember
+Rush at 80% to Tidal Mind at 25%, and Ember Rush beat Tidal Mind 23-1.
+
+The useful part was measuring the *deck* before measuring a change. A new harness asks, for every
+one of a list's sixty slots, how often the bot casts it as a share of the games it reached hand —
+and the answer for Tidal Mind was that nothing is dead. Its least-cast spell is Diabolic Tutor at
+35%; the counterspells it was supposedly wasting are at 92% and above. Ember Rush at 80% has the
+same shape, and so do Ashen Rite and Rot Harvest. **Four decks spanning fifty-five points of win
+rate, and not one dead card between them.** Whatever explains a deck's record here, it is not cards
+the bot refuses to cast.
+
+What did explain it came out of the per-opponent split. Trading counterspell copies for cheap
+creatures is worth *nothing at all* against the two fastest decks — 3-31 against Ember Rush before
+and 4-30 after — and five to ten games each against every slower one, including beating Skyward
+Writ where it used to lose 8-26. The hypothesis going in had been "six counterspells cannot answer
+eighteen one-drops", which predicts exactly the opposite shape. The deck's fault was not that it
+could not survive; it was that it had no way to win the games it survived.
+
+So Tidal Mind is on three counterspells rather than six, paying for a second Fog Bank, a second
+Vampire Nighthawk and a third Man-o'-War: +31 and +25 over 238 games on two seed sets, confirmed
+out of sample on a third at 25% → 36%. The pool now runs 36% to 78% rather than 25% to 80%, and the
+floor is shared rather than an outlier. Cutting deeper measures better still and is deliberately not
+shipped — it would mean deleting Counterspell while keeping Cancel, which costs a mana more for the
+same text, and two of the remaining counterspells are the pool's only copies of their cards.
+
+The first change tried was the obvious one, and it is in the log as nothing: two three-mana answers
+for two cheap blockers, +4 and +10 on 238 games, both inside the noise floor. Same direction twice
+is not a measurement.
+
+Three harnesses moved into `scripts/measure/` with a README that states the noise floor and the two
+seed sets. They had lived in a scratch directory, which means every number this document has quoted
+up to here was produced by a tool nobody could re-run.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

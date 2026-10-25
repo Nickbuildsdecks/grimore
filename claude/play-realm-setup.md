@@ -180,19 +180,39 @@ tapped, and six of the eight also run a pair of cycling lands. Any pairing works
 against itself. They are also the only decks right now — see *What is not done* below.
 
 A note on what to expect from each: played against each other by the engine's own opponent, the
-aggressive decks win more. Skyward Writ in particular wins 42% against the field — beating the
+aggressive decks win more. Skyward Writ in particular wins 45% against the field — beating the
 slower decks comfortably and losing to the fastest ones — and a good part of that is the opponent
 rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
 A person plays it better.
 
-**The decks are not all equally strong, and the pool knows it.** Measured bot against bot over 238
-games each against the rest of the pool, Ember Rush wins about three games in four (183-53) and
-Tidal Mind about one in four (45-193 on one seed set, 64-174 on another). That is partly the decks
-and partly the opponent: a burn deck with four Lightning Bolts is the easiest thing in the pool for
-a one-ply search to pilot, and a control deck that wants to hold mana up and answer the right spell
-is the hardest (see `claude/decisions-log.md`, D108 and D110). If you want an even game against the
-computer, give it Ember Rush or Verdant Guard and take whichever deck you like; if you want an easy
-one, give it Tidal Mind. A full table of all eight is the next measurement.
+**The decks are not all equally strong, and now there is a table of it.** Every deck against every
+other, both seats, 168 games each (`node scripts/measure/deck-table.mjs`):
+
+```
+ 78%  131-37   ember-rush
+ 71%  120-48   forge-alliance
+ 53%   89-79   verdant-guard
+ 45%   76-92   skyward-writ
+ 42%   70-98   hollow-tide
+ 39%   66-102  rot-harvest
+ 36%   60-108  tidal-mind
+ 36%   60-108  ashen-rite
+```
+
+Some of that spread is the decks and some of it is the opponent: a burn deck with four Lightning
+Bolts is the easiest thing in the pool for a one-ply search to pilot, and a control deck that wants
+to hold mana up and answer the right spell is the hardest (see `claude/decisions-log.md`, D108 and
+D110). **If you want an even game against the computer, give it Ember Rush or Forge Alliance and
+take whichever deck you like; if you want an easy one, give it Tidal Mind or Ashen Rite.** Two
+people playing each other can ignore all of this — these numbers are about how well the *bot*
+pilots each deck, and the two decks it handles worst are the two a person gets the most out of.
+
+Tidal Mind used to be the outlier at 25%, and what fixed it was not the obvious thing. Nothing in
+the deck was dead — every card got cast in a majority of the games it was drawn — and the deck's
+own counterspells were among its most-used cards. What it lacked was a way to *win* the games it
+survived, so three counterspell copies became a second Fog Bank, a second Vampire Nighthawk and a
+third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
+games against every slower one. D114 has the whole measurement.
 
 The decks share a pool of a hundred and seventy-two scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
