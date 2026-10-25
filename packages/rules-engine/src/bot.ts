@@ -599,9 +599,21 @@ const PERMANENT_ON_BOARD = 3;
   | 1.0 | 20-64 | 79 |
   | 2.0 | 18-66 | 78 |
 
-  Monotone: the more mana it held, the fewer games it won. At 0.5 it is exactly a wash and costs a
-  scan of the hand on every evaluation. So the term is gone, and the lesson is in its place — for
-  this bot in this pool, the board bought with the mana is worth more than the answer kept for it.
+  Monotone: the more mana it held, the fewer games it won. So the term is gone.
+
+  **That reading was wrong, and the numbers above are why it was recoverable.** Those games were
+  played when the search scored whatever position auto-pass had carried the table to, which for a
+  term about *the rest of this turn* is close to the worst possible instrument — mana pools empty
+  when a step ends, so a term about mana held was being read in a position where it could no longer
+  mean anything (D117). Asked again on a search that stops where its action happened, and on the
+  paired bot-against-bot instrument rather than the narrow field above: **171-165 at 0.5, 171-165 at
+  1.0, 169-167 at 2.0, and 167-169 on a second seed set.** Level, not monotone-against. See D119.
+
+  It stays gone, because level is level and it costs a scan of the hand on every evaluation. But
+  what stays with it is the corrected lesson rather than the original one: this is not "the board
+  bought with the mana is worth more than the answer kept for it" — that was never measured. It is
+  "holding mana is worth nothing to a bot that cannot plan a turn ahead", which is a smaller claim
+  and the one the numbers support.
 
   The same measurement corrected the premise, which is the part worth keeping. **Every counterspell
   the bot casts is already cast in response** — 75 of 75 with the term off, 80 of 80 at 0.5 — and

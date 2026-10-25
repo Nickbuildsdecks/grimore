@@ -4629,3 +4629,40 @@ instrument that was reading the wrong position, and the deletions were recorded 
 terms.** They were facts about the pair. Every one of those entries states its numbers, which is the
 only reason this was recoverable at all — a log that had recorded "tried valuing evasion, didn't
 work" would have closed the question for good.
+
+## D119 — Untapped mana, re-asked: level too, and the second conclusion corrected
+
+The second of D118's three. D68 built a term for the hole that reads as obvious — a bot that taps
+out every turn is holding a counterspell with no mana when the spell worth answering arrives — and
+measured it losing at every weight that changed anything, monotone, over 84 paired games on a narrow
+field. The term was "a little for each untapped land, but only while the hand holds something
+castable at instant speed, capped at the cheapest such card's cost".
+
+Rebuilt exactly as it was and asked again on the search that stops where its action happened, on the
+paired bot-against-bot instrument (negative control first: 56-56 of 112 again):
+
+| mana-up weight | D68, old search and narrow field | fixed search, paired instrument |
+| --- | --- | --- |
+| 0.5 | 23-61 | **171-165** |
+| 1.0 | 20-64 | **171-165** |
+| 2.0 | 18-66 | **169-167** |
+
+And 167-169 on a second seed set at 1.0 — so +6 and -2 across 672 games, which is level. It changes
+1% of decisions, so it is a real change to the choices that is worth nothing on the scoreboard.
+
+**Two corrections, not one.** A term about *the rest of this turn* measured against a position the
+table had already left was being read in about the worst place it could be: mana pools empty when a
+step ends (CR 500.4), so by the time the old search looked, the mana the term was pricing had gone.
+That is why the sign flipped rather than merely the size.
+
+And the lesson D68 left behind has to go with it. "For this bot in this pool, the board bought with
+the mana is worth more than the answer kept for it" is a claim about Magic, and it was never
+measured — it was inferred from a monotone that was an artifact. What the numbers support is
+smaller and duller: **holding mana is worth nothing to a bot that cannot plan a turn ahead.** The
+term cannot pay off, because paying off means spending the mana on the opponent's turn in a way this
+search never gets to see.
+
+The term stays deleted. Two of the four deletions D118 flagged are now corrected, and both turn out
+to have been level rather than harmful. That is the shape of the finding: **a broken instrument did
+not produce noise, it produced confident wrong signs** — monotone ones, in both cases, which is
+exactly what makes a bad measurement persuasive.
