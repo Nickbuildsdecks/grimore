@@ -4490,3 +4490,56 @@ than passing silently. The deterministic coverage is seven engine tests — paid
 pay, not off your own spells, off an activated ability, off a triggered ability, and the Pest's own
 death trigger — plus a web test on the shape the control bar reads, which is the layer the flashback
 bug lived in (D113).
+
+## D116 — Unblocked power: the fifth term, the fifth deletion, and what the four have in common
+
+D110 ended on "what is missing is not depth: it is an evaluation worth searching with". This is the
+first attempt at the other half, and it failed — but it failed in a way that explains the other four.
+
+**The idea.** Every weight in `evaluate` is a fact about a *card*. `flying: 1.5` is worth the same
+against a board of five ground creatures as against a board of five fliers, when in the first case
+the 2/2 flier is a two-a-turn clock and in the second it is a 2/2. That difference is **relational**,
+and reading the board rather than pricing a card is the pattern that has actually worked in this bot
+(D103's removal with nothing to remove, D107, D111's animated land). So: for each creature that
+could attack, ask whether anything opposite could legally block it — with `canBlock`, so there is
+one answer to "can this block that" rather than a cheaper second opinion written in the bot — and
+add that power to the side it belongs to. Counted only where the opponent *had* blockers that could
+not do the job, since a creature unblocked by an empty board is already described by the power on
+the board, and counting it twice would make the measurement meaningless.
+
+**The instrument, which is new and worth keeping.** Deck changes are measured against a field;
+a term in the evaluation has to be measured against *the bot without it*. So: bot against bot, every
+deck pairing, both bots in both seats, identical seeds. The negative control ran first — two
+identical bots — and scored **56-56 of 112**. Exactly level, which is what a paired design should
+give and what makes the rest of the table readable: there is no seat bias and no matchup bias left
+in it, so anything that moves is the term.
+
+| a point of unblocked power | record over 336 games |
+| --- | --- |
+| 0.5 | 165-171 |
+| 1.0 | 161-175 |
+| 2.0 | 158-178 |
+
+Monotone, and against — the same shape as the untapped-mana result in D68. The first version of the
+term counted tapped and summoning-sick creatures as pressure, which is a genuine flaw: a tapped
+creature is not a clock. Gating it on `canAttack` moved 0.5 to 164-172 and 1.0 to 162-174 — the same
+answer to a third decimal place. **The hypothesis was wrong, not the implementation**, which is
+worth separating because the opposite conclusion would have sent the next attempt down the same road.
+
+**What the four deleted terms have in common.** A second ply (D62), a swing projection (D62),
+untapped mana (D68) and this one are all statements about what happens *next*: the move after this
+one, the damage this swing will deal, the option the mana buys, the damage the flier will get
+through. The terms that work are statements about what *is* — life, cards in hand, cards in the
+library, bodies on the board, loyalty on a planeswalker. And the reason is in the engine rather than
+in the weights: with auto-pass on, the position this search scores after a cast **can already be a
+turn later** — the same trap the "spent on nothing" family of rules exists to work around (D103) —
+so a term about the future is read at a moment that has already gone past it.
+
+So the ceiling is not "a sum of material cannot express tempo", which is how D69 put it. It is
+narrower and more useful: **this evaluation can price what is, not what will be**, and the fix is
+not a better weight but a search that stops where the term applies. That is a different piece of
+work from either a deeper search or a richer evaluation, and it is the one the next attempt should
+be aimed at.
+
+The code is gone and the lesson is in its place, in the comment above `LAND_ON_BOARD` where the
+other four live.

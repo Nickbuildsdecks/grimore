@@ -537,6 +537,41 @@ const LIBRARY_CARD = 0.3;
   actually move it is knowledge of a kind the evaluation has no place for: which of the opponent's
   spells is the one that beats you.
 */
+/*
+  Unblocked power — the fifth term measured against this evaluation's ceiling, and the fifth deleted.
+
+  The idea was the one thing a sum of material structurally cannot say. Every weight here is a fact
+  about a *card*: `flying: 1.5` is worth the same against five ground creatures as against five
+  fliers, when in the first case the 2/2 flier is a two-a-turn clock and in the second it is a 2/2.
+  So the term asked the board instead — for each creature that could attack, is there anything
+  opposite that could legally block it (`canBlock`, so one answer rather than a second opinion) —
+  and added that power to the side it belonged to. Counted only when the opponent *had* blockers
+  that could not do the job, because a creature unblocked by an empty board is already described by
+  the power on the board.
+
+  Bot against bot, both seats, every deck pairing, identical seeds. The negative control first:
+  identical bots scored **56-56 of 112**, so the paired design has no seat or matchup bias at all
+  and anything that moves is the term.
+
+  | a point of unblocked power | record over 336 games |
+  | --- | --- |
+  | 0.5 | 165-171 |
+  | 1.0 | 161-175 |
+  | 2.0 | 158-178 |
+
+  Monotone, and against. The first version counted tapped and summoning-sick creatures as pressure,
+  which is a real flaw and not the reason: gating it on `canAttack` moved 0.5 to 164-172 and 1.0 to
+  162-174 — the same answer. The hypothesis was wrong, not the implementation.
+
+  **And it says something sharper than "no".** Four of the five deleted terms — a second ply (D62),
+  a swing projection (D62), untapped mana (D68) and this — are all statements about what happens
+  *next*: the option the mana buys, the damage the flier will get through. The ones that work are
+  statements about what *is*: life, cards in hand, cards in the library, bodies on the board. With
+  auto-pass on, the position this search scores after a cast can already be a turn later (the same
+  trap the "spent on nothing" family exists for, D103), so a term about the future is read at a
+  moment that has already passed it. **This evaluation can price what is, not what will be** — and
+  the fix for that is not a better weight, it is a search that stops where the term applies.
+*/
 const LAND_ON_BOARD = 2.5;
 const PERMANENT_ON_BOARD = 3;
 /*
