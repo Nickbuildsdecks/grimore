@@ -461,6 +461,37 @@ const CONSULATE_DREADNOUGHT: CardDef = {
   colors: [],
 };
 
+/*
+  Two Sagas, which are enchantments that read themselves out over three turns and then go away.
+
+  The type line is where most of a Saga lives: an enchantment, so nothing that kills creatures or
+  artifacts touches it, and its chapters happen whether or not its controller has mana or a board.
+  What it costs is time — three turns to get all of it, and the opponent can see every turn of it
+  coming.
+
+  The Birth of Meletis is a one-and-a-half-mana wall, two life and a land for a deck that wants to
+  reach its fliers. The Eldest Reborn is six mana of grinding: a sacrifice, a discard, and a
+  creature back out of **any** graveyard, which is the first card in this pool that can use a pile
+  its own mill spells filled.
+*/
+const THE_BIRTH_OF_MELETIS: CardDef = {
+  name: 'The Birth of Meletis',
+  typeLine: 'Enchantment — Saga',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  oracleText: 'I — Create a 0/4 white Wall creature token with defender.\nII — You gain 2 life.\nIII — Search your library for a Plains card, put it onto the battlefield tapped, then shuffle.',
+  colors: ['W'],
+};
+
+const THE_ELDEST_REBORN: CardDef = {
+  name: 'The Eldest Reborn',
+  typeLine: 'Enchantment — Saga',
+  manaCost: '{4}{B}{B}',
+  cmc: 6,
+  oracleText: 'I — Each opponent sacrifices a creature.\nII — Each opponent discards a card.\nIII — Return target creature card from a graveyard to the battlefield under your control.',
+  colors: ['B'],
+};
+
 const CONCLAVE_TRIBUNAL: CardDef = {
   name: 'Conclave Tribunal',
   typeLine: 'Enchantment',
@@ -2644,7 +2675,19 @@ export const SKYWARD_WRIT: DeckSpec = {
     */
     { card: SAMITE_HEALER, count: 1 },
     { card: HEALING_SALVE, count: 1 },
-    { card: WALL_OF_AIR, count: 2 },
+    { card: WALL_OF_AIR, count: 1 },
+    /*
+      The Birth of Meletis for the second Wall of Air, and the first Saga in the pool.
+
+      Three turns of exactly what this deck is short of: a 0/4 wall that stops a ground creature
+      dead, two life, and a land. It is also the one card here that an opponent cannot answer by
+      killing a creature or an artifact — a Saga is an enchantment, and in this pool only three
+      cards destroy one.
+
+      The second Wall of Air, because chapter I makes a better wall than it: 0/4 blocks everything
+      on the ground forever, and this deck already has two Fog Banks for the things that fly.
+    */
+    { card: THE_BIRTH_OF_MELETIS, count: 1 },
     { card: RAISE_THE_ALARM, count: 2 },
     // And the air, which it does intend to win.
     { card: LEONIN_SKYHUNTER, count: 3 },
@@ -2723,7 +2766,20 @@ export const HOLLOW_TIDE: DeckSpec = {
     // The ground, which is the half of a mill deck that is not the mill. None of these want to
     // attack and all of them are happy to block for ever.
     { card: FOG_BANK, count: 2 },
-    { card: WALL_OF_AIR, count: 2 },
+    { card: WALL_OF_AIR, count: 1 },
+    /*
+      The Eldest Reborn for the second Wall of Air, and the card this deck has been missing.
+
+      Hollow Tide spends the whole game putting creatures into graveyards and has never had a way
+      to take one back out. Chapter III returns a creature from **any** graveyard — every other
+      reanimation in the pool reads "your graveyard" — so the Nemesis of Reason that mills ten a
+      turn is finally filling a pile this deck can spend.
+
+      Six mana is a lot, and a deck whose plan is to survive is the one list that reliably reaches
+      it: twelve black sources, and the two chapters before the reanimation are a sacrifice and a
+      discard, which are what a slow deck wants from its early turns.
+    */
+    { card: THE_ELDEST_REBORN, count: 1 },
     { card: OMENSPEAKER, count: 2 },
     { card: THIEVING_MAGPIE, count: 2 },
     { card: VAMPIRE_NIGHTHAWK, count: 2 },

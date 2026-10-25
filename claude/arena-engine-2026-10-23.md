@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 185 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 187 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2752,6 +2752,41 @@ because "has power printed on it" and "is a creature right now" part company in 
 a Vehicle has a printed 7/11 and is not one, and a Mutavault is one with no printed power. The board
 read the first as the second, so it told a player their uncrewed Vehicle was *not ready*. It says
 **not crewed** now, and the Mutavault had been quietly wrong there since it was scripted.
+
+### Sagas, and three kinds of thing for one card
+
+The first permanent here whose whole shape is that it says three different things on three different
+turns and then is gone. Everything else in the engine is an entry trigger that fires at a moment, an
+activated ability a player presses, a static that is simply true, or an effect that expires. A Saga
+is a permanent that **keeps a count**, and what each number means is printed on it.
+
+So it took three pieces, each a different kind of thing. A **turn-based action** adds the lore
+counter as its controller's precombat main phase begins, beside the untap and the draw, because
+nothing can be done in response to a counter going on. A **triggered ability** keyed to the counter
+reaching a number is the chapter, which goes on the stack and can be answered. And a **state-based
+action** sacrifices the Saga once its last chapter has gone.
+
+`saga: true` is the only new field. The chapters are ordinary triggers with `on: { kind: 'chapter',
+n }`, so they get the stack, targets and mid-resolution questions for free, and the chapter count is
+derived from them rather than declared beside them — a `chapters: 3` field next to three chapter
+triggers is a field that eventually disagrees with them.
+
+The counter being the state is what makes the awkward cases free. Nothing records which chapters
+have fired, so a Saga that leaves stops counting, one that comes back starts at chapter I, and a
+face-down Saga does nothing at all. The sacrifice checks the counters and an empty stack rather than
+whether an ability resolved, which is the rule and also what lets chapter III sit on the stack and
+read the board it is about.
+
+Two cards, and the second is placed for a clause rather than a colour: The Birth of Meletis (a wall,
+two life, a land) in the deck that wants to survive to its fliers, and The Eldest Reborn in the mill
+deck — its last chapter returns a creature from **any** graveyard, where every other reanimation in
+the pool reads *your* graveyard, so it is Hollow Tide finally able to spend the pile it spent the
+game filling.
+
+Both slots measure as a wash: down 1 and down 5 for the Eldest Reborn, up 3 and up 1 for the Birth
+of Meletis, all a fraction of the noise floor. What is not a wash is that they get cast — 86% and
+100% of the games they reach hand, with no bot teaching at all. A Saga asks nothing of the player
+after it is cast, which is the one kind of card this bot pilots perfectly.
 
 ## Next
 

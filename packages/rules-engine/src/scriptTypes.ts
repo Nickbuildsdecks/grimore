@@ -206,7 +206,20 @@ export type TriggerEvent =
       readonly object?: string;
     }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
-  | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' };
+  | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' }
+  /**
+   * A Saga's chapter, which fires when its lore counter *reaches* this number (CR 714.2b).
+   *
+   * Not a step trigger and not an entry trigger, and it is worth being clear why neither would do.
+   * A step trigger would fire on a turn the Saga had already finished, and would fire on the same
+   * chapter twice if the counters were ever changed by something else. An entry trigger fires once,
+   * at a moment, and a Saga's whole shape is that it says three different things on three different
+   * turns. The counter is the state and the chapter is what reaching a number *means*.
+   *
+   * `n` is the chapter the ability is printed as: I is 1. Two chapters may share a number only by
+   * being written as one ability, the way the printed cards do ("I, II — ...").
+   */
+  | { readonly kind: 'chapter'; readonly n: number };
 
 /**
  * A question a card asks *while it is resolving* (CR 608.2).
@@ -642,6 +655,21 @@ export interface CardScript {
   readonly additionalCost?: {
     readonly sacrifice: 'creature' | 'another-creature';
   };
+  /**
+   * A Saga: it enters with a lore counter, gains one at the beginning of its controller's
+   * precombat main phase, and is sacrificed once its last chapter has resolved (CR 714).
+   *
+   * A flag rather than a chapter list, and the chapters live in `triggers` with
+   * `on: { kind: 'chapter', n }` like any other triggered ability — which means they get targets,
+   * mid-resolution questions and the stack for free, and means **the number of chapters is derived
+   * from them** rather than declared beside them. A `chapters: 3` field that could disagree with
+   * the triggers is a field that eventually does.
+   *
+   * The sacrifice is a state-based action and not a fourth chapter, which is the rule and also the
+   * only version that behaves: a Saga whose last chapter is countered still goes away, because what
+   * the game checks is the counters and an empty stack rather than whether an ability resolved.
+   */
+  readonly saga?: true;
   readonly triggers?: readonly TriggerDef[];
   readonly abilities?: readonly AbilityDef[];
   /** Static effects the permanent creates while it is on the battlefield. */

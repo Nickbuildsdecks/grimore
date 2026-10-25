@@ -5046,3 +5046,59 @@ Mutavault is a creature with no printed power at all. The table read the first a
 during declare-attackers it told a player their uncrewed Vehicle was **not ready** — the wrong answer
 to a question nobody asked. It now says **not crewed**, and the Mutavault has been quietly wrong in
 the same place since it was scripted.
+
+## D126 — Sagas, and three pieces of machinery for a permanent with a life of its own
+
+The first permanent in this pool whose whole shape is that it says three different things on three
+different turns and then is gone. Everything else here is one of four things: an entry trigger that
+fires at a moment, an activated ability a player presses, a static that is simply true, or a
+continuous effect that expires. A Saga is a permanent that **keeps a count**, and what each number
+means is printed on it (CR 714).
+
+**Three pieces, and each is a different kind of thing.** A *turn-based action* adds the lore
+counter as the controller's precombat main phase begins, in `onEnterStep` beside the untap and the
+draw — not a trigger, because nothing can be done in response to the counter going on. A *triggered
+ability* keyed to the counter reaching a number is the chapter, which goes on the stack and can be
+answered like anything else. And a *state-based action* sacrifices the Saga once its last chapter
+has gone. Three mechanisms for one card, and writing any of them as another would have been wrong
+in a way a player would notice.
+
+**`saga: true` is the only new field, and the chapters are ordinary triggers.** `on: { kind:
+'chapter', n }` means they get the stack, targets and mid-resolution questions for free — chapter
+III of The Birth of Meletis asks for a Plains and chapter III of The Eldest Reborn targets a
+graveyard, both through machinery that already existed. The number of chapters is **derived** from
+the triggers by `sagaChapters` rather than declared beside them: a `chapters: 3` field sitting next
+to three chapter triggers is a field that eventually disagrees with them, and the consequence would
+be a Saga that never leaves or one that leaves a turn early.
+
+**The counter is the state, so nothing records which chapters have fired.** The number on the card
+is the record, which is what makes three awkward cases free rather than special. A Saga that leaves
+the battlefield stops counting, because there is no permanent to put a counter on. One that comes
+back is a new object with no counters and starts at chapter I, which is the rule. And a face-down
+Saga does nothing at all, because `scriptOf` already returns nothing for a face-down permanent.
+
+**The sacrifice checks the counters and an empty stack, not whether an ability resolved.** That is
+CR 714.4 and it is also the only version that behaves: a Saga whose last chapter is countered still
+goes away. The stack check is the whole of the delay — the Saga sits on the battlefield while
+chapter III waits, which is what lets a chapter that reads the board see the board the chapter is
+about. A test pins the pair: at three counters with the chapter on the stack it is still there, and
+after the chapter resolves it is in the graveyard.
+
+**Chapter I fires on the turn the Saga is cast**, off the counter it enters with (CR 714.2a), which
+is added in the arrivals loop in `settle` beside "enters tapped". That loop is the one place that
+sees every way onto the battlefield, so a Saga put there by an effect rather than cast still starts
+counting. Guarded on having no counter yet, which reads the board rather than remembering.
+
+**Two cards, and the second is placed for a clause rather than for a colour.** The Birth of Meletis
+({1}{W}: a 0/4 wall, two life, a Plains) went into Skyward Writ, whose plan is to survive to its
+fliers. The Eldest Reborn ({4}{B}{B}: each opponent sacrifices, each opponent discards, then return
+a creature from **any** graveyard) went into Hollow Tide, and the "any" is why: every other
+reanimation in the pool reads *your* graveyard, and this is the mill deck finally able to spend the
+pile its own Mind Sculpts filled.
+
+**Measured, and both are a wash.** The Eldest Reborn against a second Wall of Air: **87-151 vs
+88-150** and **93-145 vs 98-140** — down 1 and down 5 in 238. The Birth of Meletis against the same
+trade: **105-133 vs 102-136** and **89-149 vs 88-150** — up 3 and up 1. All four a fraction of the
+eighteen-game noise floor. What is not a wash is that they get cast: **The Eldest Reborn in 86% of
+the games it reaches hand and The Birth of Meletis in 100%**, with no bot teaching at all — a Saga
+asks nothing of the player after it is cast, which is the one kind of card this bot pilots perfectly.

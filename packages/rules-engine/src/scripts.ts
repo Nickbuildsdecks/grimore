@@ -903,6 +903,12 @@ export const KNIGHT_TOKEN: CardDef = {
   power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
 };
 
+/** The Birth of Meletis' first chapter, and the pool's first 0/4. */
+export const WALL_TOKEN: CardDef = {
+  name: 'Wall', typeLine: 'Token Creature — Wall', manaCost: '', cmc: 0,
+  power: '0', toughness: '4', oracleText: 'Defender', colors: ['W'],
+};
+
 export const BEAST_TOKEN: CardDef = {
   name: 'Beast', typeLine: 'Token Creature — Beast', manaCost: '', cmc: 0,
   power: '3', toughness: '3', oracleText: '', colors: ['G'],
@@ -2160,6 +2166,99 @@ const CONSULATE_DREADNOUGHT: CardScript = {
   }],
 };
 
+/*
+  The two Sagas, and the first permanents in this pool with a life of their own.
+
+  A Saga is one card that says three different things on three different turns and then is gone. The
+  shape is unlike anything else here: an entry trigger fires once at a moment, an activated ability
+  fires when a player presses it, and a static ability is simply true — a Saga is a permanent that
+  *keeps a count*, and what each number means is printed on it.
+
+  Which is why `saga: true` is the only new field. The chapters are ordinary triggered abilities
+  keyed to the counter reaching a number, so they get the stack, targets and mid-resolution
+  questions for free, and the number of chapters is read off them rather than declared beside them.
+  The sacrifice is a state-based action in `stateBasedActions`, not a fourth chapter.
+
+  The Birth of Meletis is the defensive one: a wall, two life, and a land, which is three turns of
+  exactly what a deck that wants to survive to its fliers is short of. The Eldest Reborn is the
+  grinding one, and it is in the mill deck on purpose — it makes every opponent sacrifice, then
+  discard, and then reanimates a creature out of **any** graveyard, which is a deck that spends the
+  whole game filling its opponents' graveyards finally getting to use one.
+*/
+const THE_BIRTH_OF_MELETIS: CardScript = {
+  name: 'The Birth of Meletis',
+  saga: true,
+  triggers: [
+    {
+      on: { kind: 'chapter', n: 1 },
+      description: 'create a 0/4 white Wall creature token with defender',
+      effect: (c) => createToken(c.state, c.controller, WALL_TOKEN, 1),
+    },
+    {
+      on: { kind: 'chapter', n: 2 },
+      description: 'you gain 2 life',
+      effect: (c) => gainLife(c.state, c.controller, 2),
+    },
+    {
+      on: { kind: 'chapter', n: 3 },
+      description: 'search your library for a Plains card and put it onto the battlefield tapped',
+      decisions: [searchYourLibrary('Search your library for a Plains', (state, id) => {
+        const inst = state.instances[id];
+        return inst !== undefined && state.cardDefs[inst.defKey]?.name === 'Plains';
+      })],
+      // Tapped, like a Rampant Growth: the land is the chapter's payoff and not a free land drop.
+      effect: (c) => {
+        const found = chosenCard(c);
+        return found === null ? c.state : putOntoBattlefield(c.state, found, c.controller, { tapped: true });
+      },
+    },
+  ],
+};
+
+const THE_ELDEST_REBORN: CardScript = {
+  name: 'The Eldest Reborn',
+  saga: true,
+  triggers: [
+    {
+      on: { kind: 'chapter', n: 1 },
+      description: 'each opponent sacrifices a creature',
+      decisions: [{
+        who: 'each-opponent', from: 'battlefield', prompt: 'Sacrifice a creature', min: 1, max: 1,
+        filter: (state, id) => {
+          const inst = state.instances[id];
+          return inst !== undefined && characteristicsOf(state, inst).isCreature;
+        },
+      }],
+      effect: (c) => c.decisions.reduce((state, answer) => moveToGraveyard(state, answer.ids), c.state),
+    },
+    {
+      on: { kind: 'chapter', n: 2 },
+      description: 'each opponent discards a card',
+      decisions: [{
+        who: 'each-opponent', from: 'hand', prompt: 'Discard a card', min: 1, max: 1,
+      }],
+      effect: (c) => c.decisions.reduce((state, answer) => moveToGraveyard(state, answer.ids), c.state),
+    },
+    {
+      on: { kind: 'chapter', n: 3 },
+      /*
+        **Any** graveyard, which is the clause that makes this card belong in a mill deck.
+
+        Every other reanimation in the pool reads "your graveyard" — Zombify, Gravedigger, Raise
+        Dead — and this one is the first that can take a creature out of the pile it spent the game
+        filling. No filter on the spec, because `graveyard-creature` already means every creature
+        card in every graveyard and narrowing it is what the others do.
+      */
+      targets: [{ kind: 'graveyard-creature', description: 'target creature card in a graveyard' }],
+      description: "return target creature card from a graveyard to the battlefield under your control",
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : putOntoBattlefield(c.state, id, c.controller);
+      },
+    },
+  ],
+};
+
 const CONCLAVE_TRIBUNAL: CardScript = {
   ...exileUntilItLeaves('Conclave Tribunal', {
     kind: 'permanent',
@@ -3129,7 +3228,7 @@ const SEDGEMOOR_WITCH: CardScript = {
  */
 export const TOKEN_DEFS: readonly CardDef[] = [
   GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN,
-  SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN,
+  SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN,
 ];
 
 const ALL: readonly CardScript[] = [
@@ -3196,6 +3295,7 @@ const ALL: readonly CardScript[] = [
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,
   SKY_SKIFF, RENEGADE_FREIGHTER, CONSULATE_DREADNOUGHT,
+  THE_BIRTH_OF_MELETIS, THE_ELDEST_REBORN,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

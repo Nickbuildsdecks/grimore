@@ -7252,3 +7252,176 @@ describe('Vehicles and crew: an artifact that is a creature only while somebody 
     expect([...swinging.keywords]).toContain('trample');
   });
 });
+
+describe('Sagas: a permanent that reads itself out over three turns and then is gone (CR 714)', () => {
+  /*
+    The first permanent here with a life of its own, and three pieces of machinery behind it: a
+    turn-based action that adds the counter, a trigger keyed to the counter reaching a number, and a
+    state-based action that sacrifices it once the last chapter has gone.
+
+    The counter is the state and the chapter is what reaching a number means, which is why nothing
+    anywhere records which chapters have fired. The number on the card is the record.
+  */
+  const saga = (name: string, deck: string, lands: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 1: deck }, hands: { 1: [name] }, battlefield: { 1: [...lands] },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    return tapAllLands(s, 1);
+  };
+
+  const lore = (s: GameState, id: string): number => s.instances[id]!.counters['lore'] ?? 0;
+
+  /**
+   * Resolves whatever is on the stack, answering any question a chapter asks on the way.
+   *
+   * A chapter is a triggered ability like any other, which means the ones that ask a question ask
+   * it *on resolution* — so a test that only passes priority leaves the table waiting and the Saga
+   * sitting there. Answering with the first candidate is enough here: which creature an opponent
+   * sacrifices is their choice and not this test's subject.
+   */
+  const settleAll = (start: GameState, limit = 12): GameState => {
+    let s = start;
+    for (let i = 0; i < limit; i++) {
+      const ask = s.pendingDecision;
+      if (ask !== null) {
+        const cards = ask.candidates.length > 0 ? [ask.candidates[0]!] : [];
+        s = apply(s, { type: 'auto:decide', by: ask.seat, cards });
+        continue;
+      }
+      if (s.stackOrder.length === 0) break;
+      s = passBoth(s);
+    }
+    return s;
+  };
+
+  it('does chapter I on the turn it is cast, off the counter it enters with', () => {
+    /*
+      The rule that makes a Saga a card rather than a three-turn promise: it enters with a lore
+      counter (CR 714.2a), so the first chapter is on the stack before its controller has passed
+      priority. An `etb` trigger would have done this one and nothing else.
+    */
+    let s = saga('The Birth of Meletis', 'skyward-writ', ['Plains', 'Plains']);
+    const card = find(s, 1, 'hand', 'The Birth of Meletis');
+    s = apply(s, { type: 'auto:cast', by: 1, card });
+    s = passBoth(s);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(lore(s, card)).toBe(1);
+    // Chapter I is on the stack, which is where an opponent may answer it.
+    expect(stackNames(s).join(' ')).toContain('Wall');
+    s = drain(passBoth(s));
+    expect(countOf(s, 1, 'battlefield', 'Wall')).toBe(1);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+  });
+
+  it('gains a counter at the beginning of its own controller’s precombat main phase, and nobody else’s', () => {
+    let s = saga('The Birth of Meletis', 'skyward-writ', ['Plains', 'Plains']);
+    const card = find(s, 1, 'hand', 'The Birth of Meletis');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card })));
+    expect(lore(s, card)).toBe(1);
+
+    // The opponent's turn moves nothing: it is "your precombat main phase" (CR 714.2a).
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(lore(s, card)).toBe(1);
+
+    // And its own turn is chapter II, which gains two life.
+    const before = life(s, 1);
+    s = drain(advanceTo(nextTurn(s), 'precombat-main'));
+    expect(lore(s, card)).toBe(2);
+    expect(life(s, 1)).toBe(before + 2);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+  });
+
+  it('is sacrificed after the last chapter resolves, and not before it', () => {
+    /*
+      The sacrifice is a state-based action and not a fourth chapter, and the stack check is the
+      whole of the delay: the Saga sits on the battlefield while chapter III waits to resolve, which
+      is what lets a chapter that reads the board see the board the chapter is about.
+    */
+    let s = saga('The Birth of Meletis', 'skyward-writ', ['Plains', 'Plains']);
+    const card = find(s, 1, 'hand', 'The Birth of Meletis');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card })));
+    s = drain(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'));
+    expect(lore(s, card)).toBe(2);
+
+    // The third counter goes on, and the Saga is still there with its chapter on the stack.
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(lore(s, card)).toBe(3);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(s.stackOrder.length).toBeGreaterThan(0);
+
+    /*
+      And still there while the chapter *resolves*, because chapter III stops to ask for the Plains.
+      A mid-resolution question keeps the ability on the stack, so the state-based action sees it
+      and leaves the Saga where it is — which is what lets a chapter that reads the board see the
+      board the chapter is about.
+    */
+    s = passBoth(s);
+    expect(s.pendingDecision).not.toBeNull();
+    expect(s.instances[card]!.zone).toBe('battlefield');
+
+    s = drain(decide(s, ['Plains']), 24);
+    expect(countOf(s, 1, 'battlefield', 'Plains')).toBeGreaterThan(2);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('stops counting the moment it leaves the battlefield', () => {
+    // Nothing remembers which chapters a Saga has done, so a Saga that is answered is simply gone:
+    // the counters went with it, and the card in the graveyard is an enchantment like any other.
+    let s = saga('The Birth of Meletis', 'skyward-writ', ['Plains', 'Plains']);
+    const card = find(s, 1, 'hand', 'The Birth of Meletis');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card })));
+    s = apply(s, { type: 'card:move', by: 1, card, toZone: 'graveyard' });
+
+    const before = life(s, 1);
+    s = drain(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'));
+    // No chapter II, because there is no Saga to put a counter on.
+    expect(life(s, 1)).toBe(before);
+    expect(s.instances[card]!.counters['lore'] ?? 0).toBe(0);
+  });
+
+  it('reaches into anybody’s graveyard on its last chapter, which is why it is in the mill deck', () => {
+    /*
+      The Eldest Reborn, and the clause that puts it in Hollow Tide: every other reanimation in the
+      pool reads "your graveyard", and this one can take the creature the deck's own mill spells put
+      into an opponent's.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'hollow-tide' },
+      hands: { 1: ['The Eldest Reborn'] },
+      battlefield: {
+        0: ['Centaur Courser'],
+        1: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const card = find(s, 1, 'hand', 'The Eldest Reborn');
+    s = tapAllLands(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card }));
+
+    // Chapter I: the opponent sacrifices their only creature, which puts it in their graveyard.
+    s = settleAll(s);
+    const theirs = find(s, 0, 'graveyard', 'Centaur Courser');
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+
+    // Chapter II, two turns on: the opponent discards.
+    s = settleAll(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'));
+    expect(lore(s, card)).toBe(2);
+    expect(ids(s, 0, 'graveyard').length).toBe(2);
+
+    /*
+      Chapter III, and the clause the card is in this deck for: it takes the creature out of the
+      **opponent's** graveyard and puts it onto this seat's battlefield. Its only legal target is
+      the creature the first chapter made them sacrifice, so the engine aims it without asking —
+      which is the same rule that stops a table offering a choice of one.
+    */
+    s = settleAll(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 24);
+    expect(s.instances[theirs]!.zone).toBe('battlefield');
+    expect(s.instances[theirs]!.zoneSeat).toBe(1);
+    // Their card, still owned by them, which is what sends it home when it dies (CR 110.2a).
+    expect(s.instances[theirs]!.owner).toBe(0);
+    // And the Saga is gone, its last chapter having resolved.
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+});

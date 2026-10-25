@@ -267,6 +267,57 @@ function advanceStep(state: GameState): GameState {
   return next;
 }
 
+/**
+ * How many chapters a Saga has, read off its own abilities.
+ *
+ * Derived rather than declared, which is the whole reason `saga` is a flag: a `chapters: 3` field
+ * sitting beside the chapter triggers is a field that eventually disagrees with them, and the
+ * consequence would be a Saga that never leaves or one that leaves a turn early.
+ */
+export const sagaChapters = (script: CardScript | undefined): number => {
+  if (script?.saga !== true) return 0;
+  let last = 0;
+  for (const trigger of script.triggers ?? []) {
+    if (trigger.on.kind === 'chapter') last = Math.max(last, trigger.on.n);
+  }
+  return last;
+};
+
+/**
+ * Puts a lore counter on a Saga and raises the chapter that number means (CR 714.2b).
+ *
+ * One at a time, and raising per counter rather than per call, because the two are not the same
+ * question: something that put two lore counters on a Saga at once would trigger both chapters, in
+ * order, which is the rule. Nothing in this pool does that, and writing it the other way would
+ * have been a decision to get wrong later for no saving now.
+ *
+ * The *counter* is the state and the chapter is what reaching a number means. That is why there is
+ * no bookkeeping of which chapters have fired: the number on the card is the record.
+ */
+function addLore(state: GameState, id: string, amount = 1): GameState {
+  let next = state;
+  for (let i = 0; i < amount; i++) {
+    const inst = next.instances[id];
+    if (inst === undefined || inst.zone !== 'battlefield') break;
+    const reached = (inst.counters['lore'] ?? 0) + 1;
+    next = addCounters(next, id, 'lore', 1);
+    next = raise(next, { kind: 'chapter', n: reached }, inst.zoneSeat, id);
+  }
+  return next;
+}
+
+/** A lore counter on each Saga this seat controls, as its precombat main phase begins. */
+function advanceSagas(state: GameState, seat: SeatIndex): GameState {
+  let next = state;
+  for (const id of [...listAt(state, zoneKey(seat, 'battlefield'))]) {
+    const inst = next.instances[id];
+    if (inst === undefined || inst.zone !== 'battlefield') continue;
+    if (scriptOf(next, id)?.saga !== true) continue;
+    next = addLore(next, id, 1);
+  }
+  return next;
+}
+
 /** What happens as a step begins, before anyone gets priority. */
 function onEnterStep(state: GameState, step: Step): GameState {
   let next = state;
@@ -284,6 +335,17 @@ function onEnterStep(state: GameState, step: Step): GameState {
 
     case 'upkeep':
       return raise(next, { kind: 'step', step: 'upkeep' }, next.activeSeat);
+
+    /*
+      A lore counter on each of the active player's Sagas (CR 714.2a).
+
+      Here rather than as a trigger, because it is a **turn-based action**: it happens as the phase
+      begins, before anybody has priority, and nothing can be done in response to the counter going
+      on. What *can* be answered is the chapter ability it puts on the stack, which is why the
+      counter and the ability are two different things.
+    */
+    case 'precombat-main':
+      return advanceSagas(next, next.activeSeat);
 
     case 'draw':
       // The player who goes first skips their first draw (CR 103.8a).
@@ -430,6 +492,17 @@ function triggerMatches(
       if (actorSeat === undefined) return false;
       return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
     }
+    /*
+      A Saga's chapter, which is about one permanent and one number.
+
+      `raise` has already narrowed the watchers to the Saga the counter went on, so all that is
+      left is whether this is the chapter that number means. A Saga with chapters I, II and III
+      sees all three events over three turns and each ability answers to exactly one.
+    */
+    case 'chapter': {
+      const e = event as Extract<TriggerEvent, { kind: 'chapter' }>;
+      return isSubject && e.n === want.n;
+    }
     case 'becomes-tapped':
     case 'leaves':
     // Narrowed to its own permanent by `raise`, like the two above: a morph turning over is its
@@ -513,7 +586,7 @@ function raise(
   // always included: it may be the watcher, and for a death it is in a graveyard by now rather
   // than on the battlefield.
   const selfOnly = new Set([
-    'becomes-tapped', 'leaves', 'combat-damage', 'targeted', 'turned-face-up',
+    'becomes-tapped', 'leaves', 'combat-damage', 'targeted', 'turned-face-up', 'chapter',
   ]);
   const everyBattlefield = apnapSeats(next).flatMap((seat) => {
     const mine = [...listAt(next, zoneKey(seat, 'battlefield'))].filter((id) => id !== subject);
@@ -725,6 +798,24 @@ export function stateBasedActions(state: GameState): GameState {
         const inst = next.instances[id];
         if (inst === undefined) continue;
         const ch = characteristicsOf(next, inst);
+
+        /*
+          CR 714.4: a Saga whose last chapter has gone is sacrificed.
+
+          A state-based action rather than a fourth chapter, which is the rule and also the only
+          version that behaves. What it checks is the **counters and an empty stack**, not whether
+          an ability resolved — so a Saga whose last chapter is countered still goes away, and one
+          whose counters were somehow removed stays. The stack check is the whole of the delay: the
+          Saga sits there while chapter III waits to resolve, which is what makes "return a creature
+          from a graveyard" able to see the board the chapter is about.
+        */
+        const chapters = sagaChapters(scriptFor(next.cardDefs[inst.defKey]?.name));
+        if (chapters > 0 && (inst.counters['lore'] ?? 0) >= chapters
+          && !next.stackOrder.some((objectId) => next.stackObjects[objectId]?.source === id)) {
+          next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+          changed = true;
+          continue;
+        }
 
         // CR 704.5m: an Aura attached to nothing, or to something gone, is put into its owner's
         // graveyard. Both halves are needed, and the first is the one that bites: `relocate`
@@ -952,6 +1043,22 @@ function settle(state: GameState, before: GameState): GameState {
         next = applyStatics(next, id, arrival.zoneSeat, arrivalScript);
       }
       next = raise(next, { kind: 'etb' }, next.instances[id]?.zoneSeat, id);
+      /*
+        And a Saga's first lore counter, which is why it does something the turn it is cast
+        (CR 714.2a).
+
+        A replacement effect on the arrival rather than a chapter of its own, and placed here for
+        the same reason "enters tapped" is: this loop is the one place that sees *every* way onto
+        the battlefield, so a Saga reanimated or put there by an effect still starts counting.
+
+        Guarded on having no counter yet, which is what stops a Saga that arrives, leaves and comes
+        back from skipping chapter I — a returning Saga is a new object with no counters, and this
+        reads the board rather than remembering.
+      */
+      if (sagaChapters(scriptFor(next.cardDefs[arrival.defKey]?.name)) > 0
+        && (next.instances[id]?.counters['lore'] ?? 0) === 0) {
+        next = addLore(next, id, 1);
+      }
     }
     next = stateBasedActions(next);
   }
