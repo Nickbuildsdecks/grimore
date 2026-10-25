@@ -2527,6 +2527,39 @@ Both cards measured as washes: +3 games on 238 for Dragonsguard Elite, and the s
 game for Sedgemoor Witch. That is the right outcome for a mechanic rather than a power addition —
 the engine gained a keyword and the pool did not move. 224 games, 224 finished.
 
+### Where the search stops, and four deletions that were facts about the instrument
+
+The opponent's evaluation has had five terms added and deleted over this project: a second ply, a
+swing projection, untapped mana, an answer held in hand, and — this checkpoint — unblocked power.
+Each deletion was written down as a fact about the term. Four of them were facts about the *pair*.
+
+`applyAction` runs the engine's auto-pass loop, so the position the search scored was wherever the
+table had drifted to rather than where the action happened. Measured over 13,907 actions in real
+games: only 51% of casts leave the table on the same step, 19% advance a whole turn, and **half of
+all attack declarations are scored after the turn has already ended.** A swing projection read after
+the swing is over is not a weak term — it is a term reading a different position.
+
+So the search now turns auto-pass off in the state it simulates. The simulated state is scored and
+thrown away, never applied, so this changes what the bot sees and never how the game runs. On the
+scoreboard it is worth nothing (166-170 over 336 paired games, inside the noise floor), and a flat
+result needed one more check before being called a wash, because a setting that changes no decisions
+cannot win or lose any: it changes 1% of decisions overall, 10% of attack declarations and 6% of
+blocks.
+
+What it is worth is time. Per decision, mean and worst: **2.62ms / 77ms → 0.91ms / 17ms** in a duel,
+and **10.42ms / 407ms → 4.78ms / 292ms** in a four-seat pod. It ships on the clock rather than the
+scoreboard — three times faster, the same player, and a worst case a person waiting at a table will
+notice.
+
+Then the newest deleted term went back in and was asked again on the fixed search: **170-166 and
+168-168, where it had been 165-171 and 161-175.** Level, not losing. The term was never harmful; the
+drift was. It stays out — level is level — but the entry that deleted it has been corrected in place,
+and three of the other four deletions are now worth re-asking for the same reason.
+
+The transferable part is about keeping records: every one of those five entries wrote down its
+numbers, which is the only reason any of this was recoverable. A log that had said "tried valuing
+evasion, didn't work" would have closed the question permanently.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
