@@ -5461,3 +5461,47 @@ established on the pool's average deck and is too generous for its worst one.** 
 that; the honest move was to ship the arrangement that was already in place, write the number down
 as unknown, and stop pretending a sign that flips is a result. Swerve, in a deck at 46%, measured
 +1 and −2 — a clean wash, the way almost every slot in that band has.
+
+## D132 — A lobby you can see, and a default that is a privacy decision
+
+**Decision: the Play Realm lists open tables, a table is unlisted unless its host says otherwise,
+and the default is enforced on the server rather than trusted to the client.**
+
+The setup doc's *What is not done* said "no way to watch a *list* of tables: you need the code", and
+half of that was wrong in the easy direction: `apps/realtime` has had a `pod:list` event, a
+`visibility: 'public' | 'private'` field and a Redis set of listed codes since the pod store was
+written. Nothing in `apps/web` had ever called it. So this is almost entirely a client change, and
+the interesting part is the one decision in it.
+
+**Unlisted by default.** Creating a table offers *Just us* (shared by code only) and *Open table*
+(listed for anyone), and the first is selected. A shared server that listed every table as it was
+made would show strangers each other's games, and nobody choosing a default in a lobby is thinking
+about that — so the lobby makes the choice rather than the player, and the labels say which is
+which rather than leaving it to a doc nobody has open.
+
+**And the default is asserted where it is enforced.** The client sending `visibility: 'private'` is
+not the guarantee; `listPublic` returning nothing for a private table is. `apps/realtime` gained a
+test that makes a public table and a private one in the same breath and watches a third client get
+exactly one of them back. A privacy default whose only proof is in the code that chooses it is a
+privacy default one refactor from being wrong.
+
+**Three things beyond rendering rows**, each of which is why this is more than a button:
+
+- The **empty state is the normal one**. Two people playing privately see no tables, so the lobby
+  has to read well that way round and the code box has to stay the obvious way in. The browser
+  suite asserts the empty state *before* anything is created, which is the order a first-time
+  player meets it in.
+- A row can be **stale** — a table that filled up or started between the render and the tap. The
+  server refuses the join and the existing error banner says so, which is better than a client that
+  pretends to check first and still races.
+- A listed table's name and code come from **other people**, so they go through React as text and
+  never as markup, and a listing reveals nothing a watcher could not already see with the code.
+
+**The browser suite is where this is really tested**, because the decision is a flow rather than a
+function: Friend now finds Nick's table *without being told the code* and joins from the row, with a
+Refresh press as the retry for a socket that connected in the instant before the table existed. The
+code path keeps its coverage in `e2e-arena` (join and watch) and `e2e-pod`. 59 checks became 62.
+
+What is still missing in that paragraph of the doc, now that the list exists, is spectator chat: a
+watcher reads the table's chat and cannot write to it. The doc says that instead of the thing that
+was already built.

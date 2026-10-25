@@ -81,6 +81,8 @@ async function waitFor(page, testId, timeout = 15000) {
 }
 
 const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
+/** Whether an element with this test id is on the page at all. */
+const has = async (page, id) => (await tid(page, id).count()) > 0;
 const cardsIn = (page, zoneTestId) => page.locator(`[data-testid="${zoneTestId}"] [data-testid^="card-"]`);
 
 /** Taps a card and picks an action from the sheet that opens. */
@@ -153,7 +155,18 @@ async function main() {
     await nick.goto(BASE);
     await waitFor(nick, 'lobby');
     await tid(nick, 'player-name').fill('Nick');
+    /*
+      The empty state, asserted before anything is created, because it is the normal one: two
+      people playing privately see no tables here and the code box has to still be the obvious
+      way in. A lobby that only reads well once somebody has opened a table reads badly most of
+      the time.
+    */
+    await waitFor(nick, 'open-tables');
+    check('the lobby says so when nobody has an open table',
+      await has(nick, 'open-tables-empty'));
     await tid(nick, 'format-modern').click();
+    // Listed on purpose: unlisted is the default, so this is the press that opts in.
+    await tid(nick, 'visibility-public').click();
     await tid(nick, 'create-table').click();
     await waitFor(nick, 'pregame');
     const code = (await tid(nick, 'table-code').textContent())?.trim() ?? '';
@@ -163,8 +176,19 @@ async function main() {
     await friend.goto(BASE);
     await waitFor(friend, 'lobby');
     await tid(friend, 'player-name').fill('Friend');
-    await tid(friend, 'join-code').fill(code);
-    await tid(friend, 'join-table').click();
+    /*
+      And the point of the whole feature: Friend is never told the code. The row is found in the
+      list, which the client asks for on connect — with a Refresh press as the retry, because a
+      socket that connected in the instant before the table existed has an answer that predates it.
+    */
+    await expectEventually(friend, 'Friend finds the open table without being told its code', async () => {
+      if (await has(friend, `open-table-${code}`)) return true;
+      await tid(friend, 'refresh-tables').click();
+      return false;
+    });
+    const row = (await tid(friend, `open-table-${code}`).textContent()) ?? '';
+    check('the listing says how full the table is', row.includes('1 of 2 seated'), row.trim());
+    await tid(friend, `join-open-${code}`).click();
     await waitFor(friend, 'pregame');
     await expectEventually(friend, 'friend joined and sees both seats', async () =>
       (await friend.locator('[data-testid^="lobby-seat-"]').count()) === 2);

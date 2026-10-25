@@ -52,9 +52,19 @@ import { isBarePass } from "@/lib/feed"
 
 const NAME_KEY = "grimore.table.name"
 const FORMATS = [
-  { id: "modern", label: "1v1 — 20 life", hint: "Two players, 60-card decks, no command zone." },
-  { id: "commander", label: "Commander — 40 life", hint: "Command zone and 21 commander damage. Up to four seats." },
+  { id: "modern", label: "1v1 — 20 life", hint: "Two players, 60-card decks, no command zone.", seats: 2 },
+  { id: "commander", label: "Commander — 40 life", hint: "Command zone and 21 commander damage. Up to four seats.", seats: 4 },
 ] as const
+
+/**
+ * How many seats a format has, for a listing that wants to say "1 of 4".
+ *
+ * Read off `FORMATS` rather than imported, because the server's own `maxSeatsFor` lives in
+ * `apps/realtime` and is not on the wire. A format this does not know is shown without a count
+ * instead of with a wrong one.
+ */
+const seatsFor = (format: string): number | null =>
+  FORMATS.find((f) => f.id === format)?.seats ?? null
 
 /**
  * The handful of actions that are idioms rather than buttons, because the table enforces no rules.
@@ -116,6 +126,16 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
   const [code, setCode] = useState("")
   const [format, setFormat] = useState<string>("modern")
   const [tableName, setTableName] = useState("Kitchen Table")
+  /*
+    Unlisted by default, and the default is the decision rather than the toggle.
+
+    A shared server that listed every table as it was made would show strangers each other's games,
+    so a table is private unless its host says otherwise — and the label says which it is rather
+    than leaving it to a doc nobody has open. The server enforces the same thing from the other
+    side: `listPublic` only ever returns a table whose host asked for it *and* which is still in
+    its lobby.
+  */
+  const [listed, setListed] = useState(false)
 
   return (
     <div data-testid="lobby" className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-8">
@@ -125,7 +145,7 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
         </a>
         <h1 className="text-xl font-semibold text-[var(--g-text-high)]">Play Realm</h1>
         <p className="text-sm text-[var(--g-text-muted)]">
-          Start a table and send the code to whoever you are playing. Everything is shared live; nobody can see your hand.
+          Start a table and send the code to whoever you are playing, or open it for anyone to join. Everything is shared live; nobody can see your hand.
         </p>
       </header>
 
@@ -157,10 +177,40 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
             </button>
           ))}
         </div>
-        <Button data-testid="create-table" onClick={() => void table.createTable({ name: tableName, format })}>
+        <div className="flex gap-2">
+          {[
+            { on: false, label: "Just us", hint: "Shared by code only" },
+            { on: true, label: "Open table", hint: "Listed for anyone to join" },
+          ].map((choice) => (
+            <button
+              key={String(choice.on)}
+              type="button"
+              data-testid={`visibility-${choice.on ? "public" : "private"}`}
+              aria-pressed={listed === choice.on}
+              onClick={() => setListed(choice.on)}
+              className={cn(
+                "flex-1 rounded-md border px-3 py-2 text-left transition-colors",
+                listed === choice.on
+                  ? "border-[var(--g-accent)] bg-[var(--g-accent)]/10"
+                  : "border-white/10 hover:border-white/25",
+              )}
+            >
+              <span className="block text-sm font-medium text-[var(--g-text-high)]">{choice.label}</span>
+              <span className="block text-xs text-[var(--g-text-muted)]">{choice.hint}</span>
+            </button>
+          ))}
+        </div>
+        <Button
+          data-testid="create-table"
+          onClick={() => void table.createTable({
+            name: tableName, format, visibility: listed ? "public" : "private",
+          })}
+        >
           Create table
         </Button>
       </section>
+
+      <OpenTables table={table} name={name} />
 
       <section className="flex flex-col gap-3 rounded-lg border border-white/10 p-4">
         <h2 className="text-sm font-semibold text-[var(--g-text-high)]">Play on your own</h2>
@@ -242,6 +292,82 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
         </div>
       </section>
     </div>
+  )
+}
+
+/**
+ * The tables whose hosts chose to list them, with a way in that is not a code.
+ *
+ * Until this existed the only route to somebody else's table was a string they had to send you,
+ * which is fine for two people who are already talking and is the whole of the lobby otherwise.
+ * The server has had the list since the pod store was written; nothing had ever asked for it.
+ *
+ * Three things it has to get right beyond rendering rows. The **empty state** is the normal one —
+ * two people playing privately see no tables, and the code box has to still be the obvious way in.
+ * A row can be **stale**: a table that filled up or started between the render and the tap is
+ * refused by the server, which is already handled as an ordinary error banner, so the button does
+ * not pretend to check first. And a table's name and code come from **other people**, so they go
+ * through React as text and never as markup.
+ */
+function OpenTables({ table, name }: { table: UseTable; name: string }) {
+  const tables = table.openTables
+  return (
+    <section data-testid="open-tables" className="flex flex-col gap-3 rounded-lg border border-white/10 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-[var(--g-text-high)]">Open tables</h2>
+        <button
+          type="button"
+          data-testid="refresh-tables"
+          onClick={() => table.refreshTables()}
+          className="text-xs text-[var(--g-text-muted)] underline-offset-2 hover:underline"
+        >
+          Refresh
+        </button>
+      </div>
+      {tables.length === 0 ? (
+        <p data-testid="open-tables-empty" className="text-xs text-[var(--g-text-muted)]">
+          Nobody has an open table right now. Start one above as an <strong>Open table</strong> to
+          be listed here, or join with a code below.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {tables.map((entry) => {
+            const seats = seatsFor(entry.format)
+            return (
+              <li
+                key={entry.code}
+                data-testid={`open-table-${entry.code}`}
+                className="flex items-center gap-2 rounded-md border border-white/10 px-3 py-2"
+              >
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium text-[var(--g-text-high)]">{entry.name}</span>
+                  <span className="text-xs text-[var(--g-text-muted)]">
+                    {entry.code}
+                    {" · "}
+                    {FORMATS.find((f) => f.id === entry.format)?.label ?? entry.format}
+                    {seats === null ? "" : ` · ${entry.seatCount} of ${seats} seated`}
+                  </span>
+                </span>
+                <Button
+                  data-testid={`join-open-${entry.code}`}
+                  variant="secondary"
+                  onClick={() => void table.joinTable({ code: entry.code, name })}
+                >
+                  Join
+                </Button>
+                <Button
+                  data-testid={`watch-open-${entry.code}`}
+                  variant="ghost"
+                  onClick={() => void table.watchTable(entry.code)}
+                >
+                  Watch
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
   )
 }
 

@@ -388,13 +388,27 @@ run end to end.
 | A reload loses the game | It should not — your seat is held for two minutes and reclaimed automatically. Past that the seat is gone. |
 | A change to the rules engine does not show up | Restart `scripts/play.mjs`, and that is all — it rebuilds the packages and the table server itself on the way up (two seconds when nothing changed). The web app hot-reloads from source; the table server runs from `dist/` and holds whatever it loaded at startup, so for three debugging sessions "the code is right and the server is old" looked exactly like a bug in the new code. It cannot now: restarting is rebuilding. |
 
+### Finding a table
+
+Two ways in, and the first one is new. **Open tables** in the lobby lists every table whose host
+chose to list it, with the code, the format, how many of its seats are taken, and a **Join** or
+**Watch** on each row — so the second player needs nothing from the first. A table is **unlisted by
+default**: creating one offers *Just us* (shared by code only) and *Open table* (listed for anyone),
+and the first is selected until you say otherwise, because a shared server that listed every game
+as it was made would show strangers each other's tables. The server enforces the same rule from its
+own side — a table is only ever listed while it is in its lobby *and* its host asked for it, so one
+that has started, filled up or gone away is simply not in the list.
+
+The code box is still there and still the way into an unlisted table. **Join** takes a seat;
+**Watch** takes none and works mid-game.
+
 ## Proving it works
 
 Four browser suites, one per way of playing. All need the stack running and Playwright available
 (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
 
 ```bash
-node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 59 checks
+node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 62 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 51-54 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 21 checks
@@ -489,7 +503,7 @@ playing the server, and a deal struck with the server's own seat).
   table you can talk at.
 - **Watching is read-only, and that is all it is.** A watcher sees both boards, both graveyards,
   the stack and the log, with both hands as face-down counts — and is offered no moves at all.
-  There is no spectator chat and no way to watch a *list* of tables: you need the code.
+  There is no spectator chat: a watcher reads the table's chat and cannot write to it.
 - **Undo is one step, and the host's.** It puts the table back to before the last move, including
   anything the engine or the computer's seats did in answer to it, and the chat says it was used.
   What it is not is a rewind: there is no second step back, no undoing an undo, and no taking back

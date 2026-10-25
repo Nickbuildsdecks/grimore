@@ -219,6 +219,32 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     expect(pods.find((p) => p.code === created.code)?.seatCount).toBe(2);
   });
 
+  it('and a table nobody asked to list stays off the list', async () => {
+    /*
+      The guarantee the lobby's own default rests on.
+
+      `apps/web` creates a table as `private` unless its host presses **Open table**, and a shared
+      server that listed every game anyway would show strangers each other's tables whatever the
+      client did. So this is asserted from the server's side, where it is actually enforced: a
+      public table and a private one made in the same breath, and only one of them comes back.
+    */
+    const host = await client('Dana');
+    const seen = okAck(await emitAck(host, 'pod:create', {
+      name: 'Listed', format: 'modern', visibility: 'public',
+    }));
+    const hidden = await client('Erin');
+    const unseen = okAck(await emitAck(hidden, 'pod:create', {
+      name: 'Unlisted', format: 'modern', visibility: 'private',
+    }));
+
+    const onlooker = await client('Frank');
+    const list = waitFor<{ pods: { code: string }[] }>(onlooker, 'pod:list');
+    okAck(await emitAck(onlooker, 'pod:list', {}));
+    const codes = (await list).pods.map((p) => p.code);
+    expect(codes).toContain(seen.code);
+    expect(codes).not.toContain(unseen.code);
+  });
+
   it('life:adjust from seat 0 reaches seat 1 with stateVersion incremented', async () => {
     const { a, b, state } = await seatedPair();
     expect(state.state).not.toBeNull();

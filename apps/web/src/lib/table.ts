@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { io, type Socket } from "socket.io-client"
 import { unpackView, type GameView, type PackedView } from "@grimore/rules-engine"
-import type { Pod, PodErrorEvent } from "@grimore/shared"
+import type { Pod, PodErrorEvent, PodListEntry } from "@grimore/shared"
 
 /** Same-origin by default, which is how it runs behind one reverse proxy. */
 const REALTIME_URL: string = import.meta.env.VITE_REALTIME_URL ?? ""
@@ -53,6 +53,15 @@ export interface TableState {
   code: string | null
   chat: ChatLine[]
   error: string | null
+  /**
+   * Tables whose host chose to list them, newest server answer first.
+   *
+   * Only ever populated from the server's own `pod:list`, which lists a table **while it is in the
+   * lobby and only if its host asked for it** — so this is not "every game on the server", and a
+   * table that has started or was created unlisted is not in here at all. Empty is the normal state
+   * for a private pair of players, and the lobby has to read well that way round.
+   */
+  openTables: readonly PodListEntry[]
 }
 
 /** An action minus `by`: the server stamps that from the socket's own seat, so it cannot be forged. */
@@ -160,6 +169,14 @@ export interface UseTable extends TableState {
    */
   undo: () => Promise<void>
   say: (text: string) => Promise<void>
+  /**
+   * Asks the server for the listed tables again.
+   *
+   * A pull rather than a subscription, because a lobby list is not worth a broadcast to every
+   * connected socket every time somebody opens a table: the lobby asks on connect and when the
+   * player presses refresh, which is the two moments the answer is looked at.
+   */
+  refreshTables: () => void
   clearError: () => void
 }
 
@@ -174,6 +191,7 @@ export function useTable(playerName: string): UseTable {
     code: null,
     chat: [],
     error: null,
+    openTables: [],
   })
   const socketRef = useRef<Socket | null>(null)
   /**
@@ -223,6 +241,9 @@ export function useTable(playerName: string): UseTable {
 
     socket.on("connect", () => {
       setState((s) => ({ ...s, connection: "connected" }))
+      // The listed tables, asked for once the socket is up. Before this the lobby had nothing to
+      // show on arrival and a player's only way in was a code somebody had sent them.
+      socket.emit("pod:list", {})
       // Reclaim a seat left behind by a reload or a dropped connection.
       const stored = readStored()
       if (!stored) return
@@ -273,6 +294,11 @@ export function useTable(playerName: string): UseTable {
     })
     socket.on("pod:chat", (line: ChatLine) => {
       setState((s) => ({ ...s, chat: [...s.chat.slice(-99), line] }))
+    })
+    socket.on("pod:list", (payload: { pods: readonly PodListEntry[] }) => {
+      // Replaced wholesale rather than merged: the server's answer is the whole list, and a table
+      // that has started or gone away is absent from it rather than marked.
+      setState((s) => ({ ...s, openTables: payload.pods }))
     })
 
     return () => {
@@ -354,6 +380,9 @@ export function useTable(playerName: string): UseTable {
     setState((s) => ({
       ...s, pod: null, view: null, seat: null, watching: false, code: null, chat: [], error: null,
     }))
+    // Back in the lobby, so the list is worth asking for again: whatever was open when this player
+    // sat down is minutes stale by the time they stand up.
+    socketRef.current?.emit("pod:list", {})
   }, [emit])
 
   const setReady = useCallback<UseTable["setReady"]>(
@@ -475,6 +504,10 @@ export function useTable(playerName: string): UseTable {
     return queued
   }, [emit])
 
+  const refreshTables = useCallback<UseTable["refreshTables"]>(() => {
+    socketRef.current?.emit("pod:list", {})
+  }, [])
+
   const say = useCallback<UseTable["say"]>(
     async (text) => {
       const trimmed = text.trim()
@@ -490,9 +523,11 @@ export function useTable(playerName: string): UseTable {
 
   return useMemo(
     () => ({
-      ...state, createTable, joinTable, watchTable, leaveTable, setReady, send, undo, say, clearError,
+      ...state, createTable, joinTable, watchTable, leaveTable, setReady, send, undo, say,
+      refreshTables, clearError,
     }),
-    [state, createTable, joinTable, watchTable, leaveTable, setReady, send, undo, say, clearError],
+    [state, createTable, joinTable, watchTable, leaveTable, setReady, send, undo, say,
+      refreshTables, clearError],
   )
 }
 
