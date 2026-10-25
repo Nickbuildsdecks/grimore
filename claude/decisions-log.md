@@ -3689,6 +3689,9 @@ worth nothing it can see. A player who shields the blocker that is about to die 
 measurement cannot score. The honest summary is that this is the floor of what the pair does, not
 its value, and the five per cent is written down rather than rounded away.
 
+*(The reason given above for the Salve — that a shield is worth nothing to `evaluate` — turned out
+to be wrong. D108 measured it: the two halves are worth the same, which is why the life wins.)*
+
 **What is still open, and named rather than hidden.** The bot never chooses the shield mode of a
 modal card, for the reason above. It will not hold a shield for a burn spell on the stack, because
 the gate asks about combat and the engine has no "this spell deals damage" flag to ask instead. And
@@ -3932,3 +3935,44 @@ Paired reference win rate, 240 games on two seed sets: 151-89 → 155-85 and 146
 and six games in the same direction, both inside the 18-game noise floor, so the case is the four
 cards a game it stops throwing away rather than the win rate. The dead-card audit over every pairing
 shows nothing newly dead: a rule that stopped a card being cast at all would show up there first.
+
+## D108 — A shield is worth the life it saves, and that changes nothing
+
+D102 left a gap with a number on it: the bot never takes Healing Salve's shield half — 72 casts out
+of 72 took the three life — and the explanation offered was that `evaluate` cannot see a shield at
+all, so "three life" was being compared with "nothing". That explanation was wrong, and finding out
+cost two weights that have both been taken back out again.
+
+**First the weight.** A point of prevention on a player is worth a point of life, so `seatValue`
+counted it as one (and a point on a creature as half, since it only pays out if that creature is in
+damage's way). Paired over 60 duels on the same seeds: **44-16 before, 44-16 after, every tally
+identical** — the same 18 Salves cast, the same 11 Samite Healer activations, the same aims. Not a
+small effect. No effect.
+
+**Then the aim.** `friendlyRank` puts a player ahead of a creature, so a helping spell could only
+ever be aimed at a life total; the alternatives list grew an own-*creature* entry for a `friendly`
+spec, on the theory that a shield on a blocker about to die is a different card from a shield on a
+player. Measured the same way: no change either.
+
+**And then the instrument said why.** The shield half was *offered to the search 22 times in those
+60 duels* — exactly as often as the life half — and chosen zero times. So the card was in hand, the
+gate let it through, and the search looked at both halves and preferred the life. With the weight
+in, that is a **tie**: three life and three prevention on the same player score the same number, and
+`>` keeps the earlier option, which is the printed order. With the weight out it is three against
+nothing and the life wins again. Either way the life wins, and for a player the life is the better
+half anyway — three prevented is three saved *this turn*, while three life is three saved for the
+rest of the game.
+
+What makes prevention better than life gain is entirely beyond this search's horizon: a shield on a
+blocker that would otherwise die, or a shield kept back for a burn spell. `simulate` stops when the
+stack empties, so the creature that survives combat because of a shield is not in the position being
+scored. **No weight can fix a horizon.** That is the same wall the pump rule, the ritual rule and
+the Fog rule all hit, and those were solved by asking the board a question instead — but "would this
+shield save a creature in a combat that has not been declared yet" is not a question about the
+board, it is the playout the search already refuses to run.
+
+So both terms are gone, which keeps the bot's evaluation at six honest weights rather than eight
+decorative ones, and the lesson is written here instead: **the Salve's two halves are worth the same
+to this bot, and taking the life is a defensible play rather than a bug.** The next person to want
+the shield half chosen needs a deeper search, not a bigger number — and the measurement that proves
+it takes twenty minutes, which is cheaper than the weight.

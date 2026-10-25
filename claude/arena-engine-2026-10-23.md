@@ -2137,7 +2137,8 @@ carried anyway for two reasons, both written down in full in `claude/decisions-l
 the pool has no card that reaches this rule at all, and the measurement is of the bot, which takes
 one point a turn and — 72 casts out of 72 — always takes the Salve's three life over its shield,
 because three life is worth something to `evaluate` and a shield is worth nothing it can see. A
-player who shields the blocker about to die gets a card the instrument cannot score.
+player who shields the blocker about to die gets a card the instrument cannot score. (Why it does is not what this entry guessed: see "A shield is worth the life it saves, and that
+changes nothing" below.)
 
 ### The aim the search was never shown
 
@@ -2290,6 +2291,31 @@ them won its game.
 The paired reference win rate moved 151-89 → 155-85 and 146-94 → 152-88, both inside the noise
 floor, so the case is the cards it stops throwing away rather than the rate. The dead-card audit is
 unchanged, which is where a rule that went too far would show first.
+
+### A shield is worth the life it saves, and that changes nothing
+
+An earlier entry said the bot never takes Healing Salve's shield half because the evaluation cannot
+see a shield at all — three life against nothing. That was wrong, and two weights were written and
+taken back out again to find out.
+
+A point of prevention on a player *is* a point of life, so the evaluation counted it as one. Paired
+over 60 duels on the same seeds: 44-16 before, 44-16 after, every tally identical — same casts, same
+activations, same aims. Then the aiming: a helping spell could only ever be aimed at a life total,
+because the own-side ordering puts the player first, so the alternatives grew an own-creature entry.
+No change either.
+
+The instrument then said why. The shield half was **offered 22 times in those 60 duels, exactly as
+often as the life half, and chosen zero times**. With the weight in, the two halves score the same
+number and the tie-break keeps the printed order; with it out, the life wins outright. And for a
+player the life is the better half anyway: three prevented is three saved this turn, three life is
+three saved for the rest of the game.
+
+What makes prevention better is beyond the search's horizon — a shield on a blocker that would
+otherwise die, or one kept for a burn spell — and `simulate` stops when the stack empties, so the
+creature that survives because of a shield is not in the position being scored. No weight fixes a
+horizon. Both terms are gone, the evaluation keeps six honest weights instead of eight decorative
+ones, and the finding is in `claude/decisions-log.md` (D108): the Salve's halves are worth the same
+to this bot, and taking the life is a defensible play rather than a bug.
 
 ## Next
 
