@@ -373,7 +373,7 @@ playing the server, and a deal struck with the server's own seat).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows a hundred and sixty-seven cards.** Everything in the eight starter decks. It
+- **The engine knows a hundred and seventy-five cards.** Everything in the eight starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your
@@ -381,11 +381,14 @@ playing the server, and a deal struck with the server's own seat).
   whoever cast it, and Fleshbag Marauder asks each player in turn order. A modal spell shows up as
   one play per mode when you tap it — Selesnya Charm offers three, and Grim Discovery offers each
   half and both — and a mode whose target is not on the board is not offered at all.
-- **Copy effects and characteristic-setting effects** are deliberately not scripted rather than
-  approximated, because `effects.ts` has no honest way to express them. Regeneration and "enters
-  with counters" *are* in now, which is why Golgari Charm is in a deck after two checkpoints of
-  being the example of what could not be scripted. Anything still beyond the engine resolves by
-  hand, and the log says it was not automated.
+- **Every layer of the rules' own ordering is in** (CR 613), which is the paragraph that used to say
+  the opposite. Copy effects and characteristic-setting effects were the long-standing example of
+  what `effects.ts` could not express honestly, and they are now cards: Clone copies a creature as
+  it printed, Turn to Frog *sets* a creature to 1/1 with no abilities, Mutavault becomes a creature
+  without stopping being a land, Crimson Wisps changes a creature's colour, and Lhurgoyf is as big
+  as the graveyards are. What is left is dependency ordering between two effects that each change
+  what the other applies to (CR 613.8), which no card in the pool needs. Anything still beyond the
+  engine resolves by hand, and the log says it was not automated.
 - **The computer opponent is not a strong player.** It attacks only where the trade is not a
   loss, swings with everything when that is lethal, blocks the biggest thing each creature can
   handle, casts the biggest spell it can afford and mulligans a hand with no land in it. What it
