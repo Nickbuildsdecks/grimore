@@ -3692,6 +3692,51 @@ its value, and the five per cent is written down rather than rounded away.
 **What is still open, and named rather than hidden.** The bot never chooses the shield mode of a
 modal card, for the reason above. It will not hold a shield for a burn spell on the stack, because
 the gate asks about combat and the engine has no "this spell deals damage" flag to ask instead. And
-`chooseTargets` picks one aim per play, so the search never compares *aims* — shielding a blocker
-against shielding yourself is a choice it cannot be shown, which is the same shape of limit as the
-block plan the search was never offered in D101.
+shielding a blocker against shielding yourself is a choice the search makes only
+if both aims are in the list `aimings` hands it, and D103 is about the fact that they were not.
+
+*(This entry first claimed the search never compares aims at all. That was wrong — `aimings` has
+offered up to three per play since the search was written. What was missing was an own-side aim
+among them, which is a smaller bug with a sharper edge.)*
+
+## D103 — The aim the search was never shown
+
+`chooseTargets` has a comment that has been true since it was written: the bot has no idea what a
+card does, so a pump spell gets aimed at an enemy creature — "legal, and wasteful". Fixing it looked
+like it needed the bot to read a script's intent. It did not. It needed the search to be handed the
+other aim.
+
+**What the measurement actually found.** Counting every targeted cast over 60 duels, split by
+whether the card helps what it points at: 31 aimed at the bot's own side and **three** at an
+opponent's — Giant Growth twice and Titanic Growth once. Far smaller than the comment implies,
+because most of the helping cards in this pool restrict their targets with a filter (Dive Down and
+the regeneration tricks say "creature you control", and the engine then offers nothing else). The
+wart only survives on a card that can legally point anywhere.
+
+**And it survives for a reason worth having found.** `aimings` already offers the search up to
+three ways of aiming a spell — the heuristic's own pick plus the top of the enemy-first ranking. On
+a board with three enemy creatures, *the top of that ranking is three enemy creatures*: the bot's
+own side is not in the list at all, so the search could not reject an aim it was never handed. It
+would have rejected it instantly — pumping their creature raises their side of the evaluation and
+lowers its own, which is the one judgement this evaluation makes well.
+
+So the alternatives are now the best two by the enemy ordering **and the best one by the own-side
+ordering** (`friendlyRank`, which the shield work in D102 had already written), with `AIM_WIDTH`
+raised from three to four so none of them is squeezed out. Helping spells aimed at an opponent went
+3 → 0 over the same 60 duels, and own-side aims 31 → 34. The test that proves it builds the board
+the bug needs — a 2/2 blocking a 3/3 with three enemy creatures out — and fails with the own-side
+ordering removed.
+
+**Nothing measurable was paid for it.** The paired reference win rate moved 150-90 → 149-91 and
+150-90 → 147-93 over 240 games on two seed sets, which is inside the 18-game noise floor. A 200-pod
+soak finished 200 of 200 with nothing refused and nothing stalled, and the mean per decision went
+*down* rather than up (a cast 8.54ms → 8.01ms, the whole soak 6.87ms → 6.45ms per decision) —
+run-to-run variation on a shared machine rather than a speedup, which is the honest reading of a
+fourth option costing nothing.
+
+**And a wart it did not cause, found while looking.** The same count says the bot points removal at
+its *own* creatures a handful of times per 60 duels — four Swords to Plowshares, three Murders, a
+Doom Blade — and the figures are the same before and after this change, so it is older than the
+fourth aiming. Some of them are defensible (a Swords on your own creature gains you its power in
+life, which the evaluation can see) and some are probably not. It is written down rather than
+guessed at: counting is cheap, and the next person to look should start from the number.

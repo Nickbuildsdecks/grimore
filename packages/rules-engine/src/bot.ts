@@ -629,7 +629,7 @@ function simulate(state: GameState, action: Action): GameState | null {
 }
 
 /** How many ways of aiming one spell are worth simulating. */
-const AIM_WIDTH = 3;
+const AIM_WIDTH = 4;
 
 /**
  * The ways this play could be aimed, best-first, at most `AIM_WIDTH` of them.
@@ -637,6 +637,20 @@ const AIM_WIDTH = 3;
  * Only the *first* target of a spell is varied. Which creature a Doom Blade kills is the choice
  * that decides whether the card was worth playing; the second target of a two-target spell almost
  * never is, and varying both would multiply the search for nothing.
+ *
+ * **Two orderings, not one, which is the fix for a measured bug.** The alternatives used to be the
+ * top of the enemy-first ranking alone — and with three enemy creatures on the board, the top of
+ * that ranking *is* three enemy creatures, so the bot's own side was never offered at all. A Giant
+ * Growth on an opposing creature is a card given away, and the search would have rejected it
+ * instantly if it had been shown the other aim: pumping their creature raises their side of the
+ * evaluation and lowers its own. Measured over 60 duels, three such casts; the search could not
+ * choose a target it was never handed.
+ *
+ * So the list is the best two by the enemy ordering and the best one by the own-side ordering
+ * (`friendlyRank`), in that order after the heuristic's own pick — which is also why `AIM_WIDTH` is
+ * four rather than three. The order matters because the options are compared with `>`, so an aim
+ * that scores identically to an earlier one loses: the heuristic's pick stays the tie-break, and a
+ * card that cannot tell its aims apart keeps the one the card's own `friendly` hint chose.
  */
 function aimings(state: GameState, seat: SeatIndex, play: LegalPlay): (readonly Target[])[] {
   const first = chooseTargets(state, seat, play);
@@ -644,17 +658,21 @@ function aimings(state: GameState, seat: SeatIndex, play: LegalPlay): (readonly 
   if (first.length === 0) return [[]];
   const spec = play.targetSpecs[0];
   const foes = foesOf(state, seat);
-  const alternatives = [...(play.candidates[0] ?? [])]
-    .sort((a, b) => rank(state, b, foes) - rank(state, a, foes))
-    .slice(0, AIM_WIDTH);
+  const candidates = play.candidates[0] ?? [];
+  const byEnemy = [...candidates].sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
+  const byOwnSide = [...candidates]
+    .sort((a, b) => friendlyRank(state, b, foes) - friendlyRank(state, a, foes));
+  const alternatives = [byEnemy[0], byEnemy[1], byOwnSide[0]];
   const out: (readonly Target[])[] = [first];
+  const seen = new Set([targetKeyOf(first[0]!)]);
   // One spec wanting several targets is left alone: the heuristic filled all of them, and swapping
   // one out would need the rest re-picked around it.
   if (spec !== undefined && Math.max(1, spec.count ?? 1) === 1) {
     for (const option of alternatives) {
-      if (targetKeyOf(option) === targetKeyOf(first[0]!)) continue;
+      if (option === undefined || seen.has(targetKeyOf(option))) continue;
       const rest = first.slice(1);
       if (rest.some((t) => targetKeyOf(t) === targetKeyOf(option))) continue;
+      seen.add(targetKeyOf(option));
       out.push([option, ...rest]);
     }
   }

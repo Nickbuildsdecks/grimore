@@ -1152,6 +1152,46 @@ describe('what the engine tells a client', () => {
   });
 });
 
+describe('which aims the search is shown', () => {
+  /*
+    The search can only choose between the aims it is handed, and for one spell in the pool it was
+    handed the wrong three.
+
+    `aimings` offers the top of the enemy-first ranking as the alternatives to the heuristic's own
+    pick — which is right for the removal and the burn that are most of what targets anything, and
+    silently wrong when the board has three enemy creatures on it, because then the top three of
+    that ranking *are* three enemy creatures and the bot's own side is never offered at all. A
+    Giant Growth aimed at an opposing creature is a card given away, and the search would have
+    thrown that aim out instantly: pumping their creature raises their side of the evaluation and
+    lowers its own. Measured over 60 duels it happened three times — not because the evaluation was
+    wrong, but because the one aim that mattered was not in the list.
+  */
+  it('pumps its own creature when the board is full of the opponent\'s', () => {
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      hands: { 0: ['Giant Growth'] },
+      battlefield: {
+        0: ['Forest', 'Grizzly Bears'],
+        1: ['Hill Giant', 'Borderland Marauder', 'Raging Goblin'],
+      },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const giant = find(s, 1, 'battlefield', 'Hill Giant');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: giant, defender: 0 }] });
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = advanceTo(s, 'declare-blockers');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: bears, attacker: giant }] });
+    s = apply(s, { type: 'auto:pass', by: 1 });
+
+    // A 2/2 blocking a 3/3 dies for nothing; +3/+3 makes it a 5/5 that kills the Giant and lives.
+    const chosen = botAction(s, 0);
+    expect(chosen?.type).toBe('auto:cast');
+    expect(chosen?.type === 'auto:cast' ? chosen.targets : []).toEqual([{ kind: 'card', id: bears }]);
+  });
+});
+
 describe('a shield the bot has to spend at the right moment', () => {
   /*
     Samite Healer is the first card in the pool whose *cost* is a blocker.

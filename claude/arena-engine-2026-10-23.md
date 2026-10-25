@@ -2133,6 +2133,32 @@ one point a turn and — 72 casts out of 72 — always takes the Salve's three l
 because three life is worth something to `evaluate` and a shield is worth nothing it can see. A
 player who shields the blocker about to die gets a card the instrument cannot score.
 
+### The aim the search was never shown
+
+A comment in the bot has said for months that a pump spell gets aimed at an enemy creature —
+"legal, and wasteful" — and that fixing it would need the bot to read what a card does. It needed
+one line of the opposite: the search had to be handed the other aim.
+
+Counted over 60 duels, the waste is three casts: Giant Growth twice, Titanic Growth once. Smaller
+than the comment implies, because most helping cards in this pool already restrict their targets
+with a filter and the engine offers nothing else. What keeps the last three alive is sharper than a
+missing weight. `aimings` offers the search up to three ways of aiming a spell — the heuristic's
+pick plus the top of the enemy-first ranking — and on a board with three enemy creatures the top of
+that ranking *is* three enemy creatures. The bot's own side was never in the list, so the search
+could not throw out an aim it had never been handed. It would have thrown it out at once: pumping
+their creature raises their side of the evaluation and lowers its own.
+
+The alternatives now come from both orderings — the best two enemy-first and the best one own-side —
+and misaimed helping spells went 3 → 0 over the same duels. The paired reference win rate did not
+move (150-90 → 149-91, 150-90 → 147-93, both inside the noise floor), and a 200-pod soak finished
+all 200 with the mean per decision slightly *down*, so the fourth option costs nothing measurable.
+
+**And a wart it did not cause.** The same count says the bot points removal at its own creatures a
+handful of times per 60 duels — four Swords to Plowshares, three Murders, a Doom Blade — with the
+same figures before and after, so it is older than this change. A Swords on your own creature gains
+you its power in life and the evaluation can see that; the rest are probably mistakes. Written down
+with a number rather than guessed at.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
