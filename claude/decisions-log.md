@@ -5102,3 +5102,57 @@ trade: **105-133 vs 102-136** and **89-149 vs 88-150** — up 3 and up 1. All fo
 eighteen-game noise floor. What is not a wash is that they get cast: **The Eldest Reborn in 86% of
 the games it reaches hand and The Birth of Meletis in 100%**, with no bot teaching at all — a Saga
 asks nothing of the player after it is cast, which is the one kind of card this bot pilots perfectly.
+
+## D127 — Foretell, and the measurement that said the cut matters more than the card
+
+The fourth zone a spell is cast from here — after the hand, the command zone and the graveyard — and
+the only one where the card is **hidden** while it waits. Foretell (CR 702.143) is {2} to exile a
+card from hand face down during your own turn, and a smaller cost to cast it on any later turn.
+
+**Two rules travel with the cost, and both are checked in one place.** It is taken during your own
+turn, which in this engine is the window a sorcery gets; and a foretold card cannot be cast on the
+turn it was foretold (CR 702.143b), which is the clause that stops foretell being a straight
+discount on a spell you were casting anyway. The second needs the engine to remember something, and
+`CardInstance.foretoldTurn` is the only new state the mechanic adds. It is also what tells a
+foretold card apart from a creature a Banisher Priest took: both are face down in exile, and only
+one of them is castable — and by its foreteller rather than its owner.
+
+**Two mechanics want opposite things from one field.** `relocate` carries `faceDown` onto the stack
+for morph's sake, and a foretold card must turn face up as it is cast — the moment the hiding ends.
+One line in `castSpell` says which is which, and it has a test of its own, because a counterspell on
+the stack that nobody could read would be a table nobody could play at.
+
+**The bot was taught, and the teaching is the tenth of the "spent on nothing" family.** The gain
+from a foretell is entirely in the future: `simulate` sees two mana spent and a card leaving hand
+for nothing at all, so without a rule the search would never foretell, and with a *weight* it would
+foretell on turn two instead of playing a creature. `foretellIsSpareMana` asks the board the
+question the search cannot: is there anything else to do with the mana? Every play on the same card
+is excluded, its own ordinary cast included, because casting it now is the thing being compared
+against rather than a reason not to compare.
+
+**Which the measurement then made interesting.** Over 56 games the bot foretold a **Saw It Coming
+eight times and a Behold the Multiverse not once**, and the asymmetry is the cards rather than the
+judgement: a counterspell has no sorcery-speed use, so on a turn with spare mana it is the only
+thing to spend it on; a Behold the Multiverse is castable whenever there is mana for it, so there is
+always something better to do with {2} than hide it. **Foretell helps this bot on exactly the card
+the mechanic was printed for** — the one it otherwise has to hold mana for, which is the thing D108,
+D110 and D119 all say it cannot do.
+
+**And then the slot measurement said the hypothesis was wrong, twice.** Saw It Coming most resembles
+Essence Scatter, so that was the first cut — and it cost Tidal Mind **13 and 8 games in 238** on two
+seed sets, consistent in sign and at the noise floor. The mechanism is not subtle in hindsight: a
+{1}{U} answer to a creature is worth more to the pool's slowest deck than a {1}{U}{U} answer to
+anything, and six of the eight decks win with creatures. Trading the cheap answer away is the
+opposite of what this deck's record asks for.
+
+**Cutting the second Murder instead measures level: −1 and +7.** Same two cards added, same deck,
+one different card removed, and a swing of about twelve games. That is the finding worth keeping
+from this entry and it is not about foretell: **which card a slot change removes matters more than
+which card it adds**, and the instrument will say so if asked separately. Both arrangements were
+measured on both seed sets before either shipped, which is the only reason the first one did not.
+
+**What the mechanic is for, which no measurement here can see.** An opponent is told there is a
+face-down card in exile and nothing else, so foretelling an answer and foretelling a threat look
+identical from across the table. This bot has no model of what an opponent knows and the rule above
+is deliberately conservative about it — it will not foretell to hide a card, only to use mana that
+was going spare. The hidden half belongs to the two people at the table.

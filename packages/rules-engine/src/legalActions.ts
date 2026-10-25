@@ -26,7 +26,7 @@ import {
   type ManaCost, type ManaPool, type ManaType,
 } from './mana.js';
 import { scriptFor } from './scripts.js';
-import { MORPH_COST, type AbilityDef, type CardScript, type TargetSpec } from './scriptTypes.js';
+import { FORETELL_COST, MORPH_COST, type AbilityDef, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { legalTargets } from './targeting.js';
 import { PACT_KINDS } from './pacts.js';
 import { MAIN_STEPS, type DecisionZone, type Step, type Target } from './turnTypes.js';
@@ -39,7 +39,7 @@ export interface LegalPlay {
    * is exactly why it is its own kind — it uses no stack, so a table that drew it as an ability
    * would be promising a window to respond that does not exist.
    */
-  readonly kind: 'land' | 'cast' | 'activate' | 'turnUp';
+  readonly kind: 'land' | 'cast' | 'activate' | 'turnUp' | 'foretell';
   readonly card: string;
   readonly name: string;
   readonly description: string;
@@ -87,6 +87,14 @@ export interface LegalPlay {
    * independently — a morph you cannot pay the printed cost for still offers this one.
    */
   readonly faceDown?: boolean;
+  /**
+   * Set on the play that casts a foretold card out of exile for its foretell cost (CR 702.143b).
+   *
+   * A different *zone* as well as a different cost, which is the half that bites: without the flag
+   * the engine is told to cast a card in exile as though it were in hand, and refuses the play the
+   * table had just offered. Flashback taught that lesson in a browser suite.
+   */
+  readonly foretold?: boolean;
   /**
    * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
    *
@@ -528,23 +536,34 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   // of the hand. Without this the engine never offered a commander at all — in a format whose
   // whole point is the commander.
   /*
-    Three zones a spell can be cast from, which is three lists rather than one.
+    Four zones a spell can be cast from, which is four lists rather than one.
 
-    The hand is the ordinary case; the command zone is a commander (CR 903.8); and the graveyard is
-    flashback (CR 702.33), offered only for a card whose script has a flashback cost. A card in a
-    graveyard with no flashback is not a play and never appears here — which is also why this does
-    not go through `why`: there is no sense in telling a player that each of the nine cards in their
-    graveyard cannot be cast.
+    The hand is the ordinary case; the command zone is a commander (CR 903.8); the graveyard is
+    flashback (CR 702.33); and exile is a foretold card (CR 702.143b). Each of the three unusual
+    ones is filtered to the cards that actually offer it — a card in a graveyard with no flashback
+    is not a play and never appears here, which is also why none of them go through `why`: there is
+    no sense in telling a player that each of the nine cards in their graveyard cannot be cast.
+
+    The exile list is the narrowest of the four. A foretold card is face down in exile, and so is a
+    creature a Banisher Priest took — `foretoldTurn` is what tells them apart, and it belongs to
+    whoever foretold it rather than to whoever owns the card.
   */
   const castable = [
-    ...listAt(state, zoneKey(seat, 'hand')).map((id) => ({ id, fromCommand: false, flashback: false })),
-    ...listAt(state, zoneKey(seat, 'command')).map((id) => ({ id, fromCommand: true, flashback: false })),
+    ...listAt(state, zoneKey(seat, 'hand')).map((id) => ({ id, fromCommand: false, flashback: false, foretold: false })),
+    ...listAt(state, zoneKey(seat, 'command')).map((id) => ({ id, fromCommand: true, flashback: false, foretold: false })),
     ...listAt(state, zoneKey(seat, 'graveyard'))
       .filter((id) => scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name)?.flashback !== undefined)
-      .map((id) => ({ id, fromCommand: false, flashback: true })),
+      .map((id) => ({ id, fromCommand: false, flashback: true, foretold: false })),
+    ...listAt(state, zoneKey(seat, 'exile'))
+      .filter((id) => {
+        const inst = state.instances[id];
+        if (inst?.foretoldTurn === undefined || inst.foretoldTurn === state.turn) return false;
+        return scriptFor(state.cardDefs[inst.defKey]?.name)?.foretell !== undefined;
+      })
+      .map((id) => ({ id, fromCommand: false, flashback: false, foretold: true })),
   ];
 
-  for (const { id, fromCommand, flashback } of castable) {
+  for (const { id, fromCommand, flashback, foretold } of castable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     const def = state.cardDefs[inst.defKey];
@@ -600,9 +619,32 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       continue;
     }
 
-    // Flashback replaces the cost, so everything from here on — affordability, X, the description
-    // — is about the flashback cost rather than the printed one.
-    const costShown = flashback ? script?.flashback?.cost ?? '' : def?.manaCost ?? '';
+    /*
+      Foretell: the special action that hides the card, offered beside its ordinary cast.
+
+      A second play on the same card like the morph above, and offered on the same terms — the
+      printed cost is not looked at, because {2} to exile it is a move you make *instead of*
+      casting it and often because you cannot cast it. During your own turn only (CR 702.143a),
+      which in this engine is the window a sorcery gets.
+    */
+    if (script?.foretell !== undefined && !flashback && !fromCommand && !foretold && sorcerySpeed) {
+      const cost = parseManaCost(FORETELL_COST);
+      if (canAfford(poolOf(state, seat), cost, sources)) {
+        out.push({
+          kind: 'foretell', card: id, name: ch.name,
+          // Named for its own player, who is the only one who will ever see which card it was.
+          description: `Foretell ${ch.name} (${FORETELL_COST}, face down in exile)`,
+          manaCost: FORETELL_COST, targetSpecs: [], candidates: [],
+          isManaAbility: false, sacrificeOptions: [],
+        });
+      }
+    }
+
+    // Flashback and foretell both replace the cost, so everything from here on — affordability, X,
+    // the description — is about that cost rather than the printed one.
+    const costShown = flashback ? script?.flashback?.cost ?? ''
+      : foretold ? script?.foretell?.cost ?? ''
+        : def?.manaCost ?? '';
     const printed = parseManaCost(costShown);
     if (printed.unsupported !== undefined) {
       why(id, 'this cost is not one the engine can pay — move it by hand');
@@ -692,11 +734,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       kind: 'cast', card: id, name: ch.name,
       description: flashback
         ? `Cast ${ch.name} from your graveyard (flashback ${costShown})`
-        : fromCommand && tax > 0
-          ? `Cast ${ch.name} (+{${tax}} tax)`
-          : `Cast ${ch.name}${convokeNote}`,
+        : foretold
+          ? `Cast ${ch.name} from exile (foretold ${costShown})`
+          : fromCommand && tax > 0
+            ? `Cast ${ch.name} (+{${tax}} tax)`
+            : `Cast ${ch.name}${convokeNote}`,
       manaCost: costShown, ...taxOn, ...xOn, targetSpecs: specs, candidates,
       ...(flashback ? { flashback: true } : {}),
+      ...(foretold ? { foretold: true } : {}),
       isManaAbility: false, sacrificeOptions: victims,
     });
 
@@ -711,7 +756,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     */
     // A flashback casting pays the flashback cost and nothing else, so the kicker is not on offer
     // with it: the two are alternative costs, and no card in the pool has both.
-    const kicker = flashback ? undefined : script?.kicker;
+    const kicker = flashback || foretold ? undefined : script?.kicker;
     if (kicker !== undefined) {
       const withKicker = parseManaCost(`${def?.manaCost ?? ''}${kicker.cost}`);
       const kickedCost: ManaCost = fromCommand && tax > 0

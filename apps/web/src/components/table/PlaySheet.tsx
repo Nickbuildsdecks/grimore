@@ -88,7 +88,11 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
               // `cast` of one card with no ability index and no modes, so without this the two
               // rows share a test id and a selector cannot tell "Cast it" from "Cast it face
               // down" — which are the two most different things you can do with the card.
-              const slug = play.faceDown === true
+              // And a foretell, which is a third thing to do with one card in hand: cast it, cast
+              // it face down, or hide it in exile. Three rows that would otherwise share one id.
+              const slug = play.kind === 'foretell'
+                ? 'foretell'
+                : play.faceDown === true
                 ? 'facedown'
                 : play.modes === undefined
                   ? String(play.abilityIndex ?? 0)

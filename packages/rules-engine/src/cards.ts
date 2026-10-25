@@ -89,6 +89,16 @@ export interface CardInstance {
    * in principle be holding several. The exiler's leave trigger looks up whatever points at it.
    */
   readonly exiledBy?: string;
+  /**
+   * The turn this card was foretold, which is the only reason the engine has to remember it
+   * (CR 702.143b: a foretold card cannot be cast on the turn it was foretold).
+   *
+   * On the instance rather than in a list somewhere, because it is a fact about this card and it
+   * has to survive the card sitting in exile across several turns. Absent on everything else,
+   * which is also how `legalActions` tells a foretold card in exile from a card exiled by a
+   * Banisher Priest — both are face down in exile and only one of them is castable.
+   */
+  readonly foretoldTurn?: number;
   readonly isToken: boolean;
   readonly isCommander: boolean;
   /**

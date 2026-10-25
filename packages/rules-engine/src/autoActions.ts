@@ -27,13 +27,13 @@ import { addToPool, counterSpell, loseLife, poolOf } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
-import { MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
+import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import { convokePlan, crewPlan, legalActions, manaSources } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, type CombatAttack, type StackObject, type Target,
-  type AutoTurnUpAction,
+  type AutoTurnUpAction, type AutoForetellAction,
 } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
 
@@ -65,6 +65,26 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const def = state.cardDefs[inst.defKey];
   const script = scriptFor(def?.name);
   const flashback = action.flashback === true;
+  /*
+    Foretell, the fourth zone a spell is cast from here (CR 702.143b).
+
+    Three checks rather than one, and each refuses a different mistake: a card that was never
+    foretold is not castable out of exile at all, a card foretold by somebody else is not yours to
+    cast, and a card foretold **this turn** is not castable yet — which is the clause that stops
+    foretell being a straight discount on a spell you were going to cast anyway.
+  */
+  const foretold = action.foretold === true;
+  if (foretold) {
+    if (script?.foretell === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no foretell`);
+    }
+    if (inst.zone !== 'exile' || inst.foretoldTurn === undefined || inst.zoneSeat !== action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card was not foretold by you');
+    }
+    if (inst.foretoldTurn === state.turn) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'a foretold card cannot be cast on the turn it was foretold');
+    }
+  }
   if (flashback) {
     if (script?.flashback === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no flashback`);
@@ -74,7 +94,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
     }
-  } else if (!fromCommand && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
+  } else if (!foretold && !fromCommand && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
   if (fromCommand && inst.zoneSeat !== action.by) {
@@ -193,7 +213,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // and the kicker and the reason the two cannot both be paid on one casting.
   const costText = flashback
     ? script?.flashback?.cost
-    : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
+    // Foretell replaces the printed cost, like flashback, which is why it is in the same chain
+    // rather than beside the kicker: a foretold spell is cast for one cost and not for two.
+    : foretold ? script?.foretell?.cost
+      : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
   /*
     Convoke, which widens what may pay rather than changing what it costs (CR 702.51).
 
@@ -236,6 +259,14 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (fromCommand) {
     next = replaceSeat(next, action.by, { commanderTax: tax + 2 });
   }
+  /*
+    A foretold card turns face up as it is cast, which is the moment the hidden half of the mechanic
+    ends: until now the opponent knew only that there was a card there.
+
+    Needed explicitly because `relocate` carries `faceDown` onto the stack for morph's sake — the
+    two mechanics want opposite things from the same field, and this is the one line that says so.
+  */
+  if (foretold) next = withInstance(next, inst.id, { faceDown: false });
   // The card physically moves to the stack, and an object describes how it was cast.
   next = relocate(next, requireInstance(next, inst.id), 'stack', action.by, 'bottom');
   // The modes are named in the stack description, because both players can see what was chosen
@@ -252,6 +283,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // And flashback, for the third time for the same reason: a player deciding whether to counter a
   // spell cast out of a graveyard should be able to see that it is never coming back.
   const flashbackText = flashback ? ' (flashback)' : '';
+  // And foretell, for the fourth time and the same reason: a spell coming out of exile for a
+  // cheaper cost is a spell the player deciding whether to answer it should be able to read as one.
+  const foretoldText = foretold ? ' (foretold)' : '';
   const object: StackObject = {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
     cardKey: inst.defKey, targets: [...chosen], targetSeqs: targetSeqsFor(state, chosen),
@@ -261,7 +295,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The flag the card's destination depends on: a spell cast from the graveyard is exiled as it
     // leaves the stack, and by then nothing else remembers where it came from.
     ...(flashback ? { flashback: true as const } : {}),
-    description: `${characteristics.name}${xText}${kickedText}${flashbackText}${modeText}`,
+    description: `${characteristics.name}${xText}${kickedText}${flashbackText}${foretoldText}${modeText}`,
   };
   next = {
     ...next,
@@ -365,6 +399,50 @@ function castFaceDown(
     state: next,
     message: `${seatName(state, action.by)} casts a face-down creature`,
     data: { card: inst.id, name: anonymous.name, tapped: [...paid.tapped], faceDown: true },
+  };
+}
+
+/**
+ * Foretelling: {2} to put a card from your hand into exile face down (CR 702.143a).
+ *
+ * A **special action**, like turning a morph face up, and the engine's second: no stack, nothing to
+ * respond to, and taken during your own turn. The two are opposites — this one hides a card and
+ * that one reveals one — and they are the only two moves at this table that an opponent cannot
+ * answer at all.
+ *
+ * `foretoldTurn` is recorded here because it is the one thing the rules need remembered: a foretold
+ * card cannot be cast on the turn it was foretold (CR 702.143b), which is what stops foretell being
+ * a straight discount on a spell you were casting anyway.
+ */
+function foretell(state: GameState, action: AutoForetellAction): Outcome {
+  requireAutomated(state);
+  requirePriority(state, action.by);
+  const inst = requireInstance(state, action.card);
+  if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
+  }
+  const def = state.cardDefs[inst.defKey];
+  const script = scriptFor(def?.name);
+  if (script?.foretell === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no foretell`);
+  }
+  // "During your turn" (CR 702.143a), which in this engine is the same window a sorcery gets.
+  if (!atSorcerySpeed(state, action.by)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'foretell is taken during your own main phase, with nothing on the stack');
+  }
+
+  const paid = payFrom(state, action.by, FORETELL_COST, 0, 0);
+  // Face down *before* the move, so `relocate` carries the bit into exile rather than the card
+  // arriving there face up for an instant that a view could have been taken in.
+  let next = withInstance(paid.state, inst.id, { faceDown: true, foretoldTurn: state.turn });
+  next = relocate(next, requireInstance(next, inst.id), 'exile', action.by, 'bottom');
+  next = resetPriority(settle(next, state), action.by);
+  return {
+    state: next,
+    // Not named, which is the point of the mechanic: the log says a card was foretold and the
+    // opponent can count it in exile without knowing what it is.
+    message: `${seatName(state, action.by)} foretells a card`,
+    data: { card: inst.id, tapped: [...paid.tapped], foretold: true },
   };
 }
 
@@ -1321,6 +1399,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:decide': return decide(state, action);
     case 'auto:pay': return payWard(state, action);
     case 'auto:turnUp': return turnUp(state, action);
+    case 'auto:foretell': return foretell(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);

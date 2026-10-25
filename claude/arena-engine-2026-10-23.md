@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 187 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 189 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -2787,6 +2787,40 @@ Both slots measure as a wash: down 1 and down 5 for the Eldest Reborn, up 3 and 
 of Meletis, all a fraction of the noise floor. What is not a wash is that they get cast — 86% and
 100% of the games they reach hand, with no bot teaching at all. A Saga asks nothing of the player
 after it is cast, which is the one kind of card this bot pilots perfectly.
+
+### Foretell, and the cut that mattered more than the card
+
+The fourth zone a spell is cast from here, and the only one where the card is hidden while it waits.
+{2} to exile a card from hand face down during your own turn, and a smaller cost to cast it on any
+later turn.
+
+Two rules travel with the cost: it is taken during your own turn, and a foretold card cannot be cast
+on the turn it was foretold — which is what stops foretell being a straight discount on a spell you
+were casting anyway, and the only reason the engine remembers anything. `foretoldTurn` is also what
+tells a foretold card apart from a creature a Banisher Priest took: both are face down in exile, and
+only one of them is castable, by its foreteller rather than its owner.
+
+Two mechanics want opposite things from one field. `relocate` carries `faceDown` onto the stack for
+morph's sake, and a foretold card must turn face up as it is cast. One line says which is which, and
+it has a test, because a counterspell on the stack that nobody could read would be unplayable.
+
+The bot was taught, as the tenth of the "spent on nothing" family: the gain from a foretell is
+entirely in the future, so the search sees two mana spent for nothing. The rule asks the board
+whether there is anything else to do with the mana. What the measurement then said is more
+interesting than the rule — over 56 games it foretold a **Saw It Coming eight times and a Behold the
+Multiverse not once**, because a counterspell has no sorcery-speed use and the Behold is castable
+whenever there is mana for it. Foretell helps this bot on exactly the card the mechanic was printed
+for.
+
+**And then the slot measurement said the hypothesis was wrong, twice.** Saw It Coming most resembles
+Essence Scatter, so that was the first cut: it cost Tidal Mind 13 and 8 games in 238 on two seed
+sets. A {1}{U} answer to a creature is worth more to the pool's slowest deck than a {1}{U}{U} answer
+to anything, and six of the eight decks win with creatures. Cutting the second Murder instead
+measures −1 and +7 — same two cards added, one different card removed, a swing of about twelve games.
+
+That is the finding worth keeping and it is not about foretell: **which card a slot change removes
+matters more than which card it adds.** Both arrangements were measured on both seed sets before
+either shipped, which is the only reason the first one did not.
 
 ## Next
 

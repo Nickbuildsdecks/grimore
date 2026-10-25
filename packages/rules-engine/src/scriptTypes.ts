@@ -620,6 +620,28 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Foretell: {2} to exile this from your hand face down, and a cheaper cost to cast it later
+   * (CR 702.143).
+   *
+   * The fourth zone a spell is cast *from* in this engine, after the hand, the command zone and the
+   * graveyard — and the only one where the card is **hidden** while it waits. An opponent sees a
+   * face-down card in exile and knows only that it is something, which is most of what the mechanic
+   * is for.
+   *
+   * Two rules travel with it rather than being asked for separately. Foretelling is a special
+   * action taken during your own turn, so it is sorcery-speed by nature; and a foretold card cannot
+   * be cast on the turn it was foretold (CR 702.143b), which is why `CardInstance.foretoldTurn`
+   * exists. Both are checked in one place rather than left to the scripts.
+   *
+   * The cost here **replaces** the printed one, like flashback and unlike the kicker — and unlike
+   * flashback, the card is not exiled afterwards: it was already in exile and it goes to the
+   * graveyard like any other spell.
+   */
+  readonly foretell?: {
+    /** The cost of casting it out of exile, in the printed `{1}{U}` form. */
+    readonly cost: string;
+  };
+  /**
    * Morph: cast this face down as a 2/2 for {3}, and turn it up later for this cost (CR 702.37).
    *
    * Only the *turn-up* cost lives here. The face-down casting costs {3} for every card that has
@@ -736,3 +758,11 @@ export const targetCount = (spec: TargetSpec): number => Math.max(1, spec.count 
  * it, and this file exists to keep an offer and a payment from disagreeing.
  */
 export const MORPH_COST = '{3}';
+
+/**
+ * What foretelling costs: {2} (CR 702.143a).
+ *
+ * In the rule rather than on the card, like morph's {3}, and a constant both halves read —
+ * `legalActions` offers the special action and the reducer pays for it.
+ */
+export const FORETELL_COST = '{2}';

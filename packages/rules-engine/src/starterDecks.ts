@@ -492,6 +492,35 @@ const THE_ELDEST_REBORN: CardDef = {
   colors: ['B'],
 };
 
+/*
+  The two foretell cards: pay {2} now to hide a card in exile, cast it later for less.
+
+  Foretell is the one mechanic in Magic that is explicitly about holding up mana, which is this
+  pool's hardest problem — Tidal Mind's whole plan is to keep two mana for an answer and its
+  documented record says the computer cannot do it. Both cards are in that deck, so one measurement
+  covers the mechanic.
+
+  What a person gets out of it and the computer does not: an opponent sees a face-down card in exile
+  and knows only that there is one.
+*/
+const BEHOLD_THE_MULTIVERSE: CardDef = {
+  name: 'Behold the Multiverse',
+  typeLine: 'Instant',
+  manaCost: '{3}{U}',
+  cmc: 4,
+  oracleText: 'Scry 2, then draw two cards.\nForetell {1}{U}',
+  colors: ['U'],
+};
+
+const SAW_IT_COMING: CardDef = {
+  name: 'Saw It Coming',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}{U}',
+  cmc: 3,
+  oracleText: 'Counter target spell.\nForetell {U}{U}',
+  colors: ['U'],
+};
+
 const CONCLAVE_TRIBUNAL: CardDef = {
   name: 'Conclave Tribunal',
   typeLine: 'Enchantment',
@@ -2282,7 +2311,8 @@ export const TIDAL_MIND: DeckSpec = {
     { card: ESSENCE_SCATTER, count: 1 },
     { card: DOOM_BLADE, count: 2 },
     // Removal that does not care what colour it is, which the Doom Blades do.
-    { card: MURDER, count: 2 },
+    { card: MURDER, count: 1 },
+    { card: SAW_IT_COMING, count: 1 },
     // Not removal but time — and the only card here that answers something already resolved
     // without killing it.
     { card: UNSUMMON, count: 1 },
@@ -2318,7 +2348,24 @@ export const TIDAL_MIND: DeckSpec = {
     { card: JACE_BELEREN, count: 1 },
     { card: OMENSPEAKER, count: 2 },
     { card: PHYREXIAN_ARENA, count: 1 },
-    { card: DIVINATION, count: 1 },
+    /*
+      Behold the Multiverse for the Divination, and Saw It Coming for the Essence Scatter: the two
+      foretell cards, in the deck foretell is for.
+
+      This list's documented problem is that holding mana for an answer is its whole plan and the
+      computer cannot do it. Foretell is the mechanic that turns that into something anybody can
+      do: {2} on a turn with nothing else to spend it on, and then the spell for {1}{U} or {U}{U}
+      on a turn when it matters.
+
+      Behold the Multiverse is a Divination that also scrys and costs less when it was paid for in
+      advance. Saw It Coming is a universal counterspell, and the slot it takes is **the second
+      Murder** rather than the Essence Scatter it most resembles — which is a measurement and not a
+      preference. Cutting the Essence Scatter cost this deck 13 and 8 games on two seed sets (D127):
+      a {1}{U} answer to a creature is worth more to it than a {1}{U}{U} answer to anything, and
+      trading the cheap one away is the opposite of what its record asks for. A three-mana
+      counterspell for a three-mana removal spell is the trade that leaves the curve alone.
+    */
+    { card: BEHOLD_THE_MULTIVERSE, count: 1 },
     { card: MIND_SPRING, count: 1 },
     { card: EXSANGUINATE, count: 1 },
     /*

@@ -59,6 +59,17 @@ function duel(seed, decks, mine) {
       mean teaching this harness which abilities make mana.
     */
     if (seat === mine && action.type === 'auto:activate') bump(nameOf(s, action.card), 'used');
+    /*
+      And the two special actions, which are the other way a card gets spent.
+
+      A foretold card is cast on a later turn, so without this a foretell reads as a card that sat
+      in hand doing nothing — and a morph turned face up is a second press on a card already
+      counted as cast. Both land in the `used` column beside the activations, which is what that
+      column is for: a use that is not a casting.
+    */
+    if (seat === mine && (action.type === 'auto:foretell' || action.type === 'auto:turnUp')) {
+      bump(nameOf(s, action.card), 'used');
+    }
     const before = s.stateVersion;
     try { s = applyAction(s, action); } catch { break; }
     if (s.stateVersion === before) break;

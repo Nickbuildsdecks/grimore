@@ -555,8 +555,10 @@ describe('blue-black control', () => {
     expect(namesIn(s, 0, 'graveyard')).toContain('Shivan Dragon');
   });
 
+  // Divination moved out of Tidal Mind for a Behold the Multiverse, so this moved to Hollow Tide
+  // with it — the same reason the Sign in Blood and Tome Scour tests below say they moved.
   it('Divination draws two', () => {
-    let s = control(['Divination'], ['Island', 'Island', 'Island']);
+    let s = draws(['Divination'], ['Island', 'Island', 'Island']);
     const before = ids(s, 1, 'hand').length;
     s = cast(s, 1, 'Divination');
     expect(ids(s, 1, 'hand').length).toBe(before - 1 + 2);
@@ -2791,7 +2793,7 @@ describe('eight that needed nothing new', () => {
 
   it('Essence Scatter answers a creature spell and nothing else', () => {
     let s = arena({
-      decks: { 1: 'tidal-mind' }, hands: { 0: ['Shivan Dragon', 'Lightning Bolt'], 1: ['Essence Scatter'] },
+      decks: { 1: 'hollow-tide' }, hands: { 0: ['Shivan Dragon', 'Lightning Bolt'], 1: ['Essence Scatter'] },
       battlefield: {
         0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'],
         1: ['Island', 'Island'],
@@ -2817,7 +2819,7 @@ describe('eight that needed nothing new', () => {
 
   it('and will not be pointed at a Lightning Bolt', () => {
     let s = arena({
-      decks: { 1: 'tidal-mind' }, hands: { 0: ['Lightning Bolt'], 1: ['Essence Scatter'] },
+      decks: { 1: 'hollow-tide' }, hands: { 0: ['Lightning Bolt'], 1: ['Essence Scatter'] },
       battlefield: { 0: ['Mountain'], 1: ['Island', 'Island'] },
       turn: 4, firstSeat: 0,
     });
@@ -4686,10 +4688,16 @@ describe('flashback: casting a spell out of the graveyard', () => {
   });
 
   it('refuses flashback on a card that has none, and on somebody else\u2019s graveyard', () => {
-    let s = graveyard('Divination', ['Island', 'Island', 'Island']);
-    const card = find(s, 0, 'hand', 'Divination');
-    s = tapAllLands(s, 0);
-    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card })));
+    /*
+      Moved to the graveyard by hand rather than cast there, which the other tests in this block
+      deliberately do not do — and here it is right, because what this one is about is the refusal
+      and not the route. Divination used to be the card: it left Tidal Mind for a Behold the
+      Multiverse, and every remaining spell in the deck with no flashback either targets something
+      or stops to ask a question on the way down.
+    */
+    let s = graveyard('Preordain', ['Island', 'Island', 'Island']);
+    const card = find(s, 0, 'hand', 'Preordain');
+    s = apply(s, { type: 'card:move', by: 0, card, toZone: 'graveyard' });
     expect(s.instances[card]!.zone).toBe('graveyard');
     // In a graveyard, with no flashback: not a play, and refused if named anyway.
     expect(legalActions(s, 0).plays.some((p) => p.card === card)).toBe(false);
@@ -7423,5 +7431,142 @@ describe('Sagas: a permanent that reads itself out over three turns and then is 
     expect(s.instances[theirs]!.owner).toBe(0);
     // And the Saga is gone, its last chapter having resolved.
     expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+});
+
+describe('foretell: {2} to hide a card in exile, and a cheaper cost later (CR 702.143)', () => {
+  /*
+    The fourth zone a spell is cast from here — after the hand, the command zone and the graveyard —
+    and the only one where the card is hidden while it waits. It is also the one mechanic in the pool
+    that is *about* the thing the engine's own opponent cannot do: holding mana for an answer.
+
+    Two rules carry the mechanic and both are checked in one place rather than in the scripts: it is
+    taken during your own turn, and a foretold card cannot be cast on the turn it was foretold.
+  */
+  const holding = (name: string, lands: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 1: 'tidal-mind' }, hands: { 1: [name] }, battlefield: { 1: [...lands] },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    return tapAllLands(s, 1);
+  };
+
+  it('is offered for {2} beside the printed cast, and takes the card to exile face down', () => {
+    let s = holding('Behold the Multiverse', ['Island', 'Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Behold the Multiverse');
+    const plays = legalActions(s, 1).plays.filter((p) => p.card === card);
+    // Two things to do with one card: cast it for {3}{U}, or foretell it for {2}.
+    expect(plays.map((p) => p.kind).sort()).toEqual(['cast', 'foretell']);
+    expect(plays.find((p) => p.kind === 'foretell')?.manaCost).toBe('{2}');
+
+    s = apply(s, { type: 'auto:foretell', by: 1, card });
+    expect(s.instances[card]!.zone).toBe('exile');
+    expect(s.instances[card]!.faceDown).toBe(true);
+    expect(s.instances[card]!.foretoldTurn).toBe(s.turn);
+    // Two mana left in the pool, because foretelling cost {2} and not {3}{U}. (The helper taps
+    // every land up front, so what is left is pool rather than untapped lands.)
+    expect(s.pools['1']?.U).toBe(2);
+  });
+
+  it('is hidden from everybody but the player who foretold it', () => {
+    /*
+      The half of the mechanic a measurement cannot see. An opponent is told there is a card in
+      exile and nothing else, which is why foretelling an answer and foretelling a threat look
+      identical from across the table.
+    */
+    let s = holding('Saw It Coming', ['Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Saw It Coming');
+    s = apply(s, { type: 'auto:foretell', by: 1, card });
+
+    for (const viewer of [0, null] as const) {
+      const theirs = viewFor(s, viewer).cards[card]!;
+      expect(theirs.zone).toBe('exile');
+      expect(theirs.faceDown).toBe(true);
+      expect(theirs.card).toBeUndefined();
+      expect(JSON.stringify(theirs)).not.toContain('Saw It Coming');
+    }
+    // And its own player reads it, because it is their card.
+    expect(viewFor(s, 1).cards[card]?.card?.name).toBe('Saw It Coming');
+  });
+
+  it('cannot be cast on the turn it was foretold, and is cast for the cheaper cost after that', () => {
+    let s = holding('Behold the Multiverse', ['Island', 'Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Behold the Multiverse');
+    s = apply(s, { type: 'auto:foretell', by: 1, card });
+
+    // CR 702.143b, which is what stops foretell being a discount on a spell you were casting anyway.
+    expect(legalActions(s, 1).plays.some((p) => p.card === card)).toBe(false);
+    expect(refusal(s, { type: 'auto:cast', by: 1, card, foretold: true }))
+      .toContain('cannot be cast on the turn it was foretold');
+
+    // Two turns on it is a play again, out of exile, for {1}{U} rather than {3}{U}.
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 1);
+    const play = legalActions(s, 1).plays.find((p) => p.card === card);
+    expect(play?.foretold).toBe(true);
+    expect(play?.manaCost).toBe('{1}{U}');
+    expect(play?.description).toContain('from exile');
+
+    const before = ids(s, 1, 'hand').length;
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card, foretold: true }));
+    // It stops to scry on the way down, like the Preordain it is a bigger version of. Keeping both
+    // cards on top is a legal answer, which is what the empty list is.
+    expect(s.pendingDecision?.prompt).toContain('Scry');
+    s = drain(decide(s, []), 24);
+    // Draw two, and the card itself in the graveyard rather than back in exile.
+    expect(ids(s, 1, 'hand').length).toBe(before + 2);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('turns face up as it is cast, which is the moment the hiding ends', () => {
+    /*
+      Morph wants `faceDown` carried onto the stack and foretell wants it cleared, so the one line
+      that says which is which is worth a test of its own. A counterspell on the stack that nobody
+      could read would be a table nobody could play at.
+    */
+    let s = holding('Behold the Multiverse', ['Island', 'Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Behold the Multiverse');
+    s = apply(s, { type: 'auto:foretell', by: 1, card });
+    expect(s.instances[card]!.faceDown).toBe(true);
+
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 1);
+    s = apply(s, { type: 'auto:cast', by: 1, card, foretold: true });
+    expect(s.instances[card]!.zone).toBe('stack');
+    expect(s.instances[card]!.faceDown).toBe(false);
+    // And the stack says what it is, to everybody.
+    expect(stackNames(s).join(' ')).toContain('Behold the Multiverse');
+    expect(JSON.stringify(viewFor(s, 0).cards[card])).toContain('Behold the Multiverse');
+  });
+
+  it('refuses a foretell of a card that has none, and one taken on somebody else’s turn', () => {
+    let s = holding('Doom Blade', ['Island', 'Island', 'Island']);
+    const blade = find(s, 1, 'hand', 'Doom Blade');
+    expect(refusal(s, { type: 'auto:foretell', by: 1, card: blade })).toContain('has no foretell');
+    expect(legalActions(s, 1).plays.some((p) => p.kind === 'foretell')).toBe(false);
+
+    /*
+      And "during your turn" (CR 702.143a): on the opponent's turn it is not a move at all.
+
+      The refusal says *priority* rather than the phase, and that is the right order — while it is
+      somebody else's turn the truer answer is that this seat does not hold priority, and the
+      sorcery-speed clause only becomes the reason once it does.
+    */
+    let theirs = holding('Saw It Coming', ['Island', 'Island', 'Island']);
+    const card = find(theirs, 1, 'hand', 'Saw It Coming');
+    theirs = advanceTo(nextTurn(theirs), 'precombat-main');
+    expect(theirs.activeSeat).toBe(0);
+    expect(legalActions(theirs, 1).plays.some((p) => p.kind === 'foretell')).toBe(false);
+    expect(refusal(theirs, { type: 'auto:foretell', by: 1, card })).toContain('priority');
+  });
+
+  it('is not castable out of exile by the player who did not foretell it', () => {
+    // A face-down card in exile is also what a Banisher Priest leaves behind, and `foretoldTurn`
+    // is what tells the two apart — it belongs to whoever foretold the card, not to whoever owns it.
+    let s = holding('Saw It Coming', ['Island', 'Island', 'Island']);
+    const card = find(s, 1, 'hand', 'Saw It Coming');
+    s = apply(s, { type: 'auto:foretell', by: 1, card });
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(legalActions(s, 0).plays.some((p) => p.card === card)).toBe(false);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, foretold: true }))
+      .toContain('not foretold by you');
   });
 });

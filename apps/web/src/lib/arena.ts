@@ -257,6 +257,12 @@ function playAction(
   */
   const withFaceDown = play.faceDown === true ? { faceDown: true } : {}
   /*
+    And foretell, which is a different *zone* as well as a different cost — the same shape of bug
+    flashback taught in a browser suite: without the flag the engine is told to cast a card in exile
+    as though it were in hand, and refuses the play the table had just offered.
+  */
+  const withForetold = play.foretold === true ? { foretold: true } : {}
+  /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
     answer in. One tap, and the 2/2 is whatever it was all along.
@@ -264,12 +270,20 @@ function playAction(
   if (play.kind === "turnUp") {
     return { type: "auto:turnUp", card: play.card }
   }
+  /*
+    Foretelling is the other special action, and the opposite of the one above: it hides a card
+    where turning a morph up reveals one. Nothing to choose either way — one tap, {2}, and the card
+    is face down in exile.
+  */
+  if (play.kind === "foretell") {
+    return { type: "auto:foretell", card: play.card }
+  }
   if (play.kind === "cast") {
     // A cast can have a cost of its own to pay now: "sacrifice a creature" is an additional cost,
     // not something the spell asks for on resolution, so it travels with the cast.
     return {
       type: "auto:cast", card: play.card,
-      ...withModes, ...withX, ...withKicker, ...withFlashback, ...withFaceDown,
+      ...withModes, ...withX, ...withKicker, ...withFlashback, ...withFaceDown, ...withForetold,
       ...withSacrifice, ...withTargets,
     }
   }

@@ -2259,6 +2259,35 @@ const THE_ELDEST_REBORN: CardScript = {
   ],
 };
 
+/*
+  The two foretell cards, and the mechanic that is about the thing this bot cannot do.
+
+  Holding two mana up for a counterspell is Tidal Mind's whole plan and the search has never been
+  able to price it — three separate measurements say so (D108, D110, D119). Foretell turns that one
+  unanswerable question into two answerable ones: spend {2} on a turn where the mana was going
+  spare, and cast the spell later for less than it says. Whether that actually helps is a
+  measurement and not an argument, and it is in D127.
+
+  Both are in Tidal Mind, so one measurement covers the mechanic.
+*/
+const BEHOLD_THE_MULTIVERSE: CardScript = {
+  name: 'Behold the Multiverse',
+  foretell: { cost: '{1}{U}' },
+  // Scry *then* draw, like Preordain: the draw sees the library the scry left behind.
+  decisions: [scry(2)],
+  onResolve: (c) => draw(c.state, c.controller, 2),
+};
+
+const SAW_IT_COMING: CardScript = {
+  name: 'Saw It Coming',
+  foretell: { cost: '{U}{U}' },
+  targets: [TARGET_SPELL],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : counterSpell(c.state, id);
+  },
+};
+
 const CONCLAVE_TRIBUNAL: CardScript = {
   ...exileUntilItLeaves('Conclave Tribunal', {
     kind: 'permanent',
@@ -3295,7 +3324,7 @@ const ALL: readonly CardScript[] = [
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,
   SKY_SKIFF, RENEGADE_FREIGHTER, CONSULATE_DREADNOUGHT,
-  THE_BIRTH_OF_MELETIS, THE_ELDEST_REBORN,
+  THE_BIRTH_OF_MELETIS, THE_ELDEST_REBORN, BEHOLD_THE_MULTIVERSE, SAW_IT_COMING,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

@@ -55,6 +55,13 @@ could have been the printed cost. `morph-use.mjs` is the split, and the number t
 not how often the bot casts face down — it is how often it then **turns the card up**, because a 2/2
 that stays down for the rest of the game is three mana spent on a card the bot forgot about.
 
+**Measure the cut as well as the card.** A `CHANGE` is two halves and the instrument prices the
+pair, so a result that looks like "this card is bad" is often "that cut was bad". D127 is the case:
+the same two cards added to the same deck measured 13 and 8 games *down* when they replaced the
+deck's cheapest answer and 1 down and 7 up when they replaced a three-mana removal spell instead.
+If a slot change measures worse than it should, re-run it with a different card removed before
+concluding anything about the card added.
+
 **Read `deck-probe`'s per-opponent split before believing the total.** A trim that wins ten games
 each against the slow decks and none at all against the fast ones is a change about having a clock,
 whatever the total says — and that is exactly what happened the one time the total was trusted on

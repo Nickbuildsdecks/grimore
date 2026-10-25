@@ -490,6 +490,11 @@ export interface AutoCastAction {
   /** The creature sacrificed for an additional cost, when the spell asks for one. */
   readonly sacrifice?: string;
   /**
+   * Cast it out of exile for its foretell cost (CR 702.143b). Refused on a card that was not
+   * foretold, on one foretold by somebody else, and on one foretold this turn.
+   */
+  readonly foretold?: boolean;
+  /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *
    * No targets, no modes, no X and no kicker travel with it, and each of those is refused rather
@@ -497,6 +502,16 @@ export interface AutoCastAction {
    * about.
    */
   readonly faceDown?: boolean;
+}
+/**
+ * Exile a card from your hand face down for {2}, to be cast later (CR 702.143a).
+ *
+ * A **special action**, like turning a morph face up: no stack, nothing to respond to. The two are
+ * the engine's only special actions and they are opposites — one hides a card and the other
+ * reveals one.
+ */
+export interface AutoForetellAction {
+  readonly type: 'auto:foretell'; readonly by: SeatIndex; readonly card: string;
 }
 /**
  * Turn your own face-down permanent face up for its morph cost (CR 702.37b).
@@ -561,12 +576,12 @@ export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
   | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction
-  | AutoTurnUpAction;
+  | AutoTurnUpAction | AutoForetellAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
   'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
-  'auto:decide', 'auto:pay', 'auto:turnUp',
+  'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

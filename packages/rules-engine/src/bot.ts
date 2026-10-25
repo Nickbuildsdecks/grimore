@@ -823,6 +823,22 @@ function candidateActions(
       out.push({ action: { type: 'auto:turnUp', by: seat, card: play.card } });
       continue;
     }
+    /*
+      Foretelling: {2} to hide a card in exile, offered to the search like any other play.
+
+      This is the one mechanic in the pool that is *about* the thing this bot cannot do. Holding two
+      mana for a counterspell is a decision the search cannot price — it has been measured and
+      written up three times (D108, D110, D119) — and foretell turns it into two decisions it can:
+      spend two mana now on a card that is not doing anything yet, and spend two mana later on a
+      spell that is. `simulate` scores the board after the foretell, so what it sees is two mana
+      gone and a card out of hand, which is a cost with no visible gain — and that is exactly the
+      case `castsARitual` and its family exist for. So it is dropped unless the mana was going
+      spare; see `foretellIsSpareMana`.
+    */
+    if (play.kind === 'foretell') {
+      out.push({ action: { type: 'auto:foretell', by: seat, card: play.card } });
+      continue;
+    }
     for (const targets of aimings(state, seat, play)) {
       if (play.kind === 'cast') {
         /*
@@ -863,6 +879,9 @@ function candidateActions(
             // the engine then refuses for want of mana, on turn three, which is exactly when the
             // bot wanted the 2/2.
             ...(play.faceDown === true ? { faceDown: true } : {}),
+            // And foretell, which is a different zone as well as a different cost: without this
+            // the engine is told to cast a card in exile as though it were in hand.
+            ...(play.foretold === true ? { foretold: true } : {}),
             ...(fodder === null ? {} : { sacrifice: fodder }),
             // X as large as the mana allows. The search sees what that buys, which is new: it
             // will not cast a Hurricane for eight into a board of its own fliers any more.
@@ -1595,6 +1614,62 @@ function animationCouldMatter(state: GameState, seat: SeatIndex, action: Action)
     && (state.step === 'declare-attackers' || state.step === 'declare-blockers');
 }
 
+/**
+ * Whether this action foretells a card (CR 702.143a).
+ *
+ * Measured, because the answer is more interesting than the rule: over 56 games this bot foretold
+ * a **Saw It Coming eight times and a Behold the Multiverse not once**, and the asymmetry is the
+ * cards rather than the judgement. A counterspell has no sorcery-speed use, so on the turn its
+ * controller has spare mana it is the only thing to spend it on and the foretell is taken. A Behold
+ * the Multiverse is castable on any turn there is mana for it, so there is always something better
+ * to do with {2} than hide it.
+ *
+ * Which means foretell helps this bot on exactly the card the mechanic was printed for — the one it
+ * otherwise has to hold mana for, which is the thing three separate measurements say it cannot do.
+ */
+const foretells = (state: GameState, action: Action): boolean =>
+  action.type === 'auto:foretell' && state.instances[action.card] !== undefined;
+
+/**
+ * Whether the mana a foretell would spend was going spare anyway.
+ *
+ * The question the board can answer, where "is a cheaper spell next turn worth two mana now" is
+ * the question it cannot. A foretell is right when this seat has mana it is not going to use: every
+ * other play has been made or is unaffordable, and the two mana would otherwise empty at the end of
+ * the step (CR 500.4).
+ *
+ * Asked by counting what else there is to do rather than by scoring it, because the scoring is
+ * exactly what fails here — `simulate` ends with the stack empty and the payoff is a turn away. A
+ * seat with a creature it could cast casts the creature; a seat holding nothing castable but a
+ * foretell takes the foretell.
+ *
+ * Deliberately conservative in one direction: it will not foretell to *hide* a card, which is the
+ * other half of why a person does it. That is information warfare and this bot has no model of what
+ * an opponent knows.
+ */
+function foretellIsSpareMana(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (action.type !== 'auto:foretell') return false;
+  const plays = legalActions(state, seat).plays;
+  /*
+    Anything else worth doing with the mana, where "else" means **another card**.
+
+    Lands are excluded because the land drop is free and taken before the search, and mana abilities
+    because tapping for mana is not spending it. The clause that matters is the third: every play on
+    *this* card is excluded, its own ordinary cast included, because the question is whether the
+    mana has a better home and casting the card now is the thing being compared against rather than
+    a reason not to compare.
+
+    The first version excluded only the foretells, which left a card's own cast in the list and made
+    the rule say "never foretell something you could cast". That is wrong reasoning, and fixing it
+    **changed nothing measurable**: 8 foretells of Saw It Coming and 0 of Behold the Multiverse
+    over 56 games, before and after. The reason is in the cards rather than in the rule — see the
+    note on `foretells` above and D127. The fix stays because the condition now says what it means.
+  */
+  const others = plays.filter((play) =>
+    play.card !== action.card && play.kind !== 'land' && !play.isManaAbility);
+  return others.length === 0;
+}
+
 /** Whether this action activates a crew ability (CR 702.122a). */
 function crewsAVehicle(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
@@ -2130,6 +2205,20 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       dropped += 1;
       continue;
     }
+    /*
+      And a foretell with nothing spare to pay for it, which is the tenth of the family.
+
+      The gain is real and entirely in the future: a card foretold this turn is cast for less on a
+      later one. `simulate` cannot see any of that — it sees two mana spent and a card leaving hand
+      for nothing at all — so without a rule the search would never foretell, and with a weight it
+      would foretell on turn two instead of playing a creature. What the board can say is whether
+      the mana was going to be spent anyway.
+    */
+    if (foretells(state, option.action) && !foretellIsSpareMana(state, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
+
     /*
       And a crew that costs more than it buys, which is the ninth of the family and the first that
       is about arithmetic rather than about an empty board.
