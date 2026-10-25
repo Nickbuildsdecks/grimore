@@ -20,6 +20,8 @@ arms comparable at all. They take no database and no server — just the engine.
 | `deck-probe.mjs` | what would this slot change be worth? | `SUBJECT=tidal-mind CHANGE='Fog Bank:+1,Cancel:-1' SEEDS=17 node scripts/measure/deck-probe.mjs` |
 | `cast-counts.mjs` | which of a deck's sixty cards does the bot actually use? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/cast-counts.mjs` |
 | `bot-duel.mjs` | what is this change to the *opponent* worth? | `TESTED='{"lookahead":false}' SEEDS=3 node scripts/measure/bot-duel.mjs` |
+| `disagree.mjs` | does that change alter any decisions at all? | `TESTED='{"lookahead":false}' SEEDS=2 node scripts/measure/disagree.mjs` |
+| `step-drift.mjs` | how far does the table move on one action? | `SEEDS=2 node scripts/measure/step-drift.mjs` |
 
 A `CHANGE` has to keep the deck at sixty cards, and `deck-probe` says so rather than quietly
 measuring deck size instead of the change: a name it cannot find in the subject deck is looked up
@@ -36,6 +38,12 @@ and write down that it measured as nothing — not to keep it because the sign l
 `bot-duel.mjs` is for, and its negative control — two identical bots — came back exactly level at
 56-56 of 112. Run that control whenever you touch the harness: a paired design with no seat bias and
 no matchup bias is what makes a six-game difference readable instead of arguable.
+
+**A flat `bot-duel` result is not a wash until `disagree.mjs` says the setting changed something.**
+A level scoreboard means one of two unrelated things — the choices changed and were worth nothing,
+or nothing changed — and only the disagreement rate tells them apart. D117 came back level and
+turned out to change 10% of attack declarations; calling that "a wash" without checking would have
+been wrong about what was measured.
 
 **Run two seed sets, not one.** `SEED0=3300` and `SEED0=8800` are the two used so far. A change
 that helps on one and not the other has not been measured; it has been sampled once.
