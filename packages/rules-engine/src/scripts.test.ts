@@ -12,7 +12,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  STARTER_DECKS, addCounters, canBlock, characteristicsOf, hasType, legalActions, parseTypeLine,
+  STARTER_DECKS, addCounters, canAttack, canBlock, characteristicsOf, hasType, legalActions,
+  parseTypeLine,
   pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor, scriptedCardNames,
   staticEffect, viewFor,
   type ContinuousEffect,
@@ -4381,6 +4382,219 @@ describe('setting what a creature is, and copying it', () => {
     // And it has the copied card's own abilities, because its name is what `scriptFor` reads: a
     // token copy of a Fog Bank prevents damage, which is a static the arrivals pass installed.
     expect(s.effects.some((e) => e.source === token && e.preventsCombatDamage === true)).toBe(true);
+  });
+});
+
+describe('a land that becomes a creature, and a creature that changes colour', () => {
+  /*
+    Layers 4 and 5, which were the last two of CR 613 this engine had named and not built.
+
+    The assertions here are about the *layers* rather than the cards. Layer 4 is the one that forced
+    `characteristicsOf` into two passes: what a permanent is decides which other effects apply to
+    it, so an animated land has to be a creature before an anthem's scope is judged — the anthem
+    test below is the one that fails on a single-pass implementation. Layer 5 only has to be in
+    effect order, and what makes it worth having is that something in the pool reads colour:
+    protection from red.
+  */
+  const vault = (hand: readonly string[] = [], turn = 3): GameState => advanceTo(arena({
+    decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+    hands: { 0: [...hand] },
+    battlefield: { 0: ['Mutavault', 'Mountain', 'Mountain'], 1: [] },
+    turn, firstSeat: 0,
+  }), 'precombat-main');
+
+  /**
+   * Pays the {1} and animates it, through the stack like any other activated ability.
+   *
+   * The mana ability is not on the stack (CR 605.3a) and the animation is, so the second
+   * activation has to be allowed to resolve — an ability sitting on the stack is not a creature
+   * yet, which is a rule and not a quirk of this helper.
+   */
+  const animate = (state: GameState): { s: GameState; id: string } => {
+    const id = find(state, 0, 'battlefield', 'Mutavault');
+    let s = apply(state, {
+      type: 'auto:activate', by: 0, card: find(state, 0, 'battlefield', 'Mountain'), abilityIndex: 0,
+    });
+    s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 1 });
+    return { s: drain(passBoth(s)), id };
+  };
+
+  it('is a 2/2 creature and a land at the same time', () => {
+    const { s, id } = animate(vault());
+    const ch = characteristicsOf(s, s.instances[id]!);
+    // "It's still a land" is the clause that makes the card, and `addTypes` rather than a replaced
+    // type line is what keeps it true.
+    expect(ch.isCreature).toBe(true);
+    expect(ch.isLand).toBe(true);
+    expect([ch.power, ch.toughness]).toEqual([2, 2]);
+    expect(hasType(ch.typeLine, 'creature')).toBe(true);
+    expect(hasType(ch.typeLine, 'land')).toBe(true);
+  });
+
+  it('and stops being a creature at end of turn', () => {
+    const { s, id } = animate(vault());
+    const later = nextTurn(s);
+    const ch = characteristicsOf(later, later.instances[id]!);
+    expect(ch.isCreature).toBe(false);
+    expect(ch.isLand).toBe(true);
+    expect(later.instances[id]!.zone).toBe('battlefield');
+  });
+
+  it('an anthem pumps it, which is why layer 4 runs before the rest', () => {
+    /*
+      The test that fails on a one-pass implementation. A Glorious Anthem's scope is "creatures you
+      control", and judging that against the *printed* type line of an animated land says no — so
+      the land would be a 2/2 under an anthem that pumped everything else. CR 613.1c runs before
+      613.1g, and here that is two passes rather than one.
+    */
+    const { s, id } = animate(vault());
+    const anthem = pumpTeam(s, 'fx-anthem', 0, { power: 1, toughness: 1, duration: 'permanent' });
+    const ch = characteristicsOf(anthem, anthem.instances[id]!);
+    expect([ch.power, ch.toughness]).toEqual([3, 3]);
+  });
+
+  it('can attack once it has been a land for a turn', () => {
+    let { s, id } = animate(vault());
+    s = advanceTo(s, 'declare-attackers');
+    expect(legalActions(s, 0).attackers).toContain(id);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: id, defender: 1 }] });
+    expect(s.combat.attacks.map((a) => a.attacker)).toEqual([id]);
+  });
+
+  it('but not on the turn it was played, because a creature is sick whatever it used to be', () => {
+    // Played from hand this turn, then animated: `canAttack` compares `enteredTurn` with the turn
+    // and does not care what the permanent was when it arrived (CR 302.6).
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: { 0: ['Mutavault'] },
+      battlefield: { 0: ['Mountain', 'Mountain'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Mutavault') });
+    const { s: live, id } = animate(s);
+    // Asked of `canAttack` rather than of the declaration, because with nothing able to attack the
+    // engine skips the step entirely — which is the same answer said earlier.
+    expect(canAttack(live, id, 0)?.reason).toContain('summoning sickness');
+  });
+
+  it('and tapping it for mana taps the creature, so it cannot do both', () => {
+    const { s, id } = animate(vault());
+    // The {1} above came from a Mountain. Tapping the Mutavault itself for mana is the choice the
+    // card actually poses: a land that paid for a spell is a creature that is already tapped.
+    const tapped = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    expect(tapped.instances[id]!.tapped).toBe(true);
+    expect(canAttack(tapped, id, 0)?.reason).toContain('tapped');
+  });
+
+  it('and dies to a removal spell, which is the trade the card is for', () => {
+    /*
+      The point of the whole layer, in one exchange: a land is immune to every removal spell in the
+      pool, and a land that has become a creature is not. The Doom Blade is not even a legal play
+      until the ability has resolved.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: { 1: ['Doom Blade'] },
+      battlefield: { 0: ['Mutavault', 'Mountain', 'Mountain'], 1: ['Swamp', 'Swamp'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const vaultId = find(s, 0, 'battlefield', 'Mutavault');
+    // Nothing to kill while it is only a land.
+    expect(legalActions(s, 1).plays.some((p) => p.name === 'Doom Blade')).toBe(false);
+
+    s = animate(s).s;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    for (const land of [...ids(s, 1, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: land, abilityIndex: 0 });
+    }
+    expect(legalActions(s, 1).plays.some((p) => p.name === 'Doom Blade')).toBe(true);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: vaultId }],
+    })));
+    // A land in the graveyard, which is where this card's games are decided.
+    expect(s.instances[vaultId]!.zone).toBe('graveyard');
+  });
+
+  it('does not tap itself to pay for its own animation', () => {
+    /*
+      Legal and self-defeating: the {1} is generic, the Mutavault makes {C}, and a solver taking
+      the cheapest source turned the 2/2 it had just become into a tapped 2/2. **Not one attack
+      with an animated land in 56 games** before `payFrom` learned to keep the permanent's own
+      mana for last.
+    */
+    const { s, id } = animate(vault());
+    expect(s.instances[id]!.tapped).toBe(false);
+    expect(characteristicsOf(s, s.instances[id]!).isCreature).toBe(true);
+    // A Mountain paid for it, which is the tap a player would have made.
+    expect(ids(s, 0, 'battlefield').filter((i) => nameOf(s, i) === 'Mountain'
+      && s.instances[i]!.tapped).length).toBe(1);
+  });
+
+  it('but does when its own mana is the only mana there is', () => {
+    // The fallback. A cost that cannot be paid any other way is paid the only way it can be, and
+    // the animation still happens — a tapped 2/2 is better than a refused ability.
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      battlefield: { 0: ['Mutavault'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const id = find(s, 0, 'battlefield', 'Mutavault');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 1 })));
+    expect(s.instances[id]!.tapped).toBe(true);
+    expect(characteristicsOf(s, s.instances[id]!).isCreature).toBe(true);
+  });
+
+  it('Crimson Wisps makes a creature red, gives it haste and draws a card', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+      hands: { 0: ['Crimson Wisps'] },
+      battlefield: { 0: ['Mountain'], 1: ['Grizzly Bears'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    expect(characteristicsOf(s, s.instances[bears]!).colors).toEqual(['G']);
+    const held = ids(s, 0, 'hand').length;
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Crimson Wisps'),
+      targets: [{ kind: 'card', id: bears }],
+    })));
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    // Layer 5 *replaces* the printed colours (CR 105.3): it is red, not red and green.
+    expect(ch.colors).toEqual(['R']);
+    expect(ch.keywords.has('haste')).toBe(true);
+    // The Wisps left the hand and a card came in, so the count is unchanged.
+    expect(ids(s, 0, 'hand').length).toBe(held);
+  });
+
+  it('and a creature made red cannot block protection from red', () => {
+    /*
+      The reason layer 5 is worth having rather than faking. Protection from red is implemented in
+      full — four rules, including "can't be blocked by red creatures" (CR 702.16c) — and until the
+      layer existed nothing could change the answer it gives.
+
+      Driven with `pump` rather than the card because the only creature worth making red here is a
+      white one, and no deck holds both Crimson Wisps and a Leonin Skyhunter. The layer is the same
+      either way; the test above is the card's.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'skyward-writ' },
+      battlefield: { 0: ['Paladin en-Vec'], 1: ['Leonin Skyhunter'] },
+      turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const paladin = find(s, 0, 'battlefield', 'Paladin en-Vec');
+    const knight = find(s, 1, 'battlefield', 'Leonin Skyhunter');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: paladin, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    // White, so it may block.
+    expect(canBlock(s, knight, paladin, 1)).toBeNull();
+    expect(protectedFrom(s, paladin, knight)).toBe(false);
+
+    const reddened = pump(s, [knight], 'fx-wisps', 1, { setColors: ['R'] });
+    expect(characteristicsOf(reddened, reddened.instances[knight]!).colors).toEqual(['R']);
+    expect(protectedFrom(reddened, paladin, knight)).toBe(true);
+    expect(canBlock(reddened, knight, paladin, 1)?.reason).toMatch(/protection/i);
   });
 });
 

@@ -340,7 +340,8 @@ function activate(
     sacrificed = action.sacrifice;
   }
 
-  const paid = payFrom(state, action.by, ability.cost.mana, 0);
+  // The permanent's own mana is the last mana spent on its own ability. See `payFrom`.
+  const paid = payFrom(state, action.by, ability.cost.mana, 0, 0, action.card);
   let next = paid.state;
   if (ability.cost.life !== undefined) next = loseLife(next, action.by, ability.cost.life);
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });

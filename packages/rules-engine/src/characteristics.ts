@@ -253,6 +253,25 @@ export interface ContinuousEffect {
    * Printed keywords go too, which is what makes a Turn to Frog answer a flier.
    */
   readonly losesAllAbilities?: boolean;
+  /**
+   * Card types this effect adds: layer 4 (CR 613.1c). "Becomes a creature", and nothing yet takes
+   * a type away.
+   *
+   * Applied in a pass of its own before anything else, because what a permanent *is* decides which
+   * later effects apply to it: an animated land is a creature, so an anthem that pumps "creatures
+   * you control" pumps it (CR 613.1c runs before 613.1g).
+   */
+  readonly addTypes?: readonly string[];
+  /** Subtypes this effect adds, for the same layer. */
+  readonly addSubtypes?: readonly string[];
+  /**
+   * The colours this permanent becomes: layer 5 (CR 613.1d).
+   *
+   * Setting rather than adding, because that is what the cards say — "becomes red" *replaces* the
+   * printed colours (CR 105.3), while "is also red" would add to them and nothing in the pool does.
+   * Last one wins, like layer 7b.
+   */
+  readonly setColors?: readonly Color[];
   readonly duration: EffectDuration;
   readonly createdTurn: number;
   /**
@@ -321,6 +340,38 @@ function effectApplies(effect: ContinuousEffect, instance: CardInstance, creatur
 }
 
 /**
+ * The type line with layer 4 applied, or the printed one when nothing changes it.
+ *
+ * Returns the *same object* when no effect adds a type, which is the common case by a very long
+ * way: this runs on the hottest path in the engine, and a type line rebuilt on every call would be
+ * two array copies per permanent per candidate per playout.
+ */
+function withAddedTypes(
+  state: GameState, instance: CardInstance, printed: TypeLine, printedCreature: boolean,
+): TypeLine {
+  let types: string[] | null = null;
+  let subtypes: string[] | null = null;
+  for (const effect of state.effects ?? []) {
+    if (effect.addTypes === undefined && effect.addSubtypes === undefined) continue;
+    if (!effectApplies(effect, instance, printedCreature)) continue;
+    for (const type of effect.addTypes ?? []) {
+      if (hasType(printed, type) || (types !== null && types.includes(type))) continue;
+      types = [...(types ?? []), type];
+    }
+    for (const sub of effect.addSubtypes ?? []) {
+      if (printed.subtypes.includes(sub) || (subtypes !== null && subtypes.includes(sub))) continue;
+      subtypes = [...(subtypes ?? []), sub];
+    }
+  }
+  if (types === null && subtypes === null) return printed;
+  return {
+    supertypes: printed.supertypes,
+    types: types === null ? printed.types : [...printed.types, ...types],
+    subtypes: subtypes === null ? printed.subtypes : [...printed.subtypes, ...subtypes],
+  };
+}
+
+/**
  * What this permanent currently is.
  *
  * **The layers, in the order CR 613 runs them**, for the four this engine has cards for:
@@ -329,22 +380,38 @@ function effectApplies(effect: ContinuousEffect, instance: CardInstance, creatur
  *     engine makes one by pointing the instance at the copied card's definition: by the time this
  *     function runs there is nothing left to apply, and `scriptFor` finds the copied card's
  *     abilities for free. That is also why a token copy of a Fog Bank prevents damage.
- *  2. **abilities** (613.1f) — keywords granted and removed, and "loses all abilities", which
+ *  2. **type-changing** (613.1c) — "becomes a creature", in a pass of its own; see
+ *     `withAddedTypes` for why it cannot share the loop below.
+ *  3. **colour-changing** (613.1d) — "becomes red", replacing the printed colours, last one wins.
+ *  4. **abilities** (613.1f) — keywords granted and removed, and "loses all abilities", which
  *     clears everything collected *before* it and lets later grants through. Accumulated in effect
  *     order, which is timestamp order, so the rule needs no second pass.
- *  3. **setting power and toughness** (7b, 613.4c) — replaces the printed base; two of them resolve
+ *  5. **setting power and toughness** (7b, 613.4c) — replaces the printed base; two of them resolve
  *     last-one-wins.
- *  4. **modifying power and toughness** (7c) — every pump and anthem, summed, applied *after* any
+ *  6. **modifying power and toughness** (7c) — every pump and anthem, summed, applied *after* any
  *     setting however early it was cast.
- *  5. **counters** (7d) — `+1/+1` and `-1/-1`, last of all.
+ *  7. **counters** (7d) — `+1/+1` and `-1/-1`, last of all.
  *
- * The three the pool has no card for are named rather than faked: type-changing (layer 4),
- * colour-changing (5) and characteristic-defining abilities (7a). A card needing one is not
- * scriptable yet, and `scripts.ts` says so.
+ * Type-changing (layer 4) and colour-changing (5) are in as well, and layer 4 is the reason this
+ * function makes two passes rather than one: a permanent's types decide which *other* effects
+ * apply to it, so "becomes a creature" has to be known before the scope of an anthem is judged.
+ * Characteristic-defining abilities (7a) are the one left, named rather than faked — a card
+ * needing one is not scriptable yet, and `scripts.ts` says so.
  */
 export function characteristicsOf(state: GameState, instance: CardInstance): Characteristics {
   const def = state.cardDefs[instance.defKey];
-  const typeLine = parseTypeLine(def?.typeLine);
+  const printed = parseTypeLine(def?.typeLine);
+  /*
+    Layer 4 first, in a pass of its own (CR 613.1c).
+
+    It has to be separate because every later layer's *scope* depends on its result: "creatures you
+    control get +1/+1" applies to a land that has become a creature, and a single pass in effect
+    order would have judged that against the printed type line and missed it. The scope of a
+    type-changing effect itself is judged against the printed types, which is the one simplification
+    left in here — a card that animates something another effect animated first would need this pass
+    to iterate, and nothing in the pool asks for it.
+  */
+  const typeLine = withAddedTypes(state, instance, printed, hasType(printed, 'creature'));
   const creature = hasType(typeLine, 'creature');
 
   // Layer 7b and 7c are collected separately, because the first replaces the base and the second
@@ -371,6 +438,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   */
   let goadedBy: SeatIndex[] | null = null;
   let protectionFrom: Color[] | null = null;
+  let setColors: readonly Color[] | null = null;
 
   for (const effect of state.effects ?? []) {
     if (!effectApplies(effect, instance, creature)) continue;
@@ -410,6 +478,9 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       protectionFrom ??= [];
       if (!protectionFrom.includes(colour)) protectionFrom.push(colour);
     }
+    // Layer 5 (CR 613.1d), which only has to be in effect order to be right: two effects that both
+    // set a colour resolve last-one-wins, the same way two that set power do.
+    if (effect.setColors !== undefined) setColors = effect.setColors;
   }
 
   // 7b, then 7c, then 7d: the base is whatever the last setting effect said (or the printed
@@ -424,7 +495,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   return {
     name: def?.name ?? 'a card',
     typeLine,
-    colors: printedColors(def),
+    colors: setColors ?? printedColors(def),
     power,
     toughness,
     keywords,
@@ -487,7 +558,17 @@ export function protectionApplies(
   if (protection.length === 0 || source === null) return false;
   const inst = state.instances[source];
   if (inst === undefined) return false;
-  return printedColors(state.cardDefs[inst.defKey]).some((colour) => protection.includes(colour));
+  /*
+    The source's *current* colours, not its printed ones — which is what layer 5 is for and what
+    this read got wrong until a card could change a colour. A creature made red is red to
+    protection from red, and this is the only rule in the engine that asks.
+
+    `characteristicsOf` rather than `printedColors` costs a characteristics computation per source,
+    and it is behind the empty-protection check above: 152 of the cards in the pool have no
+    protection at all, so for them nothing here runs. For the two that do, the right answer is
+    worth the work.
+  */
+  return characteristicsOf(state, inst).colors.some((colour) => protection.includes(colour));
 }
 
 /** Convenience for the many places that only need to ask about one keyword. */

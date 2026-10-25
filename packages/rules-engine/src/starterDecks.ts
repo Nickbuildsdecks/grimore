@@ -177,6 +177,22 @@ const LAVA_SPIKE: CardDef = {
   colors: ['R'],
 };
 
+/**
+ * Crimson Wisps: the colour-changing layer's one card.
+ *
+ * A cantrip with haste on it, and a clause that in this pool only Paladin en-Vec's protection ever
+ * reads. In it for the layer rather than for the deck, and the deck measurement below says what
+ * the slot cost.
+ */
+const CRIMSON_WISPS: CardDef = {
+  name: 'Crimson Wisps',
+  typeLine: 'Sorcery',
+  manaCost: '{R}',
+  cmc: 1,
+  oracleText: 'Target creature gains haste until end of turn and becomes red.\nDraw a card.',
+  colors: ['R'],
+};
+
 const FLAME_SLASH: CardDef = {
   name: 'Flame Slash',
   typeLine: 'Sorcery',
@@ -1579,6 +1595,22 @@ const FOG_BANK: CardDef = {
   colors: ['U'],
 };
 
+/**
+ * Mutavault, the one card in the pool that is two things at once.
+ *
+ * Colourless on purpose: it is a land every deck here could play, so the layer it needs is not
+ * paid for by one colour's slot. The printed card says "with all creature types"; the script leaves
+ * that clause out and says why.
+ */
+const MUTAVAULT: CardDef = {
+  name: 'Mutavault',
+  typeLine: 'Land',
+  manaCost: '',
+  cmc: 0,
+  oracleText: '{T}: Add {C}.\n{1}: Mutavault becomes a 2/2 creature until end of turn. It\u2019s still a land.',
+  colors: [],
+};
+
 const MAZE_OF_ITH: CardDef = {
   name: 'Maze of Ith',
   typeLine: 'Land',
@@ -1768,11 +1800,22 @@ export const EMBER_RUSH: DeckSpec = {
     // Lightning Strike had to come from somewhere, and a land is the only thing in here no test
     // reaches for by name. The curve came down with it — this deck's most expensive card it
     // actually wants to cast on curve is four.
-    { card: MOUNTAIN, count: 19 },
+    { card: MOUNTAIN, count: 18 },
+    /*
+      One land of the nineteen is a Mutavault, which in a mono-red deck of {R} costs is a real
+      price rather than a free upgrade: it taps for {C}, so it pays for generic costs and nothing
+      else, and a hand of Bolts and a Mutavault is a hand that cannot cast them. What it buys is a
+      land that attacks for two once the deck has run out of things to do with its mana — see the
+      measurement in the progress doc for what that trade was worth.
+    */
+    { card: MUTAVAULT, count: 1 },
     { card: MONASTERY_SWIFTSPEAR, count: 4 },
     { card: RAGING_GOBLIN, count: 2 },
     { card: GOBLIN_ARSONIST, count: 2 },
-    { card: FIREBRAND_ARCHER, count: 2 },
+    // One Archer rather than two: the slot went to Crimson Wisps, which is a card the Archer would
+    // have pinged for anyway and which gives the Dragon, the Kavu or a Hill Giant haste.
+    { card: FIREBRAND_ARCHER, count: 1 },
+    { card: CRIMSON_WISPS, count: 1 },
     { card: MAGMA_JET, count: 1 },
     { card: THERMO_ALCHEMIST, count: 2 },
     { card: HILL_GIANT, count: 1 },

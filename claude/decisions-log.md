@@ -4114,3 +4114,73 @@ honest today is answers from the *battlefield*, since a permanent's activated ab
 attack walking into an untapped Maze of Ith or Icy Manipulator is a real blind spot. It accounted for
 about 19 of the 398 answers above, which is far below anything this instrument could price, so it
 was not kept either.
+
+## D111 — The last two layers, and the land the bot pressed 854 times
+
+Layers 4 and 5 of CR 613 — type-changing and colour-changing — were the last two this engine had
+*named* as not built, and the note next to them said the honest thing: nothing in the pool needed
+them, so a card that did was not scriptable rather than approximated. Two cards now need them.
+
+**Mutavault** ({T}: add {C}; {1}: becomes a 2/2 creature until end of turn, and is still a land) is
+layer 4, and it is the honest hard case rather than a token one: a land that is a creature has to be
+a creature everywhere the engine asks. **Crimson Wisps** ({R}: haste, becomes red, draw a card) is
+layer 5, and is in for the layer rather than for the deck — two cards in this pool read colour at
+all, and both are Paladin en-Vec's protection.
+
+### Layer 4 is why `characteristicsOf` makes two passes
+
+Every other layer can share one loop in effect order. Layer 4 cannot, because what a permanent *is*
+decides which *other* effects apply to it: "creatures you control get +1/+1" applies to an animated
+land (613.1c runs before 613.1g), and a single pass judging that scope against the printed type line
+says no. So type changes are collected first, the type line is rebuilt from them, and everything
+after is judged against the result. The scope of a type-changing effect is itself judged against the
+printed types, which is the one simplification left — a card animating something another effect had
+already animated would need the pass to iterate, and there is none.
+
+The test that pins it is the anthem: an animated Mutavault under a `pumpTeam` is a 3/3. On the
+one-pass version it is a 2/2, which is the kind of wrong answer nobody notices until a game is
+decided by it.
+
+### The bug layer 5 found in code that was already shipped
+
+`protectionApplies` read the *printed* colours of the damage source. It had been right for as long
+as nothing could change a colour, and the layer-5 test — a white Leonin Skyhunter made red, against
+a Paladin en-Vec's protection from red — is what caught it. It reads `characteristicsOf(...).colors`
+now, behind the empty-protection check that keeps the whole rule free for the 150-odd cards with no
+protection at all.
+
+### And then the card did nothing, three times over
+
+The deck measurement said so first, and loudly. Ember Rush with one Mountain swapped for a Mutavault
+and one Firebrand Archer for a Crimson Wisps, against the other seven decks, both seats, 238 games
+per arm on two seed sets: **183-53 → 156-81 and 181-55 → 155-82.** Twenty-seven and twenty-six games
+worse, which is not a noise-floor argument — it is the worst deck change measured here.
+
+The instrument then said why, and it was not the card. In 56 games the bot **animated the Mutavault
+854 times and attacked with it zero times.** Three separate failures, each needing its own fix:
+
+1. **The moment.** A Mutavault that becomes a 2/2 is *still a land* to `seatValue`, so the animation
+   scores exactly zero — and the search has no baseline for doing nothing, so with `>` comparing
+   options it takes a free zero whenever nothing better is affordable. It animated in postcombat
+   main phases and on opponents' turns. Fixed as the eighth "spent on nothing" rule: the board is
+   asked whether there is an attack to make (its own precombat main, untapped, not summoning-sick,
+   somebody left to attack) or a block to make. 854 → 90.
+2. **The payment.** The {1} is generic and the Mutavault makes {C}, so the cost solver tapped the
+   Mutavault to animate the Mutavault — legal, and it turns the 2/2 into a tapped 2/2 that cannot
+   attack. `payFrom` now keeps the permanent's own mana for last when paying for that permanent's
+   own ability, falling back to it when nothing else can pay. This is the fix that matters most: it
+   is why the count was *zero* rather than small.
+3. **The repeat.** With the first animation still on the stack the permanent is not a creature yet
+   and the board looks untouched, so the rule above said yes again — and again. The gate asks the
+   stack as well as the battlefield. 90 → 45, with **37 attacks** out of those 45.
+
+Re-measured with all three in, same seeds: **183-53 → 189-48 and 181-55 → 177-60.** Six games up and
+four down, both inside the 18-game noise floor, which is the honest reading of a two-card slot change
+in a sixty — and a long way from twenty-seven games down. A Mutavault in a mono-red deck of {R}
+costs is a real price as well as a body; what it is no longer is a trap the bot falls into.
+
+Two smaller things worth recording. The table needed no change at all: the view sends power and
+toughness exactly when `characteristicsOf` says the permanent is a creature, so an animated land
+moves itself into the creature row and draws its own attack arrow. And Crimson Wisps' colour clause
+is nearly inert in play — 12 casts in 56 games, almost all of them for the haste and the card — which
+is written down rather than dressed up: the layer is right, and the card that needs it is a cantrip.

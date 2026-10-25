@@ -299,6 +299,18 @@ export interface AbilityDef {
    * while the creature itself is a perfectly good play.
    */
   readonly preventsDamage?: boolean;
+  /**
+   * "This ability turns the permanent into a creature until end of turn" — layer 4, bought with
+   * mana.
+   *
+   * Declared for the bot, and the eighth member of the "spent on nothing" family. The evaluation
+   * cannot see what animating a land buys: a Mutavault that is a 2/2 still scores as a land, so
+   * the gain is zero and the mana is free — and with no baseline for doing nothing, the search
+   * pressed it whenever it had a spare {1}. Measured before the rule: **854 animations in 56
+   * games, and not one attack with it.** The question the board is asked instead is whether there
+   * is an attack to make or a block to make; see `animationCouldMatter`.
+   */
+  readonly animates?: boolean;
 }
 
 /** An Aura: what it may enchant, and what it does to the thing it is attached to. */

@@ -1431,6 +1431,60 @@ function castsAPrevention(state: GameState, action: Action): boolean {
   return modesOf(script, action.modes).some((mode) => mode.preventsDamage === true);
 }
 
+/**
+ * Whether this action turns a permanent into a creature (see `AbilityDef.animates`).
+ */
+function animatesSomething(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:activate') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.animates === true;
+}
+
+/**
+ * Whether animating this permanent could do anything: is there an attack to make, or a block.
+ *
+ * The eighth "spent on nothing" rule, and the one with the largest count behind it. A Mutavault
+ * that becomes a 2/2 is *still a land* to `seatValue`, so the animation scores exactly zero — and
+ * with no baseline for doing nothing, a search comparing options with `>` takes a free zero
+ * whenever nothing better is affordable. It pressed the button **854 times across 56 games and
+ * never attacked with it once**, which is {1} a turn spent on nothing in a deck whose spells all
+ * cost {R}.
+ *
+ * So the board is asked instead, the same way the Fog, the ritual and the removal rules ask it:
+ *
+ *  - its own precombat main phase, with the land untapped, not summoning-sick, and somebody left
+ *    to attack — the only moment animating leads to damage;
+ *  - or an attack aimed at this seat with its damage still to come, where a 2/2 blocker is a 2/2
+ *    blocker.
+ *
+ * Summoning sickness is read off `enteredTurn` directly rather than through `canAttack`, which
+ * cannot answer the question: the permanent is not a creature *yet*, so `canAttack` would refuse
+ * it for being a land. A land animated by something that also granted haste would be judged
+ * wrongly here, and there is no such card.
+ */
+function animationCouldMatter(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (action.type !== 'auto:activate') return false;
+  const inst = state.instances[action.card];
+  if (inst === undefined || inst.tapped) return false;
+  /*
+    And not twice, which is the auto-pass trap's cousin.
+
+    The first animation is still on the stack when the next decision is made, so the permanent is
+    not a creature yet and the board looks exactly as it did — the rule above would say yes again,
+    and the bot would animate until the mana ran out. Asking the *stack* as well as the battlefield
+    is the honest version of "has this already been done": one of the two is always the answer.
+  */
+  if (characteristicsOf(state, inst).isCreature) return false;
+  if (state.stackOrder.some((id) => state.stackObjects[id]?.source === action.card)) return false;
+  if (state.activeSeat === seat && state.step === 'precombat-main'
+    && inst.enteredTurn < state.turn
+    && state.seats.some((s) => s.index !== seat && !s.eliminated)) {
+    return true;
+  }
+  return state.combat.attacks.some((attack) => attack.defender === seat)
+    && (state.step === 'declare-attackers' || state.step === 'declare-blockers');
+}
+
 /** Whether this action casts a card whose point is to become a copy of a creature. */
 function castsACopy(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -1835,6 +1889,12 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       card in hand for the moment it is for, which is the only moment the search can tell "cast it"
       from "pass".
     */
+    // The eighth: a land turned into a creature with nothing to attack or block. See
+    // `animationCouldMatter` for the 854 presses that bought nothing.
+    if (animatesSomething(state, option.action) && !animationCouldMatter(state, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
     if (castsAProtection(state, option.action) && !creatureOfYoursIsThreatened(state, seat)) {
       dropped += 1;
       continue;

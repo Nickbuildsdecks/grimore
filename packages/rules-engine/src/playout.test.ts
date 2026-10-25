@@ -1215,6 +1215,59 @@ describe('removal with nothing to remove', () => {
   });
 });
 
+describe('the land it animates and then attacks with', () => {
+  /*
+    The eighth "spent on nothing" rule, and the one with the biggest count behind it.
+
+    A Mutavault that becomes a 2/2 is still a land to `seatValue`, so animating scores exactly
+    zero — and with no baseline for doing nothing, a search comparing options with `>` takes a free
+    zero whenever nothing better is affordable. It pressed the button **854 times across 56 games
+    and never attacked with it once**: the mana went on an animation in the postcombat main phase,
+    on the opponent's turn, or on a land the payment had already tapped.
+
+    Three things were wrong and each needed its own fix: the moment (this rule), the payment (a
+    permanent tapping itself for its own ability, see `scripts.test.ts`) and the repeat (an
+    animation already on the stack leaves the board looking untouched). Afterwards: 45 animations
+    in the same 56 games and 37 attacks with the animated land.
+  */
+  const board = (step: 'precombat-main' | 'postcombat-main'): GameState => advanceTo(arena({
+    decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+    battlefield: { 0: ['Mutavault', 'Mountain', 'Mountain'], 1: [] },
+    turn: 3, firstSeat: 0, autoPass: true,
+  }), step);
+
+  const animating = (state: GameState, action: Action | null): boolean =>
+    action?.type === 'auto:activate'
+      && action.card === find(state, 0, 'battlefield', 'Mutavault')
+      && action.abilityIndex === 1;
+
+  it('animates it before combat, and then attacks with it', () => {
+    let s = board('precombat-main');
+    const vault = find(s, 0, 'battlefield', 'Mutavault');
+    const first = botAction(s, 0);
+    expect(animating(s, first)).toBe(true);
+    s = applyAction(s, first!, HOST);
+
+    // And not again while the first one is on the stack, which is the board looking untouched.
+    expect(animating(s, botAction(s, 0))).toBe(false);
+
+    for (let i = 0; i < 12 && s.step !== 'declare-attackers'; i += 1) {
+      const next = botAction(s, seatToAct(s) ?? 0);
+      if (next === null) break;
+      s = applyAction(s, next, HOST);
+    }
+    expect(s.step).toBe('declare-attackers');
+    const plan = botAction(s, 0);
+    expect(plan?.type === 'auto:attack' ? plan.attackers.map((a) => a.attacker) : null).toEqual([vault]);
+  });
+
+  it('and leaves the mana alone when there is no attack to make with it', () => {
+    // Postcombat main: the same board, the same spare {1}, and nothing an animation can do with it.
+    const s = board('postcombat-main');
+    expect(animating(s, botAction(s, 0))).toBe(false);
+  });
+});
+
 describe('a Clone with nothing to copy', () => {
   /*
     The sixth member of the "spent on nothing" family, and the most literal: a Clone cast with an

@@ -2585,6 +2585,79 @@ const MAZE_OF_ITH: CardScript = {
   }],
 };
 
+/*
+  The two cards layers 4 and 5 are for, which were the last of CR 613 this engine had named and
+  not built (bar characteristic-defining abilities).
+
+  They are here together because neither is interesting without the layer and the layer is not
+  worth having for one card. What makes them worth the layer is that both are *honest* cases: a
+  land that becomes a creature has to be a creature everywhere the engine asks — it can attack, it
+  is summoning-sick the turn it arrives, an anthem pumps it, a Doom Blade kills it and a sweeper
+  takes it with the rest — and a creature that changes colour has to change what protection from
+  that colour does about it.
+*/
+
+/**
+ * Mutavault: a land that becomes a creature, which is the whole of layer 4 in one card.
+ *
+ * The printed card says "with all creature types", and that clause is not here: changeling matters
+ * to tribal cards and there are none in this pool, so adding every subtype in Magic would be a
+ * list nothing reads. Everything else is the card.
+ *
+ * Note what the engine gets for free once the type line is right. Tapping it for mana taps the
+ * *creature*, so a Mutavault that paid for a spell cannot also attack. It is summoning-sick on the
+ * turn it is played, because `canAttack` compares `enteredTurn` with the current turn and does not
+ * care what the permanent was when it arrived (CR 302.6 via 613.1c). And a 2/2 land dies to
+ * everything a 2/2 dies to, which is the trade the card is for.
+ */
+const MUTAVAULT: CardScript = {
+  name: 'Mutavault',
+  abilities: [
+    { cost: { tap: true }, description: '{T}: Add {C}.', produces: ['C'] },
+    {
+      cost: { mana: '{1}' },
+      description: '{1}: Mutavault becomes a 2/2 creature until end of turn. It\u2019s still a land.',
+      // See `AbilityDef.animates`: the bot does not press this unless there is an attack or a
+      // block to make with it.
+      animates: true,
+      /*
+        `addTypes` and not `setTypes`: "it's still a land" is the clause that makes the card, and
+        adding a type rather than replacing the line is also what the rules do (CR 613.1c adds).
+        The body comes from layer 7b, which this engine already had — a 2/2 base, not +2/+2, so an
+        anthem lands on top of it rather than under it.
+      */
+      effect: (c) => pump(c.state, [c.source], c.source, c.controller, {
+        addTypes: ['Creature'], setPower: 2, setToughness: 2,
+      }),
+    },
+  ],
+};
+
+/**
+ * Crimson Wisps: haste, a card, and the colour change that layer 5 exists for.
+ *
+ * Worth being straight about what the colour clause is worth in this pool: almost nothing. Two
+ * cards read colour at all — Paladin en-Vec's protection from red and black — so most of the time
+ * this card is "give something haste and draw a card" and the layer is doing bookkeeping nobody
+ * sees. What it is not is *approximated*: a creature this made red is red for protection, for a
+ * red source's damage and for anything else that asks, and `scripts.test.ts` asserts the
+ * interaction rather than the field.
+ */
+const CRIMSON_WISPS: CardScript = {
+  name: 'Crimson Wisps',
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    if (id === null) return draw(c.state, c.controller, 1);
+    // Haste first so the draw happens whatever the target did, then the card: "draw a card" is not
+    // conditional on the creature still being there.
+    const hasted = pump(c.state, [id], c.source, c.controller, {
+      keywords: ['haste'], setColors: ['R'],
+    });
+    return draw(hasted, c.controller, 1);
+  },
+};
+
 // ── The two painlands, which are the same card said two different ways ───────────────────────────
 
 /*
@@ -2809,6 +2882,7 @@ const ALL: readonly CardScript[] = [
   equipment('Darksteel Plate', '{2}', { keywords: ['indestructible'] },
     'equipped creature is indestructible'),
   guildgate('Rakdos Guildgate', 'B', 'R'),
+  MUTAVAULT, CRIMSON_WISPS,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

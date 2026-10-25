@@ -912,6 +912,7 @@ function tapSources(state: GameState, seat: SeatIndex, picks: readonly ManaPick[
  */
 function payFrom(
   state: GameState, seat: SeatIndex, costText: string | undefined, x: number, extraGeneric = 0,
+  avoid?: string,
 ): { state: GameState; tapped: readonly string[] } {
   const printed = parseManaCost(costText);
   // `extraGeneric` is the commander tax (CR 903.8): generic mana on top of the printed cost, which
@@ -921,7 +922,19 @@ function payFrom(
   let tapped: readonly string[] = [];
   if (!canPay(poolOf(next, seat), cost, x)) {
     const sources = manaSources(next, seat);
-    const plan = solveTap(poolOf(next, seat), cost, sources, x);
+    /*
+      `avoid` is the permanent whose own ability is being paid for, kept out of the sources unless
+      nothing else can cover the cost.
+
+      Legal either way — a Mutavault may tap itself for the {1} that animates it — and nearly
+      always wrong: it turns the 2/2 it just became into a tapped 2/2 that cannot attack, which is
+      the whole point of the card gone. Measured before this: **not one attack with an animated
+      land in 56 games**, because the ability had tapped it every time. The fallback keeps a cost
+      payable when the permanent's own mana is the only mana there is.
+    */
+    const preferred = avoid === undefined ? sources : sources.filter((source) => source.key !== avoid);
+    const plan = solveTap(poolOf(next, seat), cost, preferred, x)
+      ?? (preferred.length === sources.length ? null : solveTap(poolOf(next, seat), cost, sources, x));
     if (plan !== null) {
       next = tapSources(next, seat, plan);
       tapped = plan.map((pick) => pick.key);

@@ -642,6 +642,11 @@ export interface PumpOptions {
   readonly setToughness?: number;
   /** See `ContinuousEffect.losesAllAbilities` — layer 6. */
   readonly losesAllAbilities?: boolean;
+  /** See `ContinuousEffect.addTypes` — layer 4, "becomes a creature". */
+  readonly addTypes?: readonly string[];
+  readonly addSubtypes?: readonly string[];
+  /** See `ContinuousEffect.setColors` — layer 5, "becomes red". */
+  readonly setColors?: readonly Color[];
   readonly duration?: EffectDuration;
 }
 
@@ -678,6 +683,9 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.setPower === undefined ? {} : { setPower: opts.setPower }),
     ...(opts.setToughness === undefined ? {} : { setToughness: opts.setToughness }),
     ...(opts.losesAllAbilities ? { losesAllAbilities: true } : {}),
+    ...(opts.addTypes ? { addTypes: opts.addTypes } : {}),
+    ...(opts.addSubtypes ? { addSubtypes: opts.addSubtypes } : {}),
+    ...(opts.setColors ? { setColors: opts.setColors } : {}),
   };
 }
 

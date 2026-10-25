@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 167 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 169 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -229,11 +229,13 @@ bug rather than a board.
   `any-battlefield` — as a Clone that chooses what to enter as. What is left of the family is a copy
   effect that keeps copying something as it *changes*, which needs layer 1 recomputed rather than
   applied once; nothing in the pool asks for it.
-- **Three of the layers** (CR 613). Four are in — copy (1), abilities (6), setting power and
-  toughness (7b) and modifying it (7c, with counters in 7d) — which is what characteristic-setting
-  and copy effects needed and what "The layers, and the two cards that needed them" below is about.
-  Type-changing (4), colour-changing (5) and characteristic-defining abilities (7a) are not, because
-  nothing in the pool needs them; a card that does is not scriptable rather than approximated.
+- ~~**Three of the layers**~~ — **one** (CR 613). Six are in: copy (1), type-changing (4),
+  colour-changing (5), abilities (6), setting power and toughness (7b) and modifying it (7c, with
+  counters in 7d). Type-changing is the one that changed the shape of `characteristicsOf`, which
+  makes two passes now rather than one, because what a permanent *is* decides which other effects
+  apply to it — see "a land that becomes a creature" below. Characteristic-defining abilities (7a)
+  are the one left, because nothing in the pool needs one; a card that does is not scriptable
+  rather than approximated.
 - **A stronger bot.** It attacks with everything, blocks when the trade is good, and casts the
   biggest thing it can afford. A better opponent needs a search, and a search needs a position
   evaluator, and neither was worth writing before the rules underneath them were trustworthy.
@@ -2377,6 +2379,33 @@ whole game state, so the reply reads the opponent's *hand*: a bot that declines 
 the exact card you are holding is a cheating opponent rather than a better one. An honest version
 has to reason from the same redacted view a person gets, plus a model of what the deck could hold —
 which is a different piece of work from a deeper search, and the one that is actually missing.
+
+### A land that becomes a creature, and the three ways the bot wasted it
+
+Layers 4 and 5 of CR 613 — type-changing and colour-changing — were the last two named as not built.
+Mutavault needs the first ({1}: becomes a 2/2 creature until end of turn, and is still a land) and
+Crimson Wisps the second ({R}: haste, becomes red, draw a card).
+
+Layer 4 is the one that changed the shape of `characteristicsOf`, which makes two passes now: what a
+permanent *is* decides which other effects apply to it, so an animated land has to be a creature
+before an anthem's scope is judged (613.1c before 613.1g). The test that pins it is an anthem over an
+animated land — a 3/3 with the layers, a 2/2 without. Layer 5 found a bug in shipped code: protection
+read the *printed* colours of a damage source, which was right for exactly as long as nothing could
+change one.
+
+Then the deck measurement said the cards were a disaster: ember-rush with one Mountain and one
+Firebrand Archer swapped out went **183-53 → 156-81 and 181-55 → 155-82** over 238 games per arm on
+two seed sets. The instrument said why, and it was not the cards: in 56 games the bot **animated the
+Mutavault 854 times and attacked with it zero times.** Three failures, each needing its own fix — the
+moment (animating in postcombat main, where it buys nothing: the eighth "spent on nothing" rule), the
+payment (the cost solver tapped the Mutavault to animate the Mutavault, so the 2/2 was always
+tapped), and the repeat (with the first animation on the stack the board looks untouched, so it
+animated again until the mana ran out). Afterwards: 45 animations, 37 attacks, and the deck measures
+**189-48 and 177-60** — six up, four down, both inside the noise floor, which is what a two-card
+change in a sixty should look like. D111 has the detail.
+
+The table needed nothing: the view sends power and toughness exactly when the engine says the
+permanent is a creature, so an animated land moves into the creature row and draws its own arrow.
 
 ## Next
 
