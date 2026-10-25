@@ -2270,6 +2270,27 @@ it replaced), and "answers the questions cards ask mid-resolution" needed a one-
 turn up in twelve specific games, which after a two-card deck change it did not. It plays
 twenty-four now.
 
+### The removal with nothing to remove
+
+An earlier entry counted the bot pointing removal at its own creatures and left the judgement open.
+Judging it took the instrument from the block work — finish the game twice from the same position,
+once with the aim it chose and once with the best aim it had — and the answer was not what the count
+suggested. **Six of the seven cases had nothing else to kill at all**: a Doom Blade on its own
+Talrand, a Pacifism on its own Serra Angel, a Swords on its own Soul Warden, with the opponent's
+board empty, so its own side was the only legal target left. The seventh was a choice — Agonizing
+Demise on its own Goblin Arsonist, whose death pings something — and played out it changed nothing.
+
+So the fix is the seventh "spent on nothing" rule rather than an aiming fix: a card whose whole
+effect is to remove a creature is not cast unless there is a creature the caster does not control.
+Ten cards carry the flag; three that look like removal do not, and the reasons are the cards —
+a Lightning Bolt can hit a player, a Man-o'-War is a body, and an Unsummon on your own creature is a
+trick that saves it. Afterwards: two self-aimed casts in the same duels, both deliberate, and one of
+them won its game.
+
+The paired reference win rate moved 151-89 → 155-85 and 146-94 → 152-88, both inside the noise
+floor, so the case is the cards it stops throwing away rather than the rate. The dead-card audit is
+unchanged, which is where a rule that went too far would show first.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

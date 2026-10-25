@@ -255,6 +255,8 @@ const MAGMA_JET: CardScript = {
 
 const FLAME_SLASH: CardScript = {
   name: 'Flame Slash',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
+  removesACreature: true,
   targets: [TARGET_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -368,6 +370,8 @@ const GIANT_GROWTH: CardScript = {
 
 const PACIFISM: CardScript = {
   name: 'Pacifism',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
+  removesACreature: true,
   aura: {
     target: { kind: 'creature', description: 'enchant creature' },
     effect: { cantAttack: true, cantBlock: true },
@@ -383,6 +387,8 @@ const SECURE_THE_WASTES: CardScript = {
 
 const SWORDS_TO_PLOWSHARES: CardScript = {
   name: 'Swords to Plowshares',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
+  removesACreature: true,
   targets: [TARGET_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -445,6 +451,8 @@ const NEGATE: CardScript = {
 
 const DOOM_BLADE: CardScript = {
   name: 'Doom Blade',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
+  removesACreature: true,
   targets: [TARGET_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -1379,6 +1387,8 @@ const CLONE: CardScript = {
  */
 const TURN_TO_FROG: CardScript = {
   name: 'Turn to Frog',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
+  removesACreature: true,
   targets: [TARGET_CREATURE],
   // It wears off, so the bot should hold it for a combat rather than spend it on its own turn.
   expiresAtEndOfTurn: true,
@@ -1932,8 +1942,17 @@ const protectFromRemoval = (name: string, power: number, toughness: number): Car
 const BLOSSOMING_DEFENSE: CardScript = protectFromRemoval('Blossoming Defense', 2, 2);
 const DIVE_DOWN: CardScript = protectFromRemoval('Dive Down', 0, 3);
 
-/** Journey to Nowhere: the same deal for one less mana, with no body attached. */
-const JOURNEY_TO_NOWHERE: CardScript = exileUntilItLeaves('Journey to Nowhere', TARGET_CREATURE);
+/**
+ * Journey to Nowhere: the same deal for one less mana, with no body attached.
+ *
+ * And `removesACreature` where a Banisher Priest does not carry it: the Priest is a 2/2 worth
+ * casting for the body alone, while this is two mana for an enchantment that sits there doing
+ * nothing if its entry trigger finds nothing to point at.
+ */
+const JOURNEY_TO_NOWHERE: CardScript = {
+  ...exileUntilItLeaves('Journey to Nowhere', TARGET_CREATURE),
+  removesACreature: true,
+};
 
 /**
  * Banishing Light: anything that is not a land, and not itself.
@@ -2013,6 +2032,8 @@ const BREATH_OF_DARIGAAZ: CardScript = {
  */
 const AGONIZING_DEMISE: CardScript = {
   name: 'Agonizing Demise',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
+  removesACreature: true,
   kicker: { cost: '{1}{R}', description: 'Kicker {1}{R}' },
   targets: [{
     kind: 'creature',
@@ -2050,6 +2071,8 @@ const AGONIZING_DEMISE: CardScript = {
  */
 const BONE_SPLINTERS: CardScript = {
   name: 'Bone Splinters',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
+  removesACreature: true,
   additionalCost: { sacrifice: 'creature' },
   targets: [TARGET_CREATURE],
   onResolve: (c) => {
@@ -2292,6 +2315,8 @@ const CANCEL: CardScript = {
 
 const MURDER: CardScript = {
   name: 'Murder',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
+  removesACreature: true,
   targets: [TARGET_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -2416,6 +2441,8 @@ const PREY_UPON: CardScript = {
  */
 const DIVINE_VERDICT: CardScript = {
   name: 'Divine Verdict',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
+  removesACreature: true,
   targets: [{
     kind: 'creature',
     description: 'target attacking or blocking creature',

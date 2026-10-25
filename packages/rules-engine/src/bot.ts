@@ -1411,6 +1411,31 @@ function somethingToCopy(state: GameState): boolean {
   return false;
 }
 
+/** Whether this action casts a card whose whole effect is to remove a creature. */
+function castsRemoval(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return name !== undefined && scriptFor(name)?.removesACreature === true;
+}
+
+/**
+ * Whether there is a creature on the table that this seat does not control.
+ *
+ * The question a removal spell is cast for. Any opponent's, which is what matters at a four-player
+ * table: a Doom Blade is worth casting for somebody else's creature whoever is attacking whom.
+ * Asked of the board rather than of the state after the cast, like every other rule in this family.
+ */
+function somethingToRemove(state: GameState, seat: SeatIndex): boolean {
+  for (const other of state.seats) {
+    if (other.index === seat || other.eliminated) continue;
+    for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst !== undefined && characteristicsOf(state, inst).isCreature) return true;
+    }
+  }
+  return false;
+}
+
 /** Whether this action casts a spell whose whole effect is keeping one of your creatures alive. */
 function castsAProtection(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -1723,6 +1748,13 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     */
     if (castsAnExpiringPump(state, option.action)
       && !expiringPumpCanMatter(state, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And removal with nothing to remove, which ends up pointed at its own board.
+    */
+    if (castsRemoval(state, option.action) && !somethingToRemove(state, seat)) {
       dropped += 1;
       continue;
     }

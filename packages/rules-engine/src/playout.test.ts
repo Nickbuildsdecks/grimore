@@ -1168,6 +1168,53 @@ describe('what the engine tells a client', () => {
   });
 });
 
+describe('removal with nothing to remove', () => {
+  /*
+    The seventh member of the "spent on nothing" family, and the first one found by playing the
+    mistake out rather than by counting it.
+
+    D103 counted the bot pointing removal at its own creatures — about seven casts in 60 duels —
+    and left the judgement open. Finishing each of those games twice, once with the aim it chose and
+    once with the best enemy aim it had, said what they were: **six of the seven had no enemy
+    creature on the board at all.** A Doom Blade on its own Talrand, a Pacifism on its own Serra
+    Angel, a Swords to Plowshares on its own Soul Warden — not a mis-aimed spell but a spell cast
+    when there was nothing to kill, with its own side the only legal target left.
+
+    The search cannot see it for the usual reason: killing your own creature scores worse than
+    passing, but with auto-pass on, the state after a one-mana instant can be a turn later, and two
+    positions a turn apart do not compare. After the rule: two self-aimed casts in the same 60
+    duels, both with an enemy creature available and so deliberate — an Agonizing Demise on its own
+    Goblin Arsonist, whose death pings something, and a Swords on its own Youthful Knight for two
+    life, which won the game it was cast in.
+  */
+  const holding = (theirs: readonly string[]): GameState => arena({
+    decks: { 0: 'tidal-mind', 1: 'ember-rush' },
+    hands: { 0: ['Doom Blade'] },
+    battlefield: {
+      0: ['Swamp', 'Swamp', 'Omenspeaker'],
+      1: [...theirs],
+    },
+    turn: 4, firstSeat: 0,
+  });
+
+  it('is not cast at all, and is cast at theirs the moment they have one', () => {
+    const empty = advanceTo(holding([]), 'precombat-main');
+    const blade = find(empty, 0, 'hand', 'Doom Blade');
+    // Offered: its own Omenspeaker is a legal target, and the table is never lied to about that.
+    expect(legalActions(empty, 0).plays.some((play) => play.card === blade)).toBe(true);
+    const chosen = botAction(empty, 0);
+    expect(chosen?.type === 'auto:cast' && chosen.card === blade).toBe(false);
+
+    const board = advanceTo(holding(['Hill Giant']), 'precombat-main');
+    const cast = botAction(board, 0);
+    expect(cast?.type).toBe('auto:cast');
+    expect(cast?.type === 'auto:cast' ? cast.card : null).toBe(find(board, 0, 'hand', 'Doom Blade'));
+    // And at the creature it does not control, which is the aim the search picks for itself.
+    expect(cast?.type === 'auto:cast' ? cast.targets : [])
+      .toEqual([{ kind: 'card', id: find(board, 1, 'battlefield', 'Hill Giant') }]);
+  });
+});
+
 describe('a Clone with nothing to copy', () => {
   /*
     The sixth member of the "spent on nothing" family, and the most literal: a Clone cast with an

@@ -3894,3 +3894,41 @@ specific games. A Tutor is one card in a sixty, and after a two-card deck change
 did not deal one: the test failed for twelve games that were fine. It plays twenty-four now, which
 saw two — the same lesson as the sampled checks in the browser suites, answered by playing more
 games rather than by asserting less.
+
+## D107 — The removal with nothing to remove
+
+D103 counted the bot pointing removal at its own creatures and deliberately did not judge it: "some
+of them are defensible and some are probably not. It is written down rather than guessed at."
+Judging it needed the instrument D101 built — finish the game twice from the same position, once
+with the aim the bot chose and once with the best aim it had — and the answer was not the one the
+count suggested.
+
+**Six of the seven were not mis-aimed. There was nothing else to kill.** Over 60 duels: a Doom Blade
+on its own Talrand, a Pacifism on its own Serra Angel, a Swords to Plowshares on its own Soul
+Warden, a Flame Slash on its own Raging Goblin — in every one of those the opponent had no creature
+on the battlefield at all, so the spell's own side was the only legal target left. The seventh had
+an alternative and chose its own Goblin Arsonist, whose death pings something; played out, that game
+ended the same either way.
+
+So this is the **seventh "spent on nothing" rule** rather than an aiming fix: a card whose whole
+effect is to remove a creature is not cast unless there is a creature the caster does not control.
+Nine cards carry the flag — Doom Blade, Murder, Agonizing Demise, Flame Slash, Swords to
+Plowshares, Pacifism, Journey to Nowhere, Divine Verdict, Bone Splinters — plus Turn to Frog, which
+is removal that leaves the body. Three cards that look like removal and are not: a Lightning Bolt
+can hit a player, a Man-o'-War is a body worth casting on its own, and an Unsummon aimed at your own
+creature is a trick that saves it from a removal spell. A Banisher Priest is a 2/2 and keeps no
+flag, while Journey to Nowhere — the same effect with no body — carries one.
+
+Why the search cannot see it is the reason the family exists: killing your own creature scores worse
+than passing, but with auto-pass on, the state after a one-mana instant can be a turn later, and
+two positions a turn apart do not compare. The board is asked instead.
+
+After the rule, the same 60 duels: **two** self-aimed casts, both with an enemy creature available
+and so deliberate — the Agonizing Demise on the Arsonist again, and a Swords on its own Youthful
+Knight for two life, which won the game it was cast in. The forced waste is gone and the judgement
+calls are left alone, which is the right division.
+
+Paired reference win rate, 240 games on two seed sets: 151-89 → 155-85 and 146-94 → 152-88. Four
+and six games in the same direction, both inside the 18-game noise floor, so the case is the four
+cards a game it stops throwing away rather than the win rate. The dead-card audit over every pairing
+shows nothing newly dead: a rule that stopped a card being cast at all would show up there first.

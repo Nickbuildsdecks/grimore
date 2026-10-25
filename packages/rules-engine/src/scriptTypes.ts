@@ -425,6 +425,26 @@ export interface CardScript {
    */
   readonly copiesACreature?: boolean;
   /**
+   * "This card's whole effect is to remove a creature" — a Doom Blade, a Pacifism, a Turn to Frog.
+   *
+   * The seventh of the family, and the one found by *playing the mistake out* rather than by
+   * counting it. Over 60 duels the bot aimed removal at its own creature seven times, and six of
+   * those had **no enemy creature on the board at all**: a Doom Blade on its own Talrand, a
+   * Pacifism on its own Serra Angel, a Swords to Plowshares on its own Soul Warden. So the waste
+   * is not a mis-aimed spell — it is a spell cast when there was nothing to kill, and the only
+   * legal target left was its own side.
+   *
+   * The search cannot see it for the reason the whole family exists: killing your own creature
+   * scores worse than passing, but with auto-pass on, the state after a one-mana instant can be a
+   * turn later, and two positions a turn apart do not compare. So the board is asked instead: is
+   * there a creature this seat does not control?
+   *
+   * Not for a card that is good without a creature to kill. A Lightning Bolt can hit a player, a
+   * Man-o'-War is a body, and an Unsummon aimed at your own creature is a trick that saves it from
+   * removal — none of those is this flag.
+   */
+  readonly removesACreature?: boolean;
+  /**
    * "This spell's whole effect is to keep one of your own creatures alive" — a protection trick.
    *
    * The third of the family, and the one whose measurement was the most lopsided: 64 cast across
