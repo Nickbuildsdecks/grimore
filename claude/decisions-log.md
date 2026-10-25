@@ -4598,3 +4598,34 @@ position the action was about rather than one the table had already left.
 was right all along and merely read at the wrong moment, so it went back in on top of this and was
 measured again — see the next entry. Being able to ask that question is most of why this was worth
 doing even at a flat scoreboard.
+
+## D118 — The same term on the fixed search: level, not losing, and D116 corrected
+
+Asked again, because D117 made it a different question. Unblocked power went back in temporarily and
+was measured on a search that stops where its action happened:
+
+| a point of unblocked power | old search (D116) | search stopping at the action |
+| --- | --- | --- |
+| 0.5 | 165-171 | **170-166** |
+| 1.0 | 161-175 | **168-168** |
+
+The negative control ran first on the fixed search too, and came back 56-56 of 112 again.
+
+**So the term is neutral, and it was never harmful.** The drift was. D116 concluded "the hypothesis
+was wrong, not the implementation" and that was too strong a claim from a broken instrument — the
+honest version is that the term is worth nothing either way, and that the twenty-game spread between
+the two columns is the cost of scoring a position the table had already left. The comment above
+`LAND_ON_BOARD` has been corrected in place rather than left to mislead the next attempt.
+
+**It stays deleted**, because level is level: a term the instrument cannot price is a scan of both
+boards on every evaluation for nothing. What it bought is the correction, and one more thing worth
+more than the term — **three of the other four deleted terms are now worth re-asking.** A second ply
+and a swing projection (D62) and untapped mana (D68) are all statements about what happens next, and
+all three were measured against a position that had already gone past them. Whether any of them
+survives the fixed instrument is unknown, and it is a much better question than the one D116 left.
+
+The general lesson is about method rather than about Magic: **four terms were deleted against an
+instrument that was reading the wrong position, and the deletions were recorded as facts about the
+terms.** They were facts about the pair. Every one of those entries states its numbers, which is the
+only reason this was recoverable at all — a log that had recorded "tried valuing evasion, didn't
+work" would have closed the question for good.

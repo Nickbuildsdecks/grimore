@@ -561,16 +561,21 @@ const LIBRARY_CARD = 0.3;
 
   Monotone, and against. The first version counted tapped and summoning-sick creatures as pressure,
   which is a real flaw and not the reason: gating it on `canAttack` moved 0.5 to 164-172 and 1.0 to
-  162-174 — the same answer. The hypothesis was wrong, not the implementation.
+  162-174 — the same answer.
 
-  **And it says something sharper than "no".** Four of the five deleted terms — a second ply (D62),
-  a swing projection (D62), untapped mana (D68) and this — are all statements about what happens
-  *next*: the option the mana buys, the damage the flier will get through. The ones that work are
-  statements about what *is*: life, cards in hand, cards in the library, bodies on the board. With
-  auto-pass on, the position this search scores after a cast can already be a turn later (the same
-  trap the "spent on nothing" family exists for, D103), so a term about the future is read at a
-  moment that has already passed it. **This evaluation can price what is, not what will be** — and
-  the fix for that is not a better weight, it is a search that stops where the term applies.
+  **Then the search was fixed and the answer changed, which is the part worth reading.** Those games
+  were played when the search scored whatever position auto-pass had carried the table to — half of
+  all attack declarations *after the turn had ended* (D117). Asked again on a search that stops
+  where its action happened, the same term measures 170-166 at 0.5 and 168-168 at 1.0: **level, not
+  losing.** So the term is not harmful and never was; the drift was making it harmful, and D116's
+  "the hypothesis was wrong" was too strong a conclusion from a broken instrument.
+
+  It stays deleted anyway, because level is level: a term that cannot be priced is a scan of both
+  boards on every evaluation for nothing. What it bought was the correction above and the one that
+  follows from it — four of the five deleted terms (a second ply and a swing projection in D62,
+  untapped mana in D68, and this) are statements about what happens *next*, and all four were
+  measured against a position that had already gone past them. Three of the four are now worth
+  re-asking, which is a better place to be than five deletions and no explanation.
 */
 const LAND_ON_BOARD = 2.5;
 const PERMANENT_ON_BOARD = 3;
