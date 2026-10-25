@@ -5372,13 +5372,23 @@ rather than across two.
 **One CI failure in this stretch, and it is recorded here because it was not fixed.** The run on
 the lords commit failed `legacy-postgres` with 25 of 26 tests passing; the next run of the same job,
 on a superset of that code, passed. The commit touched the rules engine, apps/web and docs and not
-`server.js`, `db.js` or `test/`, so it cannot have caused it, and the suite passes three times out of
-three locally. The lead is in the Postgres container log — `duplicate key value violates unique
-constraint "players_pkey", Key (id)=(p_admin)` — and `test/postgres-write-paths.test.js` already
-carries a comment about that exact hazard: registering a player seeds a zeroed `player_stats` row for
-whatever season is active, so one test's row-count assertion depends on which season a previous test
-left open. A test that is commented about rather than made independent is a test that will do this
-again, so it is a task rather than a shrug — and **not** a retry, which would hide it for good.
+`server.js`, `db.js` or `test/`, so it cannot have caused it, and the suite passes ten times out of
+ten locally — including six runs in parallel, which is the closest thing here to a loaded CI runner.
+
+**Which test failed is still unknown, and that is the actual finding.** The job log is reachable only
+through the GitHub tool's *tail*, the failing test was early in a 26-test file, and the signed blob
+URL that would give the whole log is blocked by this environment's egress proxy. So the one thing
+worth changing was changed: every `node --test` script now runs the **spec reporter**, which prints
+a `✖ failing tests:` block with the name and the assertion at the *end* of the output. A tail is
+enough next time.
+
+**And the lead that looked obvious was a dead end, which is worth writing down so nobody follows
+it.** The Postgres container log is full of `column "id" does not exist` and one `duplicate key
+value violates unique constraint "players_pkey"`, and both are *handled*: `db.js`'s `run()` appends
+`RETURNING id` to every INSERT and retries without it when the table has no `id` column, and
+`seedAdminAccount()` is wrapped in its own try/catch. A service container's error log is the
+database's record of every statement that failed, not a record of anything the program minded. Half
+an hour went into that log before the code said so.
 
 
 
