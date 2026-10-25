@@ -185,6 +185,15 @@ slower decks comfortably and losing to the fastest ones — and a good part of t
 rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
 A person plays it better.
 
+**The decks are not all equally strong, and the pool knows it.** Measured bot against bot over 238
+games each against the rest of the pool, Ember Rush wins about three games in four (183-53) and
+Tidal Mind about one in four (45-193 on one seed set, 64-174 on another). That is partly the decks
+and partly the opponent: a burn deck with four Lightning Bolts is the easiest thing in the pool for
+a one-ply search to pilot, and a control deck that wants to hold mana up and answer the right spell
+is the hardest (see `claude/decisions-log.md`, D108 and D110). If you want an even game against the
+computer, give it Ember Rush or Verdant Guard and take whichever deck you like; if you want an easy
+one, give it Tidal Mind. A full table of all eight is the next measurement.
+
 The decks share a pool of a hundred and seventy-two scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
