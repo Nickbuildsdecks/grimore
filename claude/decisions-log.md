@@ -3630,3 +3630,68 @@ The win rate against the fixed shallow reference moved 148-92 → 150-90 on one 
 150-90 on the other. Both are inside the 18-game noise floor on 240, so the win rate is not the
 case for this change and is not claimed as one: the case is that a death the bot could have avoided
 no longer happens, at a cost of four tenths of a millisecond on a block.
+
+## D102 — Prevention with a quantity, and a card that is weak on purpose
+
+The last named gap in replacement and prevention: a shield with an amount. A Fog is all-or-nothing
+and lasts a turn; "prevent the next 3 damage" is a number that is *spent* by whatever damage shows
+up. `preventsCombatDamage` had refused to be stretched into it, and the three reasons it gave turned
+out to be exactly the three differences:
+
+- **it is rewritten rather than only read** — each damage event takes what it needs, the remainder
+  stays, and the effect is removed when it reaches zero rather than when the turn ends;
+- **it covers every source of damage**, not only combat, because that is what the cards say;
+- **its target can be a player**, which is why `ContinuousEffect['scope']` now has a seat in it —
+  the first scope here that names one, and the only one `characteristicsOf` can never match.
+
+All of it lands in `dealDamage`, which is the one place damage is ever marked, and *before* anything
+is marked. That ordering is the rule rather than a tidiness preference: damage that was prevented
+was never dealt, so it must not reduce life, must not mark a creature, must not count towards a
+commander's twenty-one, must not mark deathtouch, and must gain no life for a lifelink source. A
+shield consulted after the fact could not do a single one of those. Four of the five new tests fail
+with the spend removed; the fifth is the expiry test, which is about the duration rather than the
+spend and legitimately passes either way.
+
+**Two bot rules, both measured, both with the control run red.**
+
+*When.* Samite Healer's ability taps it, so it is the first card in the pool whose cost is a
+blocker. The search cannot see that cost — it scores the position one move out, where a tapped 1/1
+and an untapped one are worth the same and the block has not happened yet — so the Fog rule
+("damage is still coming") has a second condition for an ability: wait until blockers are declared.
+With it, 113 activations in 240 duels, every one of them in the declare-blockers step. Without it,
+45 in 60 duels, **every one in declare-attackers**, each spending a blocker before it blocked.
+
+*Where.* The bot's default aim is "the enemy, and the enemy's creatures", which is right for the
+removal and burn that are most of what targets anything and perfectly backwards for a shield: aimed
+at an opponent it prevents the damage *you* were about to deal. `TargetSpec.friendly` is advice to
+the bot in the same family as `preventsDamage` and `makesMana` — not a restriction, because a human
+may legally shield an opponent's creature and at a four-player table may want to. With it, 113 of
+113 shields aimed at the bot's own seat. Without it, **26 of 27 aimed at the opponent**.
+
+**And the card is weak, which the measurement said plainly and three times.** Skyward Writ beats the
+rest of the pool 164-76 and 153-87 over 240 paired duels on two seed sets. Adding the pair cost it
+about five per cent whichever way the slot was paid for:
+
+| the swap | seed set A | seed set B |
+| --- | --- | --- |
+| baseline | 164-76 | 153-87 |
+| two Healers + a Salve, for three bodies | 141-99 | 145-95 |
+| one of each, for two bodies | 146-94 | 146-94 |
+| one of each, for two spells | 153-87 | 139-101 |
+
+Which three cards come out moves the result less than the two seed sets move each other, so there is
+no free version of this slot: a three-mana 1/1 is a weak card whatever its text. Two things keep it
+in anyway. The pool otherwise contains **no card at all** that uses prevention-with-a-quantity, and
+a rule nothing can reach is a rule nobody can trust. And the measurement is of the *bot*: it takes
+exactly one point a turn with the Healer and — 72 casts out of 72 — always takes Healing Salve's
+three life rather than its shield, because three life is three life to `evaluate` while a shield is
+worth nothing it can see. A player who shields the blocker that is about to die gets a card the
+measurement cannot score. The honest summary is that this is the floor of what the pair does, not
+its value, and the five per cent is written down rather than rounded away.
+
+**What is still open, and named rather than hidden.** The bot never chooses the shield mode of a
+modal card, for the reason above. It will not hold a shield for a burn spell on the stack, because
+the gate asks about combat and the engine has no "this spell deals damage" flag to ask instead. And
+`chooseTargets` picks one aim per play, so the search never compares *aims* — shielding a blocker
+against shielding yourself is a choice it cannot be shown, which is the same shape of limit as the
+block plan the search was never offered in D101.

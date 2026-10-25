@@ -49,6 +49,24 @@ export interface TargetSpec {
   readonly filter?: (
     state: GameState, candidate: Target, controller: SeatIndex, source?: string,
   ) => boolean;
+  /**
+   * Advice to the bot: what this points at is being **helped**, not hit.
+   *
+   * Not a restriction, and deliberately not one. "Prevent the next 3 damage that would be dealt to
+   * any target" may legally be aimed at an opponent's creature, and at a four-player table there
+   * are reasons to; a filter that stopped it would be a different card. What it changes is which
+   * legal target the bot *picks*, because its default is "the enemy and the enemy's creatures" —
+   * sensible for the removal and the burn that are most of what targets anything, and exactly
+   * backwards for a shield, which is simply thrown away on an opponent.
+   *
+   * Declared on the spec, like `preventsDamage` is declared on the card, the mode or the ability:
+   * the engine does not read either, and both exist because the bot cannot work out intent from an
+   * effect it has not run yet.
+   *
+   * The pump spells have the same problem and do **not** carry this yet: `chooseTargets` says so,
+   * and fixing it there is a change to five cards' measured behaviour rather than a flag.
+   */
+  readonly friendly?: boolean;
 }
 
 /**
@@ -258,6 +276,12 @@ export interface AbilityDef {
   readonly effect?: EffectFn;
   /** Only activatable when you could cast a sorcery. */
   readonly sorcerySpeed?: boolean;
+  /**
+   * See `CardScript.preventsDamage`. On the ability because that is what is spent: a Samite
+   * Healer's ability taps it, so using it when no damage is coming costs a blocker for nothing,
+   * while the creature itself is a perfectly good play.
+   */
+  readonly preventsDamage?: boolean;
 }
 
 /** An Aura: what it may enchant, and what it does to the thing it is attached to. */
@@ -280,6 +304,13 @@ export interface ModeDef {
    * back for a combat would be wrong for either.
    */
   readonly expiresAtEndOfTurn?: boolean;
+  /**
+   * See `CardScript.preventsDamage`. On the mode for the same reason: Healing Salve's other mode
+   * gains three life, which is never spent on nothing the way a shield is — the life stays until
+   * something takes it, so dropping the whole card when no damage is coming would throw away the
+   * half that was fine.
+   */
+  readonly preventsDamage?: boolean;
 }
 
 /**

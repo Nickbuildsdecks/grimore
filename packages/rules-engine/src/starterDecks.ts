@@ -1182,6 +1182,26 @@ const TITANIC_GROWTH: CardDef = {
   colors: ['G'],
 };
 
+const SAMITE_HEALER: CardDef = {
+  name: 'Samite Healer',
+  typeLine: 'Creature \u2014 Human Cleric',
+  manaCost: '{1}{W}{W}',
+  cmc: 3,
+  power: '1',
+  toughness: '1',
+  oracleText: '{T}: Prevent the next 1 damage that would be dealt to any target this turn.',
+  colors: ['W'],
+};
+
+const HEALING_SALVE: CardDef = {
+  name: 'Healing Salve',
+  typeLine: 'Instant',
+  manaCost: '{W}',
+  cmc: 1,
+  oracleText: 'Choose one \u2014\n\u2022 Target player gains 3 life.\n\u2022 Prevent the next 3 damage that would be dealt to any target this turn.',
+  colors: ['W'],
+};
+
 const HEALERS_HAWK: CardDef = {
   name: "Healer's Hawk",
   typeLine: 'Creature \u2014 Bird',
@@ -2001,8 +2021,27 @@ export const SKYWARD_WRIT: DeckSpec = {
     // A one-drop that blocks in the air and gains the life back, which is what the matchups this
     // deck loses actually ask for.
     { card: HEALERS_HAWK, count: 2 },
-    { card: YOUTHFUL_KNIGHT, count: 2 },
+    { card: YOUTHFUL_KNIGHT, count: 1 },
     { card: OMENSPEAKER, count: 2 },
+    /*
+      The prevention pair, one copy each, and the two cards they cost.
+
+      A Samite Healer stops one damage a turn for ever, and the tap is a real decision rather than
+      a freebie because a tapped Healer is not blocking; Healing Salve is one mana for three life
+      or three damage that never happens. They cost a Wind Drake and the second Youthful Knight.
+
+      **Two cards and not six, and the slot is not free.** Three shapes of this swap were measured
+      over 240 paired duels each against the rest of the pool, twice, against a baseline of 164-76
+      and 153-87: two Healers and a Salve for three bodies gave 141-99 and 145-95; one of each for
+      two bodies gave 146-94 and 146-94; one of each for two *spells* instead gave 153-87 and
+      139-101. Every version costs this deck about five per cent, and which cards come out moves it
+      less than the two seed sets move each other — a three-mana 1/1 is a weak card whatever its
+      text. This is the version that keeps every answer: the Healer stands in for the second
+      Youthful Knight on the ground and the Salve for the Wind Drake. It is carried on purpose, and
+      why is in `claude/decisions-log.md` (D102).
+    */
+    { card: SAMITE_HEALER, count: 1 },
+    { card: HEALING_SALVE, count: 1 },
     { card: WALL_OF_AIR, count: 2 },
     { card: RAISE_THE_ALARM, count: 2 },
     // And the air, which it does intend to win.
@@ -2011,7 +2050,6 @@ export const SKYWARD_WRIT: DeckSpec = {
     // to. Against the two colours that hold this pool's removal it simply cannot be answered, and
     // it is the only card here that proves protection does all four of its jobs.
     { card: PALADIN_EN_VEC, count: 2 },
-    { card: WIND_DRAKE, count: 1 },
     { card: MAN_O_WAR, count: 2 },
     { card: AIR_ELEMENTAL, count: 1 },
     { card: SERRA_ANGEL, count: 2 },

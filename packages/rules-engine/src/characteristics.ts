@@ -131,7 +131,18 @@ export interface ContinuousEffect {
      * 3/2. `source` is what it excludes, which is why a continuous effect keeps it.
      */
     | { readonly kind: 'other-controller-creatures' }
-    | { readonly kind: 'all-creatures' };
+    | { readonly kind: 'all-creatures' }
+    /**
+     * One player, rather than any permanent.
+     *
+     * The only scope here that names a seat, and the only one `characteristicsOf` can never match,
+     * because a player has no characteristics to modify. It exists for the one kind of effect that
+     * has to be able to point at a player the same way it points at a creature: a prevention
+     * shield, whose printed target is "any target" (CR 115.4). `effectApplies` says so out loud
+     * rather than falling through the default, so the next effect that wants a seat scope finds
+     * the question already asked.
+     */
+    | { readonly kind: 'seat'; readonly seat: SeatIndex };
   readonly power?: number;
   readonly toughness?: number;
   readonly keywords?: readonly Keyword[];
@@ -198,6 +209,23 @@ export interface ContinuousEffect {
    * it does.
    */
   readonly preventsCombatDamage?: boolean;
+  /**
+   * A shield with a quantity: "prevent the next N damage that would be dealt to <this> this turn"
+   * (CR 615.1), where N is what is **left** of it.
+   *
+   * The shape `preventsCombatDamage` deliberately refused, and the three differences are the whole
+   * of it. It is **spent**: each damage event takes what it needs and the remainder stays, so the
+   * effect is rewritten rather than only read, and it is removed when it reaches zero rather than
+   * when the turn ends. It covers **every** source of damage, not only combat, because that is
+   * what the cards say — a Samite Healer answers a Lightning Bolt. And its target can be a
+   * **player**, which is why the scope union now has a seat in it.
+   *
+   * Applied in `dealDamage`, which is the single place damage is ever marked or lost, and applied
+   * *before* anything is marked: prevention is not something that can be undone afterwards, and
+   * damage that is wholly prevented must also not gain life for a lifelink source or mark a
+   * creature deathtouched, because none of it was dealt.
+   */
+  readonly preventsDamageAmount?: number;
   readonly duration: EffectDuration;
   readonly createdTurn: number;
   /**
@@ -257,6 +285,9 @@ function effectApplies(effect: ContinuousEffect, instance: CardInstance, creatur
       return creature && instance.zoneSeat === effect.controller && instance.id !== effect.source;
     case 'all-creatures':
       return creature;
+    // A seat scope is about the player, not their permanents: nothing on the battlefield is in it.
+    case 'seat':
+      return false;
     default:
       return false;
   }

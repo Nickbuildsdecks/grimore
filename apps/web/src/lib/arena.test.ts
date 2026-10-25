@@ -1212,6 +1212,15 @@ describe("cardBadges", () => {
     expect(cardBadges(v, permanent())).not.toContain("damage prevented")
   })
 
+  it("says how much prevention is sitting on a creature, which is a number nothing else holds", () => {
+    // A shield is not a counter and not a keyword, and the card that made it is in a graveyard.
+    // Three points that will quietly not happen, with nothing on the board to say so.
+    const v = view({ automation: automation() })
+    expect(cardBadges(v, permanent({ shielded: 3 }))).toContain("prevents 3")
+    expect(cardBadges(v, permanent({ shielded: 1 }))).toContain("prevents 1")
+    expect(cardBadges(v, permanent()).some((b) => b.startsWith("prevents"))).toBe(false)
+  })
+
   it("says when a creature cannot fight, which is what an Aura like Pacifism does", () => {
     const v = view({ automation: automation() })
     expect(cardBadges(v, permanent({ cantAttack: true, cantBlock: true }))).toContain("can't fight")

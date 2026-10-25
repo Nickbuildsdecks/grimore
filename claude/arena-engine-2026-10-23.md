@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 153 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 155 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -218,10 +218,11 @@ bug rather than a board.
   is the first one that belongs to a permanent and changes what happens to a *different* one. The
   shape it needed — a pass that asks every permanent whether it wants to replace what is about to
   happen — now exists and is what the next one should use. **Protection from a colour (CR 702.16) is
-  in as well**, all four of its rules. What is still missing is damage prevention with a quantity
-  ("prevent the next 3 damage": a shield that is spent, survives partial use, and has to interact
-  with every source of damage). Cards needing that are still left unscripted rather than
-  approximated.
+  in as well**, all four of its rules, and so is **damage prevention with a quantity (CR 615)** —
+  the shield that is spent a point at a time, survives partial use, covers every source of damage
+  and can sit on a player. That was the last of the named gaps in this family; what is left is
+  redirection ("the next time ~ would deal damage, it deals it to ~ instead"), which nothing in the
+  pool needs and which is not approximated.
 - **Copy effects** and **characteristic-setting effects**: still no vocabulary for either.
 - **True layer interaction** (CR 613). What is here is a fixed order — printed, then effects, then
   counters — which is right for every effect the card pool produces. Characteristic-setting and copy
@@ -1323,7 +1324,8 @@ duration, an expiry pass and a source. `preventsCombatDamage` says "combat damag
 permanents does not happen — dealt by them *and* dealt to them", which is the sentence both printed
 cards use, and the engine reads it in exactly one place, `dealCombatDamage`. It is combat-only and
 named so: "prevent the next 3 damage" is a shield with a quantity that is spent, a different shape
-that no card here needs.
+that no card here needed at the time. Two cards need it now, and it is built as its own thing rather
+than as a stretch of this flag — see "A shield with a number on it" below.
 
 Four cards, and each one is a different shape of the same flag:
 
@@ -2092,6 +2094,44 @@ can, because every run has thousands of each kind. The paired win rate against t
 reference moved 148-92 → 150-90 and 149-91 → 150-90 on the two seed sets, both inside the documented
 18-game noise floor, so the case for the change is the death that no longer happens rather than the
 win rate — which is written down that way rather than rounded up.
+
+### A shield with a number on it
+
+The last named gap in prevention. A Fog is all-or-nothing for a turn; "prevent the next 3 damage" is
+an amount that whatever damage arrives spends a point at a time. Two cards carry it — **Samite
+Healer**, which taps for one damage a turn for ever, and **Healing Salve**, one mana for three life
+or three damage that never happens — and between them they needed three things the blanket version
+had deliberately refused: an effect that is rewritten as it absorbs, one that covers a burn spell as
+well as a combat, and one that can sit on a *player*, which is the first effect scope here that
+names a seat.
+
+It all happens in `dealDamage`, before anything is marked, which is the rule and not tidiness:
+damage that was prevented was never dealt, so it reduces no life, marks no creature, counts towards
+no commander's twenty-one, marks no deathtouch and gains no life for a lifelink source. Four of the
+five tests fail with the spend removed.
+
+**The table is told.** A shield is not a counter, not a keyword, and the card that made it is in a
+graveyard — three points that will quietly not happen, with nothing on the board to say so. The view
+now carries it on the permanent and on the seat, and the board shows "prevents 3". It is public, for
+the same reason it is public at a real table: a block made against a shield the attacker could not
+see would be the table lying to them instead of to the defender.
+
+**Two bot rules, each with its control run red.** The Healer's ability taps it, so it is the first
+card whose cost is a blocker — and the search cannot see that cost, because one move out a tapped
+1/1 and an untapped one score the same. So it waits for the blocks: 113 activations in 240 duels,
+every one in the declare-blockers step, against 45 in 60 duels all in declare-attackers without the
+rule. And the bot's default aim is the enemy, which for a shield is the one aim that makes the card
+do nothing at all: 113 of 113 aimed at itself with `friendly` on the target spec, 26 of 27 aimed at
+the opponent without it.
+
+**And the card is weak, which the measurement said three times.** Skyward Writ beats the pool
+164-76 and 153-87 over 240 paired duels; the pair costs it about five per cent however the slot is
+paid for, and which cards come out matters less than the seed sets differ from each other. It is
+carried anyway for two reasons, both written down in full in `claude/decisions-log.md`: without it
+the pool has no card that reaches this rule at all, and the measurement is of the bot, which takes
+one point a turn and — 72 casts out of 72 — always takes the Salve's three life over its shield,
+because three life is worth something to `evaluate` and a shield is worth nothing it can see. A
+player who shields the blocker about to die gets a card the instrument cannot score.
 
 ## Next
 

@@ -104,9 +104,13 @@ const foesOf = (state: GameState, seat: SeatIndex): SeatIndex[] =>
  * Picks targets for a play, preferring the opponent and the opponent's creatures.
  *
  * It has no idea what a card does, so a pump spell gets aimed at an enemy creature — legal, and
- * wasteful. Fixing that needs the bot to read the script's intent, which is a different piece of
- * work; what matters here is that every choice comes from the candidate list the engine produced,
- * so a bad choice is still a legal one.
+ * wasteful. Fixing that in general needs the bot to read the script's intent, which is a different
+ * piece of work; what matters here is that every choice comes from the candidate list the engine
+ * produced, so a bad choice is still a legal one.
+ *
+ * The exception is a spec the card marks `friendly`, which is the one case where the default is not
+ * merely wasteful but the whole cost of the card: a prevention shield aimed at an opponent prevents
+ * the damage *you* were about to deal. Those are aimed the other way round — see `friendlyRank`.
  */
 function chooseTargets(state: GameState, seat: SeatIndex, play: LegalPlay): Target[] | null {
   const chosen: Target[] = [];
@@ -122,8 +126,11 @@ function chooseTargets(state: GameState, seat: SeatIndex, play: LegalPlay): Targ
       const candidates = (play.candidates[i] ?? []).filter(
         (t) => !used.has(t.kind === 'card' ? `c${t.id}` : `p${t.seat}`),
       );
-      const enemyFirst = [...candidates].sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
-      const pick = enemyFirst[0];
+      const score = spec.friendly === true
+        ? (t: Target): number => friendlyRank(state, t, foes)
+        : (t: Target): number => rank(state, t, foes);
+      const bestFirst = [...candidates].sort((a, b) => score(b) - score(a));
+      const pick = bestFirst[0];
       if (pick === undefined) {
         if (spec.optional) break;
         return null;
@@ -145,6 +152,24 @@ function cheapestCreature(state: GameState, ids: readonly string[]): string | nu
     if (best === null || power < best.power) best = { id, power };
   }
   return best?.id ?? null;
+}
+
+/**
+ * The other way round, for a spec the card marks `friendly`: my own side only.
+ *
+ * **Me before my creatures**, which is a judgement rather than an obvious ordering. A shield on a
+ * blocker can save a creature; a shield on me only saves life. But the bot is offered these in a
+ * combat it is being attacked in, where some of the damage is usually unblocked and coming at a
+ * life total — and life is the thing that loses games, while the creature is replaceable. A seat
+ * that could work out which of the two is better in *this* combat would be a better player than
+ * this bot is anywhere else.
+ */
+function friendlyRank(state: GameState, target: Target, foes: readonly SeatIndex[]): number {
+  if (target.kind === 'player') return foes.includes(target.seat) ? -100 : 100;
+  const inst = state.instances[target.id];
+  if (inst === undefined) return -100;
+  if (foes.includes(inst.zoneSeat)) return -50;
+  return 50 + creatureValue(state, target.id);
 }
 
 /** Enemy players score highest, then enemy creatures by size, then anything else. */
@@ -1272,11 +1297,44 @@ function damageStillToCome(state: GameState, seat: SeatIndex): boolean {
     || state.step === 'first-strike-damage';
 }
 
-/** Whether this action casts a spell whose whole effect is to prevent combat damage. */
+/**
+ * Whether prevention spent on this action can still earn its keep.
+ *
+ * Damage has to be coming at this seat, which is `damageStillToCome` and is the Fog rule. A shield
+ * paid for by **tapping a creature** has a second condition on top of it: it waits until blockers
+ * are declared, because the tap is also paying with a blocker and the search cannot see that — it
+ * scores the position one move out, where a tapped 1/1 and an untapped one are worth the same and
+ * the block that 1/1 would have made has not happened yet. Nothing is lost by waiting: the ability
+ * is instant speed, and a shield spent after blocks are in knows what it is stopping.
+ */
+function preventionCanMatter(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (!damageStillToCome(state, seat)) return false;
+  return !(action.type === 'auto:activate' && state.step === 'declare-attackers');
+}
+
+/**
+ * Whether this action spends something whose whole effect is to prevent damage.
+ *
+ * Three shapes now, and each needed saying separately:
+ *
+ *  - the **card**, which is a Fog;
+ *  - one **mode** of a card, which is Healing Salve's shield — its other mode gains three life and
+ *    is never wasted in the same way, so dropping the whole card would throw away the good half;
+ *  - one **ability**, which is Samite Healer's tap. The creature is a fine play; what is spent on
+ *    nothing is the tap, and a tapped 1/1 is not a blocker.
+ */
 function castsAPrevention(state: GameState, action: Action): boolean {
+  if (action.type === 'auto:activate') {
+    const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+    const ability = scriptFor(name)?.abilities?.[action.abilityIndex ?? 0];
+    return ability?.preventsDamage === true;
+  }
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return name !== undefined && scriptFor(name)?.preventsDamage === true;
+  const script = name === undefined ? undefined : scriptFor(name);
+  if (script === undefined) return false;
+  if (script.preventsDamage === true) return true;
+  return modesOf(script, action.modes).some((mode) => mode.preventsDamage === true);
 }
 
 /** Whether this action casts a spell whose whole effect is keeping one of your creatures alive. */
@@ -1562,7 +1620,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     }
     // And the same judgement for a Fog with nothing attacking. Not a weight: a card that prevents
     // damage nobody is dealing has done nothing at all, which is a fact about the board.
-    if (castsAPrevention(state, option.action) && !damageStillToCome(state, seat)) {
+    if (castsAPrevention(state, option.action) && !preventionCanMatter(state, seat, option.action)) {
       dropped += 1;
       continue;
     }

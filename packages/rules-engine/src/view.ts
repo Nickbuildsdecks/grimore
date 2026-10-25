@@ -28,6 +28,7 @@
 import { zoneKey, type CardDef, type CardInstance, type ZoneId } from './cards.js';
 import type { FormatId } from './formats.js';
 import { characteristicsOf, combatDamagePrevented, type Keyword } from './characteristics.js';
+import { shieldOn } from './effects.js';
 import { legalActions, type LegalActions } from './legalActions.js';
 import { autoPassFor, pendingDeclaration, stillDeciding } from './automation.js';
 import { STEP_LABELS } from './turnTypes.js';
@@ -84,6 +85,17 @@ export interface VisibleCard {
    * a player about to make the wrong block.
    */
   readonly damagePrevented?: boolean;
+  /**
+   * Points of damage prevention sitting on this permanent, when something put a shield there.
+   *
+   * Sent for the same reason `damagePrevented` is, and more urgently: a blanket Fog changes what
+   * every block on the board is worth, and a player can at least see the Fog in the log. A shield
+   * with three points left on one creature is invisible — it is not a counter, it is not a keyword,
+   * and the card it came from is in a graveyard. At a real table it is a note beside the creature;
+   * here it has to be a number on the card, or the player who cast it blocks as though they had
+   * not.
+   */
+  readonly shielded?: number;
 }
 
 /** One object waiting to resolve, as the table sees it. The stack is public. */
@@ -155,6 +167,13 @@ export interface SeatView {
   readonly graveyardCount: number;
   readonly exileCount: number;
   readonly battlefieldCount: number;
+  /**
+   * Points of damage prevention sitting on this **player**, when something put a shield there.
+   *
+   * The same number as `VisibleCard.shielded` and for the same reason, for the target a card like
+   * Healing Salve points at most often: nothing on the board says it is there.
+   */
+  readonly shielded?: number;
 }
 
 export interface GameView {
@@ -219,6 +238,7 @@ export interface PackedCard {
   readonly cantAttack?: true;
   readonly cantBlock?: true;
   readonly damagePrevented?: true;
+  readonly shielded?: number;
 }
 
 /** A view as it travels: the same thing, with each card definition said once. */
@@ -282,6 +302,7 @@ export function packView(view: GameView): PackedView {
     if (card.cantAttack === true) packed.cantAttack = true;
     if (card.cantBlock === true) packed.cantBlock = true;
     if (card.damagePrevented === true) packed.damagePrevented = true;
+    if (card.shielded !== undefined) packed.shielded = card.shielded;
     cards[id] = packed as unknown as PackedCard;
   }
   const { cards: _dropped, ...view_ } = view;
@@ -317,6 +338,7 @@ export function unpackView(packed: PackedView): GameView {
       ...(card.cantAttack === true ? { cantAttack: true } : {}),
       ...(card.cantBlock === true ? { cantBlock: true } : {}),
       ...(card.damagePrevented === true ? { damagePrevented: true } : {}),
+      ...(card.shielded === undefined ? {} : { shielded: card.shielded }),
     };
   }
   const { defs: _defs, cards: _packedCards, ...view } = packed;
@@ -389,6 +411,9 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     ...(ch.cantAttack ? { cantAttack: true } : {}),
     ...(ch.cantBlock ? { cantBlock: true } : {}),
     ...(combatDamagePrevented(state, inst) ? { damagePrevented: true } : {}),
+    ...(shieldOn(state, { kind: 'card', id: inst.id }) > 0
+      ? { shielded: shieldOn(state, { kind: 'card', id: inst.id }) }
+      : {}),
   };
 }
 
@@ -497,6 +522,9 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     graveyardCount: listAt(state, zoneKey(seat.index, 'graveyard')).length,
     exileCount: listAt(state, zoneKey(seat.index, 'exile')).length,
     battlefieldCount: listAt(state, zoneKey(seat.index, 'battlefield')).length,
+    ...(shieldOn(state, { kind: 'player', seat: seat.index }) > 0
+      ? { shielded: shieldOn(state, { kind: 'player', seat: seat.index }) }
+      : {}),
   }));
 
   return {

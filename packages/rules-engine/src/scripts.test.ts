@@ -4342,6 +4342,141 @@ describe('damage that does not happen', () => {
     const maze = find(s, 1, 'battlefield', 'Maze of Ith');
     expect(legalActions(s, 1).plays.some((play) => play.card === maze)).toBe(false);
   });
+
+  /*
+    And the other shape of prevention: a quantity that is spent rather than a blanket.
+
+    Four things to prove, and each is a different line in `dealDamage`: the shield takes what it
+    can and no more, a shield that is used up stops existing, damage that was prevented was never
+    dealt at all — so no life is gained for a lifelink source and nothing is marked — and the
+    whole thing wears off at end of turn like any other effect with a duration.
+
+    The arithmetic is deliberately order-independent where it can be. Combat damage is dealt
+    creature by creature here, and nothing in the rules says which attacker's damage a shield
+    meets first; a test that only passes for one of those orders would be a test of this engine's
+    loop rather than of the card.
+  */
+  it("Healing Salve's shield takes three of the damage and then stops", () => {
+    // Two attackers, four damage: a 3/3 Hill Giant and a 1/1 Raging Goblin, neither blocked.
+    // Three of the four are prevented whichever order they arrive in, so one gets through.
+    let s = swingInto(['Healing Salve'], ['Plains'], 'skyward-writ');
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Plains'), abilityIndex: 0 });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Healing Salve'),
+      // The second mode, chosen as it is cast — the first gains three life instead.
+      modes: [1], targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(s.effects.length).toBe(1);
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(life(s, 1)).toBe(19);
+    // Spent, so it is gone rather than sitting at zero waiting for the turn to end.
+    expect(s.effects.length).toBe(0);
+  });
+
+  it('a Samite Healer taps for one damage a turn, and one is all it is', () => {
+    let s = swingInto([], ['Samite Healer'], 'skyward-writ');
+    const healer = find(s, 1, 'battlefield', 'Samite Healer');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 1, card: healer, abilityIndex: 0,
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    // The tap is the cost, and the reason using it is a decision: this 1/1 is not blocking now.
+    expect(s.instances[healer]!.tapped).toBe(true);
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(life(s, 1)).toBe(17);
+  });
+
+  it('three damage prevented on a blocker saves it, and the attacker still takes its share', () => {
+    let s = swingInto(['Healing Salve'], ['Plains', 'Leonin Skyhunter'], 'skyward-writ');
+    const skyhunter = find(s, 1, 'battlefield', 'Leonin Skyhunter');
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Plains'), abilityIndex: 0 });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Healing Salve'),
+      modes: [1], targets: [{ kind: 'card', id: skyhunter }],
+    })));
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = blockAndFight(s, 'Leonin Skyhunter');
+    // A 2/2 blocking a 3/3 dies; with the three prevented it is unmarked and alive, and the Giant
+    // takes its two all the same — prevention is about the damage, not about the fight.
+    expect(s.instances[skyhunter]!.zone).toBe('battlefield');
+    expect(damageOn(s, skyhunter)).toBe(0);
+    expect(damageOn(s, giant)).toBe(2);
+    // Only the unblocked Goblin got through.
+    expect(life(s, 1)).toBe(19);
+  });
+
+  it('damage that was prevented gains no life for a lifelink source', () => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'skyward-writ' },
+      battlefield: { 0: ["Healer's Hawk"], 1: ['Samite Healer'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const hawk = find(s, 0, 'battlefield', "Healer's Hawk");
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: hawk, defender: 1 }] });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Samite Healer'), abilityIndex: 0,
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    s = advanceTo(s, 'postcombat-main', 120);
+    // One damage, one prevented: the defender loses nothing, and the lifelink gains nothing,
+    // because no damage was dealt (CR 702.15a). A shield read after the fact could not say that.
+    expect(life(s, 1)).toBe(20);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('and the table is told it is there, on the creature and on the player', () => {
+    /*
+      The one way a shield differs from everything else the engine computes: there is nothing on
+      the card to read it off. Power, toughness, keywords and marked damage are all sent because a
+      client cannot work them out; a shield is sent because a *player* cannot, and would block as
+      though they had never cast it.
+    */
+    let s = swingInto(['Healing Salve'], ['Plains', 'Leonin Skyhunter'], 'skyward-writ');
+    const skyhunter = find(s, 1, 'battlefield', 'Leonin Skyhunter');
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Plains'), abilityIndex: 0 });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Healing Salve'),
+      modes: [1], targets: [{ kind: 'card', id: skyhunter }],
+    })));
+    // Public: the seat being attacked knows, and so does the seat attacking it — prevention is not
+    // hidden information at a real table either, and a block made against a shield nobody could
+    // see would be the table lying to the attacker instead of to the defender.
+    expect(viewFor(s, 1).cards[skyhunter]!.shielded).toBe(3);
+    expect(viewFor(s, 0).cards[skyhunter]!.shielded).toBe(3);
+    expect(viewFor(s, 1).seats[1]!.shielded).toBeUndefined();
+
+    // And on a player, where the same number has no card to sit on at all.
+    let t = swingInto(['Healing Salve'], ['Plains'], 'skyward-writ');
+    t = apply(t, { type: 'auto:activate', by: 1, card: find(t, 1, 'battlefield', 'Plains'), abilityIndex: 0 });
+    t = drain(passBoth(apply(t, {
+      type: 'auto:cast', by: 1, card: find(t, 1, 'hand', 'Healing Salve'),
+      modes: [1], targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(viewFor(t, 1).seats[1]!.shielded).toBe(3);
+    expect(viewFor(t, 1).seats[0]!.shielded).toBeUndefined();
+  });
+
+  it('an unspent shield wears off at end of turn', () => {
+    // Nobody attacking, so nothing spends it — and a land is not a legal target for "any target",
+    // which the engine refuses: the shield goes on its controller.
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'rot-harvest' },
+      hands: { 0: ['Healing Salve'] },
+      battlefield: { 0: ['Plains'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Plains'), abilityIndex: 0 });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Healing Salve'),
+      modes: [1], targets: [{ kind: 'player', seat: 0 }],
+    })));
+    expect(s.effects.length).toBe(1);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.effects.length).toBe(0);
+  });
 });
 
 describe('answering a permanent, and answering an answer', () => {

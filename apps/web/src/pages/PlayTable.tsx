@@ -688,6 +688,23 @@ function SeatStrip({
       {seat.poison > 0 ? <span className="text-[var(--g-mana-g)]">poison {seat.poison}</span> : null}
 
       {/*
+        Damage prevention sitting on this player, which nothing else on the table shows.
+
+        A shield cast on a player is three points that will quietly not happen, held somewhere no
+        card and no counter records. The seat row is where a player reads their life, so it is where
+        the number that defends it belongs.
+      */}
+      {(seat.shielded ?? 0) > 0 ? (
+        <span
+          data-testid={`shielded-${seat.index}`}
+          title="Damage prevention held on this player this turn"
+          className="text-[var(--g-mana-w)]"
+        >
+          prevents {seat.shielded}
+        </span>
+      ) : null}
+
+      {/*
         The commander damage *you* have taken, on your own row, which is the number that decides
         games: 21 from any one commander and you are out (CR 903.10), whatever your life total
         says. Only the worst of the three is shown, and whose it is — a column per opponent would

@@ -26,7 +26,7 @@ import {
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
-  exileUntilLeaves, returnExiledBy, preventCombatDamage,
+  exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type { CardScript, DecisionSpec, TargetSpec } from './scriptTypes.js';
@@ -39,6 +39,8 @@ import type { Target } from './turnTypes.js';
 const COLOURS = ['W', 'U', 'B', 'R', 'G'] as const;
 
 const ANY_TARGET: TargetSpec = { kind: 'any', description: 'any target' };
+/** The same spec on a card that *helps* what it points at. See `TargetSpec.friendly`. */
+const ANY_TARGET_HELPED: TargetSpec = { kind: 'any', description: 'any target', friendly: true };
 const TARGET_CREATURE: TargetSpec = { kind: 'creature', description: 'target creature' };
 const TARGET_PLAYER: TargetSpec = { kind: 'player', description: 'target player' };
 
@@ -1327,6 +1329,13 @@ function damageFirstTarget(c: EffectContext, amount: number): GameState {
   return dealDamage(c.state, target, amount, { controller: c.controller, source: c.source });
 }
 
+/** "Prevent the next N damage that would be dealt to any target" — a creature or a player. */
+function shieldFirstTarget(c: EffectContext, amount: number): GameState {
+  const target = c.targets[0];
+  if (target === undefined) return c.state;
+  return preventDamage(c.state, c.source, c.controller, target, amount);
+}
+
 /** Creature cards in a seat's own graveyard, which several cards in Rot Harvest count. */
 function creatureCardsInGraveyard(state: GameState, seat: SeatIndex): number {
   let n = 0;
@@ -2167,6 +2176,74 @@ const HOLY_DAY: CardScript = {
   onResolve: (c) => preventCombatDamage(c.state, c.source, c.controller),
 };
 
+/*
+  And the other shape of prevention: a shield with a quantity.
+
+  A Fog is all-or-nothing and lasts a turn; these two hand out an *amount* that the damage spends.
+  Three differences follow, and all three are why `preventsCombatDamage` refused to be stretched
+  into them: the effect is rewritten as it absorbs rather than only read, it covers a burn spell as
+  well as a combat, and it can sit on a player. `preventDamage` is the primitive; `dealDamage` is
+  the only thing that reads it.
+
+  Both cards are "any target", which is the first time a continuous effect in this engine has
+  needed to point at a player.
+*/
+
+/**
+ * Samite Healer: one damage a turn, for ever, for the price of not blocking with it.
+ *
+ * The repeatable version, and the one whose cost is easy to miss — the ability taps it, and a
+ * tapped 1/1 is not a blocker. On a board where one damage decides a fight that is a real
+ * decision, which is what makes a vanilla-looking common worth scripting.
+ *
+ * `preventsDamage` on the ability rather than the card, for the same reason Selesnya Charm carries
+ * `expiresAtEndOfTurn` per mode: the flag is advice to the bot about *this* way of spending the
+ * card, and a creature's body is not spent on nothing just because its ability would be.
+ */
+const SAMITE_HEALER: CardScript = {
+  name: 'Samite Healer',
+  abilities: [{
+    cost: { tap: true },
+    description: '{T}: Prevent the next 1 damage that would be dealt to any target this turn.',
+    preventsDamage: true,
+    targets: [ANY_TARGET_HELPED],
+    effect: (c) => shieldFirstTarget(c, 1),
+  }],
+};
+
+/**
+ * Healing Salve: three life, or three damage that never happens.
+ *
+ * The one-mana white instant that is two cards, and the pair is the point: gaining three life and
+ * preventing three damage are the same three points in most positions and completely different in
+ * two — life does nothing for a creature in a fight, and prevention does nothing against a loss
+ * the damage already caused. Which half is right is a judgement about the board, which is exactly
+ * the kind of choice a modal spell exists to put in front of a player.
+ */
+const HEALING_SALVE: CardScript = {
+  name: 'Healing Salve',
+  modal: {
+    modes: [
+      {
+        description: 'Target player gains 3 life',
+        targets: [TARGET_PLAYER],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : gainLife(c.state, seat, 3);
+        },
+      },
+      {
+        description: 'Prevent the next 3 damage that would be dealt to any target this turn',
+        // Only this mode is spent on nothing when no damage is coming; the life is never wasted in
+        // the same way, because it stays until something takes it.
+        preventsDamage: true,
+        targets: [ANY_TARGET_HELPED],
+        effect: (c) => shieldFirstTarget(c, 3),
+      },
+    ],
+  },
+};
+
 /**
  * Maze of Ith: a land that answers one attacker a turn, for ever, and never taps for mana.
  *
@@ -2414,7 +2491,8 @@ const ALL: readonly CardScript[] = [
   WALL_OF_AIR, HANNA,
   LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,
   DARK_RITUAL, BORDERLAND_MARAUDER, PREY_UPON, DIVINE_VERDICT,
-  FOG, HOLY_DAY, MAZE_OF_ITH, FOG_BANK, CITY_OF_BRASS, MANA_CONFLUENCE, DARK_CONFIDANT,
+  FOG, HOLY_DAY, SAMITE_HEALER, HEALING_SALVE, MAZE_OF_ITH, FOG_BANK, CITY_OF_BRASS,
+  MANA_CONFLUENCE, DARK_CONFIDANT,
   guildgate('Azorius Guildgate', 'W', 'U'),
   equipment('Darksteel Plate', '{2}', { keywords: ['indestructible'] },
     'equipped creature is indestructible'),

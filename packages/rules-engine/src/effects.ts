@@ -88,6 +88,88 @@ export const opponentsOf = (state: GameState, seat: SeatIndex): SeatIndex[] =>
 // ── Damage and life ──────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Spends whatever prevention shields apply to this target against this much damage.
+ *
+ * Returns the damage that is **left** after they have taken what they can, and a state whose
+ * shields have been decremented — or dropped, when a shield is used up. Both halves in one place
+ * because they are one rule: a shield that absorbs two of three damage has to both stop the two
+ * and stop being there.
+ *
+ * **Oldest first**, which is a simplification of CR 616.1: the player being dealt the damage
+ * chooses which applicable prevention effect to apply. The choice only matters when two shields
+ * cover the same target at the same time and one of them would be wasted, and the only way this
+ * pool produces that is two Samite Healers tapping in the same combat — where the order changes
+ * nothing, because both shields prevent the same thing. Asking would be a new prompt mid-damage
+ * for a choice that has no consequence here, so it is ordered and written down instead.
+ */
+function spendShields(
+  state: GameState, target: Target, amount: number,
+): { readonly state: GameState; readonly amount: number } {
+  let left = amount;
+  let changed = false;
+  const kept: ContinuousEffect[] = [];
+  for (const effect of state.effects) {
+    const shield = effect.preventsDamageAmount;
+    if (shield === undefined || shield <= 0 || left <= 0 || !shieldCovers(effect, target)) {
+      kept.push(effect);
+      continue;
+    }
+    const used = Math.min(shield, left);
+    left -= used;
+    changed = true;
+    if (shield - used > 0) kept.push({ ...effect, preventsDamageAmount: shield - used });
+  }
+  return { state: changed ? { ...state, effects: kept } : state, amount: left };
+}
+
+/**
+ * How many points of prevention are sitting on this target.
+ *
+ * The read-only half of the same question `spendShields` asks, through the same `shieldCovers`, so
+ * the number a player is shown and the number the damage meets can never disagree. `viewFor` is
+ * what wants it: a shield is not a counter and not a keyword, so without this it is invisible.
+ */
+export function shieldOn(state: GameState, target: Target): number {
+  let total = 0;
+  for (const effect of state.effects) {
+    const shield = effect.preventsDamageAmount;
+    if (shield === undefined || shield <= 0) continue;
+    if (shieldCovers(effect, target)) total += shield;
+  }
+  return total;
+}
+
+/** Whether a shield is on this target: a permanent by id, or a player by seat. */
+function shieldCovers(effect: ContinuousEffect, target: Target): boolean {
+  if (target.kind === 'player') {
+    return effect.scope.kind === 'seat' && effect.scope.seat === target.seat;
+  }
+  return effect.scope.kind === 'cards' && effect.scope.ids.includes(target.id);
+}
+
+/**
+ * "Prevent the next N damage that would be dealt to any target this turn" (CR 615.1).
+ *
+ * The shield half of prevention, as opposed to `preventCombatDamage`'s blanket: a quantity that is
+ * spent by the damage it absorbs, against any source rather than only combat, and able to sit on a
+ * player as well as on a permanent. `dealDamage` is the only thing that reads it.
+ */
+export function preventDamage(
+  state: GameState, source: string, controller: SeatIndex, target: Target, amount: number,
+): GameState {
+  if (amount <= 0) return state;
+  return pushEffect(state, {
+    source,
+    controller,
+    scope: target.kind === 'player'
+      ? { kind: 'seat', seat: target.seat }
+      : { kind: 'cards', ids: [target.id] },
+    preventsDamageAmount: amount,
+    duration: 'end-of-turn',
+  });
+}
+
+/**
  * Marks damage on a creature or deals it to a player.
  *
  * Damage to a creature is *marked*, not subtracted from toughness: a creature with 3 damage that is
@@ -128,6 +210,18 @@ export function dealDamage(
   // Protection from the source's colour prevents the damage entirely (CR 702.16b). Asked before
   // anything is marked, because prevention is not something that can be undone afterwards.
   if (target.kind === 'card' && protectedFrom(next, target.id, opts.source)) return next;
+  /*
+    Then prevention shields take what they can (CR 615.1), also before anything is marked.
+
+    `left` rather than `amount` from here down, and every use of it matters: damage that was
+    prevented is damage that was never dealt, so it does not reduce life, does not mark a creature,
+    does not count towards the twenty-one a commander needs, does not mark deathtouch, and gains no
+    life for a lifelink source. A shield read after the fact could not do any of that.
+  */
+  const shielded = spendShields(next, target, amount);
+  next = shielded.state;
+  const left = shielded.amount;
+  if (left <= 0) return next;
   if (target.kind === 'player') {
     const seat = next.seats[target.seat];
     if (seat === undefined) return next;
@@ -149,8 +243,8 @@ export function dealDamage(
     const key = from?.isCommander === true ? String(from.owner) : null;
     const tally = key === null
       ? {}
-      : { commanderDamage: { ...seat.commanderDamage, [key]: (seat.commanderDamage[key] ?? 0) + amount } };
-    next = replaceSeat(next, target.seat, { life: clampValue(seat.life - amount), ...tally });
+      : { commanderDamage: { ...seat.commanderDamage, [key]: (seat.commanderDamage[key] ?? 0) + left } };
+    next = replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally });
   } else {
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') return next;
@@ -161,19 +255,19 @@ export function dealDamage(
     */
     if (hasType(characteristicsOf(next, inst).typeLine, 'planeswalker')) {
       const loyalty = inst.counters['loyalty'] ?? 0;
-      const counters = { ...inst.counters, loyalty: Math.max(0, loyalty - amount) };
+      const counters = { ...inst.counters, loyalty: Math.max(0, loyalty - left) };
       next = withInstance(next, inst.id, { counters });
-      if (opts.lifelink && opts.controller !== undefined) next = gainLife(next, opts.controller, amount);
+      if (opts.lifelink && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
       return next;
     }
     next = withInstance(next, inst.id, {
-      damage: clampValue(inst.damage + amount),
+      damage: clampValue(inst.damage + left),
       // Any damage from a deathtouch source destroys the creature (CR 702.2b). Marking it keeps
       // state-based actions the only place something actually dies.
       ...(opts.deathtouch ? { counters: { ...inst.counters, deathtouched: 1 } } : {}),
     });
   }
-  if (opts.lifelink && opts.controller !== undefined) next = gainLife(next, opts.controller, amount);
+  if (opts.lifelink && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
   return next;
 }
 

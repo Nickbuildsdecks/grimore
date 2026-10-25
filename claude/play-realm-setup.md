@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — a hundred and fifty-three, today, across seven starter decks. A
+cards somebody has scripted — a hundred and fifty-five, today, across seven starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -178,7 +178,7 @@ slower decks comfortably and losing to the fastest ones — and a good part of t
 rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
 A person plays it better.
 
-The decks share a pool of a hundred and fifty-three scripted cards, which now includes a wrath, a
+The decks share a pool of a hundred and fifty-five scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -310,9 +310,9 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (559 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (567 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (170 tests, the interaction reducer behind every prompt) and
+pods as well as duels), `apps/web` (171 tests, the interaction reducer behind every prompt) and
 `apps/realtime`
 (30 tests against live Redis, including two socket clients playing to a finish and one person
 playing the server).
@@ -323,7 +323,7 @@ playing the server).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows a hundred and fifty-three cards.** Everything in the seven starter decks. It
+- **The engine knows a hundred and fifty-five cards.** Everything in the seven starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

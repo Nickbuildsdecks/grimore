@@ -731,6 +731,16 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
   // you would make without it.
   if (card.damagePrevented === true) out.push("damage prevented")
   /*
+    And the shield with a quantity, which is more invisible still.
+
+    "Damage prevented" above comes from a Fog, and a Fog is in the log a moment earlier. A shield
+    is a number that sits on one permanent for the rest of the turn and is spent a point at a time
+    by whatever damage arrives, with nothing on the card to show it — not a counter, not a keyword,
+    and the Samite Healer that made it is untapped again next turn. A player who cannot see it
+    blocks as though they had never cast it.
+  */
+  if ((card.shielded ?? 0) > 0) out.push(`prevents ${card.shielded}`)
+  /*
     Who this creature is attacking, and who is in its way.
 
     With one opponent "attacking" says everything there is to say; with three it says almost

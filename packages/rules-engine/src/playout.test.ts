@@ -1152,6 +1152,74 @@ describe('what the engine tells a client', () => {
   });
 });
 
+describe('a shield the bot has to spend at the right moment', () => {
+  /*
+    Samite Healer is the first card in the pool whose *cost* is a blocker.
+
+    The ability taps it, so using it in the attackers step spends a 1/1 that has not blocked yet —
+    and the search cannot see that, because it scores the position one move out, where a tapped 1/1
+    and an untapped one are worth the same and the block has not happened. So the rule family that
+    stops a Fog being cast into an empty board has a second condition for an ability: wait until
+    blockers are declared. Nothing is lost by waiting — it is instant speed, and a shield spent
+    after the blocks are in knows what it is stopping.
+
+    The second half is aim. The bot's default is "the enemy, and the enemy's creatures", which is
+    right for the removal and the burn that are most of what targets anything and exactly wrong
+    here: a shield aimed at an opponent prevents the damage *you* were about to deal. `friendly` on
+    the target spec is what turns that around, and this is the test that it did.
+  */
+  const beingAttacked = (): GameState => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+      battlefield: { 0: ['Samite Healer', 'Wall of Air', 'Plains'], 1: ['Hill Giant', 'Raging Goblin'] },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const attackers = ['Hill Giant', 'Raging Goblin'].map((name) => ({
+      attacker: find(s, 1, 'battlefield', name), defender: 0 as SeatIndex,
+    }));
+    s = apply(s, { type: 'auto:attack', by: 1, attackers });
+    // The attacking seat holds priority first, in the step it declared the attack in.
+    return apply(s, { type: 'auto:pass', by: 1 });
+  };
+
+  it('holds the tap until blockers are declared, then aims it at itself', () => {
+    const s = beingAttacked();
+    const healer = find(s, 0, 'battlefield', 'Samite Healer');
+    // Offered — this is a legal activation, and the table is never lied to about that.
+    expect(legalActions(s, 0).plays.some((play) => play.card === healer)).toBe(true);
+    // And declined, because the 1/1 has a block to make first.
+    expect(botAction(s, 0)).toEqual({ type: 'auto:pass', by: 0 });
+
+    let t = advanceTo(s, 'declare-blockers');
+    t = apply(t, {
+      type: 'auto:block', by: 0,
+      blocks: [{ blocker: find(t, 0, 'battlefield', 'Wall of Air'), attacker: find(t, 1, 'battlefield', 'Hill Giant') }],
+    });
+    // Now the blocks are in, and the seat with priority after them is the attacker's opponent.
+    t = apply(t, { type: 'auto:pass', by: 1 });
+    expect(botAction(t, 0)).toEqual({
+      type: 'auto:activate', by: 0, card: healer, abilityIndex: 0,
+      // At itself, which is the whole point of the `friendly` hint: the default would have shielded
+      // the player attacking it.
+      targets: [{ kind: 'player', seat: 0 }],
+    });
+  });
+
+  it('and will not tap it at all when nothing is attacking', () => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+      battlefield: { 0: ['Samite Healer', 'Plains'], 1: ['Hill Giant'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const healer = find(s, 0, 'battlefield', 'Samite Healer');
+    expect(legalActions(s, 0).plays.some((play) => play.card === healer)).toBe(true);
+    const chosen = botAction(s, 0);
+    expect(chosen?.type === 'auto:activate' && chosen.card === healer).toBe(false);
+  });
+});
+
 describe('blocking when the attack is lethal', () => {
   /*
     The worst mistake a Magic opponent can make is dying to an attack it could have blocked.
