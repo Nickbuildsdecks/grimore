@@ -2677,6 +2677,12 @@ went into the log. The cause is upstream — the land drop is taken before the s
 never weighs the Cavern's two halves at all. That half of the card is a person's option rather than
 the computer's.
 
+And one thing was drawn that had been missing since before morph: a face-down permanent rendered as
+a plain card back, with no power, no toughness and no counters. Right while the only face-down cards
+were somebody's hidden hand; wrong the moment one sat on the battlefield, where the opponent is
+entitled to read the 2/2. The back now carries both, and five checks in the tabletop suite turn a
+permanent over in two real browsers and assert each half of what the two players should see.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

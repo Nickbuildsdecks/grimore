@@ -321,7 +321,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
 
 ```bash
-node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 54 checks
+node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 59 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 53 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 21 checks

@@ -245,6 +245,46 @@ async function main() {
     await expectEventually(nick, 'untap all straightens it back up', async () =>
       (await cardsIn(nick, 'zone-battlefield-0').first().getAttribute('data-tapped')) === 'false');
 
+    /*
+      Face down, which is the one move at this table where the two players are supposed to see
+      different things — and for three versions of the engine they saw the wrong different things.
+
+      Nick keeps the name because it is his card. Friend gets no name at all *and* the 2/2 the rules
+      say a face-down permanent is (CR 707.2), which the engine only started sending in D122 and the
+      card back only started drawing with morph. A blank rectangle here hid a creature Friend is
+      entitled to read.
+    */
+    const faceDownCard = cardsIn(nick, 'zone-battlefield-0').first();
+    const faceDownId = await faceDownCard.getAttribute('data-testid');
+    const shownName = await faceDownCard.getAttribute('data-card-name');
+    await cardAction(nick, faceDownCard, 'act-facedown');
+    await expectEventually(nick, 'turning a permanent face down leaves its own player able to read it', async () =>
+      (await cardsIn(nick, 'zone-battlefield-0').first().getAttribute('data-card-name')) === shownName);
+    await expectEventually(friend, 'the other player sees a card with no name', async () => {
+      const names = await cardsIn(friend, 'zone-battlefield-0').evaluateAll((els) =>
+        els.map((e) => e.getAttribute('data-card-name')));
+      return names.length === 1 && !names[0];
+    });
+    await expectEventually(friend, 'and reads the 2/2 it publicly is, rather than a blank card', async () => {
+      const id = String(faceDownId).replace('card-', 'body-');
+      const el = friend.locator(`[data-testid="${id}"]`);
+      return (await el.count()) === 1 && (await el.innerText()).trim() === '2/2';
+    });
+    /*
+      The board, not the page. The name is legitimately in Friend's **log** — "Nick moved Shock to
+      Nick's battlefield" — because playing it was a public move that happened before it was turned
+      over, and a tabletop log that forgot what everybody watched would be the bug. What must not
+      carry the name is the thing on the board, and the first version of this check asserted over
+      the whole page and failed on the log, which is the harness being wrong rather than the table.
+    */
+    check('and the card underneath is nowhere on the other player’s board',
+      !(await tid(friend, 'zone-battlefield-0').first().innerText()).includes(String(shownName)),
+      String(shownName));
+    await shot(friend, 'friend-sees-a-face-down-card');
+    await cardAction(nick, cardsIn(nick, 'zone-battlefield-0').first(), 'act-facedown');
+    await expectEventually(friend, 'turning it back up tells Friend what it was', async () =>
+      (await cardsIn(friend, 'zone-battlefield-0').first().getAttribute('data-card-name')) === shownName);
+
     const libraryBefore = await readNumber(nick, 'library-count-0');
     await tid(nick, 'draw').click();
     await expectEventually(nick, 'drawing takes a card off the deck and into hand', async () =>

@@ -95,7 +95,18 @@ export function CardFace({ card, size = "board", onSelect, selected, highlight, 
   const def = card.card
   const hidden = def === undefined
   const counters = Object.entries(card.counters).filter(([, n]) => n !== 0)
-  const label = hidden ? "Face-down card" : def.name
+  /*
+    The label says what the card publicly is, which for a face-down permanent is a 2/2.
+
+    `card.power` is present only where the engine computed characteristics — a battlefield permanent
+    or a face-down spell on the stack — so this stays "Face-down card" for the opponent's hand and
+    for a card face down in exile, where there genuinely is nothing to say about it.
+  */
+  const label = !hidden
+    ? def.name
+    : card.power !== undefined
+      ? `Face-down creature, ${card.power}/${card.toughness}`
+      : "Face-down card"
   /**
    * The engine's current power and toughness, not the printed ones.
    *
@@ -121,7 +132,7 @@ export function CardFace({ card, size = "board", onSelect, selected, highlight, 
       data-tapped={card.tapped ? "true" : "false"}
       data-hidden={hidden ? "true" : "false"}
       aria-label={label}
-      title={hidden ? "Face down" : `${def.name} — ${def.typeLine}`}
+      title={hidden ? label : `${def.name} — ${def.typeLine}`}
       onClick={onSelect ? () => onSelect(card) : undefined}
       disabled={!onSelect}
       className={cn(
@@ -144,13 +155,44 @@ export function CardFace({ card, size = "board", onSelect, selected, highlight, 
     >
       {hidden ? (
         <span
-          className="absolute inset-0 flex items-center justify-center"
+          className="absolute inset-0 flex flex-col items-center justify-center p-1"
           style={{
             background:
               "repeating-linear-gradient(45deg, rgba(120,90,200,0.35) 0 6px, rgba(30,24,60,0.9) 6px 12px)",
           }}
         >
           <span className="text-[9px] font-bold uppercase tracking-widest text-white/55">Grimore</span>
+          {/*
+            A face-down permanent is a 2/2 and its counters are public (CR 707.2), so the back
+            carries both. Everything a card back ever showed before this was nothing at all, which
+            was right while a face-down card was only ever somebody's hidden card — once morph put
+            one on the battlefield, drawing a blank rectangle hid a creature the opponent is
+            entitled to read and made a +1/+1 counter on it invisible.
+          */}
+          {counters.length > 0 ? (
+            <span className="mt-0.5 flex flex-wrap justify-center gap-0.5">
+              {counters.map(([key, n]) => (
+                <span
+                  key={key}
+                  data-testid={`counter-${card.id}-${key}`}
+                  className="rounded bg-[var(--g-gold-400)] px-1 text-[7px] font-bold text-black"
+                >
+                  {key === "+1/+1" ? `+${n}/+${n}` : `${key} ${n}`}
+                </span>
+              ))}
+            </span>
+          ) : null}
+          {body !== null ? (
+            <span
+              data-testid={`body-${card.id}`}
+              className={cn(
+                "mt-0.5 shrink-0 font-bold text-white",
+                size === "large" ? "text-[13px]" : "text-[8px] sm:text-[9px]",
+              )}
+            >
+              {body.power}/{body.toughness}
+            </span>
+          ) : null}
         </span>
       ) : (
         <>

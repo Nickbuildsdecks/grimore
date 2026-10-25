@@ -4908,3 +4908,16 @@ on the back need — Ainok Survivalist, Master of Pearls, Willbender. The hook h
 (`raise` with a new event kind, off `turnUp`) and no card in the pool wants it yet, so it is not
 there: three cards whose face-up side is keywords prove the mechanic without it. Megamorph, and a
 morph cost that is not mana (Zombie Cutthroat pays three life), are the same answer.
+
+**One more thing was drawn, and it had been missing since before morph.** A face-down permanent
+rendered as a plain card back: no power, no toughness, no counters. That was right while the only
+face-down cards were somebody's hidden hand, and wrong the moment one sat on the battlefield — the
+opponent is entitled to read the 2/2, and a +1/+1 counter on it was invisible. `CardFace` now draws
+both on the back, and the aria-label says "Face-down creature, 2/2" rather than "Face-down card"
+wherever the engine computed characteristics. Checked in a real browser rather than only in the
+view payload: five checks in the tabletop suite turn a permanent over and assert that its own player
+keeps the name, the other player gets none, the other player reads **2/2**, the card underneath is
+nowhere on their board, and turning it back up tells them what it was. The first version of that
+leak check asserted over the whole page and failed on **the log** — "Nick moved Shock to Nick's
+battlefield", a public move that happened before the card was turned over. The log is right and the
+check was wrong, which is the same lesson the engine's own leak test learned two entries ago.
