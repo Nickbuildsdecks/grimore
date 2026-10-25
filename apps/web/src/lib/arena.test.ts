@@ -1085,8 +1085,15 @@ describe("view helpers", () => {
 })
 
 describe("splitBattlefield", () => {
+  /*
+    `isCreature` is the engine's answer and `power` travels with it, which is why the stub sets both
+    from one argument: a card with a body is a creature and a card without one is not.
+  */
   const card = (id: string, power?: number) =>
-    ({ id, zone: "battlefield", ...(power === undefined ? {} : { power, toughness: power }) }) as never
+    ({
+      id, zone: "battlefield",
+      ...(power === undefined ? {} : { power, toughness: power, isCreature: true }),
+    }) as never
 
   it("puts what fights in one row and what makes mana in another", () => {
     const { creatures, lands } = splitBattlefield([card("bear", 2), card("forest"), card("angel", 4)])
@@ -1099,11 +1106,19 @@ describe("splitBattlefield", () => {
     expect(creatures.map((c) => c.id)).toEqual(["a", "b", "c"])
   })
 
-  it("treats anything the engine gave no power as not a creature", () => {
-    // A face-down permanent and an enchantment are both in the second row, which is right: the
-    // question that row answers is "what is not fighting".
-    const { lands } = splitBattlefield([card("pacifism"), card("facedown")])
-    expect(lands).toHaveLength(2)
+  it("asks the engine, not the card, so a Vehicle changes rows as it is crewed", () => {
+    // An enchantment and an uncrewed Vehicle are both in the second row — the question that row
+    // answers is "what is not fighting" — and the Vehicle moves across the moment it is crewed.
+    const { creatures, lands } = splitBattlefield([card("pacifism"), card("vehicle"), card("crewed", 4)])
+    expect(lands.map((c) => c.id)).toEqual(["pacifism", "vehicle"])
+    expect(creatures.map((c) => c.id)).toEqual(["crewed"])
+  })
+
+  it("puts a face-down permanent with the creatures, because that is what it is", () => {
+    // A face-down permanent is a 2/2 (CR 707.2) and it fights, so it belongs in the first row —
+    // which the engine says by sending it a body and `isCreature`, like any other creature.
+    const { creatures } = splitBattlefield([card("facedown", 2)])
+    expect(creatures.map((c) => c.id)).toEqual(["facedown"])
   })
 })
 
@@ -1310,6 +1325,22 @@ describe("cardBadges", () => {
     expect(cardBadges(view({ automation: auto }), permanent())).toContain("not ready")
     // And says nothing outside that step, where it would just be noise.
     expect(cardBadges(view({ automation: automation() }), permanent())).not.toContain("not ready")
+  })
+
+  it("shows the body of a land that has become a creature, which has no printed power", () => {
+    /*
+      The other direction of the same mistake. An animated Mutavault is a 2/2 with nothing printed
+      in the power box, so the board used to show no body for it at all — a player who had pressed
+      the button had to remember that they had. `isCreature` is what the question was always about.
+    */
+    const mutavault = { name: "Mutavault", typeLine: "Land", manaCost: "", cmc: 0, oracleText: "", colors: [] }
+    expect(cardBadges(view({ automation: automation() }), permanent({
+      card: mutavault, power: 2, toughness: 2, isCreature: true,
+    }))).toContain("2/2")
+    // And a land that has not been animated says nothing, because it has no body to show.
+    expect(cardBadges(view({ automation: automation() }), permanent({
+      card: mutavault, power: undefined, toughness: undefined, isCreature: undefined,
+    }))).toEqual([])
   })
 
   it("says a Vehicle is not crewed, rather than that it is not ready", () => {

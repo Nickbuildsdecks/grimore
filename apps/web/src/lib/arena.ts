@@ -646,8 +646,13 @@ export function splitBattlefield(cards: readonly VisibleCard[]): {
   const creatures: VisibleCard[] = []
   const lands: VisibleCard[] = []
   for (const card of cards) {
-    // The view sends power only for a creature, which is the engine's own answer to the question.
-    if (card.power !== undefined) creatures.push(card)
+    /*
+      The engine's own answer, rather than anything derived from the card.
+
+      A Vehicle moves between the two rows as it is crewed and as the turn ends, which is right:
+      while nobody is driving it, it belongs with the permanents that cannot fight.
+    */
+    if (card.isCreature === true) creatures.push(card)
     else lands.push(card)
   }
   return { creatures, lands }
@@ -765,7 +770,17 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     .map((c) => c.card?.name)
     .filter((name): name is string => name !== undefined)
   for (const name of held) out.push(`holding ${name}`)
-  if (card.power !== undefined && card.toughness !== undefined && card.card?.power !== undefined) {
+  /*
+    Its current body, for anything that currently *is* a creature.
+
+    The third clause used to be `card.card?.power !== undefined` — "the card has power printed on
+    it" — and it was wrong in both directions, which the Vehicles made impossible to ignore. An
+    animated Mutavault is a 2/2 with no printed power, so the board showed no body for it at all and
+    a player had to remember what they had pressed; an uncrewed Vehicle has a printed 7/11 and is not
+    a creature, so it would have shown one it did not have. `isCreature` is the question both of
+    them were really asking.
+  */
+  if (card.power !== undefined && card.toughness !== undefined && card.isCreature === true) {
     out.push(`${card.power}/${card.toughness}`)
   }
   if ((card.damage ?? 0) > 0) out.push(`${card.damage} dmg`)

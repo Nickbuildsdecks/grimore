@@ -185,24 +185,29 @@ tapped, and six of the eight also run a pair of cycling lands. Any pairing works
 against itself. They are also the only decks right now — see *What is not done* below.
 
 A note on what to expect from each: played against each other by the engine's own opponent, the
-aggressive decks win more. Skyward Writ in particular wins 45% against the field — beating the
-slower decks comfortably and losing to the fastest ones — and a good part of that is the opponent
-rather than the deck: holding mana for a counterspell is its whole plan and the bot cannot do it.
-A person plays it better.
+aggressive decks win more. Skyward Writ in particular wins 39% against the field — beating the
+slower decks and losing to the fastest ones — and a good part of that is the opponent rather than
+the deck: holding mana for a counterspell is its whole plan and the bot cannot do it. A person
+plays it better.
 
 **The decks are not all equally strong, and now there is a table of it.** Every deck against every
 other, both seats, 168 games each (`node scripts/measure/deck-table.mjs`):
 
 ```
- 80%  135-33   ember-rush
- 71%  119-49   forge-alliance
- 55%   93-75   verdant-guard
- 43%   73-95   skyward-writ
- 43%   73-95   ashen-rite
- 40%   67-101  rot-harvest
- 34%   57-111  hollow-tide
- 33%   55-113  tidal-mind
+ 82%  137-31   ember-rush
+ 68%  114-54   forge-alliance
+ 57%   96-72   verdant-guard
+ 45%   76-92   ashen-rite
+ 39%   65-103  rot-harvest
+ 39%   65-103  skyward-writ
+ 36%   60-108  hollow-tide
+ 35%   58-110  tidal-mind
 ```
+
+That run is after morph and Vehicles, with six of the eight lists changed since the previous one.
+What moved is mostly the bottom: Ashen Rite up two, Tidal Mind and Hollow Tide up two and three
+from the floor, Skyward Writ down four and Rot Harvest down one. Which is the caveat below in
+miniature — Skyward Writ lost four points on a change that added a card to it.
 
 **Read the order, not the individual numbers.** Every deck's record here depends on all seven of
 the others, so a deck moves when its opponents change even if it does not. The clearest case is in
