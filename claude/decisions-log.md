@@ -4543,3 +4543,58 @@ be aimed at.
 
 The code is gone and the lesson is in its place, in the comment above `LAND_ON_BOARD` where the
 other four live.
+
+## D117 — Where the search stops: three times faster, and exactly as strong
+
+D116 ended on a diagnosis rather than a weight: *this evaluation can price what is, not what will
+be*, because with auto-pass on, the position handed to `evaluate` can be a step — or a turn — past
+the action it was about. That was inferred. This measures it, acts on it, and reports what the
+action was worth, which is not what the diagnosis predicted.
+
+**The drift, counted.** Over 13,907 actions in real games, how far the table moved on one action:
+
+```
+action           actions  same step   a step on   a turn on
+auto:cast           2821    51%        30%         19%
+auto:attack         1298    23%        27%         50%
+auto:block           408    25%         7%         68%
+auto:playLand       1350    71%         6%         23%
+auto:activate        743    57%        36%          7%
+```
+
+**Half of all attack declarations are scored after the turn has already ended**, and nearly one cast
+in five. A swing projection read after the swing is over is not a weak term; it is a term reading a
+different position. The same goes for untapped mana, which is about the rest of *this* turn, in a
+position that is often next turn — and mana pools empty when a step ends.
+
+**The fix is one line in the right place.** `applyAction` runs the engine's auto-pass loop, so the
+search turns auto-pass off in the state it is about to simulate (`noAutoPass`). The simulated state
+is scored and thrown away — it is never applied to the real table — so this changes what the bot
+*sees* and never how the game runs. The action then stops where it happened: the spell resolved,
+priority back, same step.
+
+**It is worth no games at all.** 166-170 over 336 paired games on the bot-against-bot instrument
+whose negative control is exactly 56-56 of 112. Inside the noise floor, and the honest reading of a
+flat result needed one more check first, because a setting that changes no decisions cannot win or
+lose any: it changes **1% of decisions overall, 10% of attack declarations and 6% of blocks**, and
+3 casts in 2,845. So it is a real change to the choices, worth nothing on the scoreboard.
+
+**What it is worth is time, and a lot of it.**
+
+| | mean per decision | worst | total over the same games |
+| --- | --- | --- | --- |
+| duel, auto-pass in the search | 2.62ms | 77ms | 36.5s |
+| duel, stopping at the action | **0.91ms** | **17ms** | 12.0s |
+| four-seat pod, auto-pass in the search | 10.42ms | 407ms | 314.9s |
+| four-seat pod, stopping at the action | **4.78ms** | **292ms** | 141.9s |
+
+Three times faster in a duel and more than twice as fast in a pod, with the worst case down from
+77ms to 17ms. That is the number that matters: D71 went looking for pods taking minutes per
+decision, and a worst case is what a person waiting at a table actually feels. **So it ships on the
+strength of the clock rather than the scoreboard** — same player, far less waiting, and scoring the
+position the action was about rather than one the table had already left.
+
+**And it does not rescue the deleted terms.** The obvious next question is whether unblocked power
+was right all along and merely read at the wrong moment, so it went back in on top of this and was
+measured again — see the next entry. Being able to ask that question is most of why this was worth
+doing even at a flat scoreboard.

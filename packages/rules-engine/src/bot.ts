@@ -667,10 +667,28 @@ export function evaluate(state: GameState, seat: SeatIndex): number {
  * from `legalActions`. Swallowed rather than thrown because a search is not the place to discover
  * it — `playout.test.ts` is, and it asserts exactly that the engine never refuses what it offered.
  */
-function simulate(state: GameState, action: Action): GameState | null {
+/**
+ * The same state with nobody auto-passing, so a simulated action stops where it happened.
+ *
+ * `applyAction` runs the engine's auto-pass loop, and with it on the position that comes back can
+ * be a step — or a whole turn — past the action it was about. Measured over 10,000 actions in real
+ * games: **only 51% of casts leave the table on the same step, 19% advance a turn, and half of all
+ * attack declarations are scored after the turn has already moved on.** That is the mechanism
+ * behind four deleted evaluation terms (D116): a term about this swing, or about the mana kept for
+ * this turn, read at a moment that has gone past it.
+ *
+ * Switched off inside the search only. The simulated state is scored and thrown away — it is never
+ * applied to the real table — so this changes what the bot *sees*, never how the game runs.
+ */
+const noAutoPass = (state: GameState): GameState => ({
+  ...state,
+  autoPassOff: state.seats.map((seat) => seat.index),
+});
+
+function simulate(state: GameState, action: Action, stopAtAction: boolean): GameState | null {
   let next: GameState;
   try {
-    next = applyAction(state, action, HOST);
+    next = applyAction(stopAtAction ? noAutoPass(state) : state, action, HOST);
   } catch {
     return null;
   }
@@ -858,6 +876,12 @@ export interface BotOptions {
    * it is worth on a table somebody is waiting at.
    */
   readonly lookahead?: boolean;
+  /**
+   * Whether the search stops where its action happened rather than wherever auto-pass carried the
+   * table. On, and here to be turned off: it is the control this was measured against, and the
+   * measurement is the reason it is on. See `noAutoPass`.
+   */
+  readonly stopAtAction?: boolean;
 }
 
 /**
@@ -1001,10 +1025,14 @@ function throughCombat(state: GameState): GameState {
  * is holding this bot back; the evaluation is, and the honest place for that finding is here rather
  * than in dead code. See `claude/decisions-log.md`, D62.
  */
-function scoreDeclaration(state: GameState, seat: SeatIndex, action: Action): number | null {
+function scoreDeclaration(
+  state: GameState, seat: SeatIndex, action: Action, stopAtAction: boolean,
+): number | null {
   let after: GameState;
   try {
-    after = applyAction(state, action, HOST);
+    // Nobody auto-passing, so `throughCombat` below gets to decide where this stops. With it on,
+    // half of all attack declarations come back with the turn already over — see `noAutoPass`.
+    after = applyAction(stopAtAction ? noAutoPass(state) : state, action, HOST);
   } catch {
     return null;
   }
@@ -1359,6 +1387,9 @@ function orderPlans(state: GameState, seat: SeatIndex): DamageOrder[][] {
   return [owed, owed.map(byCost), owed.map(byValue)];
 }
 
+/** Whether this bot's search stops where its action happened. On: see `noAutoPass`. */
+const stopsAtAction = (opts: BotOptions): boolean => opts.stopAtAction ?? true;
+
 /** The declaration this seat owes, chosen by playing each plan out. */
 function declareBySearch(
   state: GameState, seat: SeatIndex, kind: 'attackers' | 'blockers' | 'order', opts: BotOptions,
@@ -1369,7 +1400,7 @@ function declareBySearch(
     if (opts.lookahead === false) return fallback;
     return bestPlan(state, seat, plans.map((orders) => ({
       type: 'auto:order', by: seat, orders,
-    } as Action))) ?? fallback;
+    } as Action)), stopsAtAction(opts)) ?? fallback;
   }
   if (kind === 'attackers') {
     const plans = attackPlans(state, seat);
@@ -1377,22 +1408,24 @@ function declareBySearch(
     if (opts.lookahead === false) return fallback;
     return bestPlan(state, seat, plans.map((attackers) => ({
       type: 'auto:attack', by: seat, attackers,
-    } as Action))) ?? fallback;
+    } as Action)), stopsAtAction(opts)) ?? fallback;
   }
   const plans = blockPlans(state, seat);
   const fallback: Action = { type: 'auto:block', by: seat, blocks: plans[0]! };
   if (opts.lookahead === false) return fallback;
   return bestPlan(state, seat, plans.map((blocks) => ({
     type: 'auto:block', by: seat, blocks,
-  } as Action))) ?? fallback;
+  } as Action)), stopsAtAction(opts)) ?? fallback;
 }
 
 /** The highest-scoring of a set of declarations, or null when none of them can be applied. */
-function bestPlan(state: GameState, seat: SeatIndex, actions: readonly Action[]): Action | null {
+function bestPlan(
+  state: GameState, seat: SeatIndex, actions: readonly Action[], stopAtAction: boolean,
+): Action | null {
   let best: Action | null = null;
   let bestScore = -Infinity;
   for (const action of actions) {
-    const score = scoreDeclaration(state, seat, action);
+    const score = scoreDeclaration(state, seat, action, stopAtAction);
     if (score === null) continue;
     // `>` again, so the heuristic's own plan — which is always first — wins a tie. A search that
     // changed the play for a rounding error would be impossible to reason about from a log.
@@ -1922,7 +1955,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
   let bestScore = -Infinity;
   let dropped = 0;
   for (const option of options) {
-    const after = simulate(state, option.action);
+    const after = simulate(state, option.action, stopsAtAction(opts));
     if (after === null) continue;
     /*
       A ritual with nothing to spend it on is not a play.
