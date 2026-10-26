@@ -97,6 +97,8 @@ export type TriggerEvent =
       readonly subjectSeat?: SeatIndex;
       /** Set by the engine when it raises the event: whether the subject is a creature. */
       readonly subjectIsCreature?: boolean;
+      /** Set by the engine when it raises the event: *which* permanent entered. See `subject`. */
+      readonly subject?: string;
     }
   | {
       readonly kind: 'dies';
@@ -114,6 +116,8 @@ export type TriggerEvent =
       readonly subjectIsCreature?: boolean;
       /** Set by the engine when it raises the event. */
       readonly subjectIsToken?: boolean;
+      /** Set by the engine when it raises the event: *which* creature died. See `subject`. */
+      readonly subject?: string;
     }
   | {
       readonly kind: 'attacks';
@@ -136,6 +140,18 @@ export type TriggerEvent =
        * what it was aimed at.
        */
       readonly attacked?: AttackedTarget;
+      /**
+       * Whether this creature was the only one declared as an attacker (CR 702.90b).
+       *
+       * One field read from both sides, because there is only one question: the engine writes it
+       * on the event, and a trigger that asks for `alone: true` fires only when it was. Exalted
+       * is the whole reason it exists, and exalted is unusual in caring — "attacks alone" is a
+       * fact about the *declaration* and not about the creature, so nothing on the board can be
+       * read later to find it out.
+       */
+      readonly alone?: boolean;
+      /** Set by the engine when it raises the event: *which* creature attacked. See `subject`. */
+      readonly subject?: string;
     }
   /**
    * This permanent has left the battlefield, however it left (CR 603.6c) — destroyed, exiled,
@@ -266,9 +282,33 @@ export interface DecisionSpec {
   readonly filter?: (state: GameState, id: string, chooser: SeatIndex) => boolean;
 }
 
+/**
+ * A yes-or-no question asked of the board, for an intervening-if clause. See `TriggerDef.condition`.
+ *
+ * The same context an effect gets, so that the condition and the effect read the same board the
+ * same way — a condition that answered from a narrower view than its effect could say yes to
+ * something the effect then cannot do.
+ */
+export type ConditionFn = (ctx: Parameters<EffectFn>[0]) => boolean;
+
 export interface TriggerDef {
   readonly on: TriggerEvent;
   readonly description: string;
+  /**
+   * The intervening-if clause: "**if** that creature's power is greater than this creature's, put
+   * a +1/+1 counter on it" (CR 603.4).
+   *
+   * Not a filter on the event, and the difference is the whole rule. A condition here is checked
+   * twice — once when the trigger would go on the stack, and again as it resolves — and if it is
+   * false either time the ability does nothing at all. So an evolve trigger whose creature was
+   * killed in response does not put a counter on, and a trigger that would not have fired is
+   * never put on the stack for an opponent to respond to.
+   *
+   * It is given the same context an effect is, which is what makes it able to answer the question
+   * at all: `ctx.subject` is the creature the event was about, and `ctx.source` is the card
+   * asking. A condition must not change the game — it is asked, not run.
+   */
+  readonly condition?: ConditionFn;
   readonly targets?: readonly TargetSpec[];
   /** Questions asked while it resolves. See `DecisionSpec`. */
   readonly decisions?: readonly DecisionSpec[];

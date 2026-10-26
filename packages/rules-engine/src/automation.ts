@@ -45,7 +45,7 @@ import {
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
 import { scriptFor } from './scripts.js';
 import type {
-  AbilityCost, AbilityDef, CardScript, DecisionSpec, ModeDef, TargetSpec, TriggerEvent,
+  AbilityCost, AbilityDef, CardScript, ConditionFn, DecisionSpec, ModeDef, TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
 import { targetCount } from './scriptTypes.js';
 import {
@@ -465,8 +465,14 @@ function triggerMatches(
       const who = want.who ?? 'self';
       if (who === 'self' && !isSubject) return false;
       if (who === 'another' && isSubject) return false;
-      const e = event as { subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean };
+      const e = event as {
+        subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean;
+        alone?: boolean;
+      };
       if (want.kind === 'dies' && want.nontoken === true && e.subjectIsToken === true) return false;
+      // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
+      // the creature, which is why the event has to carry it (CR 702.90b).
+      if (want.kind === 'attacks' && want.alone === true && e.alone !== true) return false;
       // "a *creature* you control enters" is what the board-watchers say, and an enchantment
       // arriving is not that. Only asked for when the trigger asks for it, so a `self` trigger on
       // a non-creature permanent still fires for its own arrival. An attacker is a creature by
@@ -562,6 +568,13 @@ function raise(
   state: GameState, event: TriggerEvent, actor?: SeatIndex, subject?: string,
 ): GameState {
   let next = state;
+  if (subject !== undefined
+    && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks')) {
+    // Which permanent the event was about, so a trigger can say "that creature" rather than only
+    // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
+    // which one. See `EffectContext.subject`.
+    event = { ...event, subject };
+  }
   if (subject !== undefined && (event.kind === 'etb' || event.kind === 'dies')) {
     // The event carries who controlled the permanent and whether it was a creature, so a watcher
     // can ask. Read from the subject rather than from `actor`, which for an entry is whoever cast
@@ -628,6 +641,24 @@ function raise(
     for (let i = 0; i < script.triggers.length; i++) {
       const trigger = script.triggers[i]!;
       if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor, id === subject)) continue;
+      /*
+        The intervening-if clause, asked the first of its two times (CR 603.4).
+
+        Before the ability goes on the stack, not after: a trigger whose condition is false does
+        not trigger at all, so nobody gets to respond to it and nothing appears in the log. The
+        second ask is in `resolveTop`, where a condition that has since become false removes the
+        ability from the stack.
+      */
+      if (trigger.condition !== undefined && !trigger.condition({
+        state: next,
+        source: id,
+        controller: inst.zoneSeat,
+        targets: [],
+        x: 0,
+        decisions: [],
+        kicked: false,
+        ...(subject === undefined ? {} : { subject }),
+      })) continue;
       const specs = trigger.targets ?? [];
       /*
         Which player this event was about, for the two events that are about one.
@@ -644,9 +675,19 @@ function raise(
       // And which object the event was about, for the one event that is about an object on the
       // stack rather than about a permanent or a player. See `StackObject.answering`.
       const answering = event.kind === 'targeted' ? event.object : undefined;
+      // And which permanent it was about, for a trigger that has to say "that creature". Only for
+      // the three events that have a subject other than the watcher itself — a card watching its
+      // own arrival already knows which permanent it means.
+      const about: TriggerAbout = {
+        ...(attacked === undefined ? {} : { attacked }),
+        ...(answering === undefined ? {} : { answering }),
+        ...(subject === undefined || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks')
+          ? {}
+          : { subject }),
+      };
       if (specs.length === 0) {
         next = pushAbility(
-          next, id, inst.zoneSeat, i, [], 'triggered', trigger.description, attacked, answering,
+          next, id, inst.zoneSeat, i, [], 'triggered', trigger.description, about,
         );
         continue;
       }
@@ -654,8 +695,7 @@ function raise(
       if (!hasAnyLegalTargets(next, specs, inst.zoneSeat, id)) continue;
       const auto = obviousTargets(next, specs, inst.zoneSeat, id);
       next = pushAbility(
-        next, id, inst.zoneSeat, i, auto ?? [], 'triggered', trigger.description, attacked,
-        answering,
+        next, id, inst.zoneSeat, i, auto ?? [], 'triggered', trigger.description, about,
       );
       if (auto !== null) {
         // An ability the engine aimed for its controller has its targets now, so anything it took
@@ -742,10 +782,24 @@ export function raiseWard(state: GameState, objectId: string): GameState {
   return next;
 }
 
+/**
+ * What a triggered ability is *about*, beyond its targets.
+ *
+ * Three facts that were true of the event and are not readable from the board by the time the
+ * ability resolves: what the attack was aimed at, which object on the stack it answers, and which
+ * permanent it happened to. One parameter rather than three in a row, so that a call site says
+ * which is which and adding a fourth does not silently shift the third.
+ */
+interface TriggerAbout {
+  readonly attacked?: AttackedTarget;
+  readonly answering?: string;
+  readonly subject?: string;
+}
+
 function pushAbility(
   state: GameState, source: string, controller: SeatIndex, abilityIndex: number,
   targets: readonly Target[], kind: 'activated' | 'triggered', description: string,
-  attacked?: AttackedTarget, answering?: string,
+  about: TriggerAbout = {},
 ): GameState {
   const seq = state.autoSeq + 1;
   const id = `ab${seq}`;
@@ -757,8 +811,9 @@ function pushAbility(
     id, kind, source, controller,
     cardKey: inst?.defKey ?? '',
     abilityIndex, targets: [...targets], description,
-    ...(attacked === undefined ? {} : { attacked }),
-    ...(answering === undefined ? {} : { answering }),
+    ...(about.attacked === undefined ? {} : { attacked: about.attacked }),
+    ...(about.answering === undefined ? {} : { answering: about.answering }),
+    ...(about.subject === undefined ? {} : { subject: about.subject }),
     targetSeqs: targetSeqsFor(state, targets),
   };
   return {
@@ -1503,6 +1558,33 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
   const specs = targetSpecsFor(state, script, object);
 
   /*
+    The intervening-if clause, asked the second of its two times (CR 603.4).
+
+    First, before anything else this resolution does: a trigger whose condition has become false
+    is removed from the stack and does nothing — it does not resolve partway, and it does not
+    fizzle, which is a different outcome with a different message. The window between the two asks
+    is exactly the window an opponent gets, so this is the half of the rule that makes killing the
+    creature an evolve trigger measured a real answer rather than a tempo loss.
+  */
+  const trigger = object.kind === 'triggered' ? abilityOrTrigger(script, object) : undefined;
+  if (trigger?.condition !== undefined && !trigger.condition({
+    state,
+    source: object.source,
+    controller: object.controller,
+    targets: object.targets,
+    x: object.x ?? 0,
+    decisions: [],
+    kicked: object.kicked === true,
+    attacked: object.attacked,
+    answering: object.answering,
+    subject: object.subject,
+  })) {
+    const next = popStack(state, object.id);
+    const name = next.cardDefs[object.cardKey]?.name ?? 'it';
+    return { state: next, message: `${name} does nothing: its condition is no longer true` };
+  }
+
+  /*
     A target that is no longer the object it was chosen as is gone, however legal it looks.
 
     Dropped before the fizzle check rather than inside it, so that a spell with two targets that
@@ -1543,6 +1625,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       state, source: object.kind === 'spell' ? object.id : object.source,
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
       kicked: object.kicked === true, attacked: object.attacked, answering: object.answering,
+      subject: object.subject,
     });
     return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
   }
@@ -1567,6 +1650,8 @@ function completeResolution(
     attacked: object.attacked,
     // What this ability is about, for a ward that has to counter a particular object.
     answering: object.answering,
+    // And which permanent it is about, for a trigger that has to say "that creature".
+    subject: object.subject,
   };
 
   if (object.kind === 'spell') {
@@ -1618,6 +1703,8 @@ function completeResolution(
 /** An activated ability and a triggered one resolve the same way: targets, then an effect. */
 interface Resolvable {
   readonly targets?: readonly TargetSpec[];
+  /** Only a trigger has one. See `TriggerDef.condition`. */
+  readonly condition?: ConditionFn;
   readonly decisions?: readonly DecisionSpec[];
   readonly beforeDecisions?: EffectFn;
   readonly effect?: EffectFn;

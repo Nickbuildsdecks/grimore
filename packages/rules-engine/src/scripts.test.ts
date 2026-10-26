@@ -8207,3 +8207,162 @@ describe('changing what a spell is pointed at (CR 114.6)', () => {
     expect(swerve?.candidates[0] ?? []).toEqual([]);
   });
 });
+
+describe('the creature the event was about: exalted, and evolve’s intervening-if', () => {
+  /*
+    Two keywords, and the two things the engine was missing to write either of them.
+
+    Every board-watching trigger before these could only talk about itself: a Blood Artist drains
+    when a creature dies and never has to say which. Exalted and evolve both have to — "that
+    creature gets +1/+1", "if that creature has greater power" — so the three events that are about
+    one permanent now carry which permanent, and a script reads it as `ctx.subject`.
+
+    Evolve brings the intervening-if clause with it (CR 603.4), which is asked twice: once before
+    the trigger goes on the stack and once as it resolves. Both asks have a test here, because the
+    two of them are different rules wearing the same words — the first is why an ability nobody
+    could use is never offered, and the second is why answering the creature answers the trigger.
+  */
+
+  /** Seat 0 in its main phase with the named cards in hand and on the battlefield. */
+  const table = (
+    deck: string, hand: readonly string[], battlefield: readonly string[],
+    opponent: readonly string[] = ['Island', 'Island'],
+  ): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: deck, 1: 'tidal-mind' },
+      hands: { 0: hand },
+      battlefield: { 0: battlefield, 1: opponent },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  it('pumps the one creature that attacked, and names it rather than the board', () => {
+    /*
+      The whole point in one assertion: two creatures out, one attacks, and the +1/+1 lands on the
+      one that attacked. A trigger that could only say "this creature" or "your creatures" would
+      get one of those two numbers wrong.
+    */
+    let s = table('skyward-writ', [], ['Plains', 'Guardians of Akrasa', 'Serra Angel', "Healer's Hawk"]);
+    const angel = find(s, 0, 'battlefield', 'Serra Angel');
+    const hawk = find(s, 0, 'battlefield', "Healer's Hawk");
+    const guards = find(s, 0, 'battlefield', 'Guardians of Akrasa');
+
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: angel, defender: 1 }] }));
+
+    expect([power(s, angel), toughness(s, angel)]).toEqual([5, 5]);
+    // The one that stayed home is untouched, and so are the Guardians — who cannot attack at all.
+    expect([power(s, hawk), toughness(s, hawk)]).toEqual([1, 1]);
+    expect([power(s, guards), toughness(s, guards)]).toEqual([2, 3]);
+  });
+
+  it('pays nothing when two creatures attack, which is the whole of “alone”', () => {
+    // A fact about the declaration, not about the board: by the time an exalted trigger would
+    // resolve, nothing on the battlefield distinguishes one attacker from two.
+    let s = table('skyward-writ', [], ['Plains', 'Guardians of Akrasa', 'Serra Angel', "Healer's Hawk"]);
+    const angel = find(s, 0, 'battlefield', 'Serra Angel');
+    const hawk = find(s, 0, 'battlefield', "Healer's Hawk");
+
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: angel, defender: 1 }, { attacker: hawk, defender: 1 }],
+    }));
+
+    expect([power(s, angel), toughness(s, angel)]).toEqual([4, 4]);
+    expect([power(s, hawk), toughness(s, hawk)]).toEqual([1, 1]);
+  });
+
+  it('and nothing at all when it is the opponent attacking alone', () => {
+    /*
+      `of: 'you'` — "whenever a creature **you control** attacks alone". Without it the Guardians
+      would hand the other player's lone attacker a +1/+1, which is the one thing exalted never
+      does.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'skyward-writ' },
+      battlefield: { 0: ['Island', "Man-o'-War"], 1: ['Plains', 'Guardians of Akrasa'] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const mine = find(s, 0, 'battlefield', "Man-o'-War");
+
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: mine, defender: 1 }] }));
+    expect([power(s, mine), toughness(s, mine)]).toEqual([2, 2]);
+  });
+
+  it('evolves the Raptor when something bigger arrives, once per arrival', () => {
+    let s = table('hollow-tide', ['Wall of Air', 'Fog Bank'],
+      ['Island', 'Island', 'Island', 'Island', 'Island', 'Cloudfin Raptor']);
+    const raptor = find(s, 0, 'battlefield', 'Cloudfin Raptor');
+    expect([power(s, raptor), toughness(s, raptor)]).toEqual([0, 1]);
+
+    // A 1/3 is bigger on both counts, so the trigger fires and the Raptor is a 1/2.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Wall of Air'),
+    })));
+    expect([power(s, raptor), toughness(s, raptor)]).toEqual([1, 2]);
+
+    /*
+      And then a 0/2, which is bigger than nothing: 0 is not greater than 1 and 2 is not greater
+      than 2. The trigger does not fire — and because the condition is asked *before* the ability
+      goes on the stack, nothing is put there for either player to respond to.
+    */
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fog Bank') }));
+    expect(s.stackOrder).toEqual([]);
+    s = drain(s);
+    expect([power(s, raptor), toughness(s, raptor)]).toEqual([1, 2]);
+  });
+
+  it('does not evolve off its own arrival', () => {
+    // `who: 'another'`: the Raptor entering is an entry it watches and is not another creature.
+    let s = table('hollow-tide', ['Cloudfin Raptor'], ['Island', 'Thieving Magpie']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cloudfin Raptor'),
+    })));
+    const raptor = find(s, 0, 'battlefield', 'Cloudfin Raptor');
+    expect([power(s, raptor), toughness(s, raptor)]).toEqual([0, 1]);
+  });
+
+  it('and loses the counter when the creature that caused it is answered in reply', () => {
+    /*
+      The second ask, and the reason the clause is a rule rather than a filter.
+
+      The Wall of Air enters, the evolve trigger goes on the stack, and the other player bounces
+      the Wall while the trigger is still waiting. On resolution the condition is asked again,
+      there is no creature to measure, and the ability does nothing — so an Unsummon answers the
+      counter as well as the body. Checked against the version that only asked once, where the
+      Raptor would keep the +1/+1 for a creature that was never there when it resolved.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'tidal-mind' },
+      hands: { 0: ['Wall of Air'], 1: ['Unsummon'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Cloudfin Raptor'],
+        1: ['Island', 'Island'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const raptor = find(s, 0, 'battlefield', 'Cloudfin Raptor');
+
+    // The Wall resolves; `passBoth` stops as soon as the stack changes, which is the trigger
+    // arriving on it.
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Wall of Air') }));
+    const wall = find(s, 0, 'battlefield', 'Wall of Air');
+    expect(stackNames(s)).toEqual(['Evolve: put a +1/+1 counter on Cloudfin Raptor.']);
+
+    // Seat 1 can only tap its lands once it holds priority, so the pass comes first — a seat
+    // without priority has no mana abilities to activate.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = tapAllLands(s, 1);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Unsummon'),
+      targets: [{ kind: 'card', id: wall }],
+    }));
+
+    expect(s.instances[wall]!.zone).toBe('hand');
+    expect([power(s, raptor), toughness(s, raptor)]).toEqual([0, 1]);
+  });
+});

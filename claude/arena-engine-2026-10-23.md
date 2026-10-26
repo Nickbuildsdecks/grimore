@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 203 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 205 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -3082,6 +3082,49 @@ this entry found and did not fix.
 Swerve, in a deck at 46%, behaved exactly as the others have: **+1 and −2** for the Negate, which is
 a wash, and it ships because it is the second reader of the primitive.
 
+### The creature the event was about, and the clause that is asked twice
+
+Two keywords, and the two things the engine was missing to write either of them. Every
+board-watching trigger before this could only talk about **itself** or about a player: `etb`, `dies`
+and `attacks` carried *whose* creature it was and whether it was a creature at all, and never
+*which*. A Blood Artist never has to know. Exalted and evolve both do — "**that** creature gets
++1/+1", "if **that** creature has greater power or toughness" — so the subject's id now rides the
+event, the stack object and `EffectContext`, exactly the way `attacked` and `answering` already do
+and for the same reason: the event is gone by the time anything reads it.
+
+The other half is a rule rather than a convenience. `TriggerDef.condition` is the intervening-if
+clause (CR 603.4), and the whole of it is that it is asked **twice** — before the ability would go
+on the stack, and again as it resolves — with a false answer either time meaning the ability does
+nothing at all. Both asks are things a player sees:
+
+- The **first** is why a Cloudfin Raptor that is already the biggest thing you control puts nothing
+  on the stack when a 1/1 arrives. Without it, every creature an evolve deck plays for the rest of
+  the game puts an ability on the stack that resolves into nothing — which reads as a broken engine,
+  not as a rule.
+- The **second** is why bouncing the creature that caused the trigger is an *answer* to it. Unsummon
+  the Wall of Air while the evolve trigger is waiting and the counter never arrives.
+
+Both were confirmed load-bearing the way the project has been confirming them: disable each check in
+turn, watch exactly one assertion fail, put it back.
+
+**And the measurement is the loudest version of a rule this file already had.** Guardians of Akrasa
+went into Skyward Writ twice, with two different cuts, 240 paired duels against the field and two
+seed sets each. Cutting the **Wall of Air**: 103-137 and 100-140, against 103-137 and 97-143 for the
+list before it — nothing, inside the noise, twice. Cutting the **Negate** instead: 120-120 and
+113-127, which is **+17 and +16** on the same side both times and right at this instrument's
+eighteen-game floor. Same card, two cuts, seventeen games between them.
+
+The reason is readable on the cards rather than only in the numbers. The Wall of Air was the wrong
+cut because its *flying* was the redundant part — this deck already answers the air with two Fog
+Banks and the Birth of Meletis holds the ground — and the Negate was the right one because it was
+the deck's least-cast card at 55% of its copies and what it answers is the half of the field Skyward
+Writ already beats. D127 said measuring the cut is half of what a slot change is; D129 confirmed it;
+this is the third data point and it is worth more than either.
+
+Cloudfin Raptor went into Hollow Tide for the second Psychic Strike at +3 and +4 — both sets the
+same way, both far inside the floor. Written down as free rather than as good, which is the bar a
+new keyword's card has to clear: it has to live somewhere to be playable at all.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -3089,10 +3132,13 @@ a wash, and it ships because it is the second reader of the primitive.
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. Every
    keyword and every static scope now has a card behind it, the subtype scope included;
    `becomes-tapped` is the one trigger left without one, and deliberately so (see the entry above).
-   `turned-face-up` has two cards behind it. Morph has megamorph and a cost paid in life now, so
-   the one thing left on that list is the card that needs **target redirection** rather than a new
-   trigger — Willbender — which is a different kind of work from everything above it: it changes
-   what a spell already on the stack is pointed at.
+   `turned-face-up` has two cards behind it, morph has megamorph and a cost paid in life, target
+   redirection has Willbender and Swerve, and the three board-watching events now carry *which*
+   permanent they were about — so exalted, evolve and anything else that says "that creature" is a
+   few declarative lines. What is left on that list is **Willbender's other half**: it is printed
+   "target spell **or ability** with a single target", and an ability on the stack cannot be
+   targeted today because a `Target` is a card or a player and nothing else. That is a third
+   `Target` shape across about thirty call sites, which is why it is a task rather than a card.
 2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
    `deck:load` already resolves any deck handed to it, but a real list needs card data — type
    lines, mana costs, oracle text — and the `cards` table has never been populated while this

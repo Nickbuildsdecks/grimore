@@ -133,6 +133,16 @@ export interface StackObject {
    * says what it was aimed at — the attacker may be dead and the attack removed from combat.
    */
   readonly attacked?: AttackedTarget;
+  /**
+   * For a triggered ability that fired off something happening to a permanent: which permanent.
+   *
+   * Travels with the object for the same reason `attacked` does, and the reason is sharper here.
+   * "That creature" is resolved when the ability resolves, not when it triggered — and by then the
+   * board may hold two more creatures that entered after this one, so looking for "the creature
+   * that entered" would find the wrong one. The id is enough: if the permanent has gone, the
+   * ability finds nothing and does nothing, which is what the rules say happens (CR 603.3d).
+   */
+  readonly subject?: string;
   /** What to show in the stack, written when the object was put there. */
   readonly description: string;
 }

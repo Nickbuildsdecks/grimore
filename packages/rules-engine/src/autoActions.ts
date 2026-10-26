@@ -892,6 +892,11 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
       {
         kind: 'attacks',
         subjectSeat: action.by,
+        // "Attacks alone": one creature in the whole declaration (CR 702.90b). Read here because
+        // this is the only place that knows — by the time an exalted trigger resolves, a second
+        // attacker could have been removed from combat and the board would say the same thing
+        // either way.
+        alone: attacks.length === 1,
         attacked: {
           defender: attack.defender,
           ...(attack.planeswalker === undefined ? {} : { planeswalker: attack.planeswalker }),

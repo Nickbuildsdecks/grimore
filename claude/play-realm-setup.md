@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and three, today, across nine starter decks. A
+cards somebody has scripted — two hundred and five, today, across nine starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -121,6 +121,8 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Play a **Saga** | Two cards are Sagas: The Birth of Meletis in Skyward Writ and The Eldest Reborn in Hollow Tide. A Saga is an enchantment that reads itself out over three turns. It arrives with one lore counter and **chapter I happens immediately** — you do not wait a turn for it — and it gets another counter at the start of each of your own main phases, never on anybody else's turn. Each chapter goes on the stack like any other trigger, so an opponent can answer the chapter even though they cannot stop the counter. Once the last chapter has resolved the Saga is sacrificed and goes to your graveyard; the card shows **lore** counters so you can see which chapter is next. Nothing can be killed in response to a Saga except the Saga: a creature removal spell does not touch it, and in this pool only three cards destroy an enchantment. |
 | **Foretell** a card | Two cards have it, in Tidal Mind and in Arc Tempest: Behold the Multiverse and Saw It Coming. On your own turn, tap the card in hand → **Foretell** and pay {2}; the card goes into exile **face down**, and nobody else can see what it is — only that there is a card there. From your next turn onwards it is a play again, out of exile, for the smaller cost printed on it (**{1}{U}** and **{U}{U}**). You cannot cast it on the turn you foretold it. The point is that it splits a four-mana spell across two turns, so you can hold up a counterspell without holding up the mana — which is the hardest thing in this pool to do and the one thing the computer genuinely cannot. Foretelling cannot be answered: no stack, nothing to respond to. |
 | Work out why your creature is bigger than its card | Three creatures are **lords**: they change the other creatures of their own type. Stromkirk Captain in Ashen Rite gives other **Vampires** +1/+1 and first strike, Knight Exemplar in Skyward Writ gives other **Knights** +1/+1 and indestructible, and Imperious Perfect in Rot Harvest gives other **Elves** +1/+1. None of them pumps itself — "other" is printed on all three. The board always shows the current size, and it changes the instant the lord arrives or leaves, with nothing to click: a Knight with three damage on it that was surviving because of the Exemplar dies the moment the Exemplar does. |
+| Attack with **one** creature on purpose | **Guardians of Akrasa** in Skyward Writ is a 2/3 that cannot attack and has **exalted**: whenever exactly one creature you control attacks, *that* creature gets +1/+1 until end of turn. It is the number of attackers you **declared** that decides, not what is left in combat afterwards — so two attackers get nothing even if one of them is removed from combat before damage, and one attacker keeps the +1/+1 even if it is blocked by three creatures. The Guardians themselves are never the creature that grows, because a creature with defender never attacks. The pump goes on the stack as a trigger, so it resolves before blockers are declared and both players can see it coming. |
+| Watch a creature grow itself | **Cloudfin Raptor** in Hollow Tide is a 0/1 flier for one mana with **evolve**: whenever another creature you control enters that has **greater power or greater toughness** than the Raptor, it gets a +1/+1 counter. Either one is enough — a 0/2 Fog Bank grows it on toughness alone — and once the Raptor is the biggest thing you control it stops growing. The condition is checked **twice**, which is worth knowing at the table: nothing goes on the stack at all when the creature that arrived is not bigger, and it is checked again when the trigger resolves, so killing or bouncing that creature in reply means no counter. The counters stay on the Raptor through anything that does not kill it. |
 | Read a creature whose power is a **\*** | Two creatures are printed with a star instead of a number, and what it means is that their power is a count of something, read fresh every time anybody looks. Lhurgoyf in Rot Harvest counts the creature cards in *every* graveyard and its toughness is that plus one; Enigma Drake in Arc Tempest counts the instants and sorceries in *your* graveyard and keeps its printed toughness of 4. In hand the card still shows the star, because that is what the card says; on the battlefield the board shows the number it currently is. It changes with nothing announcing it — including downwards, if a graveyard gets exiled. |
 | Send their removal somewhere else | Two cards change what a spell already on the stack is pointed at. **Willbender** in Tidal Mind is a morph: {3} face down, and {1}{U} to turn it up at the moment their removal is on the stack aimed at one of your creatures — then pick the spell, and pick where it goes instead. **Swerve** in Arc Tempest does the same for {1}{U}{R} as an instant, for an instant or a sorcery, and a burn spell aimed at your face can be aimed back at theirs. Three things to know. The new target has to be legal **for their spell** — a "target creature" spell cannot be sent at a player, and if the one you pick is illegal the spell simply keeps the target it had rather than being countered. The spell has to have exactly **one** target. And the table will not offer you a spell with nowhere else to go: if the thing it is aimed at is the only legal target on the table, changing it would change nothing. Willbender is printed "spell **or ability**" and the engine does the spell half; use **Move by hand** for an ability. |
 | Have a creature with **ward** targeted | Two creatures have it: Dragonsguard Elite (ward {1}) in Verdant Guard and Sedgemoor Witch (ward {3}) in Ashen Rite. When an opponent aims a spell or an ability at one, their spell stops on the stack and **they** are asked: pay the ward cost, or let it be countered. Both answers are offered, because declining is often right — the removal is answered either way, and it cost them the card. If they cannot produce the cost at all they are not asked, and the log says the ward was not paid. It never triggers off its own controller's spells, so you can pump your own warded creature for free. |
@@ -180,17 +182,19 @@ are Vampires, which is more of one creature type than any other deck in the pool
 where **Stromkirk Captain** lives: +1/+1 and first strike for the other eight, which turns a row of
 0/1 Blood Artists into 1/2s that kill an attacker and take nothing back.
 **Skyward Writ** (white-blue) is the first deck whose plan is not to have the best
-board: Walls that hold the ground and attack nowhere, three different counterspells because what
-needs countering changes, and fliers to win over the top. Hanna leads it and buys an artifact or
+board: Walls that hold the ground and attack nowhere, two Counterspells and an Essence Scatter
+because what beats it is a creature, and fliers to win over the top. Hanna leads it and buys an artifact or
 enchantment back out of your graveyard once a turn. Its six Knights are the pool's second-deepest
 tribe, and **Knight Exemplar** makes all of them +1/+1 and **indestructible** — with the caveat
 that matters at the table: kill the Exemplar and they are mortal again immediately, including in
 the middle of a combat somebody has already assigned damage in. **Hollow Tide** (blue-black) is the newest, and
 the first deck in the pool that **does not care about your life total**: it wins by emptying your
 library, which the engine has always enforced as a loss (CR 704.5b) and which nothing had ever tried
-to do on purpose. Blockers that never attack, four counterspells and four removal spells to survive
+to do on purpose. Blockers that never attack, three counterspells and four removal spells to survive
 the early turns, and then ten cards a swing from a Nemesis of Reason, ten a turn from Jace, or
-eleven a connection from Mirko Vosk, who leads it.
+eleven a connection from Mirko Vosk, who leads it. Its cheapest blocker is a **Cloudfin Raptor**,
+a 0/1 for one mana that grows itself every time a bigger creature of yours arrives — which in this
+deck is every creature it has.
 
 **Arc Tempest** (red-blue) is the ninth and the newest, and it is the first deck here whose
 creatures are paid for by its spells. Twenty-five of its sixty cards are instants and sorceries and
@@ -212,9 +216,9 @@ tapped, and seven of the nine also run a pair of cycling lands. Any pairing work
 against itself. They are also the only decks right now — see *What is not done* below.
 
 A note on what to expect from each: played against each other by the engine's own opponent, the
-aggressive decks win more. Skyward Writ in particular wins 39% against the field — beating the
-slower decks and losing to the fastest ones — and a good part of that is the opponent rather than
-the deck: holding mana for a counterspell is its whole plan and the bot cannot do it. A person
+aggressive decks win more. Skyward Writ is the clearest case of the bot rather than the deck: it is
+level with the field at 51% and loses to the two fastest decks there — holding mana for a
+counterspell is half its plan and the bot cannot do it. A person
 plays it better. The same caveat applies twice over to Arc Tempest: holding up Counterspell is half
 its plan against the fast decks, and the bot casts it the turn it can afford it.
 
@@ -222,21 +226,30 @@ its plan against the fast decks, and the bot casts it the turn it can afford it.
 other, both seats, 192 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 82%  158-34   ember-rush
- 67%  128-64   forge-alliance
- 55%  106-86   verdant-guard
- 48%   93-99   skyward-writ
- 46%   89-103  ashen-rite
- 46%   88-104  arc-tempest
- 40%   77-115  rot-harvest
- 35%   68-124  hollow-tide
- 29%   56-136  tidal-mind
+ 81%  155-37   ember-rush
+ 65%  125-67   forge-alliance
+ 54%  104-88   verdant-guard
+ 51%   97-95   skyward-writ
+ 46%   88-104  ashen-rite
+ 45%   86-106  arc-tempest
+ 40%   76-116  hollow-tide
+ 39%   75-117  rot-harvest
+ 30%   57-135  tidal-mind
 ```
 
-That run is after the two redirection cards, and it is the quietest refresh this table has had:
-every row moved by three games or fewer and three did not move at all. Which is what it should look
-like when both new slots measured as washes — a table that moved a lot here would have meant the
-slot measurements were wrong.
+That run is after exalted and evolve, and **both decks that changed a card moved up**: Skyward Writ
+from 48% to 51% for the Guardians of Akrasa, Hollow Tide from 35% to 40% for the Cloudfin Raptor.
+It is the first refresh where the two changed rows are the two that moved most, which is what the
+slot measurements predicted and is rarer in this table than it sounds. The single sharpest move is
+the matchup where *both* cards are in play: Skyward Writ beat Hollow Tide 14-10 before and loses it
+10-14 now, so the Raptor was worth more in that matchup than the Guardians were. Everything else
+moved by one or two points, including two decks that drifted down without changing anything —
+see the caveat below.
+
+The run before it was after the two redirection cards, and it was the quietest refresh this table
+has had: every row moved by three games or fewer and three did not move at all. Which is what it
+should look like when both new slots measured as washes — a table that moved a lot there would have
+meant the slot measurements were wrong.
 
 The run before it was after the three tribal lords and the two new morphs. **Skyward Writ is up eight and
 Ashen Rite up three**, which is both of the decks that got a card and both in the direction their
@@ -287,7 +300,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and three scripted cards, which now includes a wrath, a
+The decks share a pool of two hundred and five scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -411,7 +424,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 62 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 51-54 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
-node scripts/e2e-solo.mjs       # one browser, against the computer    — 21 checks
+node scripts/e2e-solo.mjs       # one browser, against the computer    — 20-21 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 23 checks
 ```
 
@@ -453,6 +466,7 @@ DECKS=rot-harvest,tidal-mind,ember-rush,verdant-guard node scripts/e2e-pod.mjs
 DECK_B=tidal-mind node scripts/e2e-arena.mjs     # counterspells, so the stack gets targeted
 DECK_A=rot-harvest DECK_B=rot-harvest node scripts/e2e-arena.mjs   # graveyards and sacrifice outlets
 DECK_A=arc-tempest DECK_B=arc-tempest node scripts/e2e-arena.mjs   # the spells deck, and a creature whose power is a *
+DECK_A=skyward-writ DECK_B=hollow-tide node scripts/e2e-arena.mjs  # exalted one side, evolve the other
 FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatever they drew
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's

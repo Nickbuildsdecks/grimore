@@ -2486,6 +2486,40 @@ const IMPERIOUS_PERFECT: CardDef = {
   colors: ['G'],
 };
 
+// ── The two keywords that point at another creature ─────────────────────────────────────────────
+
+/*
+  Exalted and evolve: the first two cards in the pool whose text is about a creature that is not
+  them. Everything else that watches the board talks about itself or about a player — these two
+  have to say "that creature", which is the whole reason they are here.
+*/
+
+const GUARDIANS_OF_AKRASA: CardDef = {
+  name: 'Guardians of Akrasa',
+  typeLine: 'Creature — Human Soldier',
+  manaCost: '{2}{W}',
+  cmc: 3,
+  power: '2',
+  toughness: '3',
+  // The reminder text in brackets, as printed, which is also what keeps the keyword parser off it:
+  // only a line that is nothing but keywords is read as keywords, and "Defender" is on its own.
+  oracleText:
+    'Defender\nExalted (Whenever a creature you control attacks alone, that creature gets +1/+1 until end of turn.)',
+  colors: ['W'],
+};
+
+const CLOUDFIN_RAPTOR: CardDef = {
+  name: 'Cloudfin Raptor',
+  typeLine: 'Creature — Bird Mutant',
+  manaCost: '{U}',
+  cmc: 1,
+  power: '0',
+  toughness: '1',
+  oracleText:
+    'Flying\nEvolve (Whenever a creature enters the battlefield under your control, if that creature has greater power or toughness than this creature, put a +1/+1 counter on this creature.)',
+  colors: ['U'],
+};
+
 export const ROT_HARVEST: DeckSpec = {
   id: 'rot-harvest',
   name: 'Rot Harvest',
@@ -2878,6 +2912,31 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: HEALING_SALVE, count: 1 },
     { card: WALL_OF_AIR, count: 1 },
     /*
+      Exalted, and the Negate it replaced.
+
+      A 2/3 for {2}{W} that cannot attack, in the deck that keeps losing on the ground — and that
+      pays the creature that attacks alone. Both halves are this deck. It holds the ground against
+      anything the aggro decks put down for two mana, and the Serra Angel that swings into an empty
+      sky while the Guardians stay home swings as a 5/5.
+
+      The exalted trigger is the one place the engine has ever had to say *which* creature an event
+      happened to: "that creature gets +1/+1" has no referent at all otherwise, and the Guardians
+      are never the creature in question because they can never attack.
+
+      The Negate went because it was this deck's least-cast card — 55% of its copies over 96 games,
+      against 90% for the Hawks — and because what it answers is the half of the field this deck
+      already beats. Two Counterspells and an Essence Scatter stay: the creature decks are the
+      matchups it loses, and a counter that cannot touch a creature is the wrong answer to them.
+
+      **Which card came out was worth more than the card going in.** Measured against the field
+      twice, 240 paired duels each: cutting the Negate for the Guardians is 120-120 and 113-127
+      against 103-137 and 97-143 for the list it replaced, so +17 and +16 — on the same side both
+      times and right at this instrument's floor. The first version of this swap cut the *Wall of
+      Air* instead, and that arrangement measured 103-137 and 100-140 — level with doing nothing.
+      Same new card, two cuts, seventeen games between them. See `claude/decisions-log.md` (D133).
+    */
+    { card: GUARDIANS_OF_AKRASA, count: 1 },
+    /*
       The Birth of Meletis for the second Wall of Air, and the first Saga in the pool.
 
       Three turns of exactly what this deck is short of: a 0/4 wall that stops a ground creature
@@ -2912,11 +2971,10 @@ export const SKYWARD_WRIT: DeckSpec = {
       Angels, three Skyhunters and two Hawks, and Tidal Mind keeps its own copy.
     */
     { card: HIDDEN_DRAGONSLAYER, count: 1 },
-    // The answers. Three different counters rather than four of one, because what needs countering
-    // changes: Essence Scatter is for the creature decks and Negate for everything else.
+    // The answers. Two Counterspells and an Essence Scatter: the Negate that used to sit beside
+    // them became the Guardians of Akrasa, because what beats this deck is a creature.
     { card: COUNTERSPELL, count: 2 },
     { card: ESSENCE_SCATTER, count: 1 },
-    { card: NEGATE, count: 1 },
     { card: UNSUMMON, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
     { card: DISENCHANT, count: 1 },
@@ -2998,6 +3056,28 @@ export const HOLLOW_TIDE: DeckSpec = {
     { card: FOG_BANK, count: 2 },
     { card: WALL_OF_AIR, count: 1 },
     /*
+      Evolve, and the second Psychic Strike it replaced.
+
+      A {U} 0/1 that this deck turns into a 3/4 flier without doing anything it was not doing
+      anyway. Every creature here is a blocker that enters bigger than the Raptor is — a 0/2 Fog
+      Bank evolves it on toughness, a 1/3 Wall of Air on both, a 2/4 Returned Centaur again — so
+      the card that is worst on turn one is the best blocker in the deck by turn five, and the deck
+      whose losses all look like "died before the mill got there" has one more turn-one play.
+
+      Evolve is also the pool's first intervening-if clause, which is the half of it that is a rule
+      rather than a card: the condition is checked when the trigger would go on the stack *and*
+      again as it resolves (CR 603.4), so a Raptor that is already the biggest thing out puts no
+      trigger on the stack at all, and bouncing the creature that caused one is an answer to it.
+
+      The second Psychic Strike went because this deck counters six things and needs to survive
+      five turns. Measured against the field twice, 240 paired duels each: 88-152 and 101-139 with
+      the Raptor against 85-155 and 97-143 without, so +3 and +4. Both seed sets lean the same way
+      and both by far less than the eighteen games this instrument can resolve, which is the
+      honest reading: the swap costs this deck nothing, and nothing is all a new keyword's card
+      has to cost.
+    */
+    { card: CLOUDFIN_RAPTOR, count: 1 },
+    /*
       The Eldest Reborn for the second Wall of Air, and the card this deck has been missing.
 
       Hollow Tide spends the whole game putting creatures into graveyards and has never had a way
@@ -3013,10 +3093,11 @@ export const HOLLOW_TIDE: DeckSpec = {
     { card: OMENSPEAKER, count: 2 },
     { card: THIEVING_MAGPIE, count: 2 },
     { card: VAMPIRE_NIGHTHAWK, count: 2 },
-    // The answers. Four counters, four removal spells and two Man-o'-Wars, because the thing that
-    // beats this deck is one creature it cannot block.
+    // The answers. Three counters, four removal spells and two Man-o'-Wars, because the thing that
+    // beats this deck is one creature it cannot block. The fourth counter was the second Psychic
+    // Strike, now a Cloudfin Raptor: a deck this slow would rather have the turn-one blocker.
     { card: COUNTERSPELL, count: 2 },
-    { card: PSYCHIC_STRIKE, count: 2 },
+    { card: PSYCHIC_STRIKE, count: 1 },
     { card: ESSENCE_SCATTER, count: 1 },
     { card: NEGATE, count: 1 },
     { card: DOOM_BLADE, count: 2 },

@@ -53,6 +53,21 @@ export interface EffectContext {
    * Undefined for everything else. See `StackObject.answering`.
    */
   readonly answering?: string;
+  /**
+   * The permanent the event that caused this trigger happened to, for a trigger that has to say
+   * "**that** creature" (CR 603.3d). Undefined for everything else.
+   *
+   * The three board-watching events — a creature entering, dying, attacking — already said *whose*
+   * creature it was and whether it was a creature at all; this is *which*. Without it a card can
+   * watch the board and then only talk about itself, which rules out an entire shape of printed
+   * card: exalted pumps the creature that attacked, evolve measures the creature that entered, and
+   * neither has anything to point at.
+   *
+   * By instance id rather than as a `Target`, because it is not one: nothing chose it, an opponent
+   * cannot make it illegal, and a trigger that reads it has no target at all. See
+   * `StackObject.subject`.
+   */
+  readonly subject?: string;
 }
 
 export type EffectFn = (ctx: EffectContext) => GameState;

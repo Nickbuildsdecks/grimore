@@ -67,10 +67,19 @@ pair, so a result that looks like "this card is bad" is often "that cut was bad"
 the same two cards added to the same deck measured 13 and 8 games *down* when they replaced the
 deck's cheapest answer and 1 down and 7 up when they replaced a three-mana removal spell instead.
 If a slot change measures worse than it should, re-run it with a different card removed before
-concluding anything about the card added. **It has now happened twice in three entries** — D129's
-Elf lord went from (+2, -8) to (+4, +13) on the same two seed sets by taking a redundant third copy
-of a creature instead of the deck's only protection spell. Treat measuring the cut as half of what a
-slot change is, not as an extra step taken when the first number disappoints.
+concluding anything about the card added. **It has now happened three times** — D129's Elf lord went
+from (+2, -8) to (+4, +13) on the same two seed sets by taking a redundant third copy of a creature
+instead of the deck's only protection spell, and D133 is the widest: Guardians of Akrasa measured
+(-2, +1) cutting Skyward Writ's Wall of Air and **(+17, +16)** cutting its Negate — one card, two
+cuts, seventeen games, with the better arrangement landing on the instrument's own floor. Treat
+measuring the cut as half of what a slot change is, not as an extra step taken when the first number
+disappoints.
+
+The corollary is a sharper way to pick the cut than "whatever is least cast". Both wrong cuts in
+D129 and D133 removed the deck's *only* copy of a thing it needed — a protection spell, a flying
+blocker — while the right cuts removed something the deck had another answer for. `cast-counts.mjs`
+ranks by how often a card is used and cannot see that difference, so read its bottom five and then
+ask which of them the deck would still be fine without.
 
 **Build first, and let the build finish before launching anything.** Every harness here reads
 `packages/rules-engine/dist/index.js`, so a probe started while `pnpm --filter @grimore/rules-engine

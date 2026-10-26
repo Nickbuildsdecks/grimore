@@ -5505,3 +5505,76 @@ code path keeps its coverage in `e2e-arena` (join and watch) and `e2e-pod`. 59 c
 What is still missing in that paragraph of the doc, now that the list exists, is spectator chat: a
 watcher reads the table's chat and cannot write to it. The doc says that instead of the thing that
 was already built.
+
+## D133 — The creature the event was about, the clause that is asked twice, and a cut worth seventeen games
+
+**Decision: the three events that are about one permanent now carry *which* permanent, a trigger
+may carry an intervening-if clause checked at both of the two times the rules check it, and exalted
+and evolve are the two cards that needed each.**
+
+Before this, every board-watching trigger in the engine could only talk about itself or about a
+player. `etb`, `dies` and `attacks` each carried `subjectSeat` — *whose* creature entered, died or
+attacked — and `subjectIsCreature`, and neither of them is *which*. That is enough for a Blood
+Artist and not enough for an entire shape of printed card:
+
+- **Exalted** (CR 702.90): "whenever a creature you control attacks alone, **that creature** gets
+  +1/+1 until end of turn."
+- **Evolve** (CR 702.100): "whenever a creature enters the battlefield under your control, **if
+  that creature** has greater power or toughness than this creature, put a +1/+1 counter on this
+  creature."
+
+So `raise` now writes the subject's instance id onto the event, `pushAbility` carries it onto the
+stack object, and `EffectContext.subject` is where a script reads it. It travels exactly the way
+`attacked` and `answering` already do, and for exactly the same reason both of those exist: the
+event is gone by the time anything reads it, and the board no longer says what happened. The three
+of them became one `TriggerAbout` parameter rather than a third optional argument in a row — three
+optionals positionally is one call site away from a bug nothing catches.
+
+**`alone` is on the event, not derived on resolution.** "Attacks alone" is a fact about the
+*declaration*: by the time an exalted trigger resolves, a second attacker may have been removed from
+combat and the board reads identically either way. `auto:attack` knows the answer (`attacks.length
+=== 1`) and writes it down.
+
+**The intervening-if clause is a rule, and it is two checks.** `TriggerDef.condition` is asked once
+before the ability would go on the stack and again as it resolves (CR 603.4), and a false answer
+either time means the ability does nothing at all. Both halves are observable at a table and both
+have a test:
+
+- The **first** ask is why a Raptor that is already the biggest thing you control puts *nothing* on
+  the stack when a 1/1 arrives. Without it, every creature an evolve deck plays for the rest of the
+  game adds an ability that resolves into nothing, which a player reads as the engine being broken.
+- The **second** ask is why answering the creature answers the trigger: Unsummon the creature that
+  caused it and the counter never arrives. This is the one that makes evolve *interactive* rather
+  than a tempo tax, and both tests were confirmed load-bearing by disabling each check in turn and
+  watching the matching assertion fail.
+
+A condition is given the same `EffectContext` an effect is, so the condition and the effect read the
+same board the same way. It is asked, not run: a condition that changed the game would be a
+replacement effect wearing a trigger's clothes.
+
+**And what this task actually measured: which card comes out is worth more than the card going in.**
+Guardians of Akrasa went into Skyward Writ twice, with two different cuts, 240 paired duels against
+the field each time, two seed sets each:
+
+| the cut | seeds from 3300 | seeds from 8800 |
+| --- | --- | --- |
+| cutting the **Wall of Air** | 103-137 | 100-140 |
+| cutting the **Negate** | **120-120** | **113-127** |
+| the list before either | 103-137 | 97-143 |
+
+The same new card is worth nothing in one arrangement (−2 and +1, inside the noise) and +17 and +16
+in the other — on the same side both times and right at this instrument's eighteen-game floor. The
+Wall of Air was the wrong cut because its *flying* was the redundant part, and this deck already
+answers the air with two Fog Banks; the Negate was the right cut because it was the deck's
+least-cast card at 55% and what it answers is the half of the field Skyward Writ already beats.
+D127 and D129 both said measuring the cut is half of what a slot change is. This is the third data
+point and the loudest: two cuts, seventeen games, one card.
+
+Cloudfin Raptor went into Hollow Tide for the second Psychic Strike and measured +3 and +4 — both
+seed sets on the same side, both far inside the floor. Written down as what it is: the swap costs
+that deck nothing, and nothing is all a new keyword's card has to cost. A card has to live
+*somewhere* for the keyword to be playable at all, and "free" is the bar for that, not "better".
+
+One thing the engine still does not have, and it is deliberate: a `condition` is checked for
+triggers only. An activated ability whose "if" clause has stopped being true is a different rule
+(CR 603.4 is about triggered abilities), and nothing in the pool wants it.

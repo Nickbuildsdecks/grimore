@@ -3463,6 +3463,97 @@ const IMPERIOUS_PERFECT: CardScript = {
   ],
 };
 
+// ── The creature the event was about ────────────────────────────────────────────────────────────
+
+/*
+  Two keywords that cannot be written without knowing *which* creature the event happened to.
+
+  Every board-watching trigger before these two could only talk about itself. A Blood Artist sees a
+  creature die and drains a player; an Impact Tremors sees a creature enter and deals 1 damage —
+  neither of them ever has to point at the creature in question. Exalted and evolve both do, and
+  they are the shape the engine was missing rather than two more cards: "**that** creature gets
+  +1/+1" and "if **that** creature is bigger than this one" (CR 603.3d). So the three events that
+  are about one permanent now carry which permanent, and `EffectContext.subject` is where a script
+  reads it.
+
+  Evolve brings the other half with it, and it is a rule rather than a convenience: the
+  intervening-if clause (CR 603.4). "If that creature has greater power or toughness" is checked
+  **twice** — when the trigger would go on the stack, and again as it resolves — and a condition
+  that is false either time means the ability does nothing at all. Both halves matter at a real
+  table. The first is why a Cloudfin Raptor that is already a 3/4 does not put a trigger on the
+  stack for a 1/1 Pest arriving, so nobody has to watch an ability resolve into nothing. The second
+  is why bouncing the creature that caused the trigger is an *answer* to it, instead of a tempo
+  loss that still leaves the counter behind.
+*/
+
+/**
+ * Exalted, the keyword that pays you for not attacking with everything (CR 702.90).
+ *
+ * The condition it checks is unusual and is the reason the event carries `alone`: "attacks alone"
+ * is a fact about the *declaration*, not about the creature. By the time this ability resolves a
+ * second attacker could have been removed from combat, and the board would read the same either
+ * way — so the engine writes it on the event, where it is still true.
+ *
+ * On a 2/3 defender on purpose. A card that can never attack itself is the honest home for a
+ * trigger that only pays when one creature attacks: the Guardians hold the ground this deck keeps
+ * losing on, and the Serra Angel that swings into an empty sky swings as a 5/5.
+ */
+const GUARDIANS_OF_AKRASA: CardScript = {
+  name: 'Guardians of Akrasa',
+  triggers: [{
+    on: { kind: 'attacks', who: 'any', of: 'you', alone: true },
+    description: 'Exalted: the attacking creature gets +1/+1 until end of turn.',
+    effect: (c) => (c.subject === undefined
+      ? c.state
+      : pump(c.state, [c.subject], c.source, c.controller, { power: 1, toughness: 1 })),
+  }],
+};
+
+/**
+ * Evolve's question, asked of the board twice: is what just arrived bigger than this (CR 702.100a)?
+ *
+ * **Power or toughness**, not both and not the pair — a 1/5 Wall evolves a 2/2 and so does a 5/1
+ * burn-proof attacker, which is what makes the keyword work in a deck full of blockers. Read
+ * through `characteristicsOf` rather than off the printed card, so a creature that entered under an
+ * anthem counts at the size it actually is.
+ *
+ * Returns false for a subject that has already gone, which is the second ask doing its job: a
+ * creature bounced or killed in response is not on the battlefield to be measured, and an ability
+ * whose condition cannot be met does nothing.
+ */
+function evolvesInto(state: GameState, source: string, subject: string | undefined): boolean {
+  if (subject === undefined) return false;
+  const self = state.instances[source];
+  const other = state.instances[subject];
+  if (self === undefined || other === undefined) return false;
+  if (self.zone !== 'battlefield' || other.zone !== 'battlefield') return false;
+  const mine = characteristicsOf(state, self);
+  const theirs = characteristicsOf(state, other);
+  return theirs.power > mine.power || theirs.toughness > mine.toughness;
+}
+
+/**
+ * Cloudfin Raptor: a one-mana 0/1 that is a 3/4 flier by turn four, or dead to nothing at all.
+ *
+ * The card evolve was printed on, and the clearest possible test of the clause. It grows off
+ * creatures it has nothing else to do with — a Wall of Air, a Fog Bank, a Returned Centaur — which
+ * is why it belongs in the deck whose early game is made of blockers rather than in one that wants
+ * its one-drop to attack.
+ *
+ * Note what it does **not** do: `who: 'another'` keeps it from evolving off its own arrival, and
+ * the condition keeps it from triggering at all once it is the biggest thing on the board. Both are
+ * the printed card, and both are checks the engine makes rather than text this script carries.
+ */
+const CLOUDFIN_RAPTOR: CardScript = {
+  name: 'Cloudfin Raptor',
+  triggers: [{
+    on: { kind: 'etb', who: 'another', of: 'you', what: 'creature' },
+    description: 'Evolve: put a +1/+1 counter on Cloudfin Raptor.',
+    condition: (c) => evolvesInto(c.state, c.source, c.subject),
+    effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+  }],
+};
+
 // ── Changing what a spell is pointed at ─────────────────────────────────────────────────────────
 
 /*
@@ -3745,6 +3836,7 @@ const ALL: readonly CardScript[] = [
   STROMKIRK_CAPTAIN, KNIGHT_EXEMPLAR, IMPERIOUS_PERFECT,
   ZOMBIE_CUTTHROAT, HIDDEN_DRAGONSLAYER,
   WILLBENDER, SWERVE,
+  GUARDIANS_OF_AKRASA, CLOUDFIN_RAPTOR,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
