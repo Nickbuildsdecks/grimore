@@ -10,7 +10,7 @@
  * mana follows. Showing a card as uncastable because the lands are still untapped would be
  * technically true and useless.
  */
-import { isFaceDownPermanent, zoneKey } from './cards.js';
+import { isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import { characteristicsOf } from './characteristics.js';
 import {
@@ -55,6 +55,17 @@ export interface LegalPlay {
    * four-mana commander on its third cast would be lying about the card.
    */
   readonly commanderTax?: number;
+  /**
+   * What the permanents on the table did to this cast's generic mana, and absent when they did
+   * nothing — negative for a reduction, positive for a tax.
+   *
+   * Separate from `manaCost` for the reason `commanderTax` is: the cost printed on the card has
+   * not changed, and a table that rewrote it would be lying about which card this is. The client
+   * shows the printed cost and this beside it, with `costNote` saying which permanent is doing it.
+   */
+  readonly costChange?: number;
+  /** "Instant and sorcery spells you cast cost {1} less", in the card's own words. */
+  readonly costNote?: string;
   /**
    * The largest X this seat could pay for, for a cost with {X} in it, and absent for every other
    * play.
@@ -691,9 +702,16 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     }
     // The tax is generic mana on top of the printed cost (CR 903.8), and it only applies to a
     // cast from the command zone.
-    const cost: ManaCost = fromCommand && tax > 0
+    const taxed: ManaCost = fromCommand && tax > 0
       ? { ...printed, generic: printed.generic + tax }
       : printed;
+    /*
+      And what the permanents on the table do to it: an Electromancer taking {1} off, a Thalia
+      putting {1} on. Applied here, where affordability is judged, and again in `castSpell`, where
+      the mana is actually taken — through the same function, so the two cannot drift apart.
+    */
+    const change = costChangeFor(state, seat, def);
+    const cost: ManaCost = withCostChange(taxed, change.generic);
     /*
       Convoke widens what may pay for this one spell, so affordability is asked of the plan rather
       than of the lands alone — and the plan is what `castSpell` recomputes, so the offer and the
@@ -709,6 +727,11 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       continue;
     }
     const taxOn = fromCommand && tax > 0 ? { commanderTax: tax } : {};
+    // Only when it actually moved the number: a Thalia taxing a creature spell changes nothing,
+    // and a note saying so would be noise on every card in the deck.
+    const changeOn = cost.generic === taxed.generic
+      ? {}
+      : { costChange: cost.generic - taxed.generic, costNote: change.notes[0] ?? '' };
     // X at zero is a legal cast of an X spell and sometimes the only one available, so a cost with
     // {X} is offered whenever the rest of it can be paid; `xMax` says how high the player may go.
     const xOn = cost.x ? { xMax: maxAffordableX(poolOf(state, seat), cost, sources) } : {};
@@ -729,7 +752,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         out.push({
           kind: 'cast', card: id, name: ch.name,
           description: `Cast ${ch.name} — ${chosen.map((m) => m.description).join('; and ')}`,
-          manaCost: costShown, ...taxOn, ...xOn, modes, targetSpecs: specs, candidates,
+          manaCost: costShown, ...taxOn, ...changeOn, ...xOn, modes, targetSpecs: specs, candidates,
           isManaAbility: false, sacrificeOptions: victims,
         });
       }
@@ -763,7 +786,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           : fromCommand && tax > 0
             ? `Cast ${ch.name} (+{${tax}} tax)`
             : `Cast ${ch.name}${convokeNote}`,
-      manaCost: costShown, ...taxOn, ...xOn, targetSpecs: specs, candidates,
+      manaCost: costShown, ...taxOn, ...changeOn, ...xOn, targetSpecs: specs, candidates,
       ...(flashback ? { flashback: true } : {}),
       ...(foretold ? { foretold: true } : {}),
       isManaAbility: false, sacrificeOptions: victims,
@@ -783,9 +806,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const kicker = flashback || foretold ? undefined : script?.kicker;
     if (kicker !== undefined) {
       const withKicker = parseManaCost(`${def?.manaCost ?? ''}${kicker.cost}`);
-      const kickedCost: ManaCost = fromCommand && tax > 0
-        ? { ...withKicker, generic: withKicker.generic + tax }
-        : withKicker;
+      const kickedCost: ManaCost = withCostChange(
+        fromCommand && tax > 0
+          ? { ...withKicker, generic: withKicker.generic + tax }
+          : withKicker,
+        change.generic,
+      );
       if (withKicker.unsupported === undefined && canAfford(poolOf(state, seat), kickedCost, sources)) {
         out.push({
           kind: 'cast', card: id, name: ch.name, kicked: true,
@@ -935,6 +961,72 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
     });
   }
   return out;
+}
+
+/**
+ * What the permanents on the table do to the cost of one spell (CR 601.2f).
+ *
+ * **One function, two callers**, which is the whole point of it being here rather than written out
+ * twice: `legalActions` uses it to decide what a cast costs and whether it is affordable, and
+ * `castSpell` uses it to decide what to charge. A table that offered a Lightning Bolt for nothing
+ * and then took a mana for it would be a table nobody could trust, and the way this engine stops
+ * that is the same way it stops it for convoke, crew and morph — the offer and the payment ask the
+ * same question of the same state.
+ *
+ * Only **generic** mana moves, which is the rule and not a simplification: a cost reduction never
+ * touches a coloured requirement, so a Goblin Electromancer makes a Counterspell cost `{U}{U}`
+ * still and an Arc Lightning cost `{1}{R}` instead of `{2}{R}`. The total is floored at nought
+ * generic for the same reason — a reduction can empty the generic part and no further.
+ *
+ * Increases and reductions are **netted and floored once**, which is the same answer the rules'
+ * order gives (CR 601.2f: increases, then reductions) because the floor only applies at the end:
+ * a Thalia and an Electromancer together leave a {1}{R} instant at {1}{R}, and two Electromancers
+ * take a {1}{R} to {R} and stop. They are counted separately all the same, so that the day a card
+ * cares *which* modifiers applied — "costs {1} less for each" wants a count, not a total — the
+ * number it needs is already here.
+ *
+ * Face-down permanents contribute nothing: a creature cast face down is a 2/2 with no abilities
+ * (CR 707.2), and an Electromancer hiding under a morph is doing nothing for anybody.
+ *
+ * **One cast this does not reach yet, and deliberately:** the {3} of casting a creature *face
+ * down*, which is paid by its own path in `castSpell` and offered by its own branch above. For the
+ * two cards in the pool the answer is the same either way — a face-down cast is a creature spell,
+ * which Thalia does not tax and the Electromancer does not cheapen — so wiring it would be a change
+ * with nothing behind it. A Sphere of Resistance, which taxes every spell, would be the card that
+ * needs it, and the offer and the payment would both have to learn it in the same commit.
+ */
+export function costChangeFor(
+  state: GameState, seat: SeatIndex, def: CardDef | undefined,
+): { readonly generic: number; readonly notes: readonly string[] } {
+  if (def === undefined) return { generic: 0, notes: [] };
+  let up = 0;
+  let down = 0;
+  const notes: string[] = [];
+  for (const other of state.seats) {
+    for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst)) continue;
+      const script = scriptFor(state.cardDefs[inst.defKey]?.name);
+      for (const mod of script?.costModifiers ?? []) {
+        const mine = other.index === seat;
+        if (mod.whose === 'controller' && !mine) continue;
+        if (mod.whose === 'opponents' && mine) continue;
+        if (!mod.applies(state, seat, def)) continue;
+        if (mod.generic >= 0) up += mod.generic;
+        else down -= mod.generic;
+        notes.push(mod.description);
+      }
+    }
+  }
+  if (up === 0 && down === 0) return { generic: 0, notes: [] };
+  return { generic: up - down, notes };
+}
+
+/** Applies a cost change to a parsed cost, taking generic down to nought and no further. */
+export function withCostChange(cost: ManaCost, change: number): ManaCost {
+  if (change === 0) return cost;
+  const generic = Math.max(0, cost.generic + change);
+  return generic === cost.generic ? cost : { ...cost, generic };
 }
 
 /** Everything `seat` may do in the current state. */

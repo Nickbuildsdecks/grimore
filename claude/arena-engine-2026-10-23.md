@@ -3714,6 +3714,14 @@ inside Tidal Mind the instrument could not call (two games between two cuts), so
 to Frog is the only card in any deck covering the characteristic-setting layer, and cutting it would
 take a rule out of the game rather than a card out of a deck.
 
+**And a test that had quietly been assuming the host went first.** `e2e-table` failed one run in
+three on "passing the turn moves it to the other player" — not because passing was broken, but
+because the roll added two days earlier (the table now rolls for who starts) meant Nick sometimes
+pressed Pass turn on a turn that was not his. The turn moved *to* him and Friend was never told
+anything. The check reads which page says "your turn" before the press now. It is worth recording
+that the first fix tried was a longer timeout: the failure looked exactly like a socket that had
+not delivered.
+
 **One case the bot gets wrong, knowingly.** A copied Gravedigger trigger has both corpses in the
 bot's own graveyard, so its ranking sees two of its own cards, ties, and declines — and then the
 copy returns the card and the original is countered for pointing at an object that has changed
@@ -3723,16 +3731,55 @@ the card the measurement is about is the other one, and there the bot's answer i
 answering gets both creatures, which is a test.
 
 **One gap, stated rather than papered over.** The table's new row — one button per target and
-**Leave it** — is covered by the reducer's own tests and by the engine's, but not by a browser
-suite, because a browser suite plays a real game and this card comes up in seven games in a hundred
-and twenty. The suites check that nothing else broke; the prompt itself is verified where it can be
-verified deterministically.
+**Leave it** — is covered by the reducer's own tests and by the engine's, but not by a *fixed*
+browser check, because a browser suite plays a real game and this card comes up in seven games in a
+hundred and twenty. It is driven when it does come up: the pod suite caught the hole the hard way,
+with a seat "stuck at Draw on turn 43" whose table was showing a Strionic Resonator's copy waiting
+to be aimed and whose driver had never heard of that row. The same hole was already there for the
+*number* prompt added one change earlier and had simply not come up yet. Both are answered now, and
+the rule is written down as D152: a question added to the table is three places, not two.
 
 One prediction worth recording as wrong: the card's own comment, written before any of this ran,
 said the computer would be poor with it because copying needs mana held through somebody else's
 turn. It does not — a seat's lands are already untapped on an opponent's turn and the engine taps
 for a cost as it pays it. The bot used the card three times more than expected, and badly, which is
 a different problem from the one that was predicted.
+
+### What a spell costs is a question about the board
+
+The engine could *replace* a cost — flashback, foretell, morph — and the command zone could tax
+one. What nothing could do was reach a card in somebody's hand and make it cheaper or dearer, which
+is the whole "costs {1} less" family and one of the most common static effects printed. So a Goblin
+Electromancer was unwritable, and so was every card that taxes.
+
+It is one declaration (`costModifiers`) and **one function with two callers**: `legalActions` asks
+it what a cast costs and whether this seat can afford it, and `castSpell` asks it what to charge.
+That is the rule convoke, crew and morph are built on — a table that offers a spell for two and then
+takes three is a table nobody can play on — and it is why this is a dozen lines in two places rather
+than a cost calculator on each side.
+
+The rules that travel with it: only **generic** mana moves (CR 601.2f), so an Electromancer leaves
+Counterspell at {U}{U} and Lightning Bolt at {R} and takes Arc Lightning from {2}{R} to {1}{R}; the
+generic floors at nought and stops; increases and reductions net out with a single floor, which is
+the answer the rules' staged order gives; the commander tax goes on *before* a reduction comes off;
+and a face-down permanent contributes nothing, because it is a 2/2 with no text (CR 707.2). The
+printed cost is never rewritten — the play carries the change beside it and the sheet draws "−{1}",
+so what the card says and what you are paying are both on the screen.
+
+**Both cards measure free, and the instrument says what they actually did.** Goblin Electromancer
+into Arc Tempest for the second Stormchaser Mage: **−2 of 240**, and over 120 duels the deck cast
+1390 spells of which **24 were discounted**, saving 24 mana — about one cast in sixty, because one
+copy in sixty cards has to be drawn, survive, and then meet a spell with generic in it. The cards it
+cheapened read like the deck's own curve: Behold the Multiverse ten times, Arc Lightning five,
+Swerve four.
+
+Thalia into Skyward Writ for the Youthful Knight: **−4 of 240**, and here the instrument found the
+more interesting thing. Over 120 duels she taxed **85 of the opponent's spells and 70 of her
+own** — an asymmetry of fifteen spells in a hundred and fifty-five. Skyward Writ is the white deck
+with the fewest noncreature spells in the pool (seventeen against a field averaging twenty), and a
+symmetric tax is *still* nearly symmetric. That is the honest read of a hate card in a 60-card
+starter pool rather than a constructed format: the tax is real, both players pay it, and the margin
+is thinner than the deckbuilding argument suggested.
 
 ## Next
 

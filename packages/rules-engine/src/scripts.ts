@@ -4377,6 +4377,51 @@ const STRIONIC_RESONATOR: CardScript = {
 };
 
 /*
+  The cost family: two permanents that change what other spells cost, in both directions.
+
+  This is one of the most common static effects in Magic and the engine had no way to say it. A
+  cost could be *replaced* (flashback, foretell, morph) or *taxed* by the command zone, but nothing
+  on the battlefield could reach a spell in somebody's hand and make it cheaper or dearer — so the
+  whole "costs {1} less" family, from Goblin Electromancer to Sphere of Resistance, was unwritable.
+
+  Both halves are one declaration (`CardScript.costModifiers`) and one function with two callers:
+  `legalActions` asks it what a cast costs and whether it is affordable, and `castSpell` asks it
+  what to charge. The rule that matters here is that they can never answer differently, which is the
+  same rule convoke, crew and morph are built on.
+
+  **Only generic mana moves** (CR 601.2f). A reduction never touches a coloured requirement, so an
+  Electromancer leaves Counterspell at {U}{U} and makes Arc Lightning {1}{R} instead of {2}{R} —
+  which is the card, and is also why its own deck is the one it is worth the most in.
+
+  Thalia is the other direction and the more interesting card, because she taxes **everyone**,
+  her own controller included. That is the printed card and it is what makes her a *cost* rather
+  than an advantage: Skyward Writ runs sixteen noncreature spells of its own.
+*/
+const GOBLIN_ELECTROMANCER: CardScript = {
+  name: 'Goblin Electromancer',
+  costModifiers: [{
+    whose: 'controller',
+    applies: (_state, _caster, card) => {
+      const line = parseTypeLine(card.typeLine);
+      return hasType(line, 'instant') || hasType(line, 'sorcery');
+    },
+    generic: -1,
+    description: 'Goblin Electromancer — instant and sorcery spells cost {1} less',
+  }],
+};
+
+const THALIA_GUARDIAN_OF_THRABEN: CardScript = {
+  name: 'Thalia, Guardian of Thraben',
+  keywords: ['first strike'],
+  costModifiers: [{
+    whose: 'everyone',
+    applies: (_state, _caster, card) => !hasType(parseTypeLine(card.typeLine), 'creature'),
+    generic: 1,
+    description: 'Thalia, Guardian of Thraben — noncreature spells cost {1} more',
+  }],
+};
+
+/*
   Copying a **spell**, which is the other half of the family and the card the engine could not have.
 
   The Resonator copies an ability; Twincast copies a spell, and a spell is a *card*, which is the
@@ -4790,6 +4835,7 @@ const ALL: readonly CardScript[] = [
   AJANI_CALLER_OF_THE_PRIDE, NISSA_VOICE_OF_ZENDIKAR,
   EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM, CHALICE_OF_THE_VOID,
   WALKING_BALLISTA, HANGARBACK_WALKER, TOXIC_DELUGE, TWINCAST,
+  GOBLIN_ELECTROMANCER, THALIA_GUARDIAN_OF_THRABEN,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

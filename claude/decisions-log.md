@@ -6441,6 +6441,14 @@ every other action is returned by reference.
 The lobby says it in one line under the two start buttons, because the first thing a player notices
 otherwise is that something changed.
 
+**What it broke, found two days later:** `e2e-table`'s "passing the turn moves it to the other
+player" had Friend hard-coded as the other player, because the host always went first when it was
+written. With the roll it failed on the runs where the roll went the other way — Nick pressed Pass
+turn on a turn that was not his, the turn moved *to* him, and Friend was never told anything. The
+check now reads which page says "your turn" before the press and asks the other one. Worth recording
+because the failure did not look like a roll: it looked like a socket that had not delivered, and
+the first fix attempted was a longer timeout.
+
 ## D148 — The number chosen while the spell is resolving
 
 **Decision: a third shape of mid-resolution question, whose answer is a number and whose range the
@@ -6638,4 +6646,95 @@ computer will be poor with this" before any of this was run, and the prediction 
 directions — the bot used it far more than expected, because a seat's lands are *already* untapped
 on an opponent's turn and the engine taps for a cost as it pays it, so nothing has to be held. That
 guess is corrected where it was made rather than quietly deleted.
+
+
+## D151 — What a spell costs is a question about the board
+
+**Decision: a permanent may change what other spells cost, through one function that both the offer
+and the payment call.**
+
+The engine could *replace* a cost — flashback, foretell, morph — and the command zone could tax one
+(CR 903.8). What nothing could do was reach a card in somebody's hand and make it cheaper or dearer,
+which is the whole "costs {1} less" family and one of the most common static effects printed. So a
+Goblin Electromancer was unwritable, and so was every card that taxes.
+
+**One function, two callers, and that is the point.** `costChangeFor` is asked by `legalActions`
+(what does this cast cost, and can this seat afford it) and by `castSpell` (what do I charge). The
+same rule convoke, crew and morph are built on: a table that offered a spell for two and then took
+three would be a table nobody could play on. The alternative — computing it twice, once per side —
+is exactly the bug this project has already fixed three times.
+
+**Only generic mana moves** (CR 601.2f). A reduction never touches a coloured requirement, so an
+Electromancer leaves Counterspell at {U}{U} and a Lightning Bolt at {R}, and makes Arc Lightning
+{1}{R} instead of {2}{R}. The generic floors at nought and stops: two Electromancers do not make a
+one-generic spell owe anybody mana.
+
+**Increases and reductions are netted and floored once**, which is the answer the rules' staged
+order gives — increases, then reductions, with the floor only at the end. They are still counted
+separately, because the first card that says "costs {1} less for *each*" wants a count rather than a
+total, and a sum would have thrown that away.
+
+**Applied after the commander tax, not before.** The tax is an increase, and a reduction taken off
+the printed cost first would floor at nought and then have the tax added on top — which would make a
+taxed commander cheaper than an untaxed one is dear.
+
+**A face-down permanent contributes nothing**, which is the morph rule rather than a special case
+(CR 707.2): an Electromancer hiding under a 2/2 is doing nothing for anybody, and the test says so.
+
+**The printed cost is not rewritten.** The play carries `costChange` and `costNote` beside
+`manaCost`, the way it already carries `commanderTax`, and the table draws "−{1}" next to the
+printed cost. A row that silently showed `{1}{R}` for a card that reads `{2}{R}` would be telling
+the player the card says something it does not — and would also be wrong the moment the
+Electromancer dies in response.
+
+**The two cards are the two directions.** Goblin Electromancer ({U}{R}, instants and sorceries *you*
+cast cost {1} less) goes to Arc Tempest, where twenty-five of sixty cards are instants and
+sorceries. Thalia, Guardian of Thraben ({1}{W}, noncreature spells cost {1} more) goes to Skyward
+Writ, and taxes **everybody** — her own controller included, which is the printed card and the
+reason she is a cost rather than a free advantage. Skyward Writ is the white deck with the fewest
+noncreature spells of its own (seventeen, against a field averaging twenty), so the tax is
+asymmetric in its favour by the margin a deckbuilder would want.
+
+**Both measure free, and the instrument says what they actually did.** The Electromancer, in for the
+second Stormchaser Mage, is **−2 of 240** — and over 120 duels Arc Tempest cast 1390 spells of which
+**24 were discounted**, saving 24 mana. About one cast in sixty, because one copy in sixty cards has
+to be drawn, survive, and then meet a spell with generic in it; the cards it cheapened were Behold
+the Multiverse ten times, Arc Lightning five and Swerve four.
+
+Thalia, in for the Youthful Knight, is **−4 of 240**, and the instrument found the more interesting
+number: over 120 duels she taxed **85 of the opponent's spells and 70 of her own**. Fifteen spells
+of a hundred and fifty-five is the whole asymmetry, in the white deck chosen *because* it has the
+fewest noncreature spells in the pool. The honest reading is about the format rather than the card:
+in a 60-card starter pool where every deck runs about twenty noncreature spells, a symmetric tax is
+very nearly symmetric, and the deckbuilding argument for where to put her is worth less than it
+sounds. She is kept because she measures free, the tax is real on both sides, and a person holding
+a hand of creatures gets the half of the card the computer cannot.
+
+
+## D152 — A new prompt is not finished until the driver can answer it
+
+**Decision: every question the table can ask gets a branch in the browser driver, in the same
+change that adds the question.**
+
+The pod suite failed with "Boris stuck at Draw on turn 43" — a seat whose table said it was their
+move and whose page offered nothing the driver knew how to press. The table was fine: a Strionic
+Resonator's copy was waiting to be aimed, and the buttons were on the screen. What could not answer
+it was `makeMove`, which knew how to tap a lit card, choose a word, pick an X and pay a ward, and
+had never heard of a row of targets.
+
+**The check that caught it is the one that exists for exactly this**: "every prompt the table shows
+can be answered". It is not a check about the engine — the engine was right — it is a check about
+whether a *player* could get through the turn, and the driver is the only proxy for a player these
+suites have.
+
+The same hole was already there, unseen, for the **number** prompt added one change earlier: a Toxic
+Deluge in a pod would have stalled the driver the same way, and did not only because one copy in
+sixty cards rarely comes up in a four-seat game. Both branches are in now, and both choose the
+answer that exercises the mechanism rather than the one that does nothing: the largest number, and
+the last target rather than **Leave it**, which is first.
+
+The rule this leaves behind is short. A question added to the table is three places, not two: the
+engine that asks it, the component that draws it, and the driver that answers it. Two of the three
+are tested by the unit suites; the third is tested by a pod that gets stuck forty turns in, and only
+sometimes.
 

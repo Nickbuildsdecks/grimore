@@ -30,7 +30,9 @@ import { scriptFor } from './scripts.js';
 import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
-import { convokePlan, crewPlan, legalActions, manaSources } from './legalActions.js';
+import {
+  convokePlan, costChangeFor, crewPlan, legalActions, manaSources, withCostChange,
+} from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type StackObject, type Target,
   type AutoTurnUpAction, type AutoForetellAction,
@@ -228,6 +230,20 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     : foretold ? script?.foretell?.cost
       : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
   /*
+    And what the permanents on the table have done to the cost: a Goblin Electromancer, a Thalia.
+
+    Through `costChangeFor`, which is the same function `legalActions` used to decide this cast was
+    affordable — the offer and the payment asking one question of one state, which is the rule this
+    file keeps for convoke, crew and morph too.
+
+    Applied **after** the commander tax rather than before it, which is the ordering the rules give
+    (CR 601.2f: increases, then reductions) and the only one that behaves: a reduction taken off the
+    printed cost first would floor at nought and then have the tax added on top, so a taxed
+    commander would come out cheaper than an untaxed one is dear.
+  */
+  const change = costChangeFor(state, action.by, def);
+
+  /*
     Convoke, which widens what may pay rather than changing what it costs (CR 702.51).
 
     Worked out by the same `convokePlan` that decided whether to offer this cast at all, so the
@@ -242,9 +258,16 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   let convoked: readonly string[] = [];
   let toPay: string | ManaCost | undefined = costText;
   let taxToPay = tax;
+  if (change.generic !== 0) {
+    const printed = parseManaCost(costText);
+    toPay = withCostChange(tax > 0 ? { ...printed, generic: printed.generic + tax } : printed, change.generic);
+    // The tax is inside `toPay` now, so adding it again in `payFrom` would charge it twice.
+    taxToPay = 0;
+  }
   if (script?.convoke === true) {
     const printed = parseManaCost(costText);
-    const full = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
+    const taxed = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
+    const full = withCostChange(taxed, change.generic);
     const plan = convokePlan(state, action.by, full, manaSources(state, action.by));
     if (plan === null) {
       throw new EngineError('RULE_NOT_APPLICABLE', `cannot pay for ${characteristics.name}, even with convoke`);

@@ -417,12 +417,25 @@ async function main() {
       (await cardsIn(nick, 'zone-battlefield-0').count()) === 1);
 
     // Turns.
+    /*
+      **Who had the turn first is a roll** (D147), so this reads the board rather than assuming it.
+
+      The table rolls for who starts, the computer's seats included, and a tabletop table is a
+      table. This check was written when the host always went first, and it failed on the runs
+      where the roll went the other way — not because passing the turn was broken, but because
+      "the other player" had been hard-coded as Friend. It now asks whoever did *not* have the turn.
+
+      The two questions are also asked in the order they happen: the press lands on the page that
+      made it, and the other browser is told over a socket, which gets the longer deadline.
+    */
     const turnBefore = await readNumber(nick, 'turn');
+    const wasNicks = ((await tid(nick, 'whose-turn').textContent()) ?? '').includes('your turn');
+    const other = wasNicks ? friend : nick;
     await tid(nick, 'pass-turn').click();
-    await expectEventually(friend, 'passing the turn moves it to the other player', async () =>
-      (await tid(friend, 'whose-turn').textContent())?.includes('your turn'));
     await expectEventually(nick, 'and the turn counter advances for both', async () =>
       (await readNumber(nick, 'turn')) > turnBefore);
+    await expectEventually(other, 'passing the turn moves it to the other player', async () =>
+      ((await tid(other, 'whose-turn').textContent()) ?? '').includes('your turn'), 25000);
     await shot(nick, 'mid-game');
 
     // Life totals, from either side.

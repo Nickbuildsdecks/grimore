@@ -14,6 +14,7 @@
  * and the log records that it was not automated, which is the honest version of "the computer did
  * something you did not expect".
  */
+import type { CardDef } from './cards.js';
 import type { Keyword } from './characteristics.js';
 import type { EffectFn, PumpOptions } from './effects.js';
 import type { ManaType } from './mana.js';
@@ -1032,6 +1033,37 @@ export interface CardScript {
       | 'self' | 'controller-creatures' | 'other-controller-creatures' | 'all-creatures'
       | { readonly subtype: string; readonly other?: boolean };
     readonly effect: PumpOptions;
+  }[];
+  /**
+   * What this permanent does to the **cost of other people's spells** while it is on the
+   * battlefield: a Goblin Electromancer, a Thalia, a Sphere of Resistance.
+   *
+   * Its own declaration rather than another `statics` entry, because it is not the same kind of
+   * thing: `statics` change a creature's characteristics and are read by the layer system, while
+   * this changes what a *spell* costs and is read by the cost planner. Sharing a shape would mean
+   * a `PumpOptions` with a mana field in it, which is the sort of union D57 warns about.
+   *
+   * `generic` is mana added (positive) or taken off (negative). Only generic, which is the rule
+   * rather than a simplification: a reduction never touches a coloured requirement (CR 601.2f), so
+   * "{1} less" on a `{U}{R}` spell changes nothing at all and a card that says otherwise is a
+   * different card.
+   *
+   * `applies` is a predicate on the card being cast rather than an enum of spell kinds, for the
+   * reason `TargetSpec.filter` is: every card words it differently — instant and sorcery, every
+   * noncreature spell, artifact spells, spells with a creature type in them — and an enum would be
+   * short of what the next card needs.
+   */
+  readonly costModifiers?: readonly {
+    /**
+     * Whose spells this applies to. `everyone` includes the permanent's own controller, which is
+     * the whole of what makes a Thalia a cost rather than an advantage.
+     */
+    readonly whose: 'controller' | 'opponents' | 'everyone';
+    readonly applies: (state: GameState, caster: SeatIndex, card: CardDef) => boolean;
+    /** Generic mana added, or taken off when negative. */
+    readonly generic: number;
+    /** Shown on the play when the cost changed: "costs {1} less". */
+    readonly description: string;
   }[];
   /**
    * Replacement effects this permanent contributes, for an event happening to *another* object

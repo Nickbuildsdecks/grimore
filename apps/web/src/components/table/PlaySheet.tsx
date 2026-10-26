@@ -108,6 +108,21 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
                 >
                   <span>{play.description}</span>
                   {play.manaCost ? <span className="ml-auto font-mono text-xs opacity-80">{play.manaCost}</span> : null}
+                  {/*
+                    What the table has done to the cost, beside the printed one rather than
+                    instead of it: a Goblin Electromancer takes {1} off and a Thalia puts {1} on,
+                    and a row that quietly rewrote `{2}{R}` to `{1}{R}` would be telling the player
+                    the card says something it does not. Shown only when the number actually moved.
+                  */}
+                  {play.costChange !== undefined && play.costChange !== 0 ? (
+                    <span
+                      data-testid={`play-cost-change-${slug}`}
+                      title={play.costNote}
+                      className="ml-1 font-mono text-[10px] text-[var(--g-text-muted)]"
+                    >
+                      {play.costChange > 0 ? `+{${play.costChange}}` : `−{${-play.costChange}}`}
+                    </span>
+                  ) : null}
                   {targetsWanted(play) > 0 ? (
                     <span className="ml-1 text-[10px] uppercase opacity-70">needs a target</span>
                   ) : null}

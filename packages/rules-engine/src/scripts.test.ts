@@ -7798,12 +7798,18 @@ describe('a static effect scoped to a creature type: the pool’s first tribal l
       hands: { 0: ['Lightning Bolt'] },
       battlefield: {
         0: ['Mountain'],
-        1: ['Plains', 'Plains', 'Plains', 'Youthful Knight', "Healer's Hawk", 'Knight Exemplar'],
+        1: ['Plains', 'Plains', 'Plains', 'Leonin Skyhunter', "Healer's Hawk", 'Knight Exemplar'],
       },
       turn: 4, firstSeat: 0,
     }), 'precombat-main');
     s = tapAllLands(s, 0);
-    const knight = find(s, 1, 'battlefield', 'Youthful Knight');
+    /*
+      A Leonin Skyhunter rather than a Youthful Knight, because the Knight this deck used to run is
+      Thalia's slot now. A Cat Knight is a Knight, which is the point of a scope that reads a type
+      line — and not a Paladin en-Vec, which has protection from red and could not be pointed at by
+      the Lightning Bolt below.
+    */
+    const knight = find(s, 1, 'battlefield', 'Leonin Skyhunter');
     const hawk = find(s, 1, 'battlefield', "Healer's Hawk");
     const exemplar = find(s, 1, 'battlefield', 'Knight Exemplar');
 
@@ -9442,6 +9448,175 @@ describe('copying an ability on the stack (CR 706.10)', () => {
   });
 });
 
+describe('spells that cost more and less (CR 601.2f)', () => {
+  /*
+    The first permanents in this pool that reach a spell in somebody's hand.
+
+    A cost could be *replaced* before now — flashback, foretell, morph — and taxed by the command
+    zone, but nothing on the battlefield could make another spell cheaper or dearer. That is one of
+    the most common static effects in Magic, and the half of it that matters most in these tests is
+    the one nobody sees: the cost the table **offers** and the cost the engine **charges** come from
+    one function, so they cannot drift apart.
+  */
+  const izzet = customDeck({
+    id: 'cost-test',
+    name: 'Cost Test',
+    entries: [
+      { name: 'Goblin Electromancer', count: 4 },
+      { name: 'Lightning Strike', count: 4 },
+      { name: 'Counterspell', count: 2 },
+      { name: 'Lightning Bolt', count: 2 },
+      { name: 'Arc Lightning', count: 4 },
+      { name: 'Fireball', count: 2 },
+      { name: 'Island', count: 21 },
+      { name: 'Mountain', count: 21 },
+    ],
+  }).deck;
+
+  const table = (
+    hand: readonly string[], mine: readonly string[] = [], theirs: readonly string[] = [],
+    lands: readonly string[] = ['Island', 'Island', 'Mountain'],
+  ): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'cost-test', 1: 'skyward-writ' },
+      deckSpecs: { 'cost-test': izzet },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...lands, ...mine], 1: ['Plains', 'Plains', ...theirs] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  /** What the table says this cast costs, printed cost and change. */
+  const offer = (s: GameState, name: string): { cost: string; change: number | undefined } => {
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.name === name);
+    return { cost: play?.manaCost ?? '(not offered)', change: play?.costChange };
+  };
+
+  it('takes {1} off a sorcery, and leaves the coloured half alone', () => {
+    // Arc Lightning is {2}{R}: the Electromancer makes it {1}{R}, not {2} or {R}.
+    const s = table(['Arc Lightning'], ['Goblin Electromancer']);
+    expect(offer(s, 'Arc Lightning')).toEqual({ cost: '{2}{R}', change: -1 });
+    // The printed cost on the play is unchanged, which is the half a table must not lie about.
+
+    // Lightning Bolt is {R} and has no generic at all, so nothing moves and nothing is claimed.
+    const t = table(['Lightning Bolt'], ['Goblin Electromancer']);
+    expect(offer(t, 'Lightning Bolt')).toEqual({ cost: '{R}', change: undefined });
+  });
+
+  it('and charges what it offered, which is the whole point of one function', () => {
+    /*
+      The lands are left untapped on purpose: the engine taps for a cost as it pays it, so counting
+      what it tapped is counting what it charged. Three lands for a {2}{R} sorcery is what the card
+      says; two is what the Electromancer makes it.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'cost-test', 1: 'skyward-writ' },
+      deckSpecs: { 'cost-test': izzet },
+      hands: { 0: ['Arc Lightning'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Mountain', 'Mountain', 'Goblin Electromancer'],
+        1: ['Plains'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const untapped = (st: GameState): number => Object.values(st.instances)
+      .filter((i) => i.zoneSeat === 0 && i.zone === 'battlefield' && !i.tapped).length;
+    const before = untapped(s);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arc Lightning'),
+      targets: [{ kind: 'player', seat: 1 }], division: [3],
+    });
+    expect(before - untapped(s)).toBe(2);
+  });
+
+  it('does not reduce a spell somebody else is casting', () => {
+    // "Instant and sorcery spells **you** cast": the Electromancer is on seat 0's board, and the
+    // question is asked of seat 1's hand.
+    const s = advanceTo(arena({
+      decks: { 0: 'cost-test', 1: 'arc-tempest' },
+      deckSpecs: { 'cost-test': izzet },
+      hands: { 1: ['Arc Lightning'] },
+      battlefield: {
+        0: ['Island', 'Mountain', 'Goblin Electromancer'],
+        1: ['Mountain', 'Mountain', 'Mountain'],
+      },
+      turn: 5, firstSeat: 1,
+    }), 'precombat-main');
+    const play = legalActions(s, 1).plays.find((p) => p.kind === 'cast' && p.name === 'Arc Lightning');
+    expect(play?.costChange).toBeUndefined();
+  });
+
+  it('taxes everybody when the card says so, its own controller included', () => {
+    // Thalia is seat 1's, and seat 1 is the one being taxed here as well as seat 0. Four lands,
+    // because a taxed {2}{R} is four mana and an unaffordable cast is not offered at all.
+    const s = table(['Arc Lightning'], [], ['Thalia, Guardian of Thraben'],
+      ['Island', 'Island', 'Mountain', 'Mountain']);
+    expect(offer(s, 'Arc Lightning')).toEqual({ cost: '{2}{R}', change: 1 });
+
+    const theirs = advanceTo(arena({
+      decks: { 0: 'cost-test', 1: 'skyward-writ' },
+      deckSpecs: { 'cost-test': izzet },
+      hands: { 1: ['Swords to Plowshares'] },
+      battlefield: {
+        0: ['Island'],
+        1: ['Plains', 'Plains', 'Thalia, Guardian of Thraben'],
+      },
+      turn: 5, firstSeat: 1,
+    }), 'precombat-main');
+    const play = legalActions(theirs, 1).plays.find((p) => p.kind === 'cast' && p.name === 'Swords to Plowshares');
+    expect(play?.costChange).toBe(1);
+  });
+
+  it('leaves a creature spell alone, which is what "noncreature" means', () => {
+    const s = table(['Goblin Electromancer'], [], ['Thalia, Guardian of Thraben']);
+    expect(offer(s, 'Goblin Electromancer')).toEqual({ cost: '{U}{R}', change: undefined });
+  });
+
+  it('cancels out when both are on the table, and says nothing about it', () => {
+    /*
+      Lightning Strike is {1}{R}: Thalia puts a mana on and the Electromancer takes it off, so the
+      cast costs exactly what the card says. No note is shown, because a table that announced "+1,
+      −1, no change" on every spell would be noise — the rule is that the note appears when the
+      number moved.
+    */
+    const s = table(['Lightning Strike'], ['Goblin Electromancer'], ['Thalia, Guardian of Thraben']);
+    expect(offer(s, 'Lightning Strike')).toEqual({ cost: '{1}{R}', change: undefined });
+  });
+
+  it('never takes the generic below nought', () => {
+    /*
+      Two Electromancers against a {1}{R}: the first takes the one generic off and the second has
+      nothing left to take. A cost reduction empties the generic part and stops (CR 601.2f) — it
+      does not start eating the red, and it does not go negative and hand anybody mana back.
+    */
+    const s = table(['Lightning Strike'], ['Goblin Electromancer', 'Goblin Electromancer']);
+    expect(offer(s, 'Lightning Strike')).toEqual({ cost: '{1}{R}', change: -1 });
+  });
+
+  it('stops working the moment the permanent leaves', () => {
+    let s = table(['Arc Lightning'], ['Goblin Electromancer']);
+    expect(offer(s, 'Arc Lightning').change).toBe(-1);
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Goblin Electromancer'),
+      toZone: 'graveyard',
+    });
+    expect(offer(s, 'Arc Lightning').change).toBeUndefined();
+  });
+
+  it('and does nothing while it is face down, which has no abilities at all (CR 707.2)', () => {
+    /*
+      A Goblin Electromancer is not a morph, so it gets there the way a test does: placed on the
+      battlefield and turned face down by hand. What is being checked is the rule rather than the
+      card — a face-down permanent is a 2/2 with no text, and a cost modifier is text.
+    */
+    let s = table(['Arc Lightning'], ['Goblin Electromancer']);
+    const mage = find(s, 0, 'battlefield', 'Goblin Electromancer');
+    s = apply(s, { type: 'card:faceDown', by: 0, card: mage, faceDown: true });
+    expect(offer(s, 'Arc Lightning').change).toBeUndefined();
+  });
+});
+
 describe('Twincast: copying a spell, and choosing where the copy points', () => {
   /*
     The other half of the copy family, and the half that needed a card to *not* be one.
@@ -9747,9 +9922,9 @@ describe('two more planeswalkers', () => {
 
   it('Ajani’s minus three is a clock: flying and double strike, until end of turn', () => {
     let s = withWalker(0, 'skyward-writ', 'Ajani, Caller of the Pride', 'Plains', 3,
-      ['Youthful Knight']);
+      ['Leonin Skyhunter']);
     const ajani = find(s, 0, 'battlefield', 'Ajani, Caller of the Pride');
-    const knight = find(s, 0, 'battlefield', 'Youthful Knight');
+    const knight = find(s, 0, 'battlefield', 'Leonin Skyhunter');
 
     s = drain(passBoth(apply(s, {
       type: 'auto:activate', by: 0, card: ajani, abilityIndex: 1,

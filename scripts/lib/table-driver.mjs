@@ -321,6 +321,31 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
         return `chose a word: ${prompt}`;
       }
     }
+    /*
+      A question whose answer is a **number** — "Pay how much life?" on a Toxic Deluge — and one
+      whose answer is a **target** for something else on the stack — "Point the copy somewhere
+      else?" on a Twincast or a Strionic Resonator.
+
+      Both draw buttons rather than lighting the board, exactly as the word question does, and both
+      were added to the table before this driver knew them: a pod reported "stuck at Draw" with a
+      Resonator's copy waiting to be aimed, which is this check working rather than a table that
+      had broken. The largest number and the last target are taken on purpose — the first target is
+      **Leave it**, and a driver that always declined would never once exercise the re-aiming.
+    */
+    if (await has(page, 'decide-numbers')) {
+      const numbers = page.locator('[data-testid^="decide-number-"]');
+      if ((await numbers.count()) > 0) {
+        await tap(numbers.last());
+        return `chose a number: ${prompt}`;
+      }
+    }
+    if (await has(page, 'decide-targets')) {
+      const targets = page.locator('[data-testid^="decide-target-"]');
+      if ((await targets.count()) > 0) {
+        await tap(targets.last());
+        return `pointed a copy: ${prompt}`;
+      }
+    }
     // The candidates are lit wherever they are — hand, battlefield, graveyard, or the library,
     // which is the one zone the table draws only while a search is open.
     for (let pick = 0; pick < 4; pick++) {

@@ -1411,6 +1411,28 @@ const HANGARBACK_WALKER: CardDef = {
   colors: [],
 };
 
+const GOBLIN_ELECTROMANCER: CardDef = {
+  name: 'Goblin Electromancer',
+  typeLine: 'Creature — Goblin Wizard',
+  manaCost: '{U}{R}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Instant and sorcery spells you cast cost {1} less to cast.',
+  colors: ['U', 'R'],
+};
+
+const THALIA_GUARDIAN_OF_THRABEN: CardDef = {
+  name: 'Thalia, Guardian of Thraben',
+  typeLine: 'Legendary Creature — Human Soldier',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'First strike\nNoncreature spells cost {1} more to cast.',
+  colors: ['W'],
+};
+
 const TWINCAST: CardDef = {
   name: 'Twincast',
   typeLine: 'Instant',
@@ -3165,7 +3187,17 @@ export const SKYWARD_WRIT: DeckSpec = {
     // A one-drop that blocks in the air and gains the life back, which is what the matchups this
     // deck loses actually ask for.
     { card: HEALERS_HAWK, count: 2 },
-    { card: YOUTHFUL_KNIGHT, count: 1 },
+    /*
+      Thalia, Guardian of Thraben, for the Youthful Knight.
+
+      The same slot and the same shape — {1}{W} for a first striker — with one toughness traded for
+      a line of text that taxes *every* noncreature spell on the table, this deck's own included.
+      It is here rather than in the other two white decks because this is the white deck with the
+      fewest noncreature spells of its own (seventeen, against twenty and twenty-five across the
+      field), so the tax is asymmetric in its favour by the margin a deckbuilder would want. The
+      Knight is not lost: Forge Alliance still runs one.
+    */
+    { card: THALIA_GUARDIAN_OF_THRABEN, count: 1 },
     { card: OMENSPEAKER, count: 2 },
     /*
       The prevention pair, one copy each, and the two cards they cost.
@@ -3604,7 +3636,17 @@ export const ARC_TEMPEST: DeckSpec = {
       win with neither — twelve of the spells point at a face.
     */
     { card: MONASTERY_SWIFTSPEAR, count: 3 },
-    { card: STORMCHASER_MAGE, count: 2 },
+    { card: STORMCHASER_MAGE, count: 1 },
+    /*
+      Goblin Electromancer, for the second Stormchaser Mage.
+
+      Twenty-five of this deck's sixty cards are instants and sorceries, so a 2/2 that makes every
+      one of them cost {1} less is the most generic-mana a single card in this pool can save. What
+      it does *not* touch is the coloured half (CR 601.2f): Counterspell stays {U}{U}, and the cards
+      it helps most are the ones with generic in them — Arc Lightning, Behold the Multiverse,
+      Twincast, Fireball's X.
+    */
+    { card: GOBLIN_ELECTROMANCER, count: 1 },
     { card: YOUNG_PYROMANCER, count: 2 },
     { card: GUTTERSNIPE, count: 2 },
     // The two that untap on a cast, which is the deck's inevitability: a board the deck cannot
