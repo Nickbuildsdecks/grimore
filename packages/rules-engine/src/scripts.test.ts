@@ -3382,7 +3382,9 @@ describe('costs that are choices: cycling, kicker, and a creature on the altar',
 
   it('Agonizing Demise kills a creature, and kicked throws the body at its controller', () => {
     let s = arena({
-      hands: { 0: ['Agonizing Demise', 'Agonizing Demise'] },
+      // One copy: the deck runs one since Thorn of the Black Rose took the other slot, and this
+      // test only ever casts one of them.
+      hands: { 0: ['Agonizing Demise'] },
       battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Mountain', 'Mountain'], 1: ['Centaur Courser'] },
       turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
     });
@@ -11080,5 +11082,131 @@ describe('delayed triggers: at end of combat, and at the next end step (CR 603.7
     const offered = (legalActions(s, 0).mustChoose?.candidates ?? []).flat();
     expect(offered.length).toBeGreaterThan(0);
     expect(offered.some((t) => t.kind === 'card' && t.id === wisp)).toBe(false);
+  });
+});
+
+describe('the monarch, as a rule rather than a button (CR 720)', () => {
+  /*
+    The crown has been a field on the state since the tabletop was written and nothing in the rules
+    touched it: no card gave it, combat damage did not take it, and the monarch never drew. All
+    three of those are rules of the *game* rather than text on a card, which is why a card's whole
+    contribution is one line and the rest lives beside the other turn-based actions.
+  */
+  const crowned = (): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'ashen-rite' },
+      hands: { 0: ['Palace Sentinels'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains'],
+        1: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Tormented Soul'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    return drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Palace Sentinels'),
+    })));
+  };
+
+  it('a card makes you the monarch, and nobody is the monarch before one does', () => {
+    const before = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'ashen-rite' }, turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    expect(before.monarch).toBeNull();
+    const s = crowned();
+    expect(s.monarch).toBe(0);
+  });
+
+  it('and draws the monarch a card at the beginning of their own end step', () => {
+    let s = crowned();
+    const before = namesIn(s, 0, 'hand').length;
+    s = advanceTo(s, 'end');
+    // One card, drawn as the step began rather than as it ended.
+    expect(namesIn(s, 0, 'hand').length).toBe(before + 1);
+  });
+
+  it('and not in anybody else’s end step, which is the half the rule is about', () => {
+    let s = crowned();
+    s = nextTurn(s);
+    expect(s.activeSeat).toBe(1);
+    const before = namesIn(s, 0, 'hand').length;
+    // Seat 1 has a creature, so it owes a declaration before the turn can reach its end step.
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [] });
+    s = advanceTo(s, 'end');
+    expect(namesIn(s, 0, 'hand').length).toBe(before);
+  });
+
+  it('a creature that connects with the monarch takes the crown (CR 720.5)', () => {
+    let s = crowned();
+    // Seat 1's turn, and seat 1 has the one creature in the pool that cannot be blocked.
+    s = nextTurn(s);
+    s = advanceTo(s, 'declare-attackers');
+    const soul = find(s, 1, 'battlefield', 'Tormented Soul');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: soul, defender: 0 }] });
+    expect(s.monarch).toBe(0);
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(life(s, 0)).toBe(19);
+    expect(s.monarch).toBe(1);
+  });
+
+  it('but not a creature whose damage never landed', () => {
+    /*
+      "Deals combat damage" means it landed: damage a shield ate takes nothing and steals nothing.
+      The crown is moved off the same list the combat-damage triggers are raised from, so there is
+      one answer to "did it connect" rather than two — and a Healing Salve is the card that proves
+      it, because the attack is otherwise unblockable and certain.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'ashen-rite' },
+      hands: { 0: ['Palace Sentinels', 'Healing Salve'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains'],
+        1: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Tormented Soul'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    /*
+      Four lands tapped rather than all five, because a seat's lands untap in its **own** untap
+      step: a player who taps out on their turn has nothing on the opponent's. The fifth Plains is
+      the Salve, held up exactly as a player would hold it.
+    */
+    for (const id of ids(s, 0, 'battlefield').slice(0, 4)) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Palace Sentinels'),
+    })));
+    expect(s.monarch).toBe(0);
+    s = nextTurn(s);
+    s = advanceTo(s, 'declare-attackers');
+    const soul = find(s, 1, 'battlefield', 'Tormented Soul');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: soul, defender: 0 }] });
+    // The attacking player passes, so the defender holds priority and can answer with the Salve.
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, {
+      type: 'auto:activate', by: 0,
+      card: ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Plains'
+        && s.instances[id]!.tapped === false)!,
+      abilityIndex: 0,
+    });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Healing Salve'),
+      // The second mode: the first gains three life, which would not stop the damage.
+      modes: [1], targets: [{ kind: 'player', seat: 0 }],
+    })));
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(life(s, 0)).toBe(20);
+    expect(s.monarch).toBe(0);
+  });
+
+  it('is the engine’s to move once it is running, so the tabletop button is refused', () => {
+    const s = crowned();
+    expect(refusal(s, { type: 'monarch:set', by: 1, seat: 1 })).toContain('the engine moves the crown');
+  });
+
+  it('and both players can see who has it', () => {
+    const s = crowned();
+    for (const seat of [0, 1] as const) expect(viewFor(s, seat).monarch).toBe(0);
   });
 });

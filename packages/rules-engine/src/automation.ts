@@ -462,8 +462,25 @@ function onEnterStep(state: GameState, step: Step): GameState {
       // the only place it could ever have been dropped.
       return { ...next, combat: EMPTY_COMBAT, effects: expireEffects(next, 'end-of-combat') };
 
-    case 'end':
+    case 'end': {
+      /*
+        The monarch draws a card at the beginning of their own end step (CR 720.4).
+
+        A turn-based action here rather than a triggered ability on the stack, which is a
+        simplification worth being explicit about: the real rule is a triggered ability the monarch
+        controls, so at a real table it could be countered by a Disallow. Nothing in this engine can
+        put an ability on the stack without a card to own it, so the draw happens and the log says
+        so. The same shortcut, for the same reason, is taken by the crown changing hands below.
+
+        Before the step trigger, because that is the order a player sees it: the card is drawn as
+        the step begins, and anything that triggers on the end step goes on the stack after.
+      */
+      if (next.monarch !== null && next.monarch === next.activeSeat
+        && next.seats[next.monarch]?.eliminated === false) {
+        next = draw(next, next.monarch, 1);
+      }
       return raise(next, { kind: 'step', step: 'end' }, next.activeSeat);
+    }
 
     case 'cleanup': {
       // Hand size is a decision, so the engine stops and waits rather than discarding for them.
@@ -1214,6 +1231,24 @@ function settle(state: GameState, before: GameState): GameState {
       their own choice — so the engine takes the one that matches the sequence a player watched.
     */
     for (const { creature, defender } of connected) {
+      /*
+        A creature that deals combat damage to the monarch hands the crown to its controller
+        (CR 720.5).
+
+        Here rather than in `dealCombatDamage`, because this is the list of damage that actually
+        landed — a swing stopped by a Fog, a shield or protection raises nothing and steals nothing,
+        which is what "deals damage" means. Applied before the combat-damage triggers go on the
+        stack, so a card that reads the crown reads it as it is after the hit.
+
+        Immediately rather than as a triggered ability, which is the same simplification as the
+        monarch's draw: nothing here can put an ability on the stack without a card to own it, so
+        the crown moves and the log says so. At a real table the trigger could be countered.
+      */
+      const taker = next.instances[creature]?.zoneSeat;
+      if (next.monarch !== null && defender === next.monarch && taker !== undefined
+        && taker !== next.monarch && next.seats[taker]?.eliminated === false) {
+        next = { ...next, monarch: taker };
+      }
       next = raise(
         next, { kind: 'combat-damage', defender }, next.instances[creature]?.zoneSeat, creature,
       );

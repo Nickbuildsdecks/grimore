@@ -1481,6 +1481,28 @@ const FLICKERWISP: CardDef = {
   colors: ['W'],
 };
 
+const PALACE_SENTINELS: CardDef = {
+  name: 'Palace Sentinels',
+  typeLine: 'Creature — Human Soldier',
+  manaCost: '{3}{W}',
+  cmc: 4,
+  power: '2',
+  toughness: '3',
+  oracleText: 'When Palace Sentinels enters the battlefield, you become the monarch.',
+  colors: ['W'],
+};
+
+const THORN_OF_THE_BLACK_ROSE: CardDef = {
+  name: 'Thorn of the Black Rose',
+  typeLine: 'Creature — Human Assassin',
+  manaCost: '{2}{B}{B}',
+  cmc: 4,
+  power: '2',
+  toughness: '3',
+  oracleText: 'Deathtouch\nWhen Thorn of the Black Rose enters the battlefield, you become the monarch.',
+  colors: ['B'],
+};
+
 const GOBLIN_ELECTROMANCER: CardDef = {
   name: 'Goblin Electromancer',
   typeLine: 'Creature — Goblin Wizard',
@@ -3235,7 +3257,17 @@ export const ASHEN_RITE: DeckSpec = {
     */
     { card: ZOMBIE_CUTTHROAT, count: 1 },
     { card: VILLAGE_RITES, count: 1 },
-    { card: AGONIZING_DEMISE, count: 2 },
+    /*
+      One Agonizing Demise, and Thorn of the Black Rose for the other: the crown in the deck that
+      can take it back.
+
+      Deathtouch on a 2/3 for four is a body this deck is happy to have either way, and the reason
+      it is *this* deck is three cards down the list — a Tormented Soul that cannot be blocked at
+      all. A crown that can always be taken back is worth more than a crown that has to be
+      defended, and nothing else in the pool can promise the first.
+    */
+    { card: AGONIZING_DEMISE, count: 1 },
+    { card: THORN_OF_THE_BLACK_ROSE, count: 1 },
     { card: BURST_LIGHTNING, count: 1 },
     // Two damage now and two more from the graveyard later, for a deck that is happy to spend its
     // whole turn on removal. One Burst Lightning stays, because the kicker is what that card is
@@ -4083,7 +4115,19 @@ export const DAWN_TITHE: DeckSpec = {
 
     // ── Cards, life, and the end of it ──
     { card: REVITALIZE, count: 3 },
-    { card: HEALING_SALVE, count: 2 },
+    /*
+      One Healing Salve, and Palace Sentinels for the other — the crown, in the deck that can keep
+      it (CR 720).
+
+      A 2/3 for four that draws an extra card at the beginning of every one of your own end steps
+      is a fair rate; the catch is that the crown goes to whoever deals you combat damage, so the
+      card is only as good as your ability to stop being hit. This deck gains life, blocks with
+      Nighthawks and plays four removal spells, which is the shape that holds a crown — and if it
+      loses it, the Soul Wardens and the Pridemates are still a deck. The Salve was its weakest
+      card and the one nothing else in the list reads.
+    */
+    { card: HEALING_SALVE, count: 1 },
+    { card: PALACE_SENTINELS, count: 1 },
     { card: SIGN_IN_BLOOD, count: 1 },
     { card: READ_THE_BONES, count: 1 },
     { card: MIND_STONE, count: 1 },

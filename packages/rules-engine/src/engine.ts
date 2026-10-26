@@ -470,6 +470,19 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
     }
 
     case 'monarch:set': {
+      /*
+        The engine owns the crown once it is running (CR 720).
+
+        A designation the rules move cannot also be a thing a player sets by hand, or the two
+        disagree and the table shows a crown the engine does not believe in. Refused here rather
+        than only hidden in the UI — which is what the commander-damage counters do — because this
+        one the rules actually change, and a client that offered it would be offering a move the
+        engine is about to overwrite. On a tabletop it stays exactly what it was: a thing somebody
+        presses, because nothing else is enforced there either.
+      */
+      if (state.automated) {
+        throw new EngineError('RULE_NOT_APPLICABLE', 'the engine moves the crown while it is running');
+      }
       if (action.seat === null) {
         // Only the current monarch (or host) may clear the crown.
         if (state.monarch !== null) assertMayActFor(action, state.monarch, ctx);

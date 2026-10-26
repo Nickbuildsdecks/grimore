@@ -29,7 +29,7 @@ import {
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
-  freezeNextUntap, removeFromCombat, scheduleDelayed,
+  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack,
   type EffectContext, type PumpOptions,
 } from './effects.js';
@@ -5000,6 +5000,40 @@ const FLICKERWISP: CardScript = {
   ],
 };
 
+/*
+  The crown: a designation the engine has had a field for since the tabletop was written, and no
+  rules for at all (CR 720).
+
+  Everything about the monarch except "you become the monarch" is a rule of the *game* rather than
+  text on a card — the extra card at the beginning of your own end step, and the crown going to
+  whoever deals you combat damage — so both of those live in the engine beside the other turn-based
+  actions, and a card's whole contribution is one line.
+
+  Which makes these two cards the cheapest interesting thing in the pool. A 2/3 for four that draws
+  you an extra card every turn is a fair rate; a 2/3 for four that draws your *opponent* an extra
+  card every turn is a disaster, and the difference is whether anything can get through to you. In a
+  duel it is a race. In a pod it is the most political object on the table: three players who each
+  want the crown have a reason to attack whoever has it, and none of it is enforced by the engine.
+*/
+const PALACE_SENTINELS: CardScript = {
+  name: 'Palace Sentinels',
+  triggers: [{
+    on: { kind: 'etb' },
+    description: 'you become the monarch',
+    effect: (c) => becomeMonarch(c.state, c.controller),
+  }],
+};
+
+const THORN_OF_THE_BLACK_ROSE: CardScript = {
+  name: 'Thorn of the Black Rose',
+  keywords: ['deathtouch'],
+  triggers: [{
+    on: { kind: 'etb' },
+    description: 'you become the monarch',
+    effect: (c) => becomeMonarch(c.state, c.controller),
+  }],
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -5083,6 +5117,7 @@ const ALL: readonly CardScript[] = [
   WALKING_BALLISTA, HANGARBACK_WALKER, TOXIC_DELUGE, TWINCAST,
   GOBLIN_ELECTROMANCER, THALIA_GUARDIAN_OF_THRABEN, TORMENTED_SOUL, RIVER_BOA,
   WALL_OF_FROST, OPHIDIAN, THICKET_BASILISK, FLICKERWISP,
+  PALACE_SENTINELS, THORN_OF_THE_BLACK_ROSE,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

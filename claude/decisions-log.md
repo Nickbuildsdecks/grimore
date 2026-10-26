@@ -6900,3 +6900,62 @@ which is the same argument the prevention shield and the freeze already won.
 The pair is the point for the engine rather than for the decks: `becomes-blocked` now has a card
 behind it, and so does the delayed trigger, and both will be a few declarative lines for the next
 card that wants them.
+
+## D156 — The crown is a rule, not a button
+
+**Decision: the monarch (CR 720) is enforced by the engine — the draw, the steal and the crowning —
+and the tabletop button that used to be the whole feature is refused while the engine is running.**
+
+`GameState.monarch` has existed since the tabletop was written, with a `monarch:set` action anybody
+could press and **nothing in the rules touching it**: no card gave the crown, combat damage did not
+take it, and the monarch never drew a card. It was a sticker, not a designation.
+
+**Three rules, and only one of them belongs on a card.** "You become the monarch" is card text, so
+it is one line in an effect (`becomeMonarch`). The other two are rules of the *game* and live beside
+the other turn-based actions:
+
+- the monarch draws a card at the beginning of **their own** end step (CR 720.4), in
+  `onEnterStep('end')` before the step's own triggers go on the stack;
+- a creature that deals combat damage to the monarch hands the crown to its controller (CR 720.5),
+  applied where `settle` drains `dealtCombatDamage` — which is the list of damage that actually
+  **landed**, so a swing a Fog or a shield stopped steals nothing. One list, one answer to "did it
+  connect", rather than a second opinion in `dealCombatDamage`.
+
+**Both are applied immediately rather than as triggered abilities, and that is a real
+simplification.** In the rules each is a triggered ability the monarch controls, so at a real table
+a Disallow could counter the crown changing hands. Nothing in this engine can put an ability on the
+stack without a card to own it — `StackObject` is identified by its source card — so the crown moves
+and the log says so. Written down here rather than discovered later.
+
+**The button is refused on an automated table.** A designation the rules move cannot also be
+something a player sets by hand: the two would disagree and the table would show a crown the engine
+does not believe in. Refused in the engine rather than merely hidden in the UI, which is what the
+commander-damage counters do, because this one the rules actually change.
+
+**Measured, and the two cards came back different** (`scripts/measure/monarch.mjs`, 660 duels):
+
+- A crown existed in **57 games** (the two cards are in two of eleven decks). It was given by a card
+  57 times and **stolen in combat 142 times** — two and a half changes of hands per game it appeared
+  in — while drawing **74 cards** in total. In a duel the crown is less a card engine than a reason
+  to attack: it changed hands nearly twice as often as it drew anything.
+- **Palace Sentinels** in Dawn Tithe measures **+15 of 240**, which is just under this instrument's
+  noise floor (D86: 18 games) — but **not one of the ten matchups moved the other way**: eight went
+  the deck's way by one to three games and two were level. Ten paired matchups all pointing one
+  direction is a sign test at roughly p=0.004, which the floor's own derivation (a single total) does
+  not cover. So this one is believed, carefully: it moves Dawn Tithe from 57% to about 63%, which is
+  third in the pool and inside the existing spread rather than a new outlier.
+- **Thorn of the Black Rose** in Ashen Rite measures **−2 of 240** with the matchups split five ways
+  either side: level. The deckbuilding argument for putting it there — a deck with an unblockable
+  creature can always take the crown back — is *also* the argument against it, because an aggressive
+  deck with four removal spells is the deck most likely to be hit back. The card ships because the
+  measurement says it costs nothing and the mechanic is worth having in two colours.
+- **The correlation worth not over-reading**: the winner held the crown at the end in 53 of those 57
+  games. That is almost certainly the winner taking the crown rather than the crown making a winner
+  — stealing it requires connecting, and connecting is what winning looks like. The number is in the
+  log because it is striking, not because it is causal.
+
+**What is not done, and deliberately.** In a duel there is one player to attack, so the bot takes
+the crown 142 times without being taught anything about it. In a **pod** choosing whom to attack is
+a real decision and "prefer the player holding the crown" would be a bot rule worth having — but the
+measuring harness is duel-only, and a behaviour change this project cannot measure is a weight, not
+a fact. Left undone and written down.

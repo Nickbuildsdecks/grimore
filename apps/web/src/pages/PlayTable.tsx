@@ -913,6 +913,7 @@ function SeatStrip({
   seat,
   isMe,
   isActive,
+  isMonarch,
   commanderFormat,
   mySeat,
   onAct,
@@ -929,6 +930,8 @@ function SeatStrip({
   seat: SeatView
   isMe: boolean
   isActive: boolean
+  /** Whether this seat holds the crown (CR 720). */
+  isMonarch: boolean
   commanderFormat: boolean
   mySeat: number
   onAct: (action: TableAction) => void
@@ -999,6 +1002,19 @@ function SeatStrip({
         {isMe ? " (you)" : ""}
       </span>
       {isActive ? <span className="rounded bg-[var(--g-gold-400)] px-1 text-[9px] font-bold uppercase text-black">turn</span> : null}
+      {/*
+        The crown (CR 720). An extra card every turn for whoever holds it, and it goes to whoever
+        deals its holder combat damage — so in a pod it is the single most useful thing to be able
+        to read off another seat, and the reason to attack the player you were not going to attack.
+      */}
+      {isMonarch ? (
+        <span
+          data-testid={`monarch-${seat.index}`}
+          className="rounded bg-[var(--g-gold-400)]/25 px-1 text-[9px] font-bold uppercase tracking-wide text-[var(--g-gold-400)] ring-1 ring-[var(--g-gold-400)]/50"
+        >
+          monarch
+        </span>
+      ) : null}
       {seat.eliminated ? (
         <span className="text-[var(--g-mana-r)]">{eliminatedLabel(seat.eliminatedReason)}</span>
       ) : null}
@@ -1746,6 +1762,7 @@ function Board({ table }: { table: UseTable }) {
             seat={o}
             isMe={false}
             isActive={view.activeSeat === o.index}
+            isMonarch={view.monarch === o.index}
             commanderFormat={commanderFormat}
             mySeat={seat}
             onAct={act}
@@ -1818,6 +1835,7 @@ function Board({ table }: { table: UseTable }) {
           seat={me}
           isMe
           isActive={isMyTurn}
+          isMonarch={view.monarch === seat}
           commanderFormat={commanderFormat}
           mySeat={seat}
           onAct={act}
@@ -2189,6 +2207,7 @@ function Watching({ table }: { table: UseTable }) {
               seat={s}
               isMe={false}
               isActive={view.activeSeat === s.index}
+              isMonarch={view.monarch === s.index}
               commanderFormat={view.format === "pod" || view.format === "edh"}
               mySeat={s.index}
               onAct={() => undefined}

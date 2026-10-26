@@ -791,6 +791,23 @@ export function scheduleDelayed(
   };
 }
 
+/**
+ * "You become the monarch" (CR 720.3).
+ *
+ * One line, and the reason it is a function at all is that it is the only thing a card ever does
+ * to the crown: everything else about the monarch — the draw at the beginning of its own end step,
+ * and the crown changing hands to whoever connects with it — is a rule of the game rather than
+ * text on a card, and lives in the engine where the other turn-based actions do.
+ *
+ * An eliminated seat cannot be crowned, which matters in a pod: the rule that clears the crown when
+ * its holder leaves the game (CR 720.6) would otherwise have to undo this a moment later.
+ */
+export function becomeMonarch(state: GameState, seat: SeatIndex): GameState {
+  if (state.seats[seat] === undefined || state.seats[seat]?.eliminated === true) return state;
+  if (state.monarch === seat) return state;
+  return { ...state, monarch: seat };
+}
+
 export function untapAll(state: GameState, seat: SeatIndex): GameState {
   let next = state;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {

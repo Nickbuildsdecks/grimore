@@ -27,6 +27,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `morph-use.mjs` | which half of a morph does the bot take, and does it follow through? | `SEEDS=3 node scripts/measure/morph-use.mjs` |
 | `combat-triggers.mjs` | do the block and unblocked triggers ever happen, and do they matter? | `SEEDS=6 node scripts/measure/combat-triggers.mjs` |
 | `delayed-triggers.mjs` | do the scheduled abilities fire, and what does the bot blink? | `SEEDS=6 node scripts/measure/delayed-triggers.mjs` |
+| `monarch.mjs` | who takes the crown, how long it is held, and what it drew | `SEEDS=6 node scripts/measure/monarch.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -148,3 +149,9 @@ whatever it fights changes which attacks get declared, and an instrument that co
 sees none of that. When a mechanism's whole point is to stop something, say what you measured —
 "the clause fired three times" — and say plainly that what it was worth in attacks nobody made is
 not in the number.
+
+**Ten matchups all pointing one way is evidence a total cannot give.** Palace Sentinels came back
++15 of 240 — under the 18-game floor — with eight of ten matchups the deck's way and two level, none
+against. The floor is derived for a single total; a sign test across ten paired matchups is a
+different question and a sharper one (p≈0.004 here). Read the split before deciding a sub-floor
+total means nothing.

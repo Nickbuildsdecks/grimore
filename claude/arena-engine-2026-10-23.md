@@ -3897,6 +3897,44 @@ other side. Whatever it is worth in attacks that were never declared is not some
 instrument can see, and saying so is better than claiming it. What the card does earn outright is
 the engine path: `becomes-blocked` has a card behind it now, and so does the delayed trigger.
 
+### The crown, which was a sticker and is now a rule
+
+`monarch` has been a field on the game state since the tabletop was written, with a button anybody
+could press and nothing in the rules touching it: no card gave the crown, combat damage did not take
+it, and the monarch never drew a card. All three of those are now the engine's.
+
+Only one of them belongs on a card. "You become the monarch" is one line in an effect; the extra
+card at the beginning of your **own** end step and the crown going to whoever deals you combat
+damage are rules of the game, so they sit beside the other turn-based actions. The steal is applied
+where the engine drains the list of combat damage that actually *landed*, so a swing a Fog or a
+prevention shield stopped takes nothing and steals nothing — one list, one answer to "did it
+connect". Both are applied immediately rather than as triggered abilities, which is a simplification
+written down rather than hidden: at a real table a Disallow could counter the crown changing hands,
+and nothing here can put an ability on the stack without a card to own it.
+
+The button is refused once the engine is running, because a designation the rules move cannot also
+be something a player sets by hand. On a tabletop it is exactly what it was.
+
+**Two cards, and the instrument liked one of them.** Over 660 duels a crown existed in 57 games —
+given by a card 57 times, **stolen in combat 142 times**, and drawing 74 cards in all. That ratio is
+the whole character of the mechanic in a duel: it changed hands nearly twice as often as it drew
+anything, so it is less a card engine than a reason to attack. **Palace Sentinels** in Dawn Tithe
+measures +15 of 240 — under the noise floor as a total, but not one of the ten matchups moved the
+other way, which is a sign test at about p=0.004 and the kind of evidence a single total cannot
+give. It takes that deck from 57% to about 63%, third in the pool and inside the existing spread.
+**Thorn of the Black Rose** in Ashen Rite measures −2 and ships because it costs nothing: the
+argument for putting the crown in the deck with an unblockable creature (it can always take it back)
+is also the argument against (an aggressive deck is the one most likely to be hit back).
+
+One number is in the log for being striking rather than causal: the winner held the crown at the end
+in 53 of the 57 games it appeared in. That is the winner taking the crown, not the crown making a
+winner — stealing it requires connecting, and connecting is what winning looks like.
+
+What is left undone on purpose: in a duel there is one player to attack, so the bot takes the crown
+142 times without being taught anything. In a pod, "prefer the player holding the crown" would be a
+bot rule worth having, and the measuring harness is duel-only — so it stays a question rather than
+becoming an unmeasured weight.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
