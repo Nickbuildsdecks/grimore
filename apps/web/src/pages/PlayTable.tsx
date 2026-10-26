@@ -28,9 +28,10 @@ import {
 } from "lucide-react"
 import {
   COMMON_TOKENS, STARTER_DECKS,
-  type GameView, type LegalPlay, type SeatView, type VisibleCard, type ZoneId,
+  type DeckSpec, type GameView, type LegalPlay, type SeatView, type VisibleCard, type ZoneId,
 } from "@grimore/rules-engine"
 import { customDeckIdFor, isCustomDeckId } from "@grimore/shared"
+import { deckSummary } from "@/lib/decks"
 import { CardFace, type CardHighlight } from "@/components/table/CardFace"
 import { ArenaBar } from "@/components/table/ArenaBar"
 import { CombatArrows } from "@/components/table/CombatArrows"
@@ -48,7 +49,10 @@ import {
   eliminatedLabel, pactBadge, playsForCard, reasonCannotPlay, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
-import { pastedNote, useTable, type TableAction, type UseTable } from "@/lib/table"
+import {
+  pastedNote, readSavedList, useTable, writeSavedList,
+  type TableAction, type UseTable,
+} from "@/lib/table"
 import { useTableSound } from "@/lib/useTableSound"
 import { useTableFeed } from "@/lib/useTableFeed"
 import { isBarePass } from "@/lib/feed"
@@ -143,6 +147,8 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
     its lobby.
   */
   const [listed, setListed] = useState(false)
+  /** Which deck's contents are open in the solo list, if any. */
+  const [soloPeek, setSoloPeek] = useState<string | null>(null)
 
   return (
     <div data-testid="lobby" className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-8">
@@ -227,18 +233,29 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
         </p>
         <div className="flex flex-col gap-2">
           {Object.values(STARTER_DECKS).map((deck) => (
-            <button
-              key={deck.id}
-              type="button"
-              data-testid={`solo-${deck.id}`}
-              onClick={() => void table.createTable({
-                name: "Solo", format: "modern", bots: 1, botDeck: deck.id,
-              })}
-              className="rounded-md border border-white/10 px-3 py-2 text-left transition-colors hover:border-white/25"
-            >
-              <span className="block text-sm font-medium text-[var(--g-text-high)]">Play against {deck.name}</span>
-              <span className="block text-xs text-[var(--g-text-muted)]">{deck.description}</span>
-            </button>
+            <div key={deck.id} className="flex flex-col">
+              <button
+                type="button"
+                data-testid={`solo-${deck.id}`}
+                onClick={() => void table.createTable({
+                  name: "Solo", format: "modern", bots: 1, botDeck: deck.id,
+                })}
+                className="rounded-md border border-white/10 px-3 py-2 text-left transition-colors hover:border-white/25"
+              >
+                <span className="block text-sm font-medium text-[var(--g-text-high)]">Play against {deck.name}</span>
+                <span className="block text-xs text-[var(--g-text-muted)]">{deck.description}</span>
+              </button>
+              {/* The same list the pregame picker offers: this is where a new player chooses first. */}
+              <button
+                type="button"
+                data-testid={`solo-peek-${deck.id}`}
+                onClick={() => setSoloPeek(soloPeek === deck.id ? null : deck.id)}
+                className="self-start px-3 py-1 text-[10px] text-[var(--g-text-muted)] underline-offset-2 hover:underline"
+              >
+                {soloPeek === deck.id ? "Hide the list" : "What's in it"}
+              </button>
+              {soloPeek === deck.id ? <DeckPeek deck={deck} /> : null}
+            </div>
           ))}
           {/*
             A pod on your own, which is the format this product is named after and the one table
@@ -384,6 +401,63 @@ function OpenTables({ table, name }: { table: UseTable; name: string }) {
 // Seated, before the cards come out
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * One deck's contents, as a player reads a decklist.
+ *
+ * Lands, creatures, spells; each sorted by cost; a curve across the top and the colours beside the
+ * count. Deliberately text rather than card images — there are no images in this product (the card
+ * table has never been populated, see `claude/play-realm-setup.md`), and a list is what a player
+ * compares two decks with anyway.
+ */
+function DeckPeek({ deck }: { deck: DeckSpec }) {
+  const summary = deckSummary(deck)
+  const peak = Math.max(1, ...summary.curve)
+  return (
+    <div
+      data-testid={`peek-panel-${deck.id}`}
+      className="mb-1 flex flex-col gap-2 rounded-md border border-white/10 bg-black/20 px-3 py-2"
+    >
+      <div className="flex items-baseline justify-between text-[10px] text-[var(--g-text-muted)]">
+        <span>
+          {summary.total} cards
+          {summary.colors.length > 0 ? ` · ${summary.colors.join("")}` : ""}
+          {summary.commander === undefined ? "" : ` · ${summary.commander}`}
+        </span>
+        {/*
+          The curve, as bars a reader can see the shape of rather than a row of numbers. One to
+          seven, lands left out, because a curve is about what you cast.
+        */}
+        <span className="flex items-end gap-0.5" data-testid={`peek-curve-${deck.id}`} aria-hidden>
+          {summary.curve.slice(1).map((n, i) => (
+            <span
+              key={i}
+              title={`${n} at ${i + 1}`}
+              className="w-1.5 rounded-sm bg-[var(--g-gold-400)]/60"
+              style={{ height: `${Math.max(2, Math.round((n / peak) * 18))}px` }}
+            />
+          ))}
+        </span>
+      </div>
+      {summary.groups.map((group) => (
+        <div key={group.label} className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--g-text-muted)]">
+            {group.label} ({group.total})
+          </span>
+          <ul className="columns-2 gap-3 text-[11px] leading-snug text-[var(--g-text-high)]">
+            {group.entries.map((entry) => (
+              <li key={entry.name} className="break-inside-avoid">
+                {entry.count}
+                {" "}
+                {entry.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function PreGame({ table }: { table: UseTable }) {
   const { pod, view, seat } = table
   /**
@@ -415,6 +489,15 @@ function PreGame({ table }: { table: UseTable }) {
   const [pasting, setPasting] = useState(false)
   const [listText, setListText] = useState("")
   const [listNote, setListNote] = useState<string | null>(null)
+  /** Which deck's contents are open, if any. One at a time: this is a lobby, not a browser. */
+  const [peeking, setPeeking] = useState<string | null>(null)
+  /**
+   * The last list this browser pasted, read once.
+   *
+   * Read in a ref-less `useState` initialiser rather than an effect so the button is there on the
+   * first paint: a player who pasted a deck yesterday should see it offered, not see it appear.
+   */
+  const [savedList] = useState(() => readSavedList())
 
   if (!pod) return null
   const mySeat = pod.seats.find((s) => s.seat === seat)
@@ -502,19 +585,38 @@ function PreGame({ table }: { table: UseTable }) {
           <section className="flex flex-col gap-2">
             <h2 className="text-xs font-medium uppercase tracking-wide text-[var(--g-text-muted)]">Your deck</h2>
             {Object.values(STARTER_DECKS).map((deck) => (
-              <button
-                key={deck.id}
-                type="button"
-                data-testid={`deck-${deck.id}`}
-                onClick={() => void table.send({ type: "deck:load", seat, deckId: deck.id })}
-                className={cn(
-                  "rounded-md border px-3 py-2 text-left transition-colors",
-                  myDeck === deck.id ? "border-[var(--g-accent)] bg-[var(--g-accent)]/10" : "border-white/10 hover:border-white/25",
-                )}
-              >
-                <span className="block text-sm font-medium text-[var(--g-text-high)]">{deck.name}</span>
-                <span className="block text-xs text-[var(--g-text-muted)]">{deck.description}</span>
-              </button>
+              <div key={deck.id} className="flex flex-col">
+                <button
+                  type="button"
+                  data-testid={`deck-${deck.id}`}
+                  onClick={() => void table.send({ type: "deck:load", seat, deckId: deck.id })}
+                  className={cn(
+                    "rounded-md border px-3 py-2 text-left transition-colors",
+                    myDeck === deck.id ? "border-[var(--g-accent)] bg-[var(--g-accent)]/10" : "border-white/10 hover:border-white/25",
+                  )}
+                >
+                  <span className="block text-sm font-medium text-[var(--g-text-high)]">{deck.name}</span>
+                  <span className="block text-xs text-[var(--g-text-muted)]">{deck.description}</span>
+                </button>
+                {/*
+                  What is actually in it, on demand.
+
+                  Eleven decks offered as a name and one line of prose is a choice made blind:
+                  "blue-black control" does not say whether there is a sweeper in it or what it
+                  wins with. The cards have been in the browser all along — the table deals from
+                  them — so this costs a request of nothing. Shut by default, because the first
+                  thing on this screen should still be "pick one and start".
+                */}
+                <button
+                  type="button"
+                  data-testid={`peek-${deck.id}`}
+                  onClick={() => setPeeking(peeking === deck.id ? null : deck.id)}
+                  className="self-start px-3 py-1 text-[10px] text-[var(--g-text-muted)] underline-offset-2 hover:underline"
+                >
+                  {peeking === deck.id ? "Hide the list" : "What's in it"}
+                </button>
+                {peeking === deck.id ? <DeckPeek deck={deck} /> : null}
+              </div>
             ))}
             {myList ? (
               <button
@@ -550,7 +652,7 @@ function PreGame({ table }: { table: UseTable }) {
                   placeholder={"4 Lightning Bolt\n2 Shock\n24 Mountain\n\nCommander\n1 Tatyova, Benthic Druid"}
                   className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-[var(--g-text-high)] placeholder:text-[var(--g-text-muted)]"
                 />
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     data-testid="use-list"
                     disabled={listText.trim().length === 0}
@@ -560,6 +662,9 @@ function PreGame({ table }: { table: UseTable }) {
                         // Null is a refusal, and it has already put its reason in the error banner;
                         // the box stays open with the text in it so the player can fix the line.
                         if (summary === null) return
+                        // Kept for next time, in this browser only: a list the server accepted is
+                        // worth not typing again tomorrow. See `writeSavedList`.
+                        writeSavedList({ text: listText })
                         setListNote(pastedNote(summary))
                         setPasting(false)
                         await table.send({ type: "deck:load", seat, deckId: myListId })
@@ -568,6 +673,15 @@ function PreGame({ table }: { table: UseTable }) {
                   >
                     Use this list
                   </Button>
+                  {savedList !== null && savedList.text !== listText ? (
+                    <Button
+                      variant="secondary"
+                      data-testid="fill-saved-list"
+                      onClick={() => setListText(savedList.text)}
+                    >
+                      Last list I pasted
+                    </Button>
+                  ) : null}
                   <Button variant="ghost" data-testid="cancel-list" onClick={() => setPasting(false)}>
                     Cancel
                   </Button>

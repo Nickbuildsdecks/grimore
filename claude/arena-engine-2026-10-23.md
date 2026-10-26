@@ -3594,6 +3594,22 @@ That makes three cards in a row whose value a one-ply search cannot realise — 
 Chalice of the Void, Hangarback Walker — all measured negative-but-noise and all shipped. A pool
 containing only what the bot pilots well would be a worse pool for the two people this is for.
 
+### Two things a player does every session
+
+**A deck says what is in it.** Eleven decks offered as a name and a line of prose is a choice made
+blind — "blue-black control" does not say whether there is a sweeper in it. The cards were already
+in the browser (the table deals from them), so the panel is presentation and nothing else: lands,
+creatures, spells, each sorted by cost, the curve drawn as bars, the colours read off the cards.
+Shut by default, in both the places a deck is chosen — the pregame picker and the lobby's solo list.
+
+**And the list you pasted is kept.** Pasting a decklist survived exactly one table, which is the
+friction that decides whether a feature gets used twice. It is in `localStorage` now and offered
+back as one button, with the three properties that come from choosing storage over an account: it
+survives a reload and a new table, it does not follow you to another device, and a browser that
+refuses storage never offers it. The server keeps nothing it did not already keep.
+
+Checked through a real reload, because that is the whole mechanism. `e2e-table` is at 72 checks.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

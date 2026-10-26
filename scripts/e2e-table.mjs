@@ -164,6 +164,25 @@ async function main() {
     await waitFor(nick, 'open-tables');
     check('the lobby says so when nobody has an open table',
       await has(nick, 'open-tables-empty'));
+    /*
+      What is in a deck, before anybody has to choose one.
+
+      Checked in the lobby rather than in the pregame picker because this is where a new player
+      lands first, and because the panel is the same component in both places. The assertion is
+      that it names cards: a panel that opens and says nothing would pass a "did it open" check.
+    */
+    await tid(nick, 'solo-peek-tidal-mind').click();
+    await waitFor(nick, 'peek-panel-tidal-mind');
+    const peeked = (await tid(nick, 'peek-panel-tidal-mind').textContent()) ?? '';
+    check('a deck says what is in it before you pick it',
+      peeked.includes('Counterspell') && peeked.includes('Lands') && peeked.includes('60 cards'),
+      peeked.slice(0, 120));
+    check('and names the commander, which no decklist can show',
+      peeked.includes('Talrand'), peeked.slice(0, 120));
+    await shot(nick, 'deck-contents');
+    await tid(nick, 'solo-peek-tidal-mind').click();
+    await nick.waitForSelector('[data-testid="peek-panel-tidal-mind"]', { state: 'detached', timeout: 5000 });
+
     await tid(nick, 'format-modern').click();
     // Listed on purpose: unlisted is the default, so this is the press that opts in.
     await tid(nick, 'visibility-public').click();
@@ -249,6 +268,26 @@ async function main() {
       const note = (await tid(friend, 'list-note').textContent()) ?? '';
       return note.includes('60 cards') && note.includes('every one of them scripted');
     });
+
+    /*
+      And the list is remembered, which is the difference between pasting a deck and keeping one.
+
+      Checked through a real reload, because `localStorage` is the whole mechanism: the browser
+      comes back on the same seat (the table has its own check for that below) and the paste box
+      offers the list it had rather than an empty box. Nothing of this reaches the server.
+    */
+    await friend.reload();
+    await waitFor(friend, 'pregame', 20000);
+    await tid(friend, 'paste-list').click();
+    await waitFor(friend, 'deck-text');
+    check('the paste box offers the list this browser used last time',
+      await has(friend, 'fill-saved-list'));
+    await tid(friend, 'fill-saved-list').click();
+    const refilled = await tid(friend, 'deck-text').inputValue();
+    check('and fills it back in exactly as it was pasted',
+      refilled.includes('24 Forest') && refilled.includes('12 Llanowar Elves'),
+      refilled.slice(0, 80));
+    await tid(friend, 'cancel-list').click();
     await expectEventually(nick, 'and the engine is offered again', async () =>
       (await tid(nick, 'start-engine').isEnabled()) && !(await has(nick, 'unreadable-note')));
     await shot(nick, 'deck-chosen');

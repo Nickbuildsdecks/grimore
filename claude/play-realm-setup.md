@@ -483,11 +483,27 @@ different things. The sixth is **Enigma Drake**, and it is the one that needed e
 characteristic-defining power that counts one player's own graveyard, and that defines the power
 while leaving the printed toughness alone.
 
+### Seeing what is in a deck
+
+Under every deck in the lobby and in the deck picker there is a **What's in it** line. It opens the
+list: lands, creatures and spells, each sorted by cost, with the deck's colours, its commander and
+a small curve across the top. It is shut until you ask, because the first thing on that screen
+should still be "pick one and start" — and it is the quickest way to answer the question the deck
+names cannot ("does this one have a sweeper in it?").
+
+Cards are text rather than pictures here for the reason given further down: there is no card
+artwork in this product, so a face is its name, cost, type line and rules text.
+
 ### Play with your own list
 
 The decks above are what the engine has scripts for. They are not the limit of what you can sit down
 and play: in the lobby, under your deck, there is **Paste a list of your own**. Paste the text you
 already keep your deck in and press **Use this list**.
+
+**Your browser keeps the last list you pasted.** Press *Paste a list of your own* again on any
+table and there is a **Last list I pasted** button beside the box: one tap and the text is back.
+It lives in this browser's storage and nowhere else — it survives a reload and a new table, it does
+not follow you to another device or another browser, and private browsing simply never offers it.
 
 It is deliberately relaxed about format. Counts can be `4`, `4x` or missing; set codes and collector
 numbers (`Forest (M21) 262`) are thrown away; `Deck`, `Commander`, `Sideboard` and `Maybeboard`
@@ -580,7 +596,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
 
 ```bash
-node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 68 checks
+node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 72 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-58 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 22 checks
@@ -642,7 +658,7 @@ SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the
 
 The layers under them have their own suites: `packages/rules-engine` (769 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (193 tests, the interaction reducer behind every prompt) and
+pods as well as duels), `apps/web` (200 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
 (38 tests against live Redis, including two socket clients playing to a finish, one person
 playing the server, a deal struck with the server's own seat, and two players rematching on

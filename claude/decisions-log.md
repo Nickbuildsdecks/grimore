@@ -6372,3 +6372,41 @@ Void (D144) and Hangarback Walker. Every one of them is a card a person uses wel
 them measured negative-but-noise, and every one shipped anyway, with its number written down. The
 alternative — a pool containing only what the bot pilots well — would be a worse pool for the two
 people this table is built for.
+
+## D146 — Two things a player does every session, and neither of them was there
+
+**Decision: a deck says what is in it before you pick it, and the last list you pasted is kept in
+your own browser.**
+
+Both are small, both are presentation rather than plumbing, and both were missing for the same
+reason: the work has been going into what the engine can express, and these are what a person
+touches on the way to using any of it.
+
+**What is in it.** Eleven decks were offered as a name and one line of prose, which is enough to
+tell Ember Rush from Tidal Mind and nothing like enough to *choose*: "blue-black control" does not
+say whether there is a sweeper in it, how many counterspells, or what it wins with. The card list
+has been in the browser the whole time — `STARTER_DECKS` is bundled, because the table deals from
+it — so the panel costs no request and no server work at all. It is grouped the way a player reads
+a decklist rather than the way the engine stores one (lands, creatures, spells; each sorted by cost
+then name), with the curve drawn as bars over the counts and the colours read off the cards rather
+than declared. It is shut by default and it is in two places: the pregame picker, where you choose
+your own, and the solo list in the lobby, where a new player chooses the computer's first.
+
+Text rather than card images, which is not a placeholder: there are no images in this product (the
+card table has never been populated and this environment cannot reach Scryfall), and a list is what
+a player compares two decks with anyway.
+
+**The list you pasted.** D142 let a player paste their decklist; it survived exactly one table.
+Paste it, play it, and tomorrow you paste it again — which is the kind of friction that decides
+whether a feature gets used twice. It is now kept in `localStorage` and offered back in the paste
+box as one button, and the three properties that follow from choosing storage over an account are
+all deliberate: it survives a reload and a new table, it does not follow the player to another
+device, and a browser that refuses storage simply never offers it. The same three the remembered
+seat has had since the first version of this table.
+
+The server keeps nothing it did not already keep. A decklist is the player's, and the only copy
+that outlives the table is in their own browser.
+
+**Checked through a real reload**, because `localStorage` is the whole mechanism: the browser comes
+back on the same seat, presses the paste box, and finds the list it had. Seventy-two checks in
+`e2e-table` now, up from sixty-eight.

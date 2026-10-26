@@ -24,6 +24,8 @@ import type { Pod, PodErrorEvent, PodListEntry } from "@grimore/shared"
 /** Same-origin by default, which is how it runs behind one reverse proxy. */
 const REALTIME_URL: string = import.meta.env.VITE_REALTIME_URL ?? ""
 const STORE_KEY = "grimore.table.seat"
+/** Where the last decklist a player pasted is kept. See `readSavedList`. */
+const LIST_KEY = "grimore.table.list"
 
 export type Connection = "connecting" | "connected" | "disconnected"
 
@@ -140,6 +142,44 @@ function writeStored(value: StoredSeat | null): void {
     else localStorage.setItem(STORE_KEY, JSON.stringify(value))
   } catch {
     /* Private browsing: the seat is simply not remembered across a reload. */
+  }
+}
+
+/** A decklist this browser pasted before, as the player typed it. */
+export interface SavedList {
+  name?: string
+  text: string
+}
+
+/**
+ * The last list this browser pasted, so playing it again is one tap rather than a trip to Moxfield.
+ *
+ * In `localStorage` and nowhere else, which is the whole design: a decklist is the player's, the
+ * server stores it only for as long as the table lasts, and nothing here needs an account. It
+ * survives a reload and a new table, it does not follow the player to another device, and a browser
+ * that refuses storage simply never offers it — the same three properties the remembered seat has.
+ */
+export function readSavedList(): SavedList | null {
+  try {
+    const raw = localStorage.getItem(LIST_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<SavedList>
+    if (typeof parsed.text !== "string" || parsed.text.trim().length === 0) return null
+    return typeof parsed.name === "string" && parsed.name.length > 0
+      ? { name: parsed.name, text: parsed.text }
+      : { text: parsed.text }
+  } catch {
+    /* Unreadable or refused storage: there is simply no list to offer. */
+    return null
+  }
+}
+
+export function writeSavedList(value: SavedList | null): void {
+  try {
+    if (value === null) localStorage.removeItem(LIST_KEY)
+    else localStorage.setItem(LIST_KEY, JSON.stringify(value))
+  } catch {
+    /* Private browsing: the list is not remembered, and nothing else changes. */
   }
 }
 
