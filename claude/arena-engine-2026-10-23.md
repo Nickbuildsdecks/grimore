@@ -4255,6 +4255,32 @@ One extra blocker bought four more cards of milling a game and nearly doubled th
 deck did not get better at milling — it got to keep doing it for longer. The thirteen-deck table
 agrees from a third seed set: 38% → 40%.
 
+### What kills the worst deck, and why the mill deck's fix did nothing for it
+
+Tidal Mind is 28% and eleven points below the next-worst deck, and three balance passes have moved
+it two. `killed-by.mjs` records how a game actually ends: what took the last of the subject's life,
+the turn, and how many cards it was still holding.
+
+**It does not lose fast and it does not lose to spells.** Three quarters of its deaths are combat
+damage, its games run to the table's twenty-third turn, and it dies **holding three and a half
+cards**. The contrast with the best deck in the pool is what makes that legible:
+
+| | Tidal Mind (28%) | Ember Rush (80%) |
+| --- | --- | --- |
+| wins on table turn | 27.6, with 21.2 life | **15.5**, with 15.6 life |
+| loses on table turn | 23.1 | 19.1 |
+| cards in hand at death | **3.5** | 1.1 |
+| deaths to combat | 76% | 93% |
+
+Tidal Mind's games run twelve table turns longer than Ember Rush's *wins* and it is still holding
+cards when they end. **It has the time and cannot use it** — which is exactly why the fix that took
+Hollow Tide from 33% to 40% did nothing here: a third blocker is worth something to a deck that
+turns turns into an empty library, and nothing to one with no clock. Both blocker adds, priced
+against Tidal Mind's weakest shared slot, came back **−2 and +4 of 288**.
+
+So nothing shipped, and the conclusion is one a deck list can act on rather than the "the pilot is
+bad" the last three passes stopped at: **this deck needs a way to win, not more time.**
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

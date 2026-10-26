@@ -33,6 +33,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `metalcraft.mjs` | how often is a conditional static actually **on**? | `SEEDS=5 node scripts/measure/metalcraft.mjs` |
 | `mill.mjs` | does the mill deck win by decking, and how close does it get? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/mill.mjs` |
+| `killed-by.mjs` | what took the last of this deck's life, on what turn, holding what? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/killed-by.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -159,6 +160,25 @@ reports zero" note below.
 of its halves measured **+19 of 264** against the field, because the half it does cast is better
 than the card it replaced. "This half is dead" and "this card is bad" are two different findings and
 this instrument only produces the first; `deck-probe` produces the second.
+
+**Two decks can want opposite things from the same number of extra turns, and only a contrast
+shows it.** `killed-by.mjs` put the worst deck in the pool beside the best, same instrument, same
+field:
+
+| | Tidal Mind (28%) | Ember Rush (80%) |
+| --- | --- | --- |
+| wins on table turn | 27.6, with 21.2 life | **15.5**, with 15.6 life |
+| loses on table turn | 23.1 | 19.1 |
+| cards still in hand when it dies | **3.5** | 1.1 |
+| deaths to combat damage | 76% | 93% |
+
+Tidal Mind's games run **twelve table turns longer** than Ember Rush's wins and it is still holding
+three and a half cards when they end. It does not lack time and it does not lose to spells — it
+cannot convert the time into a win. Which is why the fix that moved Hollow Tide seven points
+measured **nothing** here: a third blocker is worth something to a deck that turns turns into a win
+condition, and nothing at all to one that does not. Both blocker adds priced against Tidal Mind's
+weakest shared slot came back **−2 and +4 of 288**. Read the two rows together before deciding what
+a deck is short of.
 
 **Instrument the mechanism and the record will explain itself.** `mill.mjs` was written to answer
 one question — does Hollow Tide ever actually deck anybody — and the answer came with the deck's fix

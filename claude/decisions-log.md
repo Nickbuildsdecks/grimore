@@ -7524,3 +7524,54 @@ third seed set: Hollow Tide 38% → 40%.
 
 This is the clearest case this project has of **instrument the mechanism, not just the record** —
 written into the measurement README beside the deck-probe caveat it corrects.
+
+## D166 — What kills the worst deck, and why Hollow Tide's fix did nothing for it
+
+**Decision: write `killed-by.mjs`; ship no change to Tidal Mind, because the two blocker adds the
+instrument pointed at measure −2 and +4 of 288 — and record *why* they do, which is the useful part.**
+
+Tidal Mind is 28% on the thirteen-deck table, eleven points below the next-worst deck, and three
+balance passes have moved it two points. D165 had just shown that instrumenting the *mechanism*
+produces the fix, so: nothing instrumented **how a game ends**.
+
+**What it records, per loss:** what took the last of the subject's life (combat, or the name of the
+spell or ability — attributed by watching the life move and reading the action that moved it), the
+turn, and how many cards were still in hand. For a win, the turn and the life left.
+
+**Tidal Mind, 144 games:**
+
+```
+it loses on turn 23.1 of the table's (about its own turn 11.6), holding 3.5 cards
+it wins on turn 27.6 with 21.2 life left
+
+how it died:        89 life (87%), 7 library (7%), 6 poison (6%)
+what took the last: 78 combat (76%), then eleven single-copy spells
+```
+
+**It does not lose fast, and it does not lose to spells.** Three quarters of its deaths are combat
+damage, the games run to the table's twenty-third turn, and it dies **holding three and a half
+cards**. That is not a deck short of answers or short of time.
+
+**The contrast is what made the reading sharp.** The same instrument on the best deck in the pool:
+
+| | Tidal Mind (28%) | Ember Rush (80%) |
+| --- | --- | --- |
+| wins on table turn | 27.6, with 21.2 life | **15.5**, with 15.6 life |
+| loses on table turn | 23.1 | 19.1 |
+| cards in hand at death | **3.5** | 1.1 |
+| deaths to combat | 76% | 93% |
+
+Tidal Mind's games run **twelve table turns longer** than Ember Rush's *wins*, and it is still
+holding cards when they end. The deck has the time and cannot use it.
+
+**Which is why Hollow Tide's fix did nothing here, and that is the result worth keeping.** A third
+blocker took Hollow Tide from 33% to 40% because that deck converts turns into an empty library.
+Priced against Tidal Mind's weakest shared slot — its single Counterspell, 38% in `cast-counts` and
+one of five counters in the list — the same shape of change measures **−2 of 288 for a second Fog
+Bank and +4 for a second Wall of Frost**. Both deep inside the floor. So nothing ships, and the
+conclusion is not "the pilot is bad" (which is where the last three passes stopped) but something a
+deck list can act on: **the deck needs a clock, not more time**. Its threats are a commander that
+makes a 2/2 flier per spell, three Vampire Nighthawks and an Air Elemental, and 21.2 life left in
+its wins says it is never close to losing the games it wins — it simply does not finish the others.
+Whoever tries next should add a way to win, and `killed-by.mjs` will say whether the turn number
+moved.
