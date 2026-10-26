@@ -3953,9 +3953,22 @@ export const HOLLOW_TIDE: DeckSpec = {
       is cast, which is why it could not be written before (see `NumberDecisionSpec`).
     */
     { card: TOXIC_DELUGE, count: 1 },
-    // The ground, which is the half of a mill deck that is not the mill. None of these want to
+    /*
+      The ground, which is the half of a mill deck that is not the mill. None of these want to
+      attack and all of them are happy to block for ever.
+
+      **A third Fog Bank, for the Essence Scatter below**, and `mill.mjs` is what asked the
+      question. The instrument says the plan works and the clock does not: half this deck's wins
+      are already empty libraries (23 of 48), it mills eighteen cards a game, and the opponent's
+      library is still at **24 on average** when the game ends. So the deck does not need more mill
+      — it needs the turns. Measured both ways against the same stock, with the same card cut: a
+      fourth Mind Sculpt is **+12 of 288** and this is **+16**, and **+23** on a second seed set.
+      The four games between the two adds are deep inside the floor, so the honest reading is that
+      most of the gain is **the cut** rather than either card — which is the README's own warning
+      about measuring the cut as well as the card, landing on the deck that asked the question.
+    */
     // attack and all of them are happy to block for ever.
-    { card: FOG_BANK, count: 2 },
+    { card: FOG_BANK, count: 3 },
     { card: WALL_OF_AIR, count: 1 },
     /*
       Evolve, and the second Psychic Strike it replaced.
@@ -4000,7 +4013,9 @@ export const HOLLOW_TIDE: DeckSpec = {
     // Strike, now a Cloudfin Raptor: a deck this slow would rather have the turn-one blocker.
     { card: COUNTERSPELL, count: 2 },
     { card: PSYCHIC_STRIKE, count: 1 },
-    { card: ESSENCE_SCATTER, count: 1 },
+    // The Essence Scatter that paid for the third Fog Bank: a creature counterspell in a deck with
+    // two Counterspells, a Psychic Strike and a Negate was the answer this list had most of.
+
     { card: NEGATE, count: 1 },
     { card: DOOM_BLADE, count: 2 },
     { card: MURDER, count: 1 },

@@ -32,6 +32,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `metalcraft.mjs` | how often is a conditional static actually **on**? | `SEEDS=5 node scripts/measure/metalcraft.mjs` |
+| `mill.mjs` | does the mill deck win by decking, and how close does it get? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/mill.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -158,6 +159,22 @@ reports zero" note below.
 of its halves measured **+19 of 264** against the field, because the half it does cast is better
 than the card it replaced. "This half is dead" and "this card is bad" are two different findings and
 this instrument only produces the first; `deck-probe` produces the second.
+
+**Instrument the mechanism and the record will explain itself.** `mill.mjs` was written to answer
+one question — does Hollow Tide ever actually deck anybody — and the answer came with the deck's fix
+attached. Half its wins were already empty libraries (23 of 48) and it milled 18 cards a game, but
+**the opponent's library was still at 24 on average when the game ended**: the plan worked and the
+clock did not, so the deck needed *turns* rather than more mill. A third Fog Bank for an Essence
+Scatter measured +16 and +23 of 288 on two seed sets, and the instrument then showed the mechanism
+rather than just the number — mill a game 18.0 → **22.1**, the library at the end 24.3 → **19.9**,
+games it decks somebody 16% → **28%**, wins by library 23 → **40**. A win-rate alone would have said
+"seven points better" and nothing about why.
+
+**And measure the two candidate adds against the same cut, then distrust the difference.** The same
+run priced a fourth Mind Sculpt (+12) against the third Fog Bank (+16) **with the same card cut in
+both arms**: four games apart, which is deep inside the floor. So the honest reading is that most of
+the gain is the cut, and "more mill or more time" is a question those two probes cannot separate —
+even though the instrument above makes a strong case for one of them.
 
 **Measure the cut as well as the card.** A `CHANGE` is two halves and the instrument prices the
 pair, so a result that looks like "this card is bad" is often "that cut was bad". D127 is the case:

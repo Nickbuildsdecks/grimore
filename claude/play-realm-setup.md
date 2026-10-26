@@ -243,6 +243,15 @@ a real decision rather than a maximum — and against the field the slot measure
 either way, which is well inside the noise. It is in the deck because a mill deck with four removal
 spells and no sweeper has no answer to a board it has already fallen behind.
 
+**And it does win that way, which somebody finally measured.** `mill.mjs` over 144 games: the deck
+mills 22 cards a game, gets somebody's library to nought in **28% of its games**, and **40 of its
+58 wins are empty libraries rather than damage**. The number that fixed it was the other one in the
+same run — before a recent change the opponent's library was still at **24 on average** when the
+game ended, which is a deck that is not short of mill but short of *turns*. A third Fog Bank for the
+Essence Scatter (its fourth counterspell) measured +16 and +23 of 288 on two seed sets, and the
+instrument then showed why: mill a game 18 → 22, the library at the end 24 → 20, mill wins 23 → 40.
+One more blocker, and the plan got to finish.
+
 **Arc Tempest** (red-blue) is the ninth, and it is the first deck here whose
 creatures are paid for by its spells. Twenty-five of its sixty cards are instants and sorceries and
 only seven are creatures, and every one of those seven reads the spells: Guttersnipe turns each cast
@@ -335,19 +344,19 @@ its plan against the fast decks, and the bot casts it the turn it can afford it.
 other, both seats, 288 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 76%  218-70   ember-rush
- 64%  185-103  verdant-guard
- 64%  185-103  dawn-tithe
- 59%  170-118  kindle-grove
- 59%  169-119  skyward-writ
+ 76%  219-69   ember-rush
+ 65%  186-102  dawn-tithe
+ 63%  182-106  verdant-guard
+ 60%  172-116  kindle-grove
+ 58%  167-121  skyward-writ
  58%  166-122  forge-alliance
- 44%  128-160  delta-bloom
- 41%  118-170  ashen-rite
- 39%  113-175  arc-tempest
- 39%  113-175  blight-vector
- 39%  112-176  rot-harvest
- 38%  108-180  hollow-tide
- 29%   83-205  tidal-mind
+ 44%  127-161  delta-bloom
+ 41%  117-171  ashen-rite
+ 40%  116-172  hollow-tide
+ 40%  114-174  arc-tempest
+ 39%  113-175  rot-harvest
+ 38%  109-179  blight-vector
+ 28%   81-207  tidal-mind
 ```
 
 **Tidal Mind is 27% in that run rather than 22%, and one card did it.** The table had said "the

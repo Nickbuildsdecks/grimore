@@ -2808,7 +2808,9 @@ describe('eight that needed nothing new', () => {
 
   it('Essence Scatter answers a creature spell and nothing else', () => {
     let s = arena({
-      decks: { 1: 'hollow-tide' }, hands: { 0: ['Shivan Dragon', 'Lightning Bolt'], 1: ['Essence Scatter'] },
+      // Skyward Writ rather than Hollow Tide: Hollow Tide's Essence Scatter paid for a third Fog
+      // Bank, and `arena` takes the named card out of the deck the seat is playing.
+      decks: { 1: 'skyward-writ' }, hands: { 0: ['Shivan Dragon', 'Lightning Bolt'], 1: ['Essence Scatter'] },
       battlefield: {
         0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'],
         1: ['Island', 'Island'],
@@ -2834,7 +2836,7 @@ describe('eight that needed nothing new', () => {
 
   it('and will not be pointed at a Lightning Bolt', () => {
     let s = arena({
-      decks: { 1: 'hollow-tide' }, hands: { 0: ['Lightning Bolt'], 1: ['Essence Scatter'] },
+      decks: { 1: 'skyward-writ' }, hands: { 0: ['Lightning Bolt'], 1: ['Essence Scatter'] },
       battlefield: { 0: ['Mountain'], 1: ['Island', 'Island'] },
       turn: 4, firstSeat: 0,
     });

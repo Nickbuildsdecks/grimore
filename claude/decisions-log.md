@@ -7473,3 +7473,54 @@ was being asked to add is a judgement about the **next few turns** — "this cre
 getting through" — and a bot that cannot plan a turn ahead has nothing to do with that. Which is the
 same answer the mana-up term got (D117/D119), for the same underlying reason, and the sixth
 evaluation term to be deleted with its numbers kept.
+
+## D165 — The mill deck does win by decking, and the instrument came with the fix attached
+
+**Decision: write `mill.mjs`, and act on what it said — a third Fog Bank for Hollow Tide's Essence
+Scatter, because the deck needed *turns* rather than more mill.**
+
+Drawing from an empty library has been an elimination in this engine since it was written
+(CR 104.3c), and Hollow Tide is thirteen cards' worth of trying to cause it. Nobody had ever
+measured whether it happens. Poison got an instrument the day it shipped (D138); milling had gone
+without one for five deck revisions.
+
+**What it found, over 144 games:**
+
+```
+hollow-tide: 48-96 of 144 [33%]
+milled 2594 cards off its opponents (18.0 a game, most in one: 48)
+  the opponent's library got down to 24.3 on average, 0 at its lowest
+  games it decked somebody: 23 (16%)
+  wins by empty library: 23, wins by damage: 25
+```
+
+**The plan works and the clock does not.** Half the deck's wins were already empty libraries — this
+is a second archetype rather than a theoretical one — and at the same time the opponent's library
+was **still at 24 on average when the game ended**. A deck that leaves its win condition at 24 is
+not short of mill; it is short of turns. That is a hypothesis a win-rate cannot produce.
+
+**So the two candidates were priced against the same cut**, which is the README's own rule: a fourth
+Mind Sculpt (more mill) at **+12 of 288** and a third Fog Bank (more turns) at **+16**, and **+23**
+on a second seed set. Four games between the two adds is deep inside the floor, so the honest
+reading of the probes alone is "most of the gain is the cut" — the Essence Scatter was the deck's
+fourth counterspell and the answer it had most of.
+
+**And then the instrument showed the mechanism, which is the part a win-rate could never give.** The
+same measurement after the change:
+
+| | before | after |
+| --- | --- | --- |
+| milled a game | 18.0 | **22.1** |
+| opponent's library at the end | 24.3 | **19.9** |
+| games it decked somebody | 23 (16%) | **40 (28%)** |
+| wins by empty library | 23 | **40** |
+| wins by damage | 25 | 18 |
+| record on those seeds | 33% | **40%** |
+
+**One extra blocker bought four more cards of milling a game and nearly doubled the mill wins.** The
+deck did not get better at milling; it got to keep doing it for longer, which is exactly what the
+instrument predicted and the probes could not distinguish. The thirteen-deck table agrees from a
+third seed set: Hollow Tide 38% → 40%.
+
+This is the clearest case this project has of **instrument the mechanism, not just the record** —
+written into the measurement README beside the deck-probe caveat it corrects.

@@ -4226,6 +4226,35 @@ already ask whether a creature can be blocked — `canBlock` knows — and what 
 being asked to add is a judgement about the *next few turns*, which a bot that cannot plan a turn
 ahead has nothing to do with.
 
+### The mill deck does win by decking, and the instrument came with the fix attached
+
+Drawing from an empty library has been an elimination since the engine was written, and Hollow Tide
+is thirteen cards' worth of trying to cause it — but nobody had ever measured whether it happens.
+Poison got an instrument the day it shipped; milling had gone five deck revisions without one.
+
+**It happens, and the deck's problem is somewhere else.** Over 144 games the deck milled 18 cards a
+game and **half its wins were already empty libraries** (23 of 48) — a second archetype rather than
+a theory. And at the same time **the opponent's library was still at 24 on average when the game
+ended**. A deck that leaves its win condition at 24 is not short of mill; it is short of turns, and
+that is a hypothesis no win-rate can produce.
+
+So the two candidates were priced against the same cut: a fourth Mind Sculpt at **+12 of 288**, a
+third Fog Bank at **+16** and **+23** on a second seed set. Four games between the two adds is deep
+inside the floor, so the probes alone say "most of the gain is the cut". Then the instrument showed
+the mechanism, which is the half a record cannot give:
+
+| | before | after |
+| --- | --- | --- |
+| milled a game | 18.0 | **22.1** |
+| library at the end | 24.3 | **19.9** |
+| games it decked somebody | 16% | **28%** |
+| wins by empty library | 23 | **40** |
+| record on those seeds | 33% | **40%** |
+
+One extra blocker bought four more cards of milling a game and nearly doubled the mill wins. The
+deck did not get better at milling — it got to keep doing it for longer. The thirteen-deck table
+agrees from a third seed set: 38% → 40%.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
