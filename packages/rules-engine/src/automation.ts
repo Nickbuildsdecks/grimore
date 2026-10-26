@@ -326,7 +326,13 @@ function onEnterStep(state: GameState, step: Step): GameState {
   switch (step) {
     case 'untap':
       next = untapAll(next, next.activeSeat);
-      next = { ...next, landsPlayed: { ...next.landsPlayed, [String(next.activeSeat)]: 0 } };
+      next = {
+        ...next,
+        landsPlayed: { ...next.landsPlayed, [String(next.activeSeat)]: 0 },
+        // And any extra land drops this seat was given, which last for the turn they were given
+        // in (CR 505.5b): a permission that outlived its turn would be a different card.
+        extraLands: { ...next.extraLands, [String(next.activeSeat)]: 0 },
+      };
       // "Until your next turn" ends here, before anybody can read the board it was changing —
       // which is the whole reason that duration exists. See `EffectDuration`.
       next = {
@@ -469,7 +475,7 @@ function triggerMatches(
       if (who === 'another' && isSubject) return false;
       const e = event as {
         subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean;
-        alone?: boolean;
+        subjectIsLand?: boolean; alone?: boolean;
       };
       if (want.kind === 'dies' && want.nontoken === true && e.subjectIsToken === true) return false;
       // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
@@ -481,6 +487,9 @@ function triggerMatches(
       // definition, which is why the attack event has no `what` to ask about.
       if (want.kind !== 'attacks' && (want.what ?? 'permanent') === 'creature'
         && e.subjectIsCreature !== true) return false;
+      // And the landfall half of the same question, asked the same way round: only when the
+      // trigger asks for it, so nothing written before this changes meaning.
+      if (want.kind === 'etb' && want.what === 'land' && e.subjectIsLand !== true) return false;
       const of = want.of ?? 'any';
       if (of === 'any') return true;
       if (e.subjectSeat === undefined) return false;
@@ -587,6 +596,9 @@ function raise(
         ...event,
         subjectSeat: inst.zoneSeat,
         subjectIsCreature: characteristicsOf(next, inst).isCreature,
+        // And whether it was a land, for the landfall templating. Only on an entry: "whenever a
+        // land dies" is not a card, and a field nothing reads is a field that drifts.
+        ...(event.kind === 'etb' ? { subjectIsLand: characteristicsOf(next, inst).isLand } : {}),
         ...(event.kind === 'dies' ? { subjectIsToken: inst.isToken } : {}),
       };
     }

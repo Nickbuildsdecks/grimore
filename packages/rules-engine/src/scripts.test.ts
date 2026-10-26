@@ -9424,3 +9424,154 @@ describe('two more planeswalkers', () => {
     expect(ids(s, 0, 'hand').length).toBe(handBefore + 5);
   });
 });
+
+describe('the eleventh deck: the lands are the engine', () => {
+  /*
+    Two engine additions, one deck. An extra land drop (CR 505.5b) is the first permission here
+    that changes what a *player* may do rather than what a permanent is, and an `etb` trigger that
+    can watch a **land** is the landfall templating — the event has always been raised for a land
+    entering and until Tatyova nothing could hear it.
+  */
+
+  /** Seat 0 on Delta Bloom, main phase, with `hand` in hand and `mine` out. */
+  const delta = (hand: readonly string[], mine: readonly string[] = [], lands = 2): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'delta-bloom', 1: 'ember-rush' },
+      hands: { 0: [...hand] },
+      battlefield: {
+        0: [...Array.from({ length: lands }, (_, i) => (i % 2 === 0 ? 'Forest' : 'Island')), ...mine],
+        1: ['Mountain'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+  /** Seat 0's commander moved out of the command zone by hand, then the turn walked to its main. */
+  const withTatyova = (state: GameState): GameState => advanceTo(apply(state, {
+    type: 'card:move', by: 0, card: ids(state, 0, 'command')[0]!, toZone: 'battlefield',
+  }), 'precombat-main');
+
+  it('plays a second land after an Explore, and refuses a third', () => {
+    let s = delta(['Explore', 'Forest', 'Island']);
+    s = tapAllLands(s, 0);
+    // The turn's own land first, so the Explore is being asked for the *second* one.
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') });
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Island') }))
+      .toContain('already played a land');
+
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Explore') })));
+    const island = find(s, 0, 'hand', 'Island');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: island });
+    expect(s.instances[island]!.zone).toBe('battlefield');
+
+    // And that is two: the allowance was one more, not unlimited.
+    const third = ids(s, 0, 'hand').find((id) => /Forest|Island/.test(nameOf(s, id)));
+    if (third !== undefined) {
+      expect(refusal(s, { type: 'auto:playLand', by: 0, card: third }))
+        .toContain('already played 2 lands');
+    }
+  });
+
+  it('and the order does not matter: Explore first is still two lands', () => {
+    let s = delta(['Explore', 'Forest', 'Island']);
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Explore') })));
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') });
+    const island = find(s, 0, 'hand', 'Island');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: island });
+    expect(s.instances[island]!.zone).toBe('battlefield');
+  });
+
+  it('and the permission ends with the turn', () => {
+    let s = delta(['Explore', 'Forest', 'Island']);
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Explore') })));
+    // Next turn of this seat's: one land, like anybody else.
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') });
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Island') }))
+      .toContain('already played a land this turn');
+  });
+
+  it('Tatyova turns a land drop into a card and a life', () => {
+    let s = withTatyova(arena({
+      decks: { 0: 'delta-bloom', 1: 'ember-rush' },
+      format: 'edh',
+      hands: { 0: ['Forest'] },
+      battlefield: { 0: ['Forest', 'Island'], 1: ['Mountain'] },
+      turn: 5, firstSeat: 0,
+    }));
+    const before = ids(s, 0, 'hand').length;
+    const lifeBefore = life(s, 0);
+
+    s = drain(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') }));
+
+    // One land out of hand and one card drawn, so the hand is level — and a life up.
+    expect(ids(s, 0, 'hand').length).toBe(before);
+    expect(life(s, 0)).toBe(lifeBefore + 1);
+  });
+
+  it('and says nothing for an opponent’s land, or for a creature of yours', () => {
+    let s = withTatyova(arena({
+      decks: { 0: 'delta-bloom', 1: 'ember-rush' },
+      format: 'edh',
+      hands: { 0: ['Elvish Visionary'], 1: ['Mountain'] },
+      battlefield: { 0: ['Forest', 'Island'], 1: ['Mountain'] },
+      turn: 5, firstSeat: 1,
+    }));
+    const lifeBefore = life(s, 0);
+    const handBefore = ids(s, 0, 'hand').length;
+
+    // Their land: "a land **you** control".
+    s = drain(apply(s, { type: 'auto:playLand', by: 1, card: find(s, 1, 'hand', 'Mountain') }));
+    expect(life(s, 0)).toBe(lifeBefore);
+    expect(ids(s, 0, 'hand').length).toBe(handBefore);
+
+    // And a creature of your own is not a land, which is the half `what: 'land'` is for. The
+    // Visionary's own trigger draws one card; Tatyova adds nothing and no life.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Elvish Visionary'),
+    })));
+    expect(life(s, 0)).toBe(lifeBefore);
+  });
+
+  it('Kiora’s Follower untaps a land, and cannot untap itself', () => {
+    let s = delta([], ["Kiora's Follower"], 3);
+    const follower = find(s, 0, 'battlefield', "Kiora's Follower");
+    // Summoning sickness is the reason the board is built on turn 5 and the creature placed with
+    // it: a {T} ability needs the creature to have been there since the turn began.
+    const forest = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Forest')!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: forest, abilityIndex: 0 });
+    expect(s.instances[forest]!.tapped).toBe(true);
+
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: follower, abilityIndex: 0,
+      targets: [{ kind: 'card', id: follower }],
+    })).toContain('another target permanent');
+
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: follower, abilityIndex: 0,
+      targets: [{ kind: 'card', id: forest }],
+    })));
+    expect(s.instances[forest]!.tapped).toBe(false);
+    // And it paid for it with its own tap.
+    expect(s.instances[follower]!.tapped).toBe(true);
+  });
+
+  it('Pelakka Wurm gains seven on the way in and draws a card on the way out', () => {
+    let s = delta(['Pelakka Wurm'], [], 7);
+    s = tapAllLands(s, 0);
+    const lifeBefore = life(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Pelakka Wurm'),
+    })));
+    const wurm = find(s, 0, 'battlefield', 'Pelakka Wurm');
+    expect(life(s, 0)).toBe(lifeBefore + 7);
+    expect([power(s, wurm), toughness(s, wurm)]).toEqual([7, 7]);
+
+    const handBefore = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'card:move', by: 0, card: wurm, toZone: 'graveyard' }));
+    expect(ids(s, 0, 'hand').length).toBe(handBefore + 1);
+  });
+});

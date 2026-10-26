@@ -16,7 +16,7 @@ import {
 const SUBJECT = process.env.SUBJECT ?? 'tidal-mind';
 const ALL = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance',
   'skyward-writ', 'hollow-tide', 'ashen-rite',
-  'arc-tempest', 'dawn-tithe'];
+  'arc-tempest', 'dawn-tithe', 'delta-bloom'];
 const FIELD = ALL.filter((id) => id !== SUBJECT);
 const SEEDS = Number(process.env.SEEDS ?? 8);
 const SEED0 = Number(process.env.SEED0 ?? 3300);

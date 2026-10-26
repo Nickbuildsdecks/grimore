@@ -3796,6 +3796,151 @@ export const DAWN_TITHE: DeckSpec = {
   ],
 };
 
+const SIMIC_GUILDGATE: CardDef = {
+  name: 'Simic Guildgate',
+  typeLine: 'Land — Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Simic Guildgate enters the battlefield tapped.\n{T}: Add {G} or {U}.',
+  colors: [],
+};
+
+const EXPLORE: CardDef = {
+  name: 'Explore',
+  typeLine: 'Sorcery',
+  manaCost: '{G}',
+  cmc: 1,
+  oracleText: 'You may play an additional land this turn.\nDraw a card.',
+  colors: ['G'],
+};
+
+const KIORAS_FOLLOWER: CardDef = {
+  name: "Kiora's Follower",
+  typeLine: 'Creature — Merfolk Elemental',
+  manaCost: '{G}{U}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: '{T}: Untap another target permanent.',
+  colors: ['G', 'U'],
+};
+
+const PELAKKA_WURM: CardDef = {
+  name: 'Pelakka Wurm',
+  typeLine: 'Creature — Wurm',
+  manaCost: '{4}{G}{G}{G}',
+  cmc: 7,
+  power: '7',
+  toughness: '7',
+  oracleText: 'Trample\nWhen Pelakka Wurm enters the battlefield, you gain 7 life.\nWhen Pelakka Wurm dies, draw a card.',
+  colors: ['G'],
+};
+
+const TATYOVA: CardDef = {
+  name: 'Tatyova, Benthic Druid',
+  typeLine: 'Legendary Creature — Merfolk Druid',
+  manaCost: '{3}{G}{U}',
+  cmc: 5,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Whenever a land you control enters the battlefield, draw a card and you gain 1 life.',
+  colors: ['G', 'U'],
+};
+
+/**
+ * Delta Bloom: the eleventh deck, and the first whose plan is its own mana.
+ *
+ * Every other deck here spends mana on a plan. This one's plan *is* the mana: nine accelerants and
+ * twenty-three lands into a top end nothing else in the pool can cast on curve, with a commander
+ * who turns every land drop after the fifth into a card and a life. Explore is the piece that
+ * makes it a deck rather than a pile of ramp — a land drop is a card with Tatyova out, so "play an
+ * additional land this turn" is "draw two" at five mana.
+ *
+ * Green-blue is the last colour pair in the ten-deck pool that nothing used, and the plan is new
+ * too: the only other deck that ramps at all is Verdant Guard, which ramps into creatures it would
+ * have cast anyway. This one ramps into X spells — a Mind Spring, an Endless One, a Hurricane —
+ * which is what makes the mana itself the win condition.
+ */
+export const DELTA_BLOOM: DeckSpec = {
+  id: 'delta-bloom',
+  name: 'Delta Bloom',
+  description: 'Green-blue ramp. The lands are the engine, and the top of the curve is the plan.',
+  commander: TATYOVA,
+  cards: [
+    /*
+      Twenty-three lands, which is two more than any other deck here, and the reason is the
+      commander: with Tatyova out a land is a card and a life, so the eighth land is never the dead
+      draw it is in every other list. Two cycling lands in each colour for the games she is not.
+    */
+    { card: FOREST, count: 9 },
+    { card: ISLAND, count: 7 },
+    { card: SIMIC_GUILDGATE, count: 3 },
+    { card: TRANQUIL_THICKET, count: 2 },
+    { card: LONELY_SANDBAR, count: 2 },
+
+    // ── Nine that make mana faster than a land does ──
+    { card: LLANOWAR_ELVES, count: 3 },
+    { card: BIRDS_OF_PARADISE, count: 2 },
+    { card: RAMPANT_GROWTH, count: 2 },
+    /*
+      Explore, and the one new permission in the engine: an extra land drop (CR 505.5b).
+
+      One mana for a card and a second land, which in this deck is two cards and two life with the
+      commander out. It is also the only card in the pool that changes what a *player* may do for
+      the turn rather than what a permanent is — see `allowExtraLand`.
+    */
+    { card: EXPLORE, count: 2 },
+
+    // ── Eight that find the next land, or the next spell ──
+    { card: ELVISH_VISIONARY, count: 2 },
+    { card: WALL_OF_BLOSSOMS, count: 2 },
+    { card: DIVINATION, count: 2 },
+    // Two Preordains rather than one: the second is the slot the second Kiora's Follower left.
+    { card: PREORDAIN, count: 2 },
+    { card: HARMONIZE, count: 1 },
+
+    // ── Nine that buy the time the plan needs ──
+    /*
+      A ramp deck's problem is the four turns before its mana matters, and this is the answer:
+      two walls that block anything and die to nothing, two Man-o'-Wars that undo a turn of theirs,
+      and the counterspells for the one card that would end the game before turn seven.
+    */
+    { card: FOG_BANK, count: 2 },
+    { card: MAN_O_WAR, count: 2 },
+    { card: GIANT_SPIDER, count: 1 },
+    { card: UNSUMMON, count: 1 },
+    { card: COUNTERSPELL, count: 2 },
+    { card: ESSENCE_SCATTER, count: 1 },
+
+    // ── Eleven that spend it ──
+    /*
+      Four of these are X spells, which is the point: a deck that ramps into creatures it would
+      have cast anyway is Verdant Guard. Mind Spring for seven is the refill nothing else here
+      has, Endless One is a creature as big as the mana, and Hurricane ends a game the board has
+      already stalled — it hits its own controller too, which is why there is only one.
+
+      Kiora's Follower is the deck's second accelerant and its only trick: untapping a land is a
+      mana, and untapping a *blocker* after it has blocked is a second block nobody expects.
+
+      **One copy, and the reason is a measurement.** Two of them untap *each other* for ever — A
+      taps to untap B, B taps to untap A — and that is a loop this bot walks straight into: the
+      first version of this list, with two, used the ability 13,581 times across 120 games, about
+      a hundred and forty-six a game. A person would never, and the engine is right to allow it (an
+      untap ability may point at anything), so the fix is the deck list: with one copy there is
+      nothing to untap it, so it is at most one activation a turn. The general problem — a bot that
+      will repeat a cycle of legal actions returning the board to where it started — is written
+      down rather than solved.
+    */
+    { card: KIORAS_FOLLOWER, count: 1 },
+    { card: SIEGE_WURM, count: 2 },
+    { card: PELAKKA_WURM, count: 1 },
+    { card: AIR_ELEMENTAL, count: 2 },
+    { card: ENDLESS_ONE, count: 2 },
+    { card: MIND_SPRING, count: 1 },
+    { card: HURRICANE, count: 1 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
@@ -3807,6 +3952,7 @@ export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [HOLLOW_TIDE.id]: HOLLOW_TIDE,
   [ARC_TEMPEST.id]: ARC_TEMPEST,
   [DAWN_TITHE.id]: DAWN_TITHE,
+  [DELTA_BLOOM.id]: DELTA_BLOOM,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

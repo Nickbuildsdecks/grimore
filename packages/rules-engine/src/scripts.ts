@@ -23,7 +23,7 @@ import { listAt } from './cardActions.js';
 import {
   addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
-  chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack,
+  chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack, allowExtraLand,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -4316,6 +4316,79 @@ const STRIONIC_RESONATOR: CardScript = {
   ],
 };
 
+/*
+  The eleventh deck's own cards, and the two things the engine had never been asked for.
+
+  Delta Bloom is green-blue and its plan is its *mana*: ramp into something enormous, and read the
+  lands as they arrive. Two engine additions came with it and both are one line each at the point
+  of use — an `etb` trigger that can watch a **land** (landfall; a land entering has always raised
+  that event and nothing could hear it), and a per-turn **extra land drop** (CR 505.5b), which is
+  the first permission in this engine that changes what a *player* may do rather than what a
+  permanent is.
+*/
+
+const EXPLORE: CardScript = {
+  name: 'Explore',
+  // The order does not matter, which is the whole reason the allowance is a count: an Explore cast
+  // before the turn's land and one cast after it both leave you able to play two.
+  onResolve: (c) => draw(allowExtraLand(c.state, c.controller), c.controller, 1),
+};
+
+const TATYOVA: CardScript = {
+  name: 'Tatyova, Benthic Druid',
+  triggers: [
+    {
+      // "Whenever a land you control enters" — `another`, because she is not a land and her own
+      // arrival is not one; `of: 'you'`, because an opponent's land is not yours.
+      on: { kind: 'etb', who: 'another', of: 'you', what: 'land' },
+      description: 'draw a card and you gain 1 life',
+      effect: (c) => draw(gainLife(c.state, c.controller, 1), c.controller, 1),
+    },
+  ],
+};
+
+const KIORAS_FOLLOWER: CardScript = {
+  name: "Kiora's Follower",
+  abilities: [
+    {
+      cost: { tap: true },
+      description: '{T}: Untap another target permanent.',
+      targets: [{
+        kind: 'permanent',
+        description: 'another target permanent',
+        // Marked as helping what it points at, which is the hint the bot needs: untapping an
+        // opponent's land is a card thrown away, and the default aim is the enemy's board.
+        friendly: true,
+        filter: (state, candidate, _controller, source) =>
+          candidate.kind === 'card' && candidate.id !== source,
+      }],
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : tap(c.state, id, false);
+      },
+    },
+  ],
+};
+
+const PELAKKA_WURM: CardScript = {
+  name: 'Pelakka Wurm',
+  keywords: ['trample'],
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'you gain 7 life',
+      effect: (c) => gainLife(c.state, c.controller, 7),
+    },
+    {
+      // The half that makes it a fine card to have killed: seven life on the way in and a card on
+      // the way out, so the removal spell aimed at it was still a card for a card.
+      on: { kind: 'dies' },
+      description: 'draw a card',
+      effect: (c) => draw(c.state, c.controller, 1),
+    },
+  ],
+};
+
 /**
  * Every token this pool can put onto the battlefield.
  *
@@ -4410,6 +4483,8 @@ const ALL: readonly CardScript[] = [
   ARC_LIGHTNING,
   STRIONIC_RESONATOR,
   AJANI_CALLER_OF_THE_PRIDE, NISSA_VOICE_OF_ZENDIKAR,
+  EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM,
+  guildgate('Simic Guildgate', 'G', 'U'),
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

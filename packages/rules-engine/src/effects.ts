@@ -499,6 +499,22 @@ export function counterSpell(state: GameState, id: string): GameState {
 }
 
 /**
+ * "You may play an additional land this turn" (CR 505.5b): an Explore, an Azusa.
+ *
+ * A permission rather than a land: nothing is put onto the battlefield here, and the seat may use
+ * it or not. It is added to a per-turn count the land-drop rule reads, so the order the player
+ * does things in does not matter — casting Explore before or after the turn's first land is the
+ * same two lands either way, which is the only reading of the card that is not a trap.
+ */
+export function allowExtraLand(state: GameState, seat: SeatIndex, count = 1): GameState {
+  const key = String(seat);
+  return {
+    ...state,
+    extraLands: { ...state.extraLands, [key]: (state.extraLands[key] ?? 0) + Math.max(0, count) },
+  };
+}
+
+/**
  * Copies an ability already on the stack (CR 706.10): a Strionic Resonator, a Lithoform Engine.
  *
  * The copy is *created* on the stack rather than activated or triggered, which is the whole of why

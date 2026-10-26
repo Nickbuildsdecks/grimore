@@ -568,11 +568,27 @@ function playLand(state: GameState, action: { by: SeatIndex; card: string }): Ou
   const ch = characteristicsOf(state, inst);
   if (!ch.isLand) throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} is not a land`);
   const played = state.landsPlayed[String(action.by)] ?? 0;
-  if (played >= 1) throw new EngineError('RULE_NOT_APPLICABLE', 'you have already played a land this turn');
+  // One, plus whatever something has given you this turn (CR 505.5b). The allowance is read here
+  // rather than decremented when it is given, so an Explore cast with the land drop still unused
+  // is two lands and not one — which is what the card says and what a player expects.
+  const allowed = 1 + (state.extraLands[String(action.by)] ?? 0);
+  if (played >= allowed) {
+    throw new EngineError('RULE_NOT_APPLICABLE', played > 1
+      ? `you have already played ${played} lands this turn`
+      : 'you have already played a land this turn');
+  }
 
   let next = relocate(state, inst, 'battlefield', action.by, 'bottom');
   next = { ...next, landsPlayed: { ...next.landsPlayed, [String(action.by)]: played + 1 } };
-  next = raise(next, { kind: 'etb' }, action.by, inst.id);
+  /*
+    No entry trigger raised here, and that is a fix rather than an omission.
+
+    `settle`'s arrivals loop is the one place that sees *every* way onto the battlefield and raises
+    `etb` there — so this line used to raise it a **second** time for a land played from hand, and
+    any watcher saw one land drop as two. Nothing in the pool could hear a land entering until
+    Tatyova, which is why a double fire sat here unnoticed: her first test drew two cards off one
+    Forest.
+  */
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
@@ -1411,6 +1427,7 @@ function startAutomation(
     combat: EMPTY_COMBAT,
     pools: {},
     landsPlayed: {},
+    extraLands: {},
     passed: [],
     priority: null,
   };

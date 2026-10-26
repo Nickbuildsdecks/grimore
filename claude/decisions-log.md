@@ -6067,3 +6067,62 @@ anywhere in the string now makes `;` the separator for the whole of it, which ke
 invocation this project has already written down working and makes the rest expressible. Both gaps
 this session were in the same place and neither was in the engine: an instrument that has only ever
 been pointed at the cards it was built for has corners nobody has stood in.
+
+## D141 — An eleventh deck whose plan is its mana, and two things the engine had never been asked
+
+**Decision: green-blue, twenty-three lands, and the two engine additions a landfall deck needs —
+an `etb` trigger that can watch a land, and a per-turn extra land drop.**
+
+Green-blue was the last colour pair the ten-deck pool did not use, and the plan is newer than the
+colours: every other list spends mana on a plan, and **Delta Bloom's plan is the mana**. Nine
+accelerants, twenty-three lands — two more than anything else here — and a top end of four X spells
+rather than creatures, which is the difference between this and Verdant Guard's ramp. Verdant Guard
+ramps into creatures it would have cast anyway; this ramps into a Mind Spring for seven.
+
+**Two engine additions, one line each at the point of use.**
+
+- **An `etb` trigger can watch a land** (`what: 'land'`). The event has always been raised for a
+  land entering; nothing in the pool could hear it, so the field was never added. Tatyova, Benthic
+  Druid — "whenever a land you control enters, draw a card and you gain 1 life" — is the whole of
+  what it is for, and the filter is asked the same way round as the creature one: only when the
+  trigger asks, so nothing written before this changes meaning.
+- **An extra land drop** (CR 505.5b), which is the first permission in this engine that changes
+  what a **player** may do rather than what a permanent is. `extraLands` is a per-turn count beside
+  `landsPlayed`, read by the land-drop rule in both places that enforce it, and reset in the untap
+  step — a permission that outlived its turn would be a different card. The count is read rather
+  than decremented when it is given, so an Explore cast before the turn's land and one cast after
+  it both leave you able to play two. Three tests, and the third is the one that matters: the
+  allowance ends with the turn.
+
+**And the first card to hear that event found a bug the engine had carried for months.** Tatyova's
+first test drew **two** cards off one Forest. `auto:playLand` raised `etb` itself and then called
+`settle`, whose arrivals loop raises `etb` for every permanent that arrived — so a land played from
+hand raised the event twice. Nothing in the pool could hear a land entering, so the double fire sat
+there unnoticed; the fix is deleting the raise in `playLand`, because the arrivals loop is the one
+place that sees every way onto the battlefield, which is the same lesson this file recorded when
+statics and the `dies` event moved there.
+
+**A second finding, and this one is about the bot rather than the engine.** The deck's first version
+ran two Kiora's Followers — "{T}: untap another target permanent" — and `cast-counts` reported the
+ability **used 13,581 times across 120 games**, about a hundred and forty-six a game. Two of them
+untap each other for ever: A taps to untap B, B taps to untap A, and the board is exactly where it
+started. The engine is right to allow it (an untap ability may point at anything, and a cycle of
+legal actions is legal), and a person would never do it — so the fix is the deck list. One copy has
+nothing to untap it, and the same measurement came back at 164 uses in 46 games, about three a game,
+which is a card untapping a land once a turn. **The general problem is written down rather than
+solved:** this bot will happily repeat a cycle that returns the board to where it started, and
+nothing in the search notices. No other card in the pool offers one.
+
+**It debuts seventh of eleven at 42%**, over 240 paired games against every other deck in both
+seats. The shape is in the matchups rather than the total: 12-12 with both mill decks, 16-8 and 15-7
+against the two grind decks, and **4-20 against Ember Rush** with 5-19 against the two white
+midrange decks. That is the deck working as written — nothing in it attacks before turn six — and it
+is the clearest statement the table has produced about what the bottom of this pool is: a deck that
+has to survive to turn seven, in a field whose top row wins 78%. Every other deck moved a point or
+two because the field grew by one, which is D108's field effect for the third time, and the order is
+unchanged apart from the new row.
+
+Five new cards: Explore, Tatyova (the commander), Kiora's Follower, Pelakka Wurm and a Simic
+Guildgate. Everything else in the sixty was already here — which is the second time a new deck has
+been built mostly out of the existing pool, and the ratio keeps improving: the ninth deck needed
+six new cards, the tenth six, this one five.

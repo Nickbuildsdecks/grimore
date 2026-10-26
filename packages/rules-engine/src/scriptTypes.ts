@@ -118,12 +118,19 @@ export type TriggerEvent =
        * What kind of permanent. `permanent` is the default because a `who: 'self'` trigger already
        * knows what its own card is — but a trigger watching the *board* almost always says
        * "creature", and without this an Impact Tremors fires for its own arrival as an enchantment.
+       *
+       * `land` is the landfall templating — "whenever a land you control enters" — and it is a
+       * separate value rather than a filter because a land is not a creature and the two questions
+       * are asked by different cards. A land entering has always raised this event; until a card
+       * asked, nothing could hear it.
        */
-      readonly what?: 'creature' | 'permanent';
+      readonly what?: 'creature' | 'permanent' | 'land';
       /** Set by the engine when it raises the event. */
       readonly subjectSeat?: SeatIndex;
       /** Set by the engine when it raises the event: whether the subject is a creature. */
       readonly subjectIsCreature?: boolean;
+      /** Set by the engine when it raises the event: whether the subject is a land. */
+      readonly subjectIsLand?: boolean;
       /** Set by the engine when it raises the event: *which* permanent entered. See `subject`. */
       readonly subject?: string;
     }

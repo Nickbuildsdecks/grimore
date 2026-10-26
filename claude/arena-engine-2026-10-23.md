@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 220 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 225 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -3410,6 +3410,40 @@ And the second instrument gap of the session, in the same place as the first: `d
 names it could not find. A `;` in the string now switches the separator for the whole of it. Neither
 gap was in the engine — an instrument only ever pointed at the cards it was built for has corners
 nobody has stood in.
+
+### An eleventh deck whose plan is its mana, and two things the engine had never been asked
+
+Green-blue was the last colour pair the pool did not use, and the plan is newer than the colours:
+every other list spends mana on a plan, and **Delta Bloom's plan is the mana**. Twenty-three lands,
+nine accelerants, and a top end of four X spells rather than creatures — which is exactly the
+difference between this and Verdant Guard, a deck that ramps into creatures it would have cast
+anyway.
+
+Two engine additions, one line each where they are used. An `etb` trigger can watch a **land**
+(`what: 'land'`) — the event was always raised for a land entering and nothing could hear it — and
+**Tatyova, Benthic Druid** turns every land after her into a card and a life. And a **per-turn extra
+land drop** (CR 505.5b), the first permission here that changes what a *player* may do rather than
+what a permanent is: `extraLands` sits beside `landsPlayed`, is read by both places that enforce the
+rule, and is reset in the untap step. It is read rather than decremented when given, so an Explore
+cast before the turn's land and one cast after it both leave you able to play two.
+
+**The first card to hear that event found a bug months old.** Tatyova's first test drew two cards off
+one Forest: `auto:playLand` raised `etb` itself and then called `settle`, whose arrivals loop raises
+it for everything that arrived. A land played from hand fired the event twice, and nothing in the
+pool could hear it, so it sat there. The fix is deleting the raise in `playLand` — the arrivals loop
+is the one place that sees every way onto the battlefield, which is the lesson this doc already
+recorded when statics and `dies` moved there.
+
+**And a finding about the bot.** The deck's first version ran two Kiora's Followers ("{T}: untap
+another target permanent") and `cast-counts` reported the ability used **13,581 times across 120
+games**. Two of them untap each other for ever and the board ends where it started; the engine is
+right to allow it and a person would never, so the fix is the deck list. One copy has nothing to
+untap it: 164 uses in 46 games, about three a game, which is a land untapped once a turn. The
+general problem — a bot that will repeat a cycle of legal actions returning the board to its start —
+is written down rather than solved, and nothing else in the pool offers one.
+
+Five new cards for a whole deck: Explore, Tatyova, Kiora's Follower, Pelakka Wurm and a Simic
+Guildgate. The ninth deck needed six, the tenth six, this one five.
 
 ## Next
 

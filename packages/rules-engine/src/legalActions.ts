@@ -539,6 +539,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   };
   const sorcerySpeed = atSorcerySpeed(state, seat);
   const landsPlayed = state.landsPlayed[String(seat)] ?? 0;
+  /** One land a turn, plus any extra drops something has handed this seat (CR 505.5b). */
+  const landsAllowed = 1 + (state.extraLands[String(seat)] ?? 0);
   const tax = state.seats[seat]?.commanderTax ?? 0;
 
   // A commander is cast from the command zone, which is why it is a second list rather than part
@@ -609,7 +611,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       // A land commander would be *played*, not cast, and nothing in the pool is one; refusing to
       // offer it is better than offering a land drop out of the command zone.
       if (fromCommand) continue;
-      if (sorcerySpeed && landsPlayed < 1) {
+      if (sorcerySpeed && landsPlayed < landsAllowed) {
         out.push({
           kind: 'land', card: id, name: ch.name, description: `Play ${ch.name}`,
           manaCost: '', targetSpecs: [], candidates: [], isManaAbility: false, sacrificeOptions: [],
@@ -617,7 +619,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       } else if (!sorcerySpeed) {
         why(id, 'a land is played in your own main phase, with nothing on the stack');
       } else {
-        why(id, 'you have already played a land this turn');
+        why(id, landsPlayed > 1
+          ? `you have already played ${landsPlayed} lands this turn`
+          : 'you have already played a land this turn');
       }
       continue;
     }

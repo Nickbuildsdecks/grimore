@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and twenty, today, across ten starter decks. A
+cards somebody has scripted — two hundred and twenty-five, today, across eleven starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -109,6 +109,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Attack | **Declare attackers**, tap the creatures, confirm. One that cannot attack is not tappable, and says why. |
 | Attack a planeswalker | Pick it from the row of targets in the attack prompt, then tap the creatures that go at it. Different creatures can go at different players and planeswalkers in the same attack. |
 | Use a planeswalker | Tap it on your battlefield and take one of its loyalty abilities. One a turn each, your main phase only, and a minus you cannot pay for is not offered. Four of them are in the pool, one per deck that wants one: **Jace Beleren** in Tidal Mind (cards, including the opponent's), **Garruk Wildspeaker** in Verdant Guard (untap two lands, a 3/3 Beast, or +3/+3 and trample for the team), **Ajani, Caller of the Pride** in Skyward Writ (a +1/+1 counter, or flying and **double strike** until end of turn — on a Serra Angel that is eight damage out of nowhere — or five 2/2 Cats at −8) and **Nissa, Voice of Zendikar** in Verdant Guard (a 0/1 Plant a turn, a +1/+1 counter on your whole team at −2, or life and cards as big as your lands at −7). The ultimates kill their own planeswalker, which is the rules rather than the card: nought loyalty is a state-based action. |
+| Play two lands in one turn | **Explore** in Delta Bloom ({G}, sorcery) says "you may play an additional land this turn", and the table simply offers the land again: a land in hand that said **you have already played a land this turn** goes back to saying **playable**. The order does not matter — cast it before or after the turn's land and you still get two — and the permission ends with the turn, so an Explore cast with no land in hand is just a card. With Tatyova out each of those lands is also a card and a life, which is what the deck is for. Nothing else in the pool gives one, and the engine counts them per turn: a third land is refused with **you have already played 2 lands this turn**. |
 | Block | **Declare blockers**, tap your creature, then tap the attacker it blocks. Only attackers it may legally block light up. |
 | See who is attacking whom | Lines on the board: gold from each attacker to the player it is aimed at, dashed from each blocker to what it blocked. In a pod that is how you know an attack is yours to answer. |
 | Work out who the threat is | Every seat strip says `board N` — the total power of that seat's creatures — and `· M up` for how much of that power is untapped. The first number is what can kill you eventually; the second is what can kill you on their *next* turn, and what can stop you on yours. A **lethal** badge on an opponent's strip means their untapped power alone is at least your life and you have nothing untapped to block with. |
@@ -170,7 +171,7 @@ so neither of you needs this page open while playing.
 The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
 anybody's turn, which is what makes instants and responses work at all.
 
-### Ten starter decks
+### Eleven starter decks
 
 **Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange, and the one deck with
 **two** planeswalkers in it now — Garruk Wildspeaker and **Nissa, Voice of Zendikar**, who makes a
@@ -240,6 +241,20 @@ creatures. It has no sweeper, no counterspell and no haste, and its clock is two
 survive a few turns — so against the fastest decks it is behind on the board and ahead on life,
 which is the trade the whole list is built around.
 
+**Delta Bloom** (green-blue) is the eleventh and the newest, and it is the first deck here whose
+plan is its own **mana**. Every other list spends mana on a plan; this one's plan *is* the mana:
+twenty-three lands — two more than anything else in the pool — nine things that make it faster than
+a land does, and a top end nothing else here can reach on curve. Four of its eleven expensive cards
+are X spells, which is the difference between this and Verdant Guard's ramp: a Mind Spring for seven
+is a refill nothing else has, an Endless One is a creature as big as the mana, and a Hurricane ends a
+game the board has already stalled — it hits its own controller too, which is why there is only one.
+Tatyova, Benthic Druid leads it and turns the whole plan into a card draw engine: **every land you
+play after her is a card and a life**, so the eighth land stops being the dead draw it is in every
+other deck. **Explore** is the card that makes that a deck rather than a pile of ramp — one mana for
+a card and *a second land this turn*, which with her out is two cards and two life. Its early turns
+are the deliberate weakness: two Fog Banks, two Man-o'-Wars and three counterspells to survive to
+turn six, and nothing at all that attacks before it.
+
 Each two-colour deck runs a pair or three of Guildgates: one mana of either colour, and they come in
 tapped, and eight of the ten also run a pair of cycling lands. Any pairing works, including a deck
 against itself. They are also the only decks right now — see *What is not done* below.
@@ -252,22 +267,33 @@ plays it better. The same caveat applies twice over to Arc Tempest: holding up C
 its plan against the fast decks, and the bot casts it the turn it can afford it.
 
 **The decks are not all equally strong, and now there is a table of it.** Every deck against every
-other, both seats, 216 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
+other, both seats, 240 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 77%  167-49   ember-rush
- 66%  142-74   forge-alliance
- 61%  131-85   verdant-guard
- 59%  127-89   dawn-tithe
- 53%  114-102  skyward-writ
- 45%   97-119  ashen-rite
- 41%   88-128  arc-tempest
- 37%   80-136  rot-harvest
- 37%   79-137  hollow-tide
- 25%   53-163  tidal-mind
+ 78%  187-53   ember-rush
+ 67%  161-79   forge-alliance
+ 63%  150-90   verdant-guard
+ 57%  138-102  dawn-tithe
+ 55%  131-109  skyward-writ
+ 46%  110-130  ashen-rite
+ 42%  100-140  delta-bloom
+ 40%   95-145  arc-tempest
+ 38%   91-149  hollow-tide
+ 37%   88-152  rot-harvest
+ 27%   65-175  tidal-mind
 ```
 
-**That run is the two planeswalkers, and the two decks that got one are the two that moved up.**
+**That run is the eleventh deck's debut, and Delta Bloom lands seventh at 42%.** Every row is 240
+games rather than 216 because there is one more opponent, and every other deck moved by a point or
+two in consequence — the field effect D108 found, for the third time, with the order unchanged apart
+from the new row. The new deck's shape is in its matchups rather than its total: it is 12-12 with
+both mill decks and beats the two grind decks (16-8, 15-7), and it loses **4-20 to Ember Rush** and
+5-19 to the two white midrange decks. That is the deck working as written — nothing in it attacks
+before turn six — and it is the clearest statement in the table of what the bottom of this pool
+actually is: a deck that needs to survive to turn seven against a field with a 78% aggro deck in it.
+
+The run before it was the two planeswalkers, and the two decks that got one were the two that
+moved up.
 Verdant Guard 52% → 61% (+18 games of 216) for Nissa, Voice of Zendikar, and Skyward Writ 50% → 53%
 (+7) for Ajani, Caller of the Pride, on the same seeds as the run before. Both cards' paired probes
 had called them free — Nissa at +15 and +5 of 270, Ajani at +1 and +5 — so this is the clearest case
@@ -374,7 +400,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and twenty scripted cards, which now includes a wrath, a
+The decks share a pool of two hundred and twenty-five scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -558,11 +584,11 @@ playing the server, and a deal struck with the server's own seat).
 
 ## What is not done
 
-- **Only the ten starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
+- **Only the eleven starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows two hundred and twenty cards.** Everything in the ten starter decks. It
+- **The engine knows two hundred and twenty-five cards.** Everything in the eleven starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent
   among its targets (CR 601.2d), and a decision made *while a card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

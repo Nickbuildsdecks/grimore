@@ -299,6 +299,15 @@ export interface AutomationState {
   readonly effects: readonly ContinuousEffect[];
   /** Lands played this turn per seat, for the one-per-turn rule. */
   readonly landsPlayed: Readonly<Record<string, number>>;
+  /**
+   * Extra land drops a seat has been given this turn (CR 505.5b): an Explore, a Azusa.
+   *
+   * A separate count rather than a smaller `landsPlayed`, because the two mean different things
+   * and a card may read either: how many lands you have played is a fact about the turn, and how
+   * many more you may play is a permission that something gave you. Reset in the untap step with
+   * `landsPlayed`, since a permission that outlived its turn would be a different card.
+   */
+  readonly extraLands: Readonly<Record<string, number>>;
   /** Source of synthetic ids for ability stack objects and effects. */
   readonly autoSeq: number;
   /** Set when a player has lost by trying to draw from an empty library (CR 704.5b). */

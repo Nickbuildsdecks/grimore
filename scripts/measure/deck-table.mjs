@@ -8,7 +8,7 @@ import { applyAction, createGame, botAction, seatsToAct } from '../../packages/r
 
 const ALL = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance',
   'skyward-writ', 'hollow-tide', 'ashen-rite',
-  'arc-tempest', 'dawn-tithe'];
+  'arc-tempest', 'dawn-tithe', 'delta-bloom'];
 const SEEDS = Number(process.env.SEEDS ?? 6);
 const SEED0 = Number(process.env.SEED0 ?? 4400);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
