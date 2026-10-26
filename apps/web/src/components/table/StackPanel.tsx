@@ -18,6 +18,13 @@ function targetLabel(view: GameView, target: { kind: string; id?: string; seat?:
     const seat = target.seat ?? 0
     return seat === view.seat ? "you" : (view.seats[seat]?.name ?? `seat ${seat}`)
   }
+  // An ability has no card, so its name is its own description — which is the only thing a reader
+  // could use anyway: "Disallow → Icy Manipulator: tap target permanent" says what is being
+  // countered, where the permanent's name alone would not say which of its abilities.
+  if (target.kind === "ability") {
+    const object = (view.automation?.stack ?? []).find((o) => o.id === target.id)
+    return object?.description ?? "an ability"
+  }
   const card = target.id === undefined ? undefined : view.cards[target.id]
   return card?.card?.name ?? "something"
 }
@@ -31,7 +38,13 @@ export interface StackPanelProps {
    * Arena mode it is drawn as a list rather than as cards, so there is no card face to tap.
    */
   targetable?: ReadonlySet<string>
-  onPick?: (id: string) => void
+  /**
+   * What the player tapped, and which kind of `Target` it is.
+   *
+   * The kind comes from here rather than from the caller because this is where it is known: a
+   * spell on the stack is a card and an ability is not, and the row already says which it is.
+   */
+  onPick?: (id: string, kind: "card" | "ability") => void
 }
 
 export function StackPanel({ view, targetable, onPick }: StackPanelProps) {
@@ -54,7 +67,13 @@ export function StackPanel({ view, targetable, onPick }: StackPanelProps) {
             <li
               key={object.id}
               data-testid={`stack-${object.id}`}
-              {...(canTarget ? { role: "button", tabIndex: 0, onClick: () => onPick?.(object.id) } : {})}
+              {...(canTarget
+                ? {
+                  role: "button",
+                  tabIndex: 0,
+                  onClick: () => onPick?.(object.id, object.kind === "spell" ? "card" : "ability"),
+                }
+                : {})}
               className={cn(
                 "flex flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded px-1.5 py-1 text-xs",
                 // The top of the stack is the one about to resolve, so it is the one lit.

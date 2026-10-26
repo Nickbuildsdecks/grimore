@@ -161,6 +161,10 @@ export function shieldOn(state: GameState, target: Target): number {
 
 /** Whether a shield is on this target: a permanent by id, or a player by seat. */
 function shieldCovers(effect: ContinuousEffect, target: Target): boolean {
+  // An ability cannot be damaged, so it cannot be shielded either. Said here as well as in
+  // `dealDamage` because this is reached from `spendShields`, and a shield that matched an ability
+  // id would be spent on damage that was never going to happen.
+  if (target.kind === 'ability') return false;
   if (target.kind === 'player') {
     return effect.scope.kind === 'seat' && effect.scope.seat === target.seat;
   }
@@ -178,6 +182,8 @@ export function preventDamage(
   state: GameState, source: string, controller: SeatIndex, target: Target, amount: number,
 ): GameState {
   if (amount <= 0) return state;
+  // Nothing can be prevented on an ability: see `dealDamage`.
+  if (target.kind === 'ability') return state;
   return pushEffect(state, {
     source,
     controller,
@@ -226,6 +232,15 @@ export function dealDamage(
   },
 ): GameState {
   if (amount <= 0) return state;
+  /*
+    Damage has nowhere to go on an ability.
+
+    An ability on the stack is neither a permanent nor a player, and those are the only two things
+    damage can be dealt to (CR 120.3). Refused here rather than left to fall through into the
+    creature branch below, which would look up `target.id` in `instances`, find nothing and return
+    unchanged — the same answer by accident instead of on purpose.
+  */
+  if (target.kind === 'ability') return state;
   let next = state;
   // Protection from the source's colour prevents the damage entirely (CR 702.16b). Asked before
   // anything is marked, because prevention is not something that can be undone afterwards.
@@ -881,6 +896,18 @@ export const cardTargets = (ctx: EffectContext): string[] =>
 export const firstPlayerTarget = (ctx: EffectContext): SeatIndex | null => {
   const t = ctx.targets.find((x) => x.kind === 'player');
   return t && t.kind === 'player' ? t.seat : null;
+};
+
+/**
+ * The ability on the stack this spell was pointed at, by stack-object id.
+ *
+ * Its own helper rather than `firstCardTarget` because an ability is not a card: the id names an
+ * entry in `stackObjects` and nothing in `instances`, so a script that confused the two would look
+ * up a creature that does not exist and silently do nothing.
+ */
+export const firstAbilityTarget = (ctx: EffectContext): string | null => {
+  const t = ctx.targets.find((x) => x.kind === 'ability');
+  return t && t.kind === 'ability' ? t.id : null;
 };
 
 /** The cards chosen in answer to one of the questions this spell asked, by index. */

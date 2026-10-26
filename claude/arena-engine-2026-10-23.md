@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 205 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 207 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -3125,6 +3125,55 @@ Cloudfin Raptor went into Hollow Tide for the second Psychic Strike at +3 and +4
 same way, both far inside the floor. Written down as free rather than as good, which is the bar a
 new keyword's card has to clear: it has to live somewhere to be playable at all.
 
+### An ability on the stack is a thing you can point at
+
+The last item on this file's own "Next" list, and the estimate in it was wrong by an order of
+magnitude. D131 said Willbender's printed "or ability" half needed a third `Target` shape "threaded
+through thirty call sites for one clause". The union has **seventy** readers and **five** of them
+needed changing — because almost every reader reaches for `.seat` on the non-card branch, and a
+third member with no `seat` makes that a type error rather than a silent fall-through. The five were
+`targetKey` and four hand-rolled copies of it in `bot.ts`; they are now one call to the shared one,
+which is the fix they should have had anyway. `apps/web` had a sixth copy, and now imports the
+engine's.
+
+What was actually left was four **honest refusals**, and each is a sentence about what an ability is:
+it is in no zone, so "still on the stack" is the whole of its legality; it has no `objectSeq`, so it
+cannot be a *different object* the way a bounced creature is (CR 400.7); it has no permanent to
+carry hexproof, shroud, protection or ward; and it cannot be damaged or shielded (CR 120.3), so
+`dealDamage` and `preventDamage` refuse it at the top rather than falling into the creature branch
+with an id that names nothing. That fall-through would have returned the same state by accident, and
+the point of writing the refusal is that the next reader cannot tell those two apart.
+
+One real bug fell out: `retarget` passed the *stack object's* id as the source for its legality
+check. Right for a spell, whose id is its card; wrong for an ability, whose id names nothing in
+`instances` — so protection from black would have missed an ability from a black permanent, which is
+a fact about the permanent (CR 702.16b).
+
+**Three cards, because the shape has three uses.** Squelch ({1}{U}, counter target *activated*
+ability, draw a card) is the narrow one and the first spec in the pool to put a `filter` on an
+ability candidate — it reads the stack object's own kind to tell an activated ability from a
+triggered one. Disallow ({1}{U}{U}, counter target spell *or* ability) is the wide one and the whole
+argument for `spell-or-ability` being a kind. Willbender does what its card says.
+
+What this adds is not a card but a kind of answer. Everything in this pool that answers a permanent
+answers the *permanent*: a Doom Blade kills the Icy Manipulator and not the tap it already
+activated, a Murder kills the Jace and not the loyalty ability above it. An ability on the stack is
+independent of its source (CR 113.7a) and was the one object at this table nothing could touch. The
+cost staying paid comes free with it — countering an Icy's tap does not untap the Icy, because the
+tap was the price of putting the ability on the stack.
+
+**And the cut decided it, for the fourth time.** Squelch in Arc Tempest, 240 paired duels against
+the field, two seed sets each: no Squelch is 100-140 and 99-141; Squelch for the *Divination* is
+98-142 and 89-151, worse both times; Squelch for the *Essence Scatter* is 102-137 and 103-137,
+better both times. Four and fourteen games between two cuts of one card. Both wrong cuts this
+project has measured took a deck's only copy of something it needed — here the Divination, which is
+Arc Tempest's only refill and which all four of its spell-payoff creatures get paid for.
+
+Disallow went into Tidal Mind for its Essence Scatter and came back +8 on one seed set and −10 on
+the other: unpriceable, exactly as D131 said that deck's record is. It ships on the rules argument —
+"counter target creature spell" is a subset of what Disallow does — and the number is written down
+as unknown.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -3133,12 +3182,12 @@ new keyword's card has to clear: it has to live somewhere to be playable at all.
    keyword and every static scope now has a card behind it, the subtype scope included;
    `becomes-tapped` is the one trigger left without one, and deliberately so (see the entry above).
    `turned-face-up` has two cards behind it, morph has megamorph and a cost paid in life, target
-   redirection has Willbender and Swerve, and the three board-watching events now carry *which*
-   permanent they were about — so exalted, evolve and anything else that says "that creature" is a
-   few declarative lines. What is left on that list is **Willbender's other half**: it is printed
-   "target spell **or ability** with a single target", and an ability on the stack cannot be
-   targeted today because a `Target` is a card or a player and nothing else. That is a third
-   `Target` shape across about thirty call sites, which is why it is a task rather than a card.
+   redirection has Willbender and Swerve, the three board-watching events carry *which* permanent
+   they were about, and an ability on the stack can be pointed at — so exalted, evolve, "that
+   creature" and "counter target ability" are all a few declarative lines now. What is left on that
+   list is **copying** an ability: "copy target activated or triggered ability" (a Strionic
+   Resonator, a Lithoform Engine) means duplicating a stack object with its targets and its
+   `subject`, which is different work from pointing at one, and nothing in the pool wants it yet.
 2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
    `deck:load` already resolves any deck handed to it, but a real list needs card data — type
    lines, mana costs, oracle text — and the `cards` table has never been populated while this

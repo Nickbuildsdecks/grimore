@@ -16,7 +16,7 @@
  * target disappearing while you choose — and a reducer is the only version of them that can be
  * tested without a browser.
  */
-import { pactBinds, pactLiveAt, pactShort, pactWords } from "@grimore/rules-engine"
+import { pactBinds, pactLiveAt, pactShort, pactWords, targetKey } from "@grimore/rules-engine"
 import type {
   GameView, LegalActions, LegalPlay, PactKind, SeatIndex, Target, VisibleCard,
 } from "@grimore/rules-engine"
@@ -203,7 +203,14 @@ export function candidatesAt(play: LegalPlay, index: number, chosen: readonly Ta
   return []
 }
 
-export const targetKey = (t: Target): string => (t.kind === "card" ? `card:${t.id}` : `player:${t.seat}`)
+/*
+  Re-exported rather than written again.
+
+  This used to be its own one-liner here, which was fine until a `Target` grew a third shape: two
+  copies of "what makes two targets the same target" is two places for that answer to drift, and
+  the engine's is the one the server checks against.
+*/
+export { targetKey }
 
 /** `candidatesAt`, for a triggered ability's specs rather than a play's. */
 export function choiceCandidatesAt(

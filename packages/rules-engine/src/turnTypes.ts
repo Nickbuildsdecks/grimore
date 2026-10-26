@@ -59,11 +59,38 @@ export const COMBAT_STEPS: readonly Step[] = Object.freeze([
 /** Steps in which nobody receives priority (CR 502.1, 514.1). */
 export const NO_PRIORITY_STEPS: readonly Step[] = Object.freeze(['untap', 'cleanup']);
 
+/**
+ * Something a spell or ability can be pointed at.
+ *
+ * Three shapes, and the third one is the odd one. A **card** covers a permanent on the battlefield,
+ * a card in a graveyard, and a spell on the stack — a spell *is* a card, which is why "counter
+ * target spell" needed nothing of its own. A **player** is a seat.
+ *
+ * An **ability** on the stack is neither. It has no card anywhere: `pushAbility` gives it a
+ * synthetic `ab<n>` id and the object in `stackObjects` is all there is of it, which is exactly why
+ * it needs its own kind rather than borrowing `card`. Everything that reads a target has to answer
+ * for it honestly, and the answers are mostly "nothing":
+ *
+ * - it is in no zone, so the zone checks do not apply and "still on the stack" is the whole of its
+ *   legality;
+ * - it has no `objectSeq`, so it cannot be a *different object* the way a bounced creature is
+ *   (CR 400.7) — it either is still there or it is gone;
+ * - it has no permanent to carry hexproof, shroud, protection or ward, so none of those touch it;
+ * - and it ceases to exist the moment it resolves, which is what makes "counter target ability" a
+ *   card you have to hold rather than a card you cast on your own turn.
+ */
 export type Target =
   | { readonly kind: 'card'; readonly id: string }
-  | { readonly kind: 'player'; readonly seat: SeatIndex };
+  | { readonly kind: 'player'; readonly seat: SeatIndex }
+  | { readonly kind: 'ability'; readonly id: string };
 
-export const targetKey = (t: Target): string => (t.kind === 'card' ? `card:${t.id}` : `player:${t.seat}`);
+export const targetKey = (t: Target): string => {
+  switch (t.kind) {
+    case 'card': return `card:${t.id}`;
+    case 'ability': return `ability:${t.id}`;
+    default: return `player:${t.seat}`;
+  }
+};
 
 /**
  * Something waiting to resolve.

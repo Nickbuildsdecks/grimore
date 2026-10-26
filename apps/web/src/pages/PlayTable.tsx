@@ -94,7 +94,8 @@ const HOW_TO_ARENA: [string, string][] = [
   ["A Saga", "An enchantment that reads itself out over three turns. Chapter I happens the moment it arrives, and it gets a lore counter at the start of each of your own main phases — the card shows the count. Each chapter goes on the stack, so it can be answered even though the counter cannot. After the last chapter resolves the Saga goes to your graveyard."],
   ["A Vehicle", "An artifact that is not a creature until it is crewed, so it cannot attack or block and a sweeper cannot touch it. Tap it → Crew, and the table taps enough of your smallest creatures to reach the number, saying how many first. It is a creature until end of turn. Crewing is an ability, so it can be answered — and the creatures are already tapped by then."],
   ["A card you play face down", "A card with morph offers two plays: cast it for its printed cost, or \"face down\" for {3}. Face down it is a 2/2 with no name and no abilities, and nobody else can see what it is. Tap it later → Turn face up, pay its morph cost, and it is itself again — keeping its damage, its counters and whether it is tapped. Nobody gets a chance to respond to that, which is the point: it can be done in the middle of a combat. Some of them do something as they turn up, and that part goes on the stack like any other trigger. Two are not paid for with mana the usual way: one costs 3 life instead, and is not offered at all while paying it would kill you; one has megamorph, which adds a +1/+1 counter as it comes up."],
-  ["Send their removal somewhere else", "Two cards change what a spell already on the stack is pointed at: Willbender (a morph — turn it up while their removal is on the stack) and Swerve (an instant, for an instant or a sorcery). Pick the spell, then pick where it goes. The new target has to be legal for THEIR spell, so a \"target creature\" spell cannot be sent at a player — and if the one you pick is illegal the spell keeps the target it had rather than being countered. The spell must have exactly one target, and a spell with nowhere else to go is not offered at all."],
+  ["Send their removal somewhere else", "Two cards change what a spell already on the stack is pointed at: Willbender (a morph — turn it up while their removal is on the stack) and Swerve (an instant, for an instant or a sorcery). Pick the spell, then pick where it goes. The new target has to be legal for THEIR spell, so a \"target creature\" spell cannot be sent at a player — and if the one you pick is illegal the spell keeps the target it had rather than being countered. The spell must have exactly one target, and a spell with nowhere else to go is not offered at all. Willbender also takes an ABILITY with a single target, which Swerve does not: tap the row on the stack rather than a card."],
+  ["Answer what a permanent is doing", "Two cards counter an ability on the stack rather than the permanent that made it, which is the one thing killing the permanent cannot do: by the time an Icy Manipulator's tap or a Jace's loyalty ability is waiting to resolve, destroying the card does not stop it. Squelch counters an activated ability and draws you a card; Disallow counters a spell OR an ability, either kind. Abilities are the rows in the stack list, so you tap the row — there is no card to tap, because an ability is a thing a permanent is doing and not an object you own. Neither is castable with nothing there to point at."],
   ["Why is my creature bigger", "Three creatures are lords: they change the other creatures of their own type, and none of them pumps itself. Stromkirk Captain gives other Vampires +1/+1 and first strike, Knight Exemplar gives other Knights +1/+1 and indestructible, Imperious Perfect gives other Elves +1/+1. The board shows the current size and changes it the instant the lord arrives or leaves — a damaged Knight that the Exemplar was keeping alive dies the moment the Exemplar does."],
   ["A creature that grows itself", "Cloudfin Raptor is a 0/1 that gets a +1/+1 counter whenever a creature you control enters that is bigger than it — greater power OR greater toughness, so a 0/2 Fog Bank grows it and a 1/1 does not. The check happens twice: nothing goes on the stack at all when the creature that arrived is not bigger, and it is checked again when the trigger resolves, so bouncing or killing that creature in reply means no counter. By the time it is the biggest thing you control it stops triggering."],
   ["Attacking with one creature", "Guardians of Akrasa is a 2/3 that cannot attack and has exalted: whenever exactly one of your creatures attacks, THAT creature gets +1/+1 until end of turn. Attack with two and nobody gets anything — it is the number of attackers you declared that matters, not what is left in combat afterwards."],
@@ -1217,6 +1218,14 @@ function Board({ table }: { table: UseTable }) {
         : []
   const targetableCards = new Set<string>([
     ...nowChoosing.filter((t) => t.kind === "card").map((t) => (t as { id: string }).id),
+    /*
+      And an ability waiting on the stack, which has no card to light.
+
+      It goes in the same set as the cards because the stack panel is the one place either kind is
+      drawn, and ids do not collide: an ability's is `ab<n>` and a card's is never that. The panel
+      reads each row's own kind to decide which Target to send back, so nothing here has to.
+    */
+    ...nowChoosing.filter((t) => t.kind === "ability").map((t) => (t as { id: string }).id),
     // A creature that could be fed to an ability is lit the same way a target is: it is the next
     // thing to tap, and the player should not have to guess which of their creatures qualifies.
     ...(arenaMode.kind === "feeding" ? arenaMode.play.sacrificeOptions : []),
@@ -1545,7 +1554,7 @@ function Board({ table }: { table: UseTable }) {
         <StackPanel
           view={view}
           targetable={targetableCards}
-          onPick={(id) => dispatchArena({ kind: "pickTarget", target: { kind: "card", id } })}
+          onPick={(id, kind) => dispatchArena({ kind: "pickTarget", target: { kind, id } })}
         />
       ) : (
         <ZoneRow

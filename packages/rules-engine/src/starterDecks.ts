@@ -2267,6 +2267,32 @@ const SWERVE: CardDef = {
   colors: ['U', 'R'],
 };
 
+// ── The two cards that answer an ability ────────────────────────────────────────────────────────
+
+/*
+  An ability on the stack has never been answerable in this pool, and these two are what that half
+  of interaction looks like: the narrow one that replaces itself, and the wide one that takes
+  either kind of object.
+*/
+
+const SQUELCH: CardDef = {
+  name: 'Squelch',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  oracleText: 'Counter target activated ability.\nDraw a card.',
+  colors: ['U'],
+};
+
+const DISALLOW: CardDef = {
+  name: 'Disallow',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}{U}',
+  cmc: 3,
+  oracleText: 'Counter target spell, activated ability, or triggered ability.',
+  colors: ['U'],
+};
+
 export const TIDAL_MIND: DeckSpec = {
   id: 'tidal-mind',
   name: 'Tidal Mind',
@@ -2326,11 +2352,28 @@ export const TIDAL_MIND: DeckSpec = {
       It cost the second Cancel, the most replaceable counterspell this deck had at the time.
     */
     { card: CLONE, count: 1 },
-    // The narrow counter, which answers the half of the format a Negate cannot — and the half that
-    // matters, in a pool where six of the eight decks win with creatures. Negate was the first cut
-    // of the pass above: it is the least-cast spell in the deck (38% of the games it is drawn) for
-    // the reason that it is blank against the decks this one was losing to.
-    { card: ESSENCE_SCATTER, count: 1 },
+    /*
+      Disallow, and the Essence Scatter it replaced.
+
+      The third counter in a deck that holds three, and the one that answers what nothing here
+      could: an **ability** on the stack. Everything else in this pool answers the permanent and
+      not what the permanent is doing — a Doom Blade kills the Icy Manipulator and not the tap it
+      already activated, a Murder kills the Jace and not the loyalty ability above it. That is the
+      whole reason this card is in the deck whose plan is answering things.
+
+      The Essence Scatter went because Disallow does its job as well as the two others: "counter
+      target creature spell" is a subset of "counter target spell, activated ability, or triggered
+      ability", so the swap costs one mana and gains two halves of the stack. It was also this
+      deck's least-cast card at 36% of the copies drawn over 96 games, which is the same number
+      that cut the Negate before it.
+
+      **The instrument could not price it, which D131 predicted.** 240 paired duels against the
+      field, two seed sets: +8 one way and −10 the other, with no consistent sign — exactly the
+      finding that the deck at the bottom of the table has the least reliable record in the pool,
+      because a deck winning three games in ten wins most of them narrowly. So this ships on the
+      rules argument rather than on a number, and the number is written down as unknown.
+    */
+    { card: DISALLOW, count: 1 },
     { card: DOOM_BLADE, count: 2 },
     // Removal that does not care what colour it is, which the Doom Blades do.
     { card: MURDER, count: 1 },
@@ -3307,7 +3350,28 @@ export const ARC_TEMPEST: DeckSpec = {
       win with creatures.
     */
     { card: COUNTERSPELL, count: 2 },
-    { card: ESSENCE_SCATTER, count: 1 },
+    /*
+      Squelch for the Essence Scatter, and the cut was worth more than the card again.
+
+      Two mana at instant speed that counters an **activated ability** and draws a card. The narrow
+      half has something to point at more often in this pool than it sounds — an Icy Manipulator, a
+      Jace, an equip, a crew, a cycling land — and when it has nothing, it is not castable at all
+      rather than wasted; the draw is what makes a counter this narrow worth a slot. The honest
+      limit is in the same sentence: on a turn nobody activates anything it sits in hand.
+
+      **Which card came out decided this twice over.** Three arrangements, 240 paired duels against
+      the field each, two seed sets: no Squelch at all is 100-140 and 99-141; Squelch for the
+      *Divination* is 98-142 and 89-151, which is worse both times; Squelch for the Essence Scatter
+      is 102-137 and 103-137, which is better both times. Four and fourteen games between the two
+      cuts of one card — the fourth time this project has measured that (D133, D134).
+
+      Why the Essence Scatter rather than the Divination, read off the cards: a Divination is this
+      deck's only way to refill, and Stormchaser Mage, Gelectrode, Young Pyromancer and Enigma
+      Drake all pay it for *any* cast, so three mana on its own turn still buys two of those. The
+      Essence Scatter was the redundant answer — this deck beats the slow decks it could counter a
+      creature from and loses to the fast ones it cannot counter enough of.
+    */
+    { card: SQUELCH, count: 1 },
     { card: SAW_IT_COMING, count: 1 },
     /*
       Swerve for the Negate, and the difference is what the deck does with the half-turn.

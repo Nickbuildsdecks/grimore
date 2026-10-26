@@ -8366,3 +8366,241 @@ describe('the creature the event was about: exalted, and evolve’s intervening-
     expect([power(s, raptor), toughness(s, raptor)]).toEqual([0, 1]);
   });
 });
+
+describe('an ability on the stack is a thing you can point at', () => {
+  /*
+    The third shape of a `Target`, and the half of interaction the pool had no answer to.
+
+    Everything that answers a permanent here answers the *permanent*: a Doom Blade kills the Icy
+    Manipulator but not the tap it already activated, a Murder kills the Jace but not the loyalty
+    ability above it. An ability on the stack has no card anywhere — only a synthetic id and an
+    entry in `stackObjects` — so until a `Target` could say `{ kind: 'ability', id }`, nothing in
+    this engine could be pointed at one.
+
+    These tests are the four answers that shape has to give: an activated ability can be countered,
+    a triggered one can be told apart from it by a filter, the wide card takes either, and
+    Willbender's printed "or ability" half finally works.
+  */
+
+  /** Seat 1 activates an Icy Manipulator at one of seat 0's creatures, then passes. */
+  const icyAimedAt = (
+    s0: GameState, victim: string,
+  ): { s: GameState; ability: string; icy: string } => {
+    const icy = find(s0, 1, 'battlefield', 'Icy Manipulator');
+    const play = legalActions(s0, 1).plays.find((p) => p.name === 'Icy Manipulator' && p.kind === 'activate');
+    let s = apply(s0, {
+      type: 'auto:activate', by: 1, card: icy, abilityIndex: play!.abilityIndex!,
+      targets: [{ kind: 'card', id: victim }],
+    });
+    // The ability is on the stack and its controller passes, which opens the window.
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    return { s, ability: s.stackOrder[s.stackOrder.length - 1]!, icy };
+  };
+
+  it('Squelch counters an activated ability, and the cost stays paid', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'tidal-mind' },
+      hands: { 0: ['Squelch'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Monastery Swiftspear'],
+        1: ['Island', 'Island', 'Icy Manipulator'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
+    const swift = find(s, 0, 'battlefield', 'Monastery Swiftspear');
+    const aimed = icyAimedAt(s, swift);
+    s = tapAllLands(aimed.s, 0);
+
+    // The offer and the effect read the same rule: the one thing on the stack is the one candidate.
+    const play = legalActions(s, 0).plays.find((p) => p.name === 'Squelch');
+    expect(play?.candidates[0]).toEqual([{ kind: 'ability', id: aimed.ability }]);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Squelch'),
+      targets: [{ kind: 'ability', id: aimed.ability }],
+    }));
+
+    // The tap never happened, and the Icy Manipulator is still tapped: a cost is paid when the
+    // ability is activated, and countering the ability does not give it back (CR 701.5a).
+    expect(s.instances[swift]!.tapped).toBe(false);
+    expect(s.instances[aimed.icy]!.tapped).toBe(true);
+    expect(s.stackOrder).toEqual([]);
+    // And it replaced itself, which is why a card this narrow is in a deck at all.
+    expect(namesIn(s, 0, 'hand')).toHaveLength(1);
+    expect(namesIn(s, 0, 'hand')).not.toContain('Squelch');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Squelch');
+  });
+
+  it('and will not touch a triggered ability, which is what its filter is for', () => {
+    /*
+      Squelch is printed "counter target **activated** ability", and the difference is a `filter` on
+      an ability candidate — a thing that had nowhere to live before this. A Soul Warden's lifegain
+      is a triggered ability with no targets at all, which makes it the clearest possible negative:
+      it is on the stack, it is an ability, and it is not this card's business.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'skyward-writ' },
+      hands: { 0: ['Squelch'], 1: ["Healer's Hawk"] },
+      battlefield: {
+        0: ['Island', 'Island'],
+        1: ['Plains', 'Plains', 'Soul Warden'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', "Healer's Hawk") }));
+    // The Hawk resolved and the Warden's trigger is waiting.
+    expect(s.stackOrder).toHaveLength(1);
+    s = tapAllLands(apply(s, { type: 'auto:pass', by: 1 }), 0);
+
+    const play = legalActions(s, 0).plays.find((p) => p.name === 'Squelch');
+    expect(play?.candidates[0] ?? []).toEqual([]);
+    // Not castable at all, rather than castable and then refused: an ability it may not name is an
+    // ability it has no legal target among.
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Squelch'),
+      targets: [{ kind: 'ability', id: s.stackOrder[0]! }],
+    })).toContain('target activated ability');
+  });
+
+  it('Disallow counters a triggered ability, which killing the permanent could not', () => {
+    /*
+      The whole argument for this card in one board. The Soul Warden's trigger is on the stack; a
+      Murder would kill the Warden and the life would still be gained, because an ability on the
+      stack is independent of its source (CR 113.7a). Disallow is the only thing in this pool that
+      answers the ability itself.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+      hands: { 0: ["Healer's Hawk"], 1: ['Disallow'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Soul Warden'],
+        1: ['Island', 'Island', 'Island'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const before = life(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Healer's Hawk") }));
+    const trigger = s.stackOrder[0]!;
+    expect(s.stackObjects[trigger]?.kind).toBe('triggered');
+    s = tapAllLands(apply(s, { type: 'auto:pass', by: 0 }), 1);
+
+    const play = legalActions(s, 1).plays.find((p) => p.name === 'Disallow');
+    expect(play?.candidates[0]).toEqual([{ kind: 'ability', id: trigger }]);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Disallow'),
+      targets: [{ kind: 'ability', id: trigger }],
+    }));
+
+    // No life, and the Hawk and the Warden both still on the battlefield.
+    expect(life(s, 0)).toBe(before);
+    expect(s.instances[find(s, 0, 'battlefield', "Healer's Hawk")]!.zone).toBe('battlefield');
+    expect(s.instances[find(s, 0, 'battlefield', 'Soul Warden')]!.zone).toBe('battlefield');
+  });
+
+  it('Disallow counters a spell too, and the card is buried rather than just removed', () => {
+    /*
+      The other half of `spell-or-ability`, and the one place the two kinds behave differently on
+      resolution: a countered *spell* has a card, and the card goes to its owner's graveyard
+      (CR 701.5a). An ability has none, so countering one leaves nothing behind.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: { 0: ['Shivan Dragon'], 1: ['Disallow'] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'],
+        1: ['Island', 'Island', 'Island'],
+      },
+      turn: 7, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const dragon = find(s, 0, 'hand', 'Shivan Dragon');
+    s = apply(apply(s, { type: 'auto:cast', by: 0, card: dragon }), { type: 'auto:pass', by: 0 });
+    s = tapAllLands(s, 1);
+
+    // Both kinds are offered by one spec: the spell is a card on the stack, and there is nothing
+    // else up.
+    const play = legalActions(s, 1).plays.find((p) => p.name === 'Disallow');
+    expect(play?.candidates[0]).toEqual([{ kind: 'card', id: dragon }]);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Disallow'),
+      targets: [{ kind: 'card', id: dragon }],
+    }));
+    expect(s.instances[dragon]!.zone).toBe('graveyard');
+  });
+
+  it('Willbender sends an activated ability somewhere else, which is its printed other half', () => {
+    /*
+      The clause this engine carried a comment about instead of a card: "change the target of target
+      spell **or ability** with a single target". An Icy Manipulator's tap is the test case a real
+      table would produce — the ability is on the stack, the permanent that made it is irrelevant by
+      then, and the Willbender's controller sends it at one of its own caster's creatures.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'tidal-mind' },
+      hands: { 0: ['Willbender'] },
+      battlefield: {
+        // Five Islands for the same reason the other Willbender test needs them: three pay for the
+        // face-down cast on this turn and two have to still be up on the opponent's.
+        0: ['Island', 'Island', 'Island', 'Island', 'Island', "Man-o'-War"],
+        1: ['Island', 'Island', 'Icy Manipulator', 'Vampire Nighthawk'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Willbender'), faceDown: true,
+    })));
+    const bender = find(s, 0, 'battlefield', 'Willbender');
+    s = tapAllLands(advanceTo(nextTurn(s), 'precombat-main'), 1);
+
+    const mine = find(s, 0, 'battlefield', "Man-o'-War");
+    const theirs = find(s, 1, 'battlefield', 'Vampire Nighthawk');
+    const aimed = icyAimedAt(s, mine);
+    s = aimed.s;
+    expect(s.stackObjects[aimed.ability]?.targets).toEqual([{ kind: 'card', id: mine }]);
+
+    // Turning it up is the special action nobody may respond to; the trigger it raises asks for
+    // the two targets, and the first of them is an ability rather than a card.
+    s = apply(s, { type: 'auto:turnUp', by: 0, card: bender });
+    expect(legalActions(s, 0).mustChoose?.candidates[0])
+      .toContainEqual({ kind: 'ability', id: aimed.ability });
+    s = apply(s, {
+      type: 'auto:choose', by: 0,
+      targets: [{ kind: 'ability', id: aimed.ability }, { kind: 'card', id: theirs }],
+    });
+    s = drain(passBoth(passBoth(s)));
+
+    // Their own Nighthawk is tapped and the Man-o'-War never was.
+    expect(s.instances[theirs]!.tapped).toBe(true);
+    expect(s.instances[mine]!.tapped).toBe(false);
+  });
+
+  it('and an ability that has already resolved is gone rather than a legal target', () => {
+    /*
+      The fizzle rule, with the one difference an ability brings to it (CR 608.2b). A card that has
+      changed zones is a *different object* and is dropped by `objectSeq`; an ability has no
+      `objectSeq` because there is no second version of it to tell apart — it either is still on
+      the stack or it does not exist. So the check that catches it is plain legality.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'tidal-mind' },
+      hands: { 0: ['Squelch'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Monastery Swiftspear'],
+        1: ['Island', 'Island', 'Icy Manipulator'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
+    const swift = find(s, 0, 'battlefield', 'Monastery Swiftspear');
+    const aimed = icyAimedAt(s, swift);
+    // Seat 0's mana goes up inside the window, while it still holds priority — so that what is
+    // missing afterwards is the target and not the mana. Then the ability is allowed to resolve.
+    s = drain(tapAllLands(aimed.s, 0));
+    expect(s.instances[swift]!.tapped).toBe(true);
+    expect(s.stackOrder).toEqual([]);
+    expect(legalActions(s, 0).plays.find((p) => p.name === 'Squelch')).toBeUndefined();
+  });
+});

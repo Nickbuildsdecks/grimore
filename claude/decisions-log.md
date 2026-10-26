@@ -5578,3 +5578,89 @@ that deck nothing, and nothing is all a new keyword's card has to cost. A card h
 One thing the engine still does not have, and it is deliberate: a `condition` is checked for
 triggers only. An activated ability whose "if" clause has stopped being true is a different rule
 (CR 603.4 is about triggered abilities), and nothing in the pool wants it.
+
+## D134 — An ability on the stack is a thing you can point at, and a `Target` grows a third shape
+
+**Decision: `Target` gains `{ kind: 'ability', id }`, two `TargetSpec` kinds come with it, and
+Willbender's printed "or ability" half works — which the comment in `scripts.ts` had been promising
+to be wrong about.**
+
+D131 wrote this down as the reason Willbender shipped half-finished: "a `Target` is a card or a
+player, a spell on the stack *is* a card, and an ability has a synthetic id and no card anywhere —
+so Willbender's printed 'or ability' half needs a third `Target` shape threaded through thirty call
+sites for one clause." That estimate was wrong by an order of magnitude, and the way it was wrong is
+the useful part.
+
+**The union has seventy readers and five of them needed changing.** `tsc` found every one, because
+almost every reader of a `Target` reaches for `.seat` on the non-card branch — and a third member
+with no `seat` makes that a type error rather than a silent fall-through. The five were `targetKey`
+and four copies of it in `bot.ts`, written as `t.kind === 'card' ? \`c${t.id}\` : \`p${t.seat}\``.
+They are now one call to the shared `targetKey`, which is the fix those four should have had anyway:
+"what makes two targets the same target" had five definitions in this repo, and a sixth in
+`apps/web`. It now has one.
+
+**What was left was four honest refusals**, and each of them is a sentence about what an ability is:
+
+- it is in **no zone**, so "still on the stack" is the whole of its legality;
+- it has no **`objectSeq`**, so it cannot be *a different object* the way a bounced creature is
+  (CR 400.7) — it either is still there or it does not exist, and the fizzle check catches that
+  through plain legality;
+- it has no permanent to carry **hexproof, shroud, protection or ward**, so none of them touch it,
+  and `raiseWard` skips it;
+- it cannot be **damaged or shielded** (CR 120.3), so `dealDamage` and `preventDamage` refuse it at
+  the top rather than falling through into the creature branch with an id that names nothing. That
+  fall-through would have returned the same state by accident; the point of saying it is that the
+  next person reading it cannot tell those apart.
+
+One real correctness fix came out of it: `retarget` was passing the *stack object's* id as the
+source for the legality check, which is right for a spell (a spell's id is its card) and wrong for
+an ability (whose id names nothing in `instances`). Protection from black is a fact about the
+permanent an ability came from, so it now resolves `object.source` for an ability.
+
+**Three cards, because the shape has three uses.** `spell`, `ability` and `spell-or-ability` are
+three kinds rather than a filter, and they are the printed difference between three cards:
+
+- **Squelch** ({1}{U}, "counter target activated ability, draw a card") is the narrow one, and the
+  first card in the pool whose spec puts a `filter` on an ability candidate: it reads the stack
+  object's own `kind` to tell an activated ability from a triggered one.
+- **Disallow** ({1}{U}{U}, "counter target spell, activated ability, or triggered ability") is the
+  wide one and the argument for the third kind existing: a card that takes either should say so
+  rather than hoping whatever it is handed has an `id`.
+- **Willbender** now redirects either, which is what it says on the card.
+
+What this adds to the pool is not a card but a *kind of answer*: everything here that answers a
+permanent answers the permanent. A Doom Blade kills the Icy Manipulator and not the tap it already
+activated; a Murder kills the Jace and not the loyalty ability above it. An ability on the stack is
+independent of its source (CR 113.7a) and was, until now, the one object at this table that nothing
+could touch. And the cost stays paid: countering an Icy Manipulator's tap does not untap the Icy
+Manipulator, which is the half players get wrong and the engine gets right for free, because the
+cost was paid to put the ability on the stack at all.
+
+**And the cut mattered more than the card, for the fourth time.** Squelch went into Arc Tempest
+twice, 240 paired duels against the field each, two seed sets:
+
+| the arrangement | seeds from 3300 | seeds from 8800 |
+| --- | --- | --- |
+| no Squelch | 100-140 | 99-141 |
+| Squelch for the **Divination** | 98-142 | 89-151 |
+| Squelch for the **Essence Scatter** | **102-137** | **103-137** |
+
+Worse both times with one cut and better both times with the other, four and fourteen games apart.
+The reason is readable off the cards: the Divination is this deck's only refill and every one of its
+four spell-payoff creatures gets paid for casting it, while the Essence Scatter was the redundant
+answer — Arc Tempest beats the slow decks it could counter a creature from and loses to the fast
+ones it cannot counter enough of. D133's corollary held again: both wrong cuts in this project have
+removed a deck's *only* copy of something it needed, and both right ones removed something the deck
+had another answer for.
+
+Disallow went into Tidal Mind for *its* Essence Scatter and the instrument could not price it: +8
+one seed set, −10 the other, no consistent sign. That is D131's finding restated — the deck at the
+bottom of the table has the least reliable record in the pool — so it ships on the rules argument
+("counter target creature spell" is a subset of what Disallow does) and the number is written down
+as unknown. Between the two swaps the pool now has two Essence Scatters where it had four, which is
+the one pool-level change here worth noticing.
+
+**Still not done, and now it is the only thing on this list:** nothing copies an ability. "Copy
+target activated or triggered ability" (a Strionic Resonator, a Lithoform Engine) needs the stack
+object duplicated with its targets and its `subject`, which is a different piece of work from
+pointing at one — and nothing in the pool wants it yet.

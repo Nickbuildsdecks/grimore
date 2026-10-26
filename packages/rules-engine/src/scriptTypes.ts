@@ -28,9 +28,15 @@ export interface TargetSpec {
    * their own kinds rather than a filter on `creature`. A card in a graveyard has no continuous
    * effects applied to it, so its **printed** type is what it is; `graveyard-card` takes any card
    * and leaves the rest to `filter`.
+   *
+   * `spell` and `ability` are both objects on the stack and are *not* interchangeable: a spell is a
+   * card and an ability is not, so they arrive as different `Target` shapes and a card that takes
+   * either says `spell-or-ability` rather than hoping. Those three are the printed difference
+   * between a Cancel, a Stifle and a Disallow.
    */
   readonly kind:
     | 'creature' | 'permanent' | 'player' | 'any' | 'spell'
+    | 'ability' | 'spell-or-ability'
     | 'graveyard-creature' | 'graveyard-land' | 'graveyard-card';
   /** Shown to the player choosing, e.g. "target creature an opponent controls". */
   readonly description: string;

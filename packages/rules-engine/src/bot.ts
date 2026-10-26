@@ -27,7 +27,7 @@ import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
 import { costValue, parseManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
-import type { Target } from './turnTypes.js';
+import { targetKey, type Target } from './turnTypes.js';
 import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
 const HOST: ActionContext = { isHost: true };
@@ -136,7 +136,7 @@ function chooseTargets(state: GameState, seat: SeatIndex, play: LegalPlay): Targ
     const want = Math.max(1, spec.count ?? 1);
     for (let taken = 0; taken < want; taken++) {
       const candidates = (play.candidates[i] ?? []).filter(
-        (t) => !used.has(t.kind === 'card' ? `c${t.id}` : `p${t.seat}`),
+        (t) => !used.has(targetKey(t)),
       );
       const score = spec.friendly === true
         ? (t: Target): number => friendlyRank(state, t, foes)
@@ -147,7 +147,7 @@ function chooseTargets(state: GameState, seat: SeatIndex, play: LegalPlay): Targ
         if (spec.optional) break;
         return null;
       }
-      used.add(pick.kind === 'card' ? `c${pick.id}` : `p${pick.seat}`);
+      used.add(targetKey(pick));
       chosen.push(pick);
     }
   }
@@ -178,6 +178,9 @@ function cheapestCreature(state: GameState, ids: readonly string[]): string | nu
  */
 function friendlyRank(state: GameState, target: Target, foes: readonly SeatIndex[]): number {
   if (target.kind === 'player') return foes.includes(target.seat) ? -100 : 100;
+  // Nothing in the pool points a *friendly* spec at an ability on the stack, and if something ever
+  // does, last place is the right answer until somebody measures a better one.
+  if (target.kind === 'ability') return -100;
   const inst = state.instances[target.id];
   if (inst === undefined) return -100;
   if (foes.includes(inst.zoneSeat)) return -50;
@@ -187,6 +190,20 @@ function friendlyRank(state: GameState, target: Target, foes: readonly SeatIndex
 /** Enemy players score highest, then enemy creatures by size, then anything else. */
 function rank(state: GameState, target: Target, foes: readonly SeatIndex[]): number {
   if (target.kind === 'player') return foes.includes(target.seat) ? 100 : -100;
+  /*
+    An ability on the stack: whose it is decides, and it ranks just under a spell.
+
+    45 against the 50 an opponent's spell gets, which only matters for a Disallow looking at both
+    at once — and countering the spell is the better half of that choice nearly every time, because
+    the spell is usually the reason the ability exists. Its own controller's ability ranks below
+    everything, which is what keeps the bot from pointing a counterspell at its own trigger when
+    that is the only object on the stack.
+  */
+  if (target.kind === 'ability') {
+    const object = state.stackObjects[target.id];
+    if (object === undefined) return -100;
+    return foes.includes(object.controller) ? 45 : -60;
+  }
   const inst = state.instances[target.id];
   if (inst === undefined) return -100;
   const mine = !foes.includes(inst.zoneSeat);
@@ -766,22 +783,20 @@ function aimings(state: GameState, seat: SeatIndex, play: LegalPlay): (readonly 
     .sort((a, b) => friendlyRank(state, b, foes) - friendlyRank(state, a, foes));
   const alternatives = [byEnemy[0], byEnemy[1], byOwnSide[0]];
   const out: (readonly Target[])[] = [first];
-  const seen = new Set([targetKeyOf(first[0]!)]);
+  const seen = new Set([targetKey(first[0]!)]);
   // One spec wanting several targets is left alone: the heuristic filled all of them, and swapping
   // one out would need the rest re-picked around it.
   if (spec !== undefined && Math.max(1, spec.count ?? 1) === 1) {
     for (const option of alternatives) {
-      if (option === undefined || seen.has(targetKeyOf(option))) continue;
+      if (option === undefined || seen.has(targetKey(option))) continue;
       const rest = first.slice(1);
-      if (rest.some((t) => targetKeyOf(t) === targetKeyOf(option))) continue;
-      seen.add(targetKeyOf(option));
+      if (rest.some((t) => targetKey(t) === targetKey(option))) continue;
+      seen.add(targetKey(option));
       out.push([option, ...rest]);
     }
   }
   return out.slice(0, AIM_WIDTH);
 }
-
-const targetKeyOf = (t: Target): string => (t.kind === 'card' ? `c${t.id}` : `p${t.seat}`);
 
 /** How many plays are worth simulating, best-first by the shallow ranking. */
 const PLAY_WIDTH = 8;
@@ -954,10 +969,10 @@ function aimPending(
   for (let i = 0; i < choice.specs.length; i++) {
     const want = Math.max(1, choice.specs[i]!.count ?? 1);
     const ranked = [...(choice.candidates[i] ?? [])]
-      .filter((t) => !used.has(t.kind === 'card' ? `c${t.id}` : `p${t.seat}`))
+      .filter((t) => !used.has(targetKey(t)))
       .sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
     for (const pick of ranked.slice(0, want)) {
-      used.add(pick.kind === 'card' ? `c${pick.id}` : `p${pick.seat}`);
+      used.add(targetKey(pick));
       chosen.push(pick);
     }
   }

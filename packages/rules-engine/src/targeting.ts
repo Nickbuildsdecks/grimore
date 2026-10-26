@@ -43,15 +43,34 @@ export function isLegalTarget(
     return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }
 
-  // The candidate is a card from here on, so a spec that only takes players cannot be satisfied by
-  // it. Without this a "target player" spell accepts a creature, because none of the checks below
-  // are about the spec's kind — a hand-built action would slip straight past them.
-  if (spec.kind === 'player') return false;
+  /*
+    An ability on the stack, and the whole of its legality: is it still there?
+
+    Every check below this is about a card — a zone, a type line, a keyword, a colour — and an
+    ability has none of those. It is not in a zone, it has no printed type, it cannot be given
+    hexproof and nothing can protect it. So the list is short and it is complete: the spec has to
+    be asking for an ability, and the object has to still be on the stack and still be an ability
+    rather than a spell. When it has resolved it is simply gone, which is the fizzle rule doing its
+    job one level up rather than anything special here (CR 608.2b).
+  */
+  if (candidate.kind === 'ability') {
+    if (spec.kind !== 'ability' && spec.kind !== 'spell-or-ability') return false;
+    const object = state.stackObjects[candidate.id];
+    if (object === undefined || object.kind === 'spell') return false;
+    return spec.filter ? spec.filter(state, candidate, controller, source) : true;
+  }
+
+  // The candidate is a card from here on, so a spec that only takes players or abilities cannot be
+  // satisfied by it. Without this a "target player" spell accepts a creature, because none of the
+  // checks below are about the spec's kind — a hand-built action would slip straight past them.
+  if (spec.kind === 'player' || spec.kind === 'ability') return false;
 
   const inst = state.instances[candidate.id];
   if (inst === undefined) return false;
 
-  if (spec.kind === 'spell') {
+  // A spell *is* a card, which is why "counter target spell" needed no new target shape: the card
+  // is physically in the stack zone and the object beside it describes how it was cast.
+  if (spec.kind === 'spell' || spec.kind === 'spell-or-ability') {
     if (inst.zone !== 'stack') return false;
     return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }
@@ -96,13 +115,27 @@ export function legalTargets(
       if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);
     }
   }
-  if (spec.kind === 'spell') {
+  if (spec.kind === 'spell' || spec.kind === 'spell-or-ability') {
     for (const id of listAt(state, 'stack')) {
       const candidate: Target = { kind: 'card', id };
       if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);
     }
-    return out;
   }
+  /*
+    And the abilities, which are not in the stack *zone* at all.
+
+    The zone holds cards, and an ability has none — it exists only as an entry in `stackObjects`,
+    so the list of candidates has to come from `stackOrder` with the spells filtered back out.
+    That asymmetry is the reason this kind exists rather than being a filter on `spell`.
+  */
+  if (spec.kind === 'ability' || spec.kind === 'spell-or-ability') {
+    for (const id of state.stackOrder) {
+      if (state.stackObjects[id]?.kind === 'spell') continue;
+      const candidate: Target = { kind: 'ability', id };
+      if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);
+    }
+  }
+  if (spec.kind === 'spell' || spec.kind === 'ability' || spec.kind === 'spell-or-ability') return out;
   if (GRAVEYARD_KINDS[spec.kind] !== undefined) {
     for (const seat of state.seats) {
       for (const id of listAt(state, zoneKey(seat.index, 'graveyard'))) {
@@ -218,9 +251,17 @@ export function retarget(
   if (object === undefined || object.targets.length !== 1) return null;
   const current = object.targets[0];
   if (current === undefined || targetKey(current) === targetKey(next)) return null;
-  // The spell's controller is the chooser, which is the half that is easy to get wrong: this is
-  // not "may the Willbender's controller target that", it is "may the Doom Blade".
-  if (!isLegalTarget(state, spec, next, object.controller, stackId)) return null;
+  /*
+    The spell's controller is the chooser, which is the half that is easy to get wrong: this is not
+    "may the Willbender's controller target that", it is "may the Doom Blade".
+
+    And the **source** is the card, not the object on the stack. For a spell those are the same id;
+    for an ability they are not — an ability's id is synthetic and names nothing in `instances`, so
+    passing it would make protection from black miss an ability from a black permanent, which is a
+    fact about the permanent (CR 702.16b) and not about the ability.
+  */
+  const sourceId = object.kind === 'spell' ? stackId : object.source;
+  if (!isLegalTarget(state, spec, next, object.controller, sourceId)) return null;
   const targets: readonly Target[] = [next];
   return {
     ...state,

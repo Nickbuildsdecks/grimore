@@ -23,6 +23,7 @@ import { listAt } from './cardActions.js';
 import {
   addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
+  firstAbilityTarget,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -3566,14 +3567,14 @@ const CLOUDFIN_RAPTOR: CardScript = {
   those lives in `targeting.ts` beside the legality rules rather than in `effects.ts` with the
   things that deal damage, because that is what it is about.
 
-  **Spells, and not abilities.** Willbender is printed "target spell or ability with a single
-  target" and what is below redirects spells only. The reason is the shape of a `Target`, which is
-  either a card or a player: a spell on the stack *is* a card and so can be targeted today, while a
-  triggered or activated ability has a synthetic id and no card anywhere, so naming one would need a
-  third kind of `Target` threaded through thirty-odd call sites for one clause. Said out loud rather
-  than silently approximated, which is the same decision the two magecraft cards' "or copy" half
-  got: the day that third shape exists, this comment is the line that is wrong. **Move by hand**
-  covers it meanwhile.
+  **Spells and abilities both, now.** This comment used to say "spells, and not abilities", because
+  a `Target` was a card or a player and an ability on the stack is neither — so Willbender's printed
+  "or ability" half needed a third `Target` shape threaded through every reader of that union. That
+  shape now exists (`{ kind: 'ability', id }`), the day the old comment warned about has arrived,
+  and Willbender does what it says on the card. What the work actually cost is worth recording,
+  because it was a tenth of the estimate: `targetKey` and five dedup keys in the bot, because
+  `tsc` found every ternary that reached for `.seat` — and four honest refusals, since an ability
+  cannot be damaged, shielded, warded or be *a different object* than the one that was chosen.
 
   Both cards also ask for *two* targets, which nothing in the pool had done before — the spell, and
   where it is going. The second is declared `any`, which is wider than the spell's own spec, and
@@ -3582,42 +3583,62 @@ const CLOUDFIN_RAPTOR: CardScript = {
 */
 
 /**
- * The single target spec a spell on the stack has, when it unambiguously has one.
+ * The single target spec an object on the stack has, when it unambiguously has one.
  *
- * `null` for everything that cannot be redirected *soundly*: an ability rather than a spell, a
- * spell with no targets or several, and a modal spell, whose targets belong to the mode it was cast
- * with rather than to the card. A spell this returns `null` for is not offered as a target at all,
- * rather than being offered and then quietly failing — which is the "one planner for the offer and
- * the payment" rule this engine uses for convoke, crew and morph.
+ * `null` for everything that cannot be redirected *soundly*: an object with no targets or several,
+ * a modal spell whose targets belong to the mode it was cast with rather than to the card, and
+ * anything whose script cannot be found. An object this returns `null` for is not offered as a
+ * target at all, rather than being offered and then quietly failing — which is the "one planner
+ * for the offer and the payment" rule this engine uses for convoke, crew and morph.
+ *
+ * A spell and an ability reach their spec by different routes and that is the whole of the
+ * difference: a spell's targets are on the card, and an ability's are on the ability, which the
+ * stack object names by index.
  */
 function soleTargetSpecOf(state: GameState, id: string): TargetSpec | null {
   const object = state.stackObjects[id];
-  if (object === undefined || object.kind !== 'spell' || object.targets.length !== 1) return null;
-  const inst = state.instances[id];
-  const script = scriptFor(state.cardDefs[inst?.defKey ?? '']?.name);
-  if (script === undefined || script.modal !== undefined) return null;
-  const specs = script.targets ?? [];
+  if (object === undefined || object.targets.length !== 1) return null;
+  if (object.kind === 'spell') {
+    const inst = state.instances[id];
+    const script = scriptFor(state.cardDefs[inst?.defKey ?? '']?.name);
+    if (script === undefined || script.modal !== undefined) return null;
+    const specs = script.targets ?? [];
+    return specs.length === 1 ? specs[0] ?? null : null;
+  }
+  // An activated or triggered ability. Its source is a permanent — or a token that has ceased to
+  // exist, in which case there is no script to read and the ability is simply not redirectable.
+  const source = state.instances[object.source];
+  const script = scriptFor(state.cardDefs[source?.defKey ?? '']?.name);
+  if (script === undefined || object.abilityIndex === undefined) return null;
+  const def = object.kind === 'activated'
+    ? script.abilities?.[object.abilityIndex]
+    : script.triggers?.[object.abilityIndex];
+  const specs = def?.targets ?? [];
   return specs.length === 1 ? specs[0] ?? null : null;
 }
 
 /**
- * "Target spell with a single target", with the clause that makes it worth casting.
+ * "Target spell or ability with a single target", with the clause that makes it worth casting.
  *
- * A spell is only offered when there is **somewhere else to send it**: `legalTargets` is asked for
- * the spell's own spec, with the spell's own controller as the chooser, and at least one answer has
- * to be something other than the target it already has. Without that the card is castable into a
- * board where the only legal target is the current one, which is a card thrown away — the same
- * judgement the bot's "spent on nothing" rules make, made here instead because it is a fact about
- * legality rather than a preference.
+ * An object is only offered when there is **somewhere else to send it**: `legalTargets` is asked
+ * for its own spec, with its own controller as the chooser, and at least one answer has to be
+ * something other than the target it already has. Without that the card is castable into a board
+ * where the only legal target is the current one, which is a card thrown away — the same judgement
+ * the bot's "spent on nothing" rules make, made here instead because it is a fact about legality
+ * rather than a preference.
+ *
+ * `also` is only ever passed with `kind: 'spell'` (it reads a printed type line, which an ability
+ * does not have), so it never sees an ability's id.
  */
-const redirectableSpell = (
+const redirectable = (
+  kind: 'spell' | 'spell-or-ability',
   description: string,
   also?: (state: GameState, id: string) => boolean,
 ): TargetSpec => ({
-  kind: 'spell',
+  kind,
   description,
   filter: (state, candidate) => {
-    if (candidate.kind !== 'card') return false;
+    if (candidate.kind === 'player') return false;
     if (also !== undefined && !also(state, candidate.id)) return false;
     const spec = soleTargetSpecOf(state, candidate.id);
     if (spec === null) return false;
@@ -3632,14 +3653,14 @@ const redirectableSpell = (
 /** The second choice both cards ask for: where the spell is going instead. */
 const NEW_TARGET: TargetSpec = { kind: 'any', description: 'the new target' };
 
-/** The shared body: `targets[0]` is the spell, `targets[1]` is where it goes. */
+/** The shared body: `targets[0]` is the spell or ability, `targets[1]` is where it goes. */
 const redirect = (c: EffectContext): GameState => {
-  const spell = c.targets[0];
+  const object = c.targets[0];
   const next = c.targets[1];
-  if (spell === undefined || spell.kind !== 'card' || next === undefined) return c.state;
-  const spec = soleTargetSpecOf(c.state, spell.id);
+  if (object === undefined || object.kind === 'player' || next === undefined) return c.state;
+  const spec = soleTargetSpecOf(c.state, object.id);
   if (spec === null) return c.state;
-  return retarget(c.state, spell.id, next, spec) ?? c.state;
+  return retarget(c.state, object.id, next, spec) ?? c.state;
 };
 
 const isInstantOrSorcerySpell = (state: GameState, id: string): boolean => {
@@ -3652,8 +3673,11 @@ const WILLBENDER: CardScript = {
   morph: { cost: { mana: '{1}{U}' } },
   triggers: [{
     on: { kind: 'turned-face-up' },
-    description: 'change the target of target spell with a single target',
-    targets: [redirectableSpell('target spell with a single target'), NEW_TARGET],
+    description: 'change the target of target spell or ability with a single target',
+    targets: [
+      redirectable('spell-or-ability', 'target spell or ability with a single target'),
+      NEW_TARGET,
+    ],
     effect: redirect,
   }],
 };
@@ -3661,10 +3685,75 @@ const WILLBENDER: CardScript = {
 const SWERVE: CardScript = {
   name: 'Swerve',
   targets: [
-    redirectableSpell('target instant or sorcery spell with a single target', isInstantOrSorcerySpell),
+    redirectable('spell', 'target instant or sorcery spell with a single target', isInstantOrSorcerySpell),
     NEW_TARGET,
   ],
   onResolve: redirect,
+};
+
+// ── Countering the thing a permanent is doing ───────────────────────────────────────────────────
+
+/*
+  Two counterspells that are not about spells, and the family the pool had no answer to at all.
+
+  Everything that answers a permanent in this pool answers the *permanent*: a Doom Blade kills the
+  Icy Manipulator, but not the tap it already activated; a Murder kills the Jace, but not the loyalty
+  ability on the stack above it. An ability, once it is on the stack, has always been unanswerable
+  here — and that is a whole half of interaction missing rather than a missing card, because the
+  rules make an ability an object you may point at (CR 115.4) and this engine could not say so.
+
+  So these two are the shape rather than two more cards:
+
+  - **Squelch** is "counter target activated ability", which is the narrow one: its spec filters the
+    ability's own kind, and a `filter` on an ability candidate is a thing that had nowhere to live
+    before. It also draws a card, which is why it is in a deck at all — a narrow answer that
+    replaces itself is never a card thrown away.
+  - **Disallow** is "counter target spell, activated ability, or triggered ability", which is the
+    wide one, and the reason `spell-or-ability` is a kind: a card that takes either should say so
+    rather than hoping that whatever it is handed has an `id`.
+
+  Both resolve through the same `counterSpell` the Cancel uses, and have since long before this —
+  "an ability has no card, so countering one simply removes it" was written there the day the stack
+  was built. Nothing could reach it.
+*/
+
+const isActivatedAbility = (state: GameState, candidate: Target): boolean =>
+  candidate.kind === 'ability' && state.stackObjects[candidate.id]?.kind === 'activated';
+
+const SQUELCH: CardScript = {
+  name: 'Squelch',
+  targets: [{
+    kind: 'ability',
+    description: 'target activated ability',
+    filter: isActivatedAbility,
+  }],
+  onResolve: (c) => {
+    const id = firstAbilityTarget(c);
+    /*
+      The draw is part of the effect, which means it does *not* happen if the ability is gone.
+
+      Worth saying because the opposite is the tempting reading: a Squelch whose only target has
+      left the stack is countered on resolution and does nothing at all, draw included
+      (CR 608.2b). That is also why the card is never a dead *draw*: it cannot be cast with nothing
+      to point at, and the only object that could get above it on the stack is something answering
+      the Squelch itself.
+    */
+    if (id === null) return c.state;
+    return draw(counterSpell(c.state, id), c.controller, 1);
+  },
+};
+
+const DISALLOW: CardScript = {
+  name: 'Disallow',
+  targets: [{ kind: 'spell-or-ability', description: 'target spell or ability' }],
+  onResolve: (c) => {
+    const object = c.targets[0];
+    // One id, two kinds of object, one function: `counterSpell` buries a spell's card and simply
+    // removes an ability, which is the difference the rules draw and the only one there is.
+    return object === undefined || object.kind === 'player'
+      ? c.state
+      : counterSpell(c.state, object.id);
+  },
 };
 
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
@@ -3837,6 +3926,7 @@ const ALL: readonly CardScript[] = [
   ZOMBIE_CUTTHROAT, HIDDEN_DRAGONSLAYER,
   WILLBENDER, SWERVE,
   GUARDIANS_OF_AKRASA, CLOUDFIN_RAPTOR,
+  SQUELCH, DISALLOW,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
