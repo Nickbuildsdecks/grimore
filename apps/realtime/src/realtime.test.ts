@@ -1109,4 +1109,140 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     }, 20_000);
   });
 
+  /*
+    A decklist somebody pasted in.
+
+    The text goes over the wire and the **server** parses it, which is the only safe way round, so
+    what is being checked here is that the server's reading is the one the table uses: the summary
+    on the ack, the counts everybody can see, and a `deck:load custom` that deals the list rather
+    than one of the built-in decks.
+  */
+  describe('a deck somebody pasted in', () => {
+    it('reads the list, says what it read, and deals it', async () => {
+      const { a, state } = await seatedPair();
+      const text = [
+        'Commander',
+        '1 Tatyova, Benthic Druid',
+        '',
+        'Deck',
+        '20 Forest (M21) 262',
+        '19 Island',
+        '4 Llanowar Elves',
+        '4 Explore',
+        '12 Nonsense Card',
+        '',
+        'Sideboard',
+        '2 Negate',
+      ].join('\n');
+
+      const ack = okAck(await emitAck(a, 'pod:deck', { name: 'Mine', text }));
+      expect(ack.deck).toMatchObject({
+        total: 59, distinct: 5, sideboard: 2,
+        unknown: ['Nonsense Card'], unknownCount: 1,
+        commander: 'Tatyova, Benthic Druid',
+      });
+
+      // And the table sees the shape of it without seeing the cards.
+      const seen = await waitFor<PodStateEvent>(a, 'pod:state', (s) => s.pod.seats[0]?.list !== undefined);
+      expect(seen.pod.seats[0]!.list).toEqual({ name: 'Mine', total: 59, unknown: 1 });
+
+      // Loading it puts those cards in that seat's library, cardboard and all. The version comes
+      // from the paste's own ack: storing a list is a change to the table like any other.
+      const loaded = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'deck:load', seat: 0, deckId: 'custom:0' },
+        expectedVersion: ack.stateVersion!,
+      }));
+      const after = await waitFor<PodStateEvent>(a, 'pod:state', (s) => s.stateVersion >= loaded.stateVersion!);
+      const view = unpackView(after.state as unknown as PackedView);
+      expect(view.seats.find((s) => s.index === 0)?.deckId).toBe('custom:0');
+      // Fifty-nine in the library — a count rather than a list, because a library's order is
+      // withheld from everyone including its owner — and the commander in the command zone.
+      expect(view.seats.find((s) => s.index === 0)?.libraryCount).toBe(59);
+      expect(view.zones['0:command']?.length).toBe(1);
+    }, 20_000);
+
+    it('refuses a paste that is not a deck, and keeps the seat as it was', async () => {
+      const { a } = await seatedPair();
+      expect(await emitAck(a, 'pod:deck', { text: '   ' }))
+        .toMatchObject({ ok: false, error: { code: 'illegal_action' } });
+      const ack = okAck(await emitAck(a, 'pod:deck', { text: '4 Forest' }));
+      expect(ack.deck).toMatchObject({ total: 4, unknownCount: 0 });
+    }, 20_000);
+
+    it('will not start the rules engine on a list the engine cannot read', async () => {
+      const { a } = await seatedPair();
+      const pasted = okAck(await emitAck(a, 'pod:deck', { text: '40 Forest\n20 Nonsense Card' }));
+      const loaded = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'deck:load', seat: 0, deckId: 'custom:0' },
+        expectedVersion: pasted.stateVersion!,
+      }));
+      // Seat 1 takes a built-in deck, so the only unreadable cards are seat 0's.
+      const second = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'deck:load', seat: 1, deckId: 'ember-rush' },
+        expectedVersion: loaded.stateVersion!,
+      }));
+      const started = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'game:start' }, expectedVersion: second.stateVersion!,
+      }));
+      const refused = await emitAck(a, 'pod:action', {
+        action: { type: 'auto:start' }, expectedVersion: started.stateVersion!,
+      });
+      expect(refused).toMatchObject({ ok: false, error: { code: 'illegal_action' } });
+      if (!refused.ok) expect(refused.error.message).toContain('Nonsense Card');
+    }, 20_000);
+
+    it('will not let the host read a guest’s list by loading it onto their own seat', async () => {
+      /*
+        The one thing per-seat ids could have cost. A list is private — the table is told its size
+        and how much of it the engine can read, never its cards — and the host can load a deck for
+        any seat. So the host asking for seat 1's list on seat 0 has to be refused, and it is,
+        because the decks an action may resolve are its own sender's.
+      */
+      const { a, b } = await seatedPair();
+      const theirs = okAck(await emitAck(b, 'pod:deck', { text: '36 Forest\n24 Island' }));
+      const refused = await emitAck(a, 'pod:action', {
+        action: { type: 'deck:load', seat: 0, deckId: 'custom:1' },
+        expectedVersion: theirs.stateVersion!,
+      });
+      // INVALID_DECK, not a refusal about permission: from the host's action that list has no id.
+      expect(refused).toMatchObject({ ok: false, error: { code: 'illegal_action' } });
+      if (!refused.ok) expect(refused.error.message).toContain('no deck with id custom:1');
+    }, 20_000);
+
+    it('deals both lists again on a rematch, whoever asks for it', async () => {
+      /*
+        The regression per-seat ids exist for. A rematch reloads every seat's deck by the id that
+        seat already has, so with one shared `custom` the host's rematch asked for a deck id only
+        the guest's actions could resolve — and "play again" was refused at any table where the
+        other player had pasted a list.
+      */
+      const { a, b } = await seatedPair();
+      const mine = okAck(await emitAck(a, 'pod:deck', { text: '36 Forest\n24 Llanowar Elves' }));
+      const theirs = okAck(await emitAck(b, 'pod:deck', { text: '36 Mountain\n24 Shock' }));
+      let v = Math.max(mine.stateVersion!, theirs.stateVersion!);
+      // Each player loads their own, which is the only way a pasted list is ever loaded.
+      for (const [who, action] of [
+        [a, { type: 'deck:load', seat: 0, deckId: 'custom:0' }],
+        [b, { type: 'deck:load', seat: 1, deckId: 'custom:1' }],
+        [a, { type: 'game:start' }],
+      ] as const) {
+        v = okAck(await emitAck(who, 'pod:action', { action, expectedVersion: v })).stateVersion!;
+      }
+      // Seat 1 out of life ends it, and then the host — not the player who pasted seat 1's deck —
+      // asks for another game.
+      v = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'life:adjust', seat: 1, delta: -40 }, expectedVersion: v,
+      })).stateVersion!;
+      const again = await emitAck(a, 'pod:action', {
+        action: { type: 'game:rematch' }, expectedVersion: v,
+      });
+      expect(again).toMatchObject({ ok: true });
+      const after = await waitFor<PodStateEvent>(a, 'pod:state',
+        (s) => s.stateVersion >= okAck(again).stateVersion!);
+      const view = unpackView(after.state as unknown as PackedView);
+      expect(view.seats.map((s) => s.deckId)).toEqual(['custom:0', 'custom:1']);
+      expect(view.seats.map((s) => s.libraryCount! + 7)).toEqual([60, 60]);
+    }, 30_000);
+  });
+
 });

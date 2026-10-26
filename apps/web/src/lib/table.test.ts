@@ -5,7 +5,7 @@
  * What is here is the thing that has to read well to a player who did nothing wrong.
  */
 import { describe, it, expect } from "vitest"
-import { moveName, showsBroadcastError } from "./table"
+import { moveName, pastedNote, showsBroadcastError } from "./table"
 
 describe("naming a move in an error banner", () => {
   it("says what the player tapped, not what the engine calls it", () => {
@@ -49,5 +49,36 @@ describe("who owns a refusal", () => {
     expect(showsBroadcastError({ code: "not_found" })).toBe(true)
     expect(showsBroadcastError({ code: "bad_payload" })).toBe(true)
     expect(showsBroadcastError({ code: "internal" })).toBe(true)
+  })
+})
+
+describe("what the table says about a list somebody pasted", () => {
+  const base = { total: 60, distinct: 20, sideboard: 0, unknown: [], unknownCount: 0 }
+
+  it("says the size, and that the engine can play all of it", () => {
+    expect(pastedNote(base)).toBe("60 cards · every one of them scripted")
+  })
+
+  it("names the cards it cannot read, because a count is not actionable", () => {
+    // The player's next move is to look at those three lines in their own list — which means the
+    // note has to name them. "three cards the engine does not know" sends them hunting.
+    expect(pastedNote({ ...base, unknown: ["Sol Ring", "Mana Crypt"], unknownCount: 2 })).toBe(
+      "60 cards · 2 the engine does not know (Sol Ring, Mana Crypt) — tabletop only",
+    )
+  })
+
+  it("admits there are more when the server capped the list", () => {
+    expect(pastedNote({ ...base, unknown: ["Sol Ring"], unknownCount: 9 })).toContain("and more")
+  })
+
+  it("mentions the commander and the sideboard it dropped", () => {
+    expect(pastedNote({ ...base, total: 99, commander: "Tatyova, Benthic Druid", sideboard: 15 })).toBe(
+      "99 cards · Tatyova, Benthic Druid in the command zone · 15 in the sideboard, left out"
+        + " · every one of them scripted",
+    )
+  })
+
+  it("counts one card as a card", () => {
+    expect(pastedNote({ ...base, total: 1 }).startsWith("1 card ·")).toBe(true)
   })
 })

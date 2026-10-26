@@ -143,8 +143,42 @@ function writeStored(value: StoredSeat | null): void {
   }
 }
 
+/** What the server read in a pasted decklist. See `UseTable.sendDeck`. */
+export interface PastedDeck {
+  total: number
+  distinct: number
+  sideboard: number
+  /** The names the engine's pool does not have, capped by the server. */
+  unknown: string[]
+  unknownCount: number
+  commander?: string
+}
+
+/**
+ * What the server made of a pasted list, in one line the player can check against their deck.
+ *
+ * It names the unreadable cards rather than only counting them, because "three cards the engine
+ * does not know" is not actionable and "Sol Ring, Mana Crypt, Dockside Extortionist" is: the
+ * player can see at a glance whether the list was mistyped or simply outside the pool.
+ */
+export function pastedNote(deck: PastedDeck): string {
+  const parts = [`${deck.total} ${deck.total === 1 ? "card" : "cards"}`]
+  if (deck.commander !== undefined) parts.push(`${deck.commander} in the command zone`)
+  if (deck.sideboard > 0) parts.push(`${deck.sideboard} in the sideboard, left out`)
+  if (deck.unknownCount === 0) parts.push("every one of them scripted")
+  else {
+    const named = deck.unknown.join(", ")
+    const more = deck.unknownCount > deck.unknown.length ? ", and more" : ""
+    parts.push(`${deck.unknownCount} the engine does not know (${named}${more}) — tabletop only`)
+  }
+  return parts.join(" · ")
+}
+
 type AckResult =
-  | { ok: true; code?: string; seat?: number; seatToken?: string; playerId?: string; stateVersion?: number }
+  | {
+      ok: true; code?: string; seat?: number; seatToken?: string; playerId?: string
+      stateVersion?: number; deck?: PastedDeck
+    }
   | { ok: false; error: PodErrorEvent }
 
 export interface UseTable extends TableState {
@@ -163,6 +197,15 @@ export interface UseTable extends TableState {
   watchTable: (code: string, name?: string) => Promise<void>
   leaveTable: () => Promise<void>
   setReady: (ready: boolean) => Promise<void>
+  /**
+   * Hands the table a decklist this player pasted in, and reports what the **server** read.
+   *
+   * The text goes up rather than a parsed list, because the server's parser is the one that
+   * decides: what comes back is how many cards it found, how many different ones, and which of
+   * them the engine's pool does not have. `null` when the table refused it, with the reason in
+   * `error` like any other refusal.
+   */
+  sendDeck: (text: string, name?: string) => Promise<PastedDeck | null>
   /**
    * Sends an action. `basedOn` is the `stateVersion` of the view it was *composed from*, which is
    * what tells a stale action apart from an illegal one — see the refusal handling in `send`.
@@ -403,6 +446,23 @@ export function useTable(playerName: string): UseTable {
     [emit],
   )
 
+  const sendDeck = useCallback<UseTable["sendDeck"]>(
+    async (text, name) => {
+      const res = await emit("pod:deck", {
+        text,
+        ...(name === undefined || name.trim().length === 0 ? {} : { name: name.trim() }),
+      })
+      if (!res.ok) {
+        setState((s) => ({ ...s, error: res.error.message }))
+        return null
+      }
+      // The summary rather than nothing, because the caller's next question is "what did it make
+      // of that?" — and the counts in the broadcast state are for the table, not for the sender.
+      return res.deck ?? null
+    },
+    [emit],
+  )
+
   const send = useCallback<UseTable["send"]>(
     (action, basedOn) => {
       const run = async (): Promise<void> => {
@@ -533,10 +593,10 @@ export function useTable(playerName: string): UseTable {
 
   return useMemo(
     () => ({
-      ...state, createTable, joinTable, watchTable, leaveTable, setReady, send, undo, say,
+      ...state, createTable, joinTable, watchTable, leaveTable, setReady, sendDeck, send, undo, say,
       refreshTables, clearError,
     }),
-    [state, createTable, joinTable, watchTable, leaveTable, setReady, send, undo, say,
+    [state, createTable, joinTable, watchTable, leaveTable, setReady, sendDeck, send, undo, say,
       refreshTables, clearError],
   )
 }

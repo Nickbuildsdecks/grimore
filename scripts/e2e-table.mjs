@@ -204,7 +204,53 @@ async function main() {
     check('readying up deals the table and offers decks', true);
 
     await tid(nick, 'deck-ember-rush').click();
-    await tid(friend, 'deck-verdant-guard').click();
+
+    /*
+      ── Friend plays a list of his own ────────────────────────────────────────────────────────────
+
+      The built-in decks are the table's pool, not its ceiling: a player keeps their deck as text
+      and should be able to paste it in. Two halves are checked here because both are the feature.
+
+      First a list with a card the engine has never scripted, which is the common case — the deck
+      loads, the tabletop will play it, and the engine button says so rather than dealing a game
+      with a card nobody can do anything with. Then the same list without it, which the engine
+      runs. Friend keeps the second one for the rest of this game, so everything below — the
+      opening hand, the library, the search — happens on a deck nobody built into this repo.
+    */
+    const cardboardList = '4 Giant Growth\n1 Black Lotus\n24 Forest\n31 Grizzly Bears';
+    const pooledList = '12 Giant Growth\n24 Forest\n12 Grizzly Bears\n12 Llanowar Elves';
+    const pasteList = async (text) => {
+      await tid(friend, 'paste-list').click();
+      await waitFor(friend, 'deck-text');
+      await tid(friend, 'deck-text').fill(text);
+      await tid(friend, 'use-list').click();
+    };
+
+    await pasteList(cardboardList);
+    await waitFor(friend, 'deck-custom');
+    await expectEventually(friend, 'a pasted list is read, counted, and loaded as a deck', async () => {
+      const note = (await tid(friend, 'list-note').textContent()) ?? '';
+      return note.includes('60 cards') && note.includes('Black Lotus') && note.includes('tabletop only');
+    });
+    await expectEventually(nick, 'the host is told whose list the engine cannot read, and how much of it',
+      async () => {
+        const badge = (await tid(nick, 'lobby-list-1').textContent()) ?? '';
+        return badge.includes('60 cards') && badge.includes('1 the engine cannot read');
+      });
+    await expectEventually(nick, 'and the engine is refused while that card is in the deck', async () =>
+      !(await tid(nick, 'start-engine').isEnabled())
+      && ((await tid(nick, 'unreadable-note').textContent()) ?? '').includes('not in the engine'));
+    check('the tabletop is still offered, because it plays cardboard',
+      await tid(nick, 'start-game').isEnabled());
+    await shot(friend, 'friend-pasted-a-list');
+
+    await pasteList(pooledList);
+    await expectEventually(friend, 'a list the engine knows end to end says so', async () => {
+      const note = (await tid(friend, 'list-note').textContent()) ?? '';
+      return note.includes('60 cards') && note.includes('every one of them scripted');
+    });
+    await expectEventually(nick, 'and the engine is offered again', async () =>
+      (await tid(nick, 'start-engine').isEnabled()) && !(await has(nick, 'unreadable-note')));
     await shot(nick, 'deck-chosen');
 
     await expectEventually(nick, 'host can start once both decks are loaded', async () =>

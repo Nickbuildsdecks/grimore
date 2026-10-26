@@ -6126,3 +6126,59 @@ Five new cards: Explore, Tatyova (the commander), Kiora's Follower, Pelakka Wurm
 Guildgate. Everything else in the sixty was already here — which is the second time a new deck has
 been built mostly out of the existing pool, and the ratio keeps improving: the ninth deck needed
 six new cards, the tenth six, this one five.
+
+## D142 — Play with your own list: the pool is the engine's, not the table's
+
+**Decision: a player pastes their decklist into the lobby, the server reads it, and a name the
+engine knows becomes the real card while a name it does not becomes cardboard.**
+
+The Play Realm's one real gap was that it only ever dealt the eleven built-in decks. A player keeps
+their deck as text — four lines of "4 Lightning Bolt" from Arena, a Moxfield export with a
+Commander section, a sideboard nobody asked for — and there was nowhere to put it. Now there is a
+box in the lobby.
+
+**The parser knows nothing about cards, and that is the whole split.** `parseDecklist` in
+`@grimore/shared` turns text into counts and names: counts may be `4`, `4x` or absent, set codes
+and collector numbers are dropped, section headers are understood, and a sideboard is left out with
+a word about it rather than silently mixed in. It is forgiving about format because a player pasting
+their deck should not have to learn a syntax, and strict about size because the text arrives from a
+client and ends up as one card instance per copy in a game state that lives in Redis. A list with
+errors is **not loaded**: a deck that silently lost half its cards is worse than a deck refused.
+
+`customDeck` in the engine is the other half, and it is there because the *pool* is there. Every
+name is looked up across all eleven decks, commanders included — a hit is the real card, with its
+script, its mana cost and its type line, and plays exactly as it does in the deck it came from. A
+miss is **cardboard**: a card with a name and nothing else, which is what a kitchen table is. The
+type line is left **empty** rather than filled with "Card", because a type line the engine invented
+would make the card look like something it can reason about, and the point is that it cannot.
+
+**Both halves matter, and they decide different things.** A list built out of the pool is fully
+automated, which is the good case. A list that is not can still be played — on the tabletop, which
+is how two people play Magic with their own decks — and `auto:start` **refuses** such a table,
+naming the card. That refusal lives in the engine, where it is enforced, and the lobby's badge
+("12 the engine cannot read") is a report of it: the rule D132 set for the privacy default, applied
+again. The deck still loads, because loading it is exactly what the tabletop wants.
+
+**What the table may know about somebody else's list is a name, a size and a count.** Never its
+cards. The seat row says "Nick's list · 60 cards · 1 the engine cannot read" to everybody, because
+that is what decides whether the host can press the engine button — a disabled button with no
+indication of whose deck is the problem is a dead end rather than an explanation.
+
+**One id per seat, which took a second pass to get right.** The first version gave every pasted
+list the same id, `custom`, and leaned on the fact that `ctx.decks` is built per *action* and an
+action is stamped with its sender: `custom` always meant the actor's own list, so two seats could
+paste different decks with no namespacing. It also broke **play again**. A rematch is composed by
+the engine out of the deck id each seat already has, so the host's rematch asked for a `custom`
+that only the guest's actions could resolve, and the rematch was refused at any table where the
+other player had pasted a deck. So the ids are `custom:0` and `custom:1`, and *which* of them an
+action may resolve stays the server's decision: its own sender's always, every seat's for a rematch
+and only for a rematch, because a rematch takes no deck id from anybody and cannot be aimed.
+Handing every list to every action would let the host load the guest's list onto their own seat and
+read it out of their own library, which is now a test.
+
+**Proved by playing with one.** `e2e-solo` no longer clicks a deck: it writes Ember Rush's own
+sixty cards out as text, pastes them, and plays a whole game against the computer under the rules
+engine — the same game that suite has always played, with one thing changed, which is where the
+cards came from. `e2e-table` pastes a list with a card the engine has never scripted, checks that
+the engine is refused and the tabletop is not, then pastes one without it and plays the rest of a
+two-browser game on a deck nobody built into this repo.

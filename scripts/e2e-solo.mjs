@@ -81,8 +81,34 @@ async function main() {
     }
     await shot(page, 'solo-lobby');
 
-    await tid(page, 'deck-ember-rush').click();
+    /*
+      The deck, pasted in as text rather than picked off the shelf.
+
+      It is Ember Rush's own sixty cards, written out the way a player keeps their deck — which
+      makes this the same game this suite has always played, with one thing changed: where the
+      cards came from. So every check below is still a check on the engine, and the pasted path
+      either deals a real game or the whole suite says so. The Commander pod keeps the built-in
+      deck, because a pasted list has no commander and a pod needs one.
+    */
+    if (SOLO_POD) {
+      await tid(page, 'deck-ember-rush').click();
+    } else {
+      const { STARTER_DECKS } = await import(
+        new URL('../packages/rules-engine/dist/index.js', import.meta.url));
+      const asText = STARTER_DECKS['ember-rush'].cards
+        .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
+      await tid(page, 'paste-list').click();
+      await waitFor(page, 'deck-text');
+      await tid(page, 'deck-text').fill(asText);
+      await tid(page, 'use-list').click();
+      await waitFor(page, 'deck-custom');
+      const note = await text(page, 'list-note');
+      check('a list pasted in as text is read, counted and loaded as a deck',
+        note.includes('60 cards') && note.includes('every one of them scripted'), note);
+    }
     await waitFor(page, 'start-engine');
+    check('and the engine is offered on it, because it knows every card in it',
+      await expectEventuallyTrue(page, async () => tid(page, 'start-engine').isEnabled()));
     await tid(page, 'start-engine').click();
 
     await waitFor(page, 'table');

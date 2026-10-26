@@ -27,6 +27,8 @@ import {
   type PodListEntry,
   type PodSeat,
   type PodVisibility,
+  parseDecklist,
+  customDeckIdFor,
 } from '@grimore/shared';
 import {
   applyAction as engineApply,
@@ -39,9 +41,22 @@ import {
   EngineError,
   FORMATS,
   type Action,
+  type DeckSpec,
   type FormatId,
   type GameState,
+  customDeck,
 } from '@grimore/rules-engine';
+
+/** What the server read in a pasted list, sent back to the player who pasted it. */
+export interface DeckListSummary {
+  readonly total: number;
+  readonly distinct: number;
+  readonly sideboard: number;
+  /** The names the pool does not have, capped — the player wants to know *which* ones. */
+  readonly unknown: readonly string[];
+  readonly unknownCount: number;
+  readonly commander?: string;
+}
 
 export class PodError extends Error {
   /**
@@ -69,6 +84,15 @@ export interface SeatRecord extends PodSeat {
   disconnectedAt: number | null;
   /** Which built-in deck a bot seat plays. Only set on bot seats. */
   botDeck?: string;
+  /**
+   * A decklist this seat pasted in: counts and names, as the *server's* parser read them.
+   *
+   * Kept here rather than built into a deck once, because `deck:load` may be sent more than once
+   * (a player changing their mind in the lobby) and because the record is what survives a
+   * reconnect. The text is not kept: it has been parsed, and keeping both would mean deciding
+   * which one is true.
+   */
+  pastedList?: { name?: string; entries: { name: string; count: number }[]; commander?: string };
 }
 
 export interface PodRecord {
@@ -173,7 +197,26 @@ const publicSeat = (s: SeatRecord): PodSeat => ({
   connected: s.connected,
   // Which seats the server plays is not a secret, and a player should be able to see it.
   bot: s.bot === true,
+  // The list's shape but never its cards: how big it is, and how much of it the engine cannot
+  // read, which is what decides whether this table can be played with the rules engine at all.
+  ...(s.pastedList === undefined ? {} : { list: listSummary(s.pastedList) }),
 });
+
+/** A pasted list as everybody at the table may see it: a name, a size and a cannot-read count. */
+function listSummary(list: NonNullable<SeatRecord['pastedList']>): NonNullable<PodSeat['list']> {
+  // The id is never read here: only `unknown` is, which is what the table is allowed to know.
+  const { unknown } = customDeck({
+    id: 'summary',
+    name: list.name ?? 'A pasted list',
+    entries: list.entries,
+    ...(list.commander === undefined ? {} : { commander: list.commander }),
+  });
+  return {
+    ...(list.name === undefined ? {} : { name: list.name }),
+    total: list.entries.reduce((n, e) => n + e.count, 0),
+    unknown: unknown.length,
+  };
+}
 
 export function toSnapshot(record: PodRecord, version: number): PodSnapshot {
   return {
@@ -589,6 +632,57 @@ export class PodStore {
    * client last saw; a mismatch is reported as version_conflict without
    * touching the pod. The CAS in `mutate` additionally guards the write itself.
    */
+  /**
+   * Stores a decklist a player pasted in, for their own seat.
+   *
+   * The **server** parses it, and that is the whole point of sending text rather than a list: a
+   * client cannot hand the table a deck the parser would have refused, and the summary that comes
+   * back — total, distinct, how many cards the pool does not have — is what the server actually
+   * read rather than what the browser guessed.
+   *
+   * Lobby only. Once the table is dealt the decks are in the game state, and changing one would
+   * mean rewriting a library somebody may already have drawn from.
+   */
+  async setDeck(
+    code: string, playerId: string, input: { text: string; name?: string },
+  ): Promise<{ snapshot: PodSnapshot; summary: DeckListSummary }> {
+    const { snapshot, result } = await this.mutate(code, (record) => {
+      const seat = record.seats.find((s) => s.playerId === playerId);
+      if (!seat) throw new PodError('not_in_pod', 'you are not seated in this pod');
+      if (record.game?.started === true) {
+        throw new PodError('illegal_action', 'the table has already been dealt');
+      }
+      const parsed = parseDecklist(input.text);
+      if (parsed.errors.length > 0) throw new PodError('illegal_action', parsed.errors[0]!);
+      const name = input.name === undefined || input.name.length === 0 ? undefined : input.name;
+      seat.pastedList = {
+        ...(name === undefined ? {} : { name }),
+        entries: parsed.entries.map((e) => ({ name: e.name, count: e.count })),
+        ...(parsed.commander === undefined ? {} : { commander: parsed.commander }),
+      };
+      const { unknown } = customDeck({
+        id: customDeckIdFor(seat.seat),
+        name: name ?? 'Your list',
+        entries: parsed.entries,
+        ...(parsed.commander === undefined ? {} : { commander: parsed.commander }),
+      });
+      return {
+        record,
+        result: {
+          total: parsed.total,
+          distinct: parsed.entries.length,
+          sideboard: parsed.sideboard,
+          // The names themselves, capped: a player pasting a list with twelve unreadable cards
+          // wants to know *which* twelve, and a cap keeps a pathological paste out of the ack.
+          unknown: unknown.slice(0, 20),
+          unknownCount: unknown.length,
+          ...(parsed.commander === undefined ? {} : { commander: parsed.commander }),
+        } satisfies DeckListSummary,
+      };
+    });
+    return { snapshot: snapshot!, summary: result };
+  }
+
   async applyAction(code: string, playerId: string, action: unknown, expectedVersion: number): Promise<PodSnapshot> {
     const { snapshot } = await this.mutate(code, (record, version) => {
       if (version !== expectedVersion) {
@@ -613,8 +707,33 @@ export class PodStore {
       // Seat index may have been compacted when the table was dealt; re-resolve.
       const mySeat = record.seats.find((s) => s.playerId === playerId)!.seat;
       const stamped = { ...(action as Action), by: mySeat } as Action;
+      /*
+        The pasted lists this one action is allowed to resolve.
+
+        The acting seat's own list, always: that is the deck that player loads. Every seat's list
+        for a rematch, and only for a rematch, because a rematch is composed by the engine out of
+        the deck id each seat already had — it takes no deck id from anybody, so it cannot be
+        aimed. Handing every list to every action would let the host load the guest's list onto
+        their own seat and then read it out of their own library, which is why this is a function
+        of the action rather than a constant. A seat that pasted nothing gets no entry, so a
+        `deck:load` naming its id is refused by the engine rather than dealing somebody else's deck.
+      */
+      const everySeatsList = (action as Action).type === 'game:rematch';
+      const decks: Record<string, DeckSpec> = {};
+      for (const s of record.seats) {
+        if (s.pastedList === undefined) continue;
+        if (!everySeatsList && s.seat !== mySeat) continue;
+        decks[customDeckIdFor(s.seat)] = customDeck({
+          id: customDeckIdFor(s.seat),
+          name: s.pastedList.name ?? 'A pasted list',
+          entries: s.pastedList.entries,
+          ...(s.pastedList.commander === undefined ? {} : { commander: s.pastedList.commander }),
+        }).deck;
+      }
       try {
-        record.game = engineApply(record.game!, stamped, { isHost });
+        record.game = engineApply(record.game!, stamped, {
+          isHost, ...(Object.keys(decks).length === 0 ? {} : { decks }),
+        });
       } catch (err) {
         if (err instanceof EngineError) {
           // A game that has ended is not a client mistake, and telling the two apart is the

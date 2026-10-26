@@ -56,6 +56,20 @@ export const PodSeat = z.object({
   connected: z.boolean().default(true),
   /** A seat the server plays. Shown to everyone, because knowing who is a bot is not a secret. */
   bot: z.boolean().default(false),
+  /**
+   * A decklist this seat pasted in, summarised — never its contents.
+   *
+   * Shown to everybody, because "Nick is playing a list of his own, and twelve cards in it are
+   * ones the engine cannot read" is table information: it is what decides whether the host can
+   * start an automated game at all. The cards themselves are not here, for the same reason a hand
+   * is not: the names in a deck are information somebody paid for by building it.
+   */
+  list: z.object({
+    name: z.string().max(60).optional(),
+    total: z.number().int().min(0),
+    /** How many of them the engine's pool does not have, which is the tabletop-only count. */
+    unknown: z.number().int().min(0),
+  }).optional(),
 });
 export type PodSeat = z.infer<typeof PodSeat>;
 
@@ -151,6 +165,23 @@ export const PodChatInput = z.object({
 export type PodChatInput = z.infer<typeof PodChatInput>;
 
 /**
+ * A decklist somebody pasted in, for their own seat.
+ *
+ * The **text** goes over the wire rather than the parsed list, which is the only safe way round: the
+ * server parses it with `parseDecklist` and that answer is the one the table uses, so a client
+ * cannot hand it a deck the parser would have refused. Twenty thousand characters is about four
+ * times the longest real list — a Commander deck with set codes on every line is under five.
+ *
+ * Before the game is dealt only, and for the sender's own seat only: what deck somebody is playing
+ * is not something anybody else at the table gets to change.
+ */
+export const PodDeckInput = z.object({
+  name: z.string().trim().max(60).optional(),
+  text: z.string().max(20_000),
+});
+export type PodDeckInput = z.infer<typeof PodDeckInput>;
+
+/**
  * Game actions are opaque to the gateway; the rules engine validates `action`.
  * `expectedVersion` drives optimistic concurrency against the Redis CAS script.
  */
@@ -185,6 +216,7 @@ export const ClientEvents = {
   "pod:leave": PodLeaveInput,
   "pod:ready": PodReadyInput,
   "pod:chat": PodChatInput,
+  "pod:deck": PodDeckInput,
   "pod:action": PodActionInput,
   "pod:undo": PodUndoInput,
   "pod:list": PodListInput,

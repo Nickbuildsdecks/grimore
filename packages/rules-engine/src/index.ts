@@ -5,6 +5,7 @@ export * from './turnTypes.js';
 export * from './mana.js';
 export * from './characteristics.js';
 export * from './starterDecks.js';
+export * from './customDeck.js';
 export * from './engine.js';
 export * from './cardActions.js';
 export * from './effects.js';

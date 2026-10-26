@@ -3445,6 +3445,48 @@ is written down rather than solved, and nothing else in the pool offers one.
 Five new cards for a whole deck: Explore, Tatyova, Kiora's Follower, Pelakka Wurm and a Simic
 Guildgate. The ninth deck needed six, the tenth six, this one five.
 
+### A list of your own, and the card the engine is honest about
+
+The table only ever dealt the eleven decks in this repo. Now there is a box in the lobby: paste the
+text you keep your deck in — `4 Lightning Bolt`, a Moxfield export with a Commander section, a
+sideboard — and play it.
+
+**Two halves, and the split is the design.** The parser is in `@grimore/shared` and **knows nothing
+about cards**: counts may be `4`, `4x` or absent, set codes and collector numbers are dropped,
+section headers are understood, a sideboard is left out with a word about it. That is what lets the
+browser preview a list before the server has seen it and the server validate one without trusting
+the browser. The other half is in the engine, because the *pool* is: every name is looked up across
+all eleven decks and their commanders, and a hit is the real card — same script, same cost, same
+type line, plays exactly as it does in the deck it came from.
+
+**A miss becomes cardboard**: a card with a name and nothing else, which is what a kitchen table is.
+Its type line is left **empty** rather than filled in, because a type line the engine invented would
+make the card look like something it can reason about. The tabletop plays cardboard perfectly — you
+read it off the card in your hand — and `auto:start` **refuses** a table holding any, naming the
+card. That refusal is in the engine where it is enforced; the lobby badge ("1 the engine cannot
+read") is a report of it, which is D132's rule applied to a refusal. The deck still *loads*, because
+loading it is exactly what the tabletop wants.
+
+**What the table learns about your list is its name, its size and that count.** Never its cards. It
+is shown to everybody because the host is the one pressing Start, and a disabled button with no
+indication of whose deck is the problem explains nothing.
+
+**The id took a second pass.** One shared `custom` worked — `ctx.decks` is built per action and an
+action is stamped with its sender, so it always meant the actor's own list — right up until **play
+again**, which the engine composes by reloading the deck id each seat already has. The host's
+rematch asked for a `custom` only the guest's actions could resolve, so a rematch was refused at any
+table where the other player had pasted a deck. The ids are per seat now, and which of them an
+action may resolve is the server's decision: its own sender's always, every seat's for a rematch and
+only for a rematch, since a rematch takes no id from anybody and cannot be aimed. Otherwise a host
+could load the guest's list onto their own seat and read it out of their own library — a test now.
+
+**Proved by playing with one.** `e2e-solo` no longer clicks a deck: it writes Ember Rush's own sixty
+cards out as text, pastes them, and plays a whole game against the computer under the engine — the
+same game that suite always played, with one thing changed, which is where the cards came from.
+`e2e-table` pastes a list containing a card the engine has never scripted, checks the engine is
+refused and the tabletop is not, then pastes one without it and plays out a two-browser game on a
+deck nobody built into this repo.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -3469,12 +3511,15 @@ Guildgate. The ninth deck needed six, the tenth six, this one five.
    with nothing to divide it between: "as this enters, choose a number" (a Chalice of the Void) or a
    cost paid in an amount the player picks mid-resolution. That wants a range on a decision rather
    than a budget on a target spec, and nothing in the pool asks for one yet.
-2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
-   `deck:load` already resolves any deck handed to it, but a real list needs card data — type
-   lines, mana costs, oracle text — and the `cards` table has never been populated while this
-   environment cannot reach Scryfall. A deck of bare names has no type line, so the engine cannot
-   tell a land from a spell and Arena mode would be unusable; the tabletop would be fine. Worth
-   building where the data exists, not here.
+2. Loading a real Grimore deck into an automated table. **Half answered, and the other half still
+   blocked.** A player can now paste a list and play it: names the engine's pool has become the real
+   cards and are fully automated, which is the whole of the feature for a list built out of the pool.
+   What is still missing is the rest of Magic — a name the pool does not have becomes cardboard the
+   tabletop plays by hand, and Arena mode refuses it by name. Closing that needs card data for
+   arbitrary names (type lines, mana costs, oracle text), the `cards` table has never been populated
+   while this environment cannot reach Scryfall, and a type line is the minimum the engine needs to
+   tell a land from a spell. Worth building where the data exists, not here — and the refusal is
+   written so that it starts working the moment the data does.
 3. A stronger opponent still. It plays each option out — plays, attacks and blocks — and keeps the
    position it likes best, which is worth better than two games in three against the bot it
    replaced. But one ply is one ply: the simulation stops at the end of the current combat, so it

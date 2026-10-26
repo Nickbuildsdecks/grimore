@@ -18,11 +18,26 @@ import {
   type PodErrorEvent,
   type ServerToClientEvents,
 } from '@grimore/shared';
-import { makePlayerId, PodError, toSeatSnapshot, type PodSnapshot, type PodStore } from './pod.js';
+import {
+  makePlayerId, PodError, toSeatSnapshot,
+  type DeckListSummary, type PodSnapshot, type PodStore,
+} from './pod.js';
 import { TokenBucket, type RateLimitOptions, DEFAULT_RATE_LIMIT } from './ratelimit.js';
 
 export type AckResult =
-  | { ok: true; code?: string; seat?: number; seatToken?: string; playerId?: string; stateVersion?: number }
+  | {
+      ok: true; code?: string; seat?: number; seatToken?: string; playerId?: string;
+      stateVersion?: number;
+      /**
+       * What the server read in a pasted decklist, for the player who pasted it.
+       *
+       * On the ack rather than only in the broadcast state, because the question it answers is the
+       * sender's own: how many cards came through, how many different ones, and *which* of them the
+       * engine's pool does not have. Everybody at the table gets the counts in `PodSeat.list`; only
+       * the player who pasted it gets the names, which is the same line their own deck is on.
+       */
+      deck?: DeckListSummary;
+    }
   | { ok: false; error: PodErrorEvent };
 export type Ack = (result: AckResult) => void;
 
@@ -48,6 +63,9 @@ const RAW_CAPS: Record<ClientEventName, number> = {
   'pod:leave': 64,
   'pod:ready': 64,
   'pod:chat': CHAT_MAX_BYTES + 64,
+  // A pasted decklist: the schema caps the text at twenty thousand characters, and the frame is
+  // that plus a name and the JSON around it.
+  'pod:deck': 21_000,
   'pod:action': ACTION_MAX_BYTES + 128,
   'pod:undo': 64,
   'pod:list': 128,
@@ -236,6 +254,26 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       const snap = await store.ready(code, playerId, input.ready);
       ack?.({ ok: true, stateVersion: snap.stateVersion });
       await broadcast(code, snap);
+    });
+
+    /*
+      A decklist somebody pasted in, for their own seat.
+
+      The text is parsed by the **server** — see `PodStore.setDeck` — and the ack carries what it
+      read rather than what the browser guessed: how many cards, how many different ones, how many
+      of them the engine's pool does not have and which. That last list is the thing the player
+      needs: a list with twelve unreadable cards can still be played on the tabletop, and the one
+      question they will ask is which twelve.
+
+      Broadcast as well as acked, because the *table* needs the summary too: the host decides
+      whether to start an automated game, and a seat whose list has cards the engine cannot read
+      makes that impossible — better to say so in the lobby than to have `auto:start` refused.
+    */
+    on('pod:deck', async (input, ack) => {
+      const { code, playerId } = requireSeat();
+      const { snapshot, summary } = await store.setDeck(code, playerId, input);
+      ack?.({ ok: true, stateVersion: snapshot.stateVersion, deck: summary });
+      await broadcast(code, snapshot);
     });
 
     on('pod:action', async (input, ack) => {

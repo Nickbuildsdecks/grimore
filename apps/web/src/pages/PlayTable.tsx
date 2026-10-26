@@ -30,6 +30,7 @@ import {
   COMMON_TOKENS, STARTER_DECKS,
   type GameView, type LegalPlay, type SeatView, type VisibleCard, type ZoneId,
 } from "@grimore/rules-engine"
+import { customDeckIdFor, isCustomDeckId } from "@grimore/shared"
 import { CardFace, type CardHighlight } from "@/components/table/CardFace"
 import { ArenaBar } from "@/components/table/ArenaBar"
 import { CombatArrows } from "@/components/table/CombatArrows"
@@ -47,7 +48,7 @@ import {
   eliminatedLabel, pactBadge, playsForCard, reasonCannotPlay, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
-import { useTable, type TableAction, type UseTable } from "@/lib/table"
+import { pastedNote, useTable, type TableAction, type UseTable } from "@/lib/table"
 import { useTableSound } from "@/lib/useTableSound"
 import { useTableFeed } from "@/lib/useTableFeed"
 import { isBarePass } from "@/lib/feed"
@@ -410,12 +411,32 @@ function PreGame({ table }: { table: UseTable }) {
     void setReady(true)
   }, [soloReady, setReady])
 
+  /** The paste box, open or shut, and what the server made of the last list sent through it. */
+  const [pasting, setPasting] = useState(false)
+  const [listText, setListText] = useState("")
+  const [listNote, setListNote] = useState<string | null>(null)
+
   if (!pod) return null
   const mySeat = pod.seats.find((s) => s.seat === seat)
   const isHost = pod.hostPlayerId !== null && mySeat?.playerId === pod.hostPlayerId
   const myDeck = view?.seats.find((s) => s.index === seat)?.deckId ?? null
   const everyoneHasADeck = (view?.seats ?? []).every((s) => s.deckId !== null)
   const soloOnly = pod.seats.length > 1 && pod.seats.every((s) => s.bot || s.seat === seat)
+  /**
+   * Cards in a *loaded* pasted list that the engine has no script for.
+   *
+   * Counted only for the seats actually playing their list, because a player who pasted a deck and
+   * then picked a starter one has nothing unreadable at the table — and counted from the lobby
+   * seats rather than the view because that is where the summary lives. It decides one thing: the
+   * engine button. The real refusal is the server's, in `auto:start`; this is the table saying so
+   * before the host presses it, which is the difference between a disabled button and an error.
+   */
+  const unreadable = (view?.seats ?? [])
+    .filter((s) => isCustomDeckId(s.deckId))
+    .reduce((n, s) => n + (pod.seats.find((p) => p.seat === s.index)?.list?.unknown ?? 0), 0)
+  const myList = mySeat?.list
+  /** This seat's pasted list, by the id the server will resolve for it. */
+  const myListId = customDeckIdFor(seat ?? 0)
 
   return (
     <div data-testid="pregame" className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-8">
@@ -437,9 +458,24 @@ function PreGame({ table }: { table: UseTable }) {
             data-testid={`lobby-seat-${s.seat}`}
             className="flex items-center justify-between rounded-md border border-white/10 px-3 py-2"
           >
-            <span className="text-sm text-[var(--g-text-high)]">
-              {s.name}
-              {s.seat === seat ? " (you)" : ""}
+            <span className="flex flex-col text-sm text-[var(--g-text-high)]">
+              <span>
+                {s.name}
+                {s.seat === seat ? " (you)" : ""}
+              </span>
+              {/*
+                Whose list it is and how much of it the engine can read, to everybody — because the
+                host is the one pressing Start, and "the engine cannot read every card" with no
+                indication of whose deck is the problem is a dead end rather than an explanation.
+                Never its contents: a summary is table information, a decklist is not.
+              */}
+              {s.list ? (
+                <span data-testid={`lobby-list-${s.seat}`} className="text-[10px] text-[var(--g-text-muted)]">
+                  {s.list.name ?? "a list of their own"} · {s.list.total}{" "}
+                  {s.list.total === 1 ? "card" : "cards"}
+                  {s.list.unknown > 0 ? ` · ${s.list.unknown} the engine cannot read` : ""}
+                </span>
+              ) : null}
             </span>
             <span className="text-xs text-[var(--g-text-muted)]">
               {s.bot ? "the computer" : !s.connected ? "reconnecting" : s.ready ? "ready" : "not ready"}
@@ -480,6 +516,73 @@ function PreGame({ table }: { table: UseTable }) {
                 <span className="block text-xs text-[var(--g-text-muted)]">{deck.description}</span>
               </button>
             ))}
+            {myList ? (
+              <button
+                type="button"
+                data-testid="deck-custom"
+                onClick={() => void table.send({ type: "deck:load", seat, deckId: myListId })}
+                className={cn(
+                  "rounded-md border px-3 py-2 text-left transition-colors",
+                  isCustomDeckId(myDeck)
+                    ? "border-[var(--g-accent)] bg-[var(--g-accent)]/10"
+                    : "border-white/10 hover:border-white/25",
+                )}
+              >
+                <span className="block text-sm font-medium text-[var(--g-text-high)]">
+                  {myList.name ?? "Your list"}
+                </span>
+                <span className="block text-xs text-[var(--g-text-muted)]">
+                  {myList.total} {myList.total === 1 ? "card" : "cards"}
+                  {myList.unknown > 0
+                    ? ` · ${myList.unknown} the engine does not know`
+                    : " · every one of them scripted"}
+                </span>
+              </button>
+            ) : null}
+            {pasting ? (
+              <div className="flex flex-col gap-2">
+                <textarea
+                  data-testid="deck-text"
+                  value={listText}
+                  onChange={(e) => setListText(e.target.value)}
+                  rows={8}
+                  spellCheck={false}
+                  placeholder={"4 Lightning Bolt\n2 Shock\n24 Mountain\n\nCommander\n1 Tatyova, Benthic Druid"}
+                  className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-[var(--g-text-high)] placeholder:text-[var(--g-text-muted)]"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    data-testid="use-list"
+                    disabled={listText.trim().length === 0}
+                    onClick={() => {
+                      void (async () => {
+                        const summary = await table.sendDeck(listText)
+                        // Null is a refusal, and it has already put its reason in the error banner;
+                        // the box stays open with the text in it so the player can fix the line.
+                        if (summary === null) return
+                        setListNote(pastedNote(summary))
+                        setPasting(false)
+                        await table.send({ type: "deck:load", seat, deckId: myListId })
+                      })()
+                    }}
+                  >
+                    Use this list
+                  </Button>
+                  <Button variant="ghost" data-testid="cancel-list" onClick={() => setPasting(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button variant="secondary" data-testid="paste-list" onClick={() => setPasting(true)}>
+                Paste a list of your own
+              </Button>
+            )}
+            {listNote === null ? null : (
+              <p data-testid="list-note" className="px-1 text-[10px] leading-snug text-[var(--g-text-muted)]">
+                {listNote}
+              </p>
+            )}
           </section>
           {isHost ? (
             <section className="flex flex-col gap-2">
@@ -491,14 +594,18 @@ function PreGame({ table }: { table: UseTable }) {
               */}
               <Button
                 data-testid="start-engine"
-                disabled={!everyoneHasADeck}
+                disabled={!everyoneHasADeck || unreadable > 0}
                 onClick={() => {
                   // One after the other: `auto:start` needs a dealt table to take over.
                   void table.send({ type: "game:start" })
                   void table.send({ type: "auto:start" })
                 }}
               >
-                {everyoneHasADeck ? "Play with the rules engine" : "Waiting for decks"}
+                {!everyoneHasADeck
+                  ? "Waiting for decks"
+                  : unreadable > 0
+                    ? "The engine cannot read every card"
+                    : "Play with the rules engine"}
               </Button>
               <Button
                 variant="secondary"
@@ -512,6 +619,14 @@ function PreGame({ table }: { table: UseTable }) {
                 The engine enforces the rules, tracks priority and runs combat. The tabletop
                 enforces nothing and lets you move any card anywhere, the way cardboard does.
               </p>
+              {unreadable > 0 ? (
+                <p data-testid="unreadable-note" className="px-1 text-[10px] leading-snug text-[var(--g-text-muted)]">
+                  {unreadable} {unreadable === 1 ? "card" : "cards"} in a pasted list{" "}
+                  {unreadable === 1 ? "is" : "are"} not in the engine's pool, so it has no idea what{" "}
+                  {unreadable === 1 ? "it does" : "they do"}. The tabletop plays them: you read them
+                  off the card, as you would at a kitchen table.
+                </p>
+              ) : null}
             </section>
           ) : (
             <p className="text-sm text-[var(--g-text-muted)]">Waiting for the host to start.</p>

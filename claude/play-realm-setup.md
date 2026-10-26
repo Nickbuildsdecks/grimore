@@ -165,6 +165,7 @@ so neither of you needs this page open while playing.
 | Put a counter on something | Tap it → **Add +1/+1** (or **Add loyalty** for a planeswalker) |
 | Equip or enchant | Tap the aura or equipment → **Attach to…**, then tap what it goes on. It shows **ATT** and detaches by itself if that creature leaves. |
 | Search your library | **Search deck** opens it to you and nobody else; **Shuffle** closes it again |
+| Play my own deck | In the lobby: **Paste a list of your own** → paste the text → **Use this list**. See *Play with your own list*. |
 | Make tokens | **Token** has the common ones. A token that leaves the battlefield disappears, as it should. |
 | Take something back | **Undo** in the top bar puts the table back to just before the last move — one step, and only the host sees the button. It takes back whatever the engine or the computer's seats did in answer to that move as well, because that is what happened, and everybody is told in the chat that it was used. With nothing left to take back the button is simply gone. It restores the state exactly, so a card that was drawn and then taken back has still been seen by whoever drew it — the same as at a kitchen table, and the reason it is one step and the host's call. For anything further back, move the cards by hand; the log shows what actually happened. |
 
@@ -257,7 +258,7 @@ turn six, and nothing at all that attacks before it.
 
 Each two-colour deck runs a pair or three of Guildgates: one mana of either colour, and they come in
 tapped, and eight of the ten also run a pair of cycling lands. Any pairing works, including a deck
-against itself. They are also the only decks right now — see *What is not done* below.
+against itself. They are not the only decks you can play, though: see *Play with your own list*.
 
 A note on what to expect from each: played against each other by the engine's own opponent, the
 aggressive decks win more. Skyward Writ is the clearest case of the bot rather than the deck: it is
@@ -457,6 +458,39 @@ different things. The sixth is **Enigma Drake**, and it is the one that needed e
 characteristic-defining power that counts one player's own graveyard, and that defines the power
 while leaving the printed toughness alone.
 
+### Play with your own list
+
+The decks above are what the engine has scripts for. They are not the limit of what you can sit down
+and play: in the lobby, under your deck, there is **Paste a list of your own**. Paste the text you
+already keep your deck in and press **Use this list**.
+
+It is deliberately relaxed about format. Counts can be `4`, `4x` or missing; set codes and collector
+numbers (`Forest (M21) 262`) are thrown away; `Deck`, `Commander`, `Sideboard` and `Maybeboard`
+headers are understood, the first card under `Commander` goes to the command zone, and a sideboard is
+left out with a note saying so. It is strict about size — 250 cards, 150 different names, 40 per line
+— and a list it cannot read is **refused** rather than half-loaded, with the reason on screen.
+
+What comes back is one line: how many cards it found, and how many of them the engine has no script
+for. For example:
+
+```
+60 cards · 2 the engine does not know (Sol Ring, Dockside Extortionist) — tabletop only
+```
+
+Those two cards are **cardboard**: a card with a name and nothing else, which is exactly what it is
+at a kitchen table. You move it by hand, and you read it off the card you are holding.
+
+**That decides which of the two games you can start.** The tabletop plays anything, so it is always
+offered. Arena mode is not: with one unreadable card in the deck, **Play with the rules engine** is
+disabled and the table says which card and why, because an automated game containing a card the
+engine cannot read is a game with a card nobody — engine or player — can do anything with. Paste a
+list built out of the pool and the engine runs it like any built-in deck: the lobby says *every one
+of them scripted*, and the cards play exactly as they do in the deck they came from.
+
+Everybody at the table sees the name, the size and that unreadable count on your seat — never your
+cards. It is there because the host is the one pressing Start, and a disabled button that does not
+say whose deck is the problem explains nothing. **Play again** re-deals both lists.
+
 Cards are drawn as text, not pictures. That is deliberate: there is no card artwork available (the
 card table on the server has never been populated, and this environment cannot reach Scryfall), so
 every card face is fully legible from its name, cost, type line, oracle text and power/toughness. If
@@ -521,11 +555,11 @@ Four browser suites, one per way of playing. All need the stack running and Play
 (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
 
 ```bash
-node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 62 checks
+node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 68 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-58 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
-node scripts/e2e-solo.mjs       # one browser, against the computer    — 20-21 checks
-SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 23 checks
+node scripts/e2e-solo.mjs       # one browser, against the computer    — 22 checks
+SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 24 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -556,6 +590,12 @@ running, taking whatever the UI offers rather than a fixed sequence, so it plays
 shuffle deals; it checks that the engine never refuses something the table offered, and has modes
 for the cases the shuffle makes rare:
 
+The solo suite plays its duel on a **pasted list** rather than a deck it picked: it writes Ember
+Rush's own sixty cards out as text, pastes them into the lobby and plays the whole game under the
+engine, which is how the paste path is proved rather than described. The tabletop suite pastes a
+list with a card the engine has never scripted, checks the engine is refused and the tabletop is
+not, then pastes one without it and plays the rest of its game on it.
+
 The pod suite is the four-player one: four seats on one code, four opening hands at once, a
 commander cast from the command zone and back in it after it died, attacks sent at more than one
 opponent, a deal offered to another player and accepted on their table, a player conceding while the
@@ -575,19 +615,26 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (643 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (769 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (179 tests, the interaction reducer behind every prompt) and
+pods as well as duels), `apps/web` (193 tests, the interaction reducer behind every prompt) and
 `apps/realtime`
-(31 tests against live Redis, including two socket clients playing to a finish, one person
-playing the server, and a deal struck with the server's own seat).
+(38 tests against live Redis, including two socket clients playing to a finish, one person
+playing the server, a deal struck with the server's own seat, and two players rematching on
+decks they pasted in).
 
 ## What is not done
 
-- **Only the eleven starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
-  a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
-  it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
-  unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
+- **A list of your own plays, but only the pool is automated.** Paste your decklist in the lobby and
+  the table deals it (see *Play with your own list*). Every name the engine's pool has — the two
+  hundred and twenty-five cards in the eleven starter decks, commanders included — becomes the real
+  card and is fully automated. Every name it does not becomes **cardboard**: a card with a name and
+  nothing else, which the tabletop plays by hand with **Move by hand** for whatever it says in
+  prose, and which Arena mode refuses by name rather than dealing a game with a card nobody can do
+  anything with. Closing that gap needs card data for arbitrary names — type lines, mana costs,
+  oracle text — which means a populated `cards` table, which means a machine that can reach
+  Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
+  exists, the card data does not.
 - **The engine knows two hundred and twenty-five cards.** Everything in the eleven starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent

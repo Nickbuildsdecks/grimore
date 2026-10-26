@@ -1391,6 +1391,25 @@ function startAutomation(
 ): Outcome {
   if (state.automated) throw new EngineError('ALREADY_STARTED', 'the rules engine is already running');
   if (!state.started) throw new EngineError('NOT_STARTED', 'deal the table first');
+  /*
+    A card the engine cannot read is a card an automated game cannot deal.
+
+    A pasted decklist becomes real cards wherever the pool has the name and **cardboard** wherever
+    it does not — a name and nothing else, which is exactly what a kitchen table is (see
+    `customDeck`). The tabletop plays that perfectly; the engine cannot, because a card with no
+    type line is not a land, not a creature and not a spell, and a game dealt with one in the deck
+    has a card in it that neither side can do anything with.
+
+    So it is refused here, by name, rather than at the point the deck is loaded: loading it is
+    exactly what the tabletop wants. This is the enforcement, and the lobby's "tabletop only" badge
+    is a report of it — asserted where it is enforced, which is the rule D132 set for the privacy
+    default and the same one applies to a refusal.
+  */
+  const blank = Object.values(state.cardDefs).find((def) => def.typeLine.trim().length === 0);
+  if (blank !== undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      `the engine does not know ${blank.name}: a pasted list plays on the tabletop, not with the rules engine`);
+  }
   const first = action.firstSeat ?? state.activeSeat;
   assertSeatIndex(state, first, 'firstSeat');
   /*
