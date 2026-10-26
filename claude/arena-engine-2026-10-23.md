@@ -4204,6 +4204,28 @@ the deck before it was measured, which is the only honest way to publish a 59%: 
 deck of big creatures better than it plays a deck of answers, so this reads higher than a person
 would make it.
 
+### Evasion priced against the board: built, measured, deleted
+
+The evaluation prices flying at a flat 1.5 whatever is opposite it, and that is two different cards:
+a 2/2 flier against a board with no flying and no reach is an unanswerable clock, and the same 2/2
+against two Giant Spiders is a 2/2. Nothing in the evaluation could tell those boards apart, which
+is the first thing a person reads off a battlefield — so it was built: a creature with flying that
+the opponents cannot block, or one that cannot be blocked at all, worth **its power again** times a
+weight, computed once per seat rather than once per creature.
+
+**Level at 0.5, 1.0 and 2.0**, on the paired bot-against-bot instrument over 936 games a run:
+467-469 and 470-464 on two seed sets at 0.5, 471-465 at 1.0, 468-468 at 2.0 — against a negative
+control of exactly **468-468**, which is what makes those rows readable rather than arguable. And it
+is a genuine wash rather than a setting that never fired: `disagree.mjs` says **83 of 30,176
+decisions differed**. It also costs about **8% of the decision time** (157s against 169s, identical
+arms, identical seeds).
+
+So it is gone, with its numbers kept in `claude/decisions-log.md` beside the five terms deleted
+before it. The lesson is narrower than the idea that motivated it: the bot's attacks and blocks
+already ask whether a creature can be blocked — `canBlock` knows — and what the evaluation was
+being asked to add is a judgement about the *next few turns*, which a bot that cannot plan a turn
+ahead has nothing to do with.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

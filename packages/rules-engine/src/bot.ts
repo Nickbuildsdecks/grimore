@@ -745,6 +745,43 @@ const PERMANENT_ON_BOARD = 3;
   that, because what the mana bought instead was worth more.
 */
 
+/*
+  Evasion priced against the board in front of it: built, measured, and gone.
+
+  `KEYWORD_VALUE` above prices flying at 1.5 whatever is opposite it, and that is two different
+  cards: a 2/2 flier against a board with no flying and no reach is an unanswerable clock, and the
+  same 2/2 against two Giant Spiders is a 2/2. No term here could tell those boards apart, which is
+  the first thing a person reads off a battlefield — so it was worth asking.
+
+  The term: a creature with flying whose controller's opponents have nothing with flying or reach,
+  or one that simply cannot be blocked, is worth **its power again** times a weight. Asked once per
+  `seatValue` rather than once per creature, so the extra work is one scan of the opponents'
+  battlefields rather than one per creature of yours.
+
+  **Level at every weight that changes anything**, on the paired bot-against-bot instrument, 936
+  games a run with thirteen decks in both seats:
+
+  | weight | seeds 3300 | seeds 8800 |
+  | --- | --- | --- |
+  | 0.5 | 467-469 | 470-464 |
+  | 1.0 | 471-465 | — |
+  | 2.0 | 468-468 | — |
+
+  The negative control — the same bot in both arms — is exactly 468-468, which is what makes those
+  three rows readable as level rather than arguable. And `disagree.mjs` says the term did change
+  decisions, so this is a genuine wash rather than a setting that never fired: **83 of 30,176
+  decisions differed**, 51 of them casts.
+
+  It also costs time. Identical arms on the same seeds, which is the clean comparison: **157s with
+  the term off and 169s with it on**, about 8% for nothing.
+
+  So the term is gone, and the lesson it leaves is narrower than the idea that motivated it: *the
+  bot's attacks and blocks already ask whether a creature can be blocked* — `canBlock` knows, and
+  the combat heuristics read it. What the evaluation was being asked to add was a judgement about
+  the **next** few turns, and a bot that cannot plan a turn ahead has nothing to do with it. The
+  same shape of answer the mana-up term got, for the same underlying reason.
+*/
+
 /** Everything one seat has, from that seat's point of view. */
 function seatValue(state: GameState, seat: SeatIndex): number {
   let total = (state.seats[seat]?.life ?? 0) * LIFE_WEIGHT;

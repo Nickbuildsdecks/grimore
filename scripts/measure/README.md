@@ -81,6 +81,14 @@ and write down that it measured as nothing — not to keep it because the sign l
 56-56 of 112. Run that control whenever you touch the harness: a paired design with no seat bias and
 no matchup bias is what makes a six-game difference readable instead of arguable.
 
+**A term can change the bot's mind and still win nothing, and both halves have to be reported.**
+The contextual evasion term (D164) is the cleanest case this project has: `disagree.mjs` said **83
+of 30,176 decisions differed**, so it was firing; `bot-duel` said 467-469 and 470-464 at one weight,
+471-465 and 468-468 at two others, against a negative control of exactly 468-468. Level at every
+weight that changed anything, and **8% slower** on identical arms over identical seeds (157s against
+169s). A term that is level and free might be kept; a term that is level and costs time is a delete,
+and the numbers go in the log so nobody builds it twice.
+
 **A flat `bot-duel` result is not a wash until `disagree.mjs` says the setting changed something.**
 A level scoreboard means one of two unrelated things — the choices changed and were worth nothing,
 or nothing changed — and only the disagreement rate tells them apart. D117 came back level and

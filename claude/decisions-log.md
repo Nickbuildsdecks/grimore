@@ -7430,3 +7430,46 @@ deck. **The limit was named in the deck's own write-up before it was measured**,
 honest way to publish a 59%: the bot plays a deck of big creatures better than it plays a deck of
 answers, so this row reads higher than a person would make it — the exact opposite of Tidal Mind's
 problem and the same cause.
+
+## D164 — Evasion priced against the board: built, measured, deleted
+
+**Decision: do not keep a term that values a flier by whether anything opposite it can block. Level
+at every weight that changes anything, and 8% slower.**
+
+`KEYWORD_VALUE` prices flying at 1.5 whatever is in front of it, and that is two different cards: a
+2/2 flier against a board with no flying and no reach is an unanswerable clock, and the same 2/2
+against two Giant Spiders is a 2/2. Nothing in the evaluation could tell those boards apart — which
+is the first thing a person reads off a battlefield, so it was worth asking properly.
+
+**The term.** A creature with flying whose controller's opponents have nothing with flying or reach,
+or one that simply cannot be blocked, is worth **its power again** times a weight. Asked once per
+`seatValue` rather than once per creature, so the extra work is one scan of the opponents'
+battlefields rather than one per creature — O(n) instead of O(n²) in the hottest loop the bot has.
+Added to `seatValue` rather than to `creatureValue`, deliberately: `creatureValue` is read by the
+*combat* heuristics too, and there the question is already asked properly.
+
+**Level, on the paired bot-against-bot instrument, 936 games a run with thirteen decks in both
+seats:**
+
+| weight | seeds 3300 | seeds 8800 |
+| --- | --- | --- |
+| 0.5 | 467-469 | 470-464 |
+| 1.0 | 471-465 | — |
+| 2.0 | 468-468 | — |
+
+**The negative control is exactly 468-468** — the same bot in both arms — which is what makes those
+rows readable as level rather than arguable, and is the reason the README insists on running it.
+
+**And it is a real wash rather than a setting that never fired**, which is the other check the README
+insists on: `disagree.mjs` says **83 of 30,176 decisions differed**, 51 of them casts, 20
+activations, 11 blocks. The term changed the bot's mind 83 times and won nothing for it.
+
+**It also costs time.** Identical arms on identical seeds, which is the clean comparison: **157s
+with the term off, 169s with it on** over the same 936 games — about 8% for nothing.
+
+**The lesson is narrower than the idea.** The bot's attacks and blocks *already* ask whether a
+creature can be blocked: `canBlock` knows, and the combat heuristics read it. What the evaluation
+was being asked to add is a judgement about the **next few turns** — "this creature will keep
+getting through" — and a bot that cannot plan a turn ahead has nothing to do with that. Which is the
+same answer the mana-up term got (D117/D119), for the same underlying reason, and the sixth
+evaluation term to be deleted with its numbers kept.
