@@ -32,7 +32,7 @@ import { checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import { convokePlan, crewPlan, legalActions, manaSources } from './legalActions.js';
 import {
-  EMPTY_COMBAT, MAIN_STEPS, type CombatAttack, type StackObject, type Target,
+  EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type StackObject, type Target,
   type AutoTurnUpAction, type AutoForetellAction,
 } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -1331,7 +1331,9 @@ function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Out
  */
 function decide(
   state: GameState,
-  action: { by: SeatIndex; cards?: readonly string[]; option?: string; amount?: number },
+  action: {
+    by: SeatIndex; cards?: readonly string[]; option?: string; amount?: number; target?: Target;
+  },
 ): Outcome {
   requireAutomated(state);
   const pending = state.pendingDecision;
@@ -1382,6 +1384,32 @@ function decide(
     return {
       state: settledNumber,
       message: `${seatName(state, action.by)} chooses ${picked} — ${resumedNumber.message}`,
+    };
+  }
+  /*
+    A question about where something else on the stack is pointed, answered — and the list the
+    engine offered is the authorisation again, the same as the words and the numbers.
+
+    Declining is a real answer here ("you may choose new targets"), so an action with no target is
+    accepted rather than refused. What is refused is a target the question did not offer: a crafted
+    action cannot aim a copy at a creature with shroud, at a permanent that is not a legal target
+    for the spell being copied, or at a card that has since left the battlefield.
+  */
+  if (pending.targetChoices !== undefined) {
+    const picked = action.target;
+    const offered = pending.targetChoices;
+    if (picked !== undefined && !offered.some((t) => targetKey(t) === targetKey(picked))) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that is not one of the targets on offer');
+    }
+    const resumedTarget = answerDecision(state, [], undefined, undefined, picked);
+    const settledTarget = resumedTarget.state.pendingDecision === null
+      ? resetPriority(settle(resumedTarget.state, state))
+      : settle(resumedTarget.state, state);
+    return {
+      state: settledTarget,
+      message: picked === undefined
+        ? `${seatName(state, action.by)} leaves it where it was — ${resumedTarget.message}`
+        : `${seatName(state, action.by)} re-aims it — ${resumedTarget.message}`,
     };
   }
   const chosen = action.cards ?? [];

@@ -65,6 +65,23 @@ export function isLegalTarget(
   // checks below are about the spec's kind — a hand-built action would slip straight past them.
   if (spec.kind === 'player' || spec.kind === 'ability') return false;
 
+  /*
+    A copy of a spell, which is a spell with no card (CR 707.10) and the one card-shaped target
+    that has no instance behind it.
+
+    Checked before the instance lookup because that lookup is what used to make a copy
+    untargetable: every test below it is about a card in a zone — a type line, a keyword, a colour —
+    and a copy on the stack has none of those, exactly as an ability has none. So the list is short
+    and complete, the same way the ability branch above is: the spec has to be asking for a spell,
+    and the filter decides the rest. What it buys is the play the rules give the other player and
+    this engine did not: countering the copy.
+  */
+  const asCopy = state.stackObjects[candidate.id];
+  if (asCopy?.kind === 'spell' && asCopy.copyOf !== undefined) {
+    if (spec.kind !== 'spell' && spec.kind !== 'spell-or-ability') return false;
+    return spec.filter ? spec.filter(state, candidate, controller, source) : true;
+  }
+
   const inst = state.instances[candidate.id];
   if (inst === undefined) return false;
 
@@ -115,8 +132,17 @@ export function legalTargets(
       if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);
     }
   }
+  /*
+    The spells, listed off the **stack order** rather than out of the stack zone.
+
+    The zone holds cards, and nearly every spell is one — but a copy of a spell is a spell with no
+    card at all (CR 707.10), so a Twincast copy sitting on the stack was invisible to "counter
+    target spell" while the engine looked in the zone. Reading `stackOrder` and keeping the spells
+    finds both, and it is the same shape the abilities below already use.
+  */
   if (spec.kind === 'spell' || spec.kind === 'spell-or-ability') {
-    for (const id of listAt(state, 'stack')) {
+    for (const id of state.stackOrder) {
+      if (state.stackObjects[id]?.kind !== 'spell') continue;
       const candidate: Target = { kind: 'card', id };
       if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);
     }

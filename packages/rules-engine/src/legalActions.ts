@@ -194,9 +194,15 @@ export interface LegalActions {
     readonly options?: readonly string[];
     /**
      * The numbers to choose between, when that is the question: "pay X life". Present exactly when
-     * neither `from` nor `options` is, and the table draws a row of numbers.
+     * `from`, `options` and `targetChoices` are all absent, and the table draws a row of numbers.
      */
     readonly numbers?: { readonly min: number; readonly max: number };
+    /**
+     * Where something else on the stack may be pointed instead: "you may choose new targets for
+     * the copy". The table draws one button per target and a way to decline, because declining is
+     * an answer. See `TargetDecisionSpec`.
+     */
+    readonly targetChoices?: readonly Target[];
   } | null;
   /**
    * A ward this seat is being asked to pay (CR 702.21b), and what it loses by declining.
@@ -991,6 +997,9 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
         ...(decision.from === undefined ? {} : { from: decision.from }),
         ...(decision.options === undefined ? {} : { options: [...decision.options] }),
         ...(decision.numbers === undefined ? {} : { numbers: { ...decision.numbers } }),
+        ...(decision.targetChoices === undefined
+          ? {}
+          : { targetChoices: [...decision.targetChoices] }),
         candidates: decision.candidates, min: decision.min, max: decision.max,
       }
     : null;

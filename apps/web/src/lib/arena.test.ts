@@ -594,6 +594,61 @@ describe("answering a question a card asked while resolving", () => {
   it("puts the prompt on the label and leaves the numbers to the buttons", () => {
     expect(decisionLabel(deluge(), [])).toBe("Pay how much life?")
   })
+
+  /*
+    A question whose answer is a **target**: "Point the copy somewhere else?" on a Twincast.
+
+    The fourth shape, and the only one whose answer may be *nothing at all* — every printed copy
+    effect says "you **may** choose new targets", so declining is an answer rather than a cancel.
+    The list is the authorisation again: the table sends a target the engine offered, or none.
+  */
+  const copy = (): Decision => ({
+    prompt: "Point the copy somewhere else?",
+    candidates: [],
+    min: 0,
+    max: 1,
+    targetChoices: [{ kind: "player", seat: 1 }, { kind: "card", id: "b2" }],
+  })
+
+  it("answers with a target in one tap", () => {
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: copy() }).mode
+    const { mode: after, action } = arenaReducer(mode, {
+      kind: "pickTargetChoice", target: { kind: "card", id: "b2" },
+    })
+    expect(action).toEqual({
+      type: "auto:decide", cards: [], target: { kind: "card", id: "b2" },
+    })
+    expect(after).toEqual(IDLE)
+  })
+
+  it("takes 'leave it' for an answer, with no target at all", () => {
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: copy() }).mode
+    const { mode: after, action } = arenaReducer(mode, { kind: "pickTargetChoice" })
+    expect(action).toEqual({ type: "auto:decide", cards: [] })
+    expect(after).toEqual(IDLE)
+  })
+
+  it("refuses a target the engine did not offer", () => {
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: copy() }).mode
+    for (const target of [
+      { kind: "card", id: "b9" } as const,
+      { kind: "player", seat: 0 } as const,
+      { kind: "ability", id: "ab1" } as const,
+    ]) {
+      expect(arenaReducer(mode, { kind: "pickTargetChoice", target }).action).toBeNull()
+    }
+  })
+
+  it("ignores a target sent at a question that is not about one", () => {
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: deluge() }).mode
+    expect(arenaReducer(mode, {
+      kind: "pickTargetChoice", target: { kind: "player", seat: 1 },
+    }).action).toBeNull()
+  })
+
+  it("leaves the targets to the buttons on the label as well", () => {
+    expect(decisionLabel(copy(), [])).toBe("Point the copy somewhere else?")
+  })
 })
 
 describe("choosing X", () => {

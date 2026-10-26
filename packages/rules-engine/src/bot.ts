@@ -18,7 +18,8 @@ import { crewPlan, legalActions, type LegalActions, type LegalPlay } from './leg
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  bottomOwed, modesOf, pendingDeclaration, preferredAmount, preferredOption, stillDeciding,
+  bottomOwed, modesOf, pendingDeclaration, pendingRetarget, preferredAmount, preferredOption,
+  stillDeciding,
 } from './automation.js';
 import { characteristicsOf, hasType, parseTypeLine, type Keyword } from './characteristics.js';
 import {
@@ -87,7 +88,54 @@ function decideAction(
       amount: preferredAmount(state) ?? ask.numbers.min,
     };
   }
+  // And where a copy should point, which no card can answer: the card being copied is not the card
+  // asking. See `newTargetFor`.
+  if (ask.targetChoices !== undefined) {
+    const picked = newTargetFor(state, seat, ask.targetChoices);
+    return {
+      type: 'auto:decide', by: seat, cards: [],
+      ...(picked === undefined ? {} : { target: picked }),
+    };
+  }
   return { type: 'auto:decide', by: seat, cards: decideCards(state, seat, ask) };
+}
+
+/**
+ * Where the bot points a copy, and when it leaves the copy where it was.
+ *
+ * The same ranking a cast uses — enemies and enemy creatures first, or my own side for a spec the
+ * card marked `friendly` — because it is the same question with the same blind spot: the bot does
+ * not know what the spell *does*, and the card's own hint is the thing that stops it pointing a
+ * copied prevention shield at the player it is attacking.
+ *
+ * **Declining when the best answer is the one it already has** is not a tidiness: a copy of my own
+ * Lightning Bolt is already aimed at the opponent, and re-choosing the same target is a legal
+ * answer that reads, in the log and on the stack, as though the bot changed its mind and did not.
+ * The interesting case is the other one — a copy of *their* removal spell, which arrives pointed at
+ * my own creature and is worth a card only once it is pointed back, which is what it does.
+ *
+ * **One case it gets wrong, and knowingly.** A copied Gravedigger trigger has both corpses in the
+ * bot's *own* graveyard, so the ranking sees two of its own cards, ties, and declines — and then
+ * the copy returns the card and the original is countered for pointing at an object that has
+ * changed zones, which is one creature back instead of two. Answering that needs "would declining
+ * make the original fizzle", which is a question about what the copied effect *does* and cannot be
+ * read off the board: the pool's other copy card is the one the measurement is about, and there
+ * the answer is right. A person answering the question gets both creatures, which the tests show.
+ */
+function newTargetFor(
+  state: GameState, seat: SeatIndex, choices: readonly Target[],
+): Target | undefined {
+  const aiming = pendingRetarget(state);
+  const foes = foesOf(state, seat);
+  const score = aiming?.friendly === true
+    ? (t: Target): number => friendlyRank(state, t, foes)
+    : (t: Target): number => rank(state, t, foes);
+  const best = [...choices].sort((a, b) => score(b) - score(a))[0];
+  if (best === undefined) return undefined;
+  const current = aiming?.current;
+  // A tie goes to leaving it alone, which is why this is `<=` rather than `<`.
+  if (current !== undefined && score(best) <= score(current)) return undefined;
+  return best;
 }
 
 function decideCards(

@@ -131,6 +131,13 @@ export type ArenaEvent =
    */
   | { kind: "pickOption"; option: string }
   | { kind: "pickNumber"; amount: number }
+  /**
+   * The answer to "you may choose new targets for the copy": where it goes, or nowhere.
+   *
+   * `target` left out is the answer "leave it where it was", which the card allows and the engine
+   * expects as an `auto:decide` with no target at all.
+   */
+  | { kind: "pickTargetChoice"; target?: Target }
   | { kind: "feed"; card: string }
   | { kind: "choosePlay"; play: LegalPlay }
   | { kind: "pickTarget"; target: Target }
@@ -675,6 +682,21 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       return { mode: IDLE, action: { type: "auto:decide", cards: [], amount: event.amount } }
     }
 
+    case "pickTargetChoice": {
+      if (mode.kind !== "deciding") return { mode, action: null }
+      const choices = mode.ask.targetChoices
+      if (choices === undefined) return { mode, action: null }
+      // Declining is a real answer, so no target is sent as no target rather than refused here.
+      if (event.target === undefined) {
+        return { mode: IDLE, action: { type: "auto:decide", cards: [] } }
+      }
+      // And a target is checked against the list the engine offered, exactly as a word and a
+      // number are: the table draws what the engine said is answerable and sends nothing else.
+      const wanted = targetKey(event.target)
+      if (!choices.some((t) => targetKey(t) === wanted)) return { mode, action: null }
+      return { mode: IDLE, action: { type: "auto:decide", cards: [], target: event.target } }
+    }
+
     case "toggleDecision": {
       if (mode.kind !== "deciding") return { mode, action: null }
       if (!mode.ask.candidates.includes(event.card)) return { mode, action: null }
@@ -1051,6 +1073,8 @@ export function decisionLabel(ask: Decision, chosen: readonly string[]): string 
   if (ask.options !== undefined) return ask.prompt
   // Nor has a number: the numbers themselves are the buttons.
   if (ask.numbers !== undefined) return ask.prompt
+  // Nor has a question about where a copy goes: the targets are the buttons, and so is declining.
+  if (ask.targetChoices !== undefined) return ask.prompt
   if (ask.min === ask.max) return `${ask.prompt} (${chosen.length} of ${ask.max})`
   if (ask.min === 0) return chosen.length === 0 ? `${ask.prompt} — or choose nothing` : `${ask.prompt} (${chosen.length})`
   return `${ask.prompt} (${chosen.length}, at least ${ask.min})`

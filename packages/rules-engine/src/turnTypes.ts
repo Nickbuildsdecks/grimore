@@ -203,6 +203,16 @@ export interface StackObject {
    * the two are different seats.
    */
   readonly actor?: SeatIndex;
+  /**
+   * The stack object this one is a **copy** of (CR 707.10), when it is one.
+   *
+   * Its presence is also what says there is no card here: a copy of a spell is not a card, so
+   * `instances[id]` is empty for it and nothing may put it in a graveyard when it has resolved.
+   * Readers that need a card off a spell go through `source`, which on a copy is still the
+   * original's instance — the characteristics are the original's, and that is where they are read
+   * from.
+   */
+  readonly copyOf?: string;
   /** What to show in the stack, written when the object was put there. */
   readonly description: string;
 }
@@ -499,9 +509,20 @@ export interface AutomationState {
     readonly options?: readonly string[];
     /**
      * The numbers on offer, when the answer is a number rather than a card or a word. Present
-     * exactly when both `from` and `options` are absent, and the table draws a row of numbers.
+     * exactly when `from`, `options` and `targetChoices` are all absent, and the table draws a row
+     * of numbers.
      */
     readonly numbers?: { readonly min: number; readonly max: number };
+    /**
+     * The targets on offer, when the answer is **where something else on the stack is pointed**:
+     * "you may choose new targets for the copy".
+     *
+     * Full targets rather than ids, because a target is a card *or* a player and the table has to
+     * draw both. The one it already has is in the list, since choosing the same target again is a
+     * legal answer to "you may choose new targets" — and `min` is nought, because declining is as
+     * well. See `TargetDecisionSpec`.
+     */
+    readonly targetChoices?: readonly Target[];
     readonly resume: {
       /** Every question this resolution asks, in order: a spec index and who answers it. */
       readonly plan: readonly { readonly seat: SeatIndex; readonly specIndex: number }[];
@@ -554,6 +575,13 @@ export interface DecisionAnswer {
    * cannot pay nine life out of a four-life range. See `NumberDecisionSpec`.
    */
   readonly amount?: number;
+  /**
+   * The target chosen, for a question about where something else on the stack is pointed.
+   *
+   * Absent when the answer was to decline, which "you may choose new targets" always allows — so
+   * the effect reads "absent means leave it alone" rather than needing a second field to say so.
+   */
+  readonly target?: Target;
 }
 
 // ── Automated actions ────────────────────────────────────────────────────────────────────────────
@@ -678,6 +706,11 @@ export interface AutoDecideAction {
   readonly option?: string;
   /** The number chosen, for a question whose answer is a number. Same action, same reason. */
   readonly amount?: number;
+  /**
+   * The target chosen, for a question about where a copy is pointed. Omitted to decline, which is
+   * why this action has no separate "no thank you" — see `TargetDecisionSpec.optional`.
+   */
+  readonly target?: Target;
 }
 /**
  * Answers a ward (CR 702.21): pay the cost, or let the spell or ability be countered.

@@ -6541,3 +6541,101 @@ stack is a test with a race in it, and the fix is to make the press idempotent �
 only version of the check that would catch the table genuinely losing the seat, because a check that
 can only pass by luck cannot fail for the right reason either. Run twice against a freshly started
 stack and a warm one: 73 of 73 both times.
+
+## D150 — The target chosen while something resolves, and the copy that is not a card
+
+**Decision: a fourth shape of mid-resolution question, whose answer is a target for a *different*
+object on the stack — and a spell copy that has no card behind it.**
+
+Three shapes of question existed: which cards, which word, which number. "You may choose new
+targets for the copy" is none of them, and it is the clause every printed copy effect ends with. So
+Strionic Resonator arrived (D136) without it, and the engine said so out loud: the copy kept
+whatever the original chose, and a copied Gravedigger trigger pointing at a card the original had
+already returned was countered for having no legal target. That limitation was a test. It is now the
+test one line above the one that undoes it.
+
+**The question is asked about the object being copied, not about the copy.** A copy's
+characteristics are the original's (CR 707.2), so its legal targets are the same set — which means
+the question can be answered *before* the copy exists, and the answer handed to `copySpellOnStack`
+as it makes one. The alternative was to make the copy aimed at the old target and then re-aim it,
+which is two states where one will do, and a visible flicker in the log.
+
+**Only a single-target object is asked about.** That is the same restriction `soleTargetSpecOf`
+puts on Swerve and Willbender, and the reason is sharper here: the rules copy a divided quantity as
+it was divided (CR 706.10c), so re-aiming an Arc Lightning would need its three points
+re-divided — and "choose new targets" is not permission to re-divide. No targets, several targets,
+or one legal target and it is the one already chosen: all three are "no question", answered by the
+engine the way a one-word list and a one-number range already are.
+
+**Not a cast-time target, which is the distinction worth being careful about.** Swerve and
+Willbender *do* choose where a spell is going as they are cast, and they are different cards for
+it: both choices are on the stack where an opponent can read and answer them. A copy effect chooses
+after every response, from the board as it ended up — a creature that arrived since is a legal new
+target, and one that died is not.
+
+**A copy of a spell is a spell with no card** (CR 707.10), which is where the work was. A spell's
+stack id has always *been* its card instance — `id` and `source` are the same field twice — so the
+copy takes a new id, leaves `source` pointing at the original's card, and has no instance at all.
+Everything in `completeResolution` that moves a spell's card was already written as "if there is an
+instance", so the copy runs its effect and ceases to exist with nothing added there. Two readers had
+to learn it: `ctx.source` for a spell, which now reads `source` rather than `id` (identical for
+every spell that was cast, correct for a copy), and the view, which must not name a card the table
+has no card for.
+
+**The copy is not cast**, and that is asserted in the deck where it would be wrong in the player's
+favour: Arc Tempest is built on triggers that read a cast, and a Guttersnipe seeing a copy would
+quietly deal two extra damage a turn. Two casts, two triggers, ten damage rather than twelve.
+
+**And the copy can be countered**, which needed a second fix nobody would have found without the
+first. Spell targets were enumerated out of the stack *zone*, which holds cards — so a copy, having
+none, was invisible to "counter target spell". They are now read off `stackOrder` with the spells
+kept, which is the shape the abilities already used, and `isLegalTarget` answers for a copy the way
+it answers for an ability: no zone, no type line, no keywords, so the spec's kind and the card's
+filter are the whole of the legality. A real Counterspell countering a real copy is the test.
+
+**The target sequence numbers move with a target that moved, and not otherwise** (CR 400.7), which
+is the subtlest line in the change and was written the wrong way round first. Those numbers are what
+the fizzle check compares a target against, so a copy aimed somewhere new needs the numbers of
+*now* — while a copy that kept the original's targets needs the *original's* numbers, because it is
+pointed at the same objects the original is and has to be countered alongside it when one of them
+has been replaced by a new object. Recomputing them either way, which is what the first version did,
+would have let a copy resolve against a card the original could no longer see. It is a test.
+
+**The bot answers it the way it aims a cast,** because no card can: the spell being copied is not
+the card asking. So `newTargetFor` ranks the offered targets the same way `chooseTargets` does —
+enemies and enemy creatures first, reversed for a spec the copied card marked `friendly` — and
+declines when the best answer is the one already chosen. The interesting half is the other one: a
+copy of *their* removal spell arrives pointed at my own creature and is worth a card only once it
+is pointed back, which is what the bot now does.
+
+**Where the card goes was decided by measurement, twice over, and the instrument said why.**
+Twincast went into Arc Tempest first, because Izzet is where the card is printed and that deck is
+made of spells worth copying. Against the field, paired on identical seeds, it cost about **nine
+games in 240 whatever it replaced**: −8 and −10 in the Lava Spike's slot on two seed sets, and −9
+against a second Faithless Looting. Three measurements, one sign.
+
+The usage instrument explained it rather than leaving it a mystery. Over 120 duels Arc Tempest drew
+it in 71 games and **cast it 23 times** — seven copying its own Lightning Bolt, and *seven copying a
+cantrip* (five Think Twice, two Faithless Looting), which is four mana for one card in a deck whose
+clock starts on turn three. The rest were four of the opponent's spells and a handful of its own
+burn. A card the bot uses often and half of the time badly.
+
+So it moved to **Tidal Mind**, where it measures **−4 of 240** — inside the eighteen-game floor —
+and the same instrument says the use is different in kind: 7 casts in 120 duels, **all seven copying
+the opponent's spell**, and three of the four new-target questions moving the copy. Rarely, and for
+the thing the clause exists for. The reading is that this was never a card-quality question: a
+four-mana reactive spell belongs in the deck that can afford four mana and holds up its turn
+anyway, and the bot's own behaviour changes to match the deck it is in.
+
+**The cut inside Tidal Mind the instrument could not call, so a rule did.** The second Omenspeaker
+against the Turn to Frog measured 58-182 and 60-180 — two games of 240, which is this instrument
+saying nothing. Turn to Frog is the pool's only characteristic-setting trick and the only card in
+any deck that covers that layer (D88), so cutting it would take a *rule* out of every game rather
+than a card out of one deck. The Omenspeaker is a 2/1 that scrys two, and this deck still has one.
+
+A note for whoever reads the Arc Tempest comment: the card's doc comment there predicted "the
+computer will be poor with this" before any of this was run, and the prediction was wrong in both
+directions — the bot used it far more than expected, because a seat's lands are *already* untapped
+on an opponent's turn and the engine taps for a cost as it pays it, so nothing has to be held. That
+guess is corrected where it was made rather than quietly deleted.
+

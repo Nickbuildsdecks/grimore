@@ -3675,6 +3675,65 @@ drawer it was waiting for; it now lets the library decide, reads the button's ow
 whether a press is still wanted, and gives a press a second and a half to land. Seventy-three checks
 now, and green on a cold stack as well as a warm one — which is the run that found this.
 
+### The target chosen while something resolves, and the copy that is not a card
+
+Three shapes of mid-resolution question existed — which cards, which word, which number. "You may
+choose new targets for the copy" is none of them, and it is the clause every printed copy effect
+ends with. Strionic Resonator arrived without it and said so: the copy kept whatever the original
+chose, and a copied Gravedigger trigger pointing at a card the original had already returned was
+countered for having no legal target. That limitation was a test. It is now the test one line above
+the one that undoes it.
+
+The question is asked about the object being **copied**, not about the copy. A copy's
+characteristics are the original's (CR 707.2), so the legal targets are the same set — which means
+the answer can be handed to the copy as it is made, rather than making one aimed at the old target
+and re-aiming it. Only a single-target object is asked about, which is the restriction Swerve and
+Willbender already live under and a sharper one here: the rules copy a divided quantity as it was
+divided (CR 706.10c), and "choose new targets" is not permission to re-divide. No targets, several,
+or one legal target and it is the one already chosen — all three are no question at all.
+
+And the thing that makes a *spell* copy different from an ability copy: **a spell is a card and the
+copy is not.** A spell's stack id has always been its card instance, so the copy takes a new id,
+keeps `source` pointing at the original's card, and has no instance — which is how the resolution
+knows to run the effect and let the copy cease to exist instead of putting a second card in a
+graveyard it was never in. Three things follow and all three are asserted: the copy is **not cast**,
+so Arc Tempest's Guttersnipe does not fire for it (ten damage, not twelve); the copy leaves no card
+behind; and the copy **can be countered**, which needed a second fix nobody would have found without
+the first — spell targets were read out of the stack *zone*, which holds cards, so a copy was
+invisible to "counter target spell". They now come off `stackOrder`, which is the shape the
+abilities already used, and a real Counterspell countering a real copy is the test.
+
+**Twincast is the card, and where it goes was measured twice.** It went into Arc Tempest first and
+cost about nine games in 240 whatever it replaced (−8 and −10 in the Lava Spike's slot on two seed
+sets, −9 against a second Faithless Looting). The instrument said why: 23 casts across 120 duels,
+seven of them copying a *cantrip* — four mana for one card in a deck whose clock starts on turn
+three. In **Tidal Mind** it measures −4 of 240, inside the floor, and the usage is different in
+kind: 7 casts in 120 duels, **all seven copying the opponent's spell**, with three of four
+new-target questions moving the copy. Rarely, and for the thing the clause is printed for. The cut
+inside Tidal Mind the instrument could not call (two games between two cuts), so the rule did: Turn
+to Frog is the only card in any deck covering the characteristic-setting layer, and cutting it would
+take a rule out of the game rather than a card out of a deck.
+
+**One case the bot gets wrong, knowingly.** A copied Gravedigger trigger has both corpses in the
+bot's own graveyard, so its ranking sees two of its own cards, ties, and declines — and then the
+copy returns the card and the original is countered for pointing at an object that has changed
+zones. One creature back instead of two. Answering it needs "would declining make the original
+fizzle", which is a question about what the copied effect does rather than a fact about the board;
+the card the measurement is about is the other one, and there the bot's answer is right. A person
+answering gets both creatures, which is a test.
+
+**One gap, stated rather than papered over.** The table's new row — one button per target and
+**Leave it** — is covered by the reducer's own tests and by the engine's, but not by a browser
+suite, because a browser suite plays a real game and this card comes up in seven games in a hundred
+and twenty. The suites check that nothing else broke; the prompt itself is verified where it can be
+verified deterministically.
+
+One prediction worth recording as wrong: the card's own comment, written before any of this ran,
+said the computer would be poor with it because copying needs mana held through somebody else's
+turn. It does not — a seat's lands are already untapped on an opponent's turn and the engine taps
+for a cost as it pays it. The bot used the card three times more than expected, and badly, which is
+a different problem from the one that was predicted.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -3688,19 +3747,24 @@ now, and green on a cold stack as well as a warm one — which is the run that f
    creature" and "counter target ability" are all a few declarative lines now. Copying one is there as well:
    `copyAbilityOnStack` builds a second stack object with the first one's targets, its `subject`
    and its division, and **Strionic Resonator** in Rot Harvest copies a triggered ability its
-   controller owns. What that card does *not* offer is the printed "you may choose new targets for
-   the copy", which wants a way to ask for a target mid-resolution that this engine has not got —
-   so the copy keeps what the original chose, and that consequence is a test rather than a comment.
+   controller owns. It now also offers the printed "you may choose new targets for
+   the copy" (`TargetDecisionSpec`), and so does **Twincast**, which copies a *spell* — an object
+   with no card behind it, which is the half of the family that needed the stack to hold something
+   that is not a card at all.
    A question whose answer is a **word** now exists too, so "you may", "tap or untap" and "choose
-   one —" on a trigger are all a few declarative lines. The *number* half of that family is half
-   answered: a quantity **divided among targets** is announced with the spell and checked as a sum
-   (`divided` on a target spec, Arc Lightning), which covers the shape printed cards actually use —
-   damage or counters split among one, two or three things. What is still missing is a number chosen
-   with nothing to divide it between: a cost paid in an amount the player picks mid-resolution.
-   (The Chalice of the Void this list used to name as the example turned out not to need it: its
-   number is the X in its cost, which is chosen at cast time and was already in the engine — see
-   *The spell a trigger is about* above.) That wants a range on a decision rather
-   than a budget on a target spec, and nothing in the pool asks for one yet.
+   one —" on a trigger are all a few declarative lines. The *number* half of that family is now
+   answered both ways round. A quantity **divided among targets** is announced with the spell and
+   checked as a sum (`divided` on a target spec, Arc Lightning), which covers the shape printed
+   cards mostly use — damage or counters split among one, two or three things. And a number with
+   nothing to divide it between, chosen **as the spell resolves** rather than as it is cast, is
+   `NumberDecisionSpec`: a range the card computes from the board when the question is asked, with
+   **Toxic Deluge** in Hollow Tide behind it. (The Chalice of the Void this list used to name as the
+   example turned out not to need it: its number is the X in its cost, which is chosen at cast time
+   and was already in the engine — see *The spell a trigger is about* above.) And the fourth and last shape, a
+   **target** for something else on the stack, is `TargetDecisionSpec`: "you may choose new targets
+   for the copy", asked while the copy effect resolves, with **Twincast** in Tidal Mind and the
+   Strionic Resonator's printed clause behind it. So all four shapes of mid-resolution question are
+   in, and a copy effect is a few declarative lines like everything else.
 2. Loading a real Grimore deck into an automated table. **Half answered, and the other half still
    blocked.** A player can now paste a list and play it: names the engine's pool has become the real
    cards and are fully automated, which is the whole of the feature for a list built out of the pool.

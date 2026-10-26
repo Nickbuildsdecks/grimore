@@ -340,8 +340,10 @@ export interface CardsDecisionSpec {
   readonly max?: number;
   /** Which cards in that zone qualify. Without one, any card in the zone does. */
   readonly filter?: (state: GameState, id: string, chooser: SeatIndex) => boolean;
-  /** Never set on this shape; it is what tells the two apart. */
+  /** Never set on this shape; the four are told apart by which of these is present. */
   readonly options?: never;
+  readonly range?: never;
+  readonly retargets?: never;
 }
 
 /**
@@ -377,8 +379,10 @@ export interface ChoiceDecisionSpec {
    * arbitrary.
    */
   readonly best?: (state: GameState, chooser: SeatIndex) => string | undefined;
-  /** Never set on this shape; it is what tells the two apart. */
+  /** Never set on this shape; the four are told apart by which of these is present. */
   readonly from?: never;
+  readonly range?: never;
+  readonly retargets?: never;
 }
 
 /**
@@ -413,12 +417,77 @@ export interface NumberDecisionSpec {
    * range or absent falls back to the bottom of the range, which is the answer that does least.
    */
   readonly best?: (state: GameState, chooser: SeatIndex) => number | undefined;
-  /** Never set on this shape; the three are told apart by which of these is present. */
+  /** Never set on this shape; the four are told apart by which of these is present. */
   readonly from?: never;
   readonly options?: never;
+  readonly retargets?: never;
 }
 
-export type DecisionSpec = CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec;
+/**
+ * A question whose answer is a **target**: "you may choose new targets for the copy".
+ *
+ * The fourth and last shape, and the only one about an object that is not the card asking. Every
+ * printed copy effect — Twincast, Reverberate, Fork, Strionic Resonator, Lithoform Engine — ends
+ * with that clause, and until this existed the engine had to leave it off: the copy kept whatever
+ * the original chose, which is a strictly worse card and was asserted as a limitation rather than
+ * fixed.
+ *
+ * It cannot be a cast-time target, which is the distinction that makes this a shape of its own.
+ * Swerve and Willbender *do* choose where a spell is going as they are cast, and they are
+ * different cards for it: both targets are announced on the stack and both can be answered. A copy
+ * effect chooses after every response, from the board as it ended up — a creature that arrived
+ * since is a legal new target, and one that died is not.
+ *
+ * **The question is asked about the object being copied, not about the copy**, which is the one
+ * design decision here worth writing down. A copy's characteristics are the original's (CR 707.2),
+ * so its legal targets are the same set, and asking before the copy exists means the answer can
+ * simply be handed to `copySpellOnStack` — rather than making a copy aimed at the old target and
+ * re-aiming it, which is two states where one will do.
+ *
+ * Only an object with a **single** target is offered the question, which is the same restriction
+ * `soleTargetSpecOf` puts on Swerve and Willbender and for a sharper reason here: the rules copy a
+ * divided quantity as it was divided (CR 706.10c), so a re-aimed Arc Lightning would need its
+ * three points re-divided as well, and "choose new targets" is not permission to re-divide. An
+ * object with no targets, with several, or with only one legal target to choose is not asked.
+ */
+export interface TargetDecisionSpec {
+  readonly who: 'controller';
+  readonly prompt: string;
+  /**
+   * Which object on the stack this question is about, read off the resolution that is asking.
+   *
+   * Twincast and the Resonator both answer `object.targets[0]?.id`: the spell or ability they were
+   * pointed at. An object that has left the stack by now means no question — the copy effect has
+   * nothing to copy, and the resolution says so on its own terms.
+   */
+  readonly retargets: (state: GameState, object: StackObjectLike) => string | undefined;
+  /**
+   * Whether declining is an answer. Every printed card that asks this says "you **may**", so this
+   * is set everywhere today — but a card that must re-aim would be a different card and the field
+   * says which this is.
+   */
+  readonly optional?: true;
+  /** Never set on this shape; the four are told apart by which of these is present. */
+  readonly from?: never;
+  readonly options?: never;
+  readonly range?: never;
+}
+
+/**
+ * What a `TargetDecisionSpec` needs off a stack object, which is its id and what it is aimed at.
+ *
+ * Narrower than `StackObject` on purpose: this module is below `turnTypes.ts` in the import order,
+ * and a spec that asked for the whole object would drag the stack's shape into the script API for
+ * the sake of two fields.
+ */
+export interface StackObjectLike {
+  readonly id: string;
+  readonly controller: SeatIndex;
+  readonly targets: readonly { readonly kind: string; readonly id?: string }[];
+}
+
+export type DecisionSpec =
+  | CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec | TargetDecisionSpec;
 
 /** Whether a question is the kind whose answer is a word. Narrows for TypeScript as well. */
 export const isChoiceDecision = (spec: DecisionSpec): spec is ChoiceDecisionSpec =>
@@ -426,7 +495,11 @@ export const isChoiceDecision = (spec: DecisionSpec): spec is ChoiceDecisionSpec
 
 /** Whether a question is the kind whose answer is a number. */
 export const isNumberDecision = (spec: DecisionSpec): spec is NumberDecisionSpec =>
-  spec.options === undefined && spec.from === undefined;
+  spec.range !== undefined;
+
+/** Whether a question is the kind whose answer is a target for something else on the stack. */
+export const isTargetDecision = (spec: DecisionSpec): spec is TargetDecisionSpec =>
+  spec.retargets !== undefined;
 
 /**
  * A yes-or-no question asked of the board, for an intervening-if clause. See `TriggerDef.condition`.

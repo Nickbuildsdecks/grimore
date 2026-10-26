@@ -490,8 +490,10 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
       kind: object.kind,
       controller: object.controller,
       description: object.description,
-      // A spell's stack object id *is* its card instance; an ability has no card to show.
-      card: object.kind === 'spell' ? object.id : null,
+      // A spell's stack object id *is* its card instance; an ability has no card to show, and
+      // neither has a *copy* of a spell — it is not a card at all (CR 707.10), so naming one here
+      // would hand the table an id it has no card for.
+      card: object.kind === 'spell' && state.instances[object.id] !== undefined ? object.id : null,
       targets: object.targets,
       ...(object.division === undefined ? {} : { division: object.division }),
     };

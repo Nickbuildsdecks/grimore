@@ -1411,6 +1411,15 @@ const HANGARBACK_WALKER: CardDef = {
   colors: [],
 };
 
+const TWINCAST: CardDef = {
+  name: 'Twincast',
+  typeLine: 'Instant',
+  manaCost: '{2}{U}{U}',
+  cmc: 4,
+  oracleText: 'Copy target instant or sorcery spell. You may choose new targets for the copy.',
+  colors: ['U'],
+};
+
 const TOXIC_DELUGE: CardDef = {
   name: 'Toxic Deluge',
   typeLine: 'Sorcery',
@@ -2487,6 +2496,31 @@ export const TIDAL_MIND: DeckSpec = {
       second Preordain, which is the cheapest card in the deck to be holding one fewer of.
     */
     { card: TURN_TO_FROG, count: 1 },
+    /*
+      Twincast, for the second Omenspeaker.
+
+      The pool's only card that copies a *spell*, and the second after the Strionic Resonator whose
+      "you may choose new targets for the copy" is answered while it resolves. It is here rather
+      than in Arc Tempest because this is the deck that can afford four mana and the deck with
+      things worth copying: four counterspells, four removal spells, and Cackling Counterpart
+      already in it.
+
+      **The deck was chosen by measurement and the instrument said why.** In Arc Tempest it cost
+      about nine games in 240 whatever it replaced (−8 and −10 on two seed sets in the Lava Spike's
+      slot, −9 against a second Faithless Looting); here it is **−4 of 240**, inside the floor. The
+      difference is not the card, it is what gets copied: Arc Tempest cast it 23 times in 120 duels
+      and spent seven of those copying a *cantrip*, which is four mana for one card in a deck whose
+      clock starts on turn three. This deck casts it 7 times in 120 — and all seven copy the
+      **opponent's** spell, with three of four new-target questions moving the copy. Rarely, and for
+      the thing the clause exists for.
+
+      The cut is the second Omenspeaker, and the instrument cannot tell it from cutting the Turn to
+      Frog: 58-182 against 60-180, two games of 240. So the cards decide, and here the rule decides
+      with them — Turn to Frog is the pool's only characteristic-setting trick and the only card in
+      any deck that covers that layer, so cutting it would take a rule out of the game rather than a
+      card out of a deck. The Omenspeaker is a 2/1 that scrys and this deck still has one.
+    */
+    { card: TWINCAST, count: 1 },
     { card: CACKLING_COUNTERPART, count: 1 },
     { card: PREORDAIN, count: 1 },
     // One mana that makes a creature untouchable by anybody, its own controller included — the
@@ -2499,7 +2533,7 @@ export const TIDAL_MIND: DeckSpec = {
     // the counterspells above paid for.
     { card: FOG_BANK, count: 2 },
     { card: JACE_BELEREN, count: 1 },
-    { card: OMENSPEAKER, count: 2 },
+    { card: OMENSPEAKER, count: 1 },
     { card: PHYREXIAN_ARENA, count: 1 },
     /*
       Behold the Multiverse for the Divination, and Saw It Coming for the Essence Scatter: the two
@@ -3613,6 +3647,18 @@ export const ARC_TEMPEST: DeckSpec = {
     // Firebolt, which is two casts out of one card — the flashback is the second trigger for every
     // creature on the board, and the pool's only burn spell that is.
     { card: FIREBOLT, count: 1 },
+    /*
+      Twincast was tried here first and measured out, which is worth leaving written down.
+
+      It reads like an Izzet card in the Izzet deck: a second Fireball on the turn the game ends, a
+      second Counterspell against the decks that go over the top of this one. Against the field it
+      cost about nine games in 240 whatever it replaced — −8 and −10 in the Lava Spike's slot on two
+      seed sets, −9 against a second Faithless Looting — and the instrument says why rather than
+      leaving it a mystery: of 23 casts across 120 duels, seven copied a Lightning Bolt and seven
+      copied a *cantrip*, which is four mana for one card in a deck whose clock starts on turn
+      three. It went to Tidal Mind, where four mana is affordable and the things worth copying are
+      counterspells and removal. See `TIDAL_MIND`.
+    */
     { card: LAVA_SPIKE, count: 1 },
     // The X spell, which is what the deck's unspent mana is for on the turn the game ends.
     { card: FIREBALL, count: 1 },

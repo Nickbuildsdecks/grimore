@@ -259,6 +259,38 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
                 </Button>
               ))}
             </span>
+          ) : mode.ask.targetChoices !== undefined ? (
+            /*
+              "You may choose new targets for the copy": one button per target the engine offered,
+              and one for leaving it where it was.
+
+              Named rather than tapped on the board, which is the opposite of how a target is
+              chosen for a *cast*. Two reasons, and both are about what the player is looking at: a
+              player is leaving one target for another, so the two want to be side by side in words,
+              and the list is short because the engine only asks when the copy has somewhere else to
+              go. **Leave it** is first, because it is the answer that changes nothing.
+            */
+            <span data-testid="decide-targets" className="flex flex-wrap gap-1.5">
+              <Button
+                size="sm"
+                variant="secondary"
+                data-testid="decide-target-none"
+                onClick={() => dispatch({ kind: "pickTargetChoice" })}
+              >
+                Leave it
+              </Button>
+              {mode.ask.targetChoices.map((target) => (
+                <Button
+                  key={targetKey(target)}
+                  size="sm"
+                  variant="secondary"
+                  data-testid={`decide-target-${targetKey(target)}`}
+                  onClick={() => dispatch({ kind: "pickTargetChoice", target })}
+                >
+                  {targetName(view, target)}
+                </Button>
+              ))}
+            </span>
           ) : (
           <span className="text-[var(--g-text-muted)]">
             {mode.ask.from === "library" ? "tap a card in your library below"
@@ -268,6 +300,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           )}
           <span className="ml-auto flex gap-1.5">
             {mode.ask.options === undefined && mode.ask.numbers === undefined
+              && mode.ask.targetChoices === undefined
               && mode.chosen.length >= mode.ask.min && mode.ask.min !== mode.ask.max ? (
               <Button size="sm" data-testid="confirm-decision" onClick={() => dispatch({ kind: "confirm" })}>
                 <Check className="size-3.5" />

@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock,
-  characteristicsOf,
+  characteristicsOf, customDeck,
   hasType,
   legalActions,
   parseTypeLine,
@@ -9256,16 +9256,17 @@ describe('copying an ability on the stack (CR 706.10)', () => {
     })).toContain('target triggered ability you control');
   });
 
-  it('the copy keeps the original’s target, so one of the two is countered when it is gone', () => {
+  it('is not asked where the copy should point when there is nowhere else to point it', () => {
     /*
-      The consequence of not offering "you may choose new targets for the copy", stated as a test
-      rather than left as a comment.
+      "You may choose new targets for the copy" with exactly one legal target, which is not a
+      question: the engine declines on the player's behalf, the same way it answers a one-word list
+      and a one-number range.
 
-      A Gravedigger's arrival trigger returns *target* creature card from a graveyard. The copy
-      resolves first and returns it; the original then has a target that has changed zones, which
-      is a different object (CR 400.7), so it is countered for having no legal target left
-      (CR 608.2b) — one creature back rather than two, and the card's printed clause is exactly
-      what would have fixed it.
+      What follows is the rule rather than a shortcoming. A Gravedigger's arrival trigger returns
+      *target* creature card from a graveyard; the copy resolves first and returns the only one
+      there, and the original then has a target that has changed zones — a different object
+      (CR 400.7) — so it is countered for having no legal target left (CR 608.2b). One creature
+      back rather than two, because there was only ever one to get back.
     */
     // Six lands: four for the Gravedigger and one for the Resonator, with one to spare.
     let s = rot(['Gravedigger'], ['Strionic Resonator'], 6);
@@ -9294,6 +9295,408 @@ describe('copying an ability on the stack (CR 706.10)', () => {
     // One copy of the card, in hand, and nothing left waiting.
     expect(s.instances[corpse]!.zone).toBe('hand');
     expect(s.stackOrder).toEqual([]);
+  });
+
+  it('but asks when there are two, and the copy returns the other one', () => {
+    /*
+      The printed clause doing the thing it is printed for, which is what the test above used to
+      say could not be done.
+
+      Two creature cards in the graveyard: the trigger is pointed at one, the copy is asked where
+      it should go, and pointing it at the other returns **both** — two creatures out of one
+      Gravedigger and one activation, which is the whole reason the card is worth {1} and a tap.
+    */
+    let s = rot(['Gravedigger'], ['Strionic Resonator'], 6);
+    const corpses = ids(s, 0, 'library')
+      .filter((id) => nameOf(s, id) === 'Centaur Courser' || nameOf(s, id) === 'Doomed Dissenter')
+      .slice(0, 2);
+    expect(corpses.length).toBe(2);
+    for (const id of corpses) s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'graveyard' });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gravedigger') });
+    s = passBoth(s);
+    // Two to choose from, so the trigger's own target is a question this time.
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: corpses[0]! }] });
+    const trigger = onStack(s, /return target creature card/i);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: trigger }],
+    });
+    s = passBoth(s);
+
+    // The copy resolves first and stops to ask. Both corpses are on offer, the one the original
+    // chose included, because choosing the same target again is a legal answer to "you may".
+    expect(s.pendingDecision?.seat).toBe(0);
+    const offered = (s.pendingDecision?.targetChoices ?? []).map((t) => (t.kind === 'card' ? t.id : ''));
+    expect(new Set(offered)).toEqual(new Set(corpses));
+    // And nobody holds priority while it stands, which is the rule every question follows.
+    expect(s.priority).toBeNull();
+
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], target: { kind: 'card', id: corpses[1]! } }));
+    expect(s.instances[corpses[0]!]!.zone).toBe('hand');
+    expect(s.instances[corpses[1]!]!.zone).toBe('hand');
+    expect(s.stackOrder).toEqual([]);
+  });
+
+
+
+  it('and the bot declines here, which is the one case it answers worse than a person', () => {
+    /*
+      A negative control, written down rather than left to be discovered.
+
+      Both corpses are in the bot's *own* graveyard, so its ranking — enemies and enemy creatures
+      first — sees two of its own cards, ties, and leaves the copy where it was. The copy then
+      returns the card and the original is countered for pointing at an object that has changed
+      zones: one creature back instead of the two a person gets. Answering it needs "would declining
+      make the original fizzle", which is a question about what the copied effect *does* rather than
+      a fact about the board. See `newTargetFor`.
+    */
+    let s = rot(['Gravedigger'], ['Strionic Resonator'], 6);
+    const corpses = ids(s, 0, 'library')
+      .filter((id) => nameOf(s, id) === 'Centaur Courser' || nameOf(s, id) === 'Doomed Dissenter')
+      .slice(0, 2);
+    for (const id of corpses) s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'graveyard' });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gravedigger') });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: corpses[0]! }] });
+    const trigger = onStack(s, /return target creature card/i);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: trigger }],
+    });
+    s = passBoth(s);
+
+    const action = botAction(s, 0);
+    expect(action?.type === 'auto:decide' ? action.target : 'missing').toBeUndefined();
+    s = drain(apply(s, action!));
+    // One back, one still there — the cost of the answer above.
+    expect(s.instances[corpses[0]!]!.zone).toBe('hand');
+    expect(s.instances[corpses[1]!]!.zone).toBe('graveyard');
+  });
+
+  it('and a copy that kept the original’s target fizzles with it (CR 400.7)', () => {
+    /*
+      The subtle half of "you may choose new targets": the target *sequence numbers*.
+
+      They are what the fizzle check compares a target against, and a copy that keeps the
+      original's targets is pointed at the same objects the original is — so if one of them has
+      since been replaced by a new object, both must be countered, not just the original. The copy
+      only gets the numbers of *now* when the player actually moved it.
+
+      Written because the first version of this recomputed them either way, which would have let a
+      copy resolve against a card the original could no longer see.
+    */
+    let s = rot(['Gravedigger'], ['Strionic Resonator'], 6);
+    const corpse = ids(s, 0, 'library').find((id) => nameOf(s, id) === 'Centaur Courser')!;
+    s = apply(s, { type: 'card:move', by: 0, card: corpse, toZone: 'graveyard' });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gravedigger') });
+    s = passBoth(s);
+    if (s.pendingChoice !== null) {
+      s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: corpse }] });
+    }
+    const trigger = onStack(s, /return target creature card/i);
+
+    // Out of the graveyard and back: the same card, a different object.
+    s = apply(s, { type: 'card:move', by: 0, card: corpse, toZone: 'exile' });
+    s = apply(s, { type: 'card:move', by: 0, card: corpse, toZone: 'graveyard' });
+
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: trigger }],
+    });
+    s = drain(passBoth(s));
+    // Neither resolved: the card is still in the graveyard and the stack is empty.
+    expect(s.instances[corpse]!.zone).toBe('graveyard');
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('refuses a target the question did not offer, and takes "no thank you" for an answer', () => {
+    let s = rot(['Gravedigger'], ['Strionic Resonator'], 6);
+    const corpses = ids(s, 0, 'library')
+      .filter((id) => nameOf(s, id) === 'Centaur Courser' || nameOf(s, id) === 'Doomed Dissenter')
+      .slice(0, 2);
+    for (const id of corpses) s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'graveyard' });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gravedigger') });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: corpses[0]! }] });
+    const trigger = onStack(s, /return target creature card/i);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: trigger }],
+    });
+    s = passBoth(s);
+
+    // A creature on the battlefield is not a creature card in a graveyard, whatever an action says.
+    const onBoard = find(s, 0, 'battlefield', 'Strionic Resonator');
+    expect(refusal(s, {
+      type: 'auto:decide', by: 0, cards: [], target: { kind: 'card', id: onBoard },
+    })).toContain('not one of the targets on offer');
+    expect(refusal(s, {
+      type: 'auto:decide', by: 0, cards: [], target: { kind: 'player', seat: 1 },
+    })).toContain('not one of the targets on offer');
+
+    // And declining is an answer: the copy keeps what the original chose, so the original is the
+    // one that fizzles and exactly one creature comes back.
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] }));
+    expect(s.instances[corpses[0]!]!.zone).toBe('hand');
+    expect(s.instances[corpses[1]!]!.zone).toBe('graveyard');
+  });
+});
+
+describe('Twincast: copying a spell, and choosing where the copy points', () => {
+  /*
+    The other half of the copy family, and the half that needed a card to *not* be one.
+
+    An ability has no card; a spell is one. So a copy of a spell is the first object this engine has
+    ever put on the stack that is neither a card nor an ability — no instance, nothing to put in a
+    graveyard when it has finished, and characteristics read off the original (CR 707.10). Each test
+    below is one of the things a person would notice if that were wrong.
+  */
+
+  /*
+    Built here rather than borrowed from a starter deck, which is deliberate.
+
+    Twincast lives in Tidal Mind and the spells worth copying in a *test* are a Bolt and a
+    Guttersnipe, which live in Arc Tempest. Pinning these tests to whichever deck currently holds
+    the card would also mean breaking them the next time a slot moves — and that has happened
+    before. `customDeck` looks a name up anywhere in the pool, so the test says what it needs.
+  */
+  const copyDeck = customDeck({
+    id: 'copy-test',
+    name: 'Copy Test',
+    entries: [
+      { name: 'Twincast', count: 4 },
+      { name: 'Lightning Bolt', count: 4 },
+      { name: 'Guttersnipe', count: 2 },
+      { name: 'Enigma Drake', count: 2 },
+      { name: 'Island', count: 26 },
+      { name: 'Mountain', count: 22 },
+    ],
+  }).deck;
+
+  /** Seat 0 on that deck, main phase, five lands tapped, with `hand` in hand. */
+  const izzet = (
+    hand: readonly string[], mine: readonly string[] = [], theirs: readonly string[] = [],
+  ): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'copy-test', 1: 'ember-rush' },
+      deckSpecs: { 'copy-test': copyDeck },
+      hands: { 0: [...hand] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Mountain', 'Mountain', ...mine],
+        1: ['Mountain', ...theirs],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  /** Casts the named card in hand at `targets`, leaving it on the stack. */
+  const cast = (s: GameState, name: string, targets?: readonly Target[]): GameState => apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+    ...(targets === undefined ? {} : { targets: [...targets] }),
+  });
+
+  /** Resolves everything, declining each "point the copy somewhere else?" on the way. */
+  const settle = (s: GameState): GameState => {
+    let next = drain(s);
+    for (let i = 0; i < 8 && next.pendingDecision !== null; i += 1) {
+      next = drain(apply(next, { type: 'auto:decide', by: next.pendingDecision.seat, cards: [] }));
+    }
+    return next;
+  };
+
+  it('copies the spell it was pointed at, and the copy resolves first', () => {
+    let s = izzet(['Lightning Bolt', 'Twincast']);
+    const them = life(s, 1);
+    s = cast(s, 'Lightning Bolt', [{ kind: 'player', seat: 1 }]);
+    const bolt = s.stackOrder[0]!;
+    s = cast(s, 'Twincast', [{ kind: 'card', id: bolt }]);
+    // Twincast above the Bolt, which is the order they were cast in.
+    expect(stackNames(s)).toEqual([
+      expect.stringContaining('Lightning Bolt'), expect.stringContaining('Twincast'),
+    ]);
+
+    /*
+      The question comes *before* the copy exists, which is the one thing about this shape worth
+      seeing in a test: a copy's legal targets are the original's (CR 707.2), so the engine asks
+      about the spell being copied and hands the answer to the copy as it is made. While the
+      question stands, the stack still reads Bolt and Twincast.
+    */
+    s = passBoth(s);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(stackNames(s)[1]).toContain('Twincast');
+
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [] });
+    // Now the copy is there, on top of the Bolt, so it resolves first.
+    expect(stackNames(s)[1]).toContain('(copy)');
+    s = settle(s);
+    // Three from the copy and three from the original: six out of one card and one copy.
+    expect(life(s, 1)).toBe(them - 6);
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('leaves no card behind, because the copy never was one (CR 707.10)', () => {
+    let s = izzet(['Lightning Bolt', 'Twincast']);
+    s = cast(s, 'Lightning Bolt', [{ kind: 'player', seat: 1 }]);
+    s = cast(s, 'Twincast', [{ kind: 'card', id: s.stackOrder[0]! }]);
+    s = settle(passBoth(s));
+    // One Bolt and one Twincast in the graveyard and no second Bolt: there was never a third card.
+    const yard = namesIn(s, 0, 'graveyard');
+    expect(yard.filter((n) => n === 'Lightning Bolt').length).toBe(1);
+    expect(yard.filter((n) => n === 'Twincast').length).toBe(1);
+  });
+
+  it('is not cast, so a Guttersnipe does not see it', () => {
+    /*
+      The rule that would be quietly wrong in the player's favour, in the deck where it matters:
+      Arc Tempest's whole plan is triggers that read a *cast*, and a copy is **put** on the stack
+      rather than cast (CR 707.10). Two casts, two Guttersnipe triggers, and the copy is not a
+      third one.
+    */
+    let s = izzet(['Lightning Bolt', 'Twincast'], ['Guttersnipe']);
+    const them = life(s, 1);
+    s = cast(s, 'Lightning Bolt', [{ kind: 'player', seat: 1 }]);
+    s = cast(s, 'Twincast', [{ kind: 'card', id: s.stackOrder[0]! }]);
+    s = settle(s);
+    // Two for each cast and three for each Bolt: ten, not twelve.
+    expect(life(s, 1)).toBe(them - 10);
+  });
+
+  it('points the copy somewhere else, which is the clause the engine had no shape for', () => {
+    let s = izzet(['Lightning Bolt', 'Twincast'], [], ['Raging Goblin']);
+    const them = life(s, 1);
+    s = cast(s, 'Lightning Bolt', [{ kind: 'player', seat: 1 }]);
+    s = cast(s, 'Twincast', [{ kind: 'card', id: s.stackOrder[0]! }]);
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    s = passBoth(s);
+
+    // The question, carrying the Bolt's own legal targets: both players and the Goblin.
+    expect(s.pendingDecision?.seat).toBe(0);
+    const offered = s.pendingDecision?.targetChoices ?? [];
+    expect(offered.some((t) => t.kind === 'player' && t.seat === 1)).toBe(true);
+    expect(offered.some((t) => t.kind === 'card' && t.id === goblin)).toBe(true);
+
+    s = settle(apply(s, { type: 'auto:decide', by: 0, cards: [], target: { kind: 'card', id: goblin } }));
+    // The copy killed the Goblin and the original still went at the player: three, not six.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Raging Goblin');
+    expect(life(s, 1)).toBe(them - 3);
+  });
+
+  it('and the copy can be countered, which is the other player’s half of it', () => {
+    /*
+      A copy on the stack is a spell, so "counter target spell" may be pointed at it — and until
+      copies existed, spell targets came out of the stack *zone*, which holds cards only. A copy is
+      not a card, so it was invisible there. Both seats on Arc Tempest here so that the answer is a
+      real Counterspell cast by a real player rather than an assertion about a list.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'copy-test', 1: 'tidal-mind' },
+      deckSpecs: { 'copy-test': copyDeck },
+      hands: { 0: ['Lightning Bolt', 'Twincast'], 1: ['Counterspell'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Mountain', 'Mountain'],
+        1: ['Island', 'Island'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    // Only seat 0's lands are tapped up front: a seat without priority cannot tap anything, and
+    // the engine taps for a cost it can pay, so seat 1's Counterspell pays for itself.
+    s = tapAllLands(s, 0);
+    const them = life(s, 1);
+    s = cast(s, 'Lightning Bolt', [{ kind: 'player', seat: 1 }]);
+    s = cast(s, 'Twincast', [{ kind: 'card', id: s.stackOrder[0]! }]);
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [] });
+
+    // The copy: on the stack, a spell, and with no card behind it at all.
+    const copy = s.stackOrder[s.stackOrder.length - 1]!;
+    expect(s.stackObjects[copy]?.copyOf).toBeDefined();
+    expect(s.instances[copy]).toBeUndefined();
+
+    // Priority comes back to the active player when a resolution finishes, so seat 1 has to be
+    // given it before it can answer — which is also the window the rules give it.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Counterspell'),
+      targets: [{ kind: 'card', id: copy }],
+    });
+    s = settle(s);
+    // The original Bolt still resolved: three, not six, and nothing is left on the stack.
+    expect(life(s, 1)).toBe(them - 3);
+    expect(s.stackOrder).toEqual([]);
+  });
+
+
+  it('the bot points a copy of their removal spell back at their own creature', () => {
+    /*
+      The play the clause exists for, made by the engine's own opponent.
+
+      Their Doom Blade is aimed at my creature; copying it is worth a card only if the copy goes
+      somewhere else, and "somewhere else" is a judgement no card can make — the spell being copied
+      is not the card asking. So the bot answers it the way it aims a cast: the enemy and the
+      enemy's creatures first, with the card's own `friendly` hint reversing that for a spell that
+      helps what it points at. See `newTargetFor`.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'copy-test', 1: 'tidal-mind' },
+      deckSpecs: { 'copy-test': copyDeck },
+      hands: { 0: ['Twincast'], 1: ['Doom Blade'] },
+      battlefield: {
+        // An Enigma Drake rather than a Swiftspear: prowess would put a trigger on the stack for
+        // the Twincast and the test would be about that instead.
+        0: ['Island', 'Island', 'Island', 'Mountain', 'Mountain', 'Enigma Drake'],
+        1: ['Island', 'Island', 'Swamp', "Man-o'-War"],
+      },
+      turn: 5, firstSeat: 1,
+    }), 'precombat-main');
+    const mine = find(s, 0, 'battlefield', 'Enigma Drake');
+    const theirs = find(s, 1, 'battlefield', "Man-o'-War");
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: mine }],
+    });
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Twincast'),
+      targets: [{ kind: 'card', id: s.stackOrder[0]! }],
+    });
+    s = passBoth(s);
+
+    // The question is up, and the bot's answer is their creature rather than mine.
+    expect(s.pendingDecision?.seat).toBe(0);
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:decide');
+    expect(action?.type === 'auto:decide' ? action.target : null).toEqual({ kind: 'card', id: theirs });
+
+    s = settle(apply(s, action!));
+    // Both creatures are dead: the copy killed theirs and the original still killed mine.
+    expect(namesIn(s, 1, 'graveyard')).toContain("Man-o'-War");
+    expect(namesIn(s, 0, 'graveyard')).toContain('Enigma Drake');
+  });
+
+  it('and leaves a copy of its own spell where it already was', () => {
+    // A Bolt of mine already aimed at the opponent: every other answer is worse, and re-choosing
+    // the same target would read in the log as a change of mind that changed nothing.
+    let s = izzet(['Lightning Bolt', 'Twincast']);
+    s = cast(s, 'Lightning Bolt', [{ kind: 'player', seat: 1 }]);
+    s = cast(s, 'Twincast', [{ kind: 'card', id: s.stackOrder[0]! }]);
+    s = passBoth(s);
+    const action = botAction(s, 0);
+    expect(action?.type === 'auto:decide' ? action.target : 'missing').toBeUndefined();
+  });
+
+  it('cannot be cast with nothing to copy, and refuses a creature spell', () => {
+    let s = izzet(['Twincast']);
+    expect(legalActions(s, 0).plays.filter((p) => p.name === 'Twincast')).toEqual([]);
+
+    // A creature spell is not an instant or a sorcery, which is the card's own filter.
+    s = izzet(['Twincast', 'Enigma Drake']);
+    s = cast(s, 'Enigma Drake');
+    const creature = s.stackOrder[0]!;
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Twincast'),
+      targets: [{ kind: 'card', id: creature }],
+    })).toBeTruthy();
   });
 });
 

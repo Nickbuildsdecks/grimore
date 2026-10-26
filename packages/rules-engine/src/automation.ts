@@ -43,12 +43,14 @@ import {
   type ManaCost, type ManaPick, type ManaPool, type ManaType,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
-import { scriptFor } from './scripts.js';
+import { scriptFor, soleTargetSpecOf } from './scripts.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, DecisionSpec, ModeDef,
   TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
-import { isChoiceDecision, isNumberDecision, targetCount } from './scriptTypes.js';
+import {
+  isChoiceDecision, isNumberDecision, isTargetDecision, targetCount,
+} from './scriptTypes.js';
 import {
   checkTargets, hasAnyLegalTargets, legalTargets, liveTargets, stillHasLegalTarget, stillTheObject,
   targetSeqsFor,
@@ -1574,6 +1576,59 @@ function askOrFinish(
         message: `${object.description} — ${seatName(state, entry.seat)}: ${spec.prompt}`,
       };
     }
+    /*
+      A question whose answer is a **target** for something else on the stack — the fourth shape,
+      and "you may choose new targets for the copy".
+
+      Asked about the object being copied rather than about the copy, which does not exist yet: a
+      copy's characteristics are the original's (CR 707.2), so the legal targets are the same set,
+      and the answer is handed to `copySpellOnStack` as the copy is made. See `TargetDecisionSpec`.
+
+      Three ways there is no question, and all three are "one possible answer" rather than a
+      refusal: the object has left the stack, it has no single target spec to re-aim (no targets,
+      or several, or a divided quantity the rules copy as it was divided — CR 706.10c), or the only
+      legal target is the one it already has. Declining is an answer, so the engine declining on
+      the player's behalf is the same outcome they would have chosen.
+    */
+    if (isTargetDecision(spec)) {
+      const aimedId = spec.retargets(state, object);
+      const aimed = aimedId === undefined ? undefined : state.stackObjects[aimedId];
+      const aimedSpec = aimedId === undefined ? null : soleTargetSpecOf(state, aimedId);
+      const current = aimed?.targets[0];
+      /*
+        Judged for the object being copied: its own controller chooses (so hexproof is hexproof
+        against *them*), and its own source is what protection and "another target" are measured
+        from — which for a spell is its card and for an ability is the permanent it came from, the
+        same split `retarget` makes.
+      */
+      const choices = aimed === undefined || aimedSpec === null || current === undefined
+        ? []
+        : legalTargets(
+          state, aimedSpec, aimed.controller,
+          aimed.kind === 'spell' ? aimed.id : aimed.source,
+        );
+      const elsewhere = choices.filter((t) => targetKey(t) !== targetKey(current!));
+      if (elsewhere.length === 0) {
+        answers = [...answers, { seat: entry.seat, ids: [] }];
+        continue;
+      }
+      return {
+        state: {
+          ...state,
+          priority: null,
+          passed: [],
+          pendingDecision: {
+            seat: entry.seat, stackId: object.id, prompt: spec.prompt,
+            // Every legal target, the one it already has included: "you may choose new targets"
+            // includes choosing the same ones, and a list that left it out would make keeping them
+            // a different button from taking them.
+            candidates: [], min: 0, max: 1, targetChoices: choices,
+            resume: { plan: [...plan], at: i, answers: [...answers] },
+          },
+        },
+        message: `${object.description} — ${seatName(state, entry.seat)}: ${spec.prompt}`,
+      };
+    }
     const taken = new Set(answers.filter((a) => a.seat === entry.seat).flatMap((a) => [...a.ids]));
     const candidates = decisionCandidates(state, spec, entry.seat).filter((id) => !taken.has(id));
     const { min, max } = decisionBounds(spec, candidates.length);
@@ -1615,7 +1670,7 @@ function askOrFinish(
  * `searching` is the only thing that opens it.
  */
 export function answerDecision(
-  state: GameState, chosen: readonly string[], option?: string, amount?: number,
+  state: GameState, chosen: readonly string[], option?: string, amount?: number, target?: Target,
 ): { state: GameState; message: string } {
   const pending = state.pendingDecision;
   if (pending === null) return { state, message: 'nothing to decide' };
@@ -1647,6 +1702,7 @@ export function answerDecision(
     seat: pending.seat, ids: [...chosen],
     ...(option === undefined ? {} : { option }),
     ...(amount === undefined ? {} : { amount }),
+    ...(target === undefined ? {} : { target }),
   }];
   return askOrFinish(next, object, pending.resume.plan, pending.resume.at + 1, answers);
 }
@@ -1695,6 +1751,43 @@ export function preferredAmount(state: GameState): number | undefined {
     : undefined;
   if (picked === undefined || !Number.isFinite(picked)) return min;
   return Math.min(max, Math.max(min, Math.floor(picked)));
+}
+
+/**
+ * What the outstanding question is re-aiming, for whoever has to answer it.
+ *
+ * The third of the same family as `preferredOption` and `preferredAmount`, and the only one that
+ * does not answer the question: "where should this go" cannot be answered by the card, because the
+ * card being copied is not the card asking. What the asker needs instead is three facts about the
+ * object being re-aimed — which object it is, what it is pointed at now, and whether the spell's
+ * own spec is `friendly` — and all three are reachable only from here, because the question's spec
+ * is found through the stack object and the script.
+ *
+ * `friendly` is the whole of what makes this answerable at all. The bot aims at the enemy by
+ * default, which is right for a copied Doom Blade and exactly wrong for a copied prevention
+ * shield; the flag travels on the *copied spell's* target spec, where the card that knows put it.
+ * The same hint, read the same way, as `chooseTargets` reads for a cast.
+ */
+export function pendingRetarget(state: GameState): {
+  readonly object: string;
+  readonly current: Target | undefined;
+  readonly friendly: boolean;
+} | undefined {
+  const pending = state.pendingDecision;
+  if (pending === null || pending.targetChoices === undefined) return undefined;
+  const object = state.stackObjects[pending.stackId];
+  if (object === undefined) return undefined;
+  const specs = decisionSpecsFor(state, object);
+  const spec = specs[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
+  if (spec === undefined || !isTargetDecision(spec)) return undefined;
+  const aimedId = spec.retargets(state, object);
+  const aimed = aimedId === undefined ? undefined : state.stackObjects[aimedId];
+  if (aimedId === undefined || aimed === undefined) return undefined;
+  return {
+    object: aimedId,
+    current: aimed.targets[0],
+    friendly: soleTargetSpecOf(state, aimedId)?.friendly === true,
+  };
 }
 
 /** Takes a stack object off the stack, which is the first thing resolving it does. */
@@ -1810,7 +1903,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     // The half of the card that comes before its question. See `CardScript.beforeDecisions`.
     const first = beforeDecisionsFor(state, object);
     const ready = first === undefined ? state : first({
-      state, source: object.kind === 'spell' ? object.id : object.source,
+      state, source: object.source,
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
       kicked: object.kicked === true, attacked: object.attacked, answering: object.answering,
       subject: object.subject, actor: object.actor, subjectCounters: object.subjectCounters,
@@ -1830,7 +1923,16 @@ function completeResolution(
 
   const ctx: EffectContext = {
     state: next,
-    source: object.kind === 'spell' ? object.id : object.source,
+    /*
+      The card this resolution is from.
+
+      `source` is the same as `id` for every spell that was cast — both are its card instance — and
+      for a *copy* of a spell it is the original's card, which is the one that still exists. So
+      reading `source` is right in both cases and the ternary this used to be was not: a copy's own
+      id is nothing in `instances`, and an effect that went looking for its characteristics there
+      would find a spell with no card. See `copySpellOnStack`.
+    */
+    source: object.source,
     controller: object.controller,
     targets: object.targets,
     x: object.x ?? 0,

@@ -23,7 +23,8 @@ import { listAt } from './cardActions.js';
 import {
   addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
-  chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack, allowExtraLand,
+  chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
+  allowExtraLand,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -31,7 +32,9 @@ import {
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack,
   type EffectContext, type PumpOptions,
 } from './effects.js';
-import type { CardScript, CardsDecisionSpec, TargetSpec, TriggerDef } from './scriptTypes.js';
+import type {
+  CardScript, CardsDecisionSpec, TargetDecisionSpec, TargetSpec, TriggerDef,
+} from './scriptTypes.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 import { legalTargets, retarget } from './targeting.js';
@@ -3621,7 +3624,7 @@ const CLOUDFIN_RAPTOR: CardScript = {
  * difference: a spell's targets are on the card, and an ability's are on the ability, which the
  * stack object names by index.
  */
-function soleTargetSpecOf(state: GameState, id: string): TargetSpec | null {
+export function soleTargetSpecOf(state: GameState, id: string): TargetSpec | null {
   const object = state.stackObjects[id];
   if (object === undefined || object.targets.length !== 1) return null;
   if (object.kind === 'spell') {
@@ -3689,8 +3692,19 @@ const redirect = (c: EffectContext): GameState => {
   return retarget(c.state, object.id, next, spec) ?? c.state;
 };
 
+/*
+  Read off the **stack object** rather than off a card instance, which matters for one case.
+
+  A copy of a spell is a spell with the original's characteristics and no card at all (CR 707.10),
+  so `instances[id]` is empty for it — and the earlier version of this, which went through the
+  instance, quietly answered "not an instant" for a copied Lightning Bolt. Going through `cardKey`
+  answers the same for every spell that was cast and correctly for the copies, and a copy of a
+  copy is a legal Twincast target exactly as the rules say.
+*/
 const isInstantOrSorcerySpell = (state: GameState, id: string): boolean => {
-  const line = parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
+  const object = state.stackObjects[id];
+  if (object?.kind !== 'spell') return false;
+  const line = parseTypeLine(state.cardDefs[object.cardKey]?.typeLine);
   return hasType(line, 'instant') || hasType(line, 'sorcery');
 };
 
@@ -4305,14 +4319,34 @@ const NISSA_VOICE_OF_ZENDIKAR: CardScript = {
   a real second card, and the Resonator sits on the battlefield doing it every turn there is a
   trigger worth copying.
 
-  **The printed "you may choose new targets for the copy" is not offered**, and that is said out
-  loud rather than quietly approximated: declining is always a legal play of the card, and offering
-  it needs a way to ask for a target mid-resolution that this engine does not have. The visible
-  consequence is that a copied Gravedigger trigger, pointed at the card the original already
-  returned, is countered for having no legal target left — which is what the rules say happens and
-  is also exactly the case the printed clause exists to fix. The day a card in the pool needs it,
-  this comment is the one that is wrong.
+  **The printed "you may choose new targets for the copy" is offered**, which it was not when this
+  card arrived: it needed a question whose answer is a target, asked while the ability resolves, and
+  the engine had no such shape. It has one now (`TargetDecisionSpec`), and the case the clause
+  exists to fix is the one this card used to demonstrate — a copied Gravedigger trigger left
+  pointing at the card the original already returned is countered for having no legal target, and
+  re-aiming it at a second creature in the graveyard is the whole point of the copy.
+
+  Declining is always an answer, and the engine does not ask at all when there is nothing to move
+  to: no targets, several, or one legal target and it is the one already chosen.
 */
+
+/**
+ * "You may choose new targets for the copy", which every copy effect ends with.
+ *
+ * Shared by the two cards that copy something, because it is the same question with the same
+ * answer: where the thing being copied is pointed, chosen while the copy effect resolves and from
+ * the board at that moment. `targets[0]` is what both cards are aimed at — the ability for the
+ * Resonator, the spell for Twincast — and the engine does the rest: it works out the legal targets
+ * from the copied object's own spec, declines on the player's behalf when there is nowhere else to
+ * go, and never asks about an object with several targets or a divided quantity (CR 706.10c). See
+ * `TargetDecisionSpec`.
+ */
+const NEW_TARGETS_FOR_THE_COPY: TargetDecisionSpec = {
+  who: 'controller',
+  prompt: 'Point the copy somewhere else?',
+  retargets: (_state, object) => object.targets[0]?.id,
+  optional: true,
+};
 
 const yourTriggeredAbility = (state: GameState, candidate: Target, controller: SeatIndex): boolean => {
   if (candidate.kind !== 'ability') return false;
@@ -4331,12 +4365,60 @@ const STRIONIC_RESONATOR: CardScript = {
         description: 'target triggered ability you control',
         filter: yourTriggeredAbility,
       }],
+      decisions: [NEW_TARGETS_FOR_THE_COPY],
       effect: (c) => {
         const id = firstAbilityTarget(c);
-        return id === null ? c.state : copyAbilityOnStack(c.state, id, c.controller);
+        return id === null
+          ? c.state
+          : copyAbilityOnStack(c.state, id, c.controller, c.decisions[0]?.target);
       },
     },
   ],
+};
+
+/*
+  Copying a **spell**, which is the other half of the family and the card the engine could not have.
+
+  The Resonator copies an ability; Twincast copies a spell, and a spell is a *card*, which is the
+  whole of the difference. The copy is not a card — it has a stack id of its own, no instance, and
+  it ceases to exist as it resolves instead of going to a graveyard it was never in. Two things
+  follow that a person would notice if they were wrong, and both are asserted rather than commented:
+  the copy is **not cast**, so Guttersnipe and Young Pyromancer and Gelectrode do not see it (CR
+  707.10), and the copy is **above** the original on the stack, so it resolves while the original is
+  still there to be answered.
+
+  **It went into Arc Tempest first and the measurement moved it**, which is worth reading before
+  deciding where the next card like it goes. Izzet is where this card is printed and that deck is
+  made of spells; against the field it cost about nine games in 240 whatever it replaced (−8 and −10
+  in the Lava Spike's slot on two seed sets, −9 against a second Faithless Looting). In Tidal Mind
+  it is −4 of 240, inside the floor, and that is where it ships. See `TIDAL_MIND` for the slot.
+
+  The instrument says why, and it is not about the card. **The bot is better with it than the guess
+  was** — "copying needs mana held through somebody else's turn" is the limitation four other
+  measurements have found, and it does not apply, because a seat's lands are already untapped on an
+  opponent's turn and the engine taps for a cost as it pays it. In Arc Tempest it drew the card in
+  71 of 120 duels and cast it 23 times: seven copies of its own Lightning Bolt, and **seven copies
+  of a cantrip** (five Think Twice, two Faithless Looting), which is four mana for one card in a
+  deck whose clock starts on turn three. In Tidal Mind it casts it 7 times in 120 — and all seven
+  copy the **opponent's** spell, with three of four new-target questions moving the copy. The same
+  card, the same bot, and a use that changes in kind with the deck around it.
+*/
+const TWINCAST: CardScript = {
+  name: 'Twincast',
+  targets: [{
+    kind: 'spell',
+    description: 'target instant or sorcery spell',
+    filter: (state, candidate) => candidate.kind === 'card'
+      && isInstantOrSorcerySpell(state, candidate.id),
+  }],
+  decisions: [NEW_TARGETS_FOR_THE_COPY],
+  onResolve: (c) => {
+    // A spell on the stack is targeted as the card it is, which is why this reads `card` rather
+    // than `spell`: the kinds on a `TargetSpec` and the kinds on a `Target` are different lists.
+    const spell = c.targets[0];
+    if (spell === undefined || spell.kind !== 'card') return c.state;
+    return copySpellOnStack(c.state, spell.id, c.controller, c.decisions[0]?.target);
+  },
 };
 
 /*
@@ -4707,7 +4789,7 @@ const ALL: readonly CardScript[] = [
   STRIONIC_RESONATOR,
   AJANI_CALLER_OF_THE_PRIDE, NISSA_VOICE_OF_ZENDIKAR,
   EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM, CHALICE_OF_THE_VOID,
-  WALKING_BALLISTA, HANGARBACK_WALKER, TOXIC_DELUGE,
+  WALKING_BALLISTA, HANGARBACK_WALKER, TOXIC_DELUGE, TWINCAST,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

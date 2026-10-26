@@ -22,6 +22,7 @@ import {
   drawFromLibrary, listAt, normaliseDef, relocate, requireInstance, withInstance, withZones,
 } from './cardActions.js';
 import { actionSeed, clampValue, mulberry32, replaceSeat } from './internal.js';
+import { targetSeqsFor } from './targeting.js';
 import type { Color, ManaType } from './mana.js';
 import { addMana, costValue, EMPTY_POOL, parseManaCost, xMultiplier } from './mana.js';
 import type { AttackedTarget, DecisionAnswer, StackObject, Target } from './turnTypes.js';
@@ -556,12 +557,18 @@ export function allowExtraLand(state: GameState, seat: SeatIndex, count = 1): Ga
  * action caused it, what the attack was aimed at — travel with it, because a copy of "whenever that
  * creature dies, you gain 1 life" that had forgotten which creature would do nothing at all.
  *
- * Its targets are the original's, and the copy is **not** re-aimed here. Every printed card that
- * does this says "you may choose new targets for the copy", and declining is always a legal play of
- * it; offering the choice needs a way to ask for a target while something is resolving that this
- * engine does not have. So the copy keeps what the original chose, which has a visible consequence
- * worth knowing: a copied Gravedigger trigger pointed at a card the original already returned is
+ * `aimedAt` is the printed "you may choose new targets for the copy", and it arrives as the answer
+ * to a `TargetDecisionSpec` asked while the Resonator's own ability resolves — so the choice is
+ * made from the board at that moment rather than when the ability was activated. Absent means the
+ * copy keeps what the original chose, which is always a legal answer and has a consequence worth
+ * knowing: a copied Gravedigger trigger left pointing at a card the original already returned is
  * countered on resolution for having no legal target left (CR 608.2b), exactly as the rules say.
+ *
+ * The target sequence numbers travel **only with a target that moved**, which is the subtle half
+ * (CR 400.7). They are what the fizzle check compares a target against, so a copy aimed somewhere
+ * new needs the numbers of *now*; a copy that kept the original's targets needs the original's
+ * numbers, because then it is pointed at the same objects the original was and has to fizzle with
+ * it when one of them has been replaced by a new object.
  *
  * `controller` is the controller of the *copying* effect, not of the original. Nothing in the pool
  * can copy somebody else's ability — Strionic Resonator says "you control" — but the rules put the
@@ -569,18 +576,20 @@ export function allowExtraLand(state: GameState, seat: SeatIndex, count = 1): Ga
  * the day a card does.
  */
 export function copyAbilityOnStack(
-  state: GameState, id: string, controller: SeatIndex,
+  state: GameState, id: string, controller: SeatIndex, aimedAt?: Target,
 ): GameState {
   const object = state.stackObjects[id];
-  // A spell is a card and cannot be copied this way: copying one makes a *token* copy or a new
-  // object with its own card, which is different work and a different card (Cackling Counterpart).
+  // A spell is copied by `copySpellOnStack`, which has a card to not copy. Copying one into a
+  // *permanent* is a third thing again and a different card (Cackling Counterpart).
   if (object === undefined || object.kind === 'spell') return state;
   const seq = state.autoSeq + 1;
   const copyId = `ab${seq}`;
+  const moved = aimedAt !== undefined && object.targets.length === 1;
   const copy: StackObject = {
     ...object,
     id: copyId,
     controller,
+    ...(moved ? { targets: [aimedAt!], targetSeqs: targetSeqsFor(state, [aimedAt!]) } : {}),
     description: `${object.description} (copy)`,
   };
   return {
@@ -588,6 +597,62 @@ export function copyAbilityOnStack(
     autoSeq: seq,
     stackObjects: { ...state.stackObjects, [copyId]: copy },
     // On top, so it resolves before the ability it was copied from.
+    stackOrder: [...state.stackOrder, copyId],
+  };
+}
+
+/**
+ * Copies a **spell** already on the stack (CR 707.10): a Twincast, a Reverberate, a Fork.
+ *
+ * The sibling of `copyAbilityOnStack` and a different thing in one way that matters more than it
+ * looks: a spell is a *card*, and the copy is not. So the copy gets a stack id of its own rather
+ * than the card's, and `instances[copy.id]` is deliberately empty — which is how the resolution
+ * knows to run the effect and then let the copy cease to exist, instead of putting a second
+ * graveyard card there that was never in anybody's deck. Everything in `completeResolution` that
+ * moves a spell's card is already written as "if there is an instance", so this needed nothing
+ * added there; `source` is the field it reads to find the card, and for a copy that is the
+ * original's instance, which is why `source` is copied rather than reset to the new id.
+ *
+ * **The copy is not cast.** Nothing here goes through `castSpell`, so no cost is paid, no cast
+ * trigger fires, and a Guttersnipe does not deal two damage for it. That is the rule (CR 707.10 —
+ * "a copy of a spell is not cast") and it is also the only thing a person at this table would
+ * notice getting wrong: Arc Tempest is a deck of cast triggers, and a copy that rang them all
+ * would be quietly playing a different game in the player's favour.
+ *
+ * `aimedAt` is the answer to "you may choose new targets for the copy", and it arrives from a
+ * `TargetDecisionSpec` asked while the copy effect resolves — so the choice is made from the board
+ * as it is at that moment. Absent means the copy keeps what the original chose, which is always a
+ * legal answer. The **target sequence numbers move with a target that moved and not otherwise**,
+ * which is the one subtle part: they are what the fizzle check compares a target against
+ * (CR 400.7), so a copy aimed somewhere new needs the numbers of now, and a copy that kept the
+ * original's targets needs the original's numbers so that it fizzles alongside it.
+ *
+ * Above the original on the stack, so the copy resolves first — which is both the rule and the
+ * reason the card is good: the copy resolves while the original is still there to be answered.
+ */
+export function copySpellOnStack(
+  state: GameState, id: string, controller: SeatIndex, aimedAt?: Target,
+): GameState {
+  const object = state.stackObjects[id];
+  // An ability is copied by `copyAbilityOnStack`, which is a shorter job: it has no card at all.
+  if (object === undefined || object.kind !== 'spell') return state;
+  const seq = state.autoSeq + 1;
+  const copyId = `cp${seq}`;
+  // One target replaced, and only when there was exactly one to replace: a spell with several
+  // targets, or with a divided quantity, is copied as it was aimed and divided (CR 706.10c).
+  const moved = aimedAt !== undefined && object.targets.length === 1;
+  const copy: StackObject = {
+    ...object,
+    id: copyId,
+    controller,
+    copyOf: object.id,
+    ...(moved ? { targets: [aimedAt!], targetSeqs: targetSeqsFor(state, [aimedAt!]) } : {}),
+    description: `${object.description} (copy)`,
+  };
+  return {
+    ...state,
+    autoSeq: seq,
+    stackObjects: { ...state.stackObjects, [copyId]: copy },
     stackOrder: [...state.stackOrder, copyId],
   };
 }
