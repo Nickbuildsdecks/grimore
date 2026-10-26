@@ -18,7 +18,7 @@ import { crewPlan, legalActions, type LegalActions, type LegalPlay } from './leg
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  bottomOwed, modesOf, pendingDeclaration, preferredOption, stillDeciding,
+  bottomOwed, modesOf, pendingDeclaration, preferredAmount, preferredOption, stillDeciding,
 } from './automation.js';
 import { characteristicsOf, hasType, parseTypeLine, type Keyword } from './characteristics.js';
 import {
@@ -29,6 +29,7 @@ import { creaturesControlledBy } from './effects.js';
 import { applyAction } from './engine.js';
 import { costValue, parseManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
+import { isNumberDecision } from './scriptTypes.js';
 import { targetKey, type Target } from './turnTypes.js';
 import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
@@ -76,6 +77,14 @@ function decideAction(
     return {
       type: 'auto:decide', by: seat, cards: [],
       option: preferredOption(state) ?? ask.options[0] ?? '',
+    };
+  }
+  // And a number by the card that asked, for the same reason: only Toxic Deluge knows that its
+  // number is life worth spending. See `NumberDecisionSpec.best`.
+  if (ask.numbers !== undefined) {
+    return {
+      type: 'auto:decide', by: seat, cards: [],
+      amount: preferredAmount(state) ?? ask.numbers.min,
     };
   }
   return { type: 'auto:decide', by: seat, cards: decideCards(state, seat, ask) };
@@ -1916,6 +1925,41 @@ function untapBoughtSomething(
 }
 
 /**
+ * Whether this cast's own number comes out nought — a card spent to choose nothing.
+ *
+ * The twelfth of the "spent on nothing" family, and the first that is about a *question* rather
+ * than a play. Toxic Deluge asks its caster how much life to pay as it resolves, and the card's own
+ * answer is nought whenever no number kills more of theirs than of mine. Cast anyway, the spell
+ * resolves, the card is in the graveyard, and the board is exactly where it was.
+ *
+ * The search cannot see that, and the reason is structural rather than a missing term: a cast puts
+ * a spell on the *stack*, and the number is not chosen until it resolves, so one ply out the board
+ * after the cast is the board before it plus a stack object — which scores the same as any other
+ * play that does nothing. **Measured: three of seventeen Deluges across 120 games were cast for
+ * nought**, and the other fourteen killed thirty of the opponent's creatures against three of its
+ * own, so the number-picking was never the problem. See `NumberDecisionSpec.best`.
+ *
+ * Asked of the board *now* rather than at resolution, which is the same approximation every rule
+ * in this family makes: the bot casts in its own main phase with an empty stack, so "now" and "as
+ * it resolves" are the same board unless somebody responds — and a card held for the turn somebody
+ * does respond is the card kept, not the card wasted.
+ */
+function chosenNumberIsNothing(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  const script = name === undefined ? undefined : scriptFor(name);
+  if (script?.decisions === undefined) return false;
+  return script.decisions.some((spec) => {
+    if (!isNumberDecision(spec) || spec.who !== 'controller') return false;
+    const best = spec.best?.(state, seat);
+    // A card with no opinion is not this rule's business, and neither is one whose range has
+    // nothing in it but its own bottom: the test is "the card itself says nought buys this".
+    if (best === undefined) return false;
+    return best <= spec.range(state, seat).min;
+  });
+}
+
+/**
  * Whether this action foretells a card (CR 702.143a).
  *
  * Measured, because the answer is more interesting than the rule: over 56 games this bot foretold
@@ -2540,6 +2584,14 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     */
     if (untapsSomething(state, option.action)
       && !untapBoughtSomething(state, after, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And a spell whose own number comes out nought, which is the twelfth of the family and the
+      first about a question rather than a play. See `chosenNumberIsNothing`.
+    */
+    if (chosenNumberIsNothing(state, seat, option.action)) {
       dropped += 1;
       continue;
     }

@@ -1447,6 +1447,81 @@ describe('the untap that puts the board back where it found it', () => {
   });
 });
 
+describe('the sweeper whose own number comes out nought', () => {
+  /*
+    The twelfth "spent on nothing" rule, and the first about a *question* rather than a play.
+
+    Toxic Deluge asks its caster how much life to pay as it resolves, and the card's own answer is
+    nought when no number kills more of theirs than of mine. Cast anyway, the spell resolves, the
+    card is in the graveyard, and the board is exactly where it was.
+
+    The search cannot see it, and the reason is structural: a cast puts a spell on the *stack*, and
+    the number is not chosen until it resolves — so one ply out, the board after the cast is the
+    board before it plus a stack object, which scores the same as any other play that does nothing.
+
+    Instrumented over 120 Hollow Tide duels against the other ten decks, before and after:
+
+    | | casts | numbers chosen | their creatures dead | its own |
+    | --- | --- | --- | --- | --- |
+    | without the rule | 18 | **0:3** 1:5 2:3 3:2 4:4 | 30 | 3 |
+    | with it | 18 | 1:8 2:3 3:2 4:4 | **33** | 3 |
+
+    The same eighteen casts, three of which were a card thrown away for nothing and are now held
+    for a turn where the number buys something — three more of the opponent's creatures dead for
+    the same three of its own. The number-picking was never the problem.
+  */
+  const deluged = (theirs: readonly string[], mine: readonly string[] = []): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'ember-rush' },
+      hands: { 0: ['Toxic Deluge'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Island', ...mine], 1: [...theirs] },
+      turn: 4, firstSeat: 0, autoPass: true,
+    }), 'precombat-main');
+    // The draw step put a card in hand on the way here, and a bot with a second option is not
+    // being asked this question. Everything but the Deluge goes back to the bottom.
+    for (const id of [...ids(s, 0, 'hand')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]?.name === 'Toxic Deluge') continue;
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+
+  const castsTheDeluge = (s: GameState): boolean => {
+    const action = botAction(s, 0);
+    if (action?.type !== 'auto:cast') return false;
+    return s.cardDefs[s.instances[action.card]?.defKey ?? '']?.name === 'Toxic Deluge';
+  };
+
+  it('is not cast into a board where no number buys anything', () => {
+    // Nothing of theirs at all: every number costs life and kills nothing. The play is legal and
+    // the search would have taken it for the free zero.
+    const empty = deluged([]);
+    expect(legalActions(empty, 0).plays.some((p) => p.kind === 'cast')).toBe(true);
+    expect(castsTheDeluge(empty)).toBe(false);
+
+    // And the harder case: a board with only the caster's own creature on it, where every number
+    // that does anything kills that and nothing else.
+    expect(castsTheDeluge(deluged([], ['Fog Bank']))).toBe(false);
+  });
+
+  it('but is cast the moment a number kills more of theirs than of its own', () => {
+    // Two 1/2 Swiftspears across the table and nothing of its own: two life for two creatures.
+    expect(castsTheDeluge(deluged(['Monastery Swiftspear', 'Monastery Swiftspear']))).toBe(true);
+  });
+
+  it('and a card the bot holds is still a card a person can cast', () => {
+    /*
+      The rule is the bot's judgement, not a refusal: this family has never once made a play
+      illegal, because a person holding up a sweeper with nothing to sweep is allowed to be wrong,
+      and a table that silently removed the option would be lying about the card.
+    */
+    const s = deluged([]);
+    const deluge = find(s, 0, 'hand', 'Toxic Deluge');
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === deluge)).toBe(true);
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: deluge })).not.toThrow();
+  });
+});
+
 describe('a Clone with nothing to copy', () => {
   /*
     The sixth member of the "spent on nothing" family, and the most literal: a Clone cast with an

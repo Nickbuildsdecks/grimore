@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and twenty-eight, today, across eleven starter decks. A
+cards somebody has scripted — two hundred and thirty-two, today, across eleven starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -122,6 +122,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Use **Walking Ballista** | Cast it and pick the number: `{X}{X}` again, so X=2 costs four mana and it arrives as a 2/2. **{1}** puts another counter on it, and **removing a counter** shoots 1 damage at any target — a creature, a player or a planeswalker. The counter is the *cost*, so it comes off before the damage resolves: firing the last one makes it a 0/0 that dies on the spot, and the damage still happens. With no counters left the shoot option is simply not offered. |
 | Use **Hangarback Walker** | Same `{X}{X}` arrival, and **{1}, {T}** grows it — so it cannot grow and attack in the same turn, which is the card. When it dies you get a 1/1 flying Thopter for **each counter it had**, counted from what was on it when it died rather than from the empty card in the graveyard. |
 | Use **Chalice of the Void** | Cast it and pick the number. `{X}{X}` is that number paid **twice**, so X=1 costs two mana and X=2 costs four — the table only offers an X you can actually pay for. It enters with that many charge counters, and from then on **any** spell whose mana value matches is countered as it is cast, including yours. It is not a target and nothing chooses: a spell that matches is countered, a spell that does not puts nothing on the stack at all. Take the counters off it and it stops matching, which is the printed answer to one. |
+| Use **Toxic Deluge** | {2}{B} in Hollow Tide, and the only card here whose whole text is a number you choose **while it is resolving**. Cast it, let it resolve, and the table asks "Pay how much life?" with a row of numbers to tap. Every creature on the table gets -X/-X until end of turn for X life — **yours too**, which is the card and the reason the question is worth thinking about. Two things about the numbers on offer. They stop one short of your life total, because a cost that kills you is not a cost you may choose to pay (CR 118.4), and they stop at the biggest toughness on the board, because -9/-9 and -4/-4 kill exactly the same creatures when nothing has five toughness. If that leaves only one number, the table takes it and does not ask. This is **not** an X cost: X is announced as a spell is cast and can be countered knowing how big it is, whereas this is chosen after every response, from the board as it ended up — which is why you hold it up rather than casting it on your own turn. |
 | Play a **Saga** | Two cards are Sagas: The Birth of Meletis in Skyward Writ and The Eldest Reborn in Hollow Tide. A Saga is an enchantment that reads itself out over three turns. It arrives with one lore counter and **chapter I happens immediately** — you do not wait a turn for it — and it gets another counter at the start of each of your own main phases, never on anybody else's turn. Each chapter goes on the stack like any other trigger, so an opponent can answer the chapter even though they cannot stop the counter. Once the last chapter has resolved the Saga is sacrificed and goes to your graveyard; the card shows **lore** counters so you can see which chapter is next. Nothing can be killed in response to a Saga except the Saga: a creature removal spell does not touch it, and in this pool only three cards destroy an enchantment. |
 | **Foretell** a card | Two cards have it, in Tidal Mind and in Arc Tempest: Behold the Multiverse and Saw It Coming. On your own turn, tap the card in hand → **Foretell** and pay {2}; the card goes into exile **face down**, and nobody else can see what it is — only that there is a card there. From your next turn onwards it is a play again, out of exile, for the smaller cost printed on it (**{1}{U}** and **{U}{U}**). You cannot cast it on the turn you foretold it. The point is that it splits a four-mana spell across two turns, so you can hold up a counterspell without holding up the mana — which is the hardest thing in this pool to do and the one thing the computer genuinely cannot. Foretelling cannot be answered: no stack, nothing to respond to. |
 | Work out why your creature is bigger than its card | Three creatures are **lords**: they change the other creatures of their own type. Stromkirk Captain in Ashen Rite gives other **Vampires** +1/+1 and first strike, Knight Exemplar in Skyward Writ gives other **Knights** +1/+1 and indestructible, and Imperious Perfect in Rot Harvest gives other **Elves** +1/+1. None of them pumps itself — "other" is printed on all three. The board always shows the current size, and it changes the instant the lord arrives or leaves, with nothing to click: a Knight with three damage on it that was surviving because of the Exemplar dies the moment the Exemplar does. |
@@ -220,7 +221,12 @@ to do on purpose. Blockers that never attack, three counterspells and four remov
 the early turns, and then ten cards a swing from a Nemesis of Reason, ten a turn from Jace, or
 eleven a connection from Mirko Vosk, who leads it. Its cheapest blocker is a **Cloudfin Raptor**,
 a 0/1 for one mana that grows itself every time a bigger creature of yours arrives — which in this
-deck is every creature it has.
+deck is every creature it has. Its newest card is **Toxic Deluge**, in the Returned Centaur's old
+slot: {2}{B} for "pay X life, all creatures get -X/-X", and the only card in the pool whose whole
+text is a number you choose *while it is resolving*. It hits your own blockers too, so the number is
+a real decision rather than a maximum — and against the field the slot measures three games of 240
+either way, which is well inside the noise. It is in the deck because a mill deck with four removal
+spells and no sweeper has no answer to a board it has already fallen behind.
 
 **Arc Tempest** (red-blue) is the ninth, and it is the first deck here whose
 creatures are paid for by its spells. Twenty-five of its sixty cards are instants and sorceries and
@@ -430,7 +436,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and twenty-eight scripted cards, which now includes a wrath, a
+The decks share a pool of two hundred and thirty-two scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -600,7 +606,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
 
 ```bash
-node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 72 checks
+node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 73 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-58 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 22 checks
@@ -660,9 +666,9 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (769 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (799 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (200 tests, the interaction reducer behind every prompt and the deck panel) and
+pods as well as duels), `apps/web` (204 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
 (43 tests against live Redis, including two socket clients playing to a finish, one person
 playing the server, a deal struck with the server's own seat, and two players rematching on
@@ -672,7 +678,7 @@ decks they pasted in).
 
 - **A list of your own plays, but only the pool is automated.** Paste your decklist in the lobby and
   the table deals it (see *Play with your own list*). Every name the engine's pool has — the two
-  hundred and twenty-five cards in the eleven starter decks, commanders included — becomes the real
+  hundred and thirty-two cards in the eleven starter decks, commanders included — becomes the real
   card and is fully automated. Every name it does not becomes **cardboard**: a card with a name and
   nothing else, which the tabletop plays by hand with **Move by hand** for whatever it says in
   prose, and which Arena mode refuses by name rather than dealing a game with a card nobody can do
@@ -680,10 +686,11 @@ decks they pasted in).
   oracle text — which means a populated `cards` table, which means a machine that can reach
   Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
   exists, the card data does not.
-- **The engine knows two hundred and twenty-eight cards.** Everything in the eleven starter decks. It
+- **The engine knows two hundred and thirty-two cards.** Everything in the eleven starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent
-  among its targets (CR 601.2d), and a decision made *while a card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your
+  among its targets (CR 601.2d), a number chosen *as a spell resolves* rather than as it is cast
+  (Toxic Deluge), and a decision made *while a card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your
   library to you and nobody else, Mind Rot is answered by the player discarding rather than by
   whoever cast it, and Fleshbag Marauder asks each player in turn order. A modal spell shows up as
   one play per mode when you tap it — Selesnya Charm offers three, and Grim Discovery offers each

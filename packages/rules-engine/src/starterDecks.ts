@@ -1411,6 +1411,15 @@ const HANGARBACK_WALKER: CardDef = {
   colors: [],
 };
 
+const TOXIC_DELUGE: CardDef = {
+  name: 'Toxic Deluge',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  oracleText: 'Pay X life. All creatures get -X/-X until end of turn.',
+  colors: ['B'],
+};
+
 const CHALICE_OF_THE_VOID: CardDef = {
   name: 'Chalice of the Void',
   typeLine: 'Artifact',
@@ -3331,7 +3340,18 @@ export const HOLLOW_TIDE: DeckSpec = {
     { card: MIND_SCULPT, count: 3 },
     { card: THOUGHT_SCOUR, count: 2 },
     { card: COMPELLING_ARGUMENT, count: 2 },
-    { card: RETURNED_CENTAUR, count: 2 },
+    { card: RETURNED_CENTAUR, count: 1 },
+    /*
+      Toxic Deluge, for the second Returned Centaur.
+
+      A mill deck wins by not dying, and until now the only way it answered a board was one
+      creature at a time. A sweeper whose size you choose is the right one for it twice over: it
+      answers four one-drops for one life each, and it answers the 5/5 it could never block
+      profitably — and the life it costs is the one resource a deck that is not racing has to
+      spend. It is the pool's only card whose number is chosen *as it resolves* rather than as it
+      is cast, which is why it could not be written before (see `NumberDecisionSpec`).
+    */
+    { card: TOXIC_DELUGE, count: 1 },
     // The ground, which is the half of a mill deck that is not the mill. None of these want to
     // attack and all of them are happy to block for ever.
     { card: FOG_BANK, count: 2 },

@@ -381,11 +381,52 @@ export interface ChoiceDecisionSpec {
   readonly from?: never;
 }
 
-export type DecisionSpec = CardsDecisionSpec | ChoiceDecisionSpec;
+/**
+ * A question whose answer is a **number**: "pay X life", "choose a number".
+ *
+ * The third and last shape of mid-resolution question, and the one this engine has been missing
+ * since it learned to ask the other two. A card is not an answer and neither is a word: Toxic
+ * Deluge's whole card is a number chosen *as it resolves*, bounded by the life its caster can
+ * actually pay, and spent before anything else happens.
+ *
+ * It is not an X cost, which is the distinction worth being careful about. X is chosen as a spell
+ * is **cast**, it is part of what gets countered, and an opponent sees it before deciding whether
+ * to respond. A number chosen on resolution is chosen *after* every response, from a board that
+ * may have changed — which is exactly why a player would rather have it that way, and why this
+ * cannot be folded into `xMax`.
+ *
+ * **The card decides the range**, because only the card knows what the number means. Toxic Deluge
+ * asks for nought up to the smaller of "life you can survive paying" and "the biggest toughness on
+ * the board", since -9/-9 and -4/-4 kill exactly the same creatures when nothing has five
+ * toughness — and a question offering forty answers where six matter is a worse question, not a
+ * more honest one. The range is computed when the question is asked, so it reads the board as it
+ * is at that moment rather than as it was when the spell was cast.
+ */
+export interface NumberDecisionSpec {
+  readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent';
+  readonly prompt: string;
+  /** The numbers on offer, inclusive, read off the board when the question is asked. */
+  readonly range: (state: GameState, chooser: SeatIndex) => { readonly min: number; readonly max: number };
+  /**
+   * Which number the engine's own opponent picks, written by the card — the same hook, and for the
+   * same reason, as `ChoiceDecisionSpec.best`: only the card knows what its number *buys*. Out of
+   * range or absent falls back to the bottom of the range, which is the answer that does least.
+   */
+  readonly best?: (state: GameState, chooser: SeatIndex) => number | undefined;
+  /** Never set on this shape; the three are told apart by which of these is present. */
+  readonly from?: never;
+  readonly options?: never;
+}
+
+export type DecisionSpec = CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec;
 
 /** Whether a question is the kind whose answer is a word. Narrows for TypeScript as well. */
 export const isChoiceDecision = (spec: DecisionSpec): spec is ChoiceDecisionSpec =>
   spec.options !== undefined;
+
+/** Whether a question is the kind whose answer is a number. */
+export const isNumberDecision = (spec: DecisionSpec): spec is NumberDecisionSpec =>
+  spec.options === undefined && spec.from === undefined;
 
 /**
  * A yes-or-no question asked of the board, for an intervening-if clause. See `TriggerDef.condition`.

@@ -556,6 +556,44 @@ describe("answering a question a card asked while resolving", () => {
     expect(arenaReducer(one, { kind: "confirm" }).action).toBeNull()
     expect(decisionLabel(ask(), ["h1"])).toBe("Discard two cards (1 of 2)")
   })
+
+  /*
+    A question whose answer is a **number**: "Pay how much life?" on a Toxic Deluge.
+
+    The third shape of question, and it behaves like the word rather than the card — one tap is the
+    whole answer, there is no count to report and no confirm step. What the table must not do is
+    offer a number the engine did not: the range on the question is the authorisation, the same way
+    the candidate list is for a card and the option list is for a word.
+  */
+  const deluge = (): Decision => ({
+    prompt: "Pay how much life?", candidates: [], min: 1, max: 1, numbers: { min: 0, max: 3 },
+  })
+
+  it("answers a number in one tap, with no confirm step", () => {
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: deluge() }).mode
+    const { mode: after, action } = arenaReducer(mode, { kind: "pickNumber", amount: 2 })
+    expect(action).toEqual({ type: "auto:decide", cards: [], amount: 2 })
+    expect(after).toEqual(IDLE)
+    // Nought is an answer like any other: paying nothing is a legal choice on this card.
+    expect(arenaReducer(mode, { kind: "pickNumber", amount: 0 }).action)
+      .toEqual({ type: "auto:decide", cards: [], amount: 0 })
+  })
+
+  it("refuses a number outside the range the engine offered", () => {
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: deluge() }).mode
+    for (const amount of [4, -1, 1.5, Number.NaN]) {
+      expect(arenaReducer(mode, { kind: "pickNumber", amount }).action).toBeNull()
+    }
+  })
+
+  it("ignores a number sent at a question that is not about one", () => {
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask: ask() }).mode
+    expect(arenaReducer(mode, { kind: "pickNumber", amount: 1 }).action).toBeNull()
+  })
+
+  it("puts the prompt on the label and leaves the numbers to the buttons", () => {
+    expect(decisionLabel(deluge(), [])).toBe("Pay how much life?")
+  })
 })
 
 describe("choosing X", () => {

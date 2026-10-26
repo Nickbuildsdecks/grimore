@@ -486,11 +486,28 @@ async function main() {
       const hand = await cardsIn(friend, 'zone-hand-1').count();
       return hand === handBeforeReload && (await readNumber(friend, 'life-1')) === lifeBeforeReload;
     }, 20000);
+    /*
+      Any decrease, not exactly one — and the click comes after the read.
+
+      The first version clicked and then demanded `lifeBeforeReload - 1` in the same attempt, which
+      is a check that cannot pass if its own click is slow: the retry clicks again, life goes down
+      twice, and the one number it will accept is now behind it. It failed that way once on a
+      freshly started stack and passed on every warm run, which is the signature of a race in the
+      test rather than in the table. So: read first, click only if nothing has landed yet, accept
+      any decrease as proof the seat can act, and then put the total back wherever those clicks
+      left it — because the end of this game counts life down to nought and expects to get there.
+    */
     await expectEventually(friend, 'and the reclaimed seat can still act', async () => {
+      if ((await readNumber(friend, 'life-1')) < lifeBeforeReload) return true;
       await tid(friend, 'life-down-1').click();
-      return (await readNumber(friend, 'life-1')) === lifeBeforeReload - 1;
+      return false;
     });
-    await tid(friend, 'life-up-1').click();
+    await expectEventually(friend, 'and life goes back to where the reload found it', async () => {
+      const now = await readNumber(friend, 'life-1');
+      if (now === lifeBeforeReload) return true;
+      await tid(friend, now < lifeBeforeReload ? 'life-up-1' : 'life-down-1').click();
+      return false;
+    });
     await shot(friend, 'after-reload');
 
     // The in-game help: neither player will have the setup guide open while playing.
@@ -532,9 +549,24 @@ async function main() {
     await nick.waitForSelector('[data-testid="chat-panel"]', { state: 'detached', timeout: 5000 });
 
     // Search the deck, which is the only time a player may look at their own library.
-    await tid(friend, 'search').click();
-    await expectEventually(friend, 'searching opens your own library to you', async () =>
-      (await cardsIn(friend, 'zone-library-1').count()) > 10);
+    /*
+      Pressed by the check rather than before it, because this button is a *toggle*.
+
+      "Search deck" and "Close deck" are the same button, so a press that has not come back from
+      the server yet must not be pressed again — the second press shuts the drawer the check is
+      waiting for. So: the library decides, the button's own label says whether a press is still
+      wanted, and a press is given a second and a half to land before another one.
+    */
+    let lastPress = 0;
+    await expectEventually(friend, 'searching opens your own library to you', async () => {
+      if ((await cardsIn(friend, 'zone-library-1').count()) > 10) return true;
+      const label = (await tid(friend, 'search').textContent()) ?? '';
+      if (Date.now() - lastPress > 1500 && /Search deck/.test(label)) {
+        lastPress = Date.now();
+        await tid(friend, 'search').click();
+      }
+      return false;
+    });
     await expectEventually(nick, 'and never to your opponent', async () =>
       (await nick.locator('[data-testid="zone-library-1"]').count()) === 0);
     await shot(friend, 'friend-searching');

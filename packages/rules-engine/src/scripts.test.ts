@@ -9850,3 +9850,110 @@ describe('Walking Ballista and Hangarback Walker: the counter as a cost, and the
     expect(s.instances[walker]?.tapped).toBe(true);
   });
 });
+
+describe('Toxic Deluge: the number chosen while the spell resolves', () => {
+  /*
+    The third and last shape of mid-resolution question, and the one this engine has been missing
+    since it learned the other two. A card is not an answer and neither is a word: this card's
+    whole text is a number, chosen as it resolves.
+
+    Which is the distinction worth being careful about. An X in a cost is announced as the spell
+    goes on the stack, is part of what gets countered, and lets an opponent decide whether to
+    respond knowing how big it is. This number is chosen after all of that, from the board as it
+    actually ended up — so it cannot be folded into `xMax`, and that is also why a player would
+    rather have it this way round.
+  */
+  const table = (theirs: readonly string[], mine: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'hollow-tide', 1: 'ember-rush' },
+    hands: { 0: ['Toxic Deluge'] },
+    battlefield: {
+      0: ['Island', 'Island', 'Swamp', ...mine],
+      1: [...theirs],
+    },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  const cast = (s: GameState): GameState => {
+    const deluge = find(s, 0, 'hand', 'Toxic Deluge');
+    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: deluge })));
+  };
+
+  it('stops and asks for a number, with a range the card computed from the board', () => {
+    // Two one-toughness creatures and a 3/3: nothing above three toughness, so nothing above
+    // three is worth offering, however much life there is to spend.
+    const s = cast(table(['Raging Goblin', 'Goblin Arsonist', 'Hill Giant']));
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 3 });
+    expect(legalActions(s, 0).mustDecide?.numbers).toEqual({ min: 0, max: 3 });
+    // And nobody holds priority while it stands, which is the rule every other question follows.
+    expect(s.priority).toBeNull();
+  });
+
+  it('pays the life and shrinks every creature by it, the caster’s own included', () => {
+    let s = cast(table(['Raging Goblin', 'Hill Giant'], ['Fog Bank']));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 2 }));
+    expect(life(s, 0)).toBe(18);
+    // A 1/1 and an 0/2 die; the 3/3 lives as a 1/1.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Raging Goblin');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Fog Bank');
+    const giant = find(s, 1, 'battlefield', 'Hill Giant');
+    expect(characteristicsOf(s, s.instances[giant]!).power).toBe(1);
+  });
+
+  it('refuses a number the question did not offer, which is where the authorisation is', () => {
+    const s = cast(table(['Raging Goblin']));
+    // The board tops out at one toughness, so one is the most on offer — however much life there
+    // is. A crafted action paying nine is refused here and nowhere else.
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 1 });
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [], amount: 9 })).toContain('between 0 and 1');
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [], amount: -1 })).toContain('between 0 and 1');
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [], amount: 1.5 })).toContain('choose a number');
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [] })).toContain('choose a number');
+  });
+
+  it('pays nothing and does nothing when nought is the answer', () => {
+    let s = cast(table(['Hill Giant']));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 0 }));
+    expect(life(s, 0)).toBe(20);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Hill Giant');
+  });
+
+  it('never offers a number that would kill its caster (CR 118.4)', () => {
+    // One life left and a 6/6 across the table: the range stops at nought, which is the same rule
+    // that stops a Mana Confluence making mana at one life.
+    let s = table(['Shivan Dragon']);
+    s = apply(s, { type: 'life:adjust', by: 0, seat: 0, delta: -19 });
+    expect(life(s, 0)).toBe(1);
+    s = cast(s);
+    // A range with one answer in it is not a question: the engine takes it and the spell resolves.
+    expect(s.pendingDecision).toBeNull();
+    expect(life(s, 0)).toBe(1);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Shivan Dragon');
+  });
+
+  it('is answered by the bot with the number that trades best, not the biggest', () => {
+    /*
+      The card's own opinion, which is the only place it could live: a number that kills three of
+      theirs and two of mine for four life is not an improvement on doing nothing, and nothing
+      generic can weigh that. See `NumberDecisionSpec.best`.
+    */
+    let s = cast(table(['Raging Goblin', 'Goblin Arsonist', 'Hill Giant'], ['Fog Bank']));
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:decide');
+    // One kills both goblins and nothing of its own: the Fog Bank is an 0/2 and survives, the
+    // Hill Giant is a 3/3 and survives. Two would take the Fog Bank with it for no extra gain.
+    expect(action?.type === 'auto:decide' ? action.amount : null).toBe(1);
+    s = drain(apply(s, action!));
+    expect(namesIn(s, 1, 'battlefield')).toEqual(['Hill Giant']);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Fog Bank');
+  });
+
+  it('and pays nothing when no number is worth it', () => {
+    // Its own 0/2 and nothing of theirs: every number costs more than it buys, so the answer is
+    // nought. The search will not *choose* to cast it into this board (see the twelfth "spent on
+    // nothing" rule in `playout.test.ts`), but a person may, and then this is the answer.
+    const s = cast(table([], ['Fog Bank']));
+    const action = botAction(s, 0);
+    expect(action?.type === 'auto:decide' ? action.amount : null).toBe(0);
+  });
+});

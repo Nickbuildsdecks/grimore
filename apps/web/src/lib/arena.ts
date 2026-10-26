@@ -130,6 +130,7 @@ export type ArenaEvent =
    * tap is the whole answer, and a half-answered word question is not a state the table can be in.
    */
   | { kind: "pickOption"; option: string }
+  | { kind: "pickNumber"; amount: number }
   | { kind: "feed"; card: string }
   | { kind: "choosePlay"; play: LegalPlay }
   | { kind: "pickTarget"; target: Target }
@@ -662,6 +663,18 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       return { mode: IDLE, action: { type: "auto:decide", cards: [], option: event.option } }
     }
 
+    case "pickNumber": {
+      if (mode.kind !== "deciding") return { mode, action: null }
+      // Checked against the range the engine offered, for the same reason a word is checked
+      // against its list: the table draws what the engine said is answerable and nothing else.
+      const range = mode.ask.numbers
+      if (range === undefined) return { mode, action: null }
+      if (!Number.isInteger(event.amount) || event.amount < range.min || event.amount > range.max) {
+        return { mode, action: null }
+      }
+      return { mode: IDLE, action: { type: "auto:decide", cards: [], amount: event.amount } }
+    }
+
     case "toggleDecision": {
       if (mode.kind !== "deciding") return { mode, action: null }
       if (!mode.ask.candidates.includes(event.card)) return { mode, action: null }
@@ -1036,6 +1049,8 @@ export function decisionLabel(ask: Decision, chosen: readonly string[]): string 
   // A word question has no count to report: the prompt is the whole label, and the options are
   // the buttons beside it.
   if (ask.options !== undefined) return ask.prompt
+  // Nor has a number: the numbers themselves are the buttons.
+  if (ask.numbers !== undefined) return ask.prompt
   if (ask.min === ask.max) return `${ask.prompt} (${chosen.length} of ${ask.max})`
   if (ask.min === 0) return chosen.length === 0 ? `${ask.prompt} — or choose nothing` : `${ask.prompt} (${chosen.length})`
   return `${ask.prompt} (${chosen.length}, at least ${ask.min})`

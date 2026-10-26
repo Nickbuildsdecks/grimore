@@ -236,6 +236,29 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
                 </Button>
               ))}
             </span>
+          ) : mode.ask.numbers !== undefined ? (
+            /*
+              A question whose answer is a number draws the numbers, for the same reason the words
+              are drawn: one tap is the whole answer, and the engine has already said which numbers
+              are answerable. The range is the card's — Toxic Deluge offers nought up to what the
+              board makes worth paying — so this is never the forty buttons a life total would be.
+            */
+            <span data-testid="decide-numbers" className="flex flex-wrap gap-1.5">
+              {Array.from(
+                { length: mode.ask.numbers.max - mode.ask.numbers.min + 1 },
+                (_, i) => mode.ask.numbers!.min + i,
+              ).map((amount) => (
+                <Button
+                  key={amount}
+                  size="sm"
+                  variant="secondary"
+                  data-testid={`decide-number-${amount}`}
+                  onClick={() => dispatch({ kind: "pickNumber", amount })}
+                >
+                  {amount}
+                </Button>
+              ))}
+            </span>
           ) : (
           <span className="text-[var(--g-text-muted)]">
             {mode.ask.from === "library" ? "tap a card in your library below"
@@ -244,7 +267,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           </span>
           )}
           <span className="ml-auto flex gap-1.5">
-            {mode.ask.options === undefined
+            {mode.ask.options === undefined && mode.ask.numbers === undefined
               && mode.chosen.length >= mode.ask.min && mode.ask.min !== mode.ask.max ? (
               <Button size="sm" data-testid="confirm-decision" onClick={() => dispatch({ kind: "confirm" })}>
                 <Check className="size-3.5" />

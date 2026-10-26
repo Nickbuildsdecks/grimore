@@ -3626,6 +3626,55 @@ The randomness is an argument rather than a global, so the tests assert the mapp
 distribution — a test that started twenty tables and checked both seats came up would fail one run
 in a million for being unlucky, which is how a suite earns a retry flag.
 
+### The number chosen while the spell is resolving
+
+The engine could ask two kinds of question in the middle of a resolution — *which cards* and *which
+word* — and Toxic Deluge is neither. "Pay X life. All creatures get -X/-X until end of turn" is a
+number, and it is chosen **as the spell resolves**, which is what made it unscriptable until now.
+
+That is not an X cost, and the difference is the card. An X in a cost is announced on the stack, is
+part of the spell an opponent is deciding whether to counter, and is locked in before anybody
+responds; a Deluge is chosen after every response, from the board as it actually ended up. Holding
+one up and choosing four after the opponent flashes in a fifth creature *is* the card, so folding it
+into `xMax` would have been a lie about it in the way a player notices.
+
+The card owns the range, computed when the question is asked: nought up to the smaller of one less
+than the caster's life (CR 118.4 — a cost that kills you is not one you may choose to pay) and the
+biggest toughness on the board, because -9/-9 and -4/-4 kill exactly the same creatures when
+nothing has five toughness. A range with one answer in it is not a question — the engine takes it
+and carries on. The table draws a row of numbers, and nothing but the numbers the engine said were
+answerable: `auto:decide` refuses a number outside the range, and the browser's reducer refuses it
+before it ever gets sent.
+
+**And then the instrument found something the record did not.** Over 120 Hollow Tide duels the bot
+cast the Deluge 18 times and chose well — 30 of the opponent's creatures dead against 3 of its own —
+but **three of those casts chose nought**, which is a card put in the graveyard to do nothing at all.
+The search cannot see that, for a structural reason rather than a missing term: a cast puts the
+spell on the *stack*, the number is not chosen until it resolves, so one ply out the board after the
+cast is the board before it plus a stack object. So the twelfth member of the "spent on nothing"
+family, and the first about a question rather than a play: if the card's own answer is the bottom of
+its own range, casting it is not a play. Same 18 casts afterwards, none for nought, and three more
+of the opponent's creatures dead for the same three of its own.
+
+The slot measures **−3 of 240** against the field, paired on identical seeds, and the drop rule
+moved it by exactly nothing — 81-159 with the Deluge and 84-156 without it, the same in both runs,
+every per-opponent row identical. Both numbers are
+far inside the eighteen-game noise floor, which is the fourth card in a row to measure that way
+(Kiora's Follower, Chalice of the Void, Hangarback Walker) and for the same reason: a one-ply search
+cannot realise a card whose value is in *when* you cast it. The rule is kept anyway, on the same
+grounds as the untap cycle: a bot that spends a card to choose nothing looks broken to the person
+sitting opposite, and three more dead creatures for the same life is not worse.
+
+**And two races in `e2e-table`, found by running it against a stack that had just started.** Both
+were in the test rather than in the table, and both were the same mistake: a check that presses a
+button on every retry. The reclaimed-seat check clicked *life down* and demanded exactly one less,
+so a click slow to land was clicked twice and the one number it would accept was already behind it;
+it now reads before it clicks, accepts any decrease as proof the seat can act, and puts the total
+back where the reload found it. The search check pressed a *toggle*, so a second press shut the
+drawer it was waiting for; it now lets the library decide, reads the button's own label to see
+whether a press is still wanted, and gives a press a second and a half to land. Seventy-three checks
+now, and green on a cold stack as well as a warm one — which is the run that found this.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

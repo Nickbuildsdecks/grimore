@@ -37,6 +37,23 @@ import type { GameState, SeatIndex } from './types.js';
 import { legalTargets, retarget } from './targeting.js';
 import { targetKey, type Target } from './turnTypes.js';
 
+/**
+ * The biggest toughness on the battlefield, which is where a sweeper's useful range stops.
+ *
+ * Used by Toxic Deluge to decide how many numbers are worth offering: a -X/-X bigger than anything
+ * on the table kills exactly what the one below it did and costs more life.
+ */
+function biggestToughness(state: GameState): number {
+  let biggest = 0;
+  for (const id of battlefield(state)) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const ch = characteristicsOf(state, inst);
+    if (ch.isCreature && ch.toughness > biggest) biggest = ch.toughness;
+  }
+  return biggest;
+}
+
 // ── Target specs used by more than one card ──────────────────────────────────────────────────────
 
 /** The five colours, for a card that offers one of each. */
@@ -4477,6 +4494,79 @@ const HANGARBACK_WALKER: CardScript = {
   ],
 };
 
+/**
+ * The sweeper whose size you choose, and the pool's first question answered with a number.
+ *
+ * "Pay X life. All creatures get -X/-X until end of turn." Everything about this card is the
+ * number, and the number is chosen **as it resolves** rather than as it is cast — which is the
+ * distinction that made it unscriptable until now. An X in a cost is announced on the stack, is
+ * part of what gets countered, and lets an opponent decide whether to respond knowing how big it
+ * is. This is chosen after all of that, from the board as it actually ended up, which is precisely
+ * why a player would rather have it this way round (see `NumberDecisionSpec`).
+ *
+ * **The range is the card's own.** Nought up to the smaller of the life its caster can survive
+ * paying and the biggest toughness on the board: -9/-9 and -4/-4 kill exactly the same creatures
+ * when nothing has five toughness, so offering forty answers where four matter would be a worse
+ * question rather than a more honest one. It reads the board when the question is asked.
+ *
+ * It hits **all** creatures, the caster's own included, which is the card and is also why the bot
+ * needs an opinion rather than a maximum: the number that kills the most of somebody else's board
+ * is often the number that kills its own. `best` answers the way a player does — the smallest
+ * number that kills more of theirs than of mine, and nought when no number does.
+ */
+const TOXIC_DELUGE: CardScript = {
+  name: 'Toxic Deluge',
+  removesACreature: true,
+  decisions: [{
+    who: 'controller',
+    prompt: 'Pay how much life?',
+    range: (state, chooser) => ({
+      min: 0,
+      // One less than the life total: a cost that kills you is not a cost you may choose to pay
+      // (CR 118.4), and the same rule is why a Mana Confluence stops at one life.
+      max: Math.max(0, Math.min(
+        (state.seats[chooser]?.life ?? 1) - 1,
+        biggestToughness(state),
+      )),
+    }),
+    best: (state, chooser) => {
+      // The smallest number that is worth more to this seat than it costs, which is what a person
+      // works out by looking: how many of theirs dies, how many of mine, and is the trade good.
+      const cap = Math.min((state.seats[chooser]?.life ?? 1) - 1, biggestToughness(state));
+      let best = 0;
+      let bestGain = 0;
+      for (let x = 1; x <= cap; x += 1) {
+        let theirs = 0;
+        let mine = 0;
+        for (const id of battlefield(state)) {
+          const inst = state.instances[id];
+          if (inst === undefined) continue;
+          const ch = characteristicsOf(state, inst);
+          if (!ch.isCreature || ch.toughness > x) continue;
+          if (inst.zoneSeat === chooser) mine += 1;
+          else theirs += 1;
+        }
+        // Life is a resource and this is the one card here that spends it, so a number that trades
+        // three life for one creature apiece is not an improvement on doing nothing.
+        const gain = theirs - mine;
+        if (gain > bestGain) {
+          bestGain = gain;
+          best = x;
+        }
+      }
+      return best;
+    },
+  }],
+  onResolve: (c) => {
+    const paid = c.decisions[0]?.amount ?? 0;
+    if (paid <= 0) return c.state;
+    // The life first, because it is the cost of the effect rather than part of it: a Deluge for
+    // four takes the life whether or not anything on the board has four toughness.
+    const spent = loseLife(c.state, c.controller, paid);
+    return pumpAll(spent, c.source, c.controller, { power: -paid, toughness: -paid });
+  },
+};
+
 const KIORAS_FOLLOWER: CardScript = {
   name: "Kiora's Follower",
   abilities: [
@@ -4617,7 +4707,7 @@ const ALL: readonly CardScript[] = [
   STRIONIC_RESONATOR,
   AJANI_CALLER_OF_THE_PRIDE, NISSA_VOICE_OF_ZENDIKAR,
   EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM, CHALICE_OF_THE_VOID,
-  WALKING_BALLISTA, HANGARBACK_WALKER,
+  WALKING_BALLISTA, HANGARBACK_WALKER, TOXIC_DELUGE,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

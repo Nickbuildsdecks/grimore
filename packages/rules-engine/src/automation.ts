@@ -48,7 +48,7 @@ import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, DecisionSpec, ModeDef,
   TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
-import { isChoiceDecision, targetCount } from './scriptTypes.js';
+import { isChoiceDecision, isNumberDecision, targetCount } from './scriptTypes.js';
 import {
   checkTargets, hasAnyLegalTargets, legalTargets, liveTargets, stillHasLegalTarget, stillTheObject,
   targetSeqsFor,
@@ -1544,6 +1544,36 @@ function askOrFinish(
         message: `${object.description} — ${seatName(state, entry.seat)}: ${spec.prompt}`,
       };
     }
+    /*
+      A question whose answer is a **number**, which is the third shape and the shortest of all.
+
+      The range is the card's, computed now rather than when the spell was cast — Toxic Deluge asks
+      for what this player's life can pay and what the board makes worth paying, and both may have
+      changed while the spell sat on the stack. A range with one answer in it is not a question: the
+      engine takes that answer, the same way a list of one word is taken above.
+    */
+    if (isNumberDecision(spec)) {
+      const { min, max } = spec.range(state, entry.seat);
+      const low = Math.max(0, Math.floor(min));
+      const high = Math.max(low, Math.floor(max));
+      if (low === high) {
+        answers = [...answers, { seat: entry.seat, ids: [], amount: low }];
+        continue;
+      }
+      return {
+        state: {
+          ...state,
+          priority: null,
+          passed: [],
+          pendingDecision: {
+            seat: entry.seat, stackId: object.id, prompt: spec.prompt,
+            candidates: [], min: 1, max: 1, numbers: { min: low, max: high },
+            resume: { plan: [...plan], at: i, answers: [...answers] },
+          },
+        },
+        message: `${object.description} — ${seatName(state, entry.seat)}: ${spec.prompt}`,
+      };
+    }
     const taken = new Set(answers.filter((a) => a.seat === entry.seat).flatMap((a) => [...a.ids]));
     const candidates = decisionCandidates(state, spec, entry.seat).filter((id) => !taken.has(id));
     const { min, max } = decisionBounds(spec, candidates.length);
@@ -1585,7 +1615,7 @@ function askOrFinish(
  * `searching` is the only thing that opens it.
  */
 export function answerDecision(
-  state: GameState, chosen: readonly string[], option?: string,
+  state: GameState, chosen: readonly string[], option?: string, amount?: number,
 ): { state: GameState; message: string } {
   const pending = state.pendingDecision;
   if (pending === null) return { state, message: 'nothing to decide' };
@@ -1614,7 +1644,9 @@ export function answerDecision(
   // while a decision is outstanding — but a resolution with nothing to resolve is simply over.
   if (object === undefined) return { state: next, message: 'that resolution is gone' };
   const answers = [...pending.resume.answers, {
-    seat: pending.seat, ids: [...chosen], ...(option === undefined ? {} : { option }),
+    seat: pending.seat, ids: [...chosen],
+    ...(option === undefined ? {} : { option }),
+    ...(amount === undefined ? {} : { amount }),
   }];
   return askOrFinish(next, object, pending.resume.plan, pending.resume.at + 1, answers);
 }
@@ -1639,6 +1671,30 @@ export function preferredOption(state: GameState): string | undefined {
   // Only a word the question actually offered: a card's own hint is still checked against the
   // list, because a hint that named something else would be a refused action and a stopped table.
   return picked !== undefined && pending.options.includes(picked) ? picked : pending.options[0];
+}
+
+/**
+ * Which number the engine's opponent would pick for the question that is outstanding.
+ *
+ * The number twin of `preferredOption`, and here for the same reason: answering it needs the spec,
+ * and the spec is reached through the stack object and the script. A card's own hint is clamped to
+ * the range the question actually offered — a hint outside it would be a refused action and a
+ * stopped table — and the bottom of the range is the fallback, because that is the answer that
+ * does least.
+ */
+export function preferredAmount(state: GameState): number | undefined {
+  const pending = state.pendingDecision;
+  if (pending === null || pending.numbers === undefined) return undefined;
+  const { min, max } = pending.numbers;
+  const object = state.stackObjects[pending.stackId];
+  if (object === undefined) return min;
+  const specs = decisionSpecsFor(state, object);
+  const spec = specs[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
+  const picked = spec !== undefined && isNumberDecision(spec)
+    ? spec.best?.(state, pending.seat)
+    : undefined;
+  if (picked === undefined || !Number.isFinite(picked)) return min;
+  return Math.min(max, Math.max(min, Math.floor(picked)));
 }
 
 /** Takes a stack object off the stack, which is the first thing resolving it does. */

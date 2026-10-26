@@ -1331,7 +1331,7 @@ function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Out
  */
 function decide(
   state: GameState,
-  action: { by: SeatIndex; cards?: readonly string[]; option?: string },
+  action: { by: SeatIndex; cards?: readonly string[]; option?: string; amount?: number },
 ): Outcome {
   requireAutomated(state);
   const pending = state.pendingDecision;
@@ -1358,6 +1358,30 @@ function decide(
     return {
       state: settledChoice,
       message: `${seatName(state, action.by)} chooses ${picked} — ${resumedChoice.message}`,
+    };
+  }
+  /*
+    A question whose answer is a number, answered — and checked against the range the engine put on
+    the question, for the same reason the words and the cards are. That range *is* the
+    authorisation: it was computed from the board when the question was asked, so a crafted action
+    paying nine life out of a four-life range is refused here and nowhere else.
+  */
+  if (pending.numbers !== undefined) {
+    const { min, max } = pending.numbers;
+    const picked = action.amount;
+    if (picked === undefined || !Number.isInteger(picked)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `choose a number between ${min} and ${max}`);
+    }
+    if (picked < min || picked > max) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `that number must be between ${min} and ${max}`);
+    }
+    const resumedNumber = answerDecision(state, [], undefined, picked);
+    const settledNumber = resumedNumber.state.pendingDecision === null
+      ? resetPriority(settle(resumedNumber.state, state))
+      : settle(resumedNumber.state, state);
+    return {
+      state: settledNumber,
+      message: `${seatName(state, action.by)} chooses ${picked} — ${resumedNumber.message}`,
     };
   }
   const chosen = action.cards ?? [];

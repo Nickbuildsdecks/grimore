@@ -497,6 +497,11 @@ export interface AutomationState {
      * buttons instead of lighting up cards.
      */
     readonly options?: readonly string[];
+    /**
+     * The numbers on offer, when the answer is a number rather than a card or a word. Present
+     * exactly when both `from` and `options` are absent, and the table draws a row of numbers.
+     */
+    readonly numbers?: { readonly min: number; readonly max: number };
     readonly resume: {
       /** Every question this resolution asks, in order: a spec index and who answers it. */
       readonly plan: readonly { readonly seat: SeatIndex; readonly specIndex: number }[];
@@ -542,6 +547,13 @@ export interface DecisionAnswer {
    * spec's own `options` when the answer arrives, so a crafted action cannot invent one.
    */
   readonly option?: string;
+  /**
+   * The number chosen, for a question whose answer is neither a card nor a word — "pay X life".
+   *
+   * Checked against the range the spec computed when the question was asked, so a crafted action
+   * cannot pay nine life out of a four-life range. See `NumberDecisionSpec`.
+   */
+  readonly amount?: number;
 }
 
 // ── Automated actions ────────────────────────────────────────────────────────────────────────────
@@ -664,6 +676,8 @@ export interface AutoDecideAction {
    * resolution — a second action would be a second thing the table has to know when to send.
    */
   readonly option?: string;
+  /** The number chosen, for a question whose answer is a number. Same action, same reason. */
+  readonly amount?: number;
 }
 /**
  * Answers a ward (CR 702.21): pay the cost, or let the spell or ability be countered.

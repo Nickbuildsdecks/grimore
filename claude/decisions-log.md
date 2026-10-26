@@ -6440,3 +6440,104 @@ every other action is returned by reference.
 
 The lobby says it in one line under the two start buttons, because the first thing a player notices
 otherwise is that something changed.
+
+## D148 — The number chosen while the spell is resolving
+
+**Decision: a third shape of mid-resolution question, whose answer is a number and whose range the
+card computes when the question is asked.**
+
+This engine could already ask two kinds of question in the middle of a resolution: *which cards*
+(`CardsDecisionSpec`) and *which word* (`ChoiceDecisionSpec`). Toxic Deluge is neither. "Pay X life.
+All creatures get -X/-X until end of turn" is a number, and — this is the part that matters — it is
+chosen **as the spell resolves**, not as it is cast.
+
+**Which is why it is not an X cost.** The engine has had `{X}` since D32: X is announced on the
+stack, is part of the spell an opponent is deciding whether to counter, and is locked in before
+anybody responds. A Deluge is the opposite: every response has already happened, the board is
+whatever it ended up being, and *then* the number is chosen from it. Folding this into `xMax` would
+have been a lie about the card in exactly the way a player would notice — holding up a Deluge and
+choosing four after the opponent flashes in a fifth creature is the card.
+
+**The card owns the range, not the engine.** `range(state, chooser)` is called when the question is
+asked, and Toxic Deluge's is nought up to the *smaller* of two numbers: one less than its caster's
+life (CR 118.4 — a cost that kills you is not one you may choose to pay, the same rule that stops a
+Mana Confluence at one life) and the biggest toughness on the board. The second bound is a question
+about question design rather than about rules: -9/-9 and -4/-4 kill precisely the same creatures
+when nothing has five toughness, so offering forty answers where four differ is a *worse* question,
+not a more honest one. A range with one answer in it is not a question at all — the engine takes
+that answer and carries on, the way a one-word list already did.
+
+**The bot gets an opinion, not a maximum,** because the card hits its own creatures too. `best` is
+the card's, for the same reason `ChoiceDecisionSpec.best` is: only Toxic Deluge knows that its
+number is life. It answers the way a person does — walk the range, count how many of theirs dies
+and how many of mine, take the smallest number where theirs outnumbers mine, and nought when no
+number does. Nought is also the fallback everywhere else: a hint outside the range, a missing hint,
+a stack object that has gone. The answer that does least is the safe one to default to.
+
+**Validated where it is enforced.** The range the engine computed *is* the authorisation, so
+`auto:decide` refuses a number that is not an integer inside it — a crafted action cannot pay nine
+life out of a four-life range — and the reducer in the browser refuses the same before it ever
+sends one. The table draws a row of numbers because the engine said which numbers are answerable;
+it is never the forty buttons a raw life total would be.
+
+**The life is paid before the effect**, not as part of it: a Deluge for four takes four life whether
+or not anything on the board has four toughness. It is a cost, and the order is the one thing a
+player would check.
+
+**And the twelfth "spent on nothing" rule, which the instrument found and the record did not.**
+Over 120 Hollow Tide duels the bot cast the Deluge 18 times and chose well — 30 of the opponent's
+creatures dead against 3 of its own — but three of those casts chose **nought**, which is a card put
+in the graveyard to do nothing at all. The search cannot see it for a structural reason rather than
+a missing term: a cast puts the spell on the *stack*, and the number is not chosen until it
+resolves, so one ply out the board after the cast is the board before it plus a stack object, which
+scores the same as any other play that does nothing. So `chosenNumberIsNothing` drops a cast whose
+card answers its own question with the bottom of its own range — a fact about the board, like every
+other member of the family, never a weight in `evaluate`.
+
+| | casts | numbers chosen | their creatures dead | its own |
+| --- | --- | --- | --- | --- |
+| without the rule | 18 | **0:3** 1:5 2:3 3:2 4:4 | 30 | 3 |
+| with it | 18 | 1:8 2:3 3:2 4:4 | **33** | 3 |
+
+**The slot measures −3 of 240** against the field, paired on identical seeds (Hollow Tide, the
+Deluge against a second Returned Centaur), and the drop rule moved it by *exactly* nothing: 81-159
+with the Deluge and 84-156 without it, the same in both runs, every per-opponent row identical. Both numbers are far inside the
+eighteen-game noise floor. That is the fourth card in a row to measure this way — Kiora's Follower,
+Chalice of the Void, Hangarback Walker — and for the fourth time the same reason: a one-ply search
+cannot realise a card whose value is in *when* it is cast. Shipped with the number written down, and
+the rule kept on the untap cycle's grounds rather than the record's: a bot that spends a card to
+choose nothing looks broken to the person sitting opposite, and three more dead creatures for the
+same three of its own is not worse.
+
+Asked of the board *now* rather than at resolution, which is the approximation every rule in this
+family makes. The bot casts in its own main phase with an empty stack, so the two are the same board
+unless somebody responds — and a card held for the turn somebody does respond is the card kept.
+
+The rule is the bot's judgement and never a refusal: a person holding up a sweeper with nothing to
+sweep is allowed to be wrong, and the cast stays legal and offered, which the tests assert.
+
+## D149 — A check that presses a button on every retry
+
+**Decision: a retry loop reads before it presses, and never presses a toggle twice.**
+
+`e2e-table` came back 70 of 72 against a stack that had just started, and green on every warm run.
+Two checks, both failing on the browser that had just reloaded, and both the same mistake in the
+test rather than anything wrong with the table.
+
+The reclaimed-seat check clicked **life down** and then demanded exactly `lifeBeforeReload - 1`, all
+inside the retried predicate. A click that is slow to land is therefore clicked again, life goes
+down twice, and the one number the check will accept is behind it for ever — it cannot pass, however
+long the timeout. It now reads first and clicks only if nothing has landed yet, accepts **any**
+decrease as proof the seat can act, and then puts the total back wherever those clicks left it,
+because the end of that game counts life down to nought and expects to start from the same place.
+
+The search check pressed a **toggle**. "Search deck" and "Close deck" are one button, so the second
+press shuts the drawer the check is waiting for. It now lets the library decide, reads the button's
+own label to see whether a press is still wanted, and gives a press a second and a half to land
+before another one.
+
+**Neither was retried away, and neither got a `--retry` flag.** A test that fails once on a cold
+stack is a test with a race in it, and the fix is to make the press idempotent — which is also the
+only version of the check that would catch the table genuinely losing the seat, because a check that
+can only pass by luck cannot fail for the right reason either. Run twice against a freshly started
+stack and a warm one: 73 of 73 both times.

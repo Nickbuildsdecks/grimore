@@ -192,6 +192,11 @@ export interface LegalActions {
      * and the table draws buttons instead of lighting up cards.
      */
     readonly options?: readonly string[];
+    /**
+     * The numbers to choose between, when that is the question: "pay X life". Present exactly when
+     * neither `from` nor `options` is, and the table draws a row of numbers.
+     */
+    readonly numbers?: { readonly min: number; readonly max: number };
   } | null;
   /**
    * A ward this seat is being asked to pay (CR 702.21b), and what it loses by declining.
@@ -985,6 +990,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
         prompt: decision.prompt,
         ...(decision.from === undefined ? {} : { from: decision.from }),
         ...(decision.options === undefined ? {} : { options: [...decision.options] }),
+        ...(decision.numbers === undefined ? {} : { numbers: { ...decision.numbers } }),
         candidates: decision.candidates, min: decision.min, max: decision.max,
       }
     : null;
