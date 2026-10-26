@@ -3959,6 +3959,43 @@ the crown looks broken to a person who knows the rule, and a table that plays it
 visibly is most of what "this feels like a real game" means. That is a fine reason to ship something
 as long as it is said out loud instead of dressed up as a win.
 
+### The second way to lose a game of Magic
+
+Poison counters, `-1/-1` counters and the ten-poison elimination have been in this engine since it
+was written, and not one card in the pool produced a point of any of them. Infect (CR 702.90) is the
+keyword that connects the three, and it is a damage **replacement** read off whatever is dealing the
+damage: a player takes poison instead of losing life, a creature takes `-1/-1` counters instead of
+marked damage, and a granted keyword works for free because the branch asks the source's current
+characteristics rather than its printed text — which is the whole of Tainted Strike.
+
+**It needed a deck, not three cards.** Ten poison takes bodies that connect over and over, so one
+infect creature in a sixty-card list is a bad card rather than a plan. **Blight Vector** is the
+twelfth deck: eighteen infect cards, eight of them new, Skithiryx leading it, and the other half of
+the list spent entirely on making 1/1s connect. Two things make it real rather than cute. `-1/-1`
+counters are **permanent** where marked damage is wiped every turn, so blocking a 1/1 with infect
+costs a 3/3 a point of size for the rest of the game; and Phyrexian Crusader's protection from red
+and white walls off where nearly all of this pool's cheap removal lives.
+
+**The win condition is reached, not theoretical.** Over 132 duels poison was dealt in **80% of its
+games**, and **every one of its wins was a poison elimination** — none by damage. The deck itself
+lands eleventh of twelve at 38%: it beats Tidal Mind 15-9, loses 3-21 to Ember Rush, and every
+creature in it dies to one blocker. That is an archetype with matchups rather than a strong deck, and
+it is the honest result for a pile of 1/1s in a field with a 78% aggro deck in it.
+
+**Infect found a bug that had been in combat since combat was written.** The damage step read each
+blocker's power *after* the attacker's damage had landed, so a creature that had just been shrunk hit
+back for less — against CR 510.2, which makes combat damage simultaneous. Nothing in the pool could
+change a creature's size mid-step, because marked damage does not, so for two hundred and fifty
+cards the two readings agreed exactly. The first test written for a `-1/-1` counter watched a 3/3
+Centaur Courser deal one damage instead of three. The fix is a snapshot of every combatant taken
+before any damage is dealt, and the lesson is worth more than the fix: **a rule that is only ever
+asked where two readings agree is a rule nobody has tested.**
+
+**And the twelfth deck exposed a maintenance bug in the instruments.** Seven of the twelve harnesses
+in `scripts/measure/` had the deck list written out by hand, so the first table run after the new
+deck quietly measured the same eleven-deck field as the day before. They all read the registry now.
+A list in seven files is a list that goes stale in six of them.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

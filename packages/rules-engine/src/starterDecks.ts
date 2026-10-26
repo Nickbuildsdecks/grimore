@@ -1503,6 +1503,93 @@ const THORN_OF_THE_BLACK_ROSE: CardDef = {
   colors: ['B'],
 };
 
+const GLISTENER_ELF: CardDef = {
+  name: 'Glistener Elf',
+  typeLine: 'Creature — Elf Warrior',
+  manaCost: '{G}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Infect',
+  colors: ['G'],
+};
+
+const PLAGUE_STINGER: CardDef = {
+  name: 'Plague Stinger',
+  typeLine: 'Artifact Creature — Insect',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Flying, infect',
+  colors: ['B'],
+};
+
+const ICHORCLAW_MYR: CardDef = {
+  name: 'Ichorclaw Myr',
+  typeLine: 'Artifact Creature — Myr',
+  manaCost: '{2}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Infect\nWhenever Ichorclaw Myr becomes blocked, it gets +2/+2 until end of turn.',
+  colors: [],
+};
+
+const BLIGHT_MAMBA: CardDef = {
+  name: 'Blight Mamba',
+  typeLine: 'Creature — Phyrexian Snake',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Infect\n{G}: Regenerate Blight Mamba.',
+  colors: ['G'],
+};
+
+const CYSTBEARER: CardDef = {
+  name: 'Cystbearer',
+  typeLine: 'Creature — Phyrexian Beast',
+  manaCost: '{2}{G}',
+  cmc: 3,
+  power: '2',
+  toughness: '3',
+  oracleText: 'Infect',
+  colors: ['G'],
+};
+
+const PHYREXIAN_CRUSADER: CardDef = {
+  name: 'Phyrexian Crusader',
+  typeLine: 'Creature — Phyrexian Zombie Knight',
+  manaCost: '{1}{B}{B}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'First strike, protection from red, protection from white, infect',
+  colors: ['B'],
+};
+
+const TAINTED_STRIKE: CardDef = {
+  name: 'Tainted Strike',
+  typeLine: 'Instant',
+  manaCost: '{B}',
+  cmc: 1,
+  oracleText: 'Target creature gets +1/+0 and gains infect until end of turn.',
+  colors: ['B'],
+};
+
+const SKITHIRYX: CardDef = {
+  name: 'Skithiryx, the Blight Dragon',
+  typeLine: 'Legendary Creature — Phyrexian Dragon Skeleton',
+  manaCost: '{3}{B}{B}',
+  cmc: 5,
+  power: '4',
+  toughness: '4',
+  oracleText: 'Flying, infect\n{B}: Skithiryx, the Blight Dragon gains haste until end of turn.\n'
+    + '{B}{B}: Regenerate Skithiryx, the Blight Dragon.',
+  colors: ['B'],
+};
+
 const GOBLIN_ELECTROMANCER: CardDef = {
   name: 'Goblin Electromancer',
   typeLine: 'Creature — Goblin Wizard',
@@ -4302,6 +4389,136 @@ export const DELTA_BLOOM: DeckSpec = {
   ],
 };
 
+/**
+ * The twelfth deck, and the only one that does not try to take anybody's life total to nought.
+ *
+ * Poison counters, `-1/-1` counters and the ten-poison elimination have been in this engine since
+ * it was written, and until infect existed not one card in the pool produced a single point of any
+ * of them: the second way to lose a game of Magic was unreachable by construction. This deck is
+ * what makes it a game rather than a rule.
+ *
+ * **Why it is a deck and not three cards sprinkled around.** Ten poison needs bodies that connect
+ * again and again, so a list with one infect creature in it has a dead card rather than a plan.
+ * Eighteen of these sixty cards have infect, every one of them is small, and the deck's whole job is
+ * to make small creatures connect — which is why the other half of the list is pump and protection
+ * rather than more creatures.
+ *
+ * **The two things that make it frightening, and both are already in the engine.** `-1/-1` counters
+ * are *permanent*: marked damage is wiped in the cleanup step, so a 1/1 with infect that trades
+ * blows with a 3/3 leaves a 1/1 behind for the rest of the game, and a deck of 1/1s beats a deck of
+ * 3/3s on the ground given two turns. And **Phyrexian Crusader** has protection from red and from
+ * white, which is where almost all of this pool's cheap removal lives (D83) — five of the eleven
+ * other decks simply cannot answer it.
+ *
+ * **What it is bad at, said up front.** Every creature in it dies to a single blocker, two of the
+ * three sweepers in the pool wipe the board, and ten poison is further away than twenty life when
+ * nothing connects. A Fog Bank or a Wall of Air stops the whole plan for as long as it lives, and
+ * the deck's answer to a wall is the same as its answer to everything: a Tainted Strike on
+ * something bigger.
+ */
+export const BLIGHT_VECTOR: DeckSpec = {
+  id: 'blight-vector',
+  name: 'Blight Vector',
+  description: 'Green-black infect. Small creatures, permanent counters, and ten poison instead of twenty damage.',
+  commander: SKITHIRYX,
+  cards: [
+    /*
+      **Twenty lands, which is fewer than any other deck in the pool**, and the instrument asked
+      for it.
+
+      The first version ran twenty-two and measured 82-182. Cutting a Forest and a Swamp for a
+      fourth Glistener Elf and a fourth Ichorclaw Myr came back **96-168 — fourteen games better**,
+      with seven of the eleven matchups up, three down and one level. It is the shape the deck
+      wanted: nothing here costs more than three, every spell is one or two mana, and a seventh
+      land in play does nothing at all. The two cycling lands below are what keeps twenty from
+      being a gamble.
+    */
+    { card: FOREST, count: 7 },
+    { card: SWAMP, count: 6 },
+    { card: GOLGARI_GUILDGATE, count: 3 },
+    // Two cycling lands in each colour, as every deck in this pool that can flood runs: a land
+    // this deck does not need is a pump spell it could have drawn instead.
+    { card: TRANQUIL_THICKET, count: 2 },
+    { card: BARREN_MOOR, count: 2 },
+
+    // ── The eighteen that win the game ──
+    /*
+      Four one-drops, because the clock starts on turn one or it does not start.
+
+      A Glistener Elf on turn one and a pump spell on turn two is four poison before anybody has a
+      blocker, which is nearly half the game — and it is also the reason this deck mulligans hands
+      without a one-drop in them.
+    */
+    { card: GLISTENER_ELF, count: 4 },
+    /*
+      Three Mambas, and the regeneration is the point rather than a bonus.
+
+      A 1/1 that can be regenerated for {G} is a creature a blocker cannot profitably eat: the
+      block happens, the Mamba comes back tapped, and the `-1/-1` counters it put on the blocker
+      stay there for ever. In a deck of one-power creatures the card that survives combat is worth
+      more than the card that wins it.
+    */
+    { card: BLIGHT_MAMBA, count: 3 },
+    /*
+      Four Myrs, and the first card in the pool that reads the `becomes-blocked` event (D154).
+
+      "Whenever it becomes blocked, it gets +2/+2" turns the obvious answer to a 1/1 into three
+      `-1/-1` counters on whatever blocked it. Colourless, so it is the one creature here that is
+      castable on turn two whichever two lands turned up.
+    */
+    { card: ICHORCLAW_MYR, count: 4 },
+    { card: PLAGUE_STINGER, count: 3 },
+    // The only infect creature in the deck that is not a 1/1, and the only one that blocks: a 2/3
+    // holds the ground for two turns while the fliers do the work.
+    { card: CYSTBEARER, count: 2 },
+    /*
+      Two Crusaders, which is as many as the deck can cast and the best card in it.
+
+      First strike plus infect kills a blocker with counters before the blocker deals its damage
+      back, and protection from red and from white is the half that reads the field rather than the
+      board: Ember Rush, Forge Alliance, Skyward Writ and Dawn Tithe hold nearly every cheap
+      removal spell in the pool between them, and none of it can be pointed at this.
+    */
+    { card: PHYREXIAN_CRUSADER, count: 2 },
+
+    // ── The ten that make them connect ──
+    { card: GIANT_GROWTH, count: 3 },
+    { card: TITANIC_GROWTH, count: 2 },
+    // Hexproof and +2/+2 for one mana: this deck's removal-spell answer and its combat trick in
+    // the same card, and the only card in it that protects a creature somebody is trying to kill.
+    { card: BLOSSOMING_DEFENSE, count: 2 },
+    /*
+      Two Tainted Strikes, which are the deck's reach and the card that reads the whole table.
+
+      One mana to put infect on something that is already huge: a Siege Wurm, a stolen creature, or
+      — the line worth knowing — an opponent's own trampling 5/5 the turn before it kills you. It
+      is also the only card here that can win a game the creatures have already lost.
+    */
+    { card: TAINTED_STRIKE, count: 2 },
+    // The equipment, and the single most poison the deck can put on anybody in one swing: +3/+0
+    // trample on a 1/1 with infect is four counters and no profitable block.
+    { card: LOXODON_WARHAMMER, count: 1 },
+
+    // ── The eight that answer what gets in the way ──
+    { card: DOOM_BLADE, count: 2 },
+    { card: MURDER, count: 1 },
+    // The charm's three modes are all live here: regenerate the team through a sweeper, kill a
+    // Fog Bank, or shrink a blocker out of the way.
+    { card: GOLGARI_CHARM, count: 2 },
+    // A fight spell in a deck whose creatures put permanent counters on what they fight, which is
+    // the one removal spell in the pool that gets *better* for being cast by this deck.
+    { card: PREY_UPON, count: 1 },
+    { card: NATURALIZE, count: 1 },
+    // One Raise Dead, because the deck's creatures are cheap and the game is usually lost to
+    // running out of bodies rather than to running out of time.
+    { card: RAISE_DEAD, count: 1 },
+
+    // ── And four cards to find the rest ──
+    { card: READ_THE_BONES, count: 2 },
+    { card: SIGN_IN_BLOOD, count: 2 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
@@ -4314,6 +4531,7 @@ export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [ARC_TEMPEST.id]: ARC_TEMPEST,
   [DAWN_TITHE.id]: DAWN_TITHE,
   [DELTA_BLOOM.id]: DELTA_BLOOM,
+  [BLIGHT_VECTOR.id]: BLIGHT_VECTOR,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

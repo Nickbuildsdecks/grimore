@@ -339,6 +339,30 @@ function hit(
 export function dealCombatDamage(state: GameState, firstStrike: boolean): GameState {
   let next = state;
   /*
+    What every creature in this combat *was* when the step began (CR 510.2).
+
+    Combat damage is dealt simultaneously, so every creature deals damage according to what it was
+    before any of it landed — and this engine deals it one creature at a time, which is only the
+    same thing if nothing a creature deals can change what another creature is. Marked damage does
+    not change power or toughness, so that held for every card in the pool right up to **infect**:
+    a `-1/-1` counter is a smaller creature at once, and without this snapshot a blocker that had
+    just taken two counters hit back for two less. Found by the test that expected a 3/3 Centaur
+    Courser to deal three to the 2/3 that killed it and watched it deal one.
+
+    Read off `state` rather than `next` for the same reason, and it covers both halves: the power a
+    creature deals with, and the toughness used to work out what is lethal for it.
+  */
+  const was = new Map<string, NonNullable<ReturnType<typeof creatureOf>>>();
+  for (const attack of state.combat.attacks) {
+    for (const id of [attack.attacker, ...attack.blockers]) {
+      const found = creatureOf(state, id);
+      if (found !== null) was.set(id, found);
+    }
+  }
+  /** What it was, or what it is for anything that was not in combat when the step began. */
+  const asItWas = (id: string): NonNullable<ReturnType<typeof creatureOf>> | null =>
+    was.get(id) ?? creatureOf(next, id);
+  /*
     Asked per creature rather than per attack, because prevention is written on the creature: a
     Fog covers every creature on the table, a Maze of Ith covers one, and either way the question
     "does this creature's combat damage happen" answers for the damage it deals and the damage it
@@ -349,8 +373,10 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
     return inst !== undefined && combatDamagePrevented(next, inst);
   };
   for (const attack of next.combat.attacks) {
+    // Still in combat and still the same object, but *as it was*: see `was` above.
     const attacker = sameObject(next, attack.attacker, attack.attackerSeq)
-      ? creatureOf(next, attack.attacker)
+      && creatureOf(next, attack.attacker) !== null
+      ? asItWas(attack.attacker)
       : null;
     // A blocker that has left is out of combat too — but it stays in `attack.blockers`, because
     // that list is what says the attacker is blocked at all (CR 509.1h).
@@ -372,7 +398,7 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
         let remaining = attacker.ch.power;
         for (const blockerId of livingBlockers) {
           if (remaining <= 0) break;
-          const blocker = creatureOf(next, blockerId);
+          const blocker = asItWas(blockerId);
           if (blocker === null) continue;
           /*
             Assigned and then not dealt, rather than skipped.
@@ -405,7 +431,7 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
     }
 
     for (const blockerId of livingBlockers) {
-      const blocker = creatureOf(next, blockerId);
+      const blocker = asItWas(blockerId);
       if (blocker === null || !dealsInStep(blocker.ch, firstStrike) || blocker.ch.power <= 0) continue;
       // The attacker may already be gone; blockers deal damage only to something still there,
       // and not to a new permanent wearing the same id.

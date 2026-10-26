@@ -4,11 +4,17 @@
  * One number per deck: how many of its games it wins against the rest of the pool. Both
  * orientations of every pairing on the same seeds, so who goes first cancels out.
  */
-import { applyAction, createGame, botAction, seatsToAct } from '../../packages/rules-engine/dist/index.js';
+import { applyAction, createGame, botAction, seatsToAct, STARTER_DECKS } from '../../packages/rules-engine/dist/index.js';
 
-const ALL = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance',
-  'skyward-writ', 'hollow-tide', 'ashen-rite',
-  'arc-tempest', 'dawn-tithe', 'delta-bloom'];
+/*
+  Every deck in the pool, read from the registry rather than written out here.
+
+  It used to be a literal list in each of seven harnesses, which is seven places to remember and
+  six places to forget: the twelfth deck was added and the first table run after it measured the
+  same eleven-deck field as the day before, with no warning of any kind. A measurement that
+  silently answers last week's question is worse than one that fails.
+*/
+const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 6);
 const SEED0 = Number(process.env.SEED0 ?? 4400);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];

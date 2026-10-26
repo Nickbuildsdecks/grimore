@@ -7011,3 +7011,66 @@ the opponents are still modelled with the rule on, because threading a measureme
 `scoreDeclaration` and `throughCombat` would be a larger change than the thing being measured. And
 in a duel the rule is a no-op by construction — a test pins that the two settings are the same bot
 when there is no crown in the game.
+
+## D158 — Infect, the twelfth deck, and the combat bug infect found
+
+**Decision: infect is a damage replacement read off the source, and it gets a whole deck rather than
+three cards sprinkled into existing ones.**
+
+Poison counters, `-1/-1` counters and the ten-poison elimination have been in this engine since it
+was written, and **not one card in the pool produced a single point of any of them**: the second way
+to lose a game of Magic was unreachable by construction. Infect (CR 702.90) is the keyword that
+connects all three.
+
+**Read off the source, like protection and deathtouch.** `dealDamage` asks `characteristicsOf` what
+is dealing the damage, so a **granted** keyword costs nothing extra — Tainted Strike puts infect on
+anything for a turn and the same branch handles it. Poison instead of life for a player, `-1/-1`
+counters instead of marked damage for a creature, and **the commander tally still counts** (CR
+903.10): infect replaces what being dealt the damage does to you, not whether it happened.
+
+**One deliberate divergence, named.** The rules treat a planeswalker as a permanent here, so infect
+damage would be `-1/-1` counters, which do nothing to something that is not a creature — an infect
+attacker cannot touch a planeswalker at all. This engine removes loyalty as normal: a strange rule
+against a strange table, nothing in the pool makes it common, and the divergence favours the
+attacker rather than quietly eating their damage.
+
+**A whole deck, because three cards would have been three dead cards.** Ten poison needs bodies that
+connect over and over; a list with one infect creature has a bad card rather than a plan. Blight
+Vector runs eighteen infect cards, eight of them new (Glistener Elf, Blight Mamba, Ichorclaw Myr,
+Plague Stinger, Cystbearer, Phyrexian Crusader, Tainted Strike, and Skithiryx leading it).
+
+**Infect found a real bug in combat damage, and it had been there since combat was written.**
+`dealCombatDamage` read each blocker's power *after* the attacker's damage had already landed, so a
+blocker that had just been shrunk hit back for less — a violation of CR 510.2, which says combat
+damage is simultaneous. Nothing in the pool could change a creature's size mid-step, because marked
+damage does not, so for two hundred and fifty cards the two readings were identical. A `-1/-1`
+counter is a smaller creature *at once*, and the first test written for it watched a 3/3 Centaur
+Courser deal one damage instead of three. Fixed with a snapshot of every combatant taken before any
+damage is dealt. **The lesson is the one worth keeping: a rule that is only ever asked in cases
+where two readings agree is a rule nobody has tested.**
+
+**Measured** (`scripts/measure/poison.mjs`, 132 duels, and `deck-table` over 264 games a row):
+
+- **Poison is reached, not theoretical**: poison was dealt in **80% of its games**, 884 counters in
+  all, most in one game 17 — and **every single one of its 51 wins in the shipped version was a
+  poison elimination**, none by damage. The win condition exists now.
+- The deck lands **eleventh of twelve at 38%**, which is the bottom third and honest for what it is:
+  it beats Tidal Mind 15-9 and Arc Tempest 14-10 and loses **3-21 to Ember Rush**. Every creature in
+  it dies to one blocker; against a deck that curves out it is a turn too slow.
+- **Twenty lands, which the instrument asked for.** The first version ran twenty-two and measured
+  82-182; cutting a Forest and a Swamp for a fourth Elf and a fourth Myr came back **96-168, +14 of
+  264**, seven matchups up and three down. Across two full table runs the row only moved +4, which
+  is the honest caveat: the paired probe is the measurement designed to answer this and the table is
+  not, so the land cut is kept on the probe's number with the table's written next to it.
+- **The field moved, as it does with every new deck** (D108, D128, three times before this). Two
+  movements are named in the setup doc rather than left to be noticed: Dawn Tithe up five points
+  (Palace Sentinels, matching its own +15 probe) and **Tidal Mind down five to 22%, now the worst
+  deck in the pool by sixteen points** — a balance question this table has now asked three times and
+  nobody has answered.
+
+**And a maintenance bug the twelfth deck exposed in the instruments themselves.** Seven of the
+twelve harnesses in `scripts/measure/` had the deck list written out as a literal array. The first
+table run after the new deck measured the same eleven-deck field as the day before and said nothing
+about it. All of them now read `Object.keys(STARTER_DECKS)`. A list in seven files is a list that
+goes stale in six of them, and a measurement that silently answers last week's question is worse
+than one that fails.

@@ -9,11 +9,17 @@
  * by what kind of action it was. The numbers that mattered were `auto:cast` at 51% same-step and
  * `auto:attack` at 50% *a whole turn on*.
  */
-import { applyAction, createGame, botAction, seatsToAct, STEPS } from '../../packages/rules-engine/dist/index.js';
+import { applyAction, createGame, botAction, seatsToAct, STEPS, STARTER_DECKS } from '../../packages/rules-engine/dist/index.js';
 
-const ALL = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance',
-  'skyward-writ', 'hollow-tide', 'ashen-rite',
-  'arc-tempest', 'dawn-tithe', 'delta-bloom'];
+/*
+  Every deck in the pool, read from the registry rather than written out here.
+
+  It used to be a literal list in each of seven harnesses, which is seven places to remember and
+  six places to forget: the twelfth deck was added and the first table run after it measured the
+  same eleven-deck field as the day before, with no warning of any kind. A measurement that
+  silently answers last week's question is worse than one that fails.
+*/
+const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 2);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];

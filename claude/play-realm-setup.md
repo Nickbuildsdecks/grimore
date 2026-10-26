@@ -129,6 +129,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Hold a creature down, or draw off one that gets through | Two cards in Tidal Mind that only exist because combat now tells a script what happened in it. **Wall of Frost** ({2}{U} 0/7 defender): whenever it blocks a creature, that creature **doesn't untap during its controller's next untap step** — so the turn it buys is two turns, not one. Attacking already tapped the creature, and it stays that way through its own untap step; the board shows **won't untap** on it, which is worth looking for before you plan a block around a creature that will not be there to make it. It holds down whatever it blocked, never a second attacker, and two Walls blocking the same creature do not hold it for two turns. **Ophidian** ({2}{U} 1/3): whenever it attacks and **isn't blocked**, you may draw a card — and if you do, it is removed from combat and deals no damage. The table asks after blockers are declared, which is the first moment anybody knows the answer: **Draw** takes the card and calls the attack off, **Attack** keeps the one point of damage. Almost always take the card. The exception is the turn one damage wins the game, which is the only reason the card asks. |
 | Make something happen **later** | Two cards schedule something instead of doing it now, and the table shows it: under the stack there is a **later** row with the step it is waiting for. **Thicket Basilisk** ({3}{G}{G} 2/4 in Delta Bloom) destroys whatever it blocks or whatever blocks it — **at end of combat**, not at once, so the creature still deals its combat damage first and a 2/4 that survives it wins the exchange anyway. It is a deterrent more than a removal spell: nothing on the ground attacks into it twice. **Flickerwisp** ({1}{W}{W} 3/1 flying in Skyward Writ) exiles **another** target permanent on arrival and gives it back at the beginning of the next end step, under its owner's control. Three things it is good for: taking a blocker out of one combat, resetting an opponent's Journey to Nowhere so the creature under it comes straight back, and re-using one of your own arrival triggers. Killing the Wisp does **not** keep the card in exile — once the delay is scheduled it no longer belongs to the Wisp (CR 603.7d), which is the opposite of how a Journey works. |
 | Take, keep and lose the **crown** | Two cards make you the **monarch** (CR 720): **Palace Sentinels** ({3}{W} 2/3 in Dawn Tithe) and **Thorn of the Black Rose** ({2}{B}{B} 2/3 deathtouch in Ashen Rite). Whoever holds it draws an extra card at the beginning of **their own** end step — not anybody else's — and the seat strip shows **monarch** beside their name, for everybody. The catch is the other half of the rule: **any creature that deals you combat damage takes the crown**, so it goes to whoever can get through, and an unblockable creature takes it back every turn. Damage that never landed — a Fog, a Healing Salve's shield, a blocker that ate it — steals nothing. Over 660 games the crown changed hands 142 times and drew 74 cards, which is the honest summary of what it is in a duel: less a card engine than a reason to attack. While the engine is running the crown is the engine's to move; on a tabletop it is still a thing somebody presses, like everything else there. The computer plays the rule too: in a pod it sends its attacks at whoever holds the crown before whoever is closest to dying. |
+| Win without dealing any damage to anybody's life total | **Blight Vector** does it with **poison**. Eighteen of its cards have **infect**, and infect changes what the damage becomes: a player takes that many **poison counters** instead of losing life, and a creature takes that many **`-1/-1` counters** instead of marked damage. **Ten poison eliminates a player** (CR 704.5c) whatever their life total says, and the seat strip shows a **poison** count as soon as anybody has one. Two things are worth knowing at the table. The counters on creatures are **permanent** — marked damage is wiped at the end of every turn and a counter never is — so blocking a 1/1 with infect costs your 3/3 a point of size for the rest of the game, which is why the deck's creatures are all 1/1s and why nobody wants to block them. And **Tainted Strike** ({B}, instant) puts infect on *any* creature until end of turn, including one of yours that is already huge and, in a pod, somebody else's: ten poison arrives a lot faster on a 5/5 than on an Elf. |
 | Play a **Saga** | Two cards are Sagas: The Birth of Meletis in Skyward Writ and The Eldest Reborn in Hollow Tide. A Saga is an enchantment that reads itself out over three turns. It arrives with one lore counter and **chapter I happens immediately** — you do not wait a turn for it — and it gets another counter at the start of each of your own main phases, never on anybody else's turn. Each chapter goes on the stack like any other trigger, so an opponent can answer the chapter even though they cannot stop the counter. Once the last chapter has resolved the Saga is sacrificed and goes to your graveyard; the card shows **lore** counters so you can see which chapter is next. Nothing can be killed in response to a Saga except the Saga: a creature removal spell does not touch it, and in this pool only three cards destroy an enchantment. |
 | **Foretell** a card | Two cards have it, in Tidal Mind and in Arc Tempest: Behold the Multiverse and Saw It Coming. On your own turn, tap the card in hand → **Foretell** and pay {2}; the card goes into exile **face down**, and nobody else can see what it is — only that there is a card there. From your next turn onwards it is a play again, out of exile, for the smaller cost printed on it (**{1}{U}** and **{U}{U}**). You cannot cast it on the turn you foretold it. The point is that it splits a four-mana spell across two turns, so you can hold up a counterspell without holding up the mana — which is the hardest thing in this pool to do and the one thing the computer genuinely cannot. Foretelling cannot be answered: no stack, nothing to respond to. |
 | Work out why your creature is bigger than its card | Three creatures are **lords**: they change the other creatures of their own type. Stromkirk Captain in Ashen Rite gives other **Vampires** +1/+1 and first strike, Knight Exemplar in Skyward Writ gives other **Knights** +1/+1 and indestructible, and Imperious Perfect in Rot Harvest gives other **Elves** +1/+1. None of them pumps itself — "other" is printed on all three. The board always shows the current size, and it changes the instant the lord arrives or leaves, with nothing to click: a Knight with three damage on it that was surviving because of the Exemplar dies the moment the Exemplar does. |
@@ -282,6 +283,20 @@ a card and *a second land this turn*, which with her out is two cards and two li
 are the deliberate weakness: two Fog Banks, two Man-o'-Wars and three counterspells to survive to
 turn six, and nothing at all that attacks before it.
 
+**Blight Vector** (green-black) is the twelfth, and the only deck here that does not try to take
+anybody's life total to nought. It wins with **poison**: eighteen of its sixty cards have **infect**,
+so their damage is poison counters on a player and `-1/-1` counters on a creature, and **ten poison
+ends the game** however much life you have left. Everything in it is small — four Glistener Elves,
+four Ichorclaw Myrs, three Blight Mambas, three Plague Stingers — and the other half of the list is
+there to make small creatures connect: six pump spells, two Tainted Strikes, a Loxodon Warhammer,
+and Blossoming Defense for the removal spell aimed at the one creature that matters. Two things make
+it frightening. `-1/-1` counters are **permanent** where marked damage is wiped at end of turn, so a
+1/1 that trades blows with a 3/3 leaves a 1/1 behind for the rest of the game — and **Phyrexian
+Crusader** has protection from red *and* white, which is where nearly all of this pool's cheap
+removal lives. Skithiryx, the Blight Dragon leads it: a 4/4 flier with infect is four poison a swing
+and regenerates for {B}{B}. Its weakness is the one the numbers show plainly — every creature in it
+dies to one blocker, and it loses 3-21 to Ember Rush.
+
 Each two-colour deck runs a pair or three of Guildgates: one mana of either colour, and they come in
 tapped, and eight of the ten also run a pair of cycling lands. Any pairing works, including a deck
 against itself. They are not the only decks you can play, though: see *Play with your own list*.
@@ -297,20 +312,37 @@ its plan against the fast decks, and the bot casts it the turn it can afford it.
 other, both seats, 240 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 78%  187-53   ember-rush
- 67%  161-79   forge-alliance
- 63%  150-90   verdant-guard
- 57%  138-102  dawn-tithe
- 55%  131-109  skyward-writ
- 46%  110-130  ashen-rite
- 42%  100-140  delta-bloom
- 40%   95-145  arc-tempest
- 38%   91-149  hollow-tide
- 37%   88-152  rot-harvest
- 27%   65-175  tidal-mind
+ 78%  206-58   ember-rush
+ 64%  168-96   verdant-guard
+ 64%  170-94   forge-alliance
+ 62%  163-101  dawn-tithe
+ 58%  152-112  skyward-writ
+ 46%  121-143  delta-bloom
+ 45%  119-145  ashen-rite
+ 44%  115-149  arc-tempest
+ 42%  112-152  hollow-tide
+ 38%  100-164  rot-harvest
+ 38%   99-165  blight-vector
+ 22%   58-206  tidal-mind
 ```
 
-**That run is the eleventh deck's debut, and Delta Bloom lands seventh at 42%.** Every row is 240
+**That run is the twelfth deck's debut, and Blight Vector lands eleventh at 38%** — every row is 264
+games rather than 240 because there is one more opponent, and the order is the order it has been for
+four of these runs with the new row near the bottom. Three movements are worth naming rather than
+leaving to be noticed: **Dawn Tithe is up five points** (57% to 62%), which is Palace Sentinels and
+matches the +15 of 240 the paired probe measured for that slot; **Tidal Mind is down five** (27% to
+22%) and is now the worst deck in the pool by sixteen points, which is a balance question this table
+has now asked three times; and **Blight Vector's own row understates it** — it beats Tidal Mind 15-9
+and Arc Tempest 14-10 and loses 3-21 to Ember Rush, which is a deck with matchups rather than a deck
+that is simply bad. What the row cannot show at all is the thing the deck is for: **80% of its games
+put poison on somebody, and every one of its wins in the last measured run was a poison kill rather
+than a damage kill.**
+
+The eleven-deck table this replaced, for comparison: Ember Rush 78%, Forge Alliance 67%, Verdant
+Guard 63%, Dawn Tithe 57%, Skyward Writ 55%, Ashen Rite 46%, Delta Bloom 42%, Arc Tempest 40%,
+Hollow Tide 38%, Rot Harvest 37%, Tidal Mind 27%.
+
+**The eleventh deck's debut, kept because the note is still true:** Every row is 240
 games rather than 216 because there is one more opponent, and every other deck moved by a point or
 two in consequence — the field effect D108 found, for the third time, with the order unchanged apart
 from the new row. The new deck's shape is in its matchups rather than its total: it is 12-12 with
@@ -445,7 +477,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and forty-three cards, which now includes a wrath, a
+The decks share a pool of two hundred and fifty-one cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -675,7 +707,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (852 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (858 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (210 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`

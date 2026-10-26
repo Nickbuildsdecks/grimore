@@ -28,6 +28,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `combat-triggers.mjs` | do the block and unblocked triggers ever happen, and do they matter? | `SEEDS=6 node scripts/measure/combat-triggers.mjs` |
 | `delayed-triggers.mjs` | do the scheduled abilities fire, and what does the bot blink? | `SEEDS=6 node scripts/measure/delayed-triggers.mjs` |
 | `monarch.mjs` | who takes the crown, how long it is held, and what it drew | `SEEDS=6 node scripts/measure/monarch.mjs` |
+| `poison.mjs` | is the poison win condition reached, or only theoretical? | `SEEDS=6 node scripts/measure/poison.mjs` |
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
@@ -162,3 +163,9 @@ identical, all four rotations of a table are the same game, so the winning seat 
 arm exactly twice — 66-66 of 132, by construction. Get a floor by running a *real* arm on two
 disjoint seed sets: "chase the crown" came back 70-62 and then 62-70, which is how we know this
 harness wobbles by at least ±8 games in 132. Do not believe a smaller pod result than that.
+
+**The deck list lives in the registry, not in the harness.** Seven of these files used to write it
+out by hand, and the first `deck-table` run after the twelfth deck was added measured the same
+eleven-deck field as the day before with no warning at all. They all read
+`Object.keys(STARTER_DECKS)` now; keep it that way, because a measurement that silently answers last
+week's question is worse than one that fails.

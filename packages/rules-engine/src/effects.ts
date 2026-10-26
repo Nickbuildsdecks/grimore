@@ -287,6 +287,17 @@ export function dealDamage(
   next = shielded.state;
   const left = shielded.amount;
   if (left <= 0) return next;
+  /*
+    Infect, which changes what the damage *becomes* rather than whether it is dealt (CR 702.90b).
+
+    A fact about the **source**, like protection and like deathtouch, so it is read off whatever
+    dealt the damage — a creature on the battlefield, or a spell whose own id is its card. Read
+    after the shields have taken their share, because prevented damage is damage that was never
+    dealt and poison is no different from life in that regard.
+  */
+  const infect = opts.source !== null
+    && next.instances[opts.source] !== undefined
+    && characteristicsOf(next, next.instances[opts.source]!).keywords.has('infect');
   if (target.kind === 'player') {
     const seat = next.seats[target.seat];
     if (seat === undefined) return next;
@@ -309,7 +320,16 @@ export function dealDamage(
     const tally = key === null
       ? {}
       : { commanderDamage: { ...seat.commanderDamage, [key]: (seat.commanderDamage[key] ?? 0) + left } };
-    next = replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally });
+    /*
+      Poison instead of life, and the commander tally **still counts** (CR 702.90b, 903.10).
+
+      The damage is dealt either way — infect replaces what being dealt it does to you, not whether
+      it happened — so a commander with infect still works towards the twenty-one that eliminates a
+      player while putting poison on them. Both at once is the rule rather than a generosity.
+    */
+    next = infect
+      ? replaceSeat(next, target.seat, { poison: clampValue(seat.poison + left), ...tally })
+      : replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally });
   } else {
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') return next;
@@ -318,6 +338,15 @@ export function dealDamage(
       marked on it. Not a detail: marked damage wears off at end of turn, and a planeswalker that
       healed every turn would be unkillable by anything but a removal spell.
     */
+    /*
+      A planeswalker loses loyalty, infect or not — which is a **deliberate divergence**.
+
+      The rules treat a planeswalker as a permanent for infect (CR 702.90b), so the damage would be
+      `-1/-1` counters, which do nothing at all to something that is not a creature: an infect
+      attacker cannot touch a planeswalker. That is the rule and it is also a strange table to
+      explain, nothing in this pool makes the interaction common, and the divergence favours the
+      attacker rather than quietly eating their damage. Named here rather than discovered later.
+    */
     if (hasType(characteristicsOf(next, inst).typeLine, 'planeswalker')) {
       const loyalty = inst.counters['loyalty'] ?? 0;
       const counters = { ...inst.counters, loyalty: Math.max(0, loyalty - left) };
@@ -325,12 +354,27 @@ export function dealDamage(
       if (opts.lifelink && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
       return next;
     }
-    next = withInstance(next, inst.id, {
-      damage: clampValue(inst.damage + left),
-      // Any damage from a deathtouch source destroys the creature (CR 702.2b). Marking it keeps
-      // state-based actions the only place something actually dies.
-      ...(opts.deathtouch ? { counters: { ...inst.counters, deathtouched: 1 } } : {}),
-    });
+    /*
+      And to a creature, infect is `-1/-1` counters instead of marked damage (CR 702.90b).
+
+      The difference is permanent: marked damage is wiped in the cleanup step and a counter is not,
+      so a 3/3 that took two infect damage is a 1/1 for the rest of the game. Deathtouch still
+      applies on top, because damage *was* dealt and that is all deathtouch asks (CR 702.2b).
+    */
+    next = infect
+      ? withInstance(next, inst.id, {
+        counters: {
+          ...inst.counters,
+          '-1/-1': clampValue((inst.counters['-1/-1'] ?? 0) + left),
+          ...(opts.deathtouch ? { deathtouched: 1 } : {}),
+        },
+      })
+      : withInstance(next, inst.id, {
+        damage: clampValue(inst.damage + left),
+        // Any damage from a deathtouch source destroys the creature (CR 702.2b). Marking it keeps
+        // state-based actions the only place something actually dies.
+        ...(opts.deathtouch ? { counters: { ...inst.counters, deathtouched: 1 } } : {}),
+      });
   }
   if (opts.lifelink && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
   return next;

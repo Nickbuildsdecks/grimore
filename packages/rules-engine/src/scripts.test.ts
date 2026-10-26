@@ -11210,3 +11210,150 @@ describe('the monarch, as a rule rather than a button (CR 720)', () => {
     for (const seat of [0, 1] as const) expect(viewFor(s, seat).monarch).toBe(0);
   });
 });
+
+describe('infect, and the win condition nothing could reach (CR 702.90)', () => {
+  /*
+    Poison counters, `-1/-1` counters and the ten-poison elimination were all in this engine before
+    any card used them, and nothing in the pool produced a single point of any of them. Infect is
+    the keyword that connects the three, and it is a fact about the **source**: it changes what the
+    damage becomes rather than whether it is dealt.
+  */
+  const swing = (
+    attacker: string, theirs: readonly string[] = [],
+  ): { state: GameState; attacker: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'blight-vector', 1: 'verdant-guard' },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Swamp', attacker],
+        1: ['Forest', 'Forest', ...theirs],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const id = find(s, 0, 'battlefield', attacker);
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: id, defender: 1 }] }));
+    return { state: s, attacker: id };
+  };
+
+  it('damage to a player is poison instead of life', () => {
+    const { state } = swing('Glistener Elf');
+    const s = drain(advanceTo(state, 'end-combat'));
+    expect(life(s, 1)).toBe(20);
+    expect(s.seats[1]!.poison).toBe(1);
+  });
+
+  it('damage to a creature is −1/−1 counters, which do not wear off', () => {
+    const { state, attacker } = swing('Cystbearer', ['Centaur Courser']);
+    let s = state;
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: courser, attacker }],
+    }));
+    s = drain(advanceTo(s, 'end-combat'));
+    /*
+      A 3/3 blocked a 2/3, and the exchange is the whole of infect in one combat.
+
+      The Courser took two `-1/-1` counters, so it is a **1/1** rather than a 3/3 with two damage
+      on it — and it still dealt its full three, which killed the Cystbearer. That last part is
+      CR 510.2 (combat damage is simultaneous) and it is the bug infect found: before this the
+      blockers' damage was read off the board *after* the attacker's had landed, so a creature that
+      had just been shrunk hit back for less. Nothing in the pool could shrink anything mid-step
+      until now, so nothing noticed.
+    */
+    expect(s.instances[courser]!.counters['-1/-1']).toBe(2);
+    expect(characteristicsOf(s, s.instances[courser]!).power).toBe(1);
+    expect(s.instances[attacker]!.zone).toBe('graveyard');
+    // And the counters are permanent: marked damage is wiped in the cleanup step and they are not,
+    // so the Courser is still a 1/1 on the next turn.
+    s = nextTurn(s);
+    expect(s.instances[courser]!.counters['-1/-1']).toBe(2);
+    expect(characteristicsOf(s, s.instances[courser]!).toughness).toBe(1);
+  });
+
+  it('ten poison ends the game, which is the second way to lose one (CR 704.5c)', () => {
+    const { state } = swing('Glistener Elf');
+    let s: GameState = {
+      ...state,
+      seats: state.seats.map((seat, i) => (i === 1 ? { ...seat, poison: 9 } : seat)),
+    };
+    // Passed rather than advanced: the tenth counter ends the game inside the damage step, and a
+    // helper that keeps looking for a later step is looking for one that will never arrive.
+    for (let i = 0; i < 12 && !s.finished; i++) {
+      if (s.priority === null) break;
+      s = drain(apply(s, { type: 'auto:pass', by: s.priority }));
+    }
+    expect(s.seats[1]!.poison).toBe(10);
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.finished).toBe(true);
+    expect(s.winnerSeat).toBe(0);
+    // And the life total never moved, which is the whole point of the deck.
+    expect(life(s, 1)).toBe(20);
+  });
+
+  it('an Ichorclaw Myr punishes the obvious answer to a 1/1', () => {
+    const { state, attacker } = swing('Ichorclaw Myr', ['Grizzly Bears']);
+    let s = state;
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker }] }));
+    // +2/+2 on being blocked, so the 1/1 is a 3/3 and the Bears take three counters.
+    expect(characteristicsOf(s, s.instances[attacker]!).power).toBe(3);
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+  });
+
+  it('a Tainted Strike turns somebody else’s creature into poison', () => {
+    /*
+      The keyword is read off whatever is dealing the damage, so granting it costs no new code: a
+      pump effect that hands out `infect` is the same thing to `dealDamage` as a printed keyword.
+    */
+    const list = customDeck({
+      id: 'strike-and-bears',
+      name: 'Strike and Bears',
+      entries: [
+        { name: 'Tainted Strike', count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Swamp', count: 52 },
+      ],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'strike-and-bears', 1: 'verdant-guard' },
+      deckSpecs: { 'strike-and-bears': list },
+      hands: { 0: ['Tainted Strike'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Grizzly Bears'], 1: ['Forest'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Tainted Strike'),
+      targets: [{ kind: 'card', id: bears }],
+    })));
+    expect(characteristicsOf(s, s.instances[bears]!).keywords.has('infect')).toBe(true);
+    expect(characteristicsOf(s, s.instances[bears]!).power).toBe(3);
+    s = advanceTo(s, 'declare-attackers');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] }));
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(s.seats[1]!.poison).toBe(3);
+    expect(life(s, 1)).toBe(20);
+    // And it is gone next turn, because it was until end of turn.
+    s = nextTurn(s);
+    expect(characteristicsOf(s, s.instances[bears]!).keywords.has('infect')).toBe(false);
+  });
+
+  it('a Phyrexian Crusader cannot be answered by red or white', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'blight-vector', 1: 'ember-rush' },
+      hands: { 1: ['Lightning Bolt'] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Swamp', 'Phyrexian Crusader'],
+        1: ['Mountain', 'Mountain', 'Mountain'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const crusader = find(s, 0, 'battlefield', 'Phyrexian Crusader');
+    s = tapAllLands(s, 1);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: crusader }],
+    })).not.toBeNull();
+  });
+});

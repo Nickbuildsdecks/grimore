@@ -5034,6 +5034,105 @@ const THORN_OF_THE_BLACK_ROSE: CardScript = {
   }],
 };
 
+/*
+  Infect: the win condition this engine has always had and never been able to reach (CR 702.90).
+
+  Poison counters, the ten-poison elimination and `-1/-1` counters were all written into the engine
+  before any card used them, and nothing in the pool produced a single point of poison — so the
+  second way to lose a game of Magic was unreachable by construction.
+
+  The keyword is a fact about the **source** and changes what its damage *becomes* rather than
+  whether it lands: a player takes poison instead of life, and a creature takes `-1/-1` counters
+  instead of marked damage. The second half is the one players under-rate — marked damage is wiped
+  in the cleanup step and a counter is not, so a 1/1 with infect trading blows with a 3/3 leaves a
+  1/1 behind for the rest of the game.
+
+  Three cards, in three colours, and all three are 1/1s: that is what infect costs. **Ichorclaw
+  Myr** is the one with text of its own, and it is the first card in the pool to use the
+  `becomes-blocked` event (D154) — blocking it is how you get poisoned, which is exactly the kind of
+  card that makes an unreachable win condition start to look reachable.
+*/
+const GLISTENER_ELF: CardScript = { name: 'Glistener Elf', keywords: ['infect'] };
+
+const BLIGHT_MAMBA: CardScript = {
+  name: 'Blight Mamba',
+  keywords: ['infect'],
+  abilities: [{
+    cost: { mana: '{G}' },
+    description: '{G}: Regenerate Blight Mamba.',
+    effect: (c) => regenerate(c.state, c.source),
+  }],
+};
+
+const CYSTBEARER: CardScript = { name: 'Cystbearer', keywords: ['infect'] };
+
+/**
+ * Phyrexian Crusader: the card that makes infect an archetype rather than a curiosity.
+ *
+ * Two keywords and two protections, and every one of the four does something this pool already
+ * understands. **First strike** plus infect means it kills a blocker with `-1/-1` counters before
+ * the blocker deals its damage back. **Protection from red and from white** (D83) is not flavour:
+ * those are the two colours holding almost all of this pool's cheap removal and nearly every
+ * first-strike blocker, so the deck's one three-drop simply cannot be answered by five of the
+ * eleven decks.
+ */
+const PHYREXIAN_CRUSADER: CardScript = {
+  name: 'Phyrexian Crusader',
+  keywords: ['first strike', 'infect'],
+  statics: [{ scope: 'self', effect: { protectionFrom: ['R', 'W'] } }],
+};
+
+/**
+ * Tainted Strike: one mana that turns anybody's creature into a clock on a different axis.
+ *
+ * The card infect needed to stop being a creature type. It grants the keyword rather than having
+ * it, which works without a line of new code — `dealDamage` reads infect off whatever is dealing
+ * the damage through `characteristicsOf`, so a granted keyword and a printed one are the same
+ * thing by the time the damage happens. The nastiest use is the one the card is famous for: a big
+ * trampling creature is suddenly ten poison rather than ten life.
+ */
+const TAINTED_STRIKE: CardScript = {
+  name: 'Tainted Strike',
+  targets: [{ kind: 'creature', description: 'target creature' }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null
+      ? c.state
+      : pump(c.state, [id], c.source, c.controller, { power: 1, keywords: ['infect'] });
+  },
+};
+
+const SKITHIRYX: CardScript = {
+  name: 'Skithiryx, the Blight Dragon',
+  keywords: ['flying', 'infect'],
+  abilities: [
+    {
+      cost: { mana: '{B}' },
+      description: '{B}: Skithiryx gains haste until end of turn.',
+      effect: (c) => pump(c.state, [c.source], c.source, c.controller, { keywords: ['haste'] }),
+    },
+    {
+      cost: { mana: '{B}{B}' },
+      description: '{B}{B}: Regenerate Skithiryx.',
+      effect: (c) => regenerate(c.state, c.source),
+    },
+  ],
+};
+
+const PLAGUE_STINGER: CardScript = { name: 'Plague Stinger', keywords: ['flying', 'infect'] };
+
+const ICHORCLAW_MYR: CardScript = {
+  name: 'Ichorclaw Myr',
+  keywords: ['infect'],
+  triggers: [{
+    on: { kind: 'becomes-blocked' },
+    description: 'it gets +2/+2 until end of turn',
+    // Its own +2/+2 rather than the blocker's, which is what the card says and the opposite of a
+    // basilisk: the Myr is not punishing the blocker, it is getting through it.
+    effect: (c) => pump(c.state, [c.source], c.source, c.controller, { power: 2, toughness: 2 }),
+  }],
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -5118,6 +5217,8 @@ const ALL: readonly CardScript[] = [
   GOBLIN_ELECTROMANCER, THALIA_GUARDIAN_OF_THRABEN, TORMENTED_SOUL, RIVER_BOA,
   WALL_OF_FROST, OPHIDIAN, THICKET_BASILISK, FLICKERWISP,
   PALACE_SENTINELS, THORN_OF_THE_BLACK_ROSE,
+  GLISTENER_ELF, PLAGUE_STINGER, ICHORCLAW_MYR, BLIGHT_MAMBA, CYSTBEARER, PHYREXIAN_CRUSADER,
+  TAINTED_STRIKE, SKITHIRYX,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

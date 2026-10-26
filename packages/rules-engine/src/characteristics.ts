@@ -27,7 +27,7 @@ import type { GameState, SeatIndex } from './types.js';
 export const KEYWORDS = [
   'flying', 'reach', 'vigilance', 'haste', 'trample', 'first strike', 'double strike',
   'deathtouch', 'lifelink', 'hexproof', 'shroud', 'indestructible', 'menace', 'defender',
-  'prowess', 'flash',
+  'prowess', 'flash', 'infect',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 
