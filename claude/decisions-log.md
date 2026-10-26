@@ -5946,3 +5946,63 @@ game until the card was drawn: the prompt counted 3 → 2 → 1 as targets were 
 on a target already picked added to it instead of dropping it, the cast went through on the last
 point, and the spell resolved. The suites are 59/59, 56/56 and 55/55 on three arc-tempest pairings,
 62/62 on the tabletop.
+
+## D139 — Copying an ability, and the clause that is not offered
+
+**Decision: an ability on the stack can be copied (CR 706.10), the copy carries everything that
+made the original mean something, and the printed "you may choose new targets for the copy" is
+declined rather than approximated.**
+
+The last item on the engine doc's own *Next* list, and it is the second half of a sentence D134
+started. That entry made an ability on the stack a thing you can *point at*; this makes one a thing
+you can *duplicate*, and the two are not neighbours. Countering removes an object. Copying builds a
+second one — with the first one's targets, the first one's `subject`, the first one's `actor`, the
+object it was answering, and now its division — and puts it **above** the original, so the copy
+resolves first.
+
+**It is a few fields rather than a call into the engine, and that is the design.** A copy is
+*created* on the stack: nothing is cast, nothing is activated, no cost is paid, no cast or
+activation trigger fires. So `copyAbilityOnStack` lives in `effects.ts` beside `counterSpell` and
+reaches the stack directly, for the reason that function already gives — `automation.ts` imports
+this module, and routing through it would only buy a cycle. The fields that travel are the ones
+`resolveTop` reads to find the script (`source`, `cardKey`, `abilityIndex`) plus the four that say
+what the original was *about*. A copy of "whenever that creature dies, you gain 1 life" that had
+forgotten which creature would do nothing at all, which is exactly the bug D133's `subject` exists
+to prevent, now inherited for free.
+
+**A spell is refused rather than copied.** `kind === 'spell'` returns the state unchanged: copying a
+spell makes a token copy or a new object with its own card, which is different work and a different
+card — this pool already has a Cackling Counterpart for that.
+
+**The clause that is not offered, said out loud.** Every printed card that does this reads "you may
+choose new targets for the copy", and that half is not implemented: offering it needs a way to ask
+for a target while something is resolving, which this engine does not have. Declining is always a
+legal play of the card, so the deviation is a worse card rather than a wrong one — and it has a
+visible consequence, which is why it is a **test** and not a comment. A copied Gravedigger trigger
+is pointed at the card the original already returned; the copy resolves first and returns it, and
+the original is then countered for having no legal target left (CR 608.2b, CR 400.7). One creature
+back instead of two, which is precisely the case the printed clause exists to fix. The card's
+oracle text in `starterDecks.ts` still says what the card says: a card that printed less than it
+says would be a worse lie than a documented gap.
+
+**Strionic Resonator goes into Rot Harvest, because that is the deck made of triggers** — a Zulaport
+Cutthroat on every death, a Doomed Dissenter that leaves a Zombie, a Wall of Blossoms and a
+Gravedigger and a Fleshbag Marauder and a Lotleth Giant as they arrive. The one filter the engine
+had no card for is the card's own: an ability on the stack that is *triggered* and is *yours*. Both
+halves are tested — an opponent's trigger is refused and is not even offered, and a Vampire
+Aristocrat's activated ability waiting under its own death triggers is refused by name.
+
+**It measures as nothing, and it is used.** Removing it is +4 on one seed set and −2 on the other
+over 270 paired duels: no consistent sign, which is this instrument saying the card is free. The
+half worth saying is the second one: in 108 games the bot cast the Resonator in 19 of the 20 games
+it drew one and **activated it 14 times**, so this is a measurement of the card rather than of a
+card nobody touched — the distinction D127 had to invent after measuring a slot nothing ever cast.
+The cut is the second Basilisk Collar; cutting an Endless One instead measured −1 and −5, worse on
+both sets.
+
+**And the bot needed no teaching at all**, which is worth recording because the last four cards
+each needed a line. The Resonator's ability is offered by `legalActions` only when there is a
+trigger of its controller's on the stack — `hasAnyLegalTargets` does that with no card-specific
+code — and the one-move search prices activating it like any other play. "A card that is a few
+declarative lines" has been the claim in that doc for months; this is the first one that was
+genuinely nothing but lines.

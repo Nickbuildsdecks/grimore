@@ -499,6 +499,57 @@ export function counterSpell(state: GameState, id: string): GameState {
 }
 
 /**
+ * Copies an ability already on the stack (CR 706.10): a Strionic Resonator, a Lithoform Engine.
+ *
+ * The copy is *created* on the stack rather than activated or triggered, which is the whole of why
+ * this is a few fields rather than a call into the engine: nothing is cast, no cost is paid, no
+ * cast or activation trigger fires, and the copy is above the original so it resolves first. It
+ * reaches the stack directly for the same reason `counterSpell` does — `automation.ts` imports this
+ * module, so routing through it would only buy a cycle.
+ *
+ * Everything that makes the original resolve the way it does is carried over: `source` and
+ * `cardKey` and `abilityIndex` are what `resolveTop` looks the script up by, and the four fields
+ * that say what the original was *about* — the object it answers, the permanent it is about, whose
+ * action caused it, what the attack was aimed at — travel with it, because a copy of "whenever that
+ * creature dies, you gain 1 life" that had forgotten which creature would do nothing at all.
+ *
+ * Its targets are the original's, and the copy is **not** re-aimed here. Every printed card that
+ * does this says "you may choose new targets for the copy", and declining is always a legal play of
+ * it; offering the choice needs a way to ask for a target while something is resolving that this
+ * engine does not have. So the copy keeps what the original chose, which has a visible consequence
+ * worth knowing: a copied Gravedigger trigger pointed at a card the original already returned is
+ * countered on resolution for having no legal target left (CR 608.2b), exactly as the rules say.
+ *
+ * `controller` is the controller of the *copying* effect, not of the original. Nothing in the pool
+ * can copy somebody else's ability — Strionic Resonator says "you control" — but the rules put the
+ * copy under the copier either way, and a field that quietly meant the other thing would be wrong
+ * the day a card does.
+ */
+export function copyAbilityOnStack(
+  state: GameState, id: string, controller: SeatIndex,
+): GameState {
+  const object = state.stackObjects[id];
+  // A spell is a card and cannot be copied this way: copying one makes a *token* copy or a new
+  // object with its own card, which is different work and a different card (Cackling Counterpart).
+  if (object === undefined || object.kind === 'spell') return state;
+  const seq = state.autoSeq + 1;
+  const copyId = `ab${seq}`;
+  const copy: StackObject = {
+    ...object,
+    id: copyId,
+    controller,
+    description: `${object.description} (copy)`,
+  };
+  return {
+    ...state,
+    autoSeq: seq,
+    stackObjects: { ...state.stackObjects, [copyId]: copy },
+    // On top, so it resolves before the ability it was copied from.
+    stackOrder: [...state.stackOrder, copyId],
+  };
+}
+
+/**
  * Ward (CR 702.21b): counter the spell or ability that targeted this, unless its controller pays.
  *
  * Two things happen here and only one of them is a choice. **The payment is a choice**, so the

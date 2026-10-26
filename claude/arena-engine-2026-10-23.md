@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 217 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 218 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -3344,6 +3344,39 @@ the division only when the shuffle produces one — a one-of is a coin flip, and
 so rather than call it covered, the UI was driven in a solo game until the card was drawn: the prompt
 counted 3 → 2 → 1, the second tap on an already-picked target added to it, and the spell resolved.
 
+### Copying an ability, and the clause that is not offered
+
+The last item on this list's own *Next*, and the second half of a sentence D134 started: that entry
+made an ability on the stack a thing you can point at, and this makes one a thing you can duplicate.
+They are not neighbours. Countering removes an object; copying builds a second one with the first
+one's targets, `subject`, `actor`, the object it was answering and its division, and puts it above
+the original so the copy resolves first.
+
+`copyAbilityOnStack` is a few fields rather than a call into the engine, because a copy is *created*
+on the stack: nothing is cast or activated, no cost is paid, and no cast trigger sees it. It lives in
+`effects.ts` beside `counterSpell` for the reason that function already gives. A spell is refused
+rather than copied — that is a token copy or a new object with its own card, which this pool has a
+Cackling Counterpart for.
+
+What is **not** offered is the printed "you may choose new targets for the copy": that needs a way to
+ask for a target mid-resolution the engine has not got. Declining is always a legal play of the card,
+so the deviation makes the card worse rather than wrong — and it has a visible consequence, which is
+why it is a test and not a comment. A copied Gravedigger trigger points at the card the original
+already returned: the copy resolves first and returns it, and the original is countered for having no
+legal target left (CR 608.2b, CR 400.7). One creature back rather than two, which is exactly the case
+the printed clause exists to fix.
+
+**Strionic Resonator** goes into Rot Harvest, the deck made of triggers, and the filter it needs is
+the one the engine had no card for: an ability on the stack that is *triggered* and is *yours*. An
+opponent's trigger is refused and never offered; a Vampire Aristocrat's activated ability, waiting
+under the death triggers its own cost caused, is refused by name.
+
+It measures as nothing — removing it is +4 and −2 of 270 — and it is used: in 108 games the bot cast
+it in 19 of the 20 games it drew one and activated it 14 times, so the number is about the card
+rather than about a card nobody touched. And it needed no bot teaching whatsoever, which the last
+four cards all did: `legalActions` offers the ability only when there is a trigger of yours on the
+stack, and the search prices activating it like anything else.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -3354,10 +3387,12 @@ counted 3 → 2 → 1, the second tap on an already-picked target added to it, a
    `turned-face-up` has two cards behind it, morph has megamorph and a cost paid in life, target
    redirection has Willbender and Swerve, the three board-watching events carry *which* permanent
    they were about, and an ability on the stack can be pointed at — so exalted, evolve, "that
-   creature" and "counter target ability" are all a few declarative lines now. What is left on that
-   list is **copying** an ability: "copy target activated or triggered ability" (a Strionic
-   Resonator, a Lithoform Engine) means duplicating a stack object with its targets and its
-   `subject`, which is different work from pointing at one, and nothing in the pool wants it yet.
+   creature" and "counter target ability" are all a few declarative lines now. Copying one is there as well:
+   `copyAbilityOnStack` builds a second stack object with the first one's targets, its `subject`
+   and its division, and **Strionic Resonator** in Rot Harvest copies a triggered ability its
+   controller owns. What that card does *not* offer is the printed "you may choose new targets for
+   the copy", which wants a way to ask for a target mid-resolution that this engine has not got —
+   so the copy keeps what the original chose, and that consequence is a test rather than a comment.
    A question whose answer is a **word** now exists too, so "you may", "tap or untap" and "choose
    one —" on a trigger are all a few declarative lines. The *number* half of that family is half
    answered: a quantity **divided among targets** is announced with the spell and checked as a sum

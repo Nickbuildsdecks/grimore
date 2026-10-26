@@ -2590,6 +2590,17 @@ const CLOUDFIN_RAPTOR: CardDef = {
   colors: ['U'],
 };
 
+const STRIONIC_RESONATOR: CardDef = {
+  name: 'Strionic Resonator',
+  typeLine: 'Artifact',
+  manaCost: '{2}',
+  cmc: 2,
+  // The printed text, including the clause the script does not offer — see its comment in
+  // `scripts.ts`. A card that said less than it says would be a worse lie than a documented gap.
+  oracleText: '{1}, {T}: Copy target triggered ability you control. You may choose new targets for the copy.',
+  colors: [],
+};
+
 export const ROT_HARVEST: DeckSpec = {
   id: 'rot-harvest',
   name: 'Rot Harvest',
@@ -2602,6 +2613,7 @@ export const ROT_HARVEST: DeckSpec = {
     { card: LLANOWAR_ELVES, count: 3 },
     { card: THORNWEALD_ARCHER, count: 1 },
     { card: DRUDGE_SKELETONS, count: 1 },
+
     { card: GOLGARI_CHARM, count: 2 },
     { card: NATURALIZE, count: 1 },
     { card: BLOSSOMING_DEFENSE, count: 1 },
@@ -2626,6 +2638,26 @@ export const ROT_HARVEST: DeckSpec = {
     { card: ENDLESS_ONE, count: 2 },
     { card: BLOOD_ARTIST, count: 1 },
     { card: ZULAPORT_CUTTHROAT, count: 1 },
+    /*
+      Strionic Resonator for the second Basilisk Collar, and this is the deck for it.
+
+      {2} for the artifact and {1} and a tap to copy a triggered ability you control — and this
+      deck is built out of triggers: a Zulaport Cutthroat on every death, a Doomed Dissenter that
+      leaves a Zombie behind, a Wall of Blossoms and a Gravedigger and a Fleshbag Marauder and a
+      Lotleth Giant as they arrive. Copying any of those is a second card out of one, every turn
+      there is one worth copying.
+
+      **It measures as nothing, and it is used.** Removing it is +4 on one seed set and −2 on the
+      other over 270 paired duels: no consistent sign, which is this instrument saying the card is
+      free. The half of that worth saying out loud is that the bot is not ignoring it — over 108
+      games it cast the Resonator in 19 of the 20 games it drew one and activated it 14 times, so
+      the number is a measurement of the card rather than of a card nobody touched.
+
+      The cut is the Collar rather than an Endless One: cutting one of those instead measured −1
+      and −5, which is worse on both sets though also inside the floor. Two copies of an equipment
+      is the most redundant thing in a deck whose creatures are meant to die.
+    */
+    { card: STRIONIC_RESONATOR, count: 1 },
     /*
       Obelisk of Urd for the second Blood Artist, and the first card here that asks a question
       whose answer is a word.
@@ -2669,7 +2701,7 @@ export const ROT_HARVEST: DeckSpec = {
     { card: FLESHBAG_MARAUDER, count: 2 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },
     { card: GRAVEDIGGER, count: 2 },
-    { card: BASILISK_COLLAR, count: 2 },
+    { card: BASILISK_COLLAR, count: 1 },
     { card: BLOODTHRONE_VAMPIRE, count: 1 },
     { card: RAISE_DEAD, count: 1 },
     { card: GRIM_DISCOVERY, count: 1 },
@@ -2682,9 +2714,9 @@ export const ROT_HARVEST: DeckSpec = {
     // better use of it in a deck that fills graveyards on purpose.
     { card: HURRICANE, count: 1 },
     { card: LHURGOYF, count: 1 },
+    { card: CENTAUR_COURSER, count: 1 },
     // One copy, for the same reason as the Grizzly Bears in Verdant Guard: the graveyard tests
     // build their boards out of this deck and need a plain creature to bury.
-    { card: CENTAUR_COURSER, count: 1 },
   ],
 };
 

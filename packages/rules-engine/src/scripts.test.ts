@@ -9133,3 +9133,166 @@ describe('damage divided as you choose (CR 601.2d)', () => {
     expect(refusal(s, cast)).toBeNull();
   });
 });
+
+describe('copying an ability on the stack (CR 706.10)', () => {
+  /*
+    The second half of "an ability is an object": D134 made one targetable, this makes one
+    copyable. The difference is not cosmetic — countering removes an object, copying builds a
+    second one with the first one's targets, the first one's `subject`, and its division if it had
+    one — and the copy is *created* on the stack rather than activated, so nothing is cast, no cost
+    is paid and it resolves first because it is on top.
+  */
+
+  /** Seat 0 on Rot Harvest, main phase, mana up, with `mine` on the battlefield. */
+  const rot = (hand: readonly string[], mine: readonly string[], lands = 4): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'ember-rush' },
+      hands: { 0: [...hand] },
+      battlefield: {
+        0: [...Array.from({ length: lands }, (_, i) => (i % 2 === 0 ? 'Swamp' : 'Forest')), ...mine],
+        1: ['Mountain', 'Mountain'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  /** The id of the one object on the stack whose description matches. */
+  const onStack = (s: GameState, pattern: RegExp): string => {
+    const id = s.stackOrder.find((o) => pattern.test(s.stackObjects[o]!.description));
+    expect(id, `nothing on the stack matching ${String(pattern)}: ${JSON.stringify(stackNames(s))}`)
+      .toBeDefined();
+    return id!;
+  };
+
+  it('copies a death trigger, and the copy drains again', () => {
+    let s = rot([], ['Zulaport Cutthroat', 'Strionic Resonator', 'Vampire Aristocrat', 'Doomed Dissenter']);
+    const mine = life(s, 0);
+    const theirs = life(s, 1);
+
+    // The Aristocrat eats the Dissenter as a *cost*, so the Cutthroat's trigger is on the stack
+    // above the ability that paid for it before anybody has priority again.
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Vampire Aristocrat'),
+      abilityIndex: 0, sacrifice: find(s, 0, 'battlefield', 'Doomed Dissenter'),
+    });
+    const trigger = onStack(s, /each opponent loses 1 life/);
+
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: trigger }],
+    });
+    // The copy is above the ability it came from, so it resolves first — and it is a copy rather
+    // than a second activation: the Resonator is tapped once and paid for once.
+    s = drain(passBoth(s));
+
+    expect(life(s, 1)).toBe(theirs - 2);
+    expect(life(s, 0)).toBe(mine + 2);
+  });
+
+  it('copies an arrival trigger, and draws twice from one creature', () => {
+    let s = rot(['Wall of Blossoms'], ['Strionic Resonator']);
+    const before = ids(s, 0, 'hand').length;
+
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Wall of Blossoms') });
+    // The Wall resolves first; its arrival trigger is what gets copied.
+    s = passBoth(s);
+    const trigger = onStack(s, /draw a card/);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: trigger }],
+    });
+    s = drain(passBoth(s));
+
+    // One card out of hand, two drawn: the hand is up one.
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+  });
+
+  it('cannot be pointed at an opponent’s trigger', () => {
+    // Both seats on the same deck, so seat 1 has a death trigger of its own to put on the stack.
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'rot-harvest' },
+      battlefield: {
+        0: ['Swamp', 'Forest', 'Strionic Resonator'],
+        1: ['Swamp', 'Swamp', 'Zulaport Cutthroat', 'Vampire Aristocrat', 'Doomed Dissenter'],
+      },
+      turn: 5, firstSeat: 1,
+    }), 'precombat-main');
+    s = apply(s, {
+      type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Vampire Aristocrat'),
+      abilityIndex: 0, sacrifice: find(s, 1, 'battlefield', 'Doomed Dissenter'),
+    });
+    const theirs = onStack(s, /each opponent loses 1 life/);
+    // Priority has to come back to seat 0 before it can tap anything, which is also the only
+    // window in which it could point a Resonator at somebody else's trigger.
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = tapAllLands(s, 0);
+
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: theirs }],
+    })).toContain('target triggered ability you control');
+    // And the table is not offered the ability at all, which is the half a player sees: an
+    // activation with nothing legal to point at is not a play.
+    const plays = legalActions(s, 0).plays
+      .filter((p) => p.name === 'Strionic Resonator' && p.kind === 'activate');
+    expect(plays).toEqual([]);
+  });
+
+  it('is not offered with nothing on the stack, and refuses an activated ability', () => {
+    let s = rot([], ['Strionic Resonator', 'Vampire Aristocrat', 'Doomed Dissenter']);
+    expect(legalActions(s, 0).plays.filter((p) => p.name === 'Strionic Resonator')).toEqual([]);
+
+    // The Aristocrat's pump is an *activated* ability, waiting on the stack under the death
+    // triggers its cost caused. The Resonator says "triggered", and means it.
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Vampire Aristocrat'),
+      abilityIndex: 0, sacrifice: find(s, 0, 'battlefield', 'Doomed Dissenter'),
+    });
+    const pump = onStack(s, /\+2\/\+2/);
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: pump }],
+    })).toContain('target triggered ability you control');
+  });
+
+  it('the copy keeps the original’s target, so one of the two is countered when it is gone', () => {
+    /*
+      The consequence of not offering "you may choose new targets for the copy", stated as a test
+      rather than left as a comment.
+
+      A Gravedigger's arrival trigger returns *target* creature card from a graveyard. The copy
+      resolves first and returns it; the original then has a target that has changed zones, which
+      is a different object (CR 400.7), so it is countered for having no legal target left
+      (CR 608.2b) — one creature back rather than two, and the card's printed clause is exactly
+      what would have fixed it.
+    */
+    // Six lands: four for the Gravedigger and one for the Resonator, with one to spare.
+    let s = rot(['Gravedigger'], ['Strionic Resonator'], 6);
+    // A creature in the graveyard for it to want, put there by hand.
+    const corpse = ids(s, 0, 'library').find((id) => nameOf(s, id) === 'Centaur Courser')!;
+    s = apply(s, { type: 'card:move', by: 0, card: corpse, toZone: 'graveyard' });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gravedigger') });
+    s = passBoth(s);
+
+    /*
+      The trigger's target: asked when there is a choice to make and settled by the engine when
+      there is not (CR 603.3d), which with one creature card in the graveyard is this case. Written
+      to cope with both, because which one it is depends on what else is in the yard.
+    */
+    if (s.pendingChoice !== null) {
+      s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: corpse }] });
+    }
+    const trigger = onStack(s, /return target creature card/i);
+    expect(s.stackObjects[trigger]!.targets).toEqual([{ kind: 'card', id: corpse }]);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: trigger }],
+    });
+    s = drain(passBoth(s));
+
+    // One copy of the card, in hand, and nothing left waiting.
+    expect(s.instances[corpse]!.zone).toBe('hand');
+    expect(s.stackOrder).toEqual([]);
+  });
+});

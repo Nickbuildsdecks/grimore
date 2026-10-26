@@ -23,7 +23,7 @@ import { listAt } from './cardActions.js';
 import {
   addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
-  chosenOption, firstAbilityTarget, dividedAmong,
+  chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -4169,6 +4169,55 @@ const ARC_LIGHTNING: CardScript = {
   ),
 };
 
+/*
+  Copying an ability on the stack, which is the last item this project's own Next list had on it.
+
+  "Counter target ability" (D134) and "copy target ability" sound like neighbours and are not: one
+  removes an object and the other builds a second one, with the first one's targets, the first one's
+  `subject`, and the first one's division if it had one. All of that travels in `copyAbilityOnStack`;
+  what the card adds here is the one filter the engine had no card for — an ability on the stack
+  that is *triggered* and is *yours*.
+
+  Rot Harvest is where it goes, because it is the deck built out of triggers: a Blood Artist and a
+  Zulaport Cutthroat on every death, a Doomed Dissenter that leaves a Zombie, a Wall of Blossoms and
+  a Gravedigger and a Fleshbag Marauder and a Lotleth Giant as they arrive. Copying any of those is
+  a real second card, and the Resonator sits on the battlefield doing it every turn there is a
+  trigger worth copying.
+
+  **The printed "you may choose new targets for the copy" is not offered**, and that is said out
+  loud rather than quietly approximated: declining is always a legal play of the card, and offering
+  it needs a way to ask for a target mid-resolution that this engine does not have. The visible
+  consequence is that a copied Gravedigger trigger, pointed at the card the original already
+  returned, is countered for having no legal target left — which is what the rules say happens and
+  is also exactly the case the printed clause exists to fix. The day a card in the pool needs it,
+  this comment is the one that is wrong.
+*/
+
+const yourTriggeredAbility = (state: GameState, candidate: Target, controller: SeatIndex): boolean => {
+  if (candidate.kind !== 'ability') return false;
+  const object = state.stackObjects[candidate.id];
+  return object?.kind === 'triggered' && object.controller === controller;
+};
+
+const STRIONIC_RESONATOR: CardScript = {
+  name: 'Strionic Resonator',
+  abilities: [
+    {
+      cost: { mana: '{1}', tap: true },
+      description: '{1}, {T}: Copy target triggered ability you control.',
+      targets: [{
+        kind: 'ability',
+        description: 'target triggered ability you control',
+        filter: yourTriggeredAbility,
+      }],
+      effect: (c) => {
+        const id = firstAbilityTarget(c);
+        return id === null ? c.state : copyAbilityOnStack(c.state, id, c.controller);
+      },
+    },
+  ],
+};
+
 /**
  * Every token this pool can put onto the battlefield.
  *
@@ -4261,6 +4310,7 @@ const ALL: readonly CardScript[] = [
   KAMBAL,
   guildgate('Orzhov Guildgate', 'W', 'B'),
   ARC_LIGHTNING,
+  STRIONIC_RESONATOR,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
