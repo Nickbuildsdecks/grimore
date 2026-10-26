@@ -7298,3 +7298,82 @@ against 44%, which is the same two points the probe put inside the floor.
 a modal back face that is a *spell* resolving into a permanent — a creature on the back of a sorcery.
 `castAs` would clear as it left the stack and the permanent would arrive as its front face. Nothing
 in the pool is one, so the branch is not there; a card that needs it should add it with a test.
+
+## D162 — A static that comes and goes, and three measurement traps found measuring it
+
+**Decision: add `ContinuousEffect.while`, a condition asked every time the effect is read, and put
+metalcraft behind it. Chrome Steed, Etched Champion and Galvanic Blast go into Forge Alliance, which
+already controlled ten artifacts and counted none of them.**
+
+Every continuous effect in the engine had the same life: created, applies for a duration, expires.
+"As long as you control three or more artifacts" is a different shape — there is no moment at which
+it turns on. The board changes and the creature is a 4/4; something leaves and it is a 2/2 again,
+with nothing announced and no trigger to watch.
+
+**Asked, not stored, and data rather than a predicate.** `conditionMet` runs inside
+`effectApplies`, which is the same answer `definesSize` already gives for a size that is a count of
+the board (D94). A predicate would have been shorter and wrong: `state.effects` is part of the game
+state and the state is serialised to Redis, so a function in there would not survive the trip. One
+`kind`, because one card shape needs one count — the rule D57 is about.
+
+**Counted off the printed type line, and that is load-bearing.** `conditionMet` is called from
+inside `characteristicsOf`, so asking a permanent for its *current* characteristics there would
+recurse until the stack ran out. Nothing in the pool gives something the artifact type, so printed
+and current are the same answer for every board that exists; a card that changed that would need
+this count in a pass of its own, the way layer 4 has one.
+
+**Three cards, and only two of them needed any of it.** Chrome Steed (+2/+2) and Etched Champion
+(protection from all five colours) are conditional statics. **Galvanic Blast is the contrast**: one
+damage or four, read **once** as the spell resolves, so it is an ordinary `onResolve` that counts
+the board. A condition only needs to live in the effect when the thing it controls persists — and
+the difference is visible at the table, because answering an artifact while the Blast is on the
+stack turns it back into a Shock. One test asserts exactly that.
+
+**What the new instrument says, which is the point of having it.** `metalcraft.mjs` samples the
+condition once per turn for every such permanent on the board, over 660 games:
+
+```
+Chrome Steed (forge-alliance, needs 3)
+  on the board for 152 turns over 32 games
+  condition met on 85 of them (56%), mean artifacts 2.6
+Etched Champion (forge-alliance, needs 3)
+  condition met on 11 of 16 turns (69%), mean artifacts 3.1
+
+Galvanic Blast: 43 casts, 9 for four damage (21%)
+```
+
+The **mean count beside the share** is the half that makes it useful: 56% on a mean of 2.6 is "nearly
+there, often", and 56% on a mean of 0.8 would be "never close, occasionally lucky" — the same
+percentage and two different cards to fix. Galvanic Blast is mostly a Shock (21%), which is an
+honest reading of a one-mana spell in a twelve-artifact deck rather than a complaint.
+
+**The bundle measures +9 of 264 on one seed set, +8 of 263 on a second — and the twelve-deck table,
+on a third, puts Forge Alliance four points *lower* than before.** All three are inside the 18-game
+duel floor (D86), so the honest reading is that the change is **free rather than good**: two paired
+probes agreeing on +8 and +9 is not enough to outvote a −12 from the table's own seeds, and a
+measurement at the floor is a measurement the instruments cannot resolve. Written down as three
+numbers rather than as the two that flatter the change. It cost one of two Ajani's Pridemates (65%),
+the Disenchant (69%, the same complaint that priced Wane) and one of two Hellriders. The two new creatures are artifacts themselves, so the
+deck's count went from ten to twelve — the cards that read the condition are part of meeting it,
+which is how the printed mechanic works.
+
+### Three traps in the instruments, all found by this one change
+
+**1. A 1-of's denominator in `cast-counts` is a handful of shuffles, not a handful of games.** At
+`SEEDS=4`, two 1-ofs in the same deck read **"in hand 54 games" and "in hand 4 games"** — which
+looked like a fact about the cards and is a fact about four libraries. The seed drives the shuffle,
+so 88 games are built from four of them, and whether a single copy sits near the top or the bottom
+is most of its count. At `SEEDS=12` the same pair read 84 and 29. Read the **rate** (cast ÷ in
+hand), never the denominator, and distrust a 1-of's row below a dozen seeds.
+
+**2. An instrument that cannot see a mechanic prints zero for it.** `cast-counts` reads Forge
+Alliance's **Disrupt Decorum at 0% — never cast in 24 games it was in hand**, which looks like the
+deadest card in the pool and is nothing of the kind: goading every creature you do not control is a
+pod card, and this harness plays duels, where there is nobody else for a goaded creature to attack.
+It stayed in the deck. A cut made on that reading would have removed the pool's only goad card for
+being unmeasurable rather than for being bad.
+
+**3. "Cast every game" and "does what it says" are different questions.** Etched Champion is cast in
+**28%** of the games it reaches hand — a 1/1 body for {3} scores badly in the evaluation — while its
+*ability* is live 69% of the turns it is on the board. The card is strong for a person and weak for
+this opponent, and only two instruments together say so.

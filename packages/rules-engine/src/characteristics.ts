@@ -323,6 +323,25 @@ export interface ContinuousEffect {
    * It defines the *base*, so layer 7b still beats it (a Turn to Frog on a Lhurgoyf is a 1/1) and
    * 7c and 7d still land on top (a Giant Growth makes it three bigger than whatever it is).
    */
+  /**
+   * A condition the whole effect depends on, asked **every time** the effect is read.
+   *
+   * Every other continuous effect here is on or off for a duration: it is created, it applies, and
+   * it expires. Metalcraft is a different shape — "as long as you control three or more artifacts"
+   * — and the difference is that there is no moment at which it turns on. The board changes and the
+   * creature is a 4/4; something dies and it is a 2/2 again, with nothing to announce and no
+   * trigger to see. So this is asked in `effectApplies` rather than stored, which is the same thing
+   * `definesSize` does one field below and for the same reason.
+   *
+   * **Data rather than a predicate**, which is not a style choice: `state.effects` is part of the
+   * game state and the state is serialised to Redis, so a function here would not survive the trip.
+   * One kind, because one card shape needs one count — the rule D57 is about.
+   */
+  readonly while?: {
+    readonly kind: 'controller-artifacts';
+    /** "three or more", which is what every metalcraft card printed says. */
+    readonly atLeast: number;
+  };
   readonly definesSize?: {
     /**
      * One count, because one card needs one count. "Cards in your hand", "lands you control" and
@@ -410,9 +429,36 @@ const numeric = (value: string | undefined): number => {
  * would put a type-line scan on the hottest loop in the engine for the sake of one scope that
  * almost nothing uses.
  */
+/**
+ * Whether a conditional effect's condition holds right now.
+ *
+ * Counted off the **printed** type line, which is load-bearing rather than lazy: this is called
+ * from inside `characteristicsOf`, so asking for a permanent's current characteristics here would
+ * recurse until the stack ran out. Nothing in the pool gives something the artifact type, so the
+ * printed line and the current one are the same answer for every board that exists — and a card
+ * that changed that would need this count to be computed in a pass of its own, like layer 4 is.
+ */
+function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
+  const cond = effect.while;
+  if (cond === undefined) return true;
+  let count = 0;
+  for (const id of state.zones[zoneKey(effect.controller, 'battlefield')] ?? []) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    // A face-down permanent is a 2/2 creature with no text, and no artifact (CR 707.2).
+    if (isFaceDownPermanent(inst)) continue;
+    if (hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'artifact')) count += 1;
+  }
+  return count >= cond.atLeast;
+}
+
 function effectApplies(
-  effect: ContinuousEffect, instance: CardInstance, creature: boolean, typeLine: TypeLine,
+  state: GameState, effect: ContinuousEffect, instance: CardInstance,
+  creature: boolean, typeLine: TypeLine,
 ): boolean {
+  // The condition first, because it is about the whole effect rather than about who it reaches: an
+  // effect whose condition is not met applies to nothing at all.
+  if (!conditionMet(state, effect)) return false;
   switch (effect.scope.kind) {
     case 'cards':
       return effect.scope.ids.includes(instance.id);
@@ -481,7 +527,7 @@ function withAddedTypes(
   for (const effect of state.effects ?? []) {
     if (effect.addTypes === undefined && effect.addSubtypes === undefined) continue;
     if (silenced(state, effect.source)) continue;
-    if (!effectApplies(effect, instance, printedCreature, printed)) continue;
+    if (!effectApplies(state, effect, instance, printedCreature, printed)) continue;
     for (const type of effect.addTypes ?? []) {
       if (hasType(printed, type) || (types !== null && types.includes(type))) continue;
       types = [...(types ?? []), type];
@@ -638,7 +684,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
 
   for (const effect of state.effects ?? []) {
     if (silenced(state, effect.source)) continue;
-    if (!effectApplies(effect, instance, creature, typeLine)) continue;
+    if (!effectApplies(state, effect, instance, creature, typeLine)) continue;
     /*
       Layer 6, and the one place the order of this loop is load-bearing.
 
@@ -744,7 +790,7 @@ export function combatDamagePrevented(state: GameState, instance: CardInstance):
   const creature = hasType(line, 'creature');
   return (state.effects ?? []).some(
     (effect) => effect.preventsCombatDamage === true
-      && effectApplies(effect, instance, creature, line),
+      && effectApplies(state, effect, instance, creature, line),
   );
 }
 

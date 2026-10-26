@@ -1954,6 +1954,52 @@ const HOLY_DAY: CardDef = {
   and nothing could carry one. Juggernaut is the plainest card that does, and its second line is a
   second small rule worth having: evasion that reads a creature type rather than a keyword.
 */
+/*
+  Metalcraft, the pool's first "as long as" clause (CR 702.75 — "metalcraft" is the keyword, and the
+  clause is an ordinary conditional static).
+
+  Three cards, and only two of them need the engine to learn anything. A static conditioned on the
+  board is a shape nothing here could say: every continuous effect was created, applied for a
+  duration and expired, while "as long as you control three or more artifacts" has no moment at
+  which it turns on. Chrome Steed and Etched Champion carry that; Galvanic Blast reads its condition
+  once, as it resolves, and needs nothing new at all — which is the contrast worth having in the
+  pool, because it says where the machinery is actually required.
+
+  The two creatures are artifacts themselves, so they are part of meeting the condition they read.
+  Forge Alliance controlled ten artifacts before them and twelve after.
+*/
+
+const CHROME_STEED: CardDef = {
+  name: 'Chrome Steed',
+  typeLine: 'Artifact Creature \u2014 Horse',
+  manaCost: '{3}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Metalcraft \u2014 Chrome Steed gets +2/+2 as long as you control three or more artifacts.',
+  colors: [],
+};
+
+const ETCHED_CHAMPION: CardDef = {
+  name: 'Etched Champion',
+  typeLine: 'Artifact Creature \u2014 Soldier',
+  manaCost: '{3}',
+  cmc: 3,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Metalcraft \u2014 Etched Champion has protection from all colors as long as you control three or more artifacts.',
+  colors: [],
+};
+
+const GALVANIC_BLAST: CardDef = {
+  name: 'Galvanic Blast',
+  typeLine: 'Instant',
+  manaCost: '{R}',
+  cmc: 1,
+  oracleText: 'Galvanic Blast deals 1 damage to any target.\nMetalcraft \u2014 Galvanic Blast deals 4 damage to that permanent or player instead if you control three or more artifacts.',
+  colors: ['R'],
+};
+
 const JUGGERNAUT: CardDef = {
   name: 'Juggernaut',
   typeLine: 'Artifact Creature — Juggernaut',
@@ -3340,11 +3386,31 @@ export const FORGE_ALLIANCE: DeckSpec = {
     */
     { card: WALKING_BALLISTA, count: 1 },
     { card: HANGARBACK_WALKER, count: 1 },
-    { card: AJANIS_PRIDEMATE, count: 2 },
+    /*
+      Metalcraft, in the deck that already controlled ten artifacts and counted none of them.
+
+      Three cards for three slots, and the three slots are the argument. The deck ran **two**
+      Ajani's Pridemates on incidental lifegain (65% cast, the weakest creature slot), a Disenchant
+      against a pool with four enchantments in it (69%, the same complaint that priced Wane), and a
+      **second** Hellrider — four mana for a 3/3 is a lot of top end for a deck now adding a
+      three-mana 4/4 and a one-mana burn spell. All three keep other homes in the pool.
+
+      Chrome Steed and Etched Champion are both artifacts themselves, so the count goes from ten to
+      twelve rather than staying put: the cards that want the condition are part of meeting it,
+      which is how the printed mechanic is meant to work. The Champion is the one worth reading
+      twice — a 1/1 that no coloured removal in this pool can target, block or damage while three
+      artifacts are out, in a deck whose Equipment wants a creature that survives.
+    */
+    { card: CHROME_STEED, count: 1 },
+    { card: ETCHED_CHAMPION, count: 1 },
+    // One damage, or four with the condition met — read as it resolves, so answering an artifact in
+    // between turns it back into a Shock.
+    { card: GALVANIC_BLAST, count: 1 },
+    { card: AJANIS_PRIDEMATE, count: 1 },
     { card: SERRA_ANGEL, count: 2 },
     // The card this deck was already built for: every small creature it plays is another damage
     // on the swing, and the tokens from Raise the Alarm and Secure the Wastes count too.
-    { card: HELLRIDER, count: 2 },
+    { card: HELLRIDER, count: 1 },
     { card: BONESPLITTER, count: 1 },
     /*
       The two cheap Vehicles, in the deck whose creatures are tokens.
@@ -3366,9 +3432,9 @@ export const FORGE_ALLIANCE: DeckSpec = {
     { card: RENEGADE_FREIGHTER, count: 1 },
     { card: LOXODON_WARHAMMER, count: 2 },
     // The deck's only answer to an Equipment or an enchantment, which is what a board of swords
-    // is most afraid of.
+    // is most afraid of. Two Banishing Lights and no Disenchant since the metalcraft slots: the
+    // Light answers any nonland permanent, which is the half of the job this pool actually needs.
     { card: BANISHING_LIGHT, count: 2 },
-    { card: DISENCHANT, count: 1 },
     { card: BASILISK_COLLAR, count: 1 },
     // The one creature in the pool that does not get a choice about attacking.
     { card: JUGGERNAUT, count: 1 },

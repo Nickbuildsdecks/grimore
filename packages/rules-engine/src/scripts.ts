@@ -5274,6 +5274,66 @@ const VASTWOOD_FORTIFICATION: CardScript = {
   },
 };
 
+/*
+  Metalcraft: an ability that is on while the board says so, and off when it does not.
+
+  Three cards, and only two of them need the machinery. A **conditional static** is a shape the
+  engine had no way to say: every other continuous effect is created, applies for a duration and
+  expires, while "as long as you control three or more artifacts" has no moment at which it turns on
+  — the board changes and the creature is a 4/4, something dies and it is a 2/2 again, with nothing
+  to announce and no trigger to watch. `ContinuousEffect.while` is asked every time the effect is
+  read, which is the same answer `definesSize` already gives for a size that is a count.
+
+  Galvanic Blast needs none of it, and is the useful contrast: its condition is read **once**, as
+  the spell resolves, so it is an ordinary `onResolve` that counts the board. A condition only needs
+  to live in the effect when the thing it controls persists.
+*/
+
+/** How many artifacts a seat controls, off the printed type line (see `conditionMet`). */
+const artifactsControlled = (state: GameState, seat: SeatIndex): number => {
+  let count = 0;
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    if (hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'artifact')) count += 1;
+  }
+  return count;
+};
+
+/** "Metalcraft — ... as long as you control three or more artifacts." */
+const METALCRAFT = { kind: 'controller-artifacts', atLeast: 3 } as const;
+
+const CHROME_STEED: CardScript = {
+  name: 'Chrome Steed',
+  statics: [{ scope: 'self', effect: { power: 2, toughness: 2, while: METALCRAFT } }],
+};
+
+/**
+ * Protection from **all** colours while the condition holds, which is the other half of the same
+ * machinery: a conditional static that grants rather than one that adds to a size.
+ *
+ * All five colours rather than a special case, because protection is already a list (D83) — so
+ * "protection from all colors" is the list with everything in it, and every one of the four rules
+ * protection has (cannot be blocked by, targeted by, dealt damage by, enchanted by) applies without
+ * anything new. A 1/1 that no coloured removal in this pool can touch while three artifacts are out.
+ */
+const ETCHED_CHAMPION: CardScript = {
+  name: 'Etched Champion',
+  statics: [{
+    scope: 'self',
+    effect: { protectionFrom: ['W', 'U', 'B', 'R', 'G'], while: METALCRAFT },
+  }],
+};
+
+const GALVANIC_BLAST: CardScript = {
+  name: 'Galvanic Blast',
+  targets: [ANY_TARGET],
+  // Four damage or one, decided as it resolves rather than as it is cast — which is what the card
+  // says, and it matters: an artifact that dies to a removal spell in between turns the Blast back
+  // into a Shock, and the player who answered it that way earned that.
+  onResolve: (c) => damageFirstTarget(c, artifactsControlled(c.state, c.controller) >= 3 ? 4 : 1),
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -5363,6 +5423,7 @@ const ALL: readonly CardScript[] = [
   guildgate('Simic Guildgate', 'G', 'U'),
   FIRE, ICE, WAX, WANE, VENTURE_DEEPER, SHIELDS_MIGHT,
   HAGRA_MAULING, VASTWOOD_FORTIFICATION,
+  CHROME_STEED, ETCHED_CHAMPION, GALVANIC_BLAST,
   tapLand('Hagra Broodpit', 'B'), tapLand('Vastwood Thicket', 'G'),
 ];
 

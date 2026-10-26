@@ -31,6 +31,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `poison.mjs` | is the poison win condition reached, or only theoretical? | `SEEDS=6 node scripts/measure/poison.mjs` |
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
+| `metalcraft.mjs` | how often is a conditional static actually **on**? | `SEEDS=5 node scripts/measure/metalcraft.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -119,6 +120,31 @@ of those land plays were made with no other land in hand**. Hagra Mauling reads 
 and **30 of 30 land plays with nothing else to play** — thirty land drops the deck would otherwise
 have missed, which is the whole argument for the card. A reading of, say, 12 of 30 would be the
 opposite finding: a bot spending a flexible card as a tapped land while an untapped one sat in hand.
+
+**A card whose text is conditional can be cast every game and still never do what it says.**
+`cast-counts` reads Chrome Steed at 50% and `deck-probe` says the deck won nine more games; neither
+can say whether "+2/+2 as long as you control three or more artifacts" was ever live.
+`metalcraft.mjs` samples the condition once per turn for every such permanent on the board, and
+reports the **mean count** beside the share — because 56% on a mean of 2.6 artifacts ("nearly
+there, often") and 56% on a mean of 0.8 ("never close, occasionally lucky") are the same percentage
+and two different cards to fix.
+
+**A 1-of's denominator in `cast-counts` is a handful of shuffles, not a handful of games.** The seed
+drives the shuffle, so twelve seeds against eleven opponents in two seats is 264 games built from
+about two dozen distinct libraries — and whether a single copy sits near the top or near the bottom
+of those is most of its "in hand" count. Measured: at `SEEDS=4` two 1-ofs in the same deck read "in
+hand 54 games" and "in hand 4 games", which is a fact about four shuffles rather than about the
+cards; at `SEEDS=12` the same pair read 84 and 29. **Read the rate (cast ÷ in hand), not the
+denominator**, and distrust a 1-of's row at fewer than a dozen seeds.
+
+**And an instrument that cannot see a mechanic prints zero for it.** `cast-counts` reads Forge
+Alliance's **Disrupt Decorum at 0% — never cast in 24 games it was in hand** — which looks like the
+deadest card in the pool and is nothing of the kind: goading every creature you do not control is a
+pod card, this harness plays duels, and with one opponent there is nobody else for a goaded creature
+to attack. It was left in the deck for that reason — a cut made on this
+reading would have taken the pool's only goad card out for being unmeasurable rather than for being
+bad. The same trap in a different instrument is the "an instrument that cannot observe the thing
+reports zero" note below.
 
 **A half nobody casts is not automatically a bad card.** The same Wax // Wane that never casts one
 of its halves measured **+19 of 264** against the field, because the half it does cast is better

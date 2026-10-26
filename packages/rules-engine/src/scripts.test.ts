@@ -11743,3 +11743,131 @@ describe('a land on the back of a spell (CR 712)', () => {
     expect(nameOf(s, (action as { card: string }).card)).toBe('Swamp');
   });
 });
+
+/*
+  Metalcraft: a static that is on while the board says so (CR 702.75).
+
+  The shape being tested is the one the engine had no way to say. Every other continuous effect here
+  is created, applies for a duration and expires; this one has no moment at which it turns on — the
+  board changes and the creature is a 4/4, something leaves and it is a 2/2 again, with nothing
+  announced and no trigger to watch. So the tests below all *change the board* and read the creature
+  again, which is the only way to tell a conditional static from a one-off pump.
+*/
+describe('a static that comes and goes: metalcraft (CR 702.75)', () => {
+  /** Seat 0 on Forge Alliance, main phase, with `board` already out. */
+  const forge = (hand: readonly string[], board: readonly string[]): GameState => {
+    let s = arena({
+      decks: { 0: 'forge-alliance' }, hands: { 0: [...hand] },
+      battlefield: { 0: [...board] }, turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return s;
+  };
+
+  it('is a 2/2 with two artifacts and a 4/4 with three', () => {
+    // Two artifacts out, plus the Steed itself once it arrives: three, so it is already on. The
+    // test is built the other way round — one artifact beside it — so the count is two.
+    let s = forge([], ['Chrome Steed', 'Bonesplitter', 'Plains', 'Plains', 'Mountain']);
+    const steed = find(s, 0, 'battlefield', 'Chrome Steed');
+    expect([power(s, steed), toughness(s, steed)]).toEqual([2, 2]);
+
+    // A third artifact — the Steed is one, so a Collar makes three — and it is a 4/4, with nothing
+    // cast and nothing triggered.
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', 'Basilisk Collar'), toZone: 'battlefield',
+    });
+    expect([power(s, steed), toughness(s, steed)]).toEqual([4, 4]);
+
+    // And back to a 2/2 when one leaves, which is the half a one-off pump could not do.
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Bonesplitter'), toZone: 'graveyard',
+    });
+    expect([power(s, steed), toughness(s, steed)]).toEqual([2, 2]);
+  });
+
+  it('counts the artifacts its own controller has, and nobody else’s', () => {
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'forge-alliance' },
+      battlefield: {
+        0: ['Chrome Steed', 'Bonesplitter'],
+        1: ['Bonesplitter', 'Basilisk Collar', 'Darksteel Plate'],
+      },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const steed = find(s, 0, 'battlefield', 'Chrome Steed');
+    // Three artifacts on the table opposite and two on this side: a 2/2.
+    expect([power(s, steed), toughness(s, steed)]).toEqual([2, 2]);
+  });
+
+  it('grants protection from every colour while it holds, and takes it back when it does not', () => {
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'ember-rush' },
+      hands: { 1: ['Lightning Bolt'] },
+      battlefield: {
+        0: ['Etched Champion', 'Bonesplitter', 'Basilisk Collar'],
+        1: ['Mountain'],
+      },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const champ = find(s, 0, 'battlefield', 'Etched Champion');
+    // Three artifacts counting itself, so a red spell cannot be pointed at it at all.
+    expect(protectedFrom(s, champ, null)).toBe(false);
+    const bolt = find(s, 1, 'hand', 'Lightning Bolt');
+    const plays = legalActions(s, 1).plays.filter((p) => p.card === bolt);
+    const aimable = plays.flatMap((p) => p.candidates[0] ?? [])
+      .filter((t) => t.kind === 'card').map((t) => (t.kind === 'card' ? t.id : ''));
+    expect(aimable).not.toContain(champ);
+
+    // Take an artifact away and the protection goes with it: now the Bolt can be aimed.
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Bonesplitter'), toZone: 'graveyard',
+    });
+    const after = legalActions(s, 1).plays.filter((p) => p.card === bolt)
+      .flatMap((p) => p.candidates[0] ?? [])
+      .filter((t) => t.kind === 'card').map((t) => (t.kind === 'card' ? t.id : ''));
+    expect(after).toContain(champ);
+  });
+
+  it('Galvanic Blast deals one, or four with three artifacts out', () => {
+    // One artifact: a Shock that costs {R}.
+    let s = forge(['Galvanic Blast'], ['Mountain', 'Bonesplitter']);
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    s = cast(s, 0, 'Galvanic Blast', [{ kind: 'player', seat: 1 }]);
+    expect(life(s, 1)).toBe(19);
+
+    // Three artifacts: four damage, and the difference is read as it resolves rather than as it is
+    // cast — which is why this is an ordinary script and not a conditional effect.
+    let t = forge(['Galvanic Blast'], ['Mountain', 'Bonesplitter', 'Basilisk Collar', 'Darksteel Plate']);
+    t = apply(t, { type: 'auto:activate', by: 0, card: find(t, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    t = cast(t, 0, 'Galvanic Blast', [{ kind: 'player', seat: 1 }]);
+    expect(life(t, 1)).toBe(16);
+  });
+
+  it('and the condition is read when the spell resolves, not when it was cast', () => {
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'ember-rush' },
+      hands: { 0: ['Galvanic Blast'] },
+      battlefield: {
+        0: ['Mountain', 'Bonesplitter', 'Basilisk Collar', 'Darksteel Plate'],
+        1: ['Mountain', 'Mountain'],
+      },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Galvanic Blast'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    // Three artifacts when it was cast, two by the time it resolves: one damage, not four. The
+    // player who answered the Collar earned that, and a condition snapshotted at cast time would
+    // have taken it away from them.
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Basilisk Collar'), toZone: 'graveyard',
+    });
+    s = passBoth(s);
+    expect(life(s, 1)).toBe(19);
+  });
+});

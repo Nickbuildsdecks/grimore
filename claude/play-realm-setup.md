@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and fifty-seven, today, across twelve starter decks. A
+cards somebody has scripted — two hundred and sixty, today, across twelve starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -121,6 +121,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Cast **one half** of a split card | Two cards are **split cards**: **Fire // Ice** in Arc Tempest and **Wax // Wane** in Verdant Guard. One card, two spells, and you cast one of them — so the card shows up as **two** plays in your list, **Cast Fire** and **Cast Ice**, each with its own cost. There is no play that casts the card as itself, because there is no such spell. Fire is {1}{R} for two damage split between one or two things; Ice is {1}{U} to tap any permanent and draw a card; Wax is {G} for +2/+2 until end of turn; Wane is {W} to destroy an enchantment. Two things to know. On the stack it is **only** the half you cast, so a Counterspell aimed at your Fire is answering a red instant and nothing else, and "counter target creature spell" cannot touch either half. And in your graveyard afterwards it is the **whole card** again, mana value four for a Fire // Ice — which is what a Chalice of the Void set to two does *not* catch. If a half has nothing to point at, that half is simply not offered: a Wane with no enchantment on the table is not a play, and the other half still is. |
 | Send a creature on an **adventure** first | Two cards are **adventurers**: **Merfolk Secretkeeper** in Hollow Tide and **Garenbrig Carver** in Delta Bloom. Each is a creature card with a spell printed on it, so it is offered twice — **Cast Garenbrig Carver** for {2}{G} as a 3/3, or **Cast Shield's Might** for {1}{G} to give a creature +3/+3 until end of turn. Cast the spell half and the card does not go to your graveyard: it goes to **exile**, and from then on your list offers **Cast Garenbrig Carver from exile (back from its adventure)** — the same creature, for its printed cost, whenever you can afford it. That is the whole point of the mechanic: one card, used twice, a turn or two apart. Merfolk Secretkeeper's half is **Venture Deeper**, {1}{U} to mill four, and the creature is a one-mana 0/4 wall. Two things to know. The adventure half is **not** a creature spell, so an Essence Scatter cannot counter it — but it can counter the creature when it comes back. And an adventure that gets **countered** never went on an adventure: that card goes to the graveyard like any other countered spell, and there is nothing to cast later. |
 | Play a spell as a **land** instead | Two cards have a land on the back: **Hagra Mauling // Hagra Broodpit** in Ashen Rite and **Vastwood Fortification // Vastwood Thicket** in Blight Vector. The card in your hand is the spell — a three-mana instant that destroys a creature, a two-mana instant that puts a +1/+1 counter on one — and beside its cast your list also offers **Play Hagra Broodpit (the back of Hagra Mauling)**, which is a land drop rather than a spell. It comes in **tapped**: that is the printed price of never drawing a dead card, and it is why the engine's own opponent plays a basic first and keeps this one in hand until there is nothing better. Two things to know. The back face is a land *drop*, so it is one per turn like any other land, and playing it means not playing a Swamp this turn. And the card is still the **spell** everywhere else — in your hand, in your graveyard, and to anything that reads what a card costs — so a Chalice of the Void set to two does not catch a Hagra Mauling, and a Hagra Broodpit that gets destroyed goes to the graveyard as Hagra Mauling. Measured over 660 games: the Mauling was cast as removal 30 times and played as a land 30 times, and **every one of those 30 land drops was made with no other land in hand.** |
+| Use a card whose text has an **if** in it | Three cards in Forge Alliance read the board rather than just doing a thing. **Chrome Steed** is a 2/2 that is a **4/4 while you control three or more artifacts** — and the deck has twelve, counting the Steed itself. **Etched Champion** is a 1/1 with **protection from every colour** on the same condition, which in this pool means no removal spell can be pointed at it, nothing coloured can block it and nothing coloured can damage it. Both turn on and off with no announcement: play a third artifact and the board shows the new numbers, lose one and it shows the old ones. There is nothing to respond to, because nothing happened — it is what the card has always said. **Galvanic Blast** is the one that is different: one damage, or **four** if you control three artifacts **when it resolves**. Answer one of those artifacts while the Blast is on the stack and it deals one, which is the play worth knowing on both sides of the table. Measured over 660 games: Chrome Steed is a 4/4 on 56% of the turns it is in play, and the Blast deals four on 21% of its casts. |
 | Drive a **Vehicle** | Three cards are Vehicles: Sky Skiff and Renegade Freighter in Forge Alliance, Consulate Dreadnought in Rot Harvest. A Vehicle is an artifact and **not a creature at all** until it is crewed — it cannot attack, cannot block, and a sweeper that kills every creature leaves it sitting there, which is why its printed body is far above its cost. Tap it → **Crew N**, and the table taps enough of your own untapped creatures to reach N power and tells you how many before you press it (**Crew 2 (tapping 2)**). It picks your smallest creatures, because the big one is the one you want left standing. A creature that arrived this turn can still crew. The Vehicle is a creature until end of turn, and then an artifact again, still on the battlefield. Crewing *is* an activated ability, so unlike turning a morph face up it can be answered — and the creatures are tapped as the cost, so an answer leaves them sideways and the Vehicle inert. The board says **not crewed** on one that nobody is driving. |
 | Use **Walking Ballista** | Cast it and pick the number: `{X}{X}` again, so X=2 costs four mana and it arrives as a 2/2. **{1}** puts another counter on it, and **removing a counter** shoots 1 damage at any target — a creature, a player or a planeswalker. The counter is the *cost*, so it comes off before the damage resolves: firing the last one makes it a 0/0 that dies on the spot, and the damage still happens. With no counters left the shoot option is simply not offered. |
 | Use **Hangarback Walker** | Same `{X}{X}` arrival, and **{1}, {T}** grows it — so it cannot grow and attack in the same turn, which is the card. When it dies you get a 1/1 flying Thopter for **each counter it had**, counted from what was on it when it died rather than from the empty card in the graveyard. |
@@ -316,18 +317,18 @@ its plan against the fast decks, and the bot casts it the turn it can afford it.
 other, both seats, 240 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 78%  205-59   ember-rush
- 66%  173-91   verdant-guard
- 63%  167-97   forge-alliance
- 63%  166-98   dawn-tithe
- 59%  156-108  skyward-writ
+ 77%  204-60   ember-rush
+ 65%  171-93   verdant-guard
+ 65%  171-93   dawn-tithe
+ 59%  157-107  skyward-writ
+ 59%  155-109  forge-alliance
  45%  120-144  delta-bloom
- 42%  110-154  ashen-rite
- 40%  105-159  arc-tempest
- 39%  104-160  rot-harvest
- 39%  102-162  hollow-tide
- 38%   99-165  blight-vector
- 28%   74-190  tidal-mind
+ 43%  113-151  ashen-rite
+ 40%  105-159  rot-harvest
+ 39%  103-161  arc-tempest
+ 39%  103-161  blight-vector
+ 38%  100-164  hollow-tide
+ 30%   79-185  tidal-mind
 ```
 
 **Tidal Mind is 27% in that run rather than 22%, and one card did it.** The table had said "the
@@ -366,7 +367,15 @@ a one-mana +2/+2 and that is better than the Naturalize it replaced. Delta Bloom
 Might and then casts the creature back out of exile 95% of the time, which is two cards in one slot
 in a deck that wants bodies early.
 
-**And the two modal cards after them moved nothing either**, which is what "free" looks like on a
+**Forge Alliance is four points lower in that run than in the one before it, and the change that
+did it measured +9 and +8 of 264 on two other seed sets.** All three readings are inside the
+eighteen-game floor, so the three metalcraft cards are **free rather than good** — and the −12 is
+printed beside the two positives because a measurement at the floor is one the instruments cannot
+resolve. What `deck-table` cannot show at all is whether the ability those cards are *for* was ever
+live, and `metalcraft.mjs` can: Chrome Steed is a 4/4 on **56%** of the turns it is on the board, at
+a mean of 2.6 artifacts.
+
+**And the two modal cards before them moved nothing either**, which is what "free" looks like on a
 table: Ashen Rite 44% to 42% and Blight Vector unchanged at 38%, against paired probes of +2 and −4
 of 264 — the same two points, read twice. What the table cannot show is the thing those two cards
 are for, and `halves-use` can: Hagra Mauling was cast as removal 30 times and played as a land 30
@@ -517,7 +526,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and fifty-seven cards, which now includes a wrath, a
+The decks share a pool of two hundred and sixty cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -747,7 +756,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (874 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (879 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (210 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
@@ -767,7 +776,7 @@ decks they pasted in).
   oracle text — which means a populated `cards` table, which means a machine that can reach
   Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
   exists, the card data does not.
-- **The engine knows two hundred and fifty-seven cards.** Everything in the twelve starter decks, plus
+- **The engine knows two hundred and sixty cards.** Everything in the twelve starter decks, plus
   the eight castable *faces* of the six cards printed with more than one. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent

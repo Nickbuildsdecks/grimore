@@ -4130,6 +4130,48 @@ for Vastwood Fortification over one of Blight Vector's two Titanic Growths, both
 floor, and both slots used more often than the cards they replaced. The twelve-deck table is
 unmoved at 28%–78%.
 
+### A static that comes and goes
+
+Every continuous effect in the engine had the same life: created, applies for a duration, expires.
+**Metalcraft** is a different shape — "as long as you control three or more artifacts" — and the
+difference is that nothing turns it on. The board changes and the creature is a 4/4; something
+leaves and it is a 2/2 again, with nothing announced and no trigger to watch.
+
+`ContinuousEffect.while` is asked every time the effect is read, which is what `definesSize` already
+does for a size that is a count of the board. **Data rather than a predicate**, because
+`state.effects` is part of the game state and the state goes to Redis — a function there would not
+survive the trip. And counted off the **printed** type line, which is load-bearing: the check runs
+inside `characteristicsOf`, so asking a permanent for its current characteristics there would
+recurse until the stack ran out.
+
+Three cards into **Forge Alliance**, which already controlled ten artifacts and counted none of
+them: **Chrome Steed** (+2/+2 while it holds), **Etched Champion** (protection from all five
+colours, which is the keyword half of the same machinery), and **Galvanic Blast** — one damage or
+four, read **once** as the spell resolves. The Blast is the contrast worth having: a condition only
+needs to live in the effect when the thing it controls persists, and answering an artifact while
+the Blast is on the stack turns it back into a Shock. The two creatures are artifacts themselves, so
+the deck's count went from ten to twelve: the cards that read the condition are part of meeting it.
+
+**`metalcraft.mjs` is the new instrument, and the mean beside the share is the half that matters.**
+Over 660 games Chrome Steed is on the board 152 turns and the condition holds on **56%** of them,
+**mean artifacts 2.6** — "nearly there, often". The same 56% on a mean of 0.8 would be "never close,
+occasionally lucky", and those are two different cards to fix. Galvanic Blast deals four damage on
+21% of its casts, which is an honest reading of a one-mana spell rather than a complaint.
+
+**The bundle is free rather than good, and three seed sets is how that got said.** Two paired probes
+measured +9 of 264 and +8 of 263; the twelve-deck table, on a third seed set, puts Forge Alliance
+four points *lower*. All three are inside the 18-game floor, so the change is unmeasurable — and
+recording the −12 beside the two positives is the only honest way to report it.
+
+**Three traps in the instruments fell out of measuring one change**, and all three are now in
+`scripts/measure/README.md`: a 1-of's "in hand" count is a fact about a handful of *shuffles* rather
+than games (at four seeds two 1-ofs in one deck read 54 and 4; at twelve, 84 and 29); Forge
+Alliance's **Disrupt Decorum reads 0%** and is not dead — goading is a pod card and this harness
+plays duels, so a cut on that reading would have removed the pool's only goad card for being
+unmeasurable; and "cast every game" is not "does what it says" — Etched Champion is cast in 28% of
+the games it reaches hand while its ability is live on 69% of the turns it is out, which is a card
+that is strong for a person and weak for this opponent.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
