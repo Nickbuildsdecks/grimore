@@ -2417,6 +2417,60 @@ const WAX_WANE: CardDef = {
   },
 };
 
+/*
+  And the third kind of printing: a modal double-faced card, where the back is a **land**
+  (CR 712).
+
+  The card's printed cost, type and mana value are the **front** face's, in every zone but the
+  battlefield: a Hagra Mauling in a hand or a graveyard is a three-mana instant, which is what a
+  Chalice of the Void counts and what a discard spell sees. The back face is not a cheaper way to
+  cast it — it is a different thing to do with the card, and it costs that turn's land drop.
+
+  Both lands come in tapped, which is the printed price of the flexibility and the whole reason the
+  cycle is fair: a deck playing one of these is a deck with twenty-two lands that are sometimes
+  spells, and the tempo it gives up for that is a turn.
+*/
+
+const HAGRA_MAULING: CardDef = {
+  name: 'Hagra Mauling',
+  typeLine: 'Instant',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  oracleText: 'Destroy target creature.',
+  colors: ['B'],
+  faces: {
+    kind: 'modal',
+    cards: [{
+      name: 'Hagra Broodpit',
+      typeLine: 'Land',
+      manaCost: '',
+      cmc: 0,
+      oracleText: 'Hagra Broodpit enters the battlefield tapped.\n{T}: Add {B}.',
+      colors: [],
+    }],
+  },
+};
+
+const VASTWOOD_FORTIFICATION: CardDef = {
+  name: 'Vastwood Fortification',
+  typeLine: 'Instant',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  oracleText: 'Put a +1/+1 counter on target creature.',
+  colors: ['G'],
+  faces: {
+    kind: 'modal',
+    cards: [{
+      name: 'Vastwood Thicket',
+      typeLine: 'Land',
+      manaCost: '',
+      cmc: 0,
+      oracleText: 'Vastwood Thicket enters the battlefield tapped.\n{T}: Add {G}.',
+      colors: [],
+    }],
+  },
+};
+
 const MERFOLK_SECRETKEEPER: CardDef = {
   name: 'Merfolk Secretkeeper',
   typeLine: 'Creature \u2014 Merfolk Wizard',
@@ -3511,8 +3565,17 @@ export const ASHEN_RITE: DeckSpec = {
     { card: BREATH_OF_DARIGAAZ, count: 1 },
     { card: LIGHTNING_BOLT, count: 1 },
     { card: FAITHLESS_LOOTING, count: 1 },
-    // Card advantage paid for in life, which is this deck's whole idea said twice.
-    { card: READ_THE_BONES, count: 1 },
+    /*
+      The modal card, for the Read the Bones that was this deck's deadest slot at 31% — cast in 16
+      of the 51 games it was in hand, because three mana and two life for two cards is a turn this
+      deck would rather spend killing something.
+
+      Hagra Mauling is the same decision made for you every game: a Murder when there is something
+      to murder, and the land this deck's eighteen were one short of when there is not. Both halves
+      are what the deck already wants, which is the only reason a card that comes in tapped is worth
+      a slot here.
+    */
+    { card: HAGRA_MAULING, count: 1 },
   ],
 };
 
@@ -4675,7 +4738,18 @@ export const BLIGHT_VECTOR: DeckSpec = {
 
     // ── The ten that make them connect ──
     { card: GIANT_GROWTH, count: 3 },
-    { card: TITANIC_GROWTH, count: 2 },
+    { card: TITANIC_GROWTH, count: 1 },
+    /*
+      One Titanic Growth for the pool's other modal card, which is three cards in one slot here.
+
+      Titanic Growth was this deck's deadest card at 23% — cast seven times in the thirty games a
+      copy was in hand, because {2}{G} for +4/+4 until end of turn is a trick a deck full of
+      one-mana infect creatures cannot usually afford on the turn it matters. A **+1/+1 counter**
+      does not wear off, which on a creature with infect is a permanent extra poison counter every
+      time it connects; and when the hand has no creature worth growing, the card is the
+      twenty-first land this twenty-land deck wanted.
+    */
+    { card: VASTWOOD_FORTIFICATION, count: 1 },
     // Hexproof and +2/+2 for one mana: this deck's removal-spell answer and its combat trick in
     // the same card, and the only card in it that protects a creature somebody is trying to kill.
     { card: BLOSSOMING_DEFENSE, count: 2 },

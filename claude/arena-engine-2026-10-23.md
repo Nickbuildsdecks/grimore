@@ -4088,6 +4088,48 @@ weakest card in a deck holding two Lightning Bolts, two Lightning Strikes, a Lav
 Lightning, two Magma Jets and a Firebolt. Cast rate measures how often a card is *castable*, not how
 much it does when it is.
 
+### The land on the back of a spell
+
+The third kind of two-faced printing, and the one a person notices across a whole game: a **modal
+double-faced card** (CR 712) with a spell on the front and a land on the back. **Hagra Mauling //
+Hagra Broodpit** is in Ashen Rite and **Vastwood Fortification // Vastwood Thicket** is in Blight
+Vector, and the card is whichever of the two the game asks for — a Murder, or the land the deck's
+eighteen were one short of.
+
+**It is a `defKey` swap, not a third mechanic.** The field D160 added describes a card *on the
+stack* and is cleared as it leaves, which is right for a split card and wrong for a permanent: an
+MDFC that arrived as its back face is that face for as long as it is on the battlefield. The
+mechanism that already does exactly that is the one copy effects use — `defKey` for what it is now,
+`printedDefKey` for what it is printed as — so `playLand` sets both and everything downstream works:
+the land's mana ability, the fact that it enters tapped, and the card in the graveyard afterwards
+being the front face again at mana value three (CR 712.4a). Sixty-three places in the engine look a
+definition up from an instance; none of them changed.
+
+**The bot's land tie-break had the same bug twice.** "Play the land that is ready now" read
+`entersTapped` off the card rather than the face, so a Hagra Mauling looked like an untapped land and
+got played over a basic Swamp that was free. Reading the face makes it play correctly for nothing:
+the basic first, and the flexible card kept in hand until there is nothing better.
+
+**And the measurement is the cleanest this project has taken.** `halves-use` now counts the land
+plays too, with the number that matters beside them — whether the hand held another land at the time:
+
+```
+Hagra Mauling (ashen-rite, modal) — cast 60 over 60 games
+  Hagra Mauling              30 (50%)  mean turn 10.6
+  Hagra Broodpit             30 (50%)  mean turn 7.8
+  played as a land with no other land in hand    30 of 30 (100%)
+```
+
+Thirty land drops the deck would otherwise have missed, no tapped land ever played over an untapped
+one, the land down on turn 7.8 and the spell cast on 10.6. And `cast-counts` reads the card at
+**100%** — used in every one of the 50 games it was in hand, which makes it the first card in the
+pool that is never a dead draw, because its worst case is a land.
+
+Both slot changes are free: +2 of 263 for Hagra Mauling over Ashen Rite's Read the Bones, −4 of 264
+for Vastwood Fortification over one of Blight Vector's two Titanic Growths, both inside the duel
+floor, and both slots used more often than the cards they replaced. The twelve-deck table is
+unmoved at 28%–78%.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

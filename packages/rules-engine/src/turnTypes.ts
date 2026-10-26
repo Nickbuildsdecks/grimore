@@ -680,7 +680,18 @@ export interface AutoOrderAction {
 
 /** One seat's own stops setting. `by` is whose preference it is, and nobody else's changes. */
 export interface AutoStopsAction { readonly type: 'auto:stops'; readonly by: SeatIndex; readonly autoPass: boolean }
-export interface AutoPlayLandAction { readonly type: 'auto:playLand'; readonly by: SeatIndex; readonly card: string }
+export interface AutoPlayLandAction {
+  readonly type: 'auto:playLand'; readonly by: SeatIndex; readonly card: string;
+  /**
+   * The back face of a modal double-faced card, played as a land instead of the card being cast
+   * as its front face (CR 712): an index into `CardDef.faces.cards`.
+   *
+   * Refused on a card with no such face, and refused when the face named is not a land — a client
+   * sending either has misread the card, and a land drop spent on something that is not a land is
+   * the kind of mistake a player cannot undo.
+   */
+  readonly half?: number;
+}
 export interface AutoCastAction {
   readonly type: 'auto:cast'; readonly by: SeatIndex; readonly card: string;
   readonly targets?: readonly Target[]; readonly x?: number;

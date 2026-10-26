@@ -2963,7 +2963,9 @@ describe('eight that needed nothing new', () => {
 
   it('Read the Bones looks at two, draws two, and costs two life', () => {
     let s = arena({
-      decks: { 0: 'ashen-rite' }, hands: { 0: ['Read the Bones'] },
+      // Dawn Tithe rather than Ashen Rite: Ashen Rite's copy became the pool's modal card, and
+      // `arena` takes the named card out of the deck the seat is playing.
+      decks: { 0: 'dawn-tithe' }, hands: { 0: ['Read the Bones'] },
       battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'] }, turn: 4, firstSeat: 0,
     });
     s = advanceTo(s, 'precombat-main');
@@ -11612,5 +11614,132 @@ describe('a card with two halves you can cast (CR 708)', () => {
     // is why the play is not even offered.
     expect(onStack(undefined).length).toBe(1);
     expect(onStack(0).length).toBe(0);
+  });
+});
+
+/*
+  The third kind of two-faced printing: a modal double-faced card, with a land on the back
+  (CR 712).
+
+  Three things are different from a split card, and each has a test here:
+
+  - the back face is **played**, not cast, and costs that turn's land drop;
+  - the chosen face survives onto the battlefield — a permanent that arrived as its back face *is*
+    that face, with that face's abilities, for as long as it is there;
+  - the **front** face is still what the card is everywhere else, so the card in a graveyard is a
+    three-mana instant rather than a land.
+*/
+describe('a land on the back of a spell (CR 712)', () => {
+  const inHand = (deck: string, name: string, lands: readonly string[]): GameState => arena({
+    decks: { 0: deck }, hands: { 0: [name] },
+    battlefield: { 0: [...lands] }, turn: 2, firstSeat: 0,
+  });
+
+  it('offers the card as a spell and its back as a land, and the land is a land drop', () => {
+    const s = advanceTo(inHand('ashen-rite', 'Hagra Mauling', ['Swamp', 'Swamp', 'Swamp']), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Hagra Mauling');
+    const mine = legalActions(s, 0).plays.filter((p) => p.card === card);
+    // The spell needs a creature to point at and there is none, so the only play on offer is the
+    // land — which is the honest half of the card and the reason it is in the deck.
+    expect(mine.map((p) => p.kind)).toEqual(['land']);
+    expect(mine[0]!.name).toBe('Hagra Broodpit');
+    expect(mine[0]!.half).toBe(0);
+    expect(mine[0]!.description).toContain('the back of Hagra Mauling');
+  });
+
+  it('plays the back face as a land: it enters tapped, taps for its colour, and spends the drop', () => {
+    let s = advanceTo(inHand('ashen-rite', 'Hagra Mauling', []), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Hagra Mauling');
+    s = apply(s, { type: 'auto:playLand', by: 0, card, half: 0 });
+    // On the battlefield it **is** the land, name and all.
+    expect(namesIn(s, 0, 'battlefield')).toEqual(['Hagra Broodpit']);
+    expect(nameOf(s, card)).toBe('Hagra Broodpit');
+    // Tapped, which is the printed price of the flexibility.
+    expect(s.instances[card]!.tapped).toBe(true);
+    // And the land drop is spent, so a second land this turn is refused.
+    expect(s.landsPlayed['0']).toBe(1);
+
+    // Untapped next turn, it taps for black — the ability is the land's, read off the face.
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.instances[card]!.tapped).toBe(false);
+    s = apply(s, { type: 'auto:activate', by: 0, card, abilityIndex: 0 });
+    expect(s.pools['0']!['B']).toBe(1);
+  });
+
+  it('refuses the front face as a land, and a face the card does not have', () => {
+    const s = advanceTo(inHand('ashen-rite', 'Hagra Mauling', []), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Hagra Mauling');
+    // No half named means the card itself, which is an instant: a land drop spent on a spell is a
+    // mistake with no way back, so it is refused rather than interpreted.
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card })).toContain('is not a land');
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card, half: 4 })).toContain('no face 4');
+  });
+
+  it('is still a three-mana instant in every other zone (CR 712.4a)', () => {
+    let s = advanceTo(inHand('ashen-rite', 'Hagra Mauling', ['Swamp', 'Swamp', 'Swamp']), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Hagra Mauling');
+    // In hand: the front face, which is what a Chalice of the Void counts and a discard spell sees.
+    expect(s.cardDefs[s.instances[card]!.defKey]!.cmc).toBe(3);
+    expect(characteristicsOf(s, s.instances[card]!).isLand).toBe(false);
+
+    // Played as the land and then destroyed: the card that reaches the graveyard is the card again.
+    s = apply(s, { type: 'auto:playLand', by: 0, card, half: 0 });
+    expect(nameOf(s, card)).toBe('Hagra Broodpit');
+    s = apply(s, { type: 'card:move', by: 0, card, toZone: 'graveyard' });
+    expect(namesIn(s, 0, 'graveyard')).toContain('Hagra Mauling');
+    expect(s.cardDefs[s.instances[card]!.defKey]!.cmc).toBe(3);
+  });
+
+  it('casts the front face instead, when that is the half the board asks for', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+      hands: { 0: ['Hagra Mauling'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'], 1: ['Centaur Courser'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const card = find(s, 0, 'hand', 'Hagra Mauling');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: courser }],
+    }));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    // The land drop was never spent, which is the trade: the card was a removal spell this game.
+    expect(s.landsPlayed['0'] ?? 0).toBe(0);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Hagra Mauling');
+  });
+
+  it('puts a counter on with the other one, which does not wear off', () => {
+    let s = arena({
+      decks: { 0: 'blight-vector' }, hands: { 0: ['Vastwood Fortification'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Glistener Elf'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const elf = find(s, 0, 'battlefield', 'Glistener Elf');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Vastwood Fortification'),
+      targets: [{ kind: 'card', id: elf }],
+    }));
+    expect([power(s, elf), toughness(s, elf)]).toEqual([2, 2]);
+    // Next turn it is still a 2/2: a counter is not a pump, which is the whole reason this card is
+    // in a deck whose creatures have infect.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect([power(s, elf), toughness(s, elf)]).toEqual([2, 2]);
+  });
+
+  it('and the bot plays the basic first, because the modal land comes in tapped', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite' }, hands: { 0: ['Hagra Mauling', 'Swamp'] },
+      battlefield: {}, turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:playLand');
+    // The Swamp, not the Broodpit: a land that is ready now beats one that is not, and keeping the
+    // flexible card is free. The tie-break reads the *face*, which is the bug this guards.
+    expect(nameOf(s, (action as { card: string }).card)).toBe('Swamp');
   });
 });

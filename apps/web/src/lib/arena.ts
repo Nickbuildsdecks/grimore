@@ -297,7 +297,16 @@ function playAction(
     ? {}
     : { division: [...division] }
   const withSacrifice = sacrifice === undefined ? {} : { sacrifice }
-  if (play.kind === "land") return { type: "auto:playLand", card: play.card }
+  /*
+    And which half of a two-faced card, for the fifth time and the same reason: a split card and an
+    adventurer are each offered as two plays on one card, and a cast with no half is either the
+    wrong spell or — on a split card, which has no printed face of its own — refused outright.
+
+    Declared before the land branch below, because a **land** play can carry one too: the back of a
+    modal double-faced card is a land you *play* rather than a spell you cast (CR 712).
+  */
+  const withHalf = play.half === undefined ? {} : { half: play.half }
+  if (play.kind === "land") return { type: "auto:playLand", card: play.card, ...withHalf }
   // A modal spell's modes were chosen by choosing *this* play: the engine offers one play per
   // legal combination, so picking a mode and picking a spell are the same gesture.
   const withModes = play.modes === undefined ? {} : { modes: [...play.modes] }
@@ -330,12 +339,6 @@ function playAction(
     as though it were in hand, and refuses the play the table had just offered.
   */
   const withForetold = play.foretold === true ? { foretold: true } : {}
-  /*
-    And which half of a two-faced card, for the fifth time and the same reason: a split card and an
-    adventurer are each offered as two plays on one card, and a cast with no half is either the
-    wrong spell or — on a split card, which has no printed face of its own — refused outright.
-  */
-  const withHalf = play.half === undefined ? {} : { half: play.half }
   /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to

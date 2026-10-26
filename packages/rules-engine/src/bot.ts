@@ -15,7 +15,7 @@
  */
 import { pactProtects } from './pacts.js';
 import { crewPlan, legalActions, type LegalActions, type LegalPlay } from './legalActions.js';
-import { zoneKey } from './cards.js';
+import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
   bottomOwed, modesOf, pendingDeclaration, pendingRetarget, preferredAmount, preferredOption,
@@ -2524,8 +2524,24 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       Cavern's two halves against each other at all. Its face-down half is a person's option rather
       than the computer's, and that is worth writing down rather than papering over.
     */
-    const ready = lands.find((p) => scriptFor(state.cardDefs[state.instances[p.card]!.defKey]?.name)?.entersTapped !== true);
-    return { type: 'auto:playLand', by: seat, card: (ready ?? lands[0]!).card };
+    /*
+      The face, not the card, because a modal double-faced card's land is on its **back**: reading
+      `entersTapped` off the front face says "ready now" about a tapped land, and the tie-break then
+      plays the flexible card over the basic that was free. The same lookup also keeps a Hagra
+      Mauling in hand while an untapped Swamp is there, which is what the card is for.
+    */
+    const landDef = (p: LegalPlay): CardDef | undefined => {
+      const card = state.cardDefs[state.instances[p.card]!.defKey];
+      return p.half === undefined ? card : card?.faces?.cards[p.half];
+    };
+    const ready = lands.find((p) => scriptFor(landDef(p)?.name)?.entersTapped !== true);
+    const chosen = ready ?? lands[0]!;
+    return {
+      type: 'auto:playLand', by: seat, card: chosen.card,
+      // Which face, for the reason every other half-carrying action says so: without it the engine
+      // is told to play the *front* of the card as a land, and refuses the play it just offered.
+      ...(chosen.half === undefined ? {} : { half: chosen.half }),
+    };
   }
 
   const options = candidateActions(state, seat, actions);

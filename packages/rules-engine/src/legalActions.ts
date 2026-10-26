@@ -680,8 +680,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       if (fromCommand) continue;
       if (sorcerySpeed && landsPlayed < landsAllowed) {
         out.push({
-          kind: 'land', card: id, name: ch.name, description: `Play ${ch.name}`,
+          kind: 'land', card: id, name: ch.name,
+          // Named as the back of the card when that is what it is, because the player is looking at
+          // a Hagra Mauling in their hand and "Play Hagra Broodpit" would otherwise read as a bug.
+          description: half === undefined
+            ? `Play ${ch.name}`
+            : `Play ${ch.name} (the back of ${state.cardDefs[inst.defKey]?.name ?? 'this card'})`,
           manaCost: '', targetSpecs: [], candidates: [], isManaAbility: false, sacrificeOptions: [],
+          ...(half === undefined ? {} : { half }),
         });
       } else if (!sorcerySpeed) {
         why(id, 'a land is played in your own main phase, with nothing on the stack');

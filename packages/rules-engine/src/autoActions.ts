@@ -656,7 +656,9 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
   };
 }
 
-function playLand(state: GameState, action: { by: SeatIndex; card: string }): Outcome {
+function playLand(
+  state: GameState, action: { by: SeatIndex; card: string; half?: number },
+): Outcome {
   requireAutomated(state);
   requirePriority(state, action.by);
   if (!atSorcerySpeed(state, action.by)) {
@@ -666,7 +668,23 @@ function playLand(state: GameState, action: { by: SeatIndex; card: string }): Ou
   if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
-  const ch = characteristicsOf(state, inst);
+  /*
+    The back face of a modal double-faced card, played as a land (CR 712).
+
+    Refused rather than ignored on a card with no such face, for the reason every other half is: a
+    client sending one has misread the card. And the land check below is asked of the **face**, so a
+    half that is not a land is refused there — a land drop spent on a sorcery is a mistake with no
+    way back.
+  */
+  const faceDef = action.half === undefined
+    ? undefined
+    : state.cardDefs[inst.defKey]?.faces?.cards[action.half];
+  if (action.half !== undefined && faceDef === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      `${state.cardDefs[inst.defKey]?.name ?? 'that card'} has no face ${action.half}`);
+  }
+  const faceKey = faceDef === undefined ? undefined : defKeyFor(faceDef);
+  const ch = characteristicsOf(state, faceKey === undefined ? inst : { ...inst, castAs: faceKey });
   if (!ch.isLand) throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} is not a land`);
   const played = state.landsPlayed[String(action.by)] ?? 0;
   // One, plus whatever something has given you this turn (CR 505.5b). The allowance is read here
@@ -680,6 +698,22 @@ function playLand(state: GameState, action: { by: SeatIndex; card: string }): Ou
   }
 
   let next = relocate(state, inst, 'battlefield', action.by, 'bottom');
+  /*
+    And on the battlefield it **is** the back face, for as long as it is there.
+
+    Through `defKey` rather than `castAs`, which is the one place a modal card differs from a split
+    one: a permanent's script, its mana ability, whether it enters tapped and everything else in the
+    engine is looked up from `defKey`, so pointing that at the land is what makes the land work
+    without a single other reader being told that two-faced cards exist. The card goes in
+    `printedDefKey`, which `relocate` already puts back on the way off the battlefield — so the card
+    in the graveyard is the front face again (CR 712.4a), exactly as a Clone stops being a copy.
+
+    Set **before** `settle`, because `settle`'s arrivals loop is what reads `entersTapped` off the
+    script — and the script it has to read is the land's.
+  */
+  if (faceKey !== undefined) {
+    next = withInstance(next, inst.id, { defKey: faceKey, printedDefKey: inst.defKey });
+  }
   next = { ...next, landsPlayed: { ...next.landsPlayed, [String(action.by)]: played + 1 } };
   /*
     No entry trigger raised here, and that is a fix rather than an omission.

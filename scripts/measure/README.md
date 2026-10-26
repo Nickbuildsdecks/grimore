@@ -30,7 +30,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `monarch.mjs` | who takes the crown, how long it is held, and what it drew | `SEEDS=6 node scripts/measure/monarch.mjs` |
 | `poison.mjs` | is the poison win condition reached, or only theoretical? | `SEEDS=6 node scripts/measure/poison.mjs` |
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
-| `halves-use.mjs` | which half of a two-faced card gets cast, and does the adventure come back? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
+| `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -110,6 +110,15 @@ one-mana +2/+2 wearing a second name. And for an adventurer the honest number is
 adventures were cast, it is **how many creatures came back out of exile**: Garenbrig Carver is 65
 adventures and 62 returns, which is the mechanic working, while a card at 65 and 9 would be a
 sorcery that had quietly eaten a creature.
+
+**For a modal card the question is not "which half" but "was the other one needed".** The back face
+of a modal double-faced card is a *land*, so a split of the uses says almost nothing on its own —
+50/50 is what a reasonable bot does with a card that is a removal spell when there is something to
+kill and a land when there is not. The number that means something is the one beside it: **how many
+of those land plays were made with no other land in hand**. Hagra Mauling reads 30 spells, 30 lands,
+and **30 of 30 land plays with nothing else to play** — thirty land drops the deck would otherwise
+have missed, which is the whole argument for the card. A reading of, say, 12 of 30 would be the
+opposite finding: a bot spending a flexible card as a tapped land while an untapped one sat in hand.
 
 **A half nobody casts is not automatically a bad card.** The same Wax // Wane that never casts one
 of its halves measured **+19 of 264** against the field, because the half it does cast is better

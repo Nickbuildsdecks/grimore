@@ -69,7 +69,7 @@ export interface CardDef {
 /**
  * A card with more than one castable face, and which kind of printing it is.
  *
- * Two kinds, because the rules differ in exactly two places and nowhere else:
+ * Three kinds, because the rules differ in a few places and nowhere else:
  *
  * - `split`: the card is **only** castable as one of its halves, and the whole card's printed
  *   characteristics — the combined cost, the summed mana value — are what it has everywhere but
@@ -77,12 +77,26 @@ export interface CardDef {
  * - `adventure`: the card itself is castable (it is a creature card), and `cards` holds the one
  *   instant or sorcery it may instead be cast as. An adventure that resolves is exiled rather than
  *   put into a graveyard, and its owner may then cast the creature out of exile.
+ * - `modal`: a modal double-faced card (CR 712). The front face is the card in every zone but the
+ *   battlefield, and the back face is a thing you may have *instead* — in this pool a land, which
+ *   is **played** rather than cast and costs that turn's land drop. A permanent that arrived as its
+ *   back face stays that face for as long as it is on the battlefield, which is the one place these
+ *   differ from the other two: `playLand` points the instance's `defKey` at the face and keeps the
+ *   card in `printedDefKey`, so every script, ability and mana source downstream reads the land
+ *   with no changes at all — and `relocate`, which already restores `printedDefKey` on the way off
+ *   the battlefield, makes the card in the graveyard the front face again (CR 712.4a).
  *
- * Everything else about the two is the same, which is why they share a field: a face is a
+ * Everything else about the three is the same, which is why they share a field: a face is a
  * definition, casting one is a cast, and the half on the stack is the half that resolves.
+ *
+ * The one shape deliberately **not** built is a modal back face that is a *spell* resolving into a
+ * permanent — a creature on the back of a sorcery. Nothing in the pool is one, and the path would
+ * be a guess: `castAs` describes a card on the stack and is cleared as it leaves, so such a
+ * permanent would arrive as its front face. A card that needs it should add the branch with a test,
+ * rather than find out.
  */
 export interface CardFaces {
-  readonly kind: 'split' | 'adventure';
+  readonly kind: 'split' | 'adventure' | 'modal';
   readonly cards: readonly CardDef[];
 }
 

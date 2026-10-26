@@ -7236,3 +7236,65 @@ the shuffle, it did. `seen.swung` now needs `[1-9]\d*` attackers, and the three-
 overlay is skipped on an empty declaration rather than spent proving nothing. Found by changing four
 deck lists, which is the second time this project has had a browser check that could not pass on a
 board the game was entitled to build.
+
+## D161 — The land on the back: a modal card is a `defKey` swap, not a third mechanic
+
+**Decision: add `faces.kind: 'modal'` and play the back face by pointing the instance's `defKey` at
+it, keeping the card in `printedDefKey`. The permanent then *is* the land, for every reader in the
+engine, with no reader told that two-faced cards exist.**
+
+A modal double-faced card (CR 712) has a spell on the front and a land on the back, and the land is
+**played** rather than cast — it costs that turn's land drop. Two cards: **Hagra Mauling // Hagra
+Broodpit** in Ashen Rite and **Vastwood Fortification // Vastwood Thicket** in Blight Vector.
+
+**Why not `castAs`, which D160 built for exactly this shape.** `castAs` describes a card *on the
+stack* and is cleared on the way off it, which is right for a split card and wrong for a permanent:
+an MDFC that arrived as its back face is that face for as long as it is on the battlefield. The
+mechanism that already does precisely that is the one copy effects use — `defKey` for what it is
+now, `printedDefKey` for what it is printed as, and `relocate` restoring the second on the way off
+the battlefield. So `playLand` sets both, and:
+
+- the land's **mana ability** works, because `manaSources` looks the script up by `defKey`;
+- it **enters tapped**, because `settle`'s arrival loop reads `entersTapped` off the same key — which
+  is why the swap happens before `settle` and not after;
+- the card in the graveyard afterwards is the **front face**, mana value three, which is CR 712.4a
+  and came for free from the line that un-copies a Clone.
+
+Sixty-three places in the engine look a definition up from an instance. Nought of them changed.
+
+**The bot needed one fix and it was the same bug twice.** Its land tie-break — "play the land that
+is ready now" — read `entersTapped` off the *card* rather than the face, so a Hagra Mauling looked
+like an untapped land and got played over a basic Swamp that was free. Reading the face makes the
+tie-break do the right thing for nothing: the basic goes first, and the flexible card stays in hand
+until there is nothing better, which is how the card is meant to be used.
+
+**`halves-use` gained the number the mechanic is actually for.** A 50/50 split of uses says nothing
+on its own; what says something is whether the hand held another land at the moment the back face
+was played. Over 660 games:
+
+```
+Hagra Mauling (ashen-rite, modal) — cast 60 over 60 games
+  Hagra Mauling              30 (50%)  mean turn 10.6
+  Hagra Broodpit             30 (50%)  mean turn 7.8
+  played as a land with no other land in hand    30 of 30 (100%)
+```
+
+**Thirty land drops the deck would otherwise have missed, and not one tapped land played over an
+untapped one.** The turns say the rest: the land goes down on turn 7.8 and the spell is cast on
+10.6 — early as a land, late as removal, which is the card doing both jobs rather than one.
+
+**And the first card in the pool that is never a dead draw.** `cast-counts` reads Hagra Mauling at
+**100% — used in all 50 of the 88 games it was in hand**, because the worst case is a land. Every
+other card in the pool has a floor set by how often it is castable; this one has none.
+
+**Both changes are free, and the slot usage went up.** Hagra Mauling for Ashen Rite's Read the Bones
+(31%, cast in 16 of 51 games in hand) measures **+2 of 263**; Vastwood Fortification for one of
+Blight Vector's two Titanic Growths (23%, cast 7 of 30) measures **−4 of 264**. Both inside the
+18-game duel floor (D86), and both slots are used more often than before: Vastwood Fortification is
+33% against the Titanic Growth's 25%. The twelve-deck table is unmoved — 28%–78%, Ashen Rite 42%
+against 44%, which is the same two points the probe put inside the floor.
+
+**One shape deliberately left unbuilt**, and written into `CardFaces` rather than discovered later:
+a modal back face that is a *spell* resolving into a permanent — a creature on the back of a sorcery.
+`castAs` would clear as it left the stack and the permanent would arrive as its front face. Nothing
+in the pool is one, so the branch is not there; a card that needs it should add it with a test.

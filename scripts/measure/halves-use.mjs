@@ -55,9 +55,35 @@ if (twoFaced.size === 0) {
 
 const stats = new Map(); // card name -> counters
 const row = (name) => {
-  const found = stats.get(name) ?? { byFace: new Map(), printed: 0, back: 0, backTurns: [], games: 0 };
+  const found = stats.get(name) ?? {
+    byFace: new Map(), printed: 0, back: 0, backTurns: [], games: 0, onlyLand: 0, landPlays: 0,
+  };
   stats.set(name, found);
   return found;
+};
+
+/**
+ * Whether this seat's hand holds any *other* land it could have played instead.
+ *
+ * The number that says whether a modal card's land half earned its slot. A deck playing one of
+ * these is a deck with twenty-one lands that are sometimes spells, and the claim is that it misses
+ * fewer land drops — so the honest question at the moment the back face is played is "was this the
+ * only land you had?". A yes is a land drop the deck would otherwise have missed; a no is a card
+ * spent as a tapped land while an untapped one sat in hand, which is the bot playing badly.
+ *
+ * Counts a *modal* card's land face as a land in hand too, because that is what it is: two Hagra
+ * Maulings in hand is two land drops available, however it feels.
+ */
+const hasOtherLand = (st, seat, exceptId) => {
+  for (const id of st.zones[`${seat}:hand`] ?? []) {
+    if (id === exceptId) continue;
+    const def = st.cardDefs[st.instances[id]?.defKey ?? ''];
+    if (def === undefined) continue;
+    if (/\bland\b/i.test(def.typeLine)) return true;
+    if (def.faces?.kind === 'modal'
+      && def.faces.cards.some((f) => /\bland\b/i.test(f.typeLine))) return true;
+  }
+  return false;
 };
 const face = (r, name) => {
   const found = r.byFace.get(name) ?? { casts: 0, turns: [] };
@@ -81,6 +107,21 @@ function duel(seed, decks) {
     if (action === null) break;
     const name = action.card === undefined ? undefined : nameOf(s, action.card);
     const card = name === undefined ? undefined : twoFaced.get(name);
+    /*
+      A modal card's back face is **played**, not cast, so it never reaches the branch below.
+
+      Counted here as a use of that face, like any other half — and with the one number the
+      mechanic is actually for beside it: whether the hand held another land at the time.
+    */
+    if (card !== undefined && action.type === 'auto:playLand' && action.half !== undefined) {
+      seen.add(name);
+      const r = row(name);
+      const f = face(r, card.faces[action.half] ?? `face ${action.half}`);
+      f.casts += 1;
+      f.turns.push(s.turn);
+      r.landPlays += 1;
+      if (!hasOtherLand(s, seat, action.card)) r.onlyLand += 1;
+    }
     if (card !== undefined && action.type === 'auto:cast') {
       seen.add(name);
       const r = row(name);
@@ -128,13 +169,18 @@ const mean = (xs) => (xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.l
 console.log(`${games} games, seeds ${SEEDS} from ${SEED0}\n`);
 for (const [name, { deck, kind, faces }] of twoFaced) {
   const r = stats.get(name) ?? { byFace: new Map(), printed: 0, back: 0, backTurns: [], games: 0 };
-  const names = kind === 'adventure' ? [name, ...faces] : faces;
+  const names = kind === 'split' ? faces : [name, ...faces];
   const total = names.reduce((n, f) => n + (r.byFace.get(f)?.casts ?? 0), 0);
   console.log(`${name} (${deck}, ${kind}) — cast ${total} over ${r.games} games`);
   for (const f of names) {
     const got = r.byFace.get(f) ?? { casts: 0, turns: [] };
     const share = total === 0 ? 0 : Math.round((100 * got.casts) / total);
     console.log(`  ${f.padEnd(24)} ${String(got.casts).padStart(4)} (${share}%)  mean turn ${mean(got.turns).toFixed(1)}`);
+  }
+  if (kind === 'modal') {
+    const share = r.landPlays === 0 ? 0 : Math.round((100 * r.onlyLand) / r.landPlays);
+    console.log(`  played as a land with no other land in hand  ${String(r.onlyLand).padStart(4)}`
+      + ` of ${r.landPlays} (${share}%)`);
   }
   if (kind === 'adventure') {
     const adventures = r.byFace.get(faces[0])?.casts ?? 0;

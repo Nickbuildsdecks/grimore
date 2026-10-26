@@ -5234,6 +5234,46 @@ const SHIELDS_MIGHT: CardScript = {
   },
 };
 
+/*
+  A land on the **back** of a spell: a modal double-faced card (CR 712).
+
+  Four scripts for two cards, and the two land scripts are the point: a modal card's back face is a
+  land that is *played*, so it needs a definition with a mana ability like any other land, and
+  nothing about it is special beyond being on the back of something else. `tapLand` is the shape the
+  whole printed cycle shares — one colour, and it comes in tapped, which is the price of the
+  flexibility.
+*/
+
+/** One colour, and it enters tapped: the back half of every modal card in this pool. */
+const tapLand = (name: string, type: 'W' | 'U' | 'B' | 'R' | 'G'): CardScript => ({
+  name,
+  entersTapped: true,
+  abilities: [{ cost: { tap: true }, description: `{T}: Add {${type}}.`, produces: [type] }],
+});
+
+const HAGRA_MAULING: CardScript = {
+  name: 'Hagra Mauling',
+  // See `CardScript.removesACreature`: not cast with nothing of theirs to point at — which for this
+  // card is the whole decision, because the alternative is a land.
+  removesACreature: true,
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : destroy(c.state, id);
+  },
+};
+
+const VASTWOOD_FORTIFICATION: CardScript = {
+  name: 'Vastwood Fortification',
+  targets: [TARGET_CREATURE],
+  // A **counter**, not a pump: it does not wear off at end of turn, which is the difference between
+  // this and a Giant Growth and the reason it is worth a card in a deck whose creatures have infect.
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : addCounters(c.state, id, '+1/+1', 1);
+  },
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -5322,6 +5362,8 @@ const ALL: readonly CardScript[] = [
   TAINTED_STRIKE, SKITHIRYX,
   guildgate('Simic Guildgate', 'G', 'U'),
   FIRE, ICE, WAX, WANE, VENTURE_DEEPER, SHIELDS_MIGHT,
+  HAGRA_MAULING, VASTWOOD_FORTIFICATION,
+  tapLand('Hagra Broodpit', 'B'), tapLand('Vastwood Thicket', 'G'),
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
