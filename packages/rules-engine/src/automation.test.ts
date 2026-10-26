@@ -662,7 +662,7 @@ describe('state-based actions', () => {
   */
   it('gives a permanent its statics however it got onto the battlefield', () => {
     let s = advanceTo(arena({
-      decks: { 0: 'tidal-mind', 1: 'tidal-mind' },
+      decks: { 0: 'hollow-tide', 1: 'hollow-tide' },
       hands: { 0: ['Fog Bank'] },
       turn: 2, firstSeat: 0,
     }), 'precombat-main');

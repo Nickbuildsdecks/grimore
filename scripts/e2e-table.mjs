@@ -170,12 +170,17 @@ async function main() {
       Checked in the lobby rather than in the pregame picker because this is where a new player
       lands first, and because the panel is the same component in both places. The assertion is
       that it names cards: a panel that opens and says nothing would pass a "did it open" check.
+
+      The card named here is one the deck holds **three** of, which it was not at first: it asked
+      for Tidal Mind's single Counterspell, and a balance pass that cut that one card turned this
+      check red while the panel was working perfectly. A browser check that names a one-of is a
+      check about a deck list.
     */
     await tid(nick, 'solo-peek-tidal-mind').click();
     await waitFor(nick, 'peek-panel-tidal-mind');
     const peeked = (await tid(nick, 'peek-panel-tidal-mind').textContent()) ?? '';
     check('a deck says what is in it before you pick it',
-      peeked.includes('Counterspell') && peeked.includes('Lands') && peeked.includes('60 cards'),
+      peeked.includes('Vampire Nighthawk') && peeked.includes('Lands') && peeked.includes('60 cards'),
       peeked.slice(0, 120));
     check('and names the commander, which no decklist can show',
       peeked.includes('Talrand'), peeked.slice(0, 120));

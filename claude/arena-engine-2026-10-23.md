@@ -4281,6 +4281,60 @@ against Tidal Mind's weakest shared slot, came back **−2 and +4 of 288**.
 So nothing shipped, and the conclusion is one a deck list can act on rather than the "the pilot is
 bad" the last three passes stopped at: **this deck needs a way to win, not more time.**
 
+### Six slots at once, and why twelve single-slot probes had to find nothing
+
+The brief above got answered, and the deck list is the least interesting part of it.
+
+Every change to Tidal Mind had been priced one or two slots at a time, and twelve of them read as
+noise — a second Air Elemental −14, a second Exsanguinate 0, cutting the Fog Bank −2, cutting the
+Wall of Frost +4, a Magpie for a Counterspell −14, and the best of them, two Magpies for two
+counterspells, at **+6, +37, +23 and −6 on four seed sets of 288 duels**. The same four seed sets
+measure the *unchanged* list at 83, 64, 88 and 90 wins: a twenty-game swing is what this instrument
+does when nothing has changed at all.
+
+Six slots came back **+47 and +38** on two seed sets, 29% to 45% against the field — and split in
+half it vanishes again:
+
+| | seeds 3300 | seeds 8800 |
+| --- | --- | --- |
+| two Magpies + a Sedgemoor Witch (3 slots) | +8 | +20 |
+| two Bloodthirsty Aerialists + a Thorn of the Black Rose (3 slots) | +12 | +19 |
+| **all six** | **+47** | **+38** |
+
+Each half is inside the floor; together they are more than the two added up. **A deck that loses for
+want of a clock does not have a slot wrong with it, it has a shape wrong with it** — and a shape is
+not priceable one card at a time. Twelve probes found nothing because they were all asking a
+question whose answer is no.
+
+`killed-by.mjs` was the instrument that asked for this, and it answered. Same 144 games, same seed
+set as the baseline above:
+
+| | before | after |
+| --- | --- | --- |
+| record | 42-102 (29%) | **77-67 (53%)** |
+| wins on table turn | 27.6, with 21.2 life | **24.9**, with 20.6 life |
+| deaths to combat damage | 76% | 66% |
+
+The wins come nearly three table turns sooner from the same comfortable life total. It was never
+close to losing the games it won; it just took too long to end them.
+
+**And the deck at the bottom of the table turned out to be holding the pool hostage.** Nineteen of
+its forty-one card slots were the pool's only copy of that card — the Twincast, the Clone, the Turn
+to Frog, the Cackling Counterpart, the Robe of Mirrors, the Chalice of the Void — so cutting its
+deadest cards would have deleted a script's only test. That, not the measurement, is what had
+bounded three previous passes. Two cuts moved rather than went: the **Twincast to Arc Tempest** for
+a second Behold the Multiverse (+3 and +2, free — the same card tried there before measured about −9
+in a *burn* slot, so the slot was the whole difference), and the **Phyrexian Arena to Ashen Rite**
+for its Sedgemoor Witch (0 and −12, which is the entire price of the change, paid by the strongest
+deck in the field).
+
+One side-finding, in the harness rather than the pool: the rebuild turned the bot's attacker-loss
+assertion red at 13.1% against a 12% threshold, and it was not a regression. Of 44 dead attackers,
+**7 sacrificed themselves** (a Ball Lightning is sacrificed at end of turn whatever happens to it,
+so attacking with it costs nothing), **10 traded**, killing a blocker, and **27 were thrown away** —
+8.0%, which is the only one of the three the test's claim was ever about. The number had already
+drifted twice as the pool grew, and this is why.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

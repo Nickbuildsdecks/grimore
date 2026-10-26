@@ -639,6 +639,11 @@ async function main() {
     */
     if (seen.swung) {
       check('an attack is drawn on the board, from the creature to who it is attacking', seen.arrows);
+    } else if ((seen.swungPastCombat ?? 0) > 0) {
+      console.log(`      (${seen.swungPastCombat} non-empty attack(s) ran through the whole of `
+        + 'combat inside one applied action, because the defender had no legal block — the browser '
+        + 'renders the board after that, so there was no moment an arrow existed to be found. '
+        + "`arena.test.ts` owns the deterministic version of the overlay's claim.)");
     }
     await shot(nick, 'mid-game-nick');
     await shot(friend, 'mid-game-friend');

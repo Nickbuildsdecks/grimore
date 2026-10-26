@@ -386,6 +386,9 @@ async function main() {
     if (seen.swung) {
       check('an attack is drawn on the board, from the creature to whichever seat it is aimed at',
         seen.arrows);
+    } else if ((seen.swungPastCombat ?? 0) > 0) {
+      console.log(`      (${seen.swungPastCombat} non-empty attack(s) ran through combat inside one `
+        + 'applied action, so no arrow was ever on screen to find — see the arena suite.)');
     }
     if (seen.blockers) check('and asks a defending player to block', true);
     else console.log('      (no block was called for in this game — combat.test.ts covers that path)');

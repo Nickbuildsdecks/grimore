@@ -450,8 +450,9 @@ describe('blue-black control', () => {
   };
 
   it('Counterspell counters a spell on the stack, which goes to its owner’s graveyard', () => {
+    // Hollow Tide holds two Counterspells; Tidal Mind's single copy went in its rebuild.
     let s = arena({
-      decks: { 1: 'tidal-mind' },
+      decks: { 1: 'hollow-tide' },
       hands: { 0: ['Hill Giant'], 1: ['Counterspell'] },
       battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Island', 'Island'] },
       turn: 2, firstSeat: 0,
@@ -1457,7 +1458,7 @@ describe('dying, upkeep and a static effect', () => {
   });
 
   it('Phyrexian Arena draws and drains at the beginning of its controller’s upkeep only', () => {
-    let s = ready(1, 'tidal-mind', ['Phyrexian Arena'], ['Swamp', 'Swamp', 'Swamp']);
+    let s = ready(1, 'ashen-rite', ['Phyrexian Arena'], ['Swamp', 'Swamp', 'Swamp']);
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Phyrexian Arena') }));
     expect(namesIn(s, 1, 'battlefield')).toContain('Phyrexian Arena');
     const held = ids(s, 1, 'hand').length;
@@ -2333,7 +2334,7 @@ describe('replacement effects: regenerating, and entering with counters', () => 
     s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Wall of Blossoms'), toZone: 'battlefield' });
     // An enchantment on the other side, put there by hand.
     const arena2 = advanceTo(arena({
-      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      decks: { 0: 'rot-harvest', 1: 'ashen-rite' },
       hands: { 0: ['Golgari Charm'] }, battlefield: { 0: ['Swamp', 'Forest'], 1: ['Phyrexian Arena'] },
       turn: 3, firstSeat: 0,
     }), 'precombat-main');
@@ -2391,7 +2392,7 @@ describe('lands that make one of two colours', () => {
   it('is one mana and not two, so a two-drop is not offered off one gate', () => {
     // The bug this type exists to prevent: counted as both its colours a Guildgate looks like two
     // mana, the table offers a two-drop, and the engine then refuses to pay for it.
-    const s = board(1, ['Dimir Guildgate'], ['Counterspell', 'Preordain'], 'tidal-mind');
+    const s = board(1, ['Dimir Guildgate'], ['Counterspell', 'Preordain'], 'hollow-tide');
     const offered = legalActions(s, 1).plays.map((p) => p.name);
     expect(offered).toContain('Preordain');
     expect(offered).not.toContain('Counterspell');
@@ -2719,7 +2720,7 @@ describe('spells with {X} in the cost, chosen as the spell is cast', () => {
   });
 
   it('draws X cards', () => {
-    let s = withMana(1, ['Mind Spring'], ['Island', 'Island', 'Island', 'Island', 'Island'], [], 'tidal-mind');
+    let s = withMana(1, ['Mind Spring'], ['Island', 'Island', 'Island', 'Island', 'Island'], [], 'delta-bloom');
     const before = ids(s, 1, 'hand').length;
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Mind Spring'), x: 3 }));
     // Three drawn, one Mind Spring gone.
@@ -4420,8 +4421,24 @@ describe('setting what a creature is, and copying it', () => {
   });
 
   it("Cackling Counterpart copies the printed card and nothing else", () => {
+    /*
+      A pasted list rather than a starter deck, because the two cards this test needs stopped
+      sharing one: the Fog Bank left Tidal Mind in its rebuild and the Cackling Counterpart is
+      still the pool's only copy, so no shipped deck holds both. What is being tested is the copy
+      rule, not a deck.
+    */
+    const bankDeck = customDeck({
+      id: 'counterpart-test',
+      name: 'Counterpart',
+      entries: [
+        { name: 'Cackling Counterpart', count: 4 },
+        { name: 'Fog Bank', count: 4 },
+        { name: 'Island', count: 52 },
+      ],
+    }).deck;
     let s = advanceTo(arena({
-      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      decks: { 0: 'counterpart-test', 1: 'verdant-guard' },
+      deckSpecs: { 'counterpart-test': bankDeck },
       hands: { 0: ['Cackling Counterpart'] },
       battlefield: { 0: ['Island', 'Island', 'Island', 'Fog Bank'] },
       turn: 4, firstSeat: 0,
@@ -4788,7 +4805,7 @@ describe('flashback: casting a spell out of the graveyard', () => {
       answering it once and answering it twice.
     */
     let s = advanceTo(arena({
-      decks: { 0: 'tidal-mind', 1: 'tidal-mind' },
+      decks: { 0: 'tidal-mind', 1: 'hollow-tide' },
       hands: { 0: ['Think Twice'], 1: ['Counterspell'] },
       battlefield: {
         0: ['Island', 'Island', 'Island', 'Island', 'Island'],
@@ -5012,7 +5029,7 @@ describe('the library as the thing you attack', () => {
     // A Fog Bank blocks the Magpie: its combat damage is prevented in both directions, so the
     // player takes nothing and the trigger — which is about damage *dealt* — never fires.
     let s = arena({
-      decks: { 0: 'hollow-tide', 1: 'tidal-mind' },
+      decks: { 0: 'hollow-tide', 1: 'delta-bloom' },
       battlefield: { 0: ['Thieving Magpie'], 1: ['Fog Bank'] },
       turn: 4, firstSeat: 0,
     });
@@ -5229,7 +5246,7 @@ describe('damage that does not happen', () => {
    */
   const castFogBank = (theirs: readonly string[], theirHand: readonly string[] = []): GameState => {
     let s = arena({
-      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      decks: { 0: 'ember-rush', 1: 'hollow-tide' },
       hands: theirHand.length === 0
         ? { 1: ['Fog Bank'] }
         : { 0: [...theirHand], 1: ['Fog Bank'] },
@@ -6374,7 +6391,7 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
 
   it('is not offered at all when the cost cannot be paid, and counters the spell itself', () => {
     // Exactly enough to cast the Doom Blade and nothing over, against Sedgemoor Witch's Ward {3}.
-    let s = table('ashen-rite', 'Sedgemoor Witch', ['Swamp', 'Swamp'], ['Swamp']);
+    let s = table('tidal-mind', 'Sedgemoor Witch', ['Swamp', 'Swamp'], ['Swamp']);
     const witch = find(s, 1, 'battlefield', 'Sedgemoor Witch');
     const blade = find(s, 0, 'hand', 'Doom Blade');
     s = drain(passBoth(apply(s, {
@@ -6474,14 +6491,15 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     // Sedgemoor Witch's other half, which is also the pool's first token with an ability of its
     // own: `scriptFor` finds a token's script by name like any other card's.
     let s = advanceTo(arena({
-      decks: { 0: 'ashen-rite' },
-      hands: { 0: ['Lightning Bolt'] },
-      battlefield: { 0: ['Mountain', 'Sedgemoor Witch'] },
+      decks: { 0: 'tidal-mind' },
+      hands: { 0: ['Think Twice'] },
+      battlefield: { 0: ['Island', 'Island', 'Sedgemoor Witch'] },
       turn: 4, firstSeat: 0,
     }), 'precombat-main');
+    // Any instant will do — magecraft reads the cast and not what was cast — and a Think Twice is
+    // the cheapest one in the deck the Witch now lives in.
     s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
-      targets: [{ kind: 'player', seat: 1 }],
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Think Twice'),
     })));
     expect(namesIn(s, 0, 'battlefield')).toContain('Pest');
 
@@ -6855,7 +6873,7 @@ describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.
       hands: { 1: ['Dirgur Nemesis'] },
       battlefield: {
         0: ['Hill Giant'],
-        1: ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Swamp', 'Swamp'],
+        1: ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Swamp', 'Swamp', 'Swamp'],
       },
       turn: 4, firstSeat: 1,
     }), 'precombat-main');
@@ -7526,16 +7544,16 @@ describe('foretell: {2} to hide a card in exile, and a cheaper cost later (CR 70
     Two rules carry the mechanic and both are checked in one place rather than in the scripts: it is
     taken during your own turn, and a foretold card cannot be cast on the turn it was foretold.
   */
-  const holding = (name: string, lands: readonly string[]): GameState => {
+  const holding = (name: string, lands: readonly string[], deck = 'tidal-mind'): GameState => {
     let s = advanceTo(arena({
-      decks: { 1: 'tidal-mind' }, hands: { 1: [name] }, battlefield: { 1: [...lands] },
+      decks: { 1: deck }, hands: { 1: [name] }, battlefield: { 1: [...lands] },
       turn: 4, firstSeat: 1,
     }), 'precombat-main');
     return tapAllLands(s, 1);
   };
 
   it('is offered for {2} beside the printed cast, and takes the card to exile face down', () => {
-    let s = holding('Behold the Multiverse', ['Island', 'Island', 'Island', 'Island']);
+    let s = holding('Behold the Multiverse', ['Island', 'Island', 'Island', 'Island'], 'arc-tempest');
     const card = find(s, 1, 'hand', 'Behold the Multiverse');
     const plays = legalActions(s, 1).plays.filter((p) => p.card === card);
     // Two things to do with one card: cast it for {3}{U}, or foretell it for {2}.
@@ -7573,7 +7591,7 @@ describe('foretell: {2} to hide a card in exile, and a cheaper cost later (CR 70
   });
 
   it('cannot be cast on the turn it was foretold, and is cast for the cheaper cost after that', () => {
-    let s = holding('Behold the Multiverse', ['Island', 'Island', 'Island', 'Island']);
+    let s = holding('Behold the Multiverse', ['Island', 'Island', 'Island', 'Island'], 'arc-tempest');
     const card = find(s, 1, 'hand', 'Behold the Multiverse');
     s = apply(s, { type: 'auto:foretell', by: 1, card });
 
@@ -7606,7 +7624,7 @@ describe('foretell: {2} to hide a card in exile, and a cheaper cost later (CR 70
       that says which is which is worth a test of its own. A counterspell on the stack that nobody
       could read would be a table nobody could play at.
     */
-    let s = holding('Behold the Multiverse', ['Island', 'Island', 'Island', 'Island']);
+    let s = holding('Behold the Multiverse', ['Island', 'Island', 'Island', 'Island'], 'arc-tempest');
     const card = find(s, 1, 'hand', 'Behold the Multiverse');
     s = apply(s, { type: 'auto:foretell', by: 1, card });
     expect(s.instances[card]!.faceDown).toBe(true);
@@ -9539,7 +9557,7 @@ describe('evasion: can’t be blocked, and landwalk (CR 702.14)', () => {
     against a deck without.
   */
   const boards = (mine: readonly string[], theirs: readonly string[]): GameState => advanceTo(arena({
-    decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+    decks: { 0: 'ashen-rite', 1: 'delta-bloom' },
     battlefield: { 0: ['Swamp', ...mine], 1: [...theirs] },
     turn: 4, firstSeat: 0,
   }), 'declare-attackers');
@@ -9566,7 +9584,7 @@ describe('evasion: can’t be blocked, and landwalk (CR 702.14)', () => {
 
   it('a River Boa is unblockable while the other player controls an Island', () => {
     const s = advanceTo(arena({
-      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
+      decks: { 0: 'verdant-guard', 1: 'delta-bloom' },
       battlefield: { 0: ['Forest', 'River Boa'], 1: ['Island', 'Fog Bank'] },
       turn: 4, firstSeat: 0,
     }), 'declare-attackers');
@@ -9616,7 +9634,7 @@ describe('evasion: can’t be blocked, and landwalk (CR 702.14)', () => {
       make, naming the wall against the Soul is refused and the refusal says why.
     */
     let s = advanceTo(arena({
-      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      decks: { 0: 'ashen-rite', 1: 'delta-bloom' },
       battlefield: { 0: ['Swamp', 'Tormented Soul', 'Doomed Dissenter'], 1: ['Island', 'Fog Bank'] },
       turn: 4, firstSeat: 0,
     }), 'declare-attackers');
@@ -9982,7 +10000,7 @@ describe('Twincast: copying a spell, and choosing where the copy points', () => 
       real Counterspell cast by a real player rather than an assertion about a list.
     */
     let s = advanceTo(arena({
-      decks: { 0: 'copy-test', 1: 'tidal-mind' },
+      decks: { 0: 'copy-test', 1: 'hollow-tide' },
       deckSpecs: { 'copy-test': copyDeck },
       hands: { 0: ['Lightning Bolt', 'Twincast'], 1: ['Counterspell'] },
       battlefield: {
@@ -10822,7 +10840,7 @@ describe('the combat triggers: a creature blocking, and an attacker getting thro
       decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
       battlefield: {
         0: ['Forest', 'Forest', 'Grizzly Bears', 'Llanowar Elves'],
-        1: ['Island', 'Island', 'Wall of Frost', 'Fog Bank'],
+        1: ['Island', 'Island', 'Wall of Frost', 'Ophidian'],
       },
       turn: 4, firstSeat: 0,
     }), 'declare-attackers');

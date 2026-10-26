@@ -1114,6 +1114,27 @@ const EXSANGUINATE: CardDef = {
   colors: ['B'],
 };
 
+/*
+  Bloodthirsty Aerialist, declared here rather than with Dawn Tithe's own cards.
+
+  It was written for the tenth deck, where every third card gains life; it is read here too, by
+  the deck below, because three Vampire Nighthawks and an Exsanguinate are also lifegain and a
+  2/2 flier that grows off them is the cheapest clock these colours have. The declaration moved
+  up the file because a `const` is only in scope after its own line: `TIDAL_MIND` is built two
+  thousand lines before Dawn Tithe's section, and referring to it from there threw at import.
+*/
+
+const BLOODTHIRSTY_AERIALIST: CardDef = {
+  name: 'Bloodthirsty Aerialist',
+  typeLine: 'Creature \u2014 Vampire Soldier',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Flying\nWhenever you gain life, put a +1/+1 counter on Bloodthirsty Aerialist.',
+  colors: ['B'],
+};
+
 // ── Green-black graveyard ────────────────────────────────────────────────────────────────────────
 
 const FLESHBAG_MARAUDER: CardDef = {
@@ -2848,8 +2869,18 @@ export const TIDAL_MIND: DeckSpec = {
   description: 'Blue-black control. Counter what matters, kill what lands, and win in the air.',
   commander: TALRAND,
   cards: [
-    { card: ISLAND, count: 7 },
-    { card: SWAMP, count: 7 },
+    /*
+      Ten Islands' worth of blue and eleven Swamps' worth of black, where it used to be level.
+
+      One land, and the only change in this deck's history that shipped without clearing the
+      floor: +2 and +3 on two seed sets, which is nothing. It ships on the pips rather than on the
+      number. After the rebuild at the bottom of this list the deck casts four double-black spells
+      — three Nighthawks, a Murder, a Sedgemoor Witch and a Thorn of the Black Rose — against two
+      double-blue, and nine black sources was already the thinner half before six more black cards
+      arrived. The measurement's job here was only to show the swap costs nothing, and it did.
+    */
+    { card: ISLAND, count: 6 },
+    { card: SWAMP, count: 8 },
     { card: DIMIR_GUILDGATE, count: 2 },
     { card: LONELY_SANDBAR, count: 2 },
     /*
@@ -2885,9 +2916,14 @@ export const TIDAL_MIND: DeckSpec = {
       for the same text, and Cancel and Soul Manipulation are this pool's only copies of their
       cards, so cutting them would orphan two scripts. The pool's structure sets where this stops,
       not the measurement.
+
+      **The Counterspell did eventually go**, in the six-slot rebuild at the bottom of this list,
+      and the reason it could is the reason it was kept twice: it is the one counterspell here that
+      the pool holds four other copies of. Cancel, Disallow, Saw It Coming and Soul Manipulation are
+      all still in the deck, so a hand of answers is still a hand of answers — what left was the
+      fourth copy of a card the opponent has already seen.
     */
-    { card: COUNTERSPELL, count: 1 },
-    // A second counter that is not a second Counterspell: a hand of answers should not be two
+    // Three counters, none of them a second copy of another: a hand of answers should not be two
     // copies of one card.
     { card: CANCEL, count: 1 },
     /*
@@ -2948,55 +2984,29 @@ export const TIDAL_MIND: DeckSpec = {
       second Preordain, which is the cheapest card in the deck to be holding one fewer of.
     */
     { card: TURN_TO_FROG, count: 1 },
-    /*
-      Twincast, for the second Omenspeaker.
-
-      The pool's only card that copies a *spell*, and the second after the Strionic Resonator whose
-      "you may choose new targets for the copy" is answered while it resolves. It is here rather
-      than in Arc Tempest because this is the deck that can afford four mana and the deck with
-      things worth copying: four counterspells, four removal spells, and Cackling Counterpart
-      already in it.
-
-      **The deck was chosen by measurement and the instrument said why.** In Arc Tempest it cost
-      about nine games in 240 whatever it replaced (−8 and −10 on two seed sets in the Lava Spike's
-      slot, −9 against a second Faithless Looting); here it is **−4 of 240**, inside the floor. The
-      difference is not the card, it is what gets copied: Arc Tempest cast it 23 times in 120 duels
-      and spent seven of those copying a *cantrip*, which is four mana for one card in a deck whose
-      clock starts on turn three. This deck casts it 7 times in 120 — and all seven copy the
-      **opponent's** spell, with three of four new-target questions moving the copy. Rarely, and for
-      the thing the clause exists for.
-
-      The cut is the second Omenspeaker, and the instrument cannot tell it from cutting the Turn to
-      Frog: 58-182 against 60-180, two games of 240. So the cards decide, and here the rule decides
-      with them — Turn to Frog is the pool's only characteristic-setting trick and the only card in
-      any deck that covers that layer, so cutting it would take a rule out of the game rather than a
-      card out of a deck. The Omenspeaker is a 2/1 that scrys and this deck still has one.
-    */
-    { card: TWINCAST, count: 1 },
     { card: CACKLING_COUNTERPART, count: 1 },
     { card: PREORDAIN, count: 1 },
     // One mana that makes a creature untouchable by anybody, its own controller included — the
     // deck's way of protecting a flier it intends to win with, at the cost of never touching it
     // again.
     { card: ROBE_OF_MIRRORS, count: 1 },
-    // A 0/2 that blocks anything in the pool for ever and survives it. The deck that loses 0-15 to
-    // the fastest red deck has no creature that can stand in front of one twice; this one does it
-    // every turn, and the first copy cost the second Robe. The second is one of the three bodies
-    // the counterspells above paid for.
     /*
-      One Fog Bank, and a Wall of Frost for the other.
+      One wall, where there used to be two.
 
-      The same job and a different half of it. A Fog Bank blanks one attacker every combat for
-      ever and never kills anything; a 0/7 blocks every creature in this pool and survives, and
-      then holds whatever it blocked down through the next untap step — so the turn it buys is two
-      turns rather than one. Keeping one of each is deliberate: the Bank is the better answer to a
-      single huge creature, because toughness does not matter to it.
+      The pair was deliberate and it is written down why: a Fog Bank blanks one attacker every
+      combat for ever and never kills anything, a 0/7 blocks every creature in this pool, survives,
+      and holds whatever it blocked down through the next untap step, so each is the better answer
+      to a different board. The Bank went in the rebuild at the bottom of this list, and the Wall
+      stayed, because the second half of that reasoning is the half that also wins a game: a
+      permanent that stops a creature *for two turns* is a tempo card, and a permanent that stops
+      one for ever while the game stays level is the deck's old problem written on a card.
+
+      The Bank's script is still in the pool — three copies in Hollow Tide and one in Delta Bloom
+      — so the prevention-replacement path it is the test case for is still walked.
     */
-    { card: FOG_BANK, count: 1 },
     { card: WALL_OF_FROST, count: 1 },
     { card: JACE_BELEREN, count: 1 },
     { card: OMENSPEAKER, count: 1 },
-    { card: PHYREXIAN_ARENA, count: 1 },
     /*
       Behold the Multiverse for the Divination, and Saw It Coming for the Essence Scatter: the two
       foretell cards, in the deck foretell is for.
@@ -3013,9 +3023,17 @@ export const TIDAL_MIND: DeckSpec = {
       a {1}{U} answer to a creature is worth more to it than a {1}{U}{U} answer to anything, and
       trading the cheap one away is the opposite of what its record asks for. A three-mana
       counterspell for a three-mana removal spell is the trade that leaves the curve alone.
+
+      **One of the two foretell cards is gone and the mechanic is not.** The rebuild at the bottom
+      of this list took the Behold the Multiverse — four mana spread over two turns to draw two
+      cards, in a deck whose diagnosis was that it draws cards instead of winning — and kept the
+      Saw It Coming, which is the half of foretell this deck was built around: an answer paid for
+      on a turn with nothing else to spend the mana on. Arc Tempest still runs a Behold, so the
+      draw-and-scry half of the mechanic is still cast and still tested; what left this list was
+      the copy whose own cast rate here was 48%. The Mind Spring went with it, for the same reason
+      and with less to say about it: {X}{U}{U} to draw X is the most mana this deck can spend on
+      nothing happening.
     */
-    { card: BEHOLD_THE_MULTIVERSE, count: 1 },
-    { card: MIND_SPRING, count: 1 },
     { card: EXSANGUINATE, count: 1 },
     /*
       Dirgur Nemesis for the Sign in Blood: a 2/2 on turn three that becomes a 2/6 when it has to.
@@ -3109,6 +3127,70 @@ export const TIDAL_MIND: DeckSpec = {
     */
     { card: VAMPIRE_NIGHTHAWK, count: 3 },
     { card: AIR_ELEMENTAL, count: 1 },
+    /*
+      Six slots at once: the change that worked after twelve that did not.
+
+      `killed-by.mjs` said what was wrong in one line. Of the games this deck lost, almost none
+      were lost to running out of cards or out of time — they were lost to combat damage, on a
+      turn by which the deck had answered four or five things and killed nobody. So the fix was
+      never in doubt. **Finding a fix the instrument could see was.**
+
+      Twelve changes were priced one and two slots at a time, and all twelve read as nothing:
+      a second Air Elemental −14, a second Exsanguinate 0, a Fog Bank cut −2, a Wall of Frost cut
+      +4, one Thieving Magpie for one Counterspell −14, and the best of them — two Magpies for a
+      Counterspell and a Cancel — read +6, +37, +23 and −6 across four seed sets of 288 duels. The
+      same four seed sets measure the *unchanged* list at 83, 64, 88 and 90 wins, so a swing of
+      twenty games is what this instrument does when nothing has changed at all. Eleven of the
+      twelve probes were inside that.
+
+      Six slots are not. On two seed sets the rebuild is **+47 (83-205 to 130-157) and +38 (64-224
+      to 102-186)**, with 22 of the 24 per-opponent splits level or up, and it is the first change
+      in this deck's history that beats Forge Alliance (3-21 to 12-12) and Rot Harvest (9-15 to
+      17-6). As a win rate against the field: 29% to 45%.
+
+      **Split in half it disappears again**, which is the finding worth keeping. Magpies and the
+      Witch alone, for the Twincast, the Arena and the Counterspell: +8 and +20. Aerialists and the
+      Thorn alone, for the Behold, the Mind Spring and the Fog Bank: +12 and +19. Each half is
+      inside the floor; together they are more than the two of them added up. A deck that loses for
+      want of a clock does not have a slot wrong with it — it has a *shape* wrong with it, and a
+      shape is not priceable one card at a time. That is why eleven probes found nothing: they were
+      all asking a question whose answer is no.
+
+      What the six cards are, in the order they were added:
+
+      - **Two Thieving Magpies.** A 1/3 flier that draws a card when it connects — the only card in
+        these colours that is the clock and the card advantage on one body, which is exactly the
+        trade this deck kept getting wrong by playing the two separately.
+      - **A Sedgemoor Witch.** 3/2 menace, ward {3}, and a 1/1 for every instant or sorcery cast.
+        The deck still holds fifteen of those, so the Witch is the one card here whose body grows
+        out of the half of the deck that was already working.
+      - **Two Bloodthirsty Aerialists.** A 2/2 flier for three that takes a +1/+1 counter whenever
+        you gain life, and three Vampire Nighthawks and an Exsanguinate are the lifegain. It is the
+        deck's first card that gets *bigger* for playing its own game.
+      - **A Thorn of the Black Rose.** 2/3 deathtouch, and the monarch (CR 720). A deck with a 0/7
+        wall, four fliers and five removal spells is the deck in this pool best placed to keep the
+        crown, and the crown is a card every turn for no mana — the Phyrexian Arena's job, done by
+        something that also blocks.
+
+      **Two of the six cuts had to find homes first.** Twincast and Phyrexian Arena were the pool's
+      only copies of their cards, and cutting the last copy of a card deletes a script's only test.
+      So they moved rather than went: the Twincast to Arc Tempest for a second Behold the
+      Multiverse (+3 and +2 — free, and the deck whose whole plan is casting spells is a better
+      home for a card that copies one), and the Arena to Ashen Rite for its Sedgemoor Witch (0 and
+      −12, which is the price of this change and it is paid by the *strongest* deck in the field, so
+      the pool's spread narrows at both ends).
+
+      That constraint is this deck's own doing, and it is worth writing down: **nineteen of Tidal
+      Mind's forty-one card slots are the pool's only copy of that card.** It is where every card
+      nobody else wanted ended up, which is why its ten least-cast cards — the Twincast at 20%, the
+      Arena at 44%, the Turn to Frog, the Clone, the Cackling Counterpart, the Robe of Mirrors —
+      could not simply be cut. The deck at the bottom of the table was the deck holding the pool's
+      script coverage hostage.
+    */
+    { card: THIEVING_MAGPIE, count: 2 },
+    { card: SEDGEMOOR_WITCH, count: 1 },
+    { card: BLOODTHIRSTY_AERIALIST, count: 2 },
+    { card: THORN_OF_THE_BLACK_ROSE, count: 1 },
   ],
 };
 
@@ -3551,15 +3633,17 @@ export const ASHEN_RITE: DeckSpec = {
     // eats two creatures and feeds the drains on the way out.
     { card: BOGGART_BRUTE, count: 1 },
     /*
-      Ward {3} in the deck that least wants its creatures answered — and, more to the point, the
-      deck that turns the Pests into damage. Every instant and sorcery here makes a 1/1 that Blood
-      Artist, Zulaport Cutthroat, Bloodthrone Vampire and Vampire Aristocrat all already know what
-      to do with, which is why the Witch is in this deck rather than in Tidal Mind.
+      The Sedgemoor Witch was here, and it is in Tidal Mind now.
 
-      It cost the second Boggart Brute: the same three power with menace, for a card that also
-      wards and also builds a board.
+      The argument for keeping it was good and it is still written down: ward {3} in the deck that
+      least wants its creatures answered, and every instant or sorcery making a 1/1 that three
+      Blood Artists and two Zulaport Cutthroats know what to do with. What beat it is that Tidal
+      Mind holds fifteen instants and sorceries against this deck's ten, and that Tidal Mind had
+      nothing to attack with at all while this deck is the strongest in the pool. The Witch left
+      with the Phyrexian Arena arriving in its place at the bottom of this list, and the pair cost
+      this deck **0 and −12 games on two seed sets**. That is the whole price of the rebuild Tidal
+      Mind's write-up measures at +47 and +38, and the deck best able to pay it is this one.
     */
-    { card: SEDGEMOOR_WITCH, count: 1 },
     { card: BLOOD_ARTIST, count: 3 },
     { card: ZULAPORT_CUTTHROAT, count: 2 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },
@@ -3642,6 +3726,20 @@ export const ASHEN_RITE: DeckSpec = {
       a slot here.
     */
     { card: HAGRA_MAULING, count: 1 },
+    /*
+      Phyrexian Arena, out of Tidal Mind, for the Sedgemoor Witch that went the other way.
+
+      A card every turn for two life, in the deck that gains life back off three Blood Artists and
+      two Zulaport Cutthroats and whose commander wants the board refilled faster than it empties.
+      It was Tidal Mind's second-deadest card at 44% — four mana and a life a turn is a slow engine
+      in a deck already drawing — and it is this deck's second Dark Confidant, which is a card this
+      deck was already happy to run.
+
+      It is here rather than nowhere because cutting it from Tidal Mind would have deleted the
+      pool's only copy and with it the only test of its upkeep trigger. That is the constraint
+      Tidal Mind's own write-up is about.
+    */
+    { card: PHYREXIAN_ARENA, count: 1 },
   ],
 };
 
@@ -4267,16 +4365,23 @@ export const ARC_TEMPEST: DeckSpec = {
     // creature on the board, and the pool's only burn spell that is.
     { card: FIREBOLT, count: 1 },
     /*
-      Twincast was tried here first and measured out, which is worth leaving written down.
+      Twincast was tried here, measured out, went to Tidal Mind, and has come back.
 
-      It reads like an Izzet card in the Izzet deck: a second Fireball on the turn the game ends, a
-      second Counterspell against the decks that go over the top of this one. Against the field it
-      cost about nine games in 240 whatever it replaced — −8 and −10 in the Lava Spike's slot on two
-      seed sets, −9 against a second Faithless Looting — and the instrument says why rather than
-      leaving it a mystery: of 23 casts across 120 duels, seven copied a Lightning Bolt and seven
-      copied a *cantrip*, which is four mana for one card in a deck whose clock starts on turn
-      three. It went to Tidal Mind, where four mana is affordable and the things worth copying are
-      counterspells and removal. See `TIDAL_MIND`.
+      All three steps are worth leaving written down, because together they are the clearest thing
+      this project has measured about *slots*. It reads like an Izzet card in the Izzet deck: a
+      second Fireball on the turn the game ends, a second Counterspell against the decks that go
+      over the top of this one. In the **burn** slots it cost about nine games in 240 whatever it
+      replaced — −8 and −10 in the Lava Spike's on two seed sets, −9 against a second Faithless
+      Looting — and the instrument said why rather than leaving it a mystery: of 23 casts across
+      120 duels, seven copied a Lightning Bolt and seven copied a *cantrip*, which is four mana for
+      one card in a deck whose clock starts on turn three.
+
+      So it went to Tidal Mind, where four mana is affordable. There it was that deck's **least-cast
+      card at 20%** — 18 casts in the 89 games it reached hand — and it came out in the six-slot
+      rebuild that finally moved that deck's record. It is back here in the **second Behold the
+      Multiverse's** slot rather than a burn spell's, and there it is **+3 and +2 on two seed sets**:
+      free, inside the floor, and the deck keeps the pool's only copy of a card that copies a spell.
+      The same card, the same deck, and the slot is the whole difference.
     */
     { card: LAVA_SPIKE, count: 1 },
     // The X spell, which is what the deck's unspent mana is for on the turn the game ends.
@@ -4289,7 +4394,10 @@ export const ARC_TEMPEST: DeckSpec = {
     { card: THINK_TWICE, count: 2 },
     // Behold the Multiverse, which is the deck's two-mana play on a turn it has nothing else to do
     // and its four-mana draw-two on a turn it does.
-    { card: BEHOLD_THE_MULTIVERSE, count: 2 },
+    // One Behold rather than two, and the pool's last copy: Tidal Mind's went in its rebuild, so
+    // this is the card that keeps foretell's draw-and-scry half cast and tested. The second copy
+    // is the Twincast's slot, measured above.
+    { card: BEHOLD_THE_MULTIVERSE, count: 1 },
     { card: DIVINATION, count: 1 },
     { card: FAITHLESS_LOOTING, count: 1 },
 
@@ -4339,6 +4447,7 @@ export const ARC_TEMPEST: DeckSpec = {
       their copies.
     */
     { card: SWERVE, count: 1 },
+    { card: TWINCAST, count: 1 },
   ],
 };
 
@@ -4362,17 +4471,6 @@ const IMPASSIONED_ORATOR: CardDef = {
   toughness: '1',
   oracleText: 'Whenever another creature enters the battlefield, you gain 1 life.',
   colors: ['W'],
-};
-
-const BLOODTHIRSTY_AERIALIST: CardDef = {
-  name: 'Bloodthirsty Aerialist',
-  typeLine: 'Creature \u2014 Vampire Soldier',
-  manaCost: '{2}{B}',
-  cmc: 3,
-  power: '2',
-  toughness: '2',
-  oracleText: 'Flying\nWhenever you gain life, put a +1/+1 counter on Bloodthirsty Aerialist.',
-  colors: ['B'],
 };
 
 const CRUEL_CELEBRANT: CardDef = {

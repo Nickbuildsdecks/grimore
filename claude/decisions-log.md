@@ -7575,3 +7575,140 @@ makes a 2/2 flier per spell, three Vampire Nighthawks and an Air Elemental, and 
 its wins says it is never close to losing the games it wins — it simply does not finish the others.
 Whoever tries next should add a way to win, and `killed-by.mjs` will say whether the turn number
 moved.
+
+## D167 — Six slots at once: the change that worked after twelve that did not
+
+**Decision: rebuild six of Tidal Mind's sixty slots rather than price another one; relocate the two
+cuts the pool could not afford to lose; and split the playout harness's attacker-loss assertion into
+the three different things it had been adding together.**
+
+D166 left a brief: *the deck needs a clock, not more time*, and `killed-by.mjs` will say whether the
+turn number moved. This is that work, and the useful part is not the deck list.
+
+### Twelve probes found nothing, and the thirteenth found +42
+
+Every change to this deck has been priced one or two slots at a time, and all of them read as
+noise: a second Air Elemental **−14**, a second Exsanguinate **0**, cutting the Fog Bank **−2**,
+cutting the Wall of Frost **+4**, one Thieving Magpie for one Counterspell **−14**, and the best of
+them — two Magpies for a Counterspell and a Cancel — **+6, +37, +23 and −6** across four seed sets
+of 288 duels.
+
+**Those four numbers are the finding.** The same four seed sets measure the *unchanged* list at 83,
+64, 88 and 90 wins, so a twenty-game swing is what this instrument does when nothing has changed at
+all. Eleven of the twelve probes were inside that, and the twelfth straddled it.
+
+Six slots are not:
+
+| | seeds 3300 | seeds 8800 |
+| --- | --- | --- |
+| stock | 83-205 | 64-224 |
+| **the rebuild** | **130-157 (+47)** | **102-186 (+38)** |
+| Magpies + Witch only (3 slots) | 91-197 (+8) | 84-204 (+20) |
+| Aerialists + Thorn only (3 slots) | 95-191 (+12) | 83-205 (+19) |
+
+**Each half is inside the floor and the whole is more than the two of them added up.** That is the
+result worth keeping, and it generalises past this deck: a deck that loses for want of a clock does
+not have a *slot* wrong with it, it has a *shape* wrong with it, and a shape is not priceable one
+card at a time. Twelve probes found nothing because they were all asking a question whose answer is
+no.
+
+What went in: **two Thieving Magpies** (a flier that draws when it connects — the clock and the card
+advantage on one body), **a Sedgemoor Witch** (3/2 menace, ward {3}, a 1/1 per instant, in a deck
+still holding fifteen), **two Bloodthirsty Aerialists** (a flier that grows off three Nighthawks'
+lifelink) and **a Thorn of the Black Rose** (deathtouch, and the monarch — the Phyrexian Arena's job
+done by something that also blocks). What came out was the six lowest-cast cards: the Twincast
+(20%), the Phyrexian Arena (44%), the Counterspell (40%), the Behold the Multiverse (48%), the Mind
+Spring (73%) and the Fog Bank.
+
+### The instrument answered the question it was asked
+
+`killed-by.mjs`, same 144 games and same seed set as D166's baseline:
+
+| | before | after |
+| --- | --- | --- |
+| record | 42-102 (29%) | **77-67 (53%)** |
+| wins on table turn | 27.6, with 21.2 life | **24.9**, with 20.6 life |
+| loses on table turn | 23.1, holding 3.5 cards | 24.8, holding 3.1 cards |
+| deaths to combat damage | 76% | 66% |
+
+**The clock moved the clock.** Its wins come nearly three table turns sooner and from the same
+comfortable life total — it was never close to losing those games, it just took too long to end
+them. `cast-counts` agrees from the other side: the four new cards are cast in 77%, 78%, 79% and
+112% of the games they reach hand, where the six cut cards sat between 20% and 48%, and the deck's
+deadest slot is now **Cancel at 34%** rather than the Twincast at 20%.
+
+### The pool's orphanage, which is why two cuts had to move rather than go
+
+**Nineteen of Tidal Mind's forty-one card slots were the pool's only copy of that card.** It is
+where every card no other deck wanted ended up — the Twincast, the Clone, the Turn to Frog, the
+Cackling Counterpart, the Robe of Mirrors, the Icy Manipulator, the Chalice of the Void — and
+cutting the last copy of a card deletes its script's only test. So the deck at the bottom of the
+table was also the deck holding the pool's script coverage hostage, and that, not the measurement,
+is what had bounded every previous pass.
+
+Two cuts moved instead:
+
+- **Twincast → Arc Tempest**, for its second Behold the Multiverse: **+3 and +2**, free. The card
+  was tried there before and measured out at about −9 in the *burn* slots; the same card in the same
+  deck, in a cantrip's slot rather than a Lava Spike's, is free. The slot is the whole difference.
+- **Phyrexian Arena → Ashen Rite**, for its Sedgemoor Witch: **0 and −12**. That is the entire price
+  of this change, and it is paid by the strongest deck in the field, so the spread narrows at both
+  ends.
+
+One more change shipped **without** clearing the floor, and it is labelled as such in the source: an
+Island became a Swamp, **+2 and +3**. It ships on the pips — the rebuild added four black cards and
+two double-black ones against nine black sources — and the measurement's job was only to show it
+costs nothing.
+
+### The harness was counting three things as one
+
+The rebuild turned `playout.test.ts`'s attacker-loss assertion red: 44 of 336 attackers died, 13.1%,
+against a threshold of 12%. It was not a regression, and finding that out fixed the instrument.
+
+Of the 44: **7 sacrificed themselves** (Ball Lightning is sacrificed at the beginning of the end
+step whatever happens to it, so attacking with it costs nothing and *not* attacking wastes the
+card); **10 traded**, killing something that blocked them; **27 were thrown away** — dead with the
+defender's board intact. That last is 8.0%, and it is the only one of the three the test's claim was
+ever about. The three are now counted apart, with the raw rate still asserted loosely so a policy
+that attacked into everything would still fail. The comment above the test had already recorded this
+number drifting twice as the pool grew; this is why it drifted.
+
+Twenty-three tests also moved deck: a test that pulls a Counterspell out of Tidal Mind's library
+has to pull it out of Hollow Tide's now. Two could not simply move — the Cackling Counterpart and
+the Fog Bank stopped sharing a deck, so that test builds a two-card pasted list instead, and the
+Sedgemoor Witch's magecraft test casts a Think Twice rather than a Lightning Bolt because the Witch
+now lives in a blue deck.
+
+### What the thirteen-deck table says
+
+288 games per deck on a third seed set (`SEEDS=12 node scripts/measure/deck-table.mjs`, seeds from
+4400), against the same run before the change:
+
+```
+ 77%  223-65   ember-rush     (76%)
+ 64%  183-105  dawn-tithe     (65%)
+ 63%  181-107  verdant-guard  (63%)
+ 57%  165-123  forge-alliance (58%)
+ 57%  164-124  kindle-grove   (60%)
+ 55%  158-130  skyward-writ   (58%)
+ 43%  124-164  arc-tempest    (40%)  ← the Twincast
+ 43%  124-164  delta-bloom    (44%)
+ 41%  117-171  ashen-rite     (41%)  ← the Arena for the Witch
+ 38%  109-179  rot-harvest    (39%)
+ 38%  108-180  blight-vector  (38%)
+ 37%  107-181  tidal-mind     (28%)  ← the rebuild
+ 37%  106-182  hollow-tide    (40%)
+```
+
+**+9 points, and the cliff at the bottom of the table is a cluster.** Tidal Mind spent five runs
+eleven points below the next-worst deck; the last four rows are now 38, 38, 37 and 37, and the whole
+field spans forty points where it spanned forty-eight. Arc Tempest's +3 is the only movement in the
+run a probe predicted beforehand (+3 and +2 for the Twincast), which is the sort of agreement worth
+noting when it happens. Ashen Rite did not move at all here despite paying the price on two other
+seed sets, and Hollow Tide lost three points **with no card of its changed** — the standing caveat
+that a `deck-table` percentage is a statement about a field rather than about a deck.
+
+**What is left, and it is the same thing it has been:** the counterspells. The deck's deadest card
+is now Cancel at 34% and Disallow at 51%, and holding mana for an answer is still the one thing the
+bot cannot do. That is a pilot problem rather than a list problem, and the honest expectation is that
+a person plays this deck above 37%.

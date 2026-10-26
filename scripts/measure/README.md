@@ -259,6 +259,31 @@ arm exactly twice — 66-66 of 132, by construction. Get a floor by running a *r
 disjoint seed sets: "chase the crown" came back 70-62 and then 62-70, which is how we know this
 harness wobbles by at least ±8 games in 132. Do not believe a smaller pod result than that.
 
+**Four seed sets, not two, before believing a `deck-probe` result near the floor.** The best of
+twelve single- and two-slot probes at Tidal Mind came back **+6, +37, +23 and −6 of 288** — two of
+those four would have shipped it, and two would have buried it. The same four seed sets measure the
+*unchanged* list at 83, 64, 88 and 90 wins, which is the honest floor for a twelve-opponent 288-game
+aggregate: about twenty games, and the per-seed-set spread is the way to see it. Two seed sets are
+enough to kill a change; four are what it takes to ship a small one.
+
+**And a change too small to measure may still be the wrong size rather than the wrong change.** Each
+half of Tidal Mind's six-slot rebuild reads +8/+20 and +12/+19 — both inside that floor — and the
+whole thing reads +47/+38. The halves are not wrong about their halves; a deck whose problem is its
+*shape* has no three-card version of the fix, so probing one slot at a time can only ever return
+noise. When a dozen probes in a row come back flat, ask whether the question is the wrong size
+before concluding the deck is fine.
+
+**Before cutting a card, check whether the pool has another copy.** `defKeyFor` registers one script
+per card name and a test asserts every script has a real card behind it, so cutting the pool's last
+copy of a card deletes that script's only coverage. Nineteen of Tidal Mind's forty-one slots were the
+pool's only copy, which is what had bounded three balance passes before anybody noticed. The way out
+is to move the card to a deck that wants it rather than to keep it in a deck that does not:
+```
+node -e "const {STARTER_DECKS}=require('./packages/rules-engine/dist/index.js');
+const n='Twincast';
+console.log(Object.entries(STARTER_DECKS).filter(([,d])=>d.cards.some(e=>e.card.name===n)).map(([i])=>i))"
+```
+
 **The deck list lives in the registry, not in the harness.** Seven of these files used to write it
 out by hand, and the first `deck-table` run after the twelfth deck was added measured the same
 eleven-deck field as the day before with no warning at all. They all read
