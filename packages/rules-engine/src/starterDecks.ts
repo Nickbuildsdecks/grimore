@@ -4548,6 +4548,116 @@ export const DAWN_TITHE: DeckSpec = {
   ],
 };
 
+const GRUUL_GUILDGATE: CardDef = {
+  name: 'Gruul Guildgate',
+  typeLine: 'Land \u2014 Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Gruul Guildgate enters the battlefield tapped.\n{T}: Add {R} or {G}.',
+  colors: [],
+};
+
+/*
+  The thirteenth deck's own cards, and the colour pair twelve decks had missed.
+
+  Red-green is the one pairing nothing in this pool played, which is how the split cards found out:
+  Assault // Battery is {R} and {3}{G}, and when the split card shipped there was no deck that could
+  cast both halves, so the card sat unused while Fire // Ice and Wax // Wane went into decks. It is
+  here now, which is the cleanest kind of reason to build a deck.
+*/
+
+const RURIC_THAR: CardDef = {
+  name: 'Ruric Thar, the Unbowed',
+  typeLine: 'Legendary Creature \u2014 Ogre Warrior',
+  manaCost: '{4}{R}{G}',
+  cmc: 6,
+  power: '6',
+  toughness: '6',
+  oracleText: 'Vigilance, reach\nAll creatures must attack each combat if able.\nWhenever a player casts a noncreature spell, Ruric Thar, the Unbowed deals 6 damage to that player.',
+  colors: ['R', 'G'],
+};
+
+const ASSAULT_BATTERY: CardDef = {
+  name: 'Assault // Battery',
+  typeLine: 'Sorcery // Sorcery',
+  manaCost: '{R} // {3}{G}',
+  cmc: 5,
+  oracleText: 'Assault deals 2 damage to any target.\nCreate a 3/3 green Elephant creature token.',
+  colors: ['R', 'G'],
+  faces: {
+    kind: 'split',
+    cards: [
+      {
+        name: 'Assault',
+        typeLine: 'Sorcery',
+        manaCost: '{R}',
+        cmc: 1,
+        oracleText: 'Assault deals 2 damage to any target.',
+        colors: ['R'],
+      },
+      {
+        name: 'Battery',
+        typeLine: 'Sorcery',
+        manaCost: '{3}{G}',
+        cmc: 4,
+        oracleText: 'Create a 3/3 green Elephant creature token.',
+        colors: ['G'],
+      },
+    ],
+  },
+};
+
+const BURNING_TREE_EMISSARY: CardDef = {
+  name: 'Burning-Tree Emissary',
+  typeLine: 'Creature \u2014 Human Shaman',
+  manaCost: '{R}{G}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'When Burning-Tree Emissary enters the battlefield, add {R}{G}.',
+  colors: ['R', 'G'],
+};
+
+const GRUUL_RAGEBEAST: CardDef = {
+  name: 'Gruul Ragebeast',
+  typeLine: 'Creature \u2014 Beast',
+  manaCost: '{5}{R}{G}',
+  cmc: 7,
+  power: '6',
+  toughness: '5',
+  oracleText: 'Whenever Gruul Ragebeast or another creature enters the battlefield under your control, that creature fights target creature you don\u2019t control.',
+  colors: ['R', 'G'],
+};
+
+const SAVAGE_TWISTER: CardDef = {
+  name: 'Savage Twister',
+  typeLine: 'Sorcery',
+  manaCost: '{X}{R}{G}',
+  cmc: 2,
+  oracleText: 'Savage Twister deals X damage to each creature.',
+  colors: ['R', 'G'],
+};
+
+const RANCOR: CardDef = {
+  name: 'Rancor',
+  typeLine: 'Enchantment \u2014 Aura',
+  manaCost: '{G}',
+  cmc: 1,
+  oracleText: 'Enchant creature\nEnchanted creature gets +2/+0 and has trample.\nWhen Rancor is put into a graveyard from the battlefield, return Rancor to its owner\u2019s hand.',
+  colors: ['G'],
+};
+
+const THRAGTUSK: CardDef = {
+  name: 'Thragtusk',
+  typeLine: 'Creature \u2014 Beast',
+  manaCost: '{4}{G}',
+  cmc: 5,
+  power: '5',
+  toughness: '3',
+  oracleText: 'When Thragtusk enters the battlefield, you gain 5 life.\nWhen Thragtusk leaves the battlefield, create a 3/3 green Beast creature token.',
+  colors: ['G'],
+};
+
 const SIMIC_GUILDGATE: CardDef = {
   name: 'Simic Guildgate',
   typeLine: 'Land — Gate',
@@ -4851,6 +4961,109 @@ export const BLIGHT_VECTOR: DeckSpec = {
   ],
 };
 
+/**
+ * The thirteenth deck, and the one that exists because a card had nowhere to live.
+ *
+ * Twelve decks covered every pair of colours but one. There was no **red-green** deck, and that was
+ * invisible until the split cards shipped: Assault // Battery is {R} on one half and {3}{G} on the
+ * other, and no deck in the pool could cast both — so while Fire // Ice went into Arc Tempest and
+ * Wax // Wane into Verdant Guard, the third split card sat unwritten. A gap in a card pool is
+ * easier to see from a card than from a list of decks.
+ *
+ * **What the pair is for.** Red is the colour that kills a creature for one mana and green is the
+ * colour that plays a bigger one for five, and the deck is the two in that order: eight cheap
+ * interactive cards, four ways to get to five mana early, and then creatures the rest of the pool
+ * cannot block profitably. It is the only deck here whose removal is mostly *combat* — two Prey
+ * Upons and a Gruul Ragebeast, which point your creature at theirs rather than pointing a spell at
+ * anything — and that is the red-green trade in one sentence: the answers cost a creature instead
+ * of a card.
+ *
+ * **Ruric Thar is a commander that taxes the table, including its own side.** "Whenever a player
+ * casts a noncreature spell, Ruric Thar deals 6 damage to that player" is symmetric, which is the
+ * half that makes it a card rather than a beating — this deck runs fourteen noncreature cards and
+ * has to mean each one. Against the pool's three control decks it is the hardest card in the
+ * format: Tidal Mind, Hollow Tide and Skyward Writ are all counterspells and removal, and every
+ * one of those costs them a third of their life. And "all creatures must attack each combat if
+ * able" is the clause that stops a board stalling — a Fog Bank cannot sit there, and neither can
+ * ours.
+ *
+ * **The honest limit, named before it is measured:** the bot plays a deck of big creatures better
+ * than it plays a deck of answers, so expect this one to read higher on the table than it would in
+ * a person's hands. The opposite of Tidal Mind's problem, and the same cause.
+ */
+export const KINDLE_GROVE: DeckSpec = {
+  id: 'kindle-grove',
+  name: 'Kindle Grove',
+  description: 'Red-green: cheap interaction, four ways to reach five mana, and creatures nothing else in the pool blocks profitably. Ruric Thar makes every noncreature spell at the table cost six life.',
+  commander: RURIC_THAR,
+  cards: [
+    // ── Twenty-three lands, and two of them are a card when they are not a land ──
+    { card: MOUNTAIN, count: 9 },
+    { card: FOREST, count: 9 },
+    { card: GRUUL_GUILDGATE, count: 3 },
+    // The cycling pair: a land that is never a dead draw, which a deck with a six-mana commander
+    // and a seven-mana Ragebeast can afford to want.
+    { card: FORGOTTEN_CAVE, count: 1 },
+    { card: TRANQUIL_THICKET, count: 1 },
+
+    // ── Four that get to five mana a turn early ──
+    { card: LLANOWAR_ELVES, count: 2 },
+    { card: RAMPANT_GROWTH, count: 2 },
+
+    // ── Nineteen creatures, in the order the curve wants them ──
+    /*
+      The two-drop that pays for the next two-drop. Two mana back as it arrives means a second
+      Emissary, or a Borderland Marauder, on turn two — and in a deck whose commander punishes
+      noncreature spells, a creature that ramps is the only ramp that costs nothing.
+    */
+    { card: BURNING_TREE_EMISSARY, count: 2 },
+    { card: BORDERLAND_MARAUDER, count: 2 },
+    { card: AMBUSH_VIPER, count: 2 },
+    { card: RIVER_BOA, count: 1 },
+    { card: THORNWEALD_ARCHER, count: 1 },
+    { card: CENTAUR_COURSER, count: 2 },
+    // Four damage to a creature *and* a 4/2, which is the best rate in the pool for what this deck
+    // does: the removal and the body in one card, so the commander's tax never applies to it.
+    { card: FLAMETONGUE_KAVU, count: 2 },
+    { card: GIANT_SPIDER, count: 1 },
+    { card: LHURGOYF, count: 1 },
+    /*
+      Thragtusk, and the reason it is in a deck that is not a control deck: answering it is not
+      answering it. Five life as it lands and a 3/3 when it **leaves** — exiled, bounced or
+      sacrificed, not only killed — so a removal spell spent on it trades one card for half a card
+      and five life.
+    */
+    { card: THRAGTUSK, count: 2 },
+    { card: SHIVAN_DRAGON, count: 1 },
+    { card: PELAKKA_WURM, count: 1 },
+    // Seven mana for a 6/5 that kills something as it lands, and then kills something every time
+    // another creature of yours does. The deck's top end, and the card its ramp is for.
+    { card: GRUUL_RAGEBEAST, count: 1 },
+
+    // ── Fourteen cards that are not creatures, and the commander means every one of them ──
+    { card: LIGHTNING_BOLT, count: 2 },
+    { card: LIGHTNING_STRIKE, count: 2 },
+    { card: FLAME_SLASH, count: 1 },
+    // Removal that costs a creature rather than a card, which is the red-green trade and the
+    // reason this deck can run fourteen noncreature cards under its own commander.
+    { card: PREY_UPON, count: 2 },
+    { card: GIANT_GROWTH, count: 2 },
+    /*
+      Rancor, the Aura that comes back: +2/+0 and trample for one mana, and answering the creature
+      does not answer the Aura. It is the one card in this list that makes a removal spell a bad
+      trade twice.
+    */
+    { card: RANCOR, count: 2 },
+    // The split card the deck was built around. {R} for two damage, or {3}{G} for a 3/3 — the same
+    // card at either end of the curve, which is exactly what a deck of two colours wants.
+    { card: ASSAULT_BATTERY, count: 1 },
+    // The X sweeper, which this deck is the only one that can aim: everything it keeps is bigger
+    // than everything it kills.
+    { card: SAVAGE_TWISTER, count: 1 },
+    { card: HURRICANE, count: 1 },
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
@@ -4864,6 +5077,7 @@ export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [DAWN_TITHE.id]: DAWN_TITHE,
   [DELTA_BLOOM.id]: DELTA_BLOOM,
   [BLIGHT_VECTOR.id]: BLIGHT_VECTOR,
+  [KINDLE_GROVE.id]: KINDLE_GROVE,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

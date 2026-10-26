@@ -252,8 +252,13 @@ export interface StackObject {
    * rather than a thing: "whenever an opponent casts a noncreature spell, **that player** loses 2
    * life" has no referent without it, and in a two-player game the wrong reading — every opponent
    * — is indistinguishable from the right one, which is exactly the kind of bug a pod finds a year
-   * later. Not the ability's controller: that is `controller`, and for every card that needs this
-   * the two are different seats.
+   * later. Not the ability's controller: that is `controller`.
+   *
+   * **Absent means the actor was the source's own controller**, which `raise` leaves off rather
+   * than writing out. That was free while every card asking the question asked it about an
+   * *opponent*; Ruric Thar is the first that taxes the table including its own side, and reading
+   * an absent actor as "nobody" made it deal no damage to its controller at all. A card reading
+   * this field wants `actor ?? controller`.
    */
   readonly actor?: SeatIndex;
   /**

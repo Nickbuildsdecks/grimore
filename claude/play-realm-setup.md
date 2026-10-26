@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and sixty, today, across twelve starter decks. A
+cards somebody has scripted — two hundred and sixty-eight, today, across thirteen starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -302,6 +302,24 @@ removal lives. Skithiryx, the Blight Dragon leads it: a 4/4 flier with infect is
 and regenerates for {B}{B}. Its weakness is the one the numbers show plainly — every creature in it
 dies to one blocker, and it loses 3-21 to Ember Rush.
 
+**Kindle Grove** (red-green) is the thirteenth, and it exists because a card had nowhere to live:
+twelve decks covered every pair of colours but this one, which was invisible until Assault // Battery
+turned up as a split card with a red half and a green half and no deck that could cast both. Red
+kills a creature for one mana, green plays a bigger one for five, and the deck is those two in that
+order — eight cheap interactive cards, four ways to reach five mana a turn early (two Llanowar
+Elves, two Rampant Growths), and then Thragtusks, a Shivan Dragon, a Pelakka Wurm and a Gruul
+Ragebeast. It is the only deck here whose removal is mostly **combat**: two Prey Upons and the
+Ragebeast point your creature at theirs rather than pointing a spell at anything, which is the
+red-green trade — the answer costs a creature instead of a card. Two cards are worth knowing at the
+table. **Rancor** is +2/+0 and trample for one mana that **comes back to your hand** when it leaves
+the battlefield, so killing the creature does not answer the Aura. And **Thragtusk** gains five as
+it arrives and leaves a 3/3 behind when it *leaves* — exiled or bounced as well as killed — so a
+removal spell spent on it trades a card for half a card and five life. **Ruric Thar, the Unbowed**
+leads it, and he is a tax on the whole table including his own side: six damage to **whoever** casts
+a noncreature spell, and every creature in play must attack each combat if able. Against the pool's
+three control decks that is close to unbeatable — it beats Tidal Mind 20-4 — and against Ember Rush
+it is a 10-14 underdog, because a six-mana commander is four turns too slow for that one.
+
 Each two-colour deck runs a pair or three of Guildgates: one mana of either colour, and they come in
 tapped, and eight of the ten also run a pair of cycling lands. Any pairing works, including a deck
 against itself. They are not the only decks you can play, though: see *Play with your own list*.
@@ -314,21 +332,22 @@ plays it better. The same caveat applies twice over to Arc Tempest: holding up C
 its plan against the fast decks, and the bot casts it the turn it can afford it.
 
 **The decks are not all equally strong, and now there is a table of it.** Every deck against every
-other, both seats, 240 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
+other, both seats, 288 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 77%  204-60   ember-rush
- 65%  171-93   verdant-guard
- 65%  171-93   dawn-tithe
- 59%  157-107  skyward-writ
- 59%  155-109  forge-alliance
- 45%  120-144  delta-bloom
- 43%  113-151  ashen-rite
- 40%  105-159  rot-harvest
- 39%  103-161  arc-tempest
- 39%  103-161  blight-vector
- 38%  100-164  hollow-tide
- 30%   79-185  tidal-mind
+ 76%  218-70   ember-rush
+ 64%  185-103  verdant-guard
+ 64%  185-103  dawn-tithe
+ 59%  170-118  kindle-grove
+ 59%  169-119  skyward-writ
+ 58%  166-122  forge-alliance
+ 44%  128-160  delta-bloom
+ 41%  118-170  ashen-rite
+ 39%  113-175  arc-tempest
+ 39%  113-175  blight-vector
+ 39%  112-176  rot-harvest
+ 38%  108-180  hollow-tide
+ 29%   83-205  tidal-mind
 ```
 
 **Tidal Mind is 27% in that run rather than 22%, and one card did it.** The table had said "the
@@ -366,6 +385,16 @@ a one-mana +2/+2 and that is better than the Naturalize it replaced. Delta Bloom
 (45% → 47%) is the other movement worth naming, and it is the adventurer: the bot casts Shield's
 Might and then casts the creature back out of exile 95% of the time, which is two cards in one slot
 in a deck that wants bodies early.
+
+**That run is the thirteenth deck's debut, and Kindle Grove lands fifth of thirteen at 59%** — every
+row is 288 games rather than 264 because there is one more opponent, and the order above it is
+unchanged. Its own row is the matchups rather than the total: it beats **Tidal Mind 20-4**, Ashen
+Rite 19-5, Rot Harvest 17-7 and both mill decks, and it loses 10-14 to each of the three decks above
+it. That is the deck working as written — a commander that costs the whole table six life per
+noncreature spell is close to unanswerable for three control decks and four turns too slow against
+the 76% aggro deck — and it is also the limit named in the deck's own write-up before it was
+measured: the computer plays a deck of big creatures better than it plays a deck of answers, so
+expect this row to read higher than a person would make it.
 
 **Forge Alliance is four points lower in that run than in the one before it, and the change that
 did it measured +9 and +8 of 264 on two other seed sets.** All three readings are inside the
@@ -526,7 +555,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and sixty cards, which now includes a wrath, a
+The decks share a pool of two hundred and sixty-eight cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -756,7 +785,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (879 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (887 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (210 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
@@ -776,8 +805,8 @@ decks they pasted in).
   oracle text — which means a populated `cards` table, which means a machine that can reach
   Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
   exists, the card data does not.
-- **The engine knows two hundred and sixty cards.** Everything in the twelve starter decks, plus
-  the eight castable *faces* of the six cards printed with more than one. It
+- **The engine knows two hundred and sixty-eight cards.** Everything in the thirteen starter decks,
+  plus the ten castable *faces* of the seven cards printed with more than one. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent
   among its targets (CR 601.2d), a number chosen *as a spell resolves* rather than as it is cast

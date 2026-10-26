@@ -53,8 +53,8 @@ describe('starter decks', () => {
     expect(Object.keys(STARTER_DECKS).sort())
       .toEqual([
         'arc-tempest', 'ashen-rite', 'blight-vector', 'dawn-tithe', 'delta-bloom', 'ember-rush',
-        'forge-alliance', 'hollow-tide', 'rot-harvest', 'skyward-writ', 'tidal-mind',
-        'verdant-guard',
+        'forge-alliance', 'hollow-tide', 'kindle-grove', 'rot-harvest', 'skyward-writ',
+        'tidal-mind', 'verdant-guard',
       ]);
     for (const deck of Object.values(STARTER_DECKS)) {
       expect(deckSize(deck)).toBe(61);

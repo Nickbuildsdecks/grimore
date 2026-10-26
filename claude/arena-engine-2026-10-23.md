@@ -4172,6 +4172,38 @@ unmeasurable; and "cast every game" is not "does what it says" — Etched Champi
 the games it reaches hand while its ability is live on 69% of the turns it is out, which is a card
 that is strong for a person and weak for this opponent.
 
+### The thirteenth deck, and the gap only a card could show
+
+Twelve decks covered every pair of colours but one. There was no **red-green** deck, and nothing
+noticed until a card had nowhere to live: Assault // Battery is {R} on one half and {3}{G} on the
+other, so when the split cards shipped, Fire // Ice went into Arc Tempest, Wax // Wane into Verdant
+Guard, and the third card of the cycle was left out because no deck could cast both halves. A hole
+in a card pool is easier to see from a card than from a list of decks.
+
+**Kindle Grove** is eight new cards and **no new machinery**, which is what the entry is really
+about. Ruric Thar, the Unbowed is a `spell-cast` trigger plus `mustAttack` on an `all-creatures`
+scope; Gruul Ragebeast is the `etb` event's `subject` plus the same `fight` Prey Upon already had;
+Rancor is a `dies` trigger on a permanent that is not a creature; Thragtusk is `leaves`, which fires
+for exile and bounce as well as death. The only refactor was pulling `fight` out of Prey Upon so
+both cards share it — both powers have to be read before either is dealt, and writing that twice
+gets the simultaneity wrong eventually.
+
+**Two bugs, both in the engine's edges rather than in the cards.** `raise` leaves `actor` off a
+stack object when the actor is the trigger source's own controller, which was free while every card
+asking "that player" asked about an opponent — Ruric Thar taxes the table **including its own side**,
+and the first version dealt no damage at all to its controller. And `makesMana` is for a spell whose
+*whole* effect is mana: declared on Burning-Tree Emissary it made the bot hold a 2/2 in hand waiting
+for something to spend the mana on. Measured both ways on the same 192 games: **46% cast with the
+flag, 101% without**.
+
+**It debuts fifth of thirteen at 59%**, and the row is its matchups: Tidal Mind **20-4**, Ashen Rite
+19-5, Rot Harvest 17-7, both mill decks, and 10-14 against each of the three decks above it. A
+commander that costs the whole table six life per noncreature spell is close to unanswerable for
+three control decks and four turns too slow against the 76% aggro deck. The limit was written into
+the deck before it was measured, which is the only honest way to publish a 59%: the computer plays a
+deck of big creatures better than it plays a deck of answers, so this reads higher than a person
+would make it.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

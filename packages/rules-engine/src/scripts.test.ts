@@ -11871,3 +11871,165 @@ describe('a static that comes and goes: metalcraft (CR 702.75)', () => {
     expect(life(s, 1)).toBe(19);
   });
 });
+
+/*
+  The thirteenth deck's own cards: red-green, the colour pair the pool had never had.
+
+  One test per card, the way every other deck's cards were taken. Nothing here needed the engine to
+  learn anything new, which is what these are really checking: a commander that taxes noncreature
+  spells is a `spell-cast` trigger with an `actor`, a creature that makes everything fight is the
+  `etb` trigger's `subject` plus the same `fight` Prey Upon has, and an Aura that comes back is a
+  `dies` trigger on a permanent that is not a creature.
+*/
+describe('red-green: the thirteenth deck’s cards', () => {
+  /** Seat 0 on Kindle Grove, main phase, every land tapped for mana. */
+  const grove = (hand: readonly string[], lands: readonly string[], board: readonly string[] = []): GameState => {
+    let s = arena({
+      decks: { 0: 'kindle-grove' }, hands: { 0: [...hand] },
+      battlefield: { 0: [...lands, ...board] }, turn: 5, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  it('Ruric Thar hits whoever casts a noncreature spell, its own controller included', () => {
+    let s = arena({
+      decks: { 0: 'kindle-grove', 1: 'ember-rush' },
+      hands: { 0: ['Lightning Bolt'], 1: ['Shock'] },
+      battlefield: { 0: ['Mountain', 'Ruric Thar, the Unbowed'], 1: ['Mountain'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    // Its own controller first, because that is the half that makes it a card rather than a
+    // beating: six damage to seat 0 for its own Bolt, and three to seat 1 from the Bolt.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(life(s, 0)).toBe(14);
+    expect(life(s, 1)).toBe(17);
+  });
+
+  it('and makes every creature on the table attack, both sides of it', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'kindle-grove', 1: 'verdant-guard' },
+      battlefield: { 0: ['Ruric Thar, the Unbowed'], 1: ['Centaur Courser'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const mine = find(s, 0, 'battlefield', 'Ruric Thar, the Unbowed');
+    const theirs = find(s, 1, 'battlefield', 'Centaur Courser');
+    expect(characteristicsOf(s, s.instances[mine]!).mustAttack).toBe(true);
+    expect(characteristicsOf(s, s.instances[theirs]!).mustAttack).toBe(true);
+    // Vigilance and reach come off the printed line, which is what lets it attack every turn under
+    // its own clause and still block.
+    expect([...characteristicsOf(s, s.instances[mine]!).keywords].sort()).toEqual(['reach', 'vigilance']);
+  });
+
+  it('Assault deals two, and Battery makes a 3/3 — one card, either end of the curve', () => {
+    let s = grove(['Assault // Battery'], ['Mountain']);
+    const card = find(s, 0, 'hand', 'Assault // Battery');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card, half: 0, targets: [{ kind: 'player', seat: 1 }],
+    }));
+    expect(life(s, 1)).toBe(18);
+
+    let t = grove(['Assault // Battery'], ['Forest', 'Forest', 'Forest', 'Forest']);
+    t = passBoth(apply(t, {
+      type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Assault // Battery'), half: 1,
+    }));
+    const token = find(t, 0, 'battlefield', 'Elephant');
+    expect([power(t, token), toughness(t, token)]).toEqual([3, 3]);
+  });
+
+  it('Burning-Tree Emissary pays for the next two-drop as it arrives', () => {
+    let s = grove(['Burning-Tree Emissary'], ['Mountain', 'Forest']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Burning-Tree Emissary'),
+    })));
+    // Two mana spent and two back: the pool is where it started, which is the whole card.
+    expect(s.pools['0']!['R']).toBe(1);
+    expect(s.pools['0']!['G']).toBe(1);
+  });
+
+  it('Gruul Ragebeast makes the creature that arrived fight, not itself', () => {
+    let s = arena({
+      decks: { 0: 'kindle-grove', 1: 'verdant-guard' },
+      hands: { 0: ['Centaur Courser'] },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Forest', 'Gruul Ragebeast'],
+        1: ['Grizzly Bears'],
+      },
+      turn: 6, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const beast = find(s, 0, 'battlefield', 'Gruul Ragebeast');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Centaur Courser'),
+    })));
+    if (s.pendingChoice !== null) {
+      s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bears }] }));
+    }
+    // The 3/3 that entered fought the 2/2 and killed it; the Ragebeast took nothing, because the
+    // fight was never about the Ragebeast.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(damageOn(s, beast)).toBe(0);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Centaur Courser');
+  });
+
+  it('Savage Twister deals X to every creature, on both sides', () => {
+    let s = arena({
+      decks: { 0: 'kindle-grove', 1: 'verdant-guard' },
+      hands: { 0: ['Savage Twister'] },
+      battlefield: {
+        0: ['Mountain', 'Forest', 'Forest', 'Forest', 'Llanowar Elves'],
+        1: ['Grizzly Bears', 'Centaur Courser'],
+      },
+      turn: 6, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Savage Twister'), x: 2,
+    }));
+    // Two damage everywhere: the 1/1 and the 2/2 die, the 3/3 lives with damage on it.
+    expect(namesIn(s, 0, 'graveyard')).toContain('Llanowar Elves');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    expect(damageOn(s, courser)).toBe(2);
+  });
+
+  it('Rancor gives +2/+0 and trample, and comes back when it leaves the battlefield', () => {
+    let s = grove(['Rancor'], ['Forest'], ['Centaur Courser']);
+    const courser = find(s, 0, 'battlefield', 'Centaur Courser');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Rancor'),
+      targets: [{ kind: 'card', id: courser }],
+    })));
+    expect([power(s, courser), toughness(s, courser)]).toEqual([5, 3]);
+    expect(characteristicsOf(s, s.instances[courser]!).keywords.has('trample')).toBe(true);
+
+    // The creature dies and the Aura goes with it — straight back to hand, which is the card.
+    s = drain(apply(s, { type: 'card:move', by: 0, card: courser, toZone: 'graveyard' }));
+    expect(namesIn(s, 0, 'hand')).toContain('Rancor');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Rancor');
+  });
+
+  it('Thragtusk gains five, and leaves a 3/3 behind however it goes', () => {
+    let s = grove(['Thragtusk'], ['Forest', 'Forest', 'Forest', 'Forest', 'Forest']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thragtusk'),
+    })));
+    expect(life(s, 0)).toBe(25);
+    const tusk = find(s, 0, 'battlefield', 'Thragtusk');
+
+    // **Exiled**, not killed, which is the half that makes the card famous: a `leaves` trigger
+    // fires for every way off the battlefield and a `dies` trigger would not have.
+    s = drain(apply(s, { type: 'card:move', by: 0, card: tusk, toZone: 'exile' }));
+    expect(namesIn(s, 0, 'exile')).toContain('Thragtusk');
+    const token = find(s, 0, 'battlefield', 'Beast');
+    expect([power(s, token), toughness(s, token)]).toEqual([3, 3]);
+  });
+});

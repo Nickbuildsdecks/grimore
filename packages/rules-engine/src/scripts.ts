@@ -944,6 +944,12 @@ export const BEAST_TOKEN: CardDef = {
   power: '3', toughness: '3', oracleText: '', colors: ['G'],
 };
 
+/** Battery's half of the split card, and the only 3/3 in the pool that is not a Beast. */
+export const ELEPHANT_TOKEN: CardDef = {
+  name: 'Elephant', typeLine: 'Token Creature — Elephant', manaCost: '', cmc: 0,
+  power: '3', toughness: '3', oracleText: '', colors: ['G'],
+};
+
 export const SOLDIER_TOKEN: CardDef = {
   name: 'Soldier', typeLine: 'Token Creature — Soldier', manaCost: '', cmc: 0,
   power: '1', toughness: '1', oracleText: '', colors: ['W'],
@@ -2804,6 +2810,32 @@ const BORDERLAND_MARAUDER: CardScript = {
  * each creature deals its power to the other, which needs both powers read before either is dealt,
  * because a creature that dies to the first half still deals its damage (CR 701.12a).
  */
+/**
+ * Two creatures each dealing their power to the other (CR 701.12a).
+ *
+ * One function for the two cards that fight, because both halves have to be read **before** either
+ * is dealt: a creature that dies to the first half still deals its damage. Prey Upon fights two
+ * chosen creatures; Gruul Ragebeast fights whichever creature just arrived against a chosen one.
+ * Written out twice, the second one would have got the simultaneity wrong eventually.
+ */
+function fight(state: GameState, mine: string, theirs: string, controller: SeatIndex): GameState {
+  const mineInst = state.instances[mine];
+  const theirsInst = state.instances[theirs];
+  if (mineInst === undefined || theirsInst === undefined) return state;
+  const minePower = characteristicsOf(state, mineInst).power;
+  const theirsPower = characteristicsOf(state, theirsInst).power;
+  let next = state;
+  if (minePower > 0) {
+    next = dealDamage(next, { kind: 'card', id: theirs }, minePower, { controller, source: mine });
+  }
+  if (theirsPower > 0) {
+    next = dealDamage(next, { kind: 'card', id: mine }, theirsPower, {
+      controller: theirsInst.zoneSeat, source: theirs,
+    });
+  }
+  return next;
+}
+
 const PREY_UPON: CardScript = {
   name: 'Prey Upon',
   targets: [
@@ -2821,24 +2853,7 @@ const PREY_UPON: CardScript = {
   onResolve: (c) => {
     const [mine, theirs] = cardTargets(c);
     if (mine === undefined || theirs === undefined) return c.state;
-    const mineInst = c.state.instances[mine];
-    const theirsInst = c.state.instances[theirs];
-    if (mineInst === undefined || theirsInst === undefined) return c.state;
-    // Both powers read first: a fight is simultaneous, so the creature that dies still fought.
-    const minePower = characteristicsOf(c.state, mineInst).power;
-    const theirsPower = characteristicsOf(c.state, theirsInst).power;
-    let state = c.state;
-    if (minePower > 0) {
-      state = dealDamage(state, { kind: 'card', id: theirs }, minePower, {
-        controller: c.controller, source: mine,
-      });
-    }
-    if (theirsPower > 0) {
-      state = dealDamage(state, { kind: 'card', id: mine }, theirsPower, {
-        controller: theirsInst.zoneSeat, source: theirs,
-      });
-    }
-    return state;
+    return fight(c.state, mine, theirs, c.controller);
   },
 };
 
@@ -4783,7 +4798,7 @@ const PELAKKA_WURM: CardScript = {
  * sharper rather than weaker — it now also catches a token script with no token to go with it.
  */
 export const TOKEN_DEFS: readonly CardDef[] = [
-  GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN,
+  GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN, ELEPHANT_TOKEN,
   SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN, ELEMENTAL_TOKEN,
   ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN, THOPTER_TOKEN,
 ];
@@ -5334,6 +5349,168 @@ const GALVANIC_BLAST: CardScript = {
   onResolve: (c) => damageFirstTarget(c, artifactsControlled(c.state, c.controller) >= 3 ? 4 : 1),
 };
 
+/*
+  The thirteenth deck's cards: red-green, the colour pair twelve decks had missed.
+
+  Nothing here needs the engine to learn anything, which is the point worth making. A commander
+  that taxes noncreature spells is a `spell-cast` trigger with a filter and an `actor`; a creature
+  that makes everything fight is the `etb` trigger plus the same `fight` Prey Upon has; an Aura that
+  comes back is a `dies` trigger on a permanent that is not a creature; a sweeper with {X} in it is
+  the X that has been in the engine since the fifth deck. Eight cards, and the diff in this file is
+  almost entirely deck list rather than machinery — which is what "adding a card is a few
+  declarative lines" is supposed to mean.
+*/
+
+const RURIC_THAR: CardScript = {
+  name: 'Ruric Thar, the Unbowed',
+  keywords: ['vigilance', 'reach'],
+  /*
+    "All creatures must attack each combat if able", which is the hardest clause here and needed
+    nothing new: `mustAttack` on an `all-creatures` scope. A requirement rather than a restriction,
+    so it is checked against the whole declaration — a creature that could have attacked and did
+    not makes the attack illegal, and "could have" already accounts for being tapped, summoning
+    sick, Pacified or having nobody legal to attack (see `ContinuousEffect.mustAttack`).
+
+    It is symmetric, which is what makes it a commander rather than a beating: the six-mana 6/6 is
+    on a board where every creature of yours has to come at somebody too.
+  */
+  statics: [{ scope: 'all-creatures', effect: { mustAttack: true } }],
+  triggers: [{
+    on: { kind: 'spell-cast', by: 'any', spell: 'noncreature' },
+    description: 'Ruric Thar deals 6 damage to that spell’s controller',
+    /*
+      "That player" — the one who cast it, which is what `actor` is for. Including its own
+      controller: the card is a tax on the table and not a reward for playing it, and that half is
+      most of why it is a *commander* rather than a creature.
+
+      `?? c.controller` is not a fallback for a missing value, it **is** the value: `raise` leaves
+      `actor` off the stack object when the actor is the trigger source's own controller (see the
+      line that builds it), because every card before this one asked only about an opponent. So an
+      absent actor means "me", and reading it as nobody is how this card first dealt no damage at
+      all to its own side.
+    */
+    effect: (c) => dealDamage(
+      c.state, { kind: 'player', seat: c.actor ?? c.controller }, 6,
+      { controller: c.controller, source: c.source },
+    ),
+  }],
+};
+
+const ASSAULT: CardScript = {
+  name: 'Assault',
+  targets: [ANY_TARGET],
+  onResolve: (c) => damageFirstTarget(c, 2),
+};
+
+const BATTERY: CardScript = {
+  name: 'Battery',
+  onResolve: (c) => createToken(c.state, c.controller, ELEPHANT_TOKEN, 1),
+};
+
+const BURNING_TREE_EMISSARY: CardScript = {
+  name: 'Burning-Tree Emissary',
+  /*
+    **No `makesMana`**, and that is the field's own rule rather than an omission: it is for a spell
+    whose *whole* effect is mana, where the search cannot see what the card did. A creature's body
+    is priced by the evaluation already, so declaring it here would hold the Emissary back until
+    there was a second spell to cast with the mana — and a 2/2 for two is worth casting on its own.
+    Measured both ways on the same 192 games: with the flag `cast-counts` read **46%**, without it
+    **101%** — which is both copies cast in every game one of them was drawn.
+  */
+  triggers: [{
+    on: { kind: 'etb', who: 'self' },
+    description: 'add {R}{G}',
+    effect: (c) => addToPool(addToPool(c.state, c.controller, 'R', 1), c.controller, 'G', 1),
+  }],
+};
+
+const GRUUL_RAGEBEAST: CardScript = {
+  name: 'Gruul Ragebeast',
+  triggers: [{
+    on: { kind: 'etb', who: 'any', of: 'you', what: 'creature' },
+    targets: [{
+      kind: 'creature',
+      description: "target creature you don't control",
+      filter: (state, candidate, controller) => creatureYouDontControl(state, candidate, controller),
+    }],
+    description: 'that creature fights target creature you don’t control',
+    /*
+      The creature that *entered* fights, not this one — which is what `subject` on the event is
+      for, and the reason the Ragebeast is in the pool at all: it is the only card here whose
+      trigger does something to the permanent the event was about rather than to its own source.
+      Its own arrival is included (`who: 'any'` with itself in scope), which is the card: a 6/5
+      that fights something the turn it lands.
+    */
+    effect: (c) => {
+      const theirs = firstCardTarget(c);
+      const mine = c.subject;
+      if (theirs === null || mine === undefined) return c.state;
+      return fight(c.state, mine, theirs, c.controller);
+    },
+  }],
+};
+
+const SAVAGE_TWISTER: CardScript = {
+  name: 'Savage Twister',
+  onResolve: (c) => {
+    const amount = c.x ?? 0;
+    if (amount <= 0) return c.state;
+    let state = c.state;
+    for (const id of battlefield(state, (cardId) => {
+      const inst = state.instances[cardId];
+      return inst !== undefined && characteristicsOf(state, inst).isCreature;
+    })) {
+      state = dealDamage(state, { kind: 'card', id }, amount, {
+        controller: c.controller, source: c.source,
+      });
+    }
+    return state;
+  },
+};
+
+/**
+ * Rancor: the Aura that comes back, and the first `dies` trigger in the pool on a permanent that is
+ * not a creature.
+ *
+ * "When Rancor is put into a graveyard from the battlefield" is a death (CR 700.4) like any other,
+ * and `relocate` has recorded it for every permanent since the engine was written — so the trigger
+ * is `what: 'permanent'` and nothing else had to change. What makes the card is the interaction:
+ * answering the creature does not answer the Aura, so a removal spell trades one-for-nothing.
+ */
+const RANCOR: CardScript = {
+  name: 'Rancor',
+  aura: {
+    target: { kind: 'creature', description: 'enchant creature', friendly: true },
+    effect: { power: 2, keywords: ['trample'] },
+  },
+  triggers: [{
+    on: { kind: 'dies', who: 'self', what: 'permanent' },
+    description: 'return Rancor to its owner’s hand',
+    effect: (c) => moveToHand(c.state, [c.source]),
+  }],
+};
+
+const THRAGTUSK: CardScript = {
+  name: 'Thragtusk',
+  triggers: [
+    {
+      on: { kind: 'etb', who: 'self' },
+      description: 'you gain 5 life',
+      effect: (c) => gainLife(c.state, c.controller, 5),
+    },
+    {
+      /*
+        `leaves` rather than `dies`, which is the whole of why the card is famous: exiling it, or
+        bouncing it, or a sacrifice, all still leave a 3/3 behind. The engine records leaving the
+        battlefield separately from dying for exactly this shape (CR 603.6c).
+      */
+      on: { kind: 'leaves' },
+      description: 'create a 3/3 green Beast creature token',
+      effect: (c) => createToken(c.state, c.controller, BEAST_TOKEN, 1),
+    },
+  ],
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -5424,6 +5601,9 @@ const ALL: readonly CardScript[] = [
   FIRE, ICE, WAX, WANE, VENTURE_DEEPER, SHIELDS_MIGHT,
   HAGRA_MAULING, VASTWOOD_FORTIFICATION,
   CHROME_STEED, ETCHED_CHAMPION, GALVANIC_BLAST,
+  RURIC_THAR, ASSAULT, BATTERY, BURNING_TREE_EMISSARY, GRUUL_RAGEBEAST, SAVAGE_TWISTER,
+  RANCOR, THRAGTUSK,
+  guildgate('Gruul Guildgate', 'R', 'G'),
   tapLand('Hagra Broodpit', 'B'), tapLand('Vastwood Thicket', 'G'),
 ];
 

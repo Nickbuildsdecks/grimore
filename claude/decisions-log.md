@@ -7377,3 +7377,56 @@ being unmeasurable rather than for being bad.
 **28%** of the games it reaches hand — a 1/1 body for {3} scores badly in the evaluation — while its
 *ability* is live 69% of the turns it is on the board. The card is strong for a person and weak for
 this opponent, and only two instruments together say so.
+
+## D163 — The thirteenth deck, and the gap only a card could show
+
+**Decision: build Kindle Grove, a red-green deck, because twelve decks covered every pair of colours
+but that one — and nothing noticed until a card had nowhere to live.**
+
+Assault // Battery is {R} on one half and {3}{G} on the other. When the split cards shipped (D160),
+Fire // Ice went into Arc Tempest and Wax // Wane into Verdant Guard, and the third card of the
+cycle was left out because **no deck in the pool could cast both halves**. A hole in a card pool is
+easier to see from a card than from a list of decks, which is the useful part of this entry.
+
+**Eight new cards and no new machinery**, which is the claim the deck is really testing. The
+vocabulary has been ahead of the pool for a long time; this is what that is worth:
+
+| card | what it needed |
+| --- | --- |
+| Ruric Thar, the Unbowed | a `spell-cast` trigger with `actor`, and `mustAttack` on `all-creatures` |
+| Assault // Battery | the split-card machinery from D160, unchanged |
+| Burning-Tree Emissary | an `etb` trigger and `addToPool` |
+| Gruul Ragebeast | the `etb` event's `subject`, plus the `fight` Prey Upon already had |
+| Savage Twister | the {X} that has been in the engine since the fifth deck |
+| Rancor | a `dies` trigger on a permanent that is **not** a creature |
+| Thragtusk | `leaves`, which fires for exile and bounce as well as death |
+| Gruul Guildgate | the `guildgate` helper |
+
+`fight` was pulled out of Prey Upon into a function the Ragebeast shares, because both halves have
+to be read before either is dealt (CR 701.12a) and writing that twice gets the simultaneity wrong
+eventually.
+
+**Two bugs found by two cards, and both were in the engine's edges rather than in the cards.**
+
+**1. An absent `actor` means "me", and reading it as "nobody" is silent.** `raise` leaves `actor`
+off the stack object when the actor is the trigger source's own controller — free while every card
+asking "that player" asked about an *opponent*, which every card before this one did. Ruric Thar
+taxes the table **including its own side**, and the first version dealt no damage at all to its
+controller: `c.actor` was undefined and the effect returned the state unchanged. A card reading that
+field wants `actor ?? controller`, and `StackObject.actor` now says so.
+
+**2. `makesMana` is for a spell whose *whole* effect is mana, and the field's own doc says so.**
+Burning-Tree Emissary was declared with it, and the bot then held a 2/2 in hand waiting for a second
+spell to spend the mana on — which is the Dark Ritual rule (D63) applied to a card that does not
+want it, because a creature's body is priced by the evaluation already. Measured both ways on the
+same 192 games: **46% cast with the flag, 101% without it** — which is both copies cast in every
+game one was drawn.
+
+**It debuts fifth of thirteen at 59% (170-118), and the row is its matchups.** It beats **Tidal Mind
+20-4**, Ashen Rite 19-5, Rot Harvest 17-7, Hollow Tide 16-8, Delta Bloom 16-8, and loses 10-14 to
+each of the three decks above it. A commander that costs the whole table six life per noncreature
+spell is close to unanswerable for three control decks and four turns too slow against a 76% aggro
+deck. **The limit was named in the deck's own write-up before it was measured**, which is the only
+honest way to publish a 59%: the bot plays a deck of big creatures better than it plays a deck of
+answers, so this row reads higher than a person would make it — the exact opposite of Tidal Mind's
+problem and the same cause.
