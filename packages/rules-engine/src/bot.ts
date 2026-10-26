@@ -394,10 +394,36 @@ const readyBlockers = (state: GameState, seat: SeatIndex): string[] =>
  * What it still does not do is hold creatures back to block. It knows what it is attacking into;
  * it does not know what is coming the other way.
  */
-function chooseAttackers(state: GameState, seat: SeatIndex): { attacker: string; defender: SeatIndex }[] {
-  const foes = foesOf(state, seat)
+/**
+ * Which opponent to go at first: the monarch, then whoever is closest to dying (CR 720).
+ *
+ * The crown ahead of the life total, and it is a **fact about the board** rather than a weight —
+ * the player holding it draws an extra card at the beginning of every one of their own end steps,
+ * and the only way to stop that is to deal them combat damage, which also hands the crown to you.
+ * So "attack the monarch" is not a preference the search has to be talked into; it is the one
+ * attack that does something no other attack can.
+ *
+ * In a duel it changes nothing, because there is one player to attack. It exists for the pod, and
+ * `scripts/measure/pod-duel.mjs` is the instrument that can say whether it is worth having.
+ */
+function foeOrder(
+  state: GameState, seat: SeatIndex, chase = true,
+): { index: SeatIndex; life: number }[] {
+  return foesOf(state, seat)
     .map((index) => ({ index, life: state.seats[index]?.life ?? 0 }))
-    .sort((a, b) => a.life - b.life);
+    .sort((a, b) => {
+      if (chase && state.monarch !== null) {
+        if (a.index === state.monarch && b.index !== state.monarch) return -1;
+        if (b.index === state.monarch && a.index !== state.monarch) return 1;
+      }
+      return a.life - b.life;
+    });
+}
+
+function chooseAttackers(
+  state: GameState, seat: SeatIndex, opts: BotOptions = {},
+): { attacker: string; defender: SeatIndex }[] {
+  const foes = foeOrder(state, seat, opts.chaseTheCrown !== false);
   if (foes.length === 0) return [];
   const able = legalActions(state, seat).attackers.filter((id) => canAttack(state, id, seat) === null);
   if (able.length === 0) return [];
@@ -1196,6 +1222,15 @@ export interface BotOptions {
    * measurement is the reason it is on. See `noAutoPass`.
    */
   readonly stopAtAction?: boolean;
+  /**
+   * Whether to send attacks at the player holding the crown first (CR 720). On by default.
+   *
+   * Off is the control this was measured against. It changes only what the bot itself declares:
+   * inside its own search the opponents are modelled with the rule on, because that is what the
+   * other players at the table are doing — and threading a measurement switch through the search
+   * would be a larger change than the thing being measured. See `foeOrder`.
+   */
+  readonly chaseTheCrown?: boolean;
 }
 
 /**
@@ -1372,14 +1407,12 @@ type AttackPlan = { attacker: string; defender: SeatIndex; planeswalker?: string
  * Four plans, not every subset: the subsets of ten attackers are a thousand combats to play out,
  * and these four are the shapes a player actually chooses between.
  */
-function attackPlans(state: GameState, seat: SeatIndex): AttackPlan[] {
-  const heuristic = chooseAttackers(state, seat);
+function attackPlans(state: GameState, seat: SeatIndex, opts: BotOptions = {}): AttackPlan[] {
+  const heuristic = chooseAttackers(state, seat, opts);
   const plans: AttackPlan[] = [heuristic, []];
 
   const able = legalActions(state, seat).attackers.filter((id) => canAttack(state, id, seat) === null);
-  const foes = foesOf(state, seat)
-    .map((index) => ({ index, life: state.seats[index]?.life ?? 0 }))
-    .sort((a, b) => a.life - b.life);
+  const foes = foeOrder(state, seat, opts.chaseTheCrown !== false);
   const nearest = foes[0];
   if (nearest !== undefined && able.length > heuristic.length) {
     plans.push(able.map((attacker) => ({ attacker, defender: nearest.index })));
@@ -1717,7 +1750,7 @@ function declareBySearch(
     } as Action)), stopsAtAction(opts)) ?? fallback;
   }
   if (kind === 'attackers') {
-    const plans = attackPlans(state, seat);
+    const plans = attackPlans(state, seat, opts);
     const fallback: Action = { type: 'auto:attack', by: seat, attackers: plans[0]! };
     if (opts.lookahead === false) return fallback;
     return bestPlan(state, seat, plans.map((attackers) => ({

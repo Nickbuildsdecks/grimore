@@ -28,6 +28,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `combat-triggers.mjs` | do the block and unblocked triggers ever happen, and do they matter? | `SEEDS=6 node scripts/measure/combat-triggers.mjs` |
 | `delayed-triggers.mjs` | do the scheduled abilities fire, and what does the bot blink? | `SEEDS=6 node scripts/measure/delayed-triggers.mjs` |
 | `monarch.mjs` | who takes the crown, how long it is held, and what it drew | `SEEDS=6 node scripts/measure/monarch.mjs` |
+| `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -155,3 +156,9 @@ not in the number.
 against. The floor is derived for a single total; a sign test across ten paired matchups is a
 different question and a sharper one (p≈0.004 here). Read the split before deciding a sub-floor
 total means nothing.
+
+**`pod-duel`'s negative control is arithmetic and must not be read as a floor.** With both arms
+identical, all four rotations of a table are the same game, so the winning seat is credited to each
+arm exactly twice — 66-66 of 132, by construction. Get a floor by running a *real* arm on two
+disjoint seed sets: "chase the crown" came back 70-62 and then 62-70, which is how we know this
+harness wobbles by at least ±8 games in 132. Do not believe a smaller pod result than that.

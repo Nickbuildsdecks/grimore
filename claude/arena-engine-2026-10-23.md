@@ -3935,6 +3935,30 @@ What is left undone on purpose: in a duel there is one player to attack, so the 
 bot rule worth having, and the measuring harness is duel-only — so it stays a question rather than
 becoming an unmeasured weight.
 
+### An instrument for the pod, and the trap in its own control
+
+Every measuring harness in this project was a duel, and a duel cannot answer a question about
+*which opponent*. Goad, the three deals, the threat read and now "attack the player holding the
+crown" had all been argued rather than priced. `scripts/measure/pod-duel.mjs` closes that: two bots
+against two in a four-seat pod, four rotations per table so each arm plays every seat, and
+`ALWAYS=<deck>` to seat the deck that can produce the thing being measured.
+
+**Its negative control is a tautology, and the first draft of its documentation claimed it as a
+floor.** With both arms empty all four rotations are the same game, so the same seat wins all four
+and the rotation credits it to each arm exactly twice: 66-66 of 132, and it could not have been
+anything else. The floor has to come from somewhere else — re-running a real arm on a different seed
+set — and that is now written at the top of the script, because a 50-50 control that *looks* like
+evidence is worse than no control at all.
+
+**The rule it was built for measures nothing.** Turning off "chase the crown" came back 70-62 one
+seed set and 62-70 on the next: the sign flips, so this harness wobbles by at least ±8 games in 132
+and the rule is level. It ships on anyway, and the honest reason is not the number. It is a fact
+about the board rather than a weight — the monarch draws a card every turn and combat damage is the
+only thing that takes the crown — and it makes the bot **legible**: a pod where nobody ever contests
+the crown looks broken to a person who knows the rule, and a table that plays its own mechanics
+visibly is most of what "this feels like a real game" means. That is a fine reason to ship something
+as long as it is said out loud instead of dressed up as a win.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

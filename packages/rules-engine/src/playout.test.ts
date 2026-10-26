@@ -1748,3 +1748,57 @@ function stepWatching(
   watch(action, s);
   return applyAction(s, action, HOST);
 }
+
+describe('the crown as a fact the bot reads (CR 720)', () => {
+  /*
+    The one bot rule in this project that a duel cannot price, and the reason the pod harness
+    exists (`scripts/measure/pod-duel.mjs`).
+
+    The crown is worth a card every turn and the only way to take it is to deal its holder combat
+    damage — so "go at the monarch" is not a preference the search has to be talked into, it is the
+    one attack that does something no other attack can. Whether it *wins* more pods is a separate
+    question the measurement answers with "nothing either way"; what these tests pin is that the
+    rule fires and that it can be turned off, which is what the measurement needed.
+  */
+  const podWithACrown = (): GameState => {
+    const base = arena({
+      format: 'pod', seats: 4,
+      battlefield: { 0: ['Mountain', 'Hill Giant'] },
+      turn: 4, firstSeat: 0,
+    });
+    // Seat 2 is nearly dead and seat 1 holds the crown, so the two rules disagree and the answer
+    // says which one the bot followed. The crowning itself is tested in `scripts.test.ts`.
+    return advanceTo({
+      ...base,
+      monarch: 1,
+      seats: base.seats.map((seat, i) => (i === 2 ? { ...seat, life: 5 } : seat)),
+    }, 'declare-attackers');
+  };
+
+  it('sends the attack at the monarch rather than at the player on five life', () => {
+    const s = podWithACrown();
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    const chosen = botAction(s, 0);
+    expect(chosen?.type).toBe('auto:attack');
+    expect(chosen?.type === 'auto:attack' ? chosen.attackers : []).toEqual([
+      { attacker: giant, defender: 1 },
+    ]);
+  });
+
+  it('and goes back to the weakest seat with the rule turned off, which is the control', () => {
+    const s = podWithACrown();
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    const chosen = botAction(s, 0, { chaseTheCrown: false });
+    expect(chosen?.type === 'auto:attack' ? chosen.attackers : []).toEqual([
+      { attacker: giant, defender: 2 },
+    ]);
+  });
+
+  it('and with no crown in the game the two are the same bot', () => {
+    const base = podWithACrown();
+    const s = { ...base, monarch: null };
+    const withRule = botAction(s, 0);
+    const without = botAction(s, 0, { chaseTheCrown: false });
+    expect(withRule).toEqual(without);
+  });
+});

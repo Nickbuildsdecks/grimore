@@ -6959,3 +6959,55 @@ the crown 142 times without being taught anything about it. In a **pod** choosin
 a real decision and "prefer the player holding the crown" would be a bot rule worth having — but the
 measuring harness is duel-only, and a behaviour change this project cannot measure is a weight, not
 a fact. Left undone and written down.
+
+## D157 — An instrument for the pod, and what it said about chasing the crown
+
+**Decision: `scripts/measure/pod-duel.mjs` — two bots against two in a four-seat pod, seats
+rotated — and the first rule it priced ships anyway, on grounds the measurement does not supply.**
+
+Every harness in `scripts/measure/` was a duel, which made a whole family of questions
+unmeasurable: goad, the deals, the threat read and "attack the player holding the crown" are all
+about *which opponent*, and a duel has one. Those changes had been argued rather than priced.
+
+**The design.** Each table seats two bots on `TESTED` and two on `CONTROL` and is played four times
+with the arms rotated one seat each time, so each arm occupies every seat equally often and turn
+order cancels. `ALWAYS=<deck>` seats one deck at every table, for a setting that only means anything
+while a particular card is in the game.
+
+**Its negative control is arithmetic, not evidence — and nearly fooled me.** With both arms empty,
+all four rotations of a table are the *same game*: same seed, same decks, same bot. So one seat wins
+all four, and the rotation credits that seat to `TESTED` on exactly two of them. It printed 66-66 of
+132 and could not have printed anything else. `bot-duel`'s 56-56 is a real reading of a duel's
+noise; this one is a tautology, and the first draft of the script's own documentation claimed it as
+a floor. **The floor has to come from re-running a real arm on a disjoint seed set.**
+
+**Which is what it took to get the answer.** `chaseTheCrown: false` against the default, with Dawn
+Tithe seated at every table:
+
+```
+SEED0=3300 → 70-62   (the arm *without* the rule, ahead by 8)
+SEED0=4100 → 62-70   (the same arm, behind by 8)
+```
+
+The result flips sign on a different seed set, so this harness wobbles by at least ±8 games in 132
+and the rule measures **nothing at all**. That is the honest reading, and it is also the floor for
+every pod measurement after this one.
+
+**The rule ships on, and not because of the number.** Three reasons, in the order they matter:
+
+1. It is a **fact about the board**, not a weight: the monarch draws an extra card at the beginning
+   of each of their own end steps, and combat damage is the only thing that takes the crown. "Go at
+   the monarch" is the one attack that does something no other attack can.
+2. It is **level**, not worse. The project has deleted a bot change that measurably lost games
+   (D98's untapped-creature term); this is not that.
+3. It makes the bot **legible**, which is the part no instrument prices. A pod where nobody ever
+   contests the crown looks broken to a person who knows the rule — and a table that plays its own
+   mechanics visibly is most of what "it feels like a real game" means. Shipping on that ground is
+   fine as long as it is said out loud rather than dressed up as a win, which is what this entry is
+   for.
+
+**What it does not do.** The switch changes only what the bot itself declares; inside its own search
+the opponents are still modelled with the rule on, because threading a measurement control through
+`scoreDeclaration` and `throughCombat` would be a larger change than the thing being measured. And
+in a duel the rule is a no-op by construction — a test pins that the two settings are the same bot
+when there is no crown in the game.
