@@ -10883,3 +10883,202 @@ describe('the combat triggers: a creature blocking, and an attacker getting thro
     expect(action && 'option' in action ? action.option : null).toBe('Draw');
   });
 });
+
+describe('delayed triggers: at end of combat, and at the next end step (CR 603.7)', () => {
+  /*
+    The first thing in this engine that happens *later*.
+
+    Every other trigger fires the moment its event happens. A delayed trigger is created by
+    something else, waits for a named step, and fires exactly once — and it cannot be a step
+    trigger, because a step trigger fires every turn for as long as its permanent is there and
+    this one fires once whether or not it is.
+  */
+  it('a Thicket Basilisk kills what blocks it, at end of combat and not before', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'delta-bloom', 1: 'verdant-guard' },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Thicket Basilisk'],
+        1: ['Forest', 'Forest', 'Centaur Courser'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const basilisk = find(s, 0, 'battlefield', 'Thicket Basilisk');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: basilisk, defender: 1 }],
+    }));
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: courser, attacker: basilisk }] }));
+    // Nothing has happened to the Courser yet: the ability is scheduled, not on the stack.
+    expect(s.instances[courser]!.zone).toBe('battlefield');
+    expect(s.delayed.length).toBe(1);
+    // And combat damage is dealt first, which is the whole difference from a removal spell: the
+    // 3/3 kills the 2/4 on the way out.
+    s = advanceTo(s, 'end-combat');
+    s = drain(s);
+    expect(s.instances[courser]!.zone).toBe('graveyard');
+    expect(s.delayed.length).toBe(0);
+    // And the Basilisk is a 2/4: three damage from a Centaur Courser is not lethal, so the trade
+    // is entirely one-way. That is what the five mana buys.
+    expect(s.instances[basilisk]!.zone).toBe('battlefield');
+    expect(damageOn(s, basilisk)).toBe(3);
+  });
+
+  it('and kills what it blocks, which is the other half of the same clause', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'delta-bloom' },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Grizzly Bears'],
+        1: ['Forest', 'Forest', 'Thicket Basilisk'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const basilisk = find(s, 1, 'battlefield', 'Thicket Basilisk');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] }));
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: basilisk, attacker: bears }] }));
+    expect(s.delayed.length).toBe(1);
+    s = drain(advanceTo(s, 'end-combat'));
+    // The Bears survived the 2/4's damage and died to the clause anyway, which is the card.
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+    expect(s.instances[basilisk]!.zone).toBe('battlefield');
+  });
+
+  it('fires once per blocker, so a gang block loses the whole gang', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'delta-bloom', 1: 'verdant-guard' },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Thicket Basilisk'],
+        1: ['Forest', 'Forest', 'Grizzly Bears', 'Llanowar Elves'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const basilisk = find(s, 0, 'battlefield', 'Thicket Basilisk');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const elves = find(s, 1, 'battlefield', 'Llanowar Elves');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: basilisk, defender: 1 }],
+    }));
+    s = apply(s, {
+      type: 'auto:block', by: 1,
+      blocks: [{ blocker: bears, attacker: basilisk }, { blocker: elves, attacker: basilisk }],
+    });
+    /*
+      Two blockers means the attacking player owes a damage assignment order (CR 509.2), and
+      nobody holds priority until it is given — so the two block triggers are on the stack and
+      cannot resolve yet. Answering it is part of the block, not part of this card.
+    */
+    expect(pendingDeclaration(s)?.kind).toBe('order');
+    s = drain(apply(s, {
+      type: 'auto:order', by: 0, orders: [{ attacker: basilisk, blockers: [bears, elves] }],
+    }));
+    expect(s.delayed.length).toBe(2);
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+    expect(s.instances[elves]!.zone).toBe('graveyard');
+  });
+
+  it('a Flickerwisp exiles a permanent and gives it back at the next end step', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      hands: { 0: ['Flickerwisp'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains'], 1: ['Forest', 'Grizzly Bears'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flickerwisp'),
+    }));
+    // Five permanents it could blink and one it cannot, so the trigger is a real choice.
+    expect(s.pendingChoice).not.toBeNull();
+    s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bears }] }));
+    expect(s.instances[bears]!.zone).toBe('exile');
+    expect(s.delayed.length).toBe(1);
+    s = drain(advanceTo(s, 'end'));
+    expect(s.instances[bears]!.zone).toBe('battlefield');
+    // Under its owner's control, which is the clause rather than a detail.
+    expect(s.instances[bears]!.zoneSeat).toBe(1);
+  });
+
+  it('and gives it back even when the Flickerwisp is dead by then (CR 603.7d)', () => {
+    /*
+      The reason the schedule lives on the state rather than on the permanent. A delayed ability
+      stops belonging to its source the moment it is created, so killing the Wisp in response does
+      not keep the card in exile — which is the opposite of how "exile until this leaves" works,
+      and the pair is worth having in one pool.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+      hands: { 0: ['Flickerwisp'], 1: ['Doom Blade'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains'], 1: ['Swamp', 'Swamp', 'Omenspeaker'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const speaker = find(s, 1, 'battlefield', 'Omenspeaker');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flickerwisp'),
+    }));
+    s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: speaker }] }));
+    const wisp = find(s, 0, 'battlefield', 'Flickerwisp');
+    expect(s.instances[speaker]!.zone).toBe('exile');
+    // Seat 0 passes, so seat 1 holds priority inside seat 0's main phase and can answer — which is
+    // also when its own lands are tappable.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = tapAllLands(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: wisp }],
+    })));
+    expect(s.instances[wisp]!.zone).toBe('graveyard');
+    s = drain(advanceTo(s, 'end'));
+    expect(s.instances[speaker]!.zone).toBe('battlefield');
+  });
+
+  it('tells both players what is going to happen, and when', () => {
+    /*
+      A delayed trigger is the one thing on the board that is going to happen and is not on the
+      stack. If the table does not say so, a permanent leaves two steps later with nothing on
+      screen to have warned anybody — the same argument as the prevention shield and the freeze.
+      Public, because all of it is.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'delta-bloom', 1: 'verdant-guard' },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Thicket Basilisk'],
+        1: ['Forest', 'Forest', 'Centaur Courser'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const basilisk = find(s, 0, 'battlefield', 'Thicket Basilisk');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: basilisk, defender: 1 }],
+    }));
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: courser, attacker: basilisk }] }));
+    for (const seat of [0, 1] as const) {
+      const later = viewFor(s, seat).automation!.later;
+      expect(later.length).toBe(1);
+      expect(later[0]!.description).toContain('Centaur Courser');
+      expect(later[0]!.stepLabel).toBe('End of combat');
+    }
+    // And it survives being packed for the wire, which is the only way it reaches a browser.
+    expect(unpackView(packView(viewFor(s, 0))).automation!.later.length).toBe(1);
+  });
+
+  it('cannot aim its own arrival at itself: "another" target permanent', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      hands: { 0: ['Flickerwisp'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains'], 1: ['Forest'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flickerwisp') }));
+    const wisp = find(s, 0, 'battlefield', 'Flickerwisp');
+    // Four lands it could blink, so the trigger is a real choice — and the Wisp is not among them.
+    expect(s.pendingChoice).not.toBeNull();
+    const offered = (legalActions(s, 0).mustChoose?.candidates ?? []).flat();
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.some((t) => t.kind === 'card' && t.id === wisp)).toBe(false);
+  });
+});

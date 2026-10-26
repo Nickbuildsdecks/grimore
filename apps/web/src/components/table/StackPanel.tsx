@@ -33,6 +33,15 @@ export interface StackPanelProps {
 
 export function StackPanel({ view, targetable, onPick }: StackPanelProps) {
   const stack = view.automation?.stack ?? []
+  /*
+    And what is scheduled but not on the stack yet: a delayed trigger (CR 603.7).
+
+    It belongs here rather than in the log because it has not happened — "destroy Centaur Courser"
+    at end of combat is a thing about to happen to the board, and a player deciding what to do in
+    between is entitled to see it. Without this the board silently changes two steps later with
+    nothing on screen to have warned anybody.
+  */
+  const later = view.automation?.later ?? []
 
   return (
     <section data-testid="stack-panel" className="flex flex-col gap-1 rounded-md border border-white/10 p-1.5">
@@ -102,6 +111,21 @@ export function StackPanel({ view, targetable, onPick }: StackPanelProps) {
           })}
         </ol>
       )}
+      {later.length > 0 ? (
+        <ul data-testid="stack-later" className="flex flex-col gap-0.5 border-t border-white/10 pt-1">
+          {later.map((entry, index) => (
+            <li
+              key={`${entry.stepLabel}-${entry.description}-${index}`}
+              data-testid="later-entry"
+              className="flex flex-wrap items-center gap-x-1.5 px-1.5 text-[11px] text-[var(--g-text-muted)]"
+            >
+              <span className="rounded bg-white/10 px-1 text-[9px] font-bold uppercase">later</span>
+              <span className="text-[var(--g-text-high)]">{entry.description}</span>
+              <span className="ml-auto text-[10px] uppercase tracking-wide">{entry.stepLabel}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   )
 }

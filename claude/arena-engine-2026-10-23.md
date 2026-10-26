@@ -3858,6 +3858,45 @@ mechanism was**: the first measurement watched for the untap step and reported z
 and nobody ever holds priority in the untap step, so the check could never have fired. 46 freezes
 and none of them holding is not a story about Magic, which is the only reason it was caught.
 
+### The trigger that happens later
+
+Every trigger in the engine fired the moment its event happened, which left a whole shelf of
+printed text unwritable: "destroy that creature **at end of combat**", "return it to the battlefield
+**at the beginning of the next end step**". A delayed trigger (CR 603.7) is now an ordinary entry in
+the card's own triggers, marked so the event path never fires it, plus a scheduled record on the
+state that the named step drains exactly once.
+
+It cannot be a step trigger with a flag: a step trigger fires every turn for as long as its
+permanent is on the battlefield, and this fires once whether or not the permanent is still there.
+That last part is a rule rather than a convenience — a **Flickerwisp** ({1}{W}{W} 3/1 flying, "exile
+another target permanent, return it at the beginning of the next end step") can be killed before the
+end step and the card still comes back, because the delayed ability stopped belonging to it the
+moment it was created. The pool now holds both halves of that distinction: a Journey to Nowhere
+keeps its creature only while the Journey lives, and a Flickerwisp's blink survives the Wisp.
+
+The table says what is coming. A delayed trigger is the one thing on the board that is going to
+happen and is not on the stack, so the stack panel draws a **later** row under it with the step —
+"destroy Centaur Courser · End of combat" — for the same reason the prevention shield and the freeze
+are drawn: a board that changes two steps later with nothing on screen to have warned anybody is a
+board nobody can plan against.
+
+**The two cards came back differently honest.** Over 660 games, 33 delayed triggers were scheduled
+and 32 fired. The Flickerwisp blinked **43 permanents and every single one was an opponent's** — 36
+creatures, six lands, one artifact — which is the lookahead working with no help at all: the card
+carries no hint about what blinking is *for*, and the search still never pointed it at its own
+Plains. It measures **0 of 240** in its slot, exactly level, with eight of ten matchups identical
+game for game: a blink that gives the permanent back a step later is one turn of tempo, and one turn
+of tempo against this field is worth nothing measurable.
+
+**Thicket Basilisk** is the other kind of answer. It was on the battlefield in 42 games and its
+clause fired **three times**, for one kill. That is not a bug and not a dead card — a creature that
+destroys whatever it fights is a *deterrent*, and a deterrent is invisible to an instrument that
+counts what happened. What the measurement can say is that the clause almost never resolves, so in
+practice the card is a 2/4 for five; it prices at **−1 of 240**, which is the same answer from the
+other side. Whatever it is worth in attacks that were never declared is not something this
+instrument can see, and saying so is better than claiming it. What the card does earn outright is
+the engine path: `becomes-blocked` has a card behind it now, and so does the delayed trigger.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

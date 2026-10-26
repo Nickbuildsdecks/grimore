@@ -6846,3 +6846,57 @@ the untap step (CR 502.1), so no state the loop sees is ever at that step: the c
 have fired. A zero from an instrument that cannot observe the thing is not a measurement, and the
 only reason it was caught is that 46 freezes on tapped creatures and 0 of them holding is not a
 story about Magic.
+
+## D155 — A trigger that happens later, and the two cards that need it
+
+**Decision: a delayed triggered ability is an entry in the card's own `triggers`, marked `delayed`,
+plus a scheduled record on the game state (CR 603.7).**
+
+Every trigger in this engine fires the moment its event happens. A whole shelf of printed text does
+not: "destroy that creature **at end of combat**", "return it to the battlefield **at the beginning
+of the next end step**". None of it was expressible.
+
+**Not a step trigger with a flag.** A step trigger fires every turn for as long as its permanent is
+on the battlefield; a delayed trigger fires **once**, at a named step, whether or not the permanent
+is still there. The two are different cards, so `delayed: true` takes the ability *out* of the event
+path and `fireDelayed` drains it at the step it names.
+
+**On the state rather than on the permanent**, which is the rule rather than a convenience
+(CR 603.7d): the ability stops belonging to its source the moment it is created. A Flickerwisp
+killed before the end step still gives the exiled card back, which is the exact opposite of how
+"exile until this leaves" behaves — and having both in one pool is worth more than having either.
+
+**"The next" one is not the one in progress** (CR 603.7b). Each record carries the turn and step it
+was created in, so an ability created during an end step waits for the following turn's rather than
+firing immediately into the step that created it.
+
+**Drained on entering every step, not only the two steps cards currently name.** The mechanism is
+about *a* step; a card that said "at the beginning of the next upkeep" would otherwise need a
+second place to be remembered.
+
+**The table says so, because all of it is public.** `AutomationView.later` carries the description
+and the step, and the stack panel draws it under the stack as a "later" row. A delayed trigger is
+the one thing on the board that is going to happen and is not on the stack — without it a permanent
+leaves two steps after the combat that doomed it with nothing on screen to have warned anybody,
+which is the same argument the prevention shield and the freeze already won.
+
+**Measured, and the two cards came back differently honest**
+(`scripts/measure/delayed-triggers.mjs`, 660 games; 33 delayed triggers scheduled and 32 fired):
+
+- **Flickerwisp** blinked **43 permanents, every single one an opponent's** — 36 creatures, 6 lands,
+  one artifact. The bot aims it correctly with no help at all, which is the search doing its job
+  (D46, D92): the card has no "this helps" hint and the lookahead works out that blinking your own
+  Plains is worth nothing. It still measures **0 of 240** in its slot — exactly level, with eight of
+  ten matchups identical game for game. A blink that gives the permanent back a step later is a turn
+  of tempo, and a turn of tempo against this field is worth nothing measurable.
+- **Thicket Basilisk** was on the battlefield in 42 games and its clause fired **three times**. Not
+  a bug and not a dead card: a creature that kills whatever it fights is a **deterrent**, and a
+  deterrent is invisible to an instrument that counts what happened. What the measurement can say
+  honestly is that the clause almost never resolves, so in practice the card is a 2/4 for five — and
+  it prices at **−1 of 240**, which is the same answer from the other direction. The value it may
+  have, in attacks that were never declared, is not something this instrument can see, and saying so
+  is better than claiming it.
+
+The pair is the point for the engine rather than for the decks: `becomes-blocked` now has a card
+behind it, and so does the delayed trigger, and both will be a few declarative lines for the next
+card that wants them.

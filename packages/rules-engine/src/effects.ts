@@ -25,7 +25,7 @@ import { actionSeed, clampValue, mulberry32, replaceSeat } from './internal.js';
 import { targetSeqsFor } from './targeting.js';
 import type { Color, ManaType } from './mana.js';
 import { addMana, costValue, EMPTY_POOL, parseManaCost, xMultiplier } from './mana.js';
-import type { AttackedTarget, DecisionAnswer, StackObject, Target } from './turnTypes.js';
+import type { AttackedTarget, DecisionAnswer, StackObject, Step, Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 /** What an effect is given when it runs. */
@@ -757,6 +757,38 @@ export function tap(state: GameState, id: string, tapped = true): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;
   return withInstance(state, id, { tapped });
+}
+
+/**
+ * Schedules one, from inside the effect that creates it. See `DelayedTrigger`.
+ *
+ * `abilityIndex` is the card's own `triggers` entry, which is how the ability gets a resolution
+ * path, targets and a description without a second mechanism: by the time it fires it is an
+ * ordinary triggered ability on the stack and nothing downstream knows it waited.
+ */
+export function scheduleDelayed(
+  state: GameState,
+  spec: {
+    readonly source: string;
+    readonly controller: SeatIndex;
+    readonly abilityIndex: number;
+    readonly step: Step;
+    readonly of: 'you' | 'any';
+    readonly subject?: string;
+    readonly description: string;
+  },
+): GameState {
+  const seq = state.autoSeq + 1;
+  return {
+    ...state,
+    autoSeq: seq,
+    delayed: [...state.delayed, {
+      id: `dl${seq}`,
+      ...spec,
+      createdTurn: state.turn,
+      createdStep: state.step,
+    }],
+  };
 }
 
 export function untapAll(state: GameState, seat: SeatIndex): GameState {

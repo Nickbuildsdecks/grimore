@@ -1078,6 +1078,21 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
         action.by,
         blocker,
       );
+      /*
+        And the same block from the attacker's side, once per blocker (CR 509.1h).
+
+        Two events rather than one with a flag, because they are about different creatures: the
+        subject of a block is the creature that blocked and the subject of becoming blocked is the
+        creature that was attacking. A card with both halves — "whenever ~ blocks or becomes
+        blocked by a creature" — carries two triggers and reads `c.blocked` in each, which is the
+        other creature both times.
+      */
+      next = raise(
+        next,
+        { kind: 'becomes-blocked', subjectSeat: state.activeSeat, blocked: blocker },
+        action.by,
+        attack.attacker,
+      );
     }
   }
   /*

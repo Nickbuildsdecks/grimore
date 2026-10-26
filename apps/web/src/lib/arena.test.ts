@@ -1089,6 +1089,7 @@ function view(over: Partial<GameView> = {}): GameView {
 const automation = (over: Record<string, unknown> = {}): GameView["automation"] =>
   ({
     step: "precombat-main", stepLabel: "Main phase 1", autoPass: true, priority: 0, passed: [], stack: [],
+    later: [],
     pools: {},
     combat: {
       attacks: [], firstStrikeDealt: false, attackersDeclared: false, blockersDeclaredBy: [],

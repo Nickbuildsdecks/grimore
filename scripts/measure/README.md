@@ -26,6 +26,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `step-drift.mjs` | how far does the table move on one action? | `SEEDS=2 node scripts/measure/step-drift.mjs` |
 | `morph-use.mjs` | which half of a morph does the bot take, and does it follow through? | `SEEDS=3 node scripts/measure/morph-use.mjs` |
 | `combat-triggers.mjs` | do the block and unblocked triggers ever happen, and do they matter? | `SEEDS=6 node scripts/measure/combat-triggers.mjs` |
+| `delayed-triggers.mjs` | do the scheduled abilities fire, and what does the bot blink? | `SEEDS=6 node scripts/measure/delayed-triggers.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -140,3 +141,10 @@ nobody ever holds priority in the untap step (CR 502.1) — no state it saw was 
 the check could not have fired once. It printed 46 freezes and 0 held, and the only reason that was
 caught is that it is not a story about Magic. Before believing a zero from a new harness, make it
 print the thing it is counting *from*, and check the two numbers can be true together.
+
+**A deterrent cannot be measured by counting what happened.** Thicket Basilisk's clause fired three
+times in 42 games it was on the battlefield, and the card is not dead: a creature that destroys
+whatever it fights changes which attacks get declared, and an instrument that counts resolutions
+sees none of that. When a mechanism's whole point is to stop something, say what you measured —
+"the clause fired three times" — and say plainly that what it was worth in attacks nobody made is
+not in the number.

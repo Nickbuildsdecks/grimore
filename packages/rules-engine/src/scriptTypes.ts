@@ -226,6 +226,31 @@ export type TriggerEvent =
       readonly blocked?: string;
     }
   /**
+   * "Whenever this creature becomes blocked by a creature" (CR 509.1h).
+   *
+   * The attacker is the subject and each blocker travels as `blocked`, which is the same pair of
+   * roles the `blocks` event has and the opposite way round — so a card with both ("whenever ~
+   * blocks **or becomes blocked by** a creature") reads `c.blocked` in either case and means the
+   * other creature both times.
+   *
+   * Raised **once per blocker**, which is what "by a creature" means: a basilisk blocked by three
+   * creatures destroys all three. Note the plain "becomes blocked", with no "by a creature", is a
+   * different trigger that fires once however many blockers there are — nothing in the pool is
+   * printed that way, and a card that was would want a separate event rather than this one with a
+   * flag.
+   */
+  | {
+      readonly kind: 'becomes-blocked';
+      readonly who?: 'self' | 'another' | 'any';
+      readonly of?: 'you' | 'opponent' | 'any';
+      /** Set by the engine: the seat that controls the attacking creature. */
+      readonly subjectSeat?: SeatIndex;
+      /** Set by the engine: which creature became blocked. See `subject`. */
+      readonly subject?: string;
+      /** Set by the engine: one of the creatures blocking it. See `EffectContext.blocked`. */
+      readonly blocked?: string;
+    }
+  /**
    * "Whenever this creature attacks and isn't blocked" (CR 509.1h).
    *
    * Not a filter on `attacks`, and the difference is the whole of the event: an attack trigger
@@ -562,6 +587,16 @@ export type ConditionFn = (ctx: Parameters<EffectFn>[0]) => boolean;
 export interface TriggerDef {
   readonly on: TriggerEvent;
   readonly description: string;
+  /**
+   * This ability is **scheduled** rather than watched for: a delayed trigger (CR 603.7).
+   *
+   * `on` still says *when* — a step, which is the only shape a printed delayed trigger takes
+   * ("at end of combat", "at the beginning of the next end step") — but the ordinary event path
+   * never fires it. Something else creates it with `scheduleDelayed`, and the step it names drains
+   * it exactly once. Without this flag a step trigger fires every turn for as long as its
+   * permanent is on the battlefield, which is a different card entirely.
+   */
+  readonly delayed?: true;
   /**
    * The intervening-if clause: "**if** that creature's power is greater than this creature's, put
    * a +1/+1 counter on it" (CR 603.4).

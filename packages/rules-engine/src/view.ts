@@ -158,6 +158,15 @@ export interface AutomationView {
   readonly priority: SeatIndex | null;
   readonly passed: readonly SeatIndex[];
   readonly stack: readonly StackView[];
+  /**
+   * What is scheduled to happen later, in words, and at which step (CR 603.7).
+   *
+   * Public, because every bit of it is: a table can see that the creature its Basilisk fought is
+   * going to die at end of combat, and that the permanent a Flickerwisp took is coming back. The
+   * alternative is a board that silently changes two steps later with nothing on screen to have
+   * warned anybody — which is the same argument as the prevention shield and the freeze.
+   */
+  readonly later: readonly { readonly description: string; readonly stepLabel: string }[];
   readonly pools: Readonly<Record<string, ManaPool>>;
   readonly combat: CombatState;
   /** Who the engine is waiting on, and for what. */
@@ -533,6 +542,10 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
     priority: state.priority,
     passed: state.passed,
     stack,
+    later: state.delayed.map((entry) => ({
+      description: entry.description,
+      stepLabel: STEP_LABELS[entry.step],
+    })),
     pools: state.pools,
     combat: state.combat,
     awaiting,

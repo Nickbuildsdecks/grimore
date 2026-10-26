@@ -195,6 +195,38 @@ export function raiseUnblockedAttacks(state: GameState): GameState {
   return next;
 }
 
+/**
+ * Puts every delayed trigger this step is the moment for onto the stack, once each (CR 603.7).
+ *
+ * Called on entering every step rather than only the two that cards currently name, because the
+ * mechanism is about *a* step and a card that says "at the beginning of the next upkeep" would
+ * otherwise need a second place to be remembered.
+ *
+ * Three rules worth naming. It fires **once**: the entry is dropped whether or not the ability
+ * does anything, because the trigger has happened. It fires from wherever its source has got to —
+ * a Flickerwisp destroyed before the end step still gives the card back, because the delayed
+ * ability stopped belonging to it the moment it was created (CR 603.7d). And "the **next**" one
+ * cannot be the step it was created in: a delayed trigger made during an end step waits for the
+ * following turn's (CR 603.7b).
+ */
+function fireDelayed(state: GameState, step: Step): GameState {
+  if (state.delayed.length === 0) return state;
+  const due = state.delayed.filter((entry) => {
+    if (entry.step !== step) return false;
+    if (entry.of === 'you' && state.activeSeat !== entry.controller) return false;
+    return !(entry.createdTurn === state.turn && entry.createdStep === step);
+  });
+  if (due.length === 0) return state;
+  let next: GameState = { ...state, delayed: state.delayed.filter((e) => !due.includes(e)) };
+  for (const entry of due) {
+    next = pushAbility(
+      next, entry.source, entry.controller, entry.abilityIndex, [], 'triggered', entry.description,
+      entry.subject === undefined ? {} : { subject: entry.subject },
+    );
+  }
+  return next;
+}
+
 export const stackTop = (state: GameState): StackObject | undefined => {
   const id = state.stackOrder[state.stackOrder.length - 1];
   return id === undefined ? undefined : state.stackObjects[id];
@@ -294,6 +326,10 @@ function advanceStep(state: GameState): GameState {
 
     next = { ...next, step };
     next = onEnterStep(next, step);
+    // And anything that was scheduled for this step, after the step's own turn-based action: an
+    // "at end of combat" ability goes on the stack in the end-of-combat step and is responded to
+    // there, like any other trigger. See `fireDelayed`.
+    next = fireDelayed(next, step);
     if (next.pendingDiscard !== null) return next;
     // A combat declaration is owed: nobody holds priority until it is made.
     if (pendingDeclaration(next) !== null) return { ...next, priority: null, passed: [] };
@@ -510,6 +546,7 @@ function triggerMatches(
     case 'dies':
     case 'attacks':
     case 'blocks':
+    case 'becomes-blocked':
     case 'attacks-unblocked': {
       // `self` is the default, which is why every script written before this one still means what
       // it meant: a trigger that says nothing about `who` watches only its own permanent.
@@ -638,7 +675,8 @@ function raise(
   let next = state;
   if (subject !== undefined
     && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
-      || event.kind === 'blocks' || event.kind === 'attacks-unblocked')) {
+      || event.kind === 'blocks' || event.kind === 'becomes-blocked'
+      || event.kind === 'attacks-unblocked')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.
@@ -696,7 +734,8 @@ function raise(
     return subjectSeat === seat ? [subject as string, ...mine] : mine;
   });
   const watchers = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
-    || event.kind === 'blocks' || event.kind === 'attacks-unblocked'
+    || event.kind === 'blocks' || event.kind === 'becomes-blocked'
+    || event.kind === 'attacks-unblocked'
     ? everyBattlefield
     : selfOnly.has(event.kind)
       ? subject === undefined ? [] : [subject]
@@ -723,6 +762,9 @@ function raise(
     if (script?.triggers === undefined) continue;
     for (let i = 0; i < script.triggers.length; i++) {
       const trigger = script.triggers[i]!;
+      // A delayed trigger is scheduled, not watched for: the step it names drains it exactly once
+      // and the ordinary event path must never fire it (CR 603.7). See `TriggerDef.delayed`.
+      if (trigger.delayed === true) continue;
       if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor, id === subject)) continue;
       /*
         The intervening-if clause, asked the first of its two times (CR 603.4).
@@ -780,13 +822,15 @@ function raise(
         ...(answering === undefined ? {} : { answering }),
         ...(subject === undefined
           || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
-            || event.kind === 'blocks' || event.kind === 'attacks-unblocked')
+            || event.kind === 'blocks' || event.kind === 'becomes-blocked'
+            || event.kind === 'attacks-unblocked')
           ? {}
           : { subject }),
         // The attacker a block was against, for "that creature". Its own field rather than the
         // subject, because the subject of a block is the creature that blocked — which is almost
         // always the watcher itself, and never the one the card is talking about.
-        ...(event.kind === 'blocks' && event.blocked !== undefined
+        ...((event.kind === 'blocks' || event.kind === 'becomes-blocked')
+          && event.blocked !== undefined
           ? { blocked: event.blocked }
           : {}),
         // What it had on it before the event, for a trigger that counts counters that are gone by

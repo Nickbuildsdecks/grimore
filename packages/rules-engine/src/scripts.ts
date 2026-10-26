@@ -29,7 +29,7 @@ import {
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
-  freezeNextUntap, removeFromCombat,
+  freezeNextUntap, removeFromCombat, scheduleDelayed,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack,
   type EffectContext, type PumpOptions,
 } from './effects.js';
@@ -4874,6 +4874,132 @@ const OPHIDIAN: CardScript = {
   ],
 };
 
+/*
+  The family of printed text that happens **later**: a delayed trigger (CR 603.7).
+
+  Every trigger in this engine fires the moment its event happens, and a whole shelf of cards says
+  otherwise — "destroy that creature **at end of combat**", "return it to the battlefield **at the
+  beginning of the next end step**". None of it was expressible, and it cannot be faked with a step
+  trigger: a step trigger fires every turn for as long as its permanent is on the battlefield, and
+  this fires once whether or not the permanent is still there.
+
+  So a delayed ability is an ordinary entry in the card's own `triggers`, marked `delayed` so the
+  event path never fires it, and something else schedules it. By the time it goes on the stack it is
+  an ordinary triggered ability and nothing downstream knows it waited.
+
+  **Thicket Basilisk** is the combat half and the card that makes `becomes-blocked` worth raising:
+  it kills whatever blocks it *and* whatever it blocks, and the death is at end of combat rather
+  than at once — so the creature it marked still deals its combat damage, and a player who saw
+  "destroy" and expected a Doom Blade will be surprised in the right way.
+
+  **Flickerwisp** is the other half, and shows why the schedule lives on the state rather than on
+  the permanent: the Wisp can be killed before the end step and the exiled card still comes back,
+  because the delayed ability stopped belonging to it the moment it was created (CR 603.7d).
+*/
+
+/** The index of a card's delayed ability, so no effect has to hard-code a position. */
+const delayedIndexOf = (script: CardScript): number =>
+  (script.triggers ?? []).findIndex((trigger) => trigger.delayed === true);
+
+const nameOfCard = (state: GameState, id: string | undefined): string => {
+  const inst = id === undefined ? undefined : state.instances[id];
+  return inst === undefined ? 'it' : state.cardDefs[inst.defKey]?.name ?? 'it';
+};
+
+const THICKET_BASILISK: CardScript = {
+  name: 'Thicket Basilisk',
+  triggers: [
+    {
+      on: { kind: 'blocks' },
+      description: 'destroy the creature it blocked at end of combat',
+      effect: (c) => markForEndOfCombat(c),
+    },
+    {
+      // The same clause from the other side, and a separate trigger because the two events are
+      // about different creatures. Both read `c.blocked`, which is the other creature either way.
+      on: { kind: 'becomes-blocked' },
+      description: 'destroy the creature blocking it at end of combat',
+      effect: (c) => markForEndOfCombat(c),
+    },
+    {
+      on: { kind: 'step', step: 'end-combat', of: 'any' },
+      delayed: true,
+      description: 'destroy the creature it fought',
+      // No `destroy` of a creature that has left: `destroy` reads the instance and does nothing
+      // for a card that is not on the battlefield, which is the rule rather than a guard.
+      effect: (c) => (c.subject === undefined ? c.state : destroy(c.state, c.subject)),
+    },
+  ],
+};
+
+function markForEndOfCombat(c: EffectContext): GameState {
+  if (c.blocked === undefined) return c.state;
+  return scheduleDelayed(c.state, {
+    source: c.source,
+    controller: c.controller,
+    abilityIndex: delayedIndexOf(THICKET_BASILISK),
+    step: 'end-combat',
+    // `any`, not `you`: the combat this was scheduled in is as often as not somebody else's turn,
+    // and "at end of combat" means *this* combat.
+    of: 'any',
+    subject: c.blocked,
+    description: `destroy ${nameOfCard(c.state, c.blocked)}`,
+  });
+}
+
+const FLICKERWISP: CardScript = {
+  name: 'Flickerwisp',
+  keywords: ['flying'],
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'exile another target permanent, and give it back at the next end step',
+      targets: [{
+        kind: 'permanent',
+        description: 'another target permanent',
+        // "Another": its own arrival cannot be aimed at itself, which is printed on the card and
+        // is also the difference between a blink and a sacrifice.
+        filter: (_state, candidate, _controller, source) =>
+          candidate.kind === 'card' && candidate.id !== source,
+      }],
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        if (id === null) return c.state;
+        const name = nameOfCard(c.state, id);
+        /*
+          Scheduled before the exile, and it matters: once the card is in exile `nameOfCard` still
+          reads it, but the *owner* the return needs is read when the delayed ability resolves, off
+          an instance that is still there. Exile is a zone the engine keeps cards in, so both are
+          safe — the order here is only so the log reads in the order a player saw it.
+        */
+        const scheduled = scheduleDelayed(c.state, {
+          source: c.source,
+          controller: c.controller,
+          abilityIndex: delayedIndexOf(FLICKERWISP),
+          step: 'end',
+          of: 'any',
+          subject: id,
+          description: `return ${name} to the battlefield`,
+        });
+        return exileCard(scheduled, id);
+      },
+    },
+    {
+      on: { kind: 'step', step: 'end', of: 'any' },
+      delayed: true,
+      description: 'return the exiled card to the battlefield',
+      effect: (c) => {
+        const id = c.subject;
+        const inst = id === undefined ? undefined : c.state.instances[id];
+        // Under its **owner's** control, which is the clause that makes this a political card in a
+        // pod: a permanent stolen by somebody else goes home, not to whoever blinked it.
+        if (inst === undefined || inst.zone !== 'exile') return c.state;
+        return putOntoBattlefield(c.state, id!, inst.owner);
+      },
+    },
+  ],
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -4956,7 +5082,7 @@ const ALL: readonly CardScript[] = [
   EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM, CHALICE_OF_THE_VOID,
   WALKING_BALLISTA, HANGARBACK_WALKER, TOXIC_DELUGE, TWINCAST,
   GOBLIN_ELECTROMANCER, THALIA_GUARDIAN_OF_THRABEN, TORMENTED_SOUL, RIVER_BOA,
-  WALL_OF_FROST, OPHIDIAN,
+  WALL_OF_FROST, OPHIDIAN, THICKET_BASILISK, FLICKERWISP,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

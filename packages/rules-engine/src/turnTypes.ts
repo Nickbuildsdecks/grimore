@@ -51,6 +51,42 @@ export const STEP_LABELS: Readonly<Record<Step, string>> = Object.freeze({
   cleanup: 'Cleanup',
 });
 
+/**
+ * One scheduled delayed trigger (CR 603.7).
+ *
+ * It names a trigger the card already has — `abilityIndex` into `CardScript.triggers`, marked
+ * `delayed` there so the ordinary event path never fires it — plus everything the ability will
+ * need when it does fire, because by then the board may say none of it: which permanent it was
+ * about, who controls it, and what to call it in the log.
+ */
+export interface DelayedTrigger {
+  readonly id: string;
+  /** The card whose script holds the ability. May have left the battlefield by now. */
+  readonly source: string;
+  readonly controller: SeatIndex;
+  /** Index into that card's `triggers`. */
+  readonly abilityIndex: number;
+  /** The step it fires at the beginning of. */
+  readonly step: Step;
+  /**
+   * Whose turn's step. `you` is the controller's own next one — "at the beginning of **your** next
+   * end step" — and `any` is the next occurrence whoever's turn it is, which is what "at end of
+   * combat" means: the combat is happening on somebody else's turn as often as not.
+   */
+  readonly of: 'you' | 'any';
+  /** The permanent the ability is about, for "that creature". See `StackObject.subject`. */
+  readonly subject?: string;
+  readonly description: string;
+  /**
+   * The turn it was scheduled on, so "the **next** end step" cannot be the one already in
+   * progress. A delayed trigger created during an end step waits for the following turn's
+   * (CR 603.7b).
+   */
+  readonly createdTurn: number;
+  /** The step it was scheduled in, for the same reason. */
+  readonly createdStep: Step;
+}
+
 /** Steps in which a player may cast a sorcery-speed spell (their own main phase, empty stack). */
 export const MAIN_STEPS: readonly Step[] = Object.freeze(['precombat-main', 'postcombat-main']);
 export const COMBAT_STEPS: readonly Step[] = Object.freeze([
@@ -339,6 +375,23 @@ export interface AutomationState {
   readonly extraLands: Readonly<Record<string, number>>;
   /** Source of synthetic ids for ability stack objects and effects. */
   readonly autoSeq: number;
+  /**
+   * Abilities scheduled to trigger later, each exactly once (CR 603.7).
+   *
+   * The family of printed text this exists for is "**at end of combat**, destroy that creature"
+   * and "**at the beginning of the next end step**, return it to the battlefield": something
+   * happens now, and something else happens at a named time, once. Every other trigger in the
+   * engine fires at the moment its event happens, so none of this was expressible — and it cannot
+   * be faked with a step trigger, because a step trigger fires every turn for as long as its
+   * permanent is on the battlefield and this one fires once whether or not the permanent is still
+   * there.
+   *
+   * On the state rather than on the permanent for exactly that reason: the Flickerwisp that exiled
+   * something can be destroyed before the end step and the card still comes back, because the
+   * delayed ability has already been created and stopped belonging to it (CR 603.7d). Drained by
+   * the step it names.
+   */
+  readonly delayed: readonly DelayedTrigger[];
   /** Set when a player has lost by trying to draw from an empty library (CR 704.5b). */
   readonly drewFromEmpty: readonly SeatIndex[];
   /**

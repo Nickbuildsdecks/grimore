@@ -1457,6 +1457,30 @@ const OPHIDIAN: CardDef = {
   colors: ['U'],
 };
 
+const THICKET_BASILISK: CardDef = {
+  name: 'Thicket Basilisk',
+  typeLine: 'Creature — Basilisk',
+  manaCost: '{3}{G}{G}',
+  cmc: 5,
+  power: '2',
+  toughness: '4',
+  oracleText: 'Whenever Thicket Basilisk blocks or becomes blocked by a creature, destroy that '
+    + 'creature at end of combat.',
+  colors: ['G'],
+};
+
+const FLICKERWISP: CardDef = {
+  name: 'Flickerwisp',
+  typeLine: 'Creature — Elemental',
+  manaCost: '{1}{W}{W}',
+  cmc: 3,
+  power: '3',
+  toughness: '1',
+  oracleText: 'Flying\nWhen Flickerwisp enters the battlefield, exile another target permanent. '
+    + "Return it to the battlefield under its owner's control at the beginning of the next end step.",
+  colors: ['W'],
+};
+
 const GOBLIN_ELECTROMANCER: CardDef = {
   name: 'Goblin Electromancer',
   typeLine: 'Creature — Goblin Wizard',
@@ -3369,7 +3393,19 @@ export const SKYWARD_WRIT: DeckSpec = {
     */
     { card: AJANI_CALLER_OF_THE_PRIDE, count: 1 },
     // And the air, which it does intend to win.
-    { card: LEONIN_SKYHUNTER, count: 3 },
+    { card: LEONIN_SKYHUNTER, count: 2 },
+    /*
+      A Flickerwisp for the third Skyhunter, and the first card in the pool whose text happens
+      **later**.
+
+      The body is the same plan one mana along — a 3/1 flier instead of a 2/2 — and the arrival is
+      a blink of *any* permanent, which in this deck is three different cards at once: reset an
+      opponent's Journey to Nowhere and the creature under it comes back to you, take a blocker out
+      of a combat your Skyhunters are losing, or re-use one of your own entry triggers. It gives
+      the permanent back at the next end step, so it buys a turn rather than answering anything —
+      which is exactly what a deck full of two-power fliers wants.
+    */
+    { card: FLICKERWISP, count: 1 },
     // Two Skyhunters' worth of white two-drops already fly; this one does not and does not need
     // to. Against the two colours that hold this pool's removal it simply cannot be answered, and
     // it is the only card here that proves protection does all four of its jobs.
@@ -4205,7 +4241,17 @@ export const DELTA_BLOOM: DeckSpec = {
     { card: KIORAS_FOLLOWER, count: 1 },
     { card: SIEGE_WURM, count: 2 },
     { card: PELAKKA_WURM, count: 1 },
-    { card: AIR_ELEMENTAL, count: 2 },
+    /*
+      One Air Elemental, and a Thicket Basilisk for the other: the same five mana spent two ways.
+
+      A 4/4 flier takes four turns to win on its own and blocks nothing on the ground; a 2/4 that
+      destroys whatever it fights — at end of combat, so it takes its damage first — ends the
+      ground war instead. This is the deck that can ask the question honestly, because it ramps:
+      five mana arrives on turn four as often as turn five, and nothing else it does at five is a
+      blocker. The Elemental stays in the pool and in this deck at one copy.
+    */
+    { card: AIR_ELEMENTAL, count: 1 },
+    { card: THICKET_BASILISK, count: 1 },
     { card: ENDLESS_ONE, count: 2 },
     { card: MIND_SPRING, count: 1 },
     { card: HURRICANE, count: 1 },
