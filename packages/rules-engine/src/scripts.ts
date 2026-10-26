@@ -23,7 +23,7 @@ import { listAt } from './cardActions.js';
 import {
   addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
-  chosenOption, firstAbilityTarget,
+  chosenOption, firstAbilityTarget, dividedAmong,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -4141,6 +4141,34 @@ const SEDGEMOOR_WITCH: CardScript = {
   ],
 };
 
+/*
+  The first card in the pool that announces *numbers* with its targets (CR 601.2d).
+
+  Everything else that points at more than one thing does the same thing to each: Garruk untaps two
+  lands, Breath of Darigaaz hits everything for one. Arc Lightning hands the caster a budget and
+  lets them spend it, which is a shape printed on dozens of cards — Chandra's Pyrohelix, Forked
+  Bolt, Fiery Confluence — and was not expressible here at all.
+
+  The spec says it in three fields and the rules do the rest: `count: 3` is the most targets it may
+  have, `optional: true` lets it be cast with fewer, and `divided: 3` is the budget. "One, two, or
+  three targets" is then a consequence rather than a fourth field, because every target must be
+  assigned at least one and the whole three must be assigned — zero targets cannot spend it and
+  four cannot be paid.
+*/
+const ARC_LIGHTNING: CardScript = {
+  name: 'Arc Lightning',
+  targets: [{ kind: 'any', description: 'any target', count: 3, optional: true, divided: 3 }],
+  // One `dealDamage` per target with its own share, rather than a loop over a single amount. Each
+  // is a separate dealing of damage from the same source, which is what the card says and what
+  // protection, prevention and deathtouch each have to be asked about separately.
+  onResolve: (c) => dividedAmong(c).reduce(
+    (state, { target, amount }) => dealDamage(state, target, amount, {
+      controller: c.controller, source: c.source,
+    }),
+    c.state,
+  ),
+};
+
 /**
  * Every token this pool can put onto the battlefield.
  *
@@ -4232,6 +4260,7 @@ const ALL: readonly CardScript[] = [
   IMPASSIONED_ORATOR, BLOODTHIRSTY_AERIALIST, CRUEL_CELEBRANT, REVITALIZE, VRASKAS_CONTEMPT,
   KAMBAL,
   guildgate('Orzhov Guildgate', 'W', 'B'),
+  ARC_LIGHTNING,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

@@ -206,6 +206,62 @@ export function checkTargets(
 }
 
 /**
+ * Checks the division a dividing spell was cast with (CR 601.2d).
+ *
+ * Separate from `checkTargets` because it is a separate announcement: the targets are legal or
+ * they are not, and the division is a sum that adds up or does not. Both are checked as the spell
+ * is cast, and neither can be changed afterwards.
+ *
+ * Four refusals, and each one is a different mistake a client can make: a division sent for a
+ * spell that divides nothing, a division that is not one number per target, a share of zero or
+ * less, and a total that is not the whole amount. The last is the one that matters most — a spell
+ * cast with two of its three damage assigned is a card that silently did less than it says.
+ */
+export function checkDivision(
+  specs: readonly TargetSpec[],
+  chosen: readonly Target[],
+  division: readonly number[] | undefined,
+): TargetCheck {
+  const dividing = specs.filter((spec) => spec.divided !== undefined);
+  if (dividing.length === 0) {
+    return division === undefined || division.length === 0
+      ? { ok: true }
+      : { ok: false, reason: 'this spell has nothing to divide' };
+  }
+  /*
+    One dividing spec, and it must be the only spec on the card.
+
+    An honest refusal rather than a limit worth working around: with two specs the division would
+    have to say which of them it is about, and every printed card that divides something divides
+    it among *all* of its targets. If one ever does both, this is where it says so rather than
+    dividing the wrong three damage among the wrong two creatures.
+  */
+  const spec = dividing[0];
+  if (spec === undefined || specs.length > 1) {
+    return { ok: false, reason: 'the engine cannot divide a spell that chooses more than one kind of target' };
+  }
+  const amount = spec.divided ?? 0;
+  if (division === undefined) {
+    return { ok: false, reason: `divide ${amount} among the targets` };
+  }
+  if (division.length !== chosen.length) {
+    return { ok: false, reason: 'say how much each target is assigned, one number per target' };
+  }
+  for (const share of division) {
+    if (!Number.isInteger(share) || share < 1) {
+      // CR 601.2d: each target must be assigned at least one of whatever is divided. A target with
+      // nothing assigned is not a target the spell took — it should not have been chosen.
+      return { ok: false, reason: 'each target must be assigned at least one' };
+    }
+  }
+  const total = division.reduce((sum, share) => sum + share, 0);
+  if (total !== amount) {
+    return { ok: false, reason: `all ${amount} must be assigned, and that is ${total}` };
+  }
+  return { ok: true };
+}
+
+/**
  * Records which object each card target is right now, to be stored on the stack object.
  *
  * Called wherever targets are written onto a stack object — a cast, an activation, a trigger, and
@@ -283,11 +339,16 @@ export function liveTargets(
   state: GameState, targets: readonly Target[], seqs: Readonly<Record<string, number>> | undefined,
 ): readonly Target[] {
   if (seqs === undefined) return targets;
-  return targets.filter((target) => {
-    if (target.kind !== 'card') return true;
-    const was = seqs[target.id];
-    return was === undefined || (state.instances[target.id]?.objectSeq ?? 0) === was;
-  });
+  return targets.filter((target) => stillTheObject(state, target, seqs));
+}
+
+/** Whether one chosen target is still the object it was chosen as. See `liveTargets`. */
+export function stillTheObject(
+  state: GameState, target: Target, seqs: Readonly<Record<string, number>> | undefined,
+): boolean {
+  if (seqs === undefined || target.kind !== 'card') return true;
+  const was = seqs[target.id];
+  return was === undefined || (state.instances[target.id]?.objectSeq ?? 0) === was;
 }
 
 /** Whether a spell on the stack still has at least one legal target, for the fizzle rule. */

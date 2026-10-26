@@ -43,6 +43,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
   IDLE, arenaReducer, boardRead, brokeADeal, candidatesAt, cardBadges, choiceCandidatesAt,
+  dividedAmount,
   eliminatedLabel, pactBadge, playsForCard, reasonCannotPlay, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
@@ -1239,9 +1240,20 @@ function Board({ table }: { table: UseTable }) {
     // the board: without the ring the player is being asked to tap cards that look untappable.
     ...(arenaMode.kind === "ordering" ? arenaMode.owed.flatMap((ask) => ask.blockers) : []),
   ])
-  const targetableSeats = new Set<number>(
-    nowChoosing.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat),
-  )
+  const targetableSeats = new Set<number>([
+    ...nowChoosing.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat),
+    /*
+      And a player a dividing spell already points at (CR 601.2d).
+
+      `candidatesAt` drops a target once it is taken, which is right for every other spell and
+      wrong for this one: another tap on the same player puts another point of the quantity on
+      them. A card does not need this — `onSelect` already lets an already-chosen card through —
+      but a seat strip is lit by this set alone.
+    */
+    ...(arenaMode.kind === "targeting" && dividedAmount(arenaMode.play) !== undefined
+      ? arenaMode.chosen.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat)
+      : []),
+  ])
   const chosenIds = new Set<string>(
     arenaMode.kind === "targeting" || arenaMode.kind === "choosing"
       ? arenaMode.chosen.filter((t) => t.kind === "card").map((t) => (t as { id: string }).id)

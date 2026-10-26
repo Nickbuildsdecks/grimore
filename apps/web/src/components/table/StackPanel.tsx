@@ -10,24 +10,8 @@
  * anybody asks of the stack.
  */
 import { cn } from "@/lib/utils"
+import { targetName } from "@/lib/arena"
 import type { GameView } from "@grimore/rules-engine"
-
-/** What a target is, in words, for the "→" part of a stack row. */
-function targetLabel(view: GameView, target: { kind: string; id?: string; seat?: number }): string {
-  if (target.kind === "player") {
-    const seat = target.seat ?? 0
-    return seat === view.seat ? "you" : (view.seats[seat]?.name ?? `seat ${seat}`)
-  }
-  // An ability has no card, so its name is its own description — which is the only thing a reader
-  // could use anyway: "Disallow → Icy Manipulator: tap target permanent" says what is being
-  // countered, where the permanent's name alone would not say which of its abilities.
-  if (target.kind === "ability") {
-    const object = (view.automation?.stack ?? []).find((o) => o.id === target.id)
-    return object?.description ?? "an ability"
-  }
-  const card = target.id === undefined ? undefined : view.cards[target.id]
-  return card?.card?.name ?? "something"
-}
 
 export interface StackPanelProps {
   view: GameView
@@ -97,7 +81,16 @@ export function StackPanel({ view, targetable, onPick }: StackPanelProps) {
               <span className="font-medium text-[var(--g-text-high)]">{object.description}</span>
               {object.targets.length > 0 ? (
                 <span className="text-[var(--g-text-muted)]">
-                  &rarr; {object.targets.map((t) => targetLabel(view, t)).join(", ")}
+                  {/*
+                    Each target with its share, for a spell that divided a quantity among them
+                    (CR 601.2d). Public on purpose: the division is announced as the spell is cast
+                    and cannot be changed, so the player deciding whether to answer it is entitled
+                    to see whether all three damage is coming at one creature.
+                  */}
+                  &rarr; {object.targets.map((t, i) => {
+                    const share = object.division?.[i]
+                    return `${targetName(view, t)}${share === undefined ? "" : ` (${share})`}`
+                  }).join(", ")}
                 </span>
               ) : null}
               <span className="ml-auto text-[10px] uppercase tracking-wide text-[var(--g-text-muted)]">

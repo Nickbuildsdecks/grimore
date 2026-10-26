@@ -93,6 +93,83 @@ describe("choosing a play", () => {
     expect(arenaReducer(mode, { kind: "undoTarget" }).mode).toEqual(IDLE)
   })
 
+  describe("a spell that divides a quantity among its targets (CR 601.2d)", () => {
+    const arcLightning = play({
+      name: "Arc Lightning",
+      description: "Cast Arc Lightning",
+      manaCost: "{2}{R}",
+      targetSpecs: [{
+        kind: "any", description: "any target", count: 3, optional: true, divided: 3,
+      }],
+      candidates: [[player(1), card("a"), card("b")]],
+    })
+
+    it("spends one point per tap, and sends the cast when the last one is spent", () => {
+      let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: arcLightning }).mode
+      let result = arenaReducer(mode, { kind: "pickTarget", target: card("a") })
+      expect(result.action).toBeNull()
+      expect(result.mode).toEqual({ kind: "targeting", play: arcLightning, chosen: [card("a")], shares: [1] })
+      mode = result.mode
+      // A second tap on the same target is another point on it, not a change of mind.
+      result = arenaReducer(mode, { kind: "pickTarget", target: card("a") })
+      expect(result.action).toBeNull()
+      expect(result.mode).toEqual({ kind: "targeting", play: arcLightning, chosen: [card("a")], shares: [2] })
+      mode = result.mode
+      result = arenaReducer(mode, { kind: "pickTarget", target: card("b") })
+      expect(result.mode).toEqual(IDLE)
+      expect(result.action).toEqual({
+        type: "auto:cast", card: "c1", targets: [card("a"), card("b")], division: [2, 1],
+      })
+    })
+
+    it("puts the whole amount in one place when that is where every tap went", () => {
+      let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: arcLightning }).mode
+      mode = arenaReducer(mode, { kind: "pickTarget", target: player(1) }).mode
+      mode = arenaReducer(mode, { kind: "pickTarget", target: player(1) }).mode
+      const result = arenaReducer(mode, { kind: "pickTarget", target: player(1) })
+      expect(result.action).toEqual({
+        type: "auto:cast", card: "c1", targets: [player(1)], division: [3],
+      })
+    })
+
+    it("steps back one point at a time, and drops the target when it has none left", () => {
+      let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: arcLightning }).mode
+      mode = arenaReducer(mode, { kind: "pickTarget", target: card("a") }).mode
+      mode = arenaReducer(mode, { kind: "pickTarget", target: card("a") }).mode
+      mode = arenaReducer(mode, { kind: "undoTarget" }).mode
+      expect(mode).toEqual({ kind: "targeting", play: arcLightning, chosen: [card("a")], shares: [1] })
+      mode = arenaReducer(mode, { kind: "undoTarget" }).mode
+      expect(mode).toEqual({ kind: "targeting", play: arcLightning, chosen: [], shares: [] })
+      // And out of targeting from empty, like every other play.
+      expect(arenaReducer(mode, { kind: "undoTarget" }).mode).toEqual(IDLE)
+    })
+
+    it("never takes more targets than the amount can pay for", () => {
+      const two = play({
+        name: "Chandra's Pyrohelix",
+        targetSpecs: [{ kind: "any", description: "any target", count: 2, optional: true, divided: 2 }],
+        candidates: [[card("a"), card("b"), card("c")]],
+      })
+      let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: two }).mode
+      mode = arenaReducer(mode, { kind: "pickTarget", target: card("a") }).mode
+      const result = arenaReducer(mode, { kind: "pickTarget", target: card("b") })
+      expect(result.action).toEqual({
+        type: "auto:cast", card: "c1", targets: [card("a"), card("b")], division: [1, 1],
+      })
+    })
+
+    it("does not send a half-spent division when Cast is pressed", () => {
+      // The spell is "up to three targets", so `targetsRequired` is zero and the old confirm would
+      // have sent it with one damage of three assigned — a division the engine refuses.
+      expect(targetsRequired(arcLightning)).toBe(0)
+      let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: arcLightning }).mode
+      mode = arenaReducer(mode, { kind: "pickTarget", target: card("a") }).mode
+      const result = arenaReducer(mode, { kind: "confirm" })
+      expect(result.action).toBeNull()
+      expect(result.mode.kind).toBe("targeting")
+    })
+  })
+
   it("refuses to confirm a spell with a required target still missing", () => {
     const mode = arenaReducer(IDLE, { kind: "choosePlay", play: play() }).mode
     const result = arenaReducer(mode, { kind: "confirm" })

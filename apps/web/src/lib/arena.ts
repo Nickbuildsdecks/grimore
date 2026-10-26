@@ -47,7 +47,18 @@ export type ArenaMode =
    * at, because the size is part of casting it and not part of resolving it.
    */
   | { kind: "payingX"; play: LegalPlay; chosen: number }
-  | { kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string; x?: number }
+  /**
+   * Aiming a play, and — for a spell that divides a quantity (CR 601.2d) — spending it.
+   *
+   * `shares` runs alongside `chosen`: one number per target, in the same order. For a dividing
+   * spell a tap on a target it already has *adds one more* to that target rather than dropping it,
+   * which is how three damage gets split two and one with no second control to learn. Absent on
+   * every other play, where there is nothing to divide.
+   */
+  | {
+      kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string; x?: number
+      shares?: number[]
+    }
   /**
    * Declaring attackers. `chosen` carries a defender per attacker, not one for the declaration,
    * because in a pod each creature may attack a different player — and `defender` here is only
@@ -185,6 +196,35 @@ export function targetsRequired(play: LegalPlay): number {
   return play.targetSpecs.reduce((n, spec) => n + (spec.optional ? 0 : Math.max(1, spec.count ?? 1)), 0)
 }
 
+/**
+ * What a target is, in words, for a prompt or a stack row.
+ *
+ * Here rather than in either component because both the stack and the division prompt need it and
+ * two copies of "what is this target called" would drift. An ability's name is its own description,
+ * which is also the only thing a reader could use: "Disallow &rarr; Icy Manipulator: tap target
+ * permanent" says which of the permanent's abilities is being countered, where the permanent's
+ * name alone would not.
+ */
+export function targetName(view: GameView, target: Target): string {
+  if (target.kind === "player") {
+    return target.seat === view.seat ? "you" : (view.seats[target.seat]?.name ?? `seat ${target.seat}`)
+  }
+  if (target.kind === "ability") {
+    return (view.automation?.stack ?? []).find((o) => o.id === target.id)?.description ?? "an ability"
+  }
+  return view.cards[target.id]?.card?.name ?? "something"
+}
+
+/**
+ * The quantity this play divides among its targets, or undefined when it divides nothing.
+ *
+ * Read off the spec the engine sent rather than from a list of card names here: the client's job
+ * is to collect the division, not to know which cards have one.
+ */
+export function dividedAmount(play: LegalPlay): number | undefined {
+  return play.targetSpecs.find((spec) => spec.divided !== undefined)?.divided
+}
+
 /** Which spec the next pick is for, so the prompt can name it. */
 export function specAt(play: LegalPlay, index: number): LegalPlay["targetSpecs"][number] | undefined {
   let seen = 0
@@ -240,8 +280,14 @@ export function choiceCandidatesAt(
 /** The action a completed play turns into. */
 function playAction(
   play: LegalPlay, targets: readonly Target[], sacrifice?: string, x?: number,
+  division?: readonly number[],
 ): TableAction {
   const withTargets = targets.length > 0 ? { targets: [...targets] } : {}
+  // The division, for a spell that has one. Sent only when the play's own spec asks for it, so a
+  // stale `shares` on another kind of play cannot reach the engine as a division it refuses.
+  const withDivision = dividedAmount(play) === undefined || division === undefined
+    ? {}
+    : { division: [...division] }
   const withSacrifice = sacrifice === undefined ? {} : { sacrifice }
   if (play.kind === "land") return { type: "auto:playLand", card: play.card }
   // A modal spell's modes were chosen by choosing *this* play: the engine offers one play per
@@ -298,6 +344,7 @@ function playAction(
     return {
       type: "auto:cast", card: play.card,
       ...withModes, ...withX, ...withKicker, ...withFlashback, ...withFaceDown, ...withForetold,
+      ...withDivision,
       ...withSacrifice, ...withTargets,
     }
   }
@@ -370,8 +417,35 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         return { mode: { ...mode, chosen }, action: null }
       }
       if (mode.kind !== "targeting") return { mode, action: null }
-      // Picking something already chosen un-picks it, which is how a misclick is undone.
       const key = targetKey(event.target)
+      /*
+        A spell that divides a quantity: one tap spends one point of it (CR 601.2d).
+
+        Tapping a target it already has adds another point to that target rather than dropping it,
+        which is the whole interface — three damage split two and one is three taps, and the spell
+        goes as soon as the last point is spent. Dropping a target is `undoTarget`, which peels
+        one point back off, so a misclick costs one tap to undo instead of the whole aim.
+      */
+      const amount = dividedAmount(mode.play)
+      if (amount !== undefined) {
+        const shares = mode.shares ?? []
+        if (shares.reduce((n, d) => n + d, 0) >= amount) return { mode, action: null }
+        const at = mode.chosen.findIndex((t) => targetKey(t) === key)
+        // Never more targets than the card allows, and never more than the amount can pay for:
+        // every target has to be assigned at least one.
+        const most = Math.min(targetsWanted(mode.play), amount)
+        if (at < 0 && mode.chosen.length >= most) return { mode, action: null }
+        const picked = at < 0 ? [...mode.chosen, event.target] : mode.chosen
+        const spread = at < 0 ? [...shares, 1] : shares.map((d, i) => (i === at ? d + 1 : d))
+        if (spread.reduce((n, d) => n + d, 0) >= amount) {
+          return {
+            mode: IDLE,
+            action: playAction(mode.play, picked, mode.sacrifice, mode.x, spread),
+          }
+        }
+        return { mode: { ...mode, chosen: picked, shares: spread }, action: null }
+      }
+      // Picking something already chosen un-picks it, which is how a misclick is undone.
       if (mode.chosen.some((t) => targetKey(t) === key)) {
         return { mode: { ...mode, chosen: mode.chosen.filter((t) => targetKey(t) !== key) }, action: null }
       }
@@ -384,6 +458,20 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
 
     case "undoTarget": {
       if (mode.kind !== "targeting") return { mode, action: null }
+      // For a dividing spell, one step back is one *point* back rather than one target: the last
+      // target tapped loses a point, and loses its place only when it has none left.
+      if (dividedAmount(mode.play) !== undefined) {
+        const shares = mode.shares ?? []
+        const last = shares.length - 1
+        if (last < 0) return { mode: IDLE, action: null }
+        const left = (shares[last] ?? 0) - 1
+        return left <= 0
+          ? {
+            mode: { ...mode, chosen: mode.chosen.slice(0, -1), shares: shares.slice(0, -1) },
+            action: null,
+          }
+          : { mode: { ...mode, shares: shares.map((d, i) => (i === last ? left : d)) }, action: null }
+      }
       if (mode.chosen.length === 0) return { mode: IDLE, action: null }
       return { mode: { ...mode, chosen: mode.chosen.slice(0, -1) }, action: null }
     }
@@ -398,7 +486,17 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (mode.kind === "targeting") {
         // "Up to" spells are the only ones that can be sent with fewer targets than they want.
         if (mode.chosen.length < targetsRequired(mode.play)) return { mode, action: null }
-        return { mode: IDLE, action: playAction(mode.play, mode.chosen, mode.sacrifice, mode.x) }
+        // A dividing spell is sent by its last point rather than by this button, so a press with
+        // the amount half spent does nothing: the engine refuses a division that does not add up,
+        // and a button that sent one would turn a rule into an error message.
+        const amount = dividedAmount(mode.play)
+        if (amount !== undefined && (mode.shares ?? []).reduce((n, d) => n + d, 0) !== amount) {
+          return { mode, action: null }
+        }
+        return {
+          mode: IDLE,
+          action: playAction(mode.play, mode.chosen, mode.sacrifice, mode.x, mode.shares),
+        }
       }
       if (mode.kind === "attackers") {
         return {

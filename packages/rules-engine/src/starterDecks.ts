@@ -3317,6 +3317,15 @@ const ENIGMA_DRAKE: CardDef = {
   colors: ['U', 'R'],
 };
 
+const ARC_LIGHTNING: CardDef = {
+  name: 'Arc Lightning',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{R}',
+  cmc: 3,
+  oracleText: 'Arc Lightning deals 3 damage divided as you choose among one, two, or three targets.',
+  colors: ['R'],
+};
+
 /**
  * Arc Tempest: the ninth deck, and the first whose creatures are paid for by its spells.
  *
@@ -3393,8 +3402,30 @@ export const ARC_TEMPEST: DeckSpec = {
 
     // ── Twelve spells that point at a face ──
     { card: LIGHTNING_BOLT, count: 2 },
-    { card: SHOCK, count: 2 },
+    { card: SHOCK, count: 1 },
     { card: LIGHTNING_STRIKE, count: 2 },
+    /*
+      Arc Lightning for the second Shock, and the one card here that kills two creatures.
+
+      Three damage for {2}{R}, divided as you choose among one, two or three targets — the first
+      card in the pool that announces numbers along with its targets (CR 601.2d). Against the two
+      token decks and the three decks with an X/1 on turn one, one card answers two creatures; and
+      the half that is not the division is that a deck of twelve burn spells now has one that is
+      not a one-for-one.
+
+      **It measures as free, and that is the honest reading.** 270 paired duels against the field,
+      two seed sets: taking it back out for a second Shock is −9 and −1, so the card is worth +9
+      and +1 — the same sign both times and both well inside the eighteen-game floor. A new card's
+      bar is "costs nothing", and it clears that.
+
+      **The cut is unpriceable, so the cards decided it.** Cutting the Magma Jet instead measured
+      −10 and +1 — no consistent sign, which means this instrument cannot tell the two cuts apart.
+      So the argument is the one the Squelch cut used (D134): the second Shock is the most
+      redundant card in a deck that already holds twelve spells pointing at a face, where Magma
+      Jet's scry is the half this deck is short of — a deck that needs its one Guttersnipe needs
+      to find it.
+    */
+    { card: ARC_LIGHTNING, count: 1 },
     // Magma Jet over a third Lightning Strike: the scry is the half this deck is short of, since a
     // deck that needs its one Guttersnipe needs to find it.
     { card: MAGMA_JET, count: 2 },

@@ -28,7 +28,7 @@ import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
 import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
-import { hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
+import { checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import { convokePlan, crewPlan, legalActions, manaSources } from './legalActions.js';
 import {
@@ -177,6 +177,16 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
   /*
+    The division, announced with the spell and with its targets (CR 601.2d).
+
+    After the targets rather than with X and the modes, because it is a statement *about* the
+    targets: "three damage divided" means nothing until there is a list to divide it among, and a
+    division checked first would have to be re-checked once the list arrived.
+  */
+  const divided = checkDivision(specs, chosen, action.division);
+  if (!divided.ok) throw new EngineError('RULE_NOT_APPLICABLE', divided.reason ?? 'that division does not add up');
+
+  /*
     An additional cost that is not optional, chosen and checked before anything is spent.
 
     A cost, not a target: it is paid as the spell is cast, so the creature is in the graveyard
@@ -290,6 +300,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
     cardKey: inst.defKey, targets: [...chosen], targetSeqs: targetSeqsFor(state, chosen),
     ...(action.x === undefined ? {} : { x: action.x }),
+    ...(action.division === undefined ? {} : { division: [...action.division] }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
     ...(kicked ? { kicked: true } : {}),
     // The flag the card's destination depends on: a spell cast from the graveyard is exiled as it
@@ -641,6 +652,17 @@ function activate(
   const chosen = action.targets ?? [];
   const check = checkTargets(state, specs, chosen, action.by, inst.id);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
+
+  /*
+    An **ability** that divides a quantity is refused rather than resolved as if it divided nothing.
+
+    `AutoActivateAction` carries no division, because no ability in the pool divides anything — and
+    the day one does, this is the line that says so instead of the ability silently dealing its
+    whole amount to the first target. An honest refusal beats a card that looks like it works.
+  */
+  if (specs.some((spec) => spec.divided !== undefined)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'the engine cannot divide an activated ability yet');
+  }
 
   // The sacrifice is chosen and checked before anything is spent, so a refusal leaves the board
   // exactly as it was rather than halfway through paying.
@@ -1179,6 +1201,11 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
   const specs = specsForObject(state, object);
   const check = checkTargets(state, specs, action.targets, action.by, object.source);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
+  // And a *trigger* that divides something, refused for the same reason an activated ability is:
+  // `auto:choose` carries no division, so resolving one would deal its whole amount to one target.
+  if (specs.some((spec) => spec.divided !== undefined)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'the engine cannot divide a triggered ability yet');
+  }
 
   let next: GameState = {
     ...state,

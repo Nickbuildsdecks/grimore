@@ -50,7 +50,8 @@ import type {
 } from './scriptTypes.js';
 import { isChoiceDecision, targetCount } from './scriptTypes.js';
 import {
-  checkTargets, hasAnyLegalTargets, legalTargets, liveTargets, stillHasLegalTarget, targetSeqsFor,
+  checkTargets, hasAnyLegalTargets, legalTargets, liveTargets, stillHasLegalTarget, stillTheObject,
+  targetSeqsFor,
 } from './targeting.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
@@ -1654,7 +1655,23 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
   const chosen = object.targets;
   const live = liveTargets(state, chosen, object.targetSeqs);
   if (live.length !== chosen.length) {
-    object = { ...object, targets: live };
+    /*
+      A divided quantity loses the share of the target that went with it, and only that share
+      (CR 608.2b). Filtered in the same breath as the targets so the two lists stay aligned
+      position by position — the one thing everything downstream assumes about them — and not
+      redistributed: three damage split two and one, with the two-damage creature bounced in
+      response, deals one. A Cloudshift answering an Arc Lightning saves exactly what it was
+      pointed at.
+    */
+    const was = object;
+    const division = was.division === undefined
+      ? undefined
+      : chosen.flatMap((target, i) => (
+        stillTheObject(state, target, was.targetSeqs) ? [was.division?.[i] ?? 0] : []
+      ));
+    object = {
+      ...object, targets: live, ...(division === undefined ? {} : { division }),
+    };
     state = { ...state, stackObjects: { ...state.stackObjects, [object.id]: object } };
   }
 
@@ -1686,6 +1703,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
       kicked: object.kicked === true, attacked: object.attacked, answering: object.answering,
       subject: object.subject, actor: object.actor,
+      ...(object.division === undefined ? {} : { division: object.division }),
     });
     return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
   }
@@ -1714,6 +1732,9 @@ function completeResolution(
     subject: object.subject,
     // And whose action it was, for one that has to say "that player".
     actor: object.actor,
+    // And how a divided quantity was split, for the one card shape that announces numbers with
+    // its targets. Filtered to match `targets` above.
+    ...(object.division === undefined ? {} : { division: object.division }),
   };
 
   if (object.kind === 'spell') {

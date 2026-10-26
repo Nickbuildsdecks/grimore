@@ -550,6 +550,17 @@ export async function notePrompts(seen, page, seat) {
     seen.arrows = true;
     await shot(page, 'combat-arrows');
   }
+  /*
+    A spell that divides a quantity among its targets (CR 601.2d).
+
+    The prompt counts down what is left to spend, and that readout is the only thing on screen that
+    proves a division can be built a tap at a time — the engine's own tests build one by hand, so
+    they cannot tell whether the board can be asked for one.
+  */
+  if (seen.divided !== true && (await has(page, 'divide-left'))) {
+    seen.divided = true;
+    await shot(page, 'dividing-damage');
+  }
   if (await has(page, 'decide-prompt')) {
     seen.decided = true;
     // A question whose answer is a word, screenshotted the once: the options are the only thing on

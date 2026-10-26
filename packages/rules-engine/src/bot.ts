@@ -773,6 +773,19 @@ function simulate(state: GameState, action: Action, stopAtAction: boolean): Game
 const AIM_WIDTH = 4;
 
 /**
+ * One way of aiming a play: what it points at, and how a divided quantity is spent on those
+ * targets when the card divides one (CR 601.2d).
+ *
+ * The two travel together because they are announced together and are legal or illegal together:
+ * a division is about a list of targets, and a target list for a dividing spell is not a play the
+ * engine accepts without one.
+ */
+interface Aiming {
+  readonly targets: readonly Target[];
+  readonly division?: readonly number[];
+}
+
+/**
  * The ways this play could be aimed, best-first, at most `AIM_WIDTH` of them.
  *
  * Only the *first* target of a spell is varied. Which creature a Doom Blade kills is the choice
@@ -793,18 +806,19 @@ const AIM_WIDTH = 4;
  * that scores identically to an earlier one loses: the heuristic's pick stays the tie-break, and a
  * card that cannot tell its aims apart keeps the one the card's own `friendly` hint chose.
  */
-function aimings(state: GameState, seat: SeatIndex, play: LegalPlay): (readonly Target[])[] {
+function aimings(state: GameState, seat: SeatIndex, play: LegalPlay): Aiming[] {
+  const spec = play.targetSpecs[0];
+  if (spec?.divided !== undefined) return dividedAimings(state, seat, play, spec.divided);
   const first = chooseTargets(state, seat, play);
   if (first === null) return [];
-  if (first.length === 0) return [[]];
-  const spec = play.targetSpecs[0];
+  if (first.length === 0) return [{ targets: [] }];
   const foes = foesOf(state, seat);
   const candidates = play.candidates[0] ?? [];
   const byEnemy = [...candidates].sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
   const byOwnSide = [...candidates]
     .sort((a, b) => friendlyRank(state, b, foes) - friendlyRank(state, a, foes));
   const alternatives = [byEnemy[0], byEnemy[1], byOwnSide[0]];
-  const out: (readonly Target[])[] = [first];
+  const out: Aiming[] = [{ targets: first }];
   const seen = new Set([targetKey(first[0]!)]);
   // One spec wanting several targets is left alone: the heuristic filled all of them, and swapping
   // one out would need the rest re-picked around it.
@@ -814,8 +828,100 @@ function aimings(state: GameState, seat: SeatIndex, play: LegalPlay): (readonly 
       const rest = first.slice(1);
       if (rest.some((t) => targetKey(t) === targetKey(option))) continue;
       seen.add(targetKey(option));
-      out.push([option, ...rest]);
+      out.push({ targets: [option, ...rest] });
     }
+  }
+  return out.slice(0, AIM_WIDTH);
+}
+
+/** What it would take to kill a creature right now, or null for one damage cannot kill. */
+function lethalFor(state: GameState, id: string): number | null {
+  const inst = state.instances[id];
+  if (inst === undefined) return null;
+  const ch = characteristicsOf(state, inst);
+  if (!ch.isCreature || ch.keywords.has('indestructible')) return null;
+  return Math.max(1, ch.toughness - inst.damage);
+}
+
+/**
+ * The ways a divided quantity could be spent (CR 601.2d), for the search to price.
+ *
+ * Three options rather than a judgement, and that is the point: how to split three damage is
+ * exactly the kind of question this bot has no business answering with a weight. One of them is
+ * always right and which one depends on the board — kill the two X/1s, or put all three into the
+ * face for the last three life — and `simulate` already scores boards. So each option is built
+ * from a *fact* and handed over:
+ *
+ * - **All of it on one thing**, the best target by the enemy-first ranking. The Lava Spike aim.
+ * - **Lethal first**: walk the opponents' creatures best-first, assign each exactly what it takes
+ *   to kill it while the budget lasts, and put whatever is left on the best remaining target. This
+ *   is the aim the card is printed for and the one a heuristic would miss, because it is worth
+ *   less by every "biggest target" measure and kills two creatures.
+ * - **One each**, spread as wide as the card allows. The answer to a board of X/1s, and different
+ *   from lethal-first whenever a creature needs more than one.
+ *
+ * Identical options are dropped, so a board with one legal target produces one aiming rather than
+ * three copies of the same one.
+ */
+function dividedAimings(
+  state: GameState, seat: SeatIndex, play: LegalPlay, amount: number,
+): Aiming[] {
+  const spec = play.targetSpecs[0];
+  const most = Math.min(Math.max(1, spec?.count ?? 1), amount);
+  const foes = foesOf(state, seat);
+  const ranked = [...(play.candidates[0] ?? [])]
+    .sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
+  const best = ranked[0];
+  if (best === undefined) return [];
+
+  const out: Aiming[] = [];
+  const add = (targets: readonly Target[], division: readonly number[]): void => {
+    if (targets.length === 0 || division.reduce((n, d) => n + d, 0) !== amount) return;
+    const key = targets.map((t, i) => `${targetKey(t)}:${division[i]}`).join('|');
+    if (out.some((a) => a.targets.map((t, i) => `${targetKey(t)}:${a.division?.[i]}`).join('|') === key)) return;
+    out.push({ targets, division });
+  };
+
+  add([best], [amount]);
+
+  // Lethal first. Only an opponent's creature is worth exact change: spending two damage to kill
+  // one of its own would be paying for the privilege.
+  const kills: { target: Target; cost: number }[] = [];
+  let budget = amount;
+  for (const candidate of ranked) {
+    if (kills.length >= most || budget <= 0) break;
+    if (candidate.kind !== 'card') continue;
+    const inst = state.instances[candidate.id];
+    if (inst === undefined || !foes.includes(inst.zoneSeat)) continue;
+    const needed = lethalFor(state, candidate.id);
+    if (needed === null || needed > budget) continue;
+    kills.push({ target: candidate, cost: needed });
+    budget -= needed;
+  }
+  if (kills.length > 0) {
+    const targets = kills.map((k) => k.target);
+    const division = kills.map((k) => k.cost);
+    if (budget > 0) {
+      // The change goes on the best target that is not already taken, or onto the last creature
+      // killed when there is nowhere else — overkill is legal and beats leaving it unassigned,
+      // which is not.
+      const spare = ranked.find(
+        (t) => !targets.some((taken) => targetKey(taken) === targetKey(t)),
+      );
+      if (spare !== undefined && targets.length < most) {
+        add([...targets, spare], [...division, budget]);
+      } else {
+        add(targets, [...division.slice(0, -1), (division[division.length - 1] ?? 0) + budget]);
+      }
+    } else {
+      add(targets, division);
+    }
+  }
+
+  // One each, as wide as it goes. The last share takes the remainder so the whole amount is spent.
+  const wide = ranked.slice(0, most);
+  if (wide.length > 1) {
+    add(wide, wide.map((_, i) => (i === wide.length - 1 ? amount - (wide.length - 1) : 1)));
   }
   return out.slice(0, AIM_WIDTH);
 }
@@ -876,7 +982,8 @@ function candidateActions(
       out.push({ action: { type: 'auto:foretell', by: seat, card: play.card } });
       continue;
     }
-    for (const targets of aimings(state, seat, play)) {
+    for (const aim of aimings(state, seat, play)) {
+      const targets = aim.targets;
       if (play.kind === 'cast') {
         /*
           A spell with an additional cost: something has to be fed to it before it can be cast at
@@ -925,6 +1032,10 @@ function candidateActions(
             ...(play.xMax === undefined ? {} : { x: play.xMax }),
             ...(play.modes === undefined ? {} : { modes: [...play.modes] }),
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
+            // And the division, which is not optional on a card that has one: the engine refuses
+            // a dividing spell cast without it, so this is the line that makes the card castable
+            // by anything other than a person.
+            ...(aim.division === undefined ? {} : { division: [...aim.division] }),
           },
         });
         continue;

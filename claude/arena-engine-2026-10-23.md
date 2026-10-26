@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 216 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 217 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -3300,6 +3300,50 @@ the first run showed "Player" and no badge with the handler change plainly in th
 realtime server under `scripts/play.mjs` predated it. Rebuild and restart the play stack before a
 browser suite, every time; a stale server fails in the shape of a bug in the code you just wrote.
 
+### Damage divided as you choose, and the range that comes free of the amount
+
+The last shape on this list's own *Next* — a choice whose answer is a number — turned out to be
+better answered by the card that prints it than by a prompt: "three damage divided as you choose
+among one, two, or three targets" is a budget announced with the spell (CR 601.2d), not a question
+asked while it resolves. `TargetSpec` carries `divided: 3` beside `count: 3` and `optional: true`,
+and the printed range falls out of the rules rather than out of a fourth field: every target must be
+assigned at least one and the whole amount must be spent, so zero targets cannot pay for three and a
+fourth has nothing left to take.
+
+The division travels positionally with the targets — on the action, on the stack object, in the view
+— so the one place that filters the target list filters both. A target that is no longer the object
+it was chosen as takes its own share out with it and nothing else (CR 608.2b): three split two and
+one, with the two bounced in response, deals one, and is not redistributed. `checkDivision` refuses
+four different mistakes, and the one that matters is the total, because a spell cast with two of its
+three damage assigned is a card that quietly did less than it says.
+
+The bot is handed three divisions and no judgement: all of it on the best target, *lethal first*
+(walk their creatures and pay exactly what each costs to kill while the budget lasts), and one each
+as wide as the card allows. `simulate` prices them, which is the same rule the rest of that file
+follows — read a fact, do not carry a weight — and the lethal-first aim is the one a heuristic would
+never find, since it scores worst by every "biggest target" measure and kills two creatures. The bot
+casts the card in 88% of the games it draws one.
+
+At the table a tap on a target the spell already points at adds *another* point rather than dropping
+it, so three damage split two and one is three taps and the cast goes on the last one. That costs the
+gesture every other prompt uses for "I changed my mind", so the division has a **Back** button that
+peels one point off and no Cast button at all — a Cast on a half-spent division is one the engine
+would refuse. Both players read the division off the stack row, because it is announced rather than
+chosen on resolution.
+
+**Arc Lightning** goes into Arc Tempest for its second Shock and measures as free: taking it back out
+is −9 and −1 of 270 on two seed sets, both inside the floor. Cutting the Magma Jet instead measured
+−10 and +1 — unpriceable — so the cut was decided by the cards, the way the Squelch cut was: the
+second Shock is the most redundant card in a deck holding twelve spells that point at a face, and
+Magma Jet's scry is the half this deck is short of.
+
+Two things are worth writing down about *how* that was measured. `deck-probe` can only add a card
+that is already in some deck's list, so a new card cannot be priced before it is slotted; the way
+round is to slot it and measure taking it out, with the sign negated. And the browser suite reports
+the division only when the shuffle produces one — a one-of is a coin flip, and three runs did not —
+so rather than call it covered, the UI was driven in a solo game until the card was drawn: the prompt
+counted 3 → 2 → 1, the second tap on an already-picked target added to it, and the spell resolved.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -3315,8 +3359,13 @@ browser suite, every time; a stale server fails in the shape of a bug in the cod
    Resonator, a Lithoform Engine) means duplicating a stack object with its targets and its
    `subject`, which is different work from pointing at one, and nothing in the pool wants it yet.
    A question whose answer is a **word** now exists too, so "you may", "tap or untap" and "choose
-   one —" on a trigger are all a few declarative lines; the one shape still missing from that
-   family is a choice whose answer is a *number*, which wants a range rather than a list.
+   one —" on a trigger are all a few declarative lines. The *number* half of that family is half
+   answered: a quantity **divided among targets** is announced with the spell and checked as a sum
+   (`divided` on a target spec, Arc Lightning), which covers the shape printed cards actually use —
+   damage or counters split among one, two or three things. What is still missing is a number chosen
+   with nothing to divide it between: "as this enters, choose a number" (a Chalice of the Void) or a
+   cost paid in an amount the player picks mid-resolution. That wants a range on a decision rather
+   than a budget on a target spec, and nothing in the pool asks for one yet.
 2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
    `deck:load` already resolves any deck handed to it, but a real list needs card data — type
    lines, mana costs, oracle text — and the `cards` table has never been populated while this

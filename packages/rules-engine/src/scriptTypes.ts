@@ -73,6 +73,27 @@ export interface TargetSpec {
    * and fixing it there is a change to five cards' measured behaviour rather than a flag.
    */
   readonly friendly?: boolean;
+  /**
+   * A quantity split among the targets of this spec, announced as the spell is cast (CR 601.2d):
+   * "Arc Lightning deals 3 damage divided as you choose among one, two, or three targets."
+   *
+   * The number is the whole amount, and the division is a fact about the *cast* rather than about
+   * the resolution — both players can read it off the stack before deciding whether to respond,
+   * the way they can read X and the chosen modes.
+   *
+   * **Two rules come free of the amount, and that is why there is no `min` field here.** Each
+   * chosen target must be assigned at least one (CR 601.2d), and the whole amount must be
+   * assigned — so `count: 3, divided: 3` *is* "one, two, or three targets": zero targets leaves
+   * three unassigned, and a fourth target would have nothing left to give it. A card that divided
+   * four among up to three would read "one, two, or three" the same way, and both are exactly
+   * what the printed cards say.
+   *
+   * What a target that becomes illegal takes with it is its share, and nothing else (CR 608.2b):
+   * the spell still resolves against the targets it has left, and the damage assigned to the one
+   * that is gone is simply not dealt. It is not redistributed — a player who could move it would
+   * be re-dividing after the window to respond had closed.
+   */
+  readonly divided?: number;
 }
 
 /**

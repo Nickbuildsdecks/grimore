@@ -131,6 +131,17 @@ export interface StackObject {
   readonly targetSeqs?: Readonly<Record<string, number>>;
   readonly x?: number;
   /**
+   * How much of a divided quantity each of `targets` was assigned, position by position
+   * (CR 601.2d). Absent on everything that divides nothing, which is almost everything.
+   *
+   * Aligned with `targets` rather than keyed by target, and that alignment is maintained where
+   * the list is: a target dropped by the fizzle check takes its share out with it, and a
+   * redirected target keeps the share of the slot it took over (CR 114.6 changes what a spell is
+   * pointed at and not how it was divided). Keyed by target would survive both on its own and
+   * would mean every reader learning what a target's key is to ask a question about a number.
+   */
+  readonly division?: readonly number[];
+  /**
    * Whether this spell's kicker was paid.
    *
    * On the stack object for the same reason X is: it was chosen as the spell was cast, both
@@ -546,6 +557,16 @@ export interface AutoCastAction {
   readonly targets?: readonly Target[]; readonly x?: number;
   /** For a modal spell: which modes, as indices into its script's `modal.modes`. */
   readonly modes?: readonly number[];
+  /**
+   * For a spell that divides a quantity among its targets (CR 601.2d): how much each of `targets`
+   * is assigned, in the same order.
+   *
+   * Announced with the spell, like X and the modes, because that is when the division is chosen
+   * and it cannot be changed afterwards. Refused on a spell that divides nothing, and refused
+   * when it does not add up — a client that sent a short division would be casting a spell whose
+   * damage went nowhere.
+   */
+  readonly division?: readonly number[];
   /** Pay the kicker (CR 702.32a). Refused on a spell that has none. */
   readonly kicked?: boolean;
   /**

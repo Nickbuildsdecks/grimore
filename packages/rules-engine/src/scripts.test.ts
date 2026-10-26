@@ -8990,3 +8990,146 @@ describe('the tenth deck: the life total that goes up', () => {
     expect(life(s, 1)).toBe(theirs);
   });
 });
+
+describe('damage divided as you choose (CR 601.2d)', () => {
+  /*
+    The first card in the pool that announces numbers along with its targets.
+
+    Four things are being tested and only one of them is the card: that the division is checked as
+    the spell is cast and refused when it does not add up, that each target gets what it was
+    assigned rather than the whole amount, that a target lost in response takes its own share with
+    it and nothing else (CR 608.2b), and that the computer opponent can cast the card at all —
+    which it cannot without choosing a division, because the engine refuses a dividing spell
+    without one.
+  */
+
+  /** Seat 0 on Arc Tempest with three Mountains up, seat 1 on Tidal Mind with `theirs` out. */
+  const arc = (hand: readonly string[], theirs: readonly string[], mine: readonly string[] = []): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'tidal-mind' },
+      hands: { 0: [...hand] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain', ...mine],
+        1: ['Island', 'Island', ...theirs],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  it('spends two on the 2/2 and one on the 1/1, and kills both', () => {
+    let s = arc(['Arc Lightning'], ["Man-o'-War", 'Ravenous Rats']);
+    const squid = find(s, 1, 'battlefield', "Man-o'-War");
+    const rats = find(s, 1, 'battlefield', 'Ravenous Rats');
+    const theirs = life(s, 1);
+
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arc Lightning'),
+      targets: [{ kind: 'card', id: squid }, { kind: 'card', id: rats }],
+      division: [2, 1],
+    })));
+
+    expect(s.instances[squid]!.zone).toBe('graveyard');
+    expect(s.instances[rats]!.zone).toBe('graveyard');
+    // Two creatures for one card, and the opponent's life untouched: this is the aim the card is
+    // printed for, and the one a spell that dealt three to a single target could not make.
+    expect(life(s, 1)).toBe(theirs);
+  });
+
+  it('or puts the whole three in one place', () => {
+    let s = arc(['Arc Lightning'], []);
+    const theirs = life(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arc Lightning'),
+      targets: [{ kind: 'player', seat: 1 }], division: [3],
+    })));
+    expect(life(s, 1)).toBe(theirs - 3);
+  });
+
+  it('refuses a division that does not add up, and one with nothing in a share', () => {
+    const s = arc(['Arc Lightning'], ["Man-o'-War", 'Ravenous Rats']);
+    const card = find(s, 0, 'hand', 'Arc Lightning');
+    const squid = { kind: 'card' as const, id: find(s, 1, 'battlefield', "Man-o'-War") };
+    const rats = { kind: 'card' as const, id: find(s, 1, 'battlefield', 'Ravenous Rats') };
+
+    // Two short of the three it says it deals, which is the refusal that matters most: a spell
+    // cast this way would quietly do less than the card says.
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card, targets: [squid, rats], division: [1, 1],
+    })).toContain('all 3 must be assigned');
+    // And over: there is no "deals 4 damage" reading of this card.
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card, targets: [squid, rats], division: [3, 1],
+    })).toContain('all 3 must be assigned');
+    // A target assigned nothing is not a target it took (CR 601.2d).
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card, targets: [squid, rats], division: [3, 0],
+    })).toContain('at least one');
+    // One number per target, or the engine cannot tell which share is whose.
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card, targets: [squid, rats], division: [3],
+    })).toContain('one number per target');
+    // And no division at all is not a cast of this card.
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card, targets: [squid, rats],
+    })).toContain('divide 3');
+  });
+
+  it('refuses a division on a spell that divides nothing', () => {
+    const s = arc(['Lightning Bolt'], ['Ravenous Rats']);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Ravenous Rats') }],
+      division: [3],
+    })).toContain('nothing to divide');
+  });
+
+  it('loses only the share of a target that is answered in response (CR 608.2b)', () => {
+    let s = arc(['Arc Lightning'], ["Man-o'-War", 'Ravenous Rats']);
+    // The Island the Unsummon is paid for, and the card itself, put where seat 1 can use them.
+    s = apply(s, {
+      type: 'card:move', by: 1, card: ids(s, 1, 'library').find(
+        (id) => nameOf(s, id) === 'Unsummon',
+      )!, toZone: 'hand',
+    });
+    const squid = find(s, 1, 'battlefield', "Man-o'-War");
+    const rats = find(s, 1, 'battlefield', 'Ravenous Rats');
+
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arc Lightning'),
+      targets: [{ kind: 'card', id: squid }, { kind: 'card', id: rats }],
+      division: [2, 1],
+    });
+    // Seat 1 answers the two-damage half by bouncing it: a different object comes back, so the
+    // spell has nothing to deal that two to (CR 400.7). One pass, not `passBoth` — the Arc
+    // Lightning must still be on the stack when the Unsummon is cast.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = tapAllLands(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Unsummon'),
+      targets: [{ kind: 'card', id: squid }],
+    })));
+
+    expect(s.instances[squid]!.zone).toBe('hand');
+    // The one damage still lands, and the two is simply gone rather than moved onto the Rats —
+    // a 1/1 is dead either way, so the assertion that matters is the Squid's, in hand and whole.
+    expect(s.instances[rats]!.zone).toBe('graveyard');
+    expect(damageOn(s, squid)).toBe(0);
+  });
+
+  it('is cast by the computer, and divided by it', () => {
+    // Three one-toughness creatures: the split that kills two of them is worth more than three
+    // damage in one place, and the search is the thing that is supposed to notice.
+    const s = arc(['Arc Lightning'], ['Ravenous Rats', 'Omenspeaker']);
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:cast');
+    const cast = action as Extract<typeof action, { type: 'auto:cast' }>;
+    expect(nameOf(s, cast.card)).toBe('Arc Lightning');
+    expect(cast.division).toBeDefined();
+    expect(cast.division!.reduce((n, d) => n + d, 0)).toBe(3);
+    expect(cast.division!.length).toBe(cast.targets!.length);
+    // Whatever it chose, the engine accepts it — which is the half of this that a division the
+    // bot made up could fail.
+    expect(refusal(s, cast)).toBeNull();
+  });
+});

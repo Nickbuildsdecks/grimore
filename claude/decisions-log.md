@@ -5860,3 +5860,89 @@ One harness note that cost longer than the feature. The first run of that check 
 reading "Player" with no badge, with the handler change plainly in the file: the realtime server
 running under `scripts/play.mjs` predated it. **Rebuild and restart the play stack before a browser
 suite**, every time; a stale server fails in the shape of a bug in the code you just wrote.
+
+## D138 — Damage divided as you choose, and the range that comes free of the amount
+
+**Decision: a target spec may carry a quantity to be divided among its targets, the division is
+announced with the spell and checked as a sum, and the table spends it one tap at a time.**
+
+Everything in this pool that points at more than one thing does the same thing to each: Garruk
+untaps two lands, Breath of Darigaaz deals one to everything. "Three damage divided as you choose
+among one, two, or three targets" is a shape printed on dozens of cards — Arc Lightning, Chandra's
+Pyrohelix, Forked Bolt, Fiery Confluence — and it was not expressible here at all, which is why the
+engine doc's *Next* list has had "a choice whose answer is a number" on it since D135.
+
+**The spec says it in three fields, and the fourth is a consequence rather than a field.**
+`count: 3` is the most targets it may take, `optional: true` lets it be cast with fewer, and
+`divided: 3` is the budget. "One, two, or three targets" then falls out of CR 601.2d: every chosen
+target must be assigned at least one and the whole amount must be assigned, so zero targets cannot
+spend three and a fourth target has nothing left to pay it. No `min` on `TargetSpec`, which is the
+kind of field that gets added and then has to agree with a rule that was already deciding the
+answer.
+
+**Positional, not keyed.** `division[i]` is the share of `targets[i]`, on the action, on the stack
+object and in the view. Keyed by target would survive the fizzle check on its own, and would also
+mean that every reader — the wire, the table, the bot — had to learn what a target's key is to ask
+a question about a number. Instead the one place that filters the list filters both: a target
+dropped for being a different object (CR 400.7) takes its share out of the array in the same
+expression, and `retarget` keeps the share of the slot it took over, which is what CR 114.6 says —
+changing what a spell is pointed at does not re-divide it.
+
+**What a lost target takes with it is its own share and nothing else (CR 608.2b).** Three damage
+split two and one, with the two-damage creature bounced in response, deals one. It is *not*
+redistributed onto what is left: a controller who could move it would be re-dividing after the
+window to respond had closed, which is exactly the half of the card an Unsummon is answering. The
+test is that Unsummon, cast in response, and the assertion is on the Squid in hand with no damage
+on it rather than on the Rats that was dying either way.
+
+**Four refusals, because a client can get this wrong in four ways**, and the one that matters most
+is the total: a spell cast with two of its three damage assigned is a card that quietly did less
+than it says. So `checkDivision` refuses a division on a spell that divides nothing, one that is
+not one number per target, a share of zero or less, and a total that is not the amount. It also
+refuses, honestly, a dividing spec on a card with more than one spec: every printed card that
+divides something divides it among all of its targets, and a division that had to say *which* spec
+it was about would be a guess the day something printed both.
+
+**The bot gets three divisions and no judgement.** How to split three damage is the kind of
+question this file has a rule about: read a fact, hand it to the search, do not carry a weight. So
+`dividedAimings` builds three options from facts — all of it on the best target by the enemy-first
+ranking; *lethal first*, walking the opponents' creatures and paying exactly what each costs to
+kill while the budget lasts; and one each, as wide as the card allows — and `simulate` prices them.
+The lethal-first aim is the one a heuristic would never find, because it is worth less by every
+"biggest target" measure and kills two creatures. In 108 games the bot cast Arc Lightning in 88% of
+the games it drew one (61 of 69), which is the top of that deck's list beside Magma Jet.
+
+**And the table spends it a tap at a time.** A tap on a target the spell already points at adds
+*another* point to it rather than dropping it, which is the whole interface: three damage split two
+and one is three taps, and the spell is cast the moment the last point is spent. That costs the one
+gesture every other prompt here uses for "I changed my mind", so the division gets a **Back** button
+that peels one point back off, and no Cast button at all — a Cast on a half-spent division is a
+button the engine would refuse, which is worse than no button. The bar shows what is left ("2 of 3
+left") and what each target has so far, and the stack row shows the division to *both* players
+(`Arc Lightning → Blood Artist (1), Monastery Swiftspear (2)`), because it is announced as the
+spell is cast and is exactly what somebody deciding whether to answer it needs.
+
+**The card measures as free, which is all a new card has to be.** 270 paired duels against the
+field, two seed sets. Taking Arc Lightning back out for a second Shock is −9 and −1, so the card is
+worth **+9 and +1** — same sign twice and both well inside the eighteen-game floor.
+
+**The cut is unpriceable, so the cards decided it.** Cutting the Magma Jet instead measured −10 and
++1: no consistent sign, which is this instrument saying it cannot tell the two cuts apart. The
+argument that shipped is the one the Squelch cut used (D134): the second Shock is the most redundant
+card in a deck already holding twelve spells that point at a face, and Magma Jet's scry is the half
+this deck is short of, since a deck that needs its one Guttersnipe needs to find it.
+
+**One instrument gap found, and worked around rather than papered over.** `deck-probe` can only
+*add* a card that already exists in some deck's list — `defNamed` looks through `STARTER_DECKS` —
+so a brand-new card cannot be priced before it is slotted, which is the order every previous entry
+did it in. The way round is exact rather than approximate: put the card in the list, then measure
+**taking it out**, and negate the sign. Worth writing down because the README says a change "is
+looked up anywhere in the pool", and the pool means the decks.
+
+**And the browser caught nothing, which took three runs to establish.** The arena suite reports the
+division when the shuffle produces one — Arc Lightning is a one-of, so that is a coin flip — and in
+three runs it did not come up. Rather than call that covered, the UI was driven directly in a solo
+game until the card was drawn: the prompt counted 3 → 2 → 1 as targets were tapped, the second tap
+on a target already picked added to it instead of dropping it, the cast went through on the last
+point, and the spell resolved. The suites are 59/59, 56/56 and 55/55 on three arc-tempest pairings,
+62/62 on the tabletop.

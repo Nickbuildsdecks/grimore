@@ -117,6 +117,15 @@ export interface StackView {
   /** The instance id for a spell, so the client can draw the card that is on the stack. */
   readonly card: string | null;
   readonly targets: StackObject['targets'];
+  /**
+   * For a spell whose quantity was divided among its targets (CR 601.2d): each target's share, in
+   * the same order as `targets`.
+   *
+   * Public, like X and the chosen modes are, and for the same reason: the division is announced as
+   * the spell is cast and cannot be changed, so the player deciding whether to answer it is
+   * entitled to know whether the three damage is all coming at one creature.
+   */
+  readonly division?: readonly number[];
 }
 
 /**
@@ -484,6 +493,7 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
       // A spell's stack object id *is* its card instance; an ability has no card to show.
       card: object.kind === 'spell' ? object.id : null,
       targets: object.targets,
+      ...(object.division === undefined ? {} : { division: object.division }),
     };
   });
 

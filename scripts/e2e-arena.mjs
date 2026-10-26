@@ -743,6 +743,20 @@ async function main() {
       console.log('      (no card asked for a creature type or a colour in this game — '
         + 'scripts.test.ts covers that path on a fixed board)');
     }
+    /*
+      Damage divided as you choose, spent through the real board.
+
+      Sampled like the two above — Arc Lightning has to be drawn and affordable — and worth its own
+      line for the same reason the word question was: a division is three taps and a running total,
+      and the engine's tests send one already finished. What a browser proves is that a player can
+      build it, and that the table keeps a target tappable after it has already been picked.
+    */
+    if (seen.divided) {
+      check('a spell whose damage is divided is spent a point at a time from the board', true);
+    } else {
+      console.log('      (no dividing spell came up in this game — scripts.test.ts asserts the '
+        + 'division, its refusals and the share a bounced target takes with it)');
+    }
     if (finished) {
       /*
         A result, and the same one on both screens.

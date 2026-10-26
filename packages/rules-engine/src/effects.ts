@@ -74,6 +74,15 @@ export interface EffectContext {
    * `StackObject.subject`.
    */
   readonly subject?: string;
+  /**
+   * How much of a divided quantity each of `targets` was assigned, position by position
+   * (CR 601.2d). Undefined for everything that divides nothing.
+   *
+   * Already filtered to match `targets`: a target that became illegal is gone from both lists by
+   * the time an effect runs, so position `i` of one is position `i` of the other and the share of
+   * a target that is no longer there is simply not in the list. See `dividedAmong`.
+   */
+  readonly division?: readonly number[];
 }
 
 export type EffectFn = (ctx: EffectContext) => GameState;
@@ -915,6 +924,23 @@ export const firstAbilityTarget = (ctx: EffectContext): string | null => {
   const t = ctx.targets.find((x) => x.kind === 'ability');
   return t && t.kind === 'ability' ? t.id : null;
 };
+
+/**
+ * The targets of a spell that divided a quantity among them, each with its share (CR 601.2d).
+ *
+ * Only the ones with a share in it: a target assigned nothing is not a target this spell has, so
+ * a card reading this list never has to decide what zero means. A spell whose `division` is
+ * missing yields nothing at all rather than guessing one each — the engine refuses to cast a
+ * dividing spell without a division, so an empty list here means the card asked for a division it
+ * does not declare, and doing nothing is the honest answer to that.
+ */
+export const dividedAmong = (
+  ctx: EffectContext,
+): readonly { readonly target: Target; readonly amount: number }[] =>
+  ctx.targets.flatMap((target, i) => {
+    const amount = ctx.division?.[i] ?? 0;
+    return amount > 0 ? [{ target, amount }] : [];
+  });
 
 /** The cards chosen in answer to one of the questions this spell asked, by index. */
 export const chosenCards = (ctx: EffectContext, index = 0): readonly string[] =>

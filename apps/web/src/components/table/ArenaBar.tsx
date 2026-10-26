@@ -11,13 +11,14 @@
  * `legalActions.attackers`, and the mana comes from the pool the server sent.
  */
 import { useState } from "react"
-import { Check, FastForward, Hand, Handshake, Shield, Skull, Swords, X } from "lucide-react"
+import { Check, FastForward, Hand, Handshake, Shield, Skull, Swords, Undo2, X } from "lucide-react"
 import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  attackRead, decisionLabel, manaPips, orderingDone, pactAsked, pactOffers, primaryMove, specAt,
-  targetsRequired, targetsWanted, type ArenaEvent, type ArenaMode,
+  attackRead, decisionLabel, dividedAmount, manaPips, orderingDone, pactAsked, pactOffers,
+  primaryMove, specAt, targetKey, targetName, targetsRequired, targetsWanted,
+  type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
 import { pactWords } from "@grimore/rules-engine"
 
@@ -89,25 +90,68 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
       className="sticky bottom-0 -mx-2 flex flex-col gap-1.5 border-t border-white/10 bg-[var(--g-surface-base)]/95 px-2 py-2 backdrop-blur sm:-mx-4 sm:px-4"
     >
       {/* What the player is halfway through, if anything. */}
-      {mode.kind === "targeting" ? (
-        <div data-testid="target-prompt" className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-semibold text-[var(--g-text-high)]">{mode.play.name}</span>
-          <span className="text-[var(--g-text-muted)]">
-            choose {specAt(mode.play, mode.chosen.length)?.description ?? "a target"}
-            {targetsWanted(mode.play) > 1 ? ` (${mode.chosen.length + 1} of ${targetsWanted(mode.play)})` : ""}
-          </span>
-          <span className="ml-auto flex gap-1.5">
-            {mode.chosen.length >= targetsRequired(mode.play) ? (
-              <Button size="sm" data-testid="confirm-targets" onClick={() => dispatch({ kind: "confirm" })}>
-                <Check className="size-3.5" /> Cast
-              </Button>
+      {mode.kind === "targeting" ? (() => {
+        /*
+          A spell that divides a quantity reads differently from one that only picks targets
+          (CR 601.2d).
+
+          What the player is tracking is how much is left to spend, not how many targets are left
+          to choose — and the assignment so far has to be on screen, because a tap on a target the
+          spell already points at adds another point to it rather than dropping it. So the division
+          gets the prompt, the running total, and a Back button: re-tapping is how a misclick is
+          undone everywhere else here, and it is the one gesture that cannot mean that any more.
+        */
+        const amount = dividedAmount(mode.play)
+        const shares = mode.shares ?? []
+        const spent = shares.reduce((n, d) => n + d, 0)
+        return (
+          <div data-testid="target-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-semibold text-[var(--g-text-high)]">{mode.play.name}</span>
+            {amount === undefined ? (
+              <span className="text-[var(--g-text-muted)]">
+                choose {specAt(mode.play, mode.chosen.length)?.description ?? "a target"}
+                {targetsWanted(mode.play) > 1 ? ` (${mode.chosen.length + 1} of ${targetsWanted(mode.play)})` : ""}
+              </span>
+            ) : (
+              <span data-testid="divide-left" className="text-[var(--g-text-muted)]">
+                tap a target for each point &mdash; {amount - spent} of {amount} left
+              </span>
+            )}
+            {amount !== undefined && mode.chosen.length > 0 ? (
+              <span className="flex flex-wrap gap-1">
+                {mode.chosen.map((t, i) => (
+                  <span
+                    key={targetKey(t)}
+                    data-testid={`divide-share-${targetKey(t)}`}
+                    className="rounded bg-white/10 px-1.5 py-0.5 tabular-nums text-[var(--g-text-high)]"
+                  >
+                    {targetName(view, t)} {shares[i] ?? 0}
+                  </span>
+                ))}
+              </span>
             ) : null}
-            <Button size="sm" variant="ghost" data-testid="cancel-mode" onClick={() => dispatch({ kind: "cancel" })}>
-              <X className="size-3.5" /> Cancel
-            </Button>
-          </span>
-        </div>
-      ) : null}
+            <span className="ml-auto flex gap-1.5">
+              {/*
+                A dividing spell is cast by its last point rather than by this button, so it is not
+                drawn for one: a Cast the engine would refuse is worse than no Cast at all.
+              */}
+              {amount === undefined && mode.chosen.length >= targetsRequired(mode.play) ? (
+                <Button size="sm" data-testid="confirm-targets" onClick={() => dispatch({ kind: "confirm" })}>
+                  <Check className="size-3.5" /> Cast
+                </Button>
+              ) : null}
+              {amount !== undefined && spent > 0 ? (
+                <Button size="sm" variant="ghost" data-testid="undo-target" onClick={() => dispatch({ kind: "undoTarget" })}>
+                  <Undo2 className="size-3.5" /> Back
+                </Button>
+              ) : null}
+              <Button size="sm" variant="ghost" data-testid="cancel-mode" onClick={() => dispatch({ kind: "cancel" })}>
+                <X className="size-3.5" /> Cancel
+              </Button>
+            </span>
+          </div>
+        )
+      })() : null}
 
       {/*
         How big is it? X is part of casting the spell (CR 601.2b), so it is asked before the
