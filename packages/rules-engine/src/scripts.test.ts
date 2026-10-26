@@ -570,9 +570,12 @@ describe('blue-black control', () => {
     test below says it moved. Tidal Mind traded the slot for a Dirgur Nemesis, because two cards
     for two life is the most replaceable thing in a deck that already holds four other ways to draw.
   */
-  const draws = (hand: readonly string[], lands: readonly string[]): GameState => {
+  /** `deck` is Hollow Tide unless a card lives somewhere else — see the Sign in Blood pair. */
+  const draws = (
+    hand: readonly string[], lands: readonly string[], deck = 'hollow-tide',
+  ): GameState => {
     let s = advanceTo(arena({
-      decks: { 1: 'hollow-tide' },
+      decks: { 1: deck },
       hands: { 1: [...hand] }, battlefield: { 1: [...lands] },
       turn: 2, firstSeat: 1,
     }), 'precombat-main');
@@ -580,7 +583,9 @@ describe('blue-black control', () => {
   };
 
   it('Sign in Blood draws two and costs two life', () => {
-    let s = draws(['Sign in Blood'], ['Swamp', 'Swamp']);
+    // Dawn Tithe rather than Hollow Tide: Hollow Tide's copy became the pool's adventurer, and
+    // `arena` takes the named card out of the deck the seat is playing.
+    let s = draws(['Sign in Blood'], ['Swamp', 'Swamp'], 'dawn-tithe');
     const before = ids(s, 1, 'hand').length;
     s = cast(s, 1, 'Sign in Blood', [{ kind: 'player', seat: 1 }]);
     expect(ids(s, 1, 'hand').length).toBe(before - 1 + 2);
@@ -588,7 +593,7 @@ describe('blue-black control', () => {
   });
 
   it('Sign in Blood can be aimed at an opponent, which is what makes it removal', () => {
-    let s = draws(['Sign in Blood'], ['Swamp', 'Swamp']);
+    let s = draws(['Sign in Blood'], ['Swamp', 'Swamp'], 'dawn-tithe');
     s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 2 } : seat)) };
     s = cast(s, 1, 'Sign in Blood', [{ kind: 'player', seat: 0 }]);
     expect(s.seats[0]!.eliminated).toBe(true);
@@ -5423,7 +5428,9 @@ describe('damage that does not happen', () => {
 describe('answering a permanent, and answering an answer', () => {
   it('Naturalize destroys an artifact', () => {
     let s = arena({
-      decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+      // Rot Harvest rather than Verdant Guard for the seat holding the Naturalize: Verdant Guard's
+      // copy became the pool's Wax // Wane, and `arena` takes the named card out of that deck.
+      decks: { 0: 'ashen-rite', 1: 'rot-harvest' },
       battlefield: { 0: ['Sol Ring'], 1: ['Forest', 'Forest'] },
       hands: { 1: ['Naturalize'] },
       turn: 3, firstSeat: 1,
@@ -5438,7 +5445,7 @@ describe('answering a permanent, and answering an answer', () => {
 
   it('and an enchantment, which is what a Pacifism on your commander needed', () => {
     let s = arena({
-      decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
       hands: { 0: ['Pacifism'], 1: ['Naturalize'] },
       battlefield: { 0: ['Plains', 'Plains'], 1: ['Forest', 'Forest', 'Centaur Courser'] },
       turn: 3, firstSeat: 0,
@@ -5468,7 +5475,7 @@ describe('answering a permanent, and answering an answer', () => {
   */
   it('and destroying a Journey to Nowhere gives the creature back', () => {
     let s = arena({
-      decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
       hands: { 0: ['Journey to Nowhere'], 1: ['Naturalize'] },
       battlefield: { 0: ['Plains', 'Plains'], 1: ['Forest', 'Forest', 'Centaur Courser'] },
       turn: 3, firstSeat: 0,
@@ -5493,7 +5500,7 @@ describe('answering a permanent, and answering an answer', () => {
 
   it('and nothing else is a legal target for it', () => {
     const s = advanceTo(arena({
-      decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
       hands: { 1: ['Naturalize'] },
       battlefield: { 0: ['Centaur Courser', 'Forest'], 1: ['Forest', 'Forest'] },
       turn: 3, firstSeat: 1,
@@ -5866,9 +5873,20 @@ describe('unscripted cards', () => {
     // and the log has to say that rather than let a player think it worked.
     const unscripted = Object.values(STARTER_DECKS)
       .flatMap((deck) => deck.cards)
-      .map((entry) => entry.card)
+      /*
+        Every castable *face*, not every card, which is what a two-faced card made different.
+
+        A split card is never cast as itself and has no script of its own, so checking the card
+        would flag "Fire // Ice" as an unscripted instant for ever; checking the faces asks the real
+        question, which is whether each thing a player can actually cast does something. An
+        adventurer is in both lists at once — the creature card and the instant on it — and both
+        belong here for the same reason.
+      */
+      .flatMap((entry) => [entry.card, ...(entry.card.faces?.cards ?? [])])
       .filter((card) => scriptFor(card.name) === undefined)
-      .filter((card) => !/creature|land|artifact|enchantment/i.test(card.typeLine));
+      .filter((card) => !/creature|land|artifact|enchantment/i.test(card.typeLine))
+      // A split card itself is not castable, so there is nothing for it to fail to do.
+      .filter((card) => card.faces?.kind !== 'split');
     expect(unscripted).toEqual([]);
   });
 });
@@ -6222,9 +6240,23 @@ describe('deck coverage', () => {
     const missing: string[] = [];
     for (const deck of Object.values(STARTER_DECKS)) {
       for (const card of [...deck.cards.map((c) => c.card), deck.commander!]) {
+        /*
+          A card printed with two castable faces is checked by its faces, not by itself.
+
+          A split card has no text of its own — "Fire // Ice" is two spells on one piece of
+          cardboard and is never cast as itself — so what has to do something is each half. An
+          adventurer is checked both ways: the creature card by this loop, and the spell on it by
+          the recursion, because a player can cast either.
+        */
+        for (const face of card.faces?.cards ?? []) {
+          if (scriptFor(face.name) === undefined) missing.push(`${face.name} (${face.typeLine})`);
+        }
+        if (card.faces?.kind === 'split') continue;
         if (scriptFor(card.name) !== undefined) continue;
         // A vanilla creature does not need a script: its body and its printed keywords are enough.
-        const vanilla = /creature/i.test(card.typeLine) && (card.oracleText ?? '').trim() === '';
+        // An adventurer's own text is the adventure, which the face above has already covered.
+        const vanilla = /creature/i.test(card.typeLine)
+          && ((card.faces === undefined ? card.oracleText : '') ?? '').trim() === '';
         if (!vanilla) missing.push(`${card.name} (${card.typeLine})`);
       }
     }
@@ -6234,7 +6266,11 @@ describe('deck coverage', () => {
   it('registers each script under the name of a real card or a token the pool makes', () => {
     const printed = new Set([
       ...Object.values(STARTER_DECKS).flatMap((deck) =>
-        [...deck.cards.map((c) => c.card), deck.commander!].map((c) => c.name),
+        [...deck.cards.map((c) => c.card), deck.commander!]
+          // Each castable face as well as the card, because a half is where the script lives: a
+          // Fire has no card of its own and a Venture Deeper is only ever on the stack.
+          .flatMap((c) => [c, ...(c.faces?.cards ?? [])])
+          .map((c) => c.name),
       ),
       // A token is in nobody's deck and can still have a script: a Pest's death trigger fires
       // every game Sedgemoor Witch connects with an instant. `TOKEN_DEFS` is the list of what
@@ -6251,6 +6287,13 @@ describe('deck coverage', () => {
     const unpayable: string[] = [];
     for (const deck of Object.values(STARTER_DECKS)) {
       for (const card of [...deck.cards.map((c) => c.card), deck.commander!]) {
+        // Each face as well, because a half is cast for its own cost — and a split card's printed
+        // cost is the two of them with a `//` between, which is never paid as written.
+        for (const face of card.faces?.cards ?? []) {
+          const faceCost = (face.manaCost ?? '').match(/\{[^}]*\}/g) ?? [];
+          if (faceCost.some((symbol) => /\//.test(symbol))) unpayable.push(face.name);
+        }
+        if (card.faces?.kind === 'split') continue;
         if (scriptFor(card.name) === undefined) continue;
         if (/land/i.test(card.typeLine)) continue;
         const cost = (card.manaCost ?? '').match(/\{[^}]*\}/g) ?? [];
@@ -7632,7 +7675,9 @@ describe('red-blue: six cards whose job is to read the spells', () => {
       business. Adeliz is a Wizard herself, Gelectrode is a Weird Wizard, and Young Pyromancer is a
       Human Shaman who gets nothing.
     */
-    let s = izzet(['Adeliz, the Cinder Wind', 'Gelectrode', 'Young Pyromancer'], ['Shock']);
+    // Burst Lightning rather than Shock: Shock's slot in Arc Tempest is the pool's split card
+    // now, and this test wants any one-mana red spell the deck still holds.
+    let s = izzet(['Adeliz, the Cinder Wind', 'Gelectrode', 'Young Pyromancer'], ['Burst Lightning']);
     const adeliz = find(s, 0, 'battlefield', 'Adeliz, the Cinder Wind');
     const wizard = find(s, 0, 'battlefield', 'Gelectrode');
     const shaman = find(s, 0, 'battlefield', 'Young Pyromancer');
@@ -7642,7 +7687,7 @@ describe('red-blue: six cards whose job is to read the spells', () => {
     // The Shock and Adeliz's trigger are both on the stack, so the board is read once both have
     // resolved rather than once the spell has.
     s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Burst Lightning'),
       targets: [{ kind: 'player', seat: 1 }],
     })));
     expect([power(s, adeliz), power(s, wizard), power(s, shaman)]).toEqual([3, 1, 2]);
@@ -7660,7 +7705,7 @@ describe('red-blue: six cards whose job is to read the spells', () => {
   });
 
   it('sends two damage at the face for every spell Guttersnipe sees cast', () => {
-    let s = izzet(['Guttersnipe'], ['Think Twice', 'Shock']);
+    let s = izzet(['Guttersnipe'], ['Think Twice', 'Burst Lightning']);
     s = tapAllLands(s, 0);
     const before = life(s, 1);
     // A cantrip: no damage of its own, two from the Goblin.
@@ -7668,7 +7713,7 @@ describe('red-blue: six cards whose job is to read the spells', () => {
     expect(life(s, 1)).toBe(before - 2);
     // And a Shock, which is two of its own on top of the Goblin's two.
     s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Burst Lightning'),
       targets: [{ kind: 'player', seat: 1 }],
     })));
     expect(life(s, 1)).toBe(before - 6);
@@ -7730,7 +7775,7 @@ describe('red-blue: six cards whose job is to read the spells', () => {
     expect([power(s, drake), toughness(s, drake)]).toEqual([0, 4]);
 
     // Three cards into the graveyard: two spells and a land, and the land is not a spell.
-    for (const name of ['Shock', 'Preordain', 'Mountain']) {
+    for (const name of ['Burst Lightning', 'Preordain', 'Mountain']) {
       s = apply(s, {
         type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'graveyard',
       });
@@ -11357,5 +11402,215 @@ describe('infect, and the win condition nothing could reach (CR 702.90)', () => 
       type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'),
       targets: [{ kind: 'card', id: crusader }],
     })).not.toBeNull();
+  });
+});
+
+/*
+  Cards printed with two castable faces: one split card, and two adventurers (CR 708).
+
+  The claim being tested is narrow and the whole mechanic rests on it: **a half is a spell**. Each
+  face is registered as its own card definition, the instance points at the one being cast while it
+  is on the stack, and from there the cost, the timing, the targets, the resolution, the stack
+  description and what a counterspell is allowed to point at all come out right without any of them
+  knowing that two-faced cards exist. So the tests below mostly check ordinary things about the
+  halves — and the three that are not ordinary are the ones that matter:
+
+  - a split card is **not castable as itself**, and the refusal says so rather than guessing;
+  - the card is one half on the stack and the **whole card** everywhere else;
+  - an adventure that resolves is exiled and castable later, and one that is **countered** is not.
+*/
+describe('a card with two halves you can cast (CR 708)', () => {
+  /** Seat 0, main phase, lands tapped, holding one named card from a named deck. */
+  const holding = (deck: string, name: string, lands: readonly string[]): GameState =>
+    withMana(0, [name], lands, [], deck);
+
+  it('offers each half of a split card as its own play, and never the whole card', () => {
+    const s = holding('arc-tempest', 'Fire // Ice', ['Mountain', 'Island']);
+    const card = find(s, 0, 'hand', 'Fire // Ice');
+    const mine = legalActions(s, 0).plays.filter((p) => p.kind === 'cast' && p.card === card);
+    expect(mine.map((p) => p.name)).toEqual(['Fire', 'Ice']);
+    // Each play says which half it is, because the engine cannot work it out from the card.
+    expect(mine.map((p) => p.half)).toEqual([0, 1]);
+    // And the cost shown is the half's, not the combined {1}{R}{1}{U} printed on the card.
+    expect(mine.map((p) => p.manaCost)).toEqual(['{1}{R}', '{1}{U}']);
+  });
+
+  it('refuses a split card cast with no half named, rather than guessing one', () => {
+    const s = holding('arc-tempest', 'Fire // Ice', ['Mountain', 'Island']);
+    const card = find(s, 0, 'hand', 'Fire // Ice');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card })).toContain('which half');
+    // And refuses a half the card does not have, for the opposite reason: a client sending one has
+    // misread the card, and a silent fallback would cast the wrong spell.
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, half: 7 })).toContain('no face 7');
+  });
+
+  it('Fire divides two damage as the caster chooses', () => {
+    let s = arena({
+      decks: { 0: 'arc-tempest', 1: 'verdant-guard' },
+      hands: { 0: ['Fire // Ice'] },
+      battlefield: { 0: ['Mountain', 'Island'], 1: ['Soul Warden'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const warden = find(s, 1, 'battlefield', 'Soul Warden');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fire // Ice'), half: 0,
+      targets: [{ kind: 'card', id: warden }, { kind: 'player', seat: 1 }],
+      division: [1, 1],
+    }));
+    // One each: the 1/1 dies and the player takes the other.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Soul Warden');
+    expect(life(s, 1)).toBe(19);
+  });
+
+  it('Ice taps a permanent and draws, which is the other half of the same card', () => {
+    let s = arena({
+      decks: { 0: 'arc-tempest', 1: 'verdant-guard' },
+      hands: { 0: ['Fire // Ice'] },
+      battlefield: { 0: ['Mountain', 'Island'], 1: ['Centaur Courser'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const held = countOf(s, 0, 'hand', 'Fire // Ice');
+    const hand = ids(s, 0, 'hand').length;
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fire // Ice'), half: 1,
+      targets: [{ kind: 'card', id: courser }],
+    }));
+    expect(s.instances[courser]!.tapped).toBe(true);
+    // One card drawn, and the Fire // Ice itself has left: the hand is where it started.
+    expect(held).toBe(1);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+
+  it('is one half on the stack and the whole card in the graveyard (CR 708.4)', () => {
+    let s = holding('arc-tempest', 'Fire // Ice', ['Mountain', 'Island']);
+    const card = find(s, 0, 'hand', 'Fire // Ice');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card, half: 0,
+      targets: [{ kind: 'player', seat: 1 }], division: [2],
+    });
+    // On the stack it is Fire: a two-mana instant, which is what a Chalice of the Void counts and
+    // what "counter target instant spell" is allowed to point at.
+    expect(stackNames(s).at(-1)).toContain('Fire');
+    expect(characteristicsOf(s, s.instances[card]!).name).toBe('Fire');
+    expect(s.cardDefs[s.instances[card]!.castAs!]!.cmc).toBe(2);
+    s = passBoth(s);
+    // And in the graveyard it is the card again, mana value four — the combined cost, which is the
+    // rule rather than an oversight.
+    expect(namesIn(s, 0, 'graveyard')).toContain('Fire // Ice');
+    expect(s.instances[card]!.castAs).toBeUndefined();
+    expect(s.cardDefs[s.instances[card]!.defKey]!.cmc).toBe(4);
+  });
+
+  it('Wane destroys an enchantment and nothing else, and Wax is the half that is never dead', () => {
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'skyward-writ' },
+      hands: { 0: ['Wax // Wane'], 1: ['Pacifism'] },
+      battlefield: { 0: ['Forest', 'Plains', 'Centaur Courser'], 1: ['Plains', 'Plains'] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 1);
+    const courser = find(s, 0, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Pacifism'),
+      targets: [{ kind: 'card', id: courser }],
+    }));
+    const aura = find(s, 1, 'battlefield', 'Pacifism');
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const card = find(s, 0, 'hand', 'Wax // Wane');
+    // The Courser is a legal target for Wax and not for Wane, which is the difference between the
+    // two halves and the whole reason a split card is two spells rather than a modal one.
+    const plays = legalActions(s, 0).plays.filter((p) => p.kind === 'cast' && p.card === card);
+    const wane = plays.find((p) => p.name === 'Wane')!;
+    expect(wane.candidates[0]!.map((t) => (t.kind === 'card' ? t.id : t.kind))).toEqual([aura]);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card, half: 1, targets: [{ kind: 'card', id: aura }],
+    }));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Pacifism');
+    // And the Courser is free again, because destroying the aura is what unpacifies it.
+    expect(characteristicsOf(s, s.instances[courser]!).cantAttack).toBe(false);
+  });
+
+  it('casts the adventure half, exiles it, and lets the creature be cast from exile later', () => {
+    let s = holding('hollow-tide', 'Merfolk Secretkeeper', ['Island', 'Island', 'Island']);
+    const card = find(s, 0, 'hand', 'Merfolk Secretkeeper');
+    const library = ids(s, 1, 'library').length;
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card, half: 0, targets: [{ kind: 'player', seat: 1 }],
+    }));
+    // Four off the top, which is the adventure's whole effect.
+    expect(ids(s, 1, 'library').length).toBe(library - 4);
+    // And the card is in exile rather than in a graveyard, flagged as castable later.
+    expect(namesIn(s, 0, 'exile')).toContain('Merfolk Secretkeeper');
+    expect(s.instances[card]!.onAdventure).toBe(true);
+
+    // The creature, out of exile, on the third Island — a play the table offers by name.
+    const back = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.card === card);
+    expect(back?.description).toContain('back from its adventure');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card }));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Merfolk Secretkeeper');
+    // A 0/4, which is the creature half and not the sorcery that sent it to exile.
+    expect([power(s, card), toughness(s, card)]).toEqual([0, 4]);
+    // And it is not on an adventure any more: a creature that dies goes to the graveyard.
+    expect(s.instances[card]!.onAdventure).toBeUndefined();
+  });
+
+  it('and a countered adventure goes to the graveyard, because it never went on one', () => {
+    let s = arena({
+      decks: { 0: 'hollow-tide', 1: 'delta-bloom' },
+      hands: { 0: ['Merfolk Secretkeeper'], 1: ['Counterspell'] },
+      battlefield: { 0: ['Island', 'Island'], 1: ['Island', 'Island'] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const card = find(s, 0, 'hand', 'Merfolk Secretkeeper');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card, half: 0, targets: [{ kind: 'player', seat: 1 }],
+    });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Counterspell'),
+      targets: [{ kind: 'card', id: card }],
+    });
+    s = passBoth(s);
+    s = passBoth(s);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Merfolk Secretkeeper');
+    expect(namesIn(s, 0, 'exile')).not.toContain('Merfolk Secretkeeper');
+    expect(s.instances[card]!.onAdventure).toBeUndefined();
+  });
+
+  it('an adventure is not a creature spell, and the creature half is', () => {
+    const base = {
+      decks: { 0: 'hollow-tide', 1: 'delta-bloom' } as Record<number, string>,
+      battlefield: { 0: ['Island', 'Island'], 1: ['Island', 'Island'] } as Record<number, string[]>,
+      turn: 2, firstSeat: 0,
+    };
+    // Essence Scatter counters target *creature* spell, so what it may point at is the engine's
+    // answer to "which half is on the stack" — asked twice on one card.
+    const onStack = (half: number | undefined): readonly string[] => {
+      let s = arena({ ...base, hands: { 0: ['Merfolk Secretkeeper'], 1: ['Essence Scatter'] } });
+      s = advanceTo(s, 'precombat-main');
+      s = tapAllLands(s, 0);
+      const card = find(s, 0, 'hand', 'Merfolk Secretkeeper');
+      s = apply(s, {
+        type: 'auto:cast', by: 0, card,
+        ...(half === undefined ? {} : { half, targets: [{ kind: 'player', seat: 1 } as Target] }),
+      });
+      s = apply(s, { type: 'auto:pass', by: 0 });
+      const scatter = legalActions(s, 1).plays
+        .find((p) => p.kind === 'cast' && p.name === 'Essence Scatter');
+      return (scatter?.candidates[0] ?? []).map((t) => (t.kind === 'card' ? t.id : t.kind));
+    };
+    // The creature half is counterable by it; the sorcery half is not a legal target at all, which
+    // is why the play is not even offered.
+    expect(onStack(undefined).length).toBe(1);
+    expect(onStack(0).length).toBe(0);
   });
 });

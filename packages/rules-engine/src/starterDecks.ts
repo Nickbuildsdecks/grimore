@@ -2337,6 +2337,130 @@ const JUDITH: CardDef = {
   colors: ['B', 'R'],
 };
 
+/*
+  The pool's two-faced cards: one split card, and two adventurers (CR 708).
+
+  Each is one physical card with more than one castable face, and the faces are nested on the
+  definition rather than written as separate deck entries — a deck list holds one Fire // Ice, not a
+  Fire and an Ice. `deck:load` registers each face under its own key as well, which is what lets a
+  spell cast as one of them be an ordinary spell everywhere downstream. See `CardDef.faces`.
+
+  The two kinds differ in what the *card* is, and the printed cost is where that shows:
+
+  - A **split card** has the combined cost and the summed mana value in every zone but the stack
+    (CR 708.4), which is why Fire // Ice is written here as `{1}{R}{1}{U}` with a mana value of 4
+    even though neither half costs more than two. A Chalice of the Void set to 2 does not counter
+    it, and that is the rule rather than an oversight.
+  - An **adventurer** is a creature card. Its printed cost, type and mana value are the creature's,
+    and the adventure half exists only while it is on the stack — so Merfolk Secretkeeper is a
+    one-mana creature card that can also be a two-mana sorcery, and the card in the graveyard
+    afterwards is a creature card.
+*/
+
+const FIRE_ICE: CardDef = {
+  name: 'Fire // Ice',
+  typeLine: 'Instant // Instant',
+  manaCost: '{1}{R} // {1}{U}',
+  cmc: 4,
+  oracleText: 'Fire deals 2 damage divided as you choose among one or two targets.\nTap target permanent. Draw a card.',
+  colors: ['R', 'U'],
+  faces: {
+    kind: 'split',
+    cards: [
+      {
+        name: 'Fire',
+        typeLine: 'Instant',
+        manaCost: '{1}{R}',
+        cmc: 2,
+        oracleText: 'Fire deals 2 damage divided as you choose among one or two targets.',
+        colors: ['R'],
+      },
+      {
+        name: 'Ice',
+        typeLine: 'Instant',
+        manaCost: '{1}{U}',
+        cmc: 2,
+        oracleText: 'Tap target permanent.\nDraw a card.',
+        colors: ['U'],
+      },
+    ],
+  },
+};
+
+const WAX_WANE: CardDef = {
+  name: 'Wax // Wane',
+  typeLine: 'Instant // Instant',
+  manaCost: '{G} // {W}',
+  cmc: 2,
+  oracleText: 'Target creature gets +2/+2 until end of turn.\nDestroy target enchantment.',
+  colors: ['G', 'W'],
+  faces: {
+    kind: 'split',
+    cards: [
+      {
+        name: 'Wax',
+        typeLine: 'Instant',
+        manaCost: '{G}',
+        cmc: 1,
+        oracleText: 'Target creature gets +2/+2 until end of turn.',
+        colors: ['G'],
+      },
+      {
+        name: 'Wane',
+        typeLine: 'Instant',
+        manaCost: '{W}',
+        cmc: 1,
+        oracleText: 'Destroy target enchantment.',
+        colors: ['W'],
+      },
+    ],
+  },
+};
+
+const MERFOLK_SECRETKEEPER: CardDef = {
+  name: 'Merfolk Secretkeeper',
+  typeLine: 'Creature \u2014 Merfolk Wizard',
+  manaCost: '{U}',
+  cmc: 1,
+  power: '0',
+  toughness: '4',
+  oracleText: 'Venture Deeper {1}{U} (Sorcery) \u2014 Target player mills four cards. Then exile this card. You may cast the creature later from exile.',
+  colors: ['U'],
+  faces: {
+    kind: 'adventure',
+    cards: [{
+      name: 'Venture Deeper',
+      typeLine: 'Sorcery \u2014 Adventure',
+      manaCost: '{1}{U}',
+      cmc: 2,
+      oracleText: 'Target player mills four cards.',
+      colors: ['U'],
+    }],
+  },
+};
+
+const GARENBRIG_CARVER: CardDef = {
+  name: 'Garenbrig Carver',
+  typeLine: 'Creature \u2014 Human Warrior',
+  manaCost: '{2}{G}',
+  cmc: 3,
+  power: '3',
+  toughness: '3',
+  oracleText: "Shield's Might {1}{G} (Instant) \u2014 Target creature gets +3/+3 until end of turn. Then exile this card. You may cast the creature later from exile.",
+  colors: ['G'],
+  faces: {
+    kind: 'adventure',
+    cards: [{
+      name: "Shield's Might",
+      typeLine: 'Instant \u2014 Adventure',
+      manaCost: '{1}{G}',
+      cmc: 2,
+      oracleText: 'Target creature gets +3/+3 until end of turn.',
+      colors: ['G'],
+    }],
+  },
+};
+
 export const EMBER_RUSH: DeckSpec = {
   id: 'ember-rush',
   name: 'Ember Rush',
@@ -2529,8 +2653,15 @@ export const VERDANT_GUARD: DeckSpec = {
       Plowshares, which is the better card and the one there is already a copy of.
     */
     { card: CONCLAVE_TRIBUNAL, count: 1 },
-    // The deck with the most to lose to an aura, and the one that can answer it.
-    { card: NATURALIZE, count: 1 },
+    /*
+      The split card, for the Naturalize that was this deck's deadest slot at 38%.
+
+      Wane is a narrower Naturalize — enchantments only — and Wax is a one-mana +2/+2 on a deck
+      full of creatures, which is the half that is never dead. Trading the artifact half for a
+      combat trick is the trade this pool rewards: four enchantments and a handful of artifacts
+      between twelve decks, and twenty-odd creatures in this one.
+    */
+    { card: WAX_WANE, count: 1 },
     { card: BLOSSOMING_DEFENSE, count: 1 },
     { card: HARMONIZE, count: 1 },
     { card: OVERRUN, count: 1 },
@@ -3749,7 +3880,17 @@ export const HOLLOW_TIDE: DeckSpec = {
     // And enough card flow to find the clock, since the deck wins with about four cards.
     { card: PREORDAIN, count: 1 },
     { card: DIVINATION, count: 1 },
-    { card: SIGN_IN_BLOOD, count: 1 },
+    /*
+      The adventurer, for the Sign in Blood: two cards for two life in the deck that already runs
+      two Thought Scours, a Divination, a Preordain and two Thieving Magpies.
+
+      Mill four and *then* a one-mana 0/4 is the same card twice in the deck whose win condition is
+      the opponent's library — and the 0/4 is the turn-one body this deck has never had. Cast in 62%
+      of the games it was in hand, the Sign in Blood was the weakest slot here that is not one of
+      this deck's own one-of engines; the Psychic Strike below it at 35% would have been the cut, and
+      it is the only copy of that card in the pool.
+    */
+    { card: MERFOLK_SECRETKEEPER, count: 1 },
   ],
 };
 
@@ -3933,7 +4074,24 @@ export const ARC_TEMPEST: DeckSpec = {
 
     // ── Twelve spells that point at a face ──
     { card: LIGHTNING_BOLT, count: 2 },
-    { card: SHOCK, count: 1 },
+    /*
+      The pool's split card, for the last Shock.
+
+      **Not for the slot `cast-counts` pointed at**, which is the part worth writing down. The
+      deadest card in this deck by a distance is the Squelch at 19% — cast five times in the
+      twenty-six games it was in hand — and cutting it would have taken the pool's only "counter
+      target activated ability" out of every deck, orphaning a script and three tests to buy one
+      slot. Cast rate measures how often a card is *castable*, not how much it does when it is: the
+      Shock is cast in nine games out of ten and is the weakest card in a deck that already runs two
+      Lightning Bolts, two Lightning Strikes, a Lava Spike, a Burst Lightning, two Magma Jets and a
+      Firebolt. One mana for two damage is the one piece of burn here that nothing misses.
+
+      Fire is a better Shock in this deck — two damage for two mana, divisible between two things —
+      and Ice is the half that makes it never a dead card: tap a blocker, tap a land on their upkeep,
+      draw. It is also the one card in the pool that can be either of this deck's two colours, which
+      is what a split card is for.
+    */
+    { card: FIRE_ICE, count: 1 },
     { card: LIGHTNING_STRIKE, count: 2 },
     /*
       Arc Lightning for the second Shock, and the one card here that kills two creatures.
@@ -4362,7 +4520,14 @@ export const DELTA_BLOOM: DeckSpec = {
     { card: DIVINATION, count: 2 },
     // Two Preordains rather than one: the second is the slot the second Kiora's Follower left.
     { card: PREORDAIN, count: 2 },
-    { card: HARMONIZE, count: 1 },
+    /*
+      The adventurer, for the Harmonize that was this deck's weakest slot at 71%.
+
+      A three-mana 3/3 that was a +3/+3 trick two turns earlier is two cards in a deck that wants
+      bodies early and has plenty of card draw already — and a ramp deck's problem is always the
+      four turns before its mana matters, which is the half of the card that gets cast first.
+    */
+    { card: GARENBRIG_CARVER, count: 1 },
 
     // ── Nine that buy the time the plan needs ──
     /*

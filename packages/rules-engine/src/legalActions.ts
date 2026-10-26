@@ -10,7 +10,7 @@
  * mana follows. Showing a card as uncastable because the lands are still untapped would be
  * technically true and useless.
  */
-import { isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
+import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import { characteristicsOf } from './characteristics.js';
 import {
@@ -109,6 +109,15 @@ export interface LegalPlay {
    * table had just offered. Flashback taught that lesson in a browser suite.
    */
   readonly foretold?: boolean;
+  /**
+   * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
+   * (CR 708).
+   *
+   * One play per face, like the kicker's and the morph's: a split card is offered twice and never
+   * as itself, and an adventurer is offered as its creature *and* as its adventure. Nothing in the
+   * table had to change for it — a menu that already shows one card several times shows this.
+   */
+  readonly half?: number;
   /**
    * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
    *
@@ -581,26 +590,62 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     creature a Banisher Priest took — `foretoldTurn` is what tells them apart, and it belongs to
     whoever foretold it rather than to whoever owns the card.
   */
-  const castable = [
-    ...listAt(state, zoneKey(seat, 'hand')).map((id) => ({ id, fromCommand: false, flashback: false, foretold: false })),
-    ...listAt(state, zoneKey(seat, 'command')).map((id) => ({ id, fromCommand: true, flashback: false, foretold: false })),
+  const zones = [
+    ...listAt(state, zoneKey(seat, 'hand'))
+      .map((id) => ({ id, fromCommand: false, flashback: false, foretold: false, fromAdventure: false })),
+    ...listAt(state, zoneKey(seat, 'command'))
+      .map((id) => ({ id, fromCommand: true, flashback: false, foretold: false, fromAdventure: false })),
     ...listAt(state, zoneKey(seat, 'graveyard'))
       .filter((id) => scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name)?.flashback !== undefined)
-      .map((id) => ({ id, fromCommand: false, flashback: true, foretold: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: true, foretold: false, fromAdventure: false })),
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => {
         const inst = state.instances[id];
         if (inst?.foretoldTurn === undefined || inst.foretoldTurn === state.turn) return false;
         return scriptFor(state.cardDefs[inst.defKey]?.name)?.foretell !== undefined;
       })
-      .map((id) => ({ id, fromCommand: false, flashback: false, foretold: true })),
-  ];
+      .map((id) => ({ id, fromCommand: false, flashback: false, foretold: true, fromAdventure: false })),
+    /*
+      And the fifth: a creature in exile whose adventure resolved (CR 708).
 
-  for (const { id, fromCommand, flashback, foretold } of castable) {
+      A second narrow list over the same zone rather than a widening of the one above it, because
+      the two have nothing in common beyond the zone — a foretold card is face down, waiting a
+      turn, and cast for a different cost, while this one is face up, castable at once, and cast
+      for exactly what is printed on it. `onAdventure` is what makes it a play at all, which is
+      also what keeps a Banisher Priest's prisoner out of this list.
+    */
+    ...listAt(state, zoneKey(seat, 'exile'))
+      .filter((id) => state.instances[id]?.onAdventure === true)
+      .map((id) => ({ id, fromCommand: false, flashback: false, foretold: false, fromAdventure: true })),
+  ];
+  /*
+    One entry per castable **face**, which is where a two-faced card stops needing special cases.
+
+    A split card is offered as each of its halves and never as itself — it has no castable face of
+    its own (CR 708.4) — and an adventurer is offered as its creature *and* as its adventure. From
+    exile there is only ever the creature: the adventure has already been cast, and the flag that
+    put the card there is the reason it is castable at all.
+  */
+  const castable = zones.flatMap((entry) => {
+    const faces = state.cardDefs[state.instances[entry.id]?.defKey ?? '']?.faces;
+    if (faces === undefined || entry.fromAdventure) return [{ ...entry, half: undefined as number | undefined }];
+    const halves = faces.cards.map((_face, index) => ({ ...entry, half: index as number | undefined }));
+    return faces.kind === 'split'
+      ? halves
+      : [{ ...entry, half: undefined as number | undefined }, ...halves];
+  });
+
+  for (const { id, fromCommand, flashback, foretold, fromAdventure, half } of castable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
-    const def = state.cardDefs[inst.defKey];
-    const ch = characteristicsOf(state, inst);
+    /*
+      The face being offered, if this play is for one: `def`, `ch` and `script` are the half's from
+      here down, so the cost checked, the timing, the targets, the description and the affordability
+      message are all about the half rather than about the card it is printed on.
+    */
+    const faceDef = half === undefined ? undefined : state.cardDefs[inst.defKey]?.faces?.cards[half];
+    const def = faceDef ?? state.cardDefs[inst.defKey];
+    const ch = characteristicsOf(state, faceDef === undefined ? inst : { ...inst, castAs: defKeyFor(faceDef) });
     const script = scriptFor(def?.name);
 
     /*
@@ -615,7 +660,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       From hand only, and never with the flashback or commander-zone pass: morph is about the card
       in your hand, and nothing in this pool has both.
     */
-    if (script?.morph !== undefined && !flashback && !fromCommand && sorcerySpeed) {
+    if (script?.morph !== undefined && !flashback && !fromCommand && !fromAdventure && sorcerySpeed) {
       const faceDownCost = parseManaCost(MORPH_COST);
       if (canAfford(poolOf(state, seat), faceDownCost, sources)) {
         out.push({
@@ -662,7 +707,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       casting it and often because you cannot cast it. During your own turn only (CR 702.143a),
       which in this engine is the window a sorcery gets.
     */
-    if (script?.foretell !== undefined && !flashback && !fromCommand && !foretold && sorcerySpeed) {
+    if (script?.foretell !== undefined && !flashback && !fromCommand && !foretold && !fromAdventure
+      && sorcerySpeed) {
       const cost = parseManaCost(FORETELL_COST);
       if (canAfford(poolOf(state, seat), cost, sources)) {
         out.push({
@@ -753,6 +799,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           kind: 'cast', card: id, name: ch.name,
           description: `Cast ${ch.name} — ${chosen.map((m) => m.description).join('; and ')}`,
           manaCost: costShown, ...taxOn, ...changeOn, ...xOn, modes, targetSpecs: specs, candidates,
+          ...(half === undefined ? {} : { half }),
           isManaAbility: false, sacrificeOptions: victims,
         });
       }
@@ -783,12 +830,17 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         ? `Cast ${ch.name} from your graveyard (flashback ${costShown})`
         : foretold
           ? `Cast ${ch.name} from exile (foretold ${costShown})`
-          : fromCommand && tax > 0
-            ? `Cast ${ch.name} (+{${tax}} tax)`
-            : `Cast ${ch.name}${convokeNote}`,
+          : fromAdventure
+            // Named as coming back, because that is the half of the card the player has not seen
+            // in play yet and a bare "Cast Merfolk Secretkeeper" from exile reads as a bug.
+            ? `Cast ${ch.name} from exile (back from its adventure)`
+            : fromCommand && tax > 0
+              ? `Cast ${ch.name} (+{${tax}} tax)`
+              : `Cast ${ch.name}${convokeNote}`,
       manaCost: costShown, ...taxOn, ...changeOn, ...xOn, targetSpecs: specs, candidates,
       ...(flashback ? { flashback: true } : {}),
       ...(foretold ? { foretold: true } : {}),
+      ...(half === undefined ? {} : { half }),
       isManaAbility: false, sacrificeOptions: victims,
     });
 

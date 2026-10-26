@@ -579,7 +579,19 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     get wrong because nothing fights it, and treating it as a 2/2 creature there would make exile
     a battlefield.
   */
-  const def = isFaceDownObject(instance) ? FACE_DOWN : state.cardDefs[instance.defKey];
+  /*
+    And the face a split card or an adventurer was cast as, which is read in preference to the card
+    itself (CR 708.4): a spell on the stack has the characteristics of only the half being cast.
+
+    One line, and it is what makes the mechanic cost nothing anywhere else. "Counter target creature
+    spell" hands a card id to a filter that asks for its characteristics, and with this it gets
+    "Venture Deeper, Sorcery" for the adventure half and "Merfolk Secretkeeper, Creature" for the
+    creature — off the same lookup, with no reader knowing that two-faced cards exist. `castAs` is
+    set only while the card is on the stack; `relocate` clears it on the way off.
+  */
+  const def = isFaceDownObject(instance)
+    ? FACE_DOWN
+    : state.cardDefs[instance.castAs ?? instance.defKey];
   const printed = parseTypeLine(def?.typeLine);
   /*
     Layer 4 first, in a pass of its own (CR 613.1c).

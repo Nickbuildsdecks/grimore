@@ -30,6 +30,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `monarch.mjs` | who takes the crown, how long it is held, and what it drew | `SEEDS=6 node scripts/measure/monarch.mjs` |
 | `poison.mjs` | is the poison win condition reached, or only theoretical? | `SEEDS=6 node scripts/measure/poison.mjs` |
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
+| `halves-use.mjs` | which half of a two-faced card gets cast, and does the adventure come back? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -100,6 +101,20 @@ at 107% and says nothing about whether the mechanic was ever used, because every
 could have been the printed cost. `morph-use.mjs` is the split, and the number that matters in it is
 not how often the bot casts face down — it is how often it then **turns the card up**, because a 2/2
 that stays down for the rest of the game is three mana spent on a card the bot forgot about.
+
+**A card with two castable faces needs the same split, and one more number.** `halves-use.mjs` is
+`morph-use` for split cards and adventurers, and it has earned its keep twice already. Wax // Wane
+reads 23 casts in 660 games and looks fine; the split says **Wax 23, Wane 0** — a "destroy target
+enchantment" half that is never castable in a pool with four enchantments in it, so the card is a
+one-mana +2/+2 wearing a second name. And for an adventurer the honest number is not how many
+adventures were cast, it is **how many creatures came back out of exile**: Garenbrig Carver is 65
+adventures and 62 returns, which is the mechanic working, while a card at 65 and 9 would be a
+sorcery that had quietly eaten a creature.
+
+**A half nobody casts is not automatically a bad card.** The same Wax // Wane that never casts one
+of its halves measured **+19 of 264** against the field, because the half it does cast is better
+than the card it replaced. "This half is dead" and "this card is bad" are two different findings and
+this instrument only produces the first; `deck-probe` produces the second.
 
 **Measure the cut as well as the card.** A `CHANGE` is two halves and the instrument prices the
 pair, so a result that looks like "this card is bad" is often "that cut was bad". D127 is the case:

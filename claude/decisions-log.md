@@ -7146,3 +7146,93 @@ and its instance is gone by the next state. It reads out of the state the questi
 instead, which is also the more honest number — what a choice was worth is what it was worth when it
 was made. Measured peak on the wire moved with the deck too: **25.7KB packed, 55.6KB inlined**,
 against the 64KB cap.
+
+## D160 — A card with two castable faces: the half is the spell
+
+**Decision: give `CardDef` a `faces` field, register each face as its own card definition, and let
+a cast point the card at one of them for as long as it is on the stack. Split cards and adventurer
+cards then need no special case anywhere else in the engine.**
+
+Four cards wanted a mechanic the engine did not have: one physical card with **more than one
+castable face**. A split card (Fire // Ice) is two spells on one piece of cardboard and is never
+cast as itself; an adventurer (Garenbrig Carver // Shield's Might) is a creature card that can
+instead be cast as an instant, which then exiles itself and may be cast as the creature later.
+
+**The whole design is one line in `characteristicsOf`.** `CardInstance` gained `castAs`, a def key
+read in preference to `defKey`, and `relocate` clears it on every zone change but the one onto the
+stack. That is the rule the engine needed (CR 708.4: a spell on the stack has the characteristics
+of only the half being cast) and it buys everything downstream for free:
+
+- the cost paid, the timing checked and the targets offered are the half's, because `legalActions`
+  and `castSpell` both read `def` and both now read the face;
+- the **script** that resolves is the half's, because the stack object's `cardKey` is the face;
+- a counterspell's filter is handed a card id and looks up its characteristics, so "counter target
+  creature spell" misses Venture Deeper and catches Merfolk Secretkeeper with no code at all;
+- the card in the graveyard afterwards is the **whole** card, mana value four for a Fire // Ice —
+  which is what a Chalice of the Void counts, and the rule rather than an oversight.
+
+**Two refusals, which are opposite mistakes.** A split card cast with no half named is refused
+("choose which half") rather than falling back to the first one, because a fallback casts the wrong
+spell; and a card with no second face refuses a half outright, because a client sending one has
+misread the card. The same pair of refusals the modes, the kicker and morph each have.
+
+**The adventure's second half is one parameter.** `spellLeavesStack` already decided where a spell
+card goes — graveyard, or exile for flashback — so the adventure went there too, with a `resolved`
+argument the three call sites answer for themselves. An adventure that is **countered** never went
+on an adventure, so its card goes to the graveyard like any other countered spell; only the one that
+finished resolving is exiled with `onAdventure`, and only that flag makes the creature castable out
+of exile. One test asserts each half of that.
+
+**`halves-use.mjs`, and what it found.** `cast-counts` reads a card with two faces as healthy while
+one of them has never been cast, which is the same blind spot `morph-use` exists for. Over 660 games:
+
+| card | halves | came back |
+| --- | --- | --- |
+| Fire // Ice (arc-tempest) | Fire 26, Ice 3 | — |
+| Wax // Wane (verdant-guard) | Wax 23, **Wane 0** | — |
+| Garenbrig Carver (delta-bloom) | creature 4, Shield's Might 65 | **62 of 65 (95%)** |
+| Merfolk Secretkeeper (hollow-tide) | creature 62, **Venture Deeper 1** | 0 of 1 |
+
+Garenbrig Carver is the mechanic working as printed: the bot casts the instant, and then casts the
+creature out of exile 95% of the time. **Wane is cast zero times** — "destroy target enchantment" in
+a pool with four enchantments is a half that is usually not castable, which was written into the
+script before it was measured and is now a number. And Merfolk Secretkeeper is the opposite
+surprise: the bot takes the one-mana body and almost never casts the mill, which is a fact about the
+evaluation rather than about the card.
+
+**A half nobody casts is not the same as a bad card**, and this is the clean case: Wax // Wane
+measured **+19 of 264** — nine matchups down for the old list, none up by more than one — because
+the half it *does* cast is better than the Naturalize it replaced. Two findings, two instruments.
+
+**All four changes, priced in reverse.** `deck-probe` looks a name up in the pool, so a card in no
+deck cannot be priced; each change was therefore shipped first and then measured by probing the
+*old* list as the variant, with the sign read the other way round:
+
+| deck | change | worth |
+| --- | --- | --- |
+| verdant-guard | Wax // Wane for the Naturalize | **+19 of 264** |
+| delta-bloom | Garenbrig Carver for the Harmonize | +5 of 262 |
+| hollow-tide | Merfolk Secretkeeper for the Sign in Blood | −2 of 264 |
+| arc-tempest | Fire // Ice for the last Shock | −8 of 263 |
+
+Three of the four are inside the 18-game duel floor (D86) and one is above it. The twelve-deck table
+is unmoved: 28%–78%, the same spread as before.
+
+**And the cut was not the slot the cast-count pointed at.** `cast-counts` put Arc Tempest's Squelch
+at **19%**, the deadest card in any deck in the pool, and cutting it would have taken the only
+"counter target activated ability" out of every deck — orphaning a script, a definition and three
+tests to buy one slot. The Shock went instead: cast in nine games out of ten and still the weakest
+card in a deck that runs two Lightning Bolts, two Lightning Strikes, a Lava Spike, a Burst Lightning,
+two Magma Jets and a Firebolt. **Cast rate measures how often a card is castable, not how much it
+does when it is**, and the same reasoning saved Hollow Tide's Psychic Strike (35%, the pool's only
+copy) at the cost of its Sign in Blood (62%, two other decks have one). The Squelch slot stays a
+known-dead card with nowhere to go, written down rather than quietly cut.
+
+**And a guard in the browser driver that did not guard.** The arena suite asks for a combat arrow
+"only when a creature actually attacked", and the flag it asks that question with was set by
+`declared 0 attackers` as well — a real and frequent answer, every turn whose only creatures are
+summoning-sick. So the check could fail for a game that was fine, and after the deck changes moved
+the shuffle, it did. `seen.swung` now needs `[1-9]\d*` attackers, and the three-second wait for the
+overlay is skipped on an empty declaration rather than spent proving nothing. Found by changing four
+deck lists, which is the second time this project has had a browser check that could not pass on a
+board the game was entitled to build.

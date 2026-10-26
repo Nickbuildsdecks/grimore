@@ -263,6 +263,15 @@ export function relocate(
     ...(toZone !== 'battlefield' && inst.printedDefKey !== undefined
       ? { defKey: inst.printedDefKey, printedDefKey: undefined }
       : {}),
+    /*
+      And a split card stops being one half of itself as it leaves the stack (CR 708.4).
+
+      The mirror of the line above, for the same reason and in the same place: a Fire // Ice cast
+      as Fire is a *four*-mana card again in the graveyard, which is what a Chalice of the Void and
+      a graveyard-cost filter both have to read. Set only while on the stack, so this clears it
+      everywhere else — including on the way to exile, which is where an adventure goes.
+    */
+    ...(toZone === 'stack' ? {} : { castAs: undefined }),
   });
   return detachAllFrom(next, inst.id);
 }
@@ -312,6 +321,22 @@ function assertCardDef(card: unknown): asserts card is CardDef {
   if (c['oracleText'] !== undefined && (typeof c['oracleText'] !== 'string' || c['oracleText'].length > MAX_CARD_TEXT_LENGTH)) {
     throw new EngineError('INVALID_CARD', `card oracleText must be at most ${MAX_CARD_TEXT_LENGTH} characters`);
   }
+  /*
+    And the other castable faces, checked the same way the card itself is — and capped at two.
+
+    The cap is not a rules limit, it is a payload one: a caller-supplied deck reaches this function,
+    each face is a definition the view inlines, and a card claiming forty faces is a state that does
+    not fit down the socket. No printed card has more than two.
+  */
+  if (c['faces'] !== undefined) {
+    const faces = c['faces'] as Record<string, unknown>;
+    if (typeof faces !== 'object' || faces === null
+      || (faces['kind'] !== 'split' && faces['kind'] !== 'adventure')
+      || !Array.isArray(faces['cards']) || faces['cards'].length === 0 || faces['cards'].length > 2) {
+      throw new EngineError('INVALID_CARD', 'card faces must be one or two faces, split or adventure');
+    }
+    for (const face of faces['cards']) assertCardDef(face);
+  }
 }
 
 export function normaliseDef(card: CardDef): CardDef {
@@ -330,6 +355,23 @@ export function normaliseDef(card: CardDef): CardDef {
     ...(card.loyalty === undefined ? {} : { loyalty: card.loyalty }),
     ...(card.imageUri === undefined ? {} : { imageUri: card.imageUri }),
     ...(card.scryfallId === undefined ? {} : { scryfallId: card.scryfallId }),
+    /*
+      The other castable faces, normalised one level deep and no further.
+
+      One level is the whole of it: no printed card has a face with a face, and recursing would let
+      a caller-supplied deck hand the engine a cycle. Each face is also registered under its own
+      key by `place` below, so these nested copies are what the *table* reads — the card in a hand
+      is drawn with both halves on it — while the engine reads the registered ones.
+    */
+    ...(card.faces === undefined ? {} : {
+      faces: {
+        kind: card.faces.kind,
+        cards: card.faces.cards.map((face) => {
+          const { faces: _nested, ...flat } = normaliseDef(face);
+          return flat;
+        }),
+      },
+    }),
   };
 }
 
@@ -405,6 +447,13 @@ export function reduceCardAction(state: GameState, action: CardAction, ctx: Acti
         const def = normaliseDef(card);
         const key = defKeyFor(def);
         cardDefs[key] ??= def;
+        /*
+          And each castable face under its own key, which is what lets everything downstream stay
+          as it is: a spell cast as one half points `castAs` at that half's key, and every existing
+          lookup — characteristics, the script, the stack description, the type line a counterspell
+          reads — finds it by the same `cardDefs[...]` it already does.
+        */
+        for (const face of def.faces?.cards ?? []) cardDefs[defKeyFor(face)] ??= face;
         seq += 1;
         const id = `c${action.seat}_${seq}`;
         const zone: ZoneId = isCommander ? 'command' : 'library';

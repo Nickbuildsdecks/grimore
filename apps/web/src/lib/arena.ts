@@ -331,6 +331,12 @@ function playAction(
   */
   const withForetold = play.foretold === true ? { foretold: true } : {}
   /*
+    And which half of a two-faced card, for the fifth time and the same reason: a split card and an
+    adventurer are each offered as two plays on one card, and a cast with no half is either the
+    wrong spell or — on a split card, which has no printed face of its own — refused outright.
+  */
+  const withHalf = play.half === undefined ? {} : { half: play.half }
+  /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
     answer in. One tap, and the 2/2 is whatever it was all along.
@@ -352,7 +358,7 @@ function playAction(
     return {
       type: "auto:cast", card: play.card,
       ...withModes, ...withX, ...withKicker, ...withFlashback, ...withFaceDown, ...withForetold,
-      ...withDivision,
+      ...withHalf, ...withDivision,
       ...withSacrifice, ...withTargets,
     }
   }

@@ -1154,6 +1154,10 @@ function candidateActions(
             // And foretell, which is a different zone as well as a different cost: without this
             // the engine is told to cast a card in exile as though it were in hand.
             ...(play.foretold === true ? { foretold: true } : {}),
+            // And which half of a two-faced card, for the fifth time and the same reason: the two
+            // halves are separate plays on one card, and a cast sent without this is either the
+            // wrong spell or — on a split card, which has no printed face of its own — refused.
+            ...(play.half === undefined ? {} : { half: play.half }),
             ...(fodder === null ? {} : { sacrifice: fodder }),
             /*
               X as large as the mana allows. The search sees what that buys, which is new: it
@@ -2304,7 +2308,9 @@ function castsARitual(state: GameState, action: Action): boolean {
 /** One play, identified well enough to tell "this is new" from "this was already on offer". */
 const playKey = (play: LegalPlay): string =>
   `${play.kind}|${play.card}|${play.abilityIndex ?? ''}|${play.kicked === true ? 'k' : ''}`
-  + `|${(play.modes ?? []).join(',')}`;
+  // The half, because two halves of one card are two different plays: without it the "did casting
+  // that buy me anything" checks would read Ice as still on offer after Fire had been cast.
+  + `|${play.half ?? ''}|${(play.modes ?? []).join(',')}`;
 
 /**
  * Whether casting a ritual actually bought this seat a spell.

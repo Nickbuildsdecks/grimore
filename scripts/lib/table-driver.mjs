@@ -617,7 +617,16 @@ export async function noteMove(seen, page, did) {
     next turn before anybody looks. That is a sampled observation reported as a fact about the
     game, which is how a run came back saying no attack was ever drawn in a game full of attacks.
   */
-  if (/^declared \d+ attackers$/.test(did)) seen.swung = true;
+  /*
+    A **non-empty** attack, which is not the same as a declaration.
+
+    `declared 0 attackers` is a real and frequent answer — every turn where the only creatures on
+    the board are summoning-sick — and it used to set this flag, which made the arena suite's arrow
+    check unguardable: the suite asks for an arrow "only when a creature actually attacked" and
+    this said one had. It failed on a game whose single declaration was empty, three runs after a
+    deck change moved the shuffle, and the game it failed on was fine. One character class.
+  */
+  if (/^declared [1-9]\d* attackers$/.test(did)) seen.swung = true;
   // A spell cast out of a graveyard, which is the one play on the table that is not in the hand or
   // on the board. Sampled rather than required: it needs the card drawn, cast, and the mana for
   // the second casting, which is a game the shuffle has to produce.
@@ -640,7 +649,9 @@ export async function noteMove(seen, page, did) {
     if (seen.ordered !== true) await shot(page, 'assigning-combat-damage');
     seen.ordered = true;
   }
-  if (/^declared \d+ attackers$/.test(did) && seen.arrows !== true) {
+  // Only a non-empty attack draws one, so only a non-empty attack is worth waiting for: polling
+  // three seconds after `declared 0 attackers` is three seconds spent proving nothing.
+  if (/^declared [1-9]\d* attackers$/.test(did) && seen.arrows !== true) {
     /*
       Waited for, briefly, rather than read the instant the action returns.
 

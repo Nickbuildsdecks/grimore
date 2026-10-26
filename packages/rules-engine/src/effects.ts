@@ -473,7 +473,22 @@ export function destroy(state: GameState, id: string): GameState {
  * is three chances for a card cast from the graveyard to end up back in the graveyard, which is a
  * one-mana spell with no end.
  */
-export function spellLeavesStack(state: GameState, object: StackObject, inst: CardInstance): GameState {
+export function spellLeavesStack(
+  state: GameState, object: StackObject, inst: CardInstance, resolved = false,
+): GameState {
+  /*
+    And an adventure that *resolved* goes to exile instead, with a flag saying it is on one.
+
+    The second half of the mechanic, and the reason `resolved` is a parameter rather than something
+    read off the object: an adventure that is **countered**, or one whose target disappeared, never
+    went on an adventure at all, so its card goes to the graveyard like any other countered spell.
+    All three cases arrive through this function and only the caller knows which it is — so the
+    caller says, and the default is the safe half.
+  */
+  if (object.adventure === true && resolved) {
+    const exiled = relocate(state, inst, 'exile', inst.owner, 'bottom');
+    return withInstance(exiled, inst.id, { onAdventure: true });
+  }
   return relocate(state, inst, object.flashback === true ? 'exile' : 'graveyard', inst.owner, 'bottom');
 }
 

@@ -2123,8 +2123,10 @@ function completeResolution(
       // here as well was the bug: a permanent that arrived any *other* way got none.
 
     } else if (inst !== undefined) {
-      // Graveyard, or exile when it was cast with flashback. See `spellLeavesStack`.
-      next = spellLeavesStack(next, object, requireInstance(next, inst.id));
+      // Graveyard, or exile when it was cast with flashback, or exile on an adventure. The last of
+      // the three is the only one that depends on the spell having *resolved*, which is what this
+      // call site knows and the other two do not. See `spellLeavesStack`.
+      next = spellLeavesStack(next, object, requireInstance(next, inst.id), true);
     }
     const name = def?.name ?? 'a spell';
     return { state: next, message: script ? `${name} resolves` : `${name} resolves (not automated — resolve it by hand)` };

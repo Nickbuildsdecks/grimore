@@ -4038,6 +4038,56 @@ exist (CR 111.7) and Talrand's Drakes are in this field now. It reads the state 
 asked in instead. The wire peak moved with the deck: **25.7KB packed, 55.6KB inlined**, against a
 64KB cap.
 
+### A card with two halves you can cast
+
+Four cards wanted a mechanic the engine had no shape for: one piece of cardboard with **more than
+one castable face**. A split card — **Fire // Ice** — is two spells and is never cast as itself. An
+adventurer — **Garenbrig Carver // Shield's Might** — is a creature card that can instead be cast as
+an instant, which then exiles itself and may be cast as the creature later.
+
+**It cost one line in `characteristicsOf`.** A card instance gained `castAs`, a definition key read
+in preference to its own for as long as the card is on the stack, and `relocate` clears it on every
+other zone change. That is exactly the rule (CR 708.4: a spell on the stack has the characteristics
+of only the half being cast), and with it everything else came for free — the cost paid, the timing,
+the targets offered, the script that resolves, and what a counterspell is allowed to point at.
+"Counter target creature spell" misses an adventure's instant half and catches the creature off that
+one line, with no reader knowing two-faced cards exist. The card in the graveyard afterwards is the
+whole card again: a Fire // Ice cast as Fire is a *four*-mana card in the bin, which is what a
+Chalice of the Void counts.
+
+The two refusals are the opposite mistakes, and both are said out loud: a split card cast with no
+half named is refused rather than falling back to the first half, and a card with no second face
+refuses a half outright. An adventure that **resolves** is exiled with a flag that makes the creature
+castable; one that is **countered** goes to the graveyard, because it never went on an adventure.
+
+**`halves-use.mjs` is the instrument, and it found three different things in 660 games.** Garenbrig
+Carver is the mechanic working as printed: 65 adventures cast, and the creature came back out of
+exile **62 times (95%)**. Wax // Wane casts Wax 23 times and **Wane zero** — "destroy target
+enchantment" in a pool with four enchantments in it is a half that is usually not castable, which
+the script said before the instrument measured it. And Merfolk Secretkeeper is the opposite
+surprise: 62 casts as the one-mana 0/4 and **one** as the mill-four, which is a fact about the bot's
+evaluation rather than about the card.
+
+**A half nobody casts is not the same as a bad card.** Wax // Wane measured **+19 of 264** against
+the field — nine matchups down for the old list, none up by more than one — because the half it does
+cast is better than the Naturalize it replaced. The other three are inside the duel floor: Garenbrig
+Carver +5, Merfolk Secretkeeper −2, Fire // Ice −8. The twelve-deck table is unmoved at 28%–78%.
+
+**One harness bug fell out of it.** The arena browser suite asks for a combat arrow only when a
+creature actually attacked — and the flag carrying that condition was set by `declared 0 attackers`
+too, which is a real answer on every turn whose creatures are all summoning-sick. The check could
+therefore fail on a game that was fine, and once four deck lists moved the shuffle, it did. It now
+needs at least one attacker, and skips the three-second wait for the overlay on an empty
+declaration.
+
+**And the cut was not the slot the cast-count pointed at**, which is the lesson worth keeping. Arc
+Tempest's deadest card is the Squelch at 19%, and cutting it would have taken the pool's only
+"counter target activated ability" out of every deck — a script, a definition and three tests
+orphaned to buy one slot. The Shock went instead: cast in nine games out of ten and still the
+weakest card in a deck holding two Lightning Bolts, two Lightning Strikes, a Lava Spike, a Burst
+Lightning, two Magma Jets and a Firebolt. Cast rate measures how often a card is *castable*, not how
+much it does when it is.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

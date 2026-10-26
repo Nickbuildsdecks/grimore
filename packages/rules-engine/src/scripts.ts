@@ -5133,6 +5133,107 @@ const ICHORCLAW_MYR: CardScript = {
   }],
 };
 
+/*
+  The halves of the pool's two-faced cards (CR 708).
+
+  Each half is an ordinary script under its own name, which is the whole trick: a split card and an
+  adventurer are two definitions on one piece of cardboard, the engine registers both and points
+  `castAs` at whichever one is being cast, and from there a half is a spell like any other. Nothing
+  in this file knows that these names are halves rather than cards — which is also why they are
+  written here rather than nested inside their parents.
+
+  The *parents* mostly need no script at all. "Fire // Ice" is never cast as itself, and the two
+  adventurers are plain bodies; the only thing a parent would ever need a script for is text that
+  applies to the creature half, which neither of these two has.
+*/
+
+const FIRE: CardScript = {
+  name: 'Fire',
+  // The same shape as Arc Lightning, with a budget of two rather than three: one target takes both,
+  // or two targets take one each. See `divided`.
+  targets: [{ kind: 'any', description: 'any target', count: 2, optional: true, divided: 2 }],
+  onResolve: (c) => dividedAmong(c).reduce(
+    (state, { target, amount }) => dealDamage(state, target, amount, {
+      controller: c.controller, source: c.source,
+    }),
+    c.state,
+  ),
+};
+
+const ICE: CardScript = {
+  name: 'Ice',
+  targets: [{
+    kind: 'permanent',
+    description: 'target permanent',
+    // Any permanent at all, which is wider than the Icy Manipulator's artifact-creature-or-land and
+    // is what the card says. An already-tapped permanent is still a legal target — the draw is half
+    // the card, and a player who wants it may always have it.
+    filter: (_state, candidate) => candidate.kind === 'card',
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    // The draw happens whether or not there was still something to tap, because the card does them
+    // in that order and the tap is not a condition of the draw.
+    return draw(id === null ? c.state : tap(c.state, id), c.controller, 1);
+  },
+};
+
+const WAX: CardScript = {
+  name: 'Wax',
+  expiresAtEndOfTurn: true,
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { power: 2, toughness: 2 });
+  },
+};
+
+/**
+ * "Destroy target enchantment." — the narrow half of a split card, and deliberately left narrow.
+ *
+ * Not folded into `destroyAnArtifactOrEnchantment`: this half destroys *only* an enchantment, so a
+ * deck holding it cannot answer a Sol Ring with it, and a pool with four enchantments in it is a
+ * pool where this half is often uncastable. That is what the card is, and the instrument that
+ * measures how often each half gets cast is the right place for the complaint — not a script that
+ * quietly makes the card better than it is printed.
+ */
+const WANE: CardScript = {
+  name: 'Wane',
+  targets: [{
+    kind: 'permanent',
+    description: 'target enchantment',
+    filter: (state, candidate) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined) return false;
+      return hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'enchantment');
+    },
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : destroy(c.state, id);
+  },
+};
+
+const VENTURE_DEEPER: CardScript = {
+  name: 'Venture Deeper',
+  targets: [TARGET_PLAYER],
+  onResolve: (c) => {
+    const seat = firstPlayerTarget(c);
+    return seat === null ? c.state : mill(c.state, seat, 4);
+  },
+};
+
+const SHIELDS_MIGHT: CardScript = {
+  name: "Shield's Might",
+  expiresAtEndOfTurn: true,
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { power: 3, toughness: 3 });
+  },
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -5220,6 +5321,7 @@ const ALL: readonly CardScript[] = [
   GLISTENER_ELF, PLAGUE_STINGER, ICHORCLAW_MYR, BLIGHT_MAMBA, CYSTBEARER, PHYREXIAN_CRUSADER,
   TAINTED_STRIKE, SKITHIRYX,
   guildgate('Simic Guildgate', 'G', 'U'),
+  FIRE, ICE, WAX, WANE, VENTURE_DEEPER, SHIELDS_MIGHT,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

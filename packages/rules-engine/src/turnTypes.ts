@@ -204,6 +204,14 @@ export interface StackObject {
    */
   readonly flashback?: true;
   /**
+   * Whether this spell is the adventure half of an adventurer card.
+   *
+   * Beside `flashback` because it answers the same question — where the card goes as it leaves the
+   * stack — and because, like flashback, nothing else remembers by then which half was cast. An
+   * adventure that finishes resolving is exiled, and its owner may cast the creature from there.
+   */
+  readonly adventure?: true;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.
@@ -710,6 +718,16 @@ export interface AutoCastAction {
    * about.
    */
   readonly faceDown?: boolean;
+  /**
+   * Which face of a card printed with more than one to cast: an index into `CardDef.faces.cards`
+   * (CR 708).
+   *
+   * Required on a split card, which has no castable face of its own — "Cast Fire // Ice" is not a
+   * play — and optional on an adventurer, where leaving it out casts the creature. Refused on a
+   * card with no second face, rather than ignored: a client sending one has misread the card, and
+   * a cast that silently fell back to the printed face would resolve the wrong spell.
+   */
+  readonly half?: number;
 }
 /**
  * Exile a card from your hand face down for {2}, to be cast later (CR 702.143a).

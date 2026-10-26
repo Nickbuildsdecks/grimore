@@ -9,7 +9,7 @@
  * Every case ends by calling `settle`, which runs state-based actions and raises triggers until the
  * game stops changing. Nothing else in here has to remember that something might have died.
  */
-import { zoneKey, type CardInstance } from './cards.js';
+import { defKeyFor, zoneKey, type CardInstance } from './cards.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
 import { characteristicsOf, hasType } from './characteristics.js';
 import {
@@ -64,9 +64,54 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // A commander is cast from the command zone (CR 903.8); everything else from hand — or, with
   // flashback, from its owner's graveyard (CR 702.33).
   const fromCommand = inst.zone === 'command' && inst.isCommander;
-  const def = state.cardDefs[inst.defKey];
+  const printedDef = state.cardDefs[inst.defKey];
+  /*
+    Which face of the card is being cast (CR 708).
+
+    Everything below this block reads `def`, `script` and `characteristics`, and all three now come
+    from the face rather than from the card — which is the whole of the mechanic: the cost paid, the
+    timing checked, the targets offered, the effect run and the description both players read are
+    the half's, because the half is what is on the stack.
+
+    Two refusals, and they are opposite mistakes. A split card has **no** castable face of its own,
+    so a cast with no half is refused rather than guessed at — "Cast Fire // Ice" is not a play, and
+    a fallback would have silently cast whichever half happened to be first. And a card with no
+    second face refuses a half outright, because a client sending one has misread the card.
+  */
+  const faces = printedDef?.faces;
+  if (action.half !== undefined) {
+    const face = faces?.cards[action.half];
+    if (face === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        `${printedDef?.name ?? 'that card'} has no face ${action.half}`);
+    }
+  } else if (faces?.kind === 'split') {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      `choose which half of ${printedDef?.name ?? 'that card'} to cast`);
+  }
+  const face = action.half === undefined ? undefined : faces?.cards[action.half];
+  const faceKey = face === undefined ? undefined : defKeyFor(face);
+  const def = face ?? printedDef;
+  /*
+    The instance as it will be *on the stack*, used for every characteristics question below.
+
+    A copy rather than a write into `state`, because `state` is the before-picture `settle` compares
+    against: the card does not become one half of itself until it is actually put on the stack, a
+    few dozen lines down, and the engine must not be able to see a half-cast card in between.
+  */
+  const casting: CardInstance = faceKey === undefined ? inst : { ...inst, castAs: faceKey };
   const script = scriptFor(def?.name);
   const flashback = action.flashback === true;
+  /*
+    An adventurer being cast as its creature half, out of exile, because its adventure resolved.
+
+    The same shape as foretell — a card in exile that one player may cast — and told apart from
+    every other exiled card by the flag the adventure's resolution left on it. Casting the
+    *adventure* half again is not a play: that half is gone, and `onAdventure` says so by being the
+    only reason this card is castable at all.
+  */
+  const fromAdventure = action.half === undefined && inst.zone === 'exile'
+    && inst.onAdventure === true && inst.zoneSeat === action.by;
   /*
     Foretell, the fourth zone a spell is cast from here (CR 702.143b).
 
@@ -96,8 +141,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
     }
-  } else if (!foretold && !fromCommand && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
-    throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
+  } else if (!foretold && !fromCommand && !fromAdventure
+    && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', inst.zone === 'exile' && inst.onAdventure === true
+      ? 'that card is on an adventure in somebody else\'s exile'
+      : 'that card is not in your hand');
   }
   if (fromCommand && inst.zoneSeat !== action.by) {
     throw new EngineError('FORBIDDEN', 'that is not your commander');
@@ -113,7 +161,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   */
   if (action.faceDown === true) return castFaceDown(state, action, inst, script);
 
-  const characteristics = characteristicsOf(state, inst);
+  const characteristics = characteristicsOf(state, casting);
   if (characteristics.isLand) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'play a land with auto:playLand; lands are not cast');
   }
@@ -300,8 +348,23 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     two mechanics want opposite things from the same field, and this is the one line that says so.
   */
   if (foretold) next = withInstance(next, inst.id, { faceDown: false });
+  /*
+    And a card coming back off an adventure stops being on one, because it is being cast.
+
+    Cleared here rather than on resolution for the reason the flag exists: it is what makes this
+    card castable out of exile, and a copy that kept it would be castable again from the graveyard
+    it eventually reaches.
+  */
+  if (fromAdventure) next = withInstance(next, inst.id, { onAdventure: undefined });
   // The card physically moves to the stack, and an object describes how it was cast.
   next = relocate(next, requireInstance(next, inst.id), 'stack', action.by, 'bottom');
+  /*
+    And on the stack it is one half of itself (CR 708.4).
+
+    After `relocate` rather than before, because `relocate` is the thing that clears this field on
+    every zone change and setting it first would have it cleared on the way in.
+  */
+  if (faceKey !== undefined) next = withInstance(next, inst.id, { castAs: faceKey });
   // The modes are named in the stack description, because both players can see what was chosen
   // and the one deciding whether to respond needs to know which half of the Charm is coming.
   const modeText = modes === undefined
@@ -321,7 +384,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const foretoldText = foretold ? ' (foretold)' : '';
   const object: StackObject = {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
-    cardKey: inst.defKey, targets: [...chosen], targetSeqs: targetSeqsFor(state, chosen),
+    // The **face**, not the card: the stack object is what resolution reads the script off, and
+    // the script that resolves is the half's.
+    cardKey: faceKey ?? inst.defKey, targets: [...chosen], targetSeqs: targetSeqsFor(state, chosen),
     ...(action.x === undefined ? {} : { x: action.x }),
     ...(action.division === undefined ? {} : { division: [...action.division] }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
@@ -329,6 +394,15 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The flag the card's destination depends on: a spell cast from the graveyard is exiled as it
     // leaves the stack, and by then nothing else remembers where it came from.
     ...(flashback ? { flashback: true as const } : {}),
+    /*
+      And the other flag the destination depends on, for the same reason: an adventure that
+      resolves is exiled "on an adventure" rather than put into a graveyard, and once it has left
+      the stack nothing else knows which half was cast.
+
+      Only when a face was actually cast. An adventurer cast as its creature half is an ordinary
+      creature spell and goes to the battlefield like one.
+    */
+    ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
     description: `${characteristics.name}${xText}${kickedText}${flashbackText}${foretoldText}${modeText}`,
   };
   next = {

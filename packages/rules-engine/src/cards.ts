@@ -55,7 +55,48 @@ export interface CardDef {
   readonly loyalty?: string;
   readonly imageUri?: string;
   readonly scryfallId?: string;
+  /**
+   * The other faces this card can be cast as, for a card printed with more than one (CR 708).
+   *
+   * The nested definitions are ordinary `CardDef`s and are registered in `cardDefs` under their
+   * own keys as the deck loads, which is what makes the rest of the engine need no changes: a
+   * spell cast as one face reads that face's definition and that face's script, through the same
+   * `defKey` lookups everything else already does. See `CardInstance.castAs`.
+   */
+  readonly faces?: CardFaces;
 }
+
+/**
+ * A card with more than one castable face, and which kind of printing it is.
+ *
+ * Two kinds, because the rules differ in exactly two places and nowhere else:
+ *
+ * - `split`: the card is **only** castable as one of its halves, and the whole card's printed
+ *   characteristics — the combined cost, the summed mana value — are what it has everywhere but
+ *   the stack (CR 708.4). "Cast Fire // Ice" is not a play; "Cast Fire" and "Cast Ice" are.
+ * - `adventure`: the card itself is castable (it is a creature card), and `cards` holds the one
+ *   instant or sorcery it may instead be cast as. An adventure that resolves is exiled rather than
+ *   put into a graveyard, and its owner may then cast the creature out of exile.
+ *
+ * Everything else about the two is the same, which is why they share a field: a face is a
+ * definition, casting one is a cast, and the half on the stack is the half that resolves.
+ */
+export interface CardFaces {
+  readonly kind: 'split' | 'adventure';
+  readonly cards: readonly CardDef[];
+}
+
+/** The faces a card offers, or nothing. */
+export const facesOf = (def: CardDef | undefined): readonly CardDef[] => def?.faces?.cards ?? [];
+
+/**
+ * Whether this card can be cast as itself.
+ *
+ * False for a split card and true for everything else, the adventurer included: an adventurer is a
+ * creature card that happens to have a spell on it, and a split card is two spells with no card of
+ * their own.
+ */
+export const castableAsPrinted = (def: CardDef | undefined): boolean => def?.faces?.kind !== 'split';
 
 /**
  * One physical card at the table.
@@ -99,6 +140,30 @@ export interface CardInstance {
    * Banisher Priest — both are face down in exile and only one of them is castable.
    */
   readonly foretoldTurn?: number;
+  /**
+   * The face this card was cast as, while it is on the stack: a def key, into `cardDefs`.
+   *
+   * A spell on the stack has the characteristics of **only** the face being cast (CR 708.4), so
+   * this is read in preference to `defKey` by `characteristicsOf` — which is what makes "counter
+   * target creature spell" miss an adventure's instant half and catch the creature, off one line
+   * rather than off a special case in every reader.
+   *
+   * On the instance rather than only on the stack object because the *card* is what gets targeted:
+   * a counterspell's filter is handed a card id and looks up its characteristics, and a stack
+   * object it never saw cannot help it. Cleared by `relocate` on the way off the stack, like
+   * `tapped` and `frozen` — the card in the graveyard afterwards is the whole card again.
+   */
+  readonly castAs?: string;
+  /**
+   * Set on a card in exile that went there as an adventure resolved, which is the whole of what
+   * makes the creature castable later.
+   *
+   * The same shape as `foretoldTurn`: a fact about this card that has to survive it sitting in
+   * exile for several turns, and the thing that tells `legalActions` this exiled card is a play
+   * while the one a Banisher Priest took is not. No turn is recorded because, unlike foretell,
+   * there is no wait — the adventure resolved, and the creature is castable from then on.
+   */
+  readonly onAdventure?: true;
   readonly isToken: boolean;
   readonly isCommander: boolean;
   /**

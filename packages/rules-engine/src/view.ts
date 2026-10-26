@@ -461,7 +461,12 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     isToken: inst.isToken,
     isCommander: inst.isCommander,
   };
-  const card = state.cardDefs[inst.defKey];
+  /*
+    The face it was cast as, for a card on the stack with two of them: what is on the stack is one
+    half of a split card or one half of an adventurer, and that is the half both players are
+    entitled to read. `castAs` is set only on the stack, so this is the whole card everywhere else.
+  */
+  const card = state.cardDefs[inst.castAs ?? inst.defKey];
   const known = canIdentify(state, inst, viewer) && card !== undefined;
   const identified: VisibleCard = known ? { ...base, card } : base;
   // A permanent on the battlefield has current characteristics, and so does a face-down spell on
