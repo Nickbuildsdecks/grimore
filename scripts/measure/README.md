@@ -20,6 +20,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `deck-probe.mjs` | what would this slot change be worth? | `SUBJECT=tidal-mind CHANGE='Fog Bank:+1,Cancel:-1' SEEDS=17 node scripts/measure/deck-probe.mjs` |
 | `deck-probe.mjs` | what is the **commander** worth? | `SUBJECT=dawn-tithe COMMANDER='Balan, Wandering Knight' SEEDS=15 node scripts/measure/deck-probe.mjs` |
 | `cast-counts.mjs` | which of a deck's sixty cards does the bot actually use? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/cast-counts.mjs` |
+| `cast-counts.mjs` | …and how often does it press *this* button? | `SUBJECT=delta-bloom CHANGE="Kiora's Follower:+1,Rampant Growth:-1" SEEDS=6 node scripts/measure/cast-counts.mjs` |
 | `bot-duel.mjs` | what is this change to the *opponent* worth? | `TESTED='{"lookahead":false}' SEEDS=3 node scripts/measure/bot-duel.mjs` |
 | `disagree.mjs` | does that change alter any decisions at all? | `TESTED='{"lookahead":false}' SEEDS=2 node scripts/measure/disagree.mjs` |
 | `step-drift.mjs` | how far does the table move on one action? | `SEEDS=2 node scripts/measure/step-drift.mjs` |
@@ -30,6 +31,12 @@ commander "the half a deck list cannot be" and until D136 that was a claim rathe
 Point it at a legend whose text is **dead** in the subject deck — Balan, Wandering Knight in a deck
 with no Equipment is a plain 2/2 double striker — and the gap between the two arms is what the real
 commander is worth. It is the only lever here that is not a card in the sixty.
+
+`cast-counts` takes a `CHANGE` as well, with the same grammar, and hands the variant list to the
+engine the way a pasted decklist arrives — so "what does a second copy do to how often the bot uses
+it" is askable without a commit. D143's two-copy row is that invocation. Its `used` column is the
+number to read for an activated ability: `cast 47 + used 164` is one card cast forty-seven times
+and its ability pressed a hundred and sixty-four.
 
 A `CHANGE` is `Name:+1,Other:-1` — or `Name:+1;Other:-1` when a name has a **comma** in it, which
 every legendary creature's does. A `;` anywhere in the string makes `;` the separator for the whole

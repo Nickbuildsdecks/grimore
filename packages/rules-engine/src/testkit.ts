@@ -15,6 +15,7 @@ import {
   zoneKey,
   type Action,
   type ActionContext,
+  type DeckSpec,
   damageOrdersOwed,
   pendingDeclaration,
   type GameState,
@@ -115,6 +116,14 @@ export interface Setup {
   readonly format?: 'modern' | 'edh' | 'pod';
   /** How many seats. Two by default; `pod` allows up to four. */
   readonly seats?: number;
+  /**
+   * Decks built in the test rather than named in `STARTER_DECKS`, by the id `decks` loads them by.
+   *
+   * For the board no starter deck can produce: two copies of a card only one deck runs one of, say.
+   * They reach the engine exactly as a pasted decklist does — through `ActionContext.decks` — so a
+   * test using one is testing the same path a player's own list takes (see `customDeck`).
+   */
+  readonly deckSpecs?: Readonly<Record<string, DeckSpec>>;
 }
 
 const DECKS: Readonly<Record<number, string>> = { 0: 'ember-rush', 1: 'verdant-guard' };
@@ -137,12 +146,15 @@ export function arena(setup: Setup = {}): GameState {
     players: POD_PLAYERS.slice(0, count), seed: 20261023,
   });
   const decks = { ...DECKS, ...setup.decks };
-  s = applyAll(s, [
+  const loading: ActionContext = setup.deckSpecs === undefined
+    ? HOST
+    : { isHost: true, decks: setup.deckSpecs };
+  s = applyMany(s, [
     ...seatList.map((seat) => ({
       type: 'deck:load' as const, by: seat, seat, deckId: decks[seat] ?? 'ember-rush',
     })),
-    { type: 'game:start', by: 0, firstSeat: first },
-  ]);
+    { type: 'game:start' as const, by: 0 as SeatIndex, firstSeat: first },
+  ], loading);
 
   // Clear every opening hand so only the named cards are held.
   for (const seat of seatList) {

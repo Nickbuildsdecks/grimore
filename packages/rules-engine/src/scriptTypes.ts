@@ -494,6 +494,20 @@ export interface AbilityDef {
    * is an attack to make or a block to make; see `animationCouldMatter`.
    */
   readonly animates?: boolean;
+  /**
+   * "{T}: Untap another target permanent" — an ability whose *whole* effect is untapping something.
+   *
+   * Declared for the bot, and the eleventh member of the "spent on nothing" family. It is the one
+   * that is not about a card spent on nothing but about a **cycle**: two Kiora's Followers untap
+   * each other for ever, and a board that ends where it started is a legal line the search is
+   * happy with. Measured before the rule, with one copy in the deck: the ability was activated
+   * **164 times across 120 games**, about three and a half per game it was drawn.
+   *
+   * Only for an ability that does nothing else. Maze of Ith untaps an attacking creature *and*
+   * prevents its damage, and Garruk's +1 untaps two lands *and* puts a loyalty counter on him —
+   * both have a payoff the question below would miss. See `untapBoughtSomething`.
+   */
+  readonly untapsOnly?: boolean;
 }
 
 /** An Aura: what it may enchant, and what it does to the thing it is attached to. */

@@ -6182,3 +6182,75 @@ engine — the same game that suite has always played, with one thing changed, w
 cards came from. `e2e-table` pastes a list with a card the engine has never scripted, checks that
 the engine is refused and the tabletop is not, then pastes one without it and plays the rest of a
 two-browser game on a deck nobody built into this repo.
+
+## D143 — The cycle that changes nothing, and what the untap has to buy
+
+**Decision: an ability whose whole effect is untapping something is dropped unless the untap bought
+this seat a spell, a body in a combat, or an ability that does something else.**
+
+D141 wrote this problem down rather than solving it. Two Kiora's Followers ("{T}: untap another
+target permanent") untap each other for ever: A taps to untap B, B taps to untap A, and the board
+is exactly where it started. The engine is right to allow it — an untap ability may point at
+anything, and a cycle of legal actions is legal — and the search is perfectly happy, because
+`evaluate` sums material and which of two permanents is tapped is worth the same either way. With
+no baseline for doing nothing, the free zero gets taken whenever nothing better is affordable. The
+deck shipped with one copy as the workaround and the general problem as a note.
+
+**The honest fix is not "do not repeat yourself".** A Gelectrode pinging twice in a step is the
+same shape and entirely right, and so is untapping a land twice in a turn. The question is the one
+the ritual rule asks of mana: *what did it buy?* One fact about the board, then three comparisons:
+
+- the target has to be **tapped**, because untapping an untapped permanent does nothing whatsoever;
+- a **cast** that was not affordable before is affordable now, which is what untapping a land is for;
+- one more creature that can **block** an attack already on the table, or one more that can
+  **attack** before this seat's own attack is declared — counted, which is what makes the wash a
+  wash: the ability taps a creature to untap a creature, so the count only moves if the source was
+  not a body to begin with;
+- an **ability that does something other than untap or make mana**, handed back.
+
+The last clause is worded that way for two mirror-image reasons. Untapping a Kiora's Follower does
+hand back an ability, and that ability is another untap — counting it would make the cycle its own
+justification. And untapping a *land* hands back a mana ability, which counted here would make
+every tapped land worth untapping whether or not there was anything to spend it on; what a land
+buys is a spell, and the cast comparison asks about that directly.
+
+**Two traps, both found by instrumenting a version that fell into them**, and both worth recording
+because they are properties of this bot's search rather than of this card.
+
+1. **The step.** With auto-pass on, a simulated line that had nothing to do with the untap has
+   already left the step by the time `simulate` returns. Same lesson as the ritual rule (D70).
+2. **The stack, which is new.** `simulate` *drains* the stack. So with anything on the stack when
+   the decision is made, every sorcery-speed play in hand is missing from the before state and
+   present in the after state — and the untap gets the credit for a Preordain it had nothing to do
+   with. That was the whole of the first version's surviving activations: 57 of them, 36 pointing at
+   a permanent that was **already untapped**, each one justified by a cast that was going to be
+   available anyway. Any rule of this family that compares two states has to compare states whose
+   stacks match; this one requires the stack to be empty and refuses an untap held for a moment when
+   something is already on it, which no card in the pool wants.
+
+**Measured, paired on identical seeds, Delta Bloom against the other ten decks, 120 games per arm:**
+
+| | activations | record |
+| --- | --- | --- |
+| one copy, without the rule | 165 | 47-73 |
+| one copy, with it | **1** | 52-68 |
+| two copies, without | 29,432 | 45-75 |
+| two copies, with | **10** | 48-72 |
+
+Five games and three, both well inside the eighteen-game floor: free, with the number written down.
+Kept for the first column — a bot pressing a button a hundred times a turn to put the board back
+where it was looks broken to the person sitting opposite — and **nine of the ten remaining
+activations with two copies point at a tapped land**, which is the card's real use and the thing
+the rule is written to keep.
+
+**Two consequences worth stating.** The deck stays at one copy: two measures four games worse,
+inside the floor, so there is no reason to change a list over it. And the card is nearly dead in
+*this* bot's hands — one activation in 120 games — because untapping a land only helps a player who
+has a second spell waiting, and three separate measurements have already found that this bot cannot
+hold mana (D70, D110, the ward rule). That is a reason to leave the card in the list rather than to
+cut it: a person untaps a Guildgate for the Counterspell they are holding, which is exactly what
+the card is in a Simic deck for.
+
+**And the deck table was not re-run.** Kiora's Follower is in one deck of eleven, the field has not
+changed, and the paired arms above are the measurement — an eleven-by-eleven refresh would move
+every row by the usual point or two of its own noise and say nothing this does not.

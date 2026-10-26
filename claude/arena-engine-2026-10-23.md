@@ -3440,7 +3440,7 @@ games**. Two of them untap each other for ever and the board ends where it start
 right to allow it and a person would never, so the fix is the deck list. One copy has nothing to
 untap it: 164 uses in 46 games, about three a game, which is a land untapped once a turn. The
 general problem — a bot that will repeat a cycle of legal actions returning the board to its start —
-is written down rather than solved, and nothing else in the pool offers one.
+was written down rather than solved here, and is solved in *The cycle that changes nothing* below.
 
 Five new cards for a whole deck: Explore, Tatyova, Kiora's Follower, Pelakka Wurm and a Simic
 Guildgate. The ninth deck needed six, the tenth six, this one five.
@@ -3486,6 +3486,47 @@ same game that suite always played, with one thing changed, which is where the c
 `e2e-table` pastes a list containing a card the engine has never scripted, checks the engine is
 refused and the tabletop is not, then pastes one without it and plays out a two-browser game on a
 deck nobody built into this repo.
+
+### The cycle that changes nothing, and what an untap has to buy
+
+The eleventh deck shipped with a note instead of a fix: two Kiora's Followers ("{T}: untap another
+target permanent") untap each other for ever, A taps to untap B and B taps to untap A, and the board
+ends where it started. **29,432 activations across 120 games** with two copies; 165 with the one the
+list runs. Every step of it is legal and the search is content, because `evaluate` sums material and
+which of two permanents is tapped is worth the same either way.
+
+The fix is not "do not repeat yourself" — a Gelectrode pinging twice in a step is the same shape and
+right — it is the ritual rule's question asked of a different resource: **what did the untap buy?**
+The target has to be tapped at all; then a cast that was not affordable is, or one more creature can
+block an attack already on the table, or one more can attack before the swing is declared, or an
+ability that does something other than untap or make mana comes back. The last clause is where the
+cycle dies: untapping a Kiora's Follower does hand back an ability, and that ability is another
+untap, so counting it would make the cycle its own justification.
+
+**Two traps, and the second is new.** The step has to be unchanged, which the ritual rule learned
+first. And the stack has to be *empty*, because `simulate` drains it — so with anything on the stack
+every sorcery-speed play in hand is missing from the before state and present in the after state,
+and the untap takes credit for a Preordain it had nothing to do with. That was the whole of the
+first version's surviving 57 activations, 36 of them pointing at a permanent that was already
+untapped. Any rule in this family that compares two states has to compare states whose stacks match.
+
+| | activations | record |
+| --- | --- | --- |
+| one copy, without the rule | 165 | 47-73 |
+| one copy, with it | **1** | 52-68 |
+| two copies, without | 29,432 | 45-75 |
+| two copies, with | **10** | 48-72 |
+
+Paired on identical seeds, 120 games an arm. The records move by five games and three, both inside
+the floor: free, with the number written down. It is kept for the first column — a hundred presses a
+turn that change nothing looks broken to the person opposite — and nine of the ten remaining
+activations with two copies point at a **tapped land**, which is what the card is actually for.
+
+The last row is also the honest answer about this card in *this bot's* hands: one activation in 120
+games, because untapping a land only helps a player with a second spell waiting, and this bot cannot
+hold mana. That is a reason to leave it in the list rather than cut it — a person untaps a Guildgate
+for the Counterspell they are holding — and the deck stays at one copy, since two is four games
+worse and four games is noise.
 
 ## Next
 

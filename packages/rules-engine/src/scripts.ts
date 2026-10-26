@@ -4353,6 +4353,9 @@ const KIORAS_FOLLOWER: CardScript = {
     {
       cost: { tap: true },
       description: '{T}: Untap another target permanent.',
+      // The whole of what it does, which is what makes it the only card in the pool that can put
+      // the board back where it found it. See `AbilityDef.untapsOnly`.
+      untapsOnly: true,
       targets: [{
         kind: 'permanent',
         description: 'another target permanent',

@@ -9,8 +9,8 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  applyAction, botAction, createGame, evaluate, legalActions, packView, playOut, seatToAct,
-  unpackView, viewFor,
+  applyAction, botAction, createGame, customDeck, evaluate, legalActions, packView, playOut,
+  seatToAct, unpackView, viewFor,
   type Action, type GameState, type SeatIndex,
 } from './index.js';
 import {
@@ -1347,6 +1347,103 @@ describe('the land it animates and then attacks with', () => {
     // Postcombat main: the same board, the same spare {1}, and nothing an animation can do with it.
     const s = board('postcombat-main');
     expect(animating(s, botAction(s, 0))).toBe(false);
+  });
+});
+
+describe('the untap that puts the board back where it found it', () => {
+  /*
+    The eleventh "spent on nothing" rule, and the only one about a cycle rather than a card.
+
+    Two Kiora's Followers ("{T}: untap another target permanent") untap each other for ever: A taps
+    to untap B, B taps to untap A, and the board is exactly where it started. Every step of it is
+    legal, and `evaluate` sums material — which of two permanents is tapped is worth the same
+    either way — so the search took the free zero whenever nothing better was affordable. With two
+    copies in the deck the ability was activated **29,432 times across 120 games**; with the one
+    copy the list ships, 165 times.
+
+    Paired on identical seeds, Delta Bloom against the other ten decks, 120 games per arm:
+
+    | | activations | record |
+    | --- | --- | --- |
+    | one copy, without the rule | 165 | 47-73 |
+    | one copy, with it | **1** | 52-68 |
+    | two copies, without | 29,432 | 45-75 |
+    | two copies, with | **10** | 48-72 |
+
+    Both arms move by less than the eighteen-game floor, so the record is "free, with the number
+    written down". It is kept for the first column: a bot that presses a button a hundred times a
+    turn to put the board back where it was looks broken to the person sitting opposite. And of the
+    ten activations with two copies, **nine point at a tapped land** — which is the card's real use,
+    and the thing the rule is written to keep.
+
+    What the last row also says is that this card is nearly dead in *this bot's* hands: it untaps a
+    land to pay for a spell, and a bot that taps lands only to pay for something it is already
+    casting rarely has a second spell waiting. That is the same limitation three other measurements
+    have found (it cannot hold mana), and it is a reason to leave the deck at one copy rather than
+    to cut the card: a person untaps a Simic Guildgate for the counterspell they are holding.
+  */
+  const twoFollowers = customDeck({
+    id: 'two-followers',
+    name: 'Two Followers',
+    entries: [{ name: "Kiora's Follower", count: 2 }, { name: 'Forest', count: 58 }],
+  }).deck;
+
+  it('does not untap one Follower with another, which is the cycle', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'two-followers', 1: 'tidal-mind' },
+      deckSpecs: { 'two-followers': twoFollowers },
+      battlefield: { 0: ["Kiora's Follower", "Kiora's Follower", 'Forest', 'Forest'], 1: [] },
+      turn: 3, firstSeat: 0, autoPass: true,
+    }), 'precombat-main');
+    // One of them tapped, which is the position in the middle of the cycle: untapping it is a
+    // legal play that hands the board straight back to where the last activation found it.
+    const [first, second] = ids(s, 0, 'battlefield')
+      .filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === "Kiora's Follower");
+    s = apply(s, { type: 'card:tap', by: 0, card: second!, tapped: true });
+    expect(s.instances[first!]?.tapped).toBe(false);
+
+    const action = botAction(s, 0);
+    expect(action?.type === 'auto:activate' ? action.card : null).not.toBe(first);
+  });
+
+  it('and does not untap something that is not tapped, which does nothing at all', () => {
+    // 36 of the first version's 57 surviving activations were this: untap, aimed at a permanent
+    // that was already untapped.
+    const s = advanceTo(arena({
+      decks: { 0: 'delta-bloom', 1: 'tidal-mind' },
+      battlefield: { 0: ["Kiora's Follower", 'Forest', 'Forest', 'Llanowar Elves'], 1: [] },
+      turn: 3, firstSeat: 0, autoPass: true,
+    }), 'precombat-main');
+    expect(botAction(s, 0)?.type).not.toBe('auto:activate');
+  });
+
+  it('but untaps a land it has already spent, when that pays for the card in its hand', () => {
+    // Two untapped lands is {G}{U}, and Divination costs {2}{U}. Untapping the third makes it
+    // castable, which is the whole of what this card is for.
+    let s = advanceTo(arena({
+      decks: { 0: 'delta-bloom', 1: 'tidal-mind' },
+      battlefield: { 0: ["Kiora's Follower", 'Island', 'Island', 'Forest'], 1: [] },
+      hands: { 0: ['Divination'] },
+      turn: 3, firstSeat: 0, autoPass: true,
+    }), 'precombat-main');
+    // The draw step put a card in hand on the way here; it goes back, so the only thing the mana
+    // could be for is the one this test is about.
+    for (const id of [...ids(s, 0, 'hand')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]?.name === 'Divination') continue;
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    const island = find(s, 0, 'battlefield', 'Island');
+    s = apply(s, { type: 'card:tap', by: 0, card: island, tapped: true });
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast')).toBe(false);
+
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:activate');
+    expect(action?.type === 'auto:activate' ? action.targets : null)
+      .toEqual([{ kind: 'card', id: island }]);
+    // And then casts the card the mana was untapped for.
+    s = apply(s, action!);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i += 1) s = passBoth(s);
+    expect(botAction(s, 0)?.type).toBe('auto:cast');
   });
 });
 

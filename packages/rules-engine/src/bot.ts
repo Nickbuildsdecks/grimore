@@ -1763,6 +1763,104 @@ function animationCouldMatter(state: GameState, seat: SeatIndex, action: Action)
 }
 
 /**
+ * Whether handing this ability back — by untapping the permanent it is on — would be worth nothing.
+ *
+ * Two kinds. An ability whose whole effect is **untapping** something, because counting it would
+ * make the cycle its own justification: untapping a Kiora's Follower hands back an untap. And a
+ * **mana** ability, because what untapping a land buys is a spell, which the cast comparison in
+ * `untapBoughtSomething` asks about directly — counted here as well, every tapped land would be
+ * worth untapping whether or not there was anything to spend it on.
+ */
+function pointlessToHandBack(state: GameState, play: LegalPlay): boolean {
+  if (play.kind !== 'activate') return false;
+  const name = state.cardDefs[state.instances[play.card]?.defKey ?? '']?.name;
+  const ability = scriptFor(name)?.abilities?.[play.abilityIndex ?? 0];
+  return ability?.untapsOnly === true || ability?.produces !== undefined;
+}
+
+/** Whether this action activates an ability whose whole effect is untapping something. */
+function untapsSomething(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:activate') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.untapsOnly === true;
+}
+
+/**
+ * Whether untapping something bought this seat anything at all.
+ *
+ * The eleventh of the "spent on nothing" family, and the only one about a **cycle** rather than a
+ * card. Two Kiora's Followers ("{T}: untap another target permanent") untap each other for ever:
+ * A taps to untap B, B taps to untap A, and the board is exactly where it started. Every step of
+ * that is legal, the engine is right to allow it, and the search is perfectly happy — `evaluate`
+ * sums material, and which of two permanents is tapped is worth the same either way, so with no
+ * baseline for doing nothing the free zero gets taken whenever there is nothing better. Measured
+ * with one copy in Delta Bloom: **165 activations across 120 games**, and with two copies on the
+ * same seeds **29,432** (see `claude/decisions-log.md`, D141, which wrote the problem down rather
+ * than solving it). Afterwards, on those seeds: one and ten. The records move by five games and
+ * three, both inside the noise floor — the table in `playout.test.ts` has all four numbers.
+ *
+ * The fix is not "do not repeat yourself" — a Gelectrode pinging twice in a step is the same shape
+ * and entirely right. It is to ask what the untap *bought*, the way the ritual rule asks what the
+ * mana bought. One fact about the board, then three comparisons:
+ *
+ *  - the target has to be **tapped**. Untapping an untapped permanent does nothing whatsoever, and
+ *    that alone was 36 of the 57 activations the first version of this rule let through;
+ *  - **mana**: a cast that was not affordable before is affordable now, which is what untapping a
+ *    land is for, and is `ritualBoughtSomething`'s question asked of a different card;
+ *  - **a body in a combat**: one more creature that can block an attack already on the table, or
+ *    one more that can attack before this seat's own attack is declared. Counted rather than
+ *    assumed, which is what makes the wash a wash: the ability taps a creature to untap a
+ *    creature, so the count only moves if the source was not a body to begin with;
+ *  - **an ability that does something other than untap or make mana**, handed back — untapping a
+ *    tapped Master Decoy is a second creature tapped down, and that is a real gain.
+ *
+ * The last clause is where the cycle dies, and why it is worded that way rather than as "a new
+ * ability": untapping a Kiora's Follower *does* hand one back, and that one is another untap, so
+ * counting it would make the cycle its own justification. A mana ability is left out of it for the
+ * mirror-image reason — see `pointlessToHandBack`.
+ *
+ * **Two traps, both found by instrumenting a version that fell into them.** The step is checked
+ * because with auto-pass on, a line that had nothing to do with the untap has already left the
+ * step by the time `simulate` returns — the lesson the ritual rule learned first. And the stack
+ * has to be **empty**, because `simulate` drains it: with anything on the stack, every
+ * sorcery-speed play in hand is missing from `before` and present in `after`, so the untap gets
+ * credit for a Preordain it had nothing to do with. That was the whole of the first version's
+ * remaining 57 activations. An untap held for a moment when something is already on the stack is
+ * refused as a consequence, and nothing in the pool wants one.
+ */
+function untapBoughtSomething(
+  before: GameState, after: GameState, seat: SeatIndex, action: Action,
+): boolean {
+  const aimed = action.type === 'auto:activate' ? action.targets?.[0] : undefined;
+  const inst = aimed?.kind === 'card' ? before.instances[aimed.id] : undefined;
+  if (inst === undefined || inst.zone !== 'battlefield' || !inst.tapped) return false;
+  if (after.step !== before.step || after.turn !== before.turn) return false;
+  if (before.stackOrder.length > 0) return false;
+  const hadCasts = new Set(
+    legalActions(before, seat).plays.filter((p) => p.kind === 'cast').map(playKey),
+  );
+  if (legalActions(after, seat).plays.some((p) => p.kind === 'cast' && !hadCasts.has(playKey(p)))) {
+    return true;
+  }
+  const underAttack = before.combat.attacks.some((attack) => attack.defender === seat);
+  if (underAttack && readyBlockers(after, seat).length > readyBlockers(before, seat).length) {
+    return true;
+  }
+  const beforeTheSwing = before.activeSeat === seat
+    && (before.step === 'precombat-main' || before.step === 'declare-attackers');
+  if (beforeTheSwing) {
+    const swingers = (state: GameState): number =>
+      legalAttackers(state, seat).filter((id) => canAttack(state, id, seat) === null).length;
+    if (swingers(after) > swingers(before)) return true;
+  }
+  const doingAbilities = (state: GameState): string[] => legalActions(state, seat).plays
+    .filter((p) => p.kind === 'activate' && !pointlessToHandBack(state, p))
+    .map(playKey);
+  const had = new Set(doingAbilities(before));
+  return doingAbilities(after).some((key) => !had.has(key));
+}
+
+/**
  * Whether this action foretells a card (CR 702.143a).
  *
  * Measured, because the answer is more interesting than the rule: over 56 games this bot foretold
@@ -2378,6 +2476,15 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       genuinely a creature, so the trade looks free.
     */
     if (crewsAVehicle(state, option.action) && !crewBuysMoreThanItCosts(state, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And an untap that puts the board back where it found it, which is the eleventh of the family
+      and the only one about a cycle rather than a card. See `untapBoughtSomething`.
+    */
+    if (untapsSomething(state, option.action)
+      && !untapBoughtSomething(state, after, seat, option.action)) {
       dropped += 1;
       continue;
     }

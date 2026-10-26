@@ -387,6 +387,15 @@ take whichever deck you like; if you want an easy one, give it Tidal Mind or Hol
 people playing each other can ignore all of this — these numbers are about how well the *bot*
 pilots each deck, and the two decks it handles worst are the two a person gets the most out of.
 
+Delta Bloom's Kiora's Follower is the clearest single example of that gap. "{T}: untap another
+target permanent" is a card you untap a Guildgate with to hold up the Counterspell in your hand,
+which is the one thing three separate measurements say this bot cannot do — so it presses the
+ability about once in a hundred and twenty games, and only ever to pay for a spell it is casting
+right now. Before the rule that asks what an untap *buys*, it pressed it 165 times in those games
+and 29,432 with a second copy in the deck, because two of them untap each other for ever and the
+board ends where it started (`claude/decisions-log.md`, D143). The card stays in the list for the
+person playing it.
+
 Tidal Mind is the deck most of this work has gone into and still the one at the bottom. Its
 newest cards are the two that answer what a permanent is *doing* rather than the permanent:
 **Disallow** counters a spell or an ability, either kind, and **Willbender** — a {3} face-down 2/2

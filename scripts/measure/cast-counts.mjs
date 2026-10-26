@@ -22,6 +22,52 @@ const SEEDS = Number(process.env.SEEDS ?? 8);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
 
+/*
+  A variant list, so the question can be asked of a deck nobody ships.
+
+  Same `CHANGE` grammar as `deck-probe` — "Name:+1,Other:-1", with `;` as the separator when a name
+  has a comma in it — and the same route into the engine: the list is built here and handed over as
+  `ActionContext.decks`, which is the path a pasted decklist takes. It exists because "how often
+  does the bot press this" and "what happens with a second copy" are the same question, and
+  measuring the second one by editing `starterDecks.ts` would mean a commit to ask it. D143's
+  two-copy row is this.
+*/
+const CHANGE = (process.env.CHANGE ?? '')
+  .split((process.env.CHANGE ?? '').includes(';') ? ';' : ',')
+  .filter(Boolean)
+  .map((part) => {
+    const at = part.lastIndexOf(':');
+    return { name: part.slice(0, at).trim(), delta: Number(part.slice(at + 1)) };
+  });
+
+const defNamed = (name) => Object.values(STARTER_DECKS)
+  .flatMap((d) => d.cards).find((e) => e.card.name === name)?.card;
+
+function listFor(id) {
+  const stock = STARTER_DECKS[id];
+  if (CHANGE.length === 0) return stock;
+  const cards = [];
+  for (const entry of stock.cards) {
+    const change = CHANGE.find((c) => c.name === entry.card.name);
+    const count = entry.count + (change?.delta ?? 0);
+    if (count > 0) cards.push({ card: entry.card, count });
+  }
+  for (const change of CHANGE) {
+    if (change.delta <= 0 || stock.cards.some((e) => e.card.name === change.name)) continue;
+    const card = defNamed(change.name);
+    if (card === undefined) throw new Error(`no card named ${change.name} in the pool`);
+    cards.push({ card, count: change.delta });
+  }
+  return { ...stock, cards };
+}
+
+const SUBJECT_LIST = listFor(SUBJECT);
+const CTX = CHANGE.length === 0 ? { isHost: true } : { isHost: true, decks: { [SUBJECT]: SUBJECT_LIST } };
+const size = (d) => d.cards.reduce((n, e) => n + e.count, 0);
+if (size(SUBJECT_LIST) !== size(STARTER_DECKS[SUBJECT])) {
+  console.log(`!! the variant is ${size(SUBJECT_LIST)} cards against the deck's ${size(STARTER_DECKS[SUBJECT])}`);
+}
+
 const used = new Map(); // name -> { cast, used, drawn }
 const bump = (name, key) => {
   const row = used.get(name) ?? { cast: 0, used: 0, drawn: 0 };
@@ -32,10 +78,10 @@ const bump = (name, key) => {
 function duel(seed, decks, mine) {
   let s = createGame({ id: `g${seed}`, format: 'modern', players: PLAYERS, seed });
   for (const seat of [0, 1]) {
-    s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: decks[seat] }, { isHost: true });
+    s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: decks[seat] }, CTX);
   }
-  s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, { isHost: true });
-  s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, { isHost: true });
+  s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, CTX);
+  s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, CTX);
   const nameOf = (st, id) => st.cardDefs[st.instances[id]?.defKey ?? '']?.name;
   // Every card of the subject's that was ever in its owner's hand, so "drawn" counts a card the
   // deck saw rather than one it shuffled past.
@@ -72,7 +118,7 @@ function duel(seed, decks, mine) {
       bump(nameOf(s, action.card), 'used');
     }
     const before = s.stateVersion;
-    try { s = applyAction(s, action); } catch { break; }
+    try { s = applyAction(s, action, CTX); } catch { break; }
     if (s.stateVersion === before) break;
   }
   for (const name of seen) if (name !== undefined) bump(name, 'drawn');
@@ -86,7 +132,7 @@ for (let i = 0; i < SEEDS; i++) {
   }
 }
 
-const list = STARTER_DECKS[SUBJECT].cards;
+const list = SUBJECT_LIST.cards;
 console.log(`${SUBJECT}: ${games} games, seeds ${SEEDS} from ${SEED0}`);
 const rows = list.map((e) => {
   const row = used.get(e.card.name) ?? { cast: 0, used: 0, drawn: 0 };
