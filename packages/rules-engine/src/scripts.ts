@@ -29,6 +29,7 @@ import {
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
+  freezeNextUntap, removeFromCombat,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack,
   type EffectContext, type PumpOptions,
 } from './effects.js';
@@ -4787,6 +4788,92 @@ export const TOKEN_DEFS: readonly CardDef[] = [
   ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN, THOPTER_TOKEN,
 ];
 
+/*
+  The two combat triggers the engine never raised, and the cards that need them.
+
+  Combat raised exactly one event: an attack was declared. Everything that happens *after* that —
+  a creature blocking, an attacker getting through unblocked — was invisible to every script in the
+  pool, which rules out a whole shelf of printed cards and both of the ones here.
+
+  - **"Whenever ~ blocks a creature"** fires as blockers are declared (CR 509.1a), once per block,
+    and the attacker it was against travels on the event because nothing on the board says which
+    one it was by the time the ability resolves. Wall of Frost is the card that makes the event
+    worth having: a 0/7 that blocks anything and then holds it down for a turn, which is a tempo
+    card rather than a wall.
+  - **"Whenever ~ attacks and isn't blocked"** cannot be a filter on the attack event, because
+    when attackers are declared nobody has blocked yet. It is raised at the end of the
+    declare-blockers step, once every defender has spoken, which is the first moment at which the
+    answer is a fact. Ophidian is the printed card and it asks a real question: a card, or one
+    point of damage.
+
+  Wall of Frost also needed a mechanism the engine had never had — "doesn't untap during its
+  controller's next untap step" — which is a flag on the permanent rather than a continuous effect,
+  because nothing about the creature is different while it is set. See `CardInstance.frozen`.
+*/
+const WALL_OF_FROST: CardScript = {
+  name: 'Wall of Frost',
+  keywords: ['defender'],
+  triggers: [
+    {
+      on: { kind: 'blocks' },
+      description: "the blocked creature doesn't untap during its controller's next untap step",
+      // `c.blocked` rather than `c.subject`: the subject of a block is the creature that blocked,
+      // which here is the Wall itself. See the `blocks` event.
+      effect: (c) => (c.blocked === undefined ? c.state : freezeNextUntap(c.state, c.blocked)),
+    },
+  ],
+};
+
+/**
+ * Which Ophidian would rather have: the card, or the damage.
+ *
+ * A fact about the board rather than a weight, like every other answer the bot gives to a card's
+ * own question (D116). Two boards say "attack": one where this unblocked point of damage is lethal,
+ * and one where the library is empty and drawing would lose the game instead of winning it
+ * (CR 704.5b). Everywhere else a card beats one damage, which is why the card is played.
+ */
+function ophidianWouldDraw(state: GameState, chooser: SeatIndex): string | undefined {
+  if (listAt(state, zoneKey(chooser, 'library')).length === 0) return 'Attack';
+  const lethal = state.combat.attacks.some((attack) => {
+    const inst = state.instances[attack.attacker];
+    if (inst === undefined || inst.zoneSeat !== chooser || attack.blockers.length > 0) return false;
+    if (attack.planeswalker !== undefined) return false;
+    const seat = state.seats[attack.defender];
+    return seat !== undefined && seat.life <= characteristicsOf(state, inst).power;
+  });
+  return lethal ? 'Attack' : 'Draw';
+}
+
+const OPHIDIAN: CardScript = {
+  name: 'Ophidian',
+  triggers: [
+    {
+      on: { kind: 'attacks-unblocked' },
+      description: 'you may draw a card; if you do, remove Ophidian from combat',
+      /*
+        "You may" as two words rather than as a flag on the trigger (D116).
+
+        The engine has no optional-trigger mechanism and does not need one: a "may" is a choice
+        between two words, the table already draws a row of buttons for one, and the decision is
+        genuinely a decision — a card is worth more than one damage until the turn the one damage
+        wins the game.
+      */
+      decisions: [{
+        who: 'controller',
+        prompt: 'Draw a card, and remove Ophidian from combat?',
+        options: ['Draw', 'Attack'],
+        best: ophidianWouldDraw,
+      }],
+      effect: (c) => {
+        if (chosenOption(c) !== 'Draw') return c.state;
+        // Removed from combat *because* a card was drawn, in that order and only then: the card
+        // says "if you do", and an Ophidian that declined is still an attacking creature.
+        return removeFromCombat(draw(c.state, c.controller, 1), c.source);
+      },
+    },
+  ],
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -4869,6 +4956,7 @@ const ALL: readonly CardScript[] = [
   EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM, CHALICE_OF_THE_VOID,
   WALKING_BALLISTA, HANGARBACK_WALKER, TOXIC_DELUGE, TWINCAST,
   GOBLIN_ELECTROMANCER, THALIA_GUARDIAN_OF_THRABEN, TORMENTED_SOUL, RIVER_BOA,
+  WALL_OF_FROST, OPHIDIAN,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

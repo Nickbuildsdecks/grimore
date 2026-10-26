@@ -638,7 +638,7 @@ describe('blue-black control', () => {
       on the table and bouncing it would be testing something else.
     */
     let s = control(
-      ['Think Twice', 'Child of Night'],
+      ['Think Twice', 'Omenspeaker'],
       ['Island', 'Island', 'Island', 'Swamp'],
       ['Talrand, Sky Summoner'],
     );
@@ -648,17 +648,19 @@ describe('blue-black control', () => {
     expect(countOf(s, 1, 'battlefield', 'Drake')).toBe(1);
     s = passBoth(s);
 
-    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Child of Night') });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Omenspeaker') });
     expect(s.stackOrder.length).toBe(1); // a creature spell is not an instant or sorcery
   });
 
   it('keeps the printed keywords of the creatures it does not script beyond them', () => {
-    let s = control([], ['Island'], ['Vampire Nighthawk', 'Air Elemental', 'Child of Night', 'Wind Drake']);
+    let s = control([], ['Island'], ['Vampire Nighthawk', 'Air Elemental', 'Wall of Frost', 'Wind Drake']);
     const keywords = (name: string) =>
       [...characteristicsOf(s, s.instances[find(s, 1, 'battlefield', name)]!).keywords].sort();
     expect(keywords('Vampire Nighthawk')).toEqual(['deathtouch', 'flying', 'lifelink']);
     expect(keywords('Air Elemental')).toEqual(['flying']);
-    expect(keywords('Child of Night')).toEqual(['lifelink']);
+    // A Wall of Frost is scripted — it has a block trigger — and its printed keyword is still
+    // read off the card rather than listed twice.
+    expect(keywords('Wall of Frost')).toEqual(['defender']);
     expect(keywords('Wind Drake')).toEqual(['flying']);
   });
 
@@ -1360,7 +1362,7 @@ describe('dying, upkeep and a static effect', () => {
     // `dies` trigger stays quiet. Swords to Plowshares would have proved nothing here.
     let s = arena({
       decks: { 1: 'tidal-mind' }, hands: { 1: ['Doom Blade'] },
-      battlefield: { 0: ['Goblin Arsonist'], 1: ['Swamp', 'Swamp', 'Child of Night'] },
+      battlefield: { 0: ['Goblin Arsonist'], 1: ['Swamp', 'Swamp', 'Omenspeaker'] },
       turn: 2, firstSeat: 1,
     });
     s = advanceTo(s, 'precombat-main');
@@ -3854,14 +3856,14 @@ describe('the keywords nothing in the pool carried', () => {
     let s = arena({
       decks: { 0: 'tidal-mind', 1: 'rot-harvest' },
       hands: { 0: ['Robe of Mirrors', 'Unsummon'], 1: ['Doom Blade'] },
-      battlefield: { 0: ['Island', 'Island', 'Child of Night'], 1: ['Swamp', 'Swamp'] },
+      battlefield: { 0: ['Island', 'Island', 'Omenspeaker'], 1: ['Swamp', 'Swamp'] },
       turn: 3, firstSeat: 0,
     });
     s = advanceTo(s, 'precombat-main');
     for (const id of [...ids(s, 0, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
       s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
     }
-    const body = find(s, 0, 'battlefield', 'Child of Night');
+    const body = find(s, 0, 'battlefield', 'Omenspeaker');
     s = passBoth(apply(s, {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Robe of Mirrors'),
       targets: [{ kind: 'card', id: body }],
@@ -10695,5 +10697,189 @@ describe('Toxic Deluge: the number chosen while the spell resolves', () => {
     const s = cast(table([], ['Fog Bank']));
     const action = botAction(s, 0);
     expect(action?.type === 'auto:decide' ? action.amount : null).toBe(0);
+  });
+});
+
+describe('the combat triggers: a creature blocking, and an attacker getting through', () => {
+  /*
+    Combat raised one event — an attack was declared — and nothing that happened afterwards.
+
+    These two are not variations of the attack event and cannot be filters on it. A block is
+    somebody *else's* declaration, made a step later, and "isn't blocked" is not knowable at the
+    moment attackers are declared: every defender has to speak first. So both are their own events,
+    raised in the declare-blockers step, and each has a card that can only exist because of it.
+  */
+  /**
+   * One creature attacks into whatever the other player has, stopped in declare-blockers.
+   *
+   * Takes the decks because both new cards are in Tidal Mind and they sit on opposite sides of the
+   * combat: the Wall is the blocker and the Ophidian is the attacker, so a helper that hard-coded
+   * which seat was which would only serve one of them.
+   */
+  const swing = (
+    attacker: string,
+    opts: {
+      readonly decks: Readonly<Record<0 | 1, string>>;
+      readonly mine: readonly string[];
+      readonly theirs?: readonly string[];
+    },
+  ): { state: GameState; attacker: string } => {
+    const land = (deck: string): string => (deck === 'verdant-guard' ? 'Forest' : 'Island');
+    let s = advanceTo(arena({
+      decks: opts.decks,
+      battlefield: {
+        0: [land(opts.decks[0]), land(opts.decks[0]), land(opts.decks[0]), ...opts.mine],
+        1: [land(opts.decks[1]), land(opts.decks[1]), land(opts.decks[1]), ...(opts.theirs ?? [])],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const id = find(s, 0, 'battlefield', attacker);
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: id, defender: 1 }] }));
+    return { state: s, attacker: id };
+  };
+  const GREEN_INTO_BLUE = { 0: 'verdant-guard', 1: 'tidal-mind' } as const;
+  const BLUE_INTO_GREEN = { 0: 'tidal-mind', 1: 'verdant-guard' } as const;
+
+  it('a Wall of Frost holds down the creature it blocked (CR 502.2)', () => {
+    const { state, attacker } = swing('Grizzly Bears', { decks: GREEN_INTO_BLUE, mine: ['Grizzly Bears'], theirs: ['Wall of Frost'] });
+    let s = state;
+    const wall = find(s, 1, 'battlefield', 'Wall of Frost');
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: wall, attacker }] }));
+    // The trigger has resolved: the Bears are frozen, and nothing else about them has changed.
+    expect(s.instances[attacker]!.frozen).toBe(true);
+    expect(characteristicsOf(s, s.instances[attacker]!).power).toBe(2);
+    // Attacking tapped it, and its own untap step declines to untap it.
+    expect(s.instances[attacker]!.tapped).toBe(true);
+    s = nextTurn(nextTurn(s));
+    expect(s.activeSeat).toBe(0);
+    expect(s.instances[attacker]!.tapped).toBe(true);
+    // And the effect is spent, so the untap step after that one untaps it.
+    expect(s.instances[attacker]!.frozen).toBe(false);
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[attacker]!.tapped).toBe(false);
+  });
+
+  it('and does nothing to a creature it did not block', () => {
+    /*
+      Two attackers, one block. The event carries *which* attacker the block was against, and
+      without that the trigger would have to read the board — which by resolution says only that
+      the Wall is blocking something.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Grizzly Bears', 'Llanowar Elves'],
+        1: ['Island', 'Island', 'Wall of Frost', 'Fog Bank'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const elves = find(s, 0, 'battlefield', 'Llanowar Elves');
+    s = apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: bears, defender: 1 }, { attacker: elves, defender: 1 }],
+    });
+    s = passBoth(s);
+    const wall = find(s, 1, 'battlefield', 'Wall of Frost');
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: wall, attacker: bears }] }));
+    expect(s.instances[bears]!.frozen).toBe(true);
+    expect(s.instances[elves]!.frozen ?? false).toBe(false);
+  });
+
+  it('fires once per block, so two walls on one attacker freeze it once', () => {
+    /*
+      The event is raised per block rather than per attacker, which is what the printed card says —
+      "whenever ~ blocks a creature" is the Wall's own trigger, and two Walls blocking the same
+      creature each have one. The flag cannot be frozen twice, which is the right answer and worth
+      pinning: a second freeze is not a second turn held down.
+    */
+    const blue = customDeck({
+      id: 'frost-wall',
+      name: 'Frost Wall',
+      entries: [{ name: 'Wall of Frost', count: 4 }, { name: 'Island', count: 56 }],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'frost-wall' },
+      deckSpecs: { 'frost-wall': blue },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Siege Wurm'],
+        1: ['Island', 'Island', 'Wall of Frost', 'Wall of Frost'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const wurm = find(s, 0, 'battlefield', 'Siege Wurm');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: wurm, defender: 1 }] }));
+    const walls = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Wall of Frost');
+    s = apply(s, {
+      type: 'auto:block', by: 1,
+      blocks: [{ blocker: walls[0]!, attacker: wurm }, { blocker: walls[1]!, attacker: wurm }],
+    });
+    // Both triggers are on the stack, which is the observable half of "once per block".
+    expect(s.stackOrder.length).toBe(2);
+    s = drain(s);
+    expect(s.instances[wurm]!.frozen).toBe(true);
+  });
+
+  it('an Ophidian that gets through is offered a card for its damage', () => {
+    /*
+      No explicit block in these three: the other player has nothing that could block, so the
+      engine auto-declares past a declaration with one possible answer — and the question the
+      Ophidian asks is waiting by the time priority comes back, which is the point.
+    */
+    const { state, attacker } = swing('Ophidian', { decks: BLUE_INTO_GREEN, mine: ['Ophidian'] });
+    let s = drain(state);
+    expect(s.pendingDecision?.prompt).toContain('Draw a card');
+    const before = namesIn(s, 0, 'hand').length;
+    const defender = life(s, 1);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Draw' }));
+    expect(namesIn(s, 0, 'hand').length).toBe(before + 1);
+    // Removed from combat because the card was drawn, so no damage is dealt at all.
+    s = advanceTo(s, 'end-combat');
+    expect(life(s, 1)).toBe(defender);
+  });
+
+  it('or can keep the damage, which is the other answer', () => {
+    const { state, attacker } = swing('Ophidian', { decks: BLUE_INTO_GREEN, mine: ['Ophidian'] });
+    let s = drain(state);
+    const before = namesIn(s, 0, 'hand').length;
+    const defender = life(s, 1);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Attack' }));
+    expect(namesIn(s, 0, 'hand').length).toBe(before);
+    s = advanceTo(s, 'end-combat');
+    expect(life(s, 1)).toBe(defender - 1);
+    expect(s.instances[attacker]!.zone).toBe('battlefield');
+  });
+
+  it('and is asked nothing at all when it is blocked', () => {
+    const { state, attacker } = swing('Ophidian', { decks: BLUE_INTO_GREEN, mine: ['Ophidian'], theirs: ['Grizzly Bears'] });
+    let s = state;
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker }] }));
+    expect(s.pendingDecision).toBeNull();
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('the bot keeps the damage when the one point wins the game', () => {
+    /*
+      A fact about the board rather than a weight (D116). The bot's answer to Ophidian's question
+      is "draw" every time except the two boards where a card is worth less than one damage: a
+      lethal swing, and an empty library.
+    */
+    const { state } = swing('Ophidian', { decks: BLUE_INTO_GREEN, mine: ['Ophidian'] });
+    const s = drain({
+      ...state, seats: state.seats.map((seat, i) => (i === 1 ? { ...seat, life: 1 } : seat)),
+    });
+    expect(s.pendingDecision).not.toBeNull();
+    const action = botAction(s, 0);
+    expect(action).not.toBeNull();
+    expect(action && 'option' in action ? action.option : null).toBe('Attack');
+  });
+
+  it('and draws when it is only one damage', () => {
+    const { state } = swing('Ophidian', { decks: BLUE_INTO_GREEN, mine: ['Ophidian'] });
+    const s = drain(state);
+    expect(s.pendingDecision).not.toBeNull();
+    const action = botAction(s, 0);
+    expect(action && 'option' in action ? action.option : null).toBe('Draw');
   });
 });

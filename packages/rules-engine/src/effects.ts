@@ -50,6 +50,11 @@ export interface EffectContext {
    */
   readonly attacked?: AttackedTarget;
   /**
+   * The attacker a block trigger's block was against, for a card that has to say "that creature".
+   * Undefined for everything else. See `StackObject.blocked`.
+   */
+  readonly blocked?: string;
+  /**
    * The object on the stack this trigger is about, for a ward that has to say "counter **it**".
    * Undefined for everything else. See `StackObject.answering`.
    */
@@ -757,9 +762,35 @@ export function tap(state: GameState, id: string, tapped = true): GameState {
 export function untapAll(state: GameState, seat: SeatIndex): GameState {
   let next = state;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
-    if (next.instances[id]?.tapped) next = withInstance(next, id, { tapped: false });
+    const inst = next.instances[id];
+    if (inst === undefined) continue;
+    /*
+      A frozen permanent does not untap, and is not frozen afterwards (CR 502.2).
+
+      Cleared here whether or not it was tapped, because "doesn't untap during its controller's
+      next untap step" is spent by the step happening rather than by an untap being prevented: a
+      creature frozen while already untapped has used the effect up, and leaving the flag on would
+      hold it down through the following turn as well.
+    */
+    if (inst.frozen === true) {
+      next = withInstance(next, id, { frozen: false });
+      continue;
+    }
+    if (inst.tapped) next = withInstance(next, id, { tapped: false });
   }
   return next;
+}
+
+/**
+ * "That creature doesn't untap during its controller's next untap step" — Wall of Frost's clause.
+ *
+ * Does not tap the permanent and does not care whether it is tapped: the two are separate
+ * sentences on every card that says this, and a Wall of Frost blocks a creature that is *already*
+ * tapped from attacking (attacking tapped it) and holds it down next turn, which is the whole card.
+ */
+export function freezeNextUntap(state: GameState, id: string): GameState {
+  if (state.instances[id] === undefined) return state;
+  return withInstance(state, id, { frozen: true });
 }
 
 export function addCounters(state: GameState, id: string, key: string, amount: number): GameState {

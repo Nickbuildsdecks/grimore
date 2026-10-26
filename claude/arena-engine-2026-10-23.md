@@ -3818,6 +3818,46 @@ One thing the engine already did right, found while writing the tests: an attack
 unblockable creature is **not a decision**, so the defender is never asked to block it. Proving that
 a block *is* refused needs a second attacker to make blocking a real choice.
 
+### The two triggers combat never raised
+
+Combat raised one event — an attack was declared — and nothing that happened afterwards. A creature
+blocking and an attacker getting through were invisible to every script in the pool, which rules
+out a shelf of printed cards and both of the ones here.
+
+**"Whenever ~ blocks a creature"** is somebody else's declaration, made a step later. The blocking
+creature is the subject and the attacker it blocked travels on the event, because by the time the
+ability resolves the board says only that the Wall is blocking *something*. It fires once per
+block, so two Walls on one attacker put two triggers on the stack. **"Whenever ~ attacks and isn't
+blocked"** cannot be a filter on the attack event at all: when attackers are declared nobody has
+blocked yet, so the answer does not exist. It is raised once every defender has spoken.
+
+**Wall of Frost** ({2}{U} 0/7 defender) needed one more thing the engine had never had: "that
+creature doesn't untap during its controller's next untap step". That is a flag on the permanent
+rather than a continuous effect, because nothing about a frozen creature is *different* — same
+power, same abilities, same keywords — and the only thing in the game that reads it is the untap
+step, which clears it as it declines to untap. Over 660 games the Wall blocked 47 times and froze
+46, every one of them a creature that was already tapped (attacking taps it), and **34 of those
+were still tapped when their controller's next turn came round**: 34 turns taken off an attacker.
+In its slot — the deck's second Fog Bank — it measures +4 of 240, which is free rather than better,
+and keeping one of each is deliberate: the Bank is the better answer to one huge creature, because
+toughness does not matter to it.
+
+**Ophidian** ({2}{U} 1/3, "you may draw a card; if you do, remove it from combat") is the decision
+half. It attacked 41 times, got through 25 of them, and the bot drew the card 24 times and kept the
+damage once — and the once is the honest part: the board that said "attack" was a lethal swing,
+which is exactly the case the card asks about. Anybody reading it as a hard choice every turn would
+be wrong, and the measurement says so rather than the write-up guessing. In its slot (a Child of
+Night, the weakest card in a deck that wins on cards rather than on life) it measures +3 of 240.
+
+Two things worth keeping from the build. The first is a **bug the Ophidian found**: a seat can come
+to have declared blockers in two different places — it said so, or it had nothing that could
+legally block and the step declared for it — and the first version raised the unblocked event only
+in the first place. So an Ophidian attacking into an empty board, the one board where it is certain
+to get through, triggered nothing. The second is that **the instrument was wrong before the
+mechanism was**: the first measurement watched for the untap step and reported zero freezes held,
+and nobody ever holds priority in the untap step, so the check could never have fired. 46 freezes
+and none of them holding is not a story about Magic, which is the only reason it was caught.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

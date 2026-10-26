@@ -182,6 +182,15 @@ export interface StackObject {
    */
   readonly attacked?: AttackedTarget;
   /**
+   * For a block trigger: the attacker the block was against (CR 509.1a).
+   *
+   * Travels for the same reason `attacked` does, and a sharper one. "That creature" in a block
+   * trigger is the attacker this creature blocked, and nothing on the board says which that was by
+   * the time the ability resolves: another creature may have been declared on the same attacker,
+   * the attack may have been removed from combat, and a blocker is only a tapped creature.
+   */
+  readonly blocked?: string;
+  /**
    * For a triggered ability that fired off something happening to a permanent: which permanent.
    *
    * Travels with the object for the same reason `attacked` does, and the reason is sharper here.

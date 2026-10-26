@@ -1479,6 +1479,14 @@ describe("cardBadges", () => {
     expect(cardBadges(v, permanent()).some((b) => b.startsWith("prevents"))).toBe(false)
   })
 
+  it("says that a creature will not untap, which a tapped creature otherwise hides", () => {
+    // A frozen creature looks exactly like one that attacked, and the difference is a whole turn
+    // of blocks a player would plan around it.
+    const v = view({ automation: automation() })
+    expect(cardBadges(v, permanent({ frozen: true, tapped: true }))).toContain("won't untap")
+    expect(cardBadges(v, permanent({ tapped: true }))).not.toContain("won't untap")
+  })
+
   it("says when a creature cannot fight, which is what an Aura like Pacifism does", () => {
     const v = view({ automation: automation() })
     expect(cardBadges(v, permanent({ cantAttack: true, cantBlock: true }))).toContain("can't fight")

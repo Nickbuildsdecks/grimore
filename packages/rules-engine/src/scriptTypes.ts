@@ -200,6 +200,54 @@ export type TriggerEvent =
       readonly subject?: string;
     }
   /**
+   * "Whenever this creature blocks" — the blocker's half of the declaration (CR 509.1a).
+   *
+   * Raised once per block, so a creature that is allowed to block two attackers sees the event
+   * twice, which is what the printed cards mean. The *blocking* creature is the subject, so `who`
+   * and `of` mean exactly what they mean on `attacks`: a card watching its own block says nothing
+   * and gets `self`.
+   *
+   * Which attacker it blocked travels on the event as `blocked`, for the same reason `attacks`
+   * carries what it was aimed at: "**that creature** doesn't untap during its controller's next
+   * untap step" is about the creature this block was against, and by the time the ability resolves
+   * the board holds nothing that says which one that was — a second blocker may have been declared
+   * on it, the attack may be gone from combat, and the blocker is just a tapped creature. Read in
+   * the effect as `EffectContext.blocked`.
+   */
+  | {
+      readonly kind: 'blocks';
+      readonly who?: 'self' | 'another' | 'any';
+      readonly of?: 'you' | 'opponent' | 'any';
+      /** Set by the engine: the seat that controls the blocking creature. */
+      readonly subjectSeat?: SeatIndex;
+      /** Set by the engine: which creature blocked. See `subject`. */
+      readonly subject?: string;
+      /** Set by the engine: the attacker it blocked. See `EffectContext.blocked`. */
+      readonly blocked?: string;
+    }
+  /**
+   * "Whenever this creature attacks and isn't blocked" (CR 509.1h).
+   *
+   * Not a filter on `attacks`, and the difference is the whole of the event: an attack trigger
+   * fires as attackers are declared, when nobody has blocked yet and the answer is not knowable.
+   * This one is raised at the end of the declare-blockers step, once every defender has said what
+   * it is doing, which is the only moment at which "isn't blocked" is a fact.
+   *
+   * Carries `attacked` for the same reason `attacks` does — the ability may want the player it is
+   * through to — and nothing else: the subject is the attacker, and there is no blocker to name.
+   */
+  | {
+      readonly kind: 'attacks-unblocked';
+      readonly who?: 'self' | 'another' | 'any';
+      readonly of?: 'you' | 'opponent' | 'any';
+      /** Set by the engine: the seat that controls the attacking creature. */
+      readonly subjectSeat?: SeatIndex;
+      /** Set by the engine: what the attack was declared against. */
+      readonly attacked?: AttackedTarget;
+      /** Set by the engine: which creature attacked. See `subject`. */
+      readonly subject?: string;
+    }
+  /**
    * This permanent has left the battlefield, however it left (CR 603.6c) — destroyed, exiled,
    * bounced or sacrificed. Only its own script can care, which is why it takes no `who`: a card
    * that wants to watch *another* permanent leave would be watching the board rather than itself,

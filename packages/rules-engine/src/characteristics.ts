@@ -8,12 +8,17 @@
  * subtract, and a stored number drifts from the truth every time two effects overlap.
  *
  * This is a deliberately simplified layer system. Real Magic applies continuous effects in seven
- * layers with timestamps and dependency ordering (CR 613). What is here covers the cases the card
- * pool actually produces — counters, until-end-of-turn pumps, static anthems, granted keywords —
- * applied in a fixed order with counters last, which gives the right answer for all of them. A card
- * needing true layer interaction (characteristic-setting effects, copy effects, layer 7b vs 7c
- * ordering) is not scriptable yet, and `scripts/` says so rather than producing a plausible wrong
- * number.
+ * layers with timestamps and dependency ordering (CR 613). What is here is a fixed order that
+ * produces the same answer for everything the pool contains: copying (layer 1), type and colour
+ * changes (4 and 5), granted and removed abilities (6), then the three sublayers of power and
+ * toughness in the order the rules put them — characteristic-setting (7b) before a pump (7c)
+ * before counters (7d). Each of those arrived with a card behind it (D88, D93, D94), so a Clone
+ * that copied a creature under a Giant Growth and three +1/+1 counters answers correctly.
+ *
+ * What is still missing is **timestamps and dependency**: two effects that disagree inside one
+ * layer are applied in the order the list happens to hold them rather than in the order they were
+ * created. Nothing in the pool produces that disagreement, and a card that would is better left
+ * unscripted than answered plausibly and wrongly.
  */
 import { isFaceDownObject, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import type { Color } from './mana.js';

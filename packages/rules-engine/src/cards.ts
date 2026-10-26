@@ -143,6 +143,19 @@ export interface CardInstance {
    * the instance that could record it.
    */
   readonly loyaltyUsedTurn?: number;
+  /**
+   * This permanent does not untap during its controller's next untap step (CR 502.2).
+   *
+   * A flag on the instance rather than a continuous effect, because it is not one: nothing about
+   * the permanent is different while it is set — it has the same power, the same abilities and the
+   * same keywords — and the only thing in the game that reads it is the untap step, which clears
+   * it as it declines to untap. One use, then gone, which is what "next untap step" means.
+   *
+   * Keyed to the permanent rather than to a seat, so a creature that changes controller stays
+   * frozen: that is the rule for the effects that read "its controller's next untap step", because
+   * the controller is read when the step comes round rather than when the effect was created.
+   */
+  readonly frozen?: boolean;
 }
 
 /**

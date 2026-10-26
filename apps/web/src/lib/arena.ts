@@ -981,6 +981,15 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     out.push(`attacking ${walker?.card?.name ?? at?.name ?? `seat ${attack.defender}`}`)
     if (attack.blockers.length > 0) out.push(`blocked by ${attack.blockers.length}`)
   }
+  /*
+    And the creature that is going to be tapped again next turn, which the board otherwise shows
+    as an ordinary tapped permanent.
+
+    A Wall of Frost's victim looks exactly like a creature that attacked, and the difference is a
+    whole turn: a player who cannot see it plans a block with a creature that will not be there to
+    make it. "Won't untap" rather than "frozen", because the card says what it does.
+  */
+  if (card.frozen === true) out.push("won't untap")
   if (card.cantAttack === true && card.cantBlock === true) out.push("can't fight")
   else if (card.cantAttack === true) out.push("can't attack")
   else if (card.cantBlock === true) out.push("can't block")

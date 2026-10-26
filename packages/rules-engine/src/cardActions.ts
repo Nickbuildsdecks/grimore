@@ -230,6 +230,11 @@ export function relocate(
     // Only the battlefield has an orientation, and only a permanent can carry counters that
     // belong to a physical object. Everything resets on the way out.
     tapped: toZone === 'battlefield' ? inst.tapped : false,
+    // And frozen-ness clears on the way out, for the reason `tapped` does: a new object owes the
+    // old effect nothing (CR 400.7), so a Wall of Frost's victim that is bounced and recast comes
+    // back free. Changing controller is not leaving, and the effect is keyed to the permanent —
+    // "its controller's next untap step" reads the controller when the step comes round.
+    ...(toZone === 'battlefield' ? {} : { frozen: false }),
     counters: toZone !== 'battlefield'
       ? {}
       : entersWithLoyalty ? { ...inst.counters, loyalty: printedLoyalty } : inst.counters,

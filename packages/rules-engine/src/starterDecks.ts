@@ -1433,6 +1433,30 @@ const RIVER_BOA: CardDef = {
   colors: ['G'],
 };
 
+const WALL_OF_FROST: CardDef = {
+  name: 'Wall of Frost',
+  typeLine: 'Creature — Wall',
+  manaCost: '{2}{U}',
+  cmc: 3,
+  power: '0',
+  toughness: '7',
+  oracleText: 'Defender\nWhenever Wall of Frost blocks a creature, that creature doesn\u2019t untap '
+    + "during its controller's next untap step.",
+  colors: ['U'],
+};
+
+const OPHIDIAN: CardDef = {
+  name: 'Ophidian',
+  typeLine: 'Creature — Serpent',
+  manaCost: '{2}{U}',
+  cmc: 3,
+  power: '1',
+  toughness: '3',
+  oracleText: "Whenever Ophidian attacks and isn't blocked, you may draw a card. If you do, "
+    + 'remove Ophidian from combat.',
+  colors: ['U'],
+};
+
 const GOBLIN_ELECTROMANCER: CardDef = {
   name: 'Goblin Electromancer',
   typeLine: 'Creature — Goblin Wizard',
@@ -2595,7 +2619,17 @@ export const TIDAL_MIND: DeckSpec = {
     // the fastest red deck has no creature that can stand in front of one twice; this one does it
     // every turn, and the first copy cost the second Robe. The second is one of the three bodies
     // the counterspells above paid for.
-    { card: FOG_BANK, count: 2 },
+    /*
+      One Fog Bank, and a Wall of Frost for the other.
+
+      The same job and a different half of it. A Fog Bank blanks one attacker every combat for
+      ever and never kills anything; a 0/7 blocks every creature in this pool and survives, and
+      then holds whatever it blocked down through the next untap step — so the turn it buys is two
+      turns rather than one. Keeping one of each is deliberate: the Bank is the better answer to a
+      single huge creature, because toughness does not matter to it.
+    */
+    { card: FOG_BANK, count: 1 },
+    { card: WALL_OF_FROST, count: 1 },
     { card: JACE_BELEREN, count: 1 },
     { card: OMENSPEAKER, count: 1 },
     { card: PHYREXIAN_ARENA, count: 1 },
@@ -2658,7 +2692,15 @@ export const TIDAL_MIND: DeckSpec = {
     */
     { card: WILLBENDER, count: 1 },
     { card: RAVENOUS_RATS, count: 1 },
-    { card: CHILD_OF_NIGHT, count: 1 },
+    /*
+      Ophidian for the Child of Night, and the Wall of Frost below for a Fog Bank.
+
+      A 2/1 lifelink was the weakest card in a deck that wins on cards rather than on life: it
+      trades with everything in the pool and gains two doing it. A 1/3 that draws when it gets
+      through is the same two mana spent on the plan the rest of the deck is built around — and it
+      asks a real question every time it attacks, which the 2/1 never did.
+    */
+    { card: OPHIDIAN, count: 1 },
     { card: WIND_DRAKE, count: 1 },
     /*
       The other two bodies the counterspell cuts paid for, and the deck's clock.

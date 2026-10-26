@@ -15,7 +15,7 @@ import { characteristicsOf, hasType } from './characteristics.js';
 import {
   advanceStep, aliveSeats, applyStatics, atSorcerySpeed, attackAimIssue, autoPassFor, bottomOwed,
   canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, forcedAttackers, legalAttackers,
-  legalBlockers, menaceSatisfied, payFrom, pendingDeclaration,
+  legalBlockers, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   raiseWard, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
   stateBasedActions,
@@ -1061,6 +1061,38 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
     ...state,
     combat: { ...state.combat, attacks, blockersDeclaredBy: [...state.combat.blockersDeclaredBy, action.by] },
   };
+  /*
+    One event per block, carrying which attacker it was against (CR 509.1a).
+
+    The blocking creature is the subject and the attacker travels on the event, which is the
+    opposite way round from how the card reads — "whenever ~ blocks a creature, **that creature**
+    doesn't untap" — and the right way round for the engine: the subject is what `who: 'self'` is
+    asked about, and the card whose trigger this is is the one that blocked. See the `blocks` event.
+  */
+  for (const attack of attacks) {
+    if (attack.defender !== action.by) continue;
+    for (const blocker of attack.blockers) {
+      next = raise(
+        next,
+        { kind: 'blocks', subjectSeat: action.by, blocked: attack.attacker },
+        action.by,
+        blocker,
+      );
+    }
+  }
+  /*
+    And "attacks and isn't blocked", which can only be asked once every defender has spoken.
+
+    Guarded inside `raiseUnblockedAttacks` rather than here, because this is not the only way a
+    seat comes to have declared: a defender with nothing that could legally block is declared for
+    by the step itself, and that path has to raise the same events. What the guard is *not* is
+    "`pendingDeclaration` returns null" — in a pod that is also waiting on the attacking player's
+    damage assignment order (CR 509.2), and an unblocked attacker is unblocked whether or not
+    somebody owes an order for a different attack. The real sequence puts these triggers on the
+    stack after the order is settled (CR 509.4), which is unobservable here: priority does not
+    return while the order is owed, so nothing can resolve or respond in between either way.
+  */
+  next = raiseUnblockedAttacks(next);
   // Priority only returns once every defender has declared.
   next = pendingDeclaration(next) === null ? resetPriority(settle(next, state)) : settle(next, state);
   const blocking = attacks.reduce((n, a) => n + (a.defender === action.by ? a.blockers.length : 0), 0);

@@ -161,6 +161,40 @@ export function pendingDeclaration(
   return null;
 }
 
+/**
+ * "Whenever ~ attacks and isn't blocked" for every attacker nobody blocked (CR 509.1h).
+ *
+ * One function with two callers, because a seat can come to have declared blockers in two
+ * different ways: it said so (`auto:block`), or it had nothing that could legally block and the
+ * step said so for it. Each caller asks only once — whichever of them leaves no blocker
+ * declaration outstanding is the one that raises — so an attacker's trigger fires exactly once
+ * however the blocks came in.
+ *
+ * Not called when a declaration is still owed: in a pod one defender's blocks say nothing about
+ * whether another is about to block the same creature.
+ */
+export function raiseUnblockedAttacks(state: GameState): GameState {
+  if (pendingDeclaration(state)?.kind === 'blockers') return state;
+  let next = state;
+  for (const attack of state.combat.attacks) {
+    if (attack.blockers.length > 0) continue;
+    next = raise(
+      next,
+      {
+        kind: 'attacks-unblocked',
+        subjectSeat: state.activeSeat,
+        attacked: {
+          defender: attack.defender,
+          ...(attack.planeswalker === undefined ? {} : { planeswalker: attack.planeswalker }),
+        },
+      },
+      state.activeSeat,
+      attack.attacker,
+    );
+  }
+  return next;
+}
+
 export const stackTop = (state: GameState): StackObject | undefined => {
   const id = state.stackOrder[state.stackOrder.length - 1];
   return id === undefined ? undefined : state.stackObjects[id];
@@ -369,7 +403,12 @@ function onEnterStep(state: GameState, step: Step): GameState {
       for (const seat of new Set(next.combat.attacks.map((a) => a.defender))) {
         if (!declared.includes(seat) && legalBlockers(next, seat).length === 0) declared.push(seat);
       }
-      return { ...next, combat: { ...next.combat, blockersDeclaredBy: declared } };
+      // And when that settled every declaration, the attacks that got through say so from here:
+      // nobody is going to send an `auto:block` for a seat that was never asked. See
+      // `raiseUnblockedAttacks`.
+      return raiseUnblockedAttacks({
+        ...next, combat: { ...next.combat, blockersDeclaredBy: declared },
+      });
     }
 
     case 'first-strike-damage':
@@ -464,12 +503,14 @@ function triggerMatches(
       if (e.step !== want.step) return false;
       return (want.of ?? 'you') === 'any' || actorSeat === sourceSeat;
     }
-    // The three events that are about one permanent and may still be watched by another. One
-    // branch rather than three, because `who` and `of` have to mean the same thing on all of
-    // them — a second copy of this filter is a second place for them to drift apart.
+    // The events that are about one permanent and may still be watched by another. One branch
+    // rather than five, because `who` and `of` have to mean the same thing on all of them — a
+    // second copy of this filter is a second place for them to drift apart.
     case 'etb':
     case 'dies':
-    case 'attacks': {
+    case 'attacks':
+    case 'blocks':
+    case 'attacks-unblocked': {
       // `self` is the default, which is why every script written before this one still means what
       // it meant: a trigger that says nothing about `who` watches only its own permanent.
       const who = want.who ?? 'self';
@@ -485,9 +526,9 @@ function triggerMatches(
       if (want.kind === 'attacks' && want.alone === true && e.alone !== true) return false;
       // "a *creature* you control enters" is what the board-watchers say, and an enchantment
       // arriving is not that. Only asked for when the trigger asks for it, so a `self` trigger on
-      // a non-creature permanent still fires for its own arrival. An attacker is a creature by
-      // definition, which is why the attack event has no `what` to ask about.
-      if (want.kind !== 'attacks' && (want.what ?? 'permanent') === 'creature'
+      // a non-creature permanent still fires for its own arrival. Anything in combat is a creature
+      // by definition, which is why none of the three combat events has a `what` to ask about.
+      if ((want.kind === 'etb' || want.kind === 'dies') && (want.what ?? 'permanent') === 'creature'
         && e.subjectIsCreature !== true) return false;
       // And the landfall half of the same question, asked the same way round: only when the
       // trigger asks for it, so nothing written before this changes meaning.
@@ -596,7 +637,8 @@ function raise(
 ): GameState {
   let next = state;
   if (subject !== undefined
-    && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks')) {
+    && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
+      || event.kind === 'blocks' || event.kind === 'attacks-unblocked')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.
@@ -654,6 +696,7 @@ function raise(
     return subjectSeat === seat ? [subject as string, ...mine] : mine;
   });
   const watchers = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
+    || event.kind === 'blocks' || event.kind === 'attacks-unblocked'
     ? everyBattlefield
     : selfOnly.has(event.kind)
       ? subject === undefined ? [] : [subject]
@@ -720,7 +763,8 @@ function raise(
         way rather than growing a second field for the second card that needs it. See
         `StackObject.attacked`.
       */
-      const attacked = event.kind === 'attacks' ? event.attacked
+      const attacked = event.kind === 'attacks' || event.kind === 'attacks-unblocked'
+        ? event.attacked
         : event.kind === 'combat-damage' && event.defender !== undefined
           ? { defender: event.defender }
           : undefined;
@@ -734,9 +778,17 @@ function raise(
         ...(actor === undefined || actor === inst.zoneSeat ? {} : { actor }),
         ...(attacked === undefined ? {} : { attacked }),
         ...(answering === undefined ? {} : { answering }),
-        ...(subject === undefined || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks')
+        ...(subject === undefined
+          || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
+            || event.kind === 'blocks' || event.kind === 'attacks-unblocked')
           ? {}
           : { subject }),
+        // The attacker a block was against, for "that creature". Its own field rather than the
+        // subject, because the subject of a block is the creature that blocked — which is almost
+        // always the watcher itself, and never the one the card is talking about.
+        ...(event.kind === 'blocks' && event.blocked !== undefined
+          ? { blocked: event.blocked }
+          : {}),
         // What it had on it before the event, for a trigger that counts counters that are gone by
         // the time it resolves. See `StackObject.subjectCounters`.
         ...(event.kind === 'dies' && event.subjectCounters !== undefined
@@ -850,6 +902,8 @@ export function raiseWard(state: GameState, objectId: string): GameState {
  */
 interface TriggerAbout {
   readonly attacked?: AttackedTarget;
+  /** The attacker a `blocks` event was against. See `StackObject.blocked`. */
+  readonly blocked?: string;
   readonly answering?: string;
   readonly subject?: string;
   readonly actor?: SeatIndex;
@@ -873,6 +927,7 @@ function pushAbility(
     cardKey: inst?.defKey ?? '',
     abilityIndex, targets: [...targets], description,
     ...(about.attacked === undefined ? {} : { attacked: about.attacked }),
+    ...(about.blocked === undefined ? {} : { blocked: about.blocked }),
     ...(about.answering === undefined ? {} : { answering: about.answering }),
     ...(about.subject === undefined ? {} : { subject: about.subject }),
     ...(about.actor === undefined ? {} : { actor: about.actor }),
@@ -1840,6 +1895,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     decisions: [],
     kicked: object.kicked === true,
     attacked: object.attacked,
+    blocked: object.blocked,
     answering: object.answering,
     subject: object.subject,
     subjectCounters: object.subjectCounters,
@@ -1905,7 +1961,8 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     const ready = first === undefined ? state : first({
       state, source: object.source,
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
-      kicked: object.kicked === true, attacked: object.attacked, answering: object.answering,
+      kicked: object.kicked === true, attacked: object.attacked, blocked: object.blocked,
+      answering: object.answering,
       subject: object.subject, actor: object.actor, subjectCounters: object.subjectCounters,
       ...(object.division === undefined ? {} : { division: object.division }),
     });
@@ -1939,6 +1996,7 @@ function completeResolution(
     decisions: answers,
     kicked: object.kicked === true,
     attacked: object.attacked,
+    blocked: object.blocked,
     // What this ability is about, for a ward that has to counter a particular object.
     answering: object.answering,
     // And which permanent it is about, for a trigger that has to say "that creature".

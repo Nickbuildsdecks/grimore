@@ -76,6 +76,14 @@ export interface VisibleCard {
   readonly toughness?: number;
   readonly keywords?: readonly Keyword[];
   /**
+   * This permanent will not untap in its controller's next untap step (CR 502.2).
+   *
+   * Public, because it is: everybody at a real table can see which creature is being held down,
+   * and a player deciding whether to attack into it needs to know. It is not a keyword and not a
+   * continuous effect — nothing about the creature is different — so it travels on its own.
+   */
+  readonly frozen?: true;
+  /**
    * Whether this permanent is **currently** a creature, which is not the same question as whether
    * its card has power printed on it.
    *
@@ -268,6 +276,7 @@ export interface PackedCard {
   readonly keywords?: readonly Keyword[];
   readonly cantAttack?: true;
   readonly cantBlock?: true;
+  readonly frozen?: true;
   readonly damagePrevented?: true;
   readonly shielded?: number;
 }
@@ -331,6 +340,7 @@ export function packView(view: GameView): PackedView {
     // every land has one — and `"keywords":[]` on three hundred cards is another four kilobytes.
     if (card.keywords !== undefined && card.keywords.length > 0) packed.keywords = card.keywords;
   if (card.isCreature === true) packed.isCreature = true;
+    if (card.frozen === true) packed.frozen = true;
     if (card.cantAttack === true) packed.cantAttack = true;
     if (card.cantBlock === true) packed.cantBlock = true;
     if (card.damagePrevented === true) packed.damagePrevented = true;
@@ -379,6 +389,7 @@ export function unpackView(packed: PackedView): GameView {
         : card.zone === 'battlefield' || (card.zone === 'stack' && card.faceDown === true)
           ? { keywords: [] } : {}),
       ...(card.isCreature === true ? { isCreature: true as const } : {}),
+      ...(card.frozen === true ? { frozen: true as const } : {}),
       ...(card.cantAttack === true ? { cantAttack: true } : {}),
       ...(card.cantBlock === true ? { cantBlock: true } : {}),
       ...(card.damagePrevented === true ? { damagePrevented: true } : {}),
@@ -471,6 +482,7 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     */
     ...(ch.isCreature ? { isCreature: true as const } : {}),
     keywords: [...ch.keywords],
+    ...(inst.frozen === true ? { frozen: true as const } : {}),
     ...(ch.cantAttack ? { cantAttack: true } : {}),
     ...(ch.cantBlock ? { cantBlock: true } : {}),
     ...(combatDamagePrevented(state, inst) ? { damagePrevented: true } : {}),

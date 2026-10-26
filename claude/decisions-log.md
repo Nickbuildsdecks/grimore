@@ -6786,3 +6786,63 @@ one possible answer, the same rule that skips a one-word question. The test that
 needs a *second* attacker to make blocking a real choice, which is the engine being right rather
 than the test being awkward.
 
+
+## D154 — The two combat triggers, and the declaration that happens in two places
+
+**Decision: `blocks` and `attacks-unblocked` are their own events, raised in the declare-blockers
+step, and neither could have been a filter on the attack event.**
+
+Combat raised exactly one thing: an attack was declared. Everything after that was invisible to
+every script in the pool.
+
+- **`blocks`** is somebody *else's* declaration, a step later. The **blocking** creature is the
+  subject, so `who` and `of` mean what they mean on `attacks`, and the attacker it blocked travels
+  on the event as `blocked` — a new channel alongside `attacked`, for the same reason that one
+  exists: "whenever ~ blocks a creature, **that creature** doesn't untap" is about one particular
+  attacker, and by the time the ability resolves the board says only that the Wall is blocking
+  something. Raised **once per block**, which is what the printed card says: two Walls on one
+  attacker put two triggers on the stack.
+- **`attacks-unblocked`** cannot be a filter on `attacks`, because when attackers are declared
+  nobody has blocked yet and the answer is not knowable. It is raised at the end of the
+  declare-blockers step, which is the first moment at which "isn't blocked" is a fact.
+
+**A new mechanism for "doesn't untap", and it is deliberately not a continuous effect.** Nothing
+about a frozen creature is different — same power, same abilities, same keywords — so a
+`ContinuousEffect` would be describing a change that does not exist. It is one flag on the
+instance, read by exactly one thing (the untap step), and cleared as that step declines to untap.
+Cleared whether or not the creature was tapped, because the effect is spent by the step happening
+rather than by an untap being prevented. See `CardInstance.frozen`.
+
+**The bot needed nothing.** A frozen creature is a tapped creature when blockers are declared, and
+`legalBlockers` has always known that a tapped creature cannot block — so the search sees the turn
+the freeze cost without a term for it, which is the same rule the rest of the bot follows: read a
+fact off the board, do not carry a weight.
+
+**The bug this found, which is the lesson worth keeping: a seat can come to have declared blockers
+in two different places.** It said so with `auto:block`, or it had nothing that could legally block
+and the step declared for it (`automation.ts`, the `declare-blockers` turn-based action). The first
+version of this raised the unblocked event only in the first place, so an Ophidian attacking into an
+empty board — the one board where it is certain to get through — triggered nothing at all. Both
+callers now go through one `raiseUnblockedAttacks`, each guarded by "no blocker declaration
+outstanding", so exactly one of them fires. This is D152's rule one layer down: a *question* added
+to the table is three places, and a *turn-based action* is as many places as can perform it.
+
+**Measured, both the record and the mechanism** (`scripts/measure/combat-triggers.mjs`, 660 games):
+
+- Wall of Frost went on the battlefield in 29 games, **blocked 47 times and froze 46** — every one
+  of them a creature that was already tapped, because attacking taps it — and **34 of those were
+  still tapped when their controller's next turn came round**. That is the card doing the thing it
+  promises, 34 turns taken off attackers; the other 12 died, left, or the game ended first. In its
+  slot (the second Fog Bank) it measures **+4 of 240**, which is free rather than better.
+- Ophidian attacked 41 times, **got through 25 of them (61%)**, and the bot drew the card 24 times
+  and kept the damage once. A question whose answer is nearly always the same is worth saying out
+  loud: it is still a real decision — the one board that said "attack" was a lethal swing, which is
+  the whole reason the card asks — but anybody reading the card as a hard choice would be wrong.
+  In its slot (the Child of Night) it measures **+3 of 240**: free again.
+
+**And the instrument was wrong before the mechanism was.** The first version of the measurement
+watched for `step: 'untap'` and reported a flat zero freezes held. Nobody ever holds priority in
+the untap step (CR 502.1), so no state the loop sees is ever at that step: the check could never
+have fired. A zero from an instrument that cannot observe the thing is not a measurement, and the
+only reason it was caught is that 46 freezes on tapped creatures and 0 of them holding is not a
+story about Magic.

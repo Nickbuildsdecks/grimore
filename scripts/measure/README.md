@@ -25,6 +25,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `disagree.mjs` | does that change alter any decisions at all? | `TESTED='{"lookahead":false}' SEEDS=2 node scripts/measure/disagree.mjs` |
 | `step-drift.mjs` | how far does the table move on one action? | `SEEDS=2 node scripts/measure/step-drift.mjs` |
 | `morph-use.mjs` | which half of a morph does the bot take, and does it follow through? | `SEEDS=3 node scripts/measure/morph-use.mjs` |
+| `combat-triggers.mjs` | do the block and unblocked triggers ever happen, and do they matter? | `SEEDS=6 node scripts/measure/combat-triggers.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -132,3 +133,10 @@ old row, and never read a deck's own move across such a boundary as a change in 
 each against the slow decks and none at all against the fast ones is a change about having a clock,
 whatever the total says — and that is exactly what happened the one time the total was trusted on
 its own.
+
+**An instrument that cannot observe the thing reports zero, and zero reads like an answer.**
+`combat-triggers`' first version watched for `step: 'untap'` to see whether a freeze had held, and
+nobody ever holds priority in the untap step (CR 502.1) — no state it saw was ever at that step, so
+the check could not have fired once. It printed 46 freezes and 0 held, and the only reason that was
+caught is that it is not a story about Magic. Before believing a zero from a new harness, make it
+print the thing it is counting *from*, and check the two numbers can be true together.
