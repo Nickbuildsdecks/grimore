@@ -604,7 +604,15 @@ function raise(
     // The event carries who controlled the permanent and whether it was a creature, so a watcher
     // can ask. Read from the subject rather than from `actor`, which for an entry is whoever cast
     // the spell and not always its controller.
-    const inst = next.instances[subject];
+    /*
+      The snapshot first, and the live instance second.
+
+      A permanent that has just left the battlefield is still in `instances` — in a graveyard, with
+      its counters already wiped — so reading it live would answer the question with the state
+      *after* the event. `vanished` holds what it was, which is what a leave-the-battlefield
+      trigger is entitled to (CR 603.6e). See `GameState.vanished`.
+    */
+    const inst = next.vanished[subject] ?? next.instances[subject];
     if (inst !== undefined) {
       event = {
         ...event,
@@ -614,6 +622,8 @@ function raise(
         // land dies" is not a card, and a field nothing reads is a field that drifts.
         ...(event.kind === 'etb' ? { subjectIsLand: characteristicsOf(next, inst).isLand } : {}),
         ...(event.kind === 'dies' ? { subjectIsToken: inst.isToken } : {}),
+        // What it had on it, for a trigger that has to count its own counters after they are gone.
+        ...(Object.keys(inst.counters).length === 0 ? {} : { subjectCounters: inst.counters }),
       };
     }
   }
@@ -725,6 +735,11 @@ function raise(
         ...(subject === undefined || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks')
           ? {}
           : { subject }),
+        // What it had on it before the event, for a trigger that counts counters that are gone by
+        // the time it resolves. See `StackObject.subjectCounters`.
+        ...(event.kind === 'dies' && event.subjectCounters !== undefined
+          ? { subjectCounters: event.subjectCounters }
+          : {}),
       };
       if (specs.length === 0) {
         next = pushAbility(
@@ -836,6 +851,8 @@ interface TriggerAbout {
   readonly answering?: string;
   readonly subject?: string;
   readonly actor?: SeatIndex;
+  /** The counters the subject had before the event. See `StackObject.subjectCounters`. */
+  readonly subjectCounters?: Readonly<Record<string, number>>;
 }
 
 function pushAbility(
@@ -857,6 +874,7 @@ function pushAbility(
     ...(about.answering === undefined ? {} : { answering: about.answering }),
     ...(about.subject === undefined ? {} : { subject: about.subject }),
     ...(about.actor === undefined ? {} : { actor: about.actor }),
+    ...(about.subjectCounters === undefined ? {} : { subjectCounters: about.subjectCounters }),
     targetSeqs: targetSeqsFor(state, targets),
   };
   return {
@@ -1675,6 +1693,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     attacked: object.attacked,
     answering: object.answering,
     subject: object.subject,
+    subjectCounters: object.subjectCounters,
   })) {
     const next = popStack(state, object.id);
     const name = next.cardDefs[object.cardKey]?.name ?? 'it';
@@ -1738,7 +1757,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       state, source: object.kind === 'spell' ? object.id : object.source,
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
       kicked: object.kicked === true, attacked: object.attacked, answering: object.answering,
-      subject: object.subject, actor: object.actor,
+      subject: object.subject, actor: object.actor, subjectCounters: object.subjectCounters,
       ...(object.division === undefined ? {} : { division: object.division }),
     });
     return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
@@ -1766,6 +1785,9 @@ function completeResolution(
     answering: object.answering,
     // And which permanent it is about, for a trigger that has to say "that creature".
     subject: object.subject,
+    // And what that permanent had on it before the event, for one that counts counters that are
+    // gone by now. See `StackObject.subjectCounters`.
+    subjectCounters: object.subjectCounters,
     // And whose action it was, for one that has to say "that player".
     actor: object.actor,
     // And how a divided quantity was split, for the one card shape that announces numbers with

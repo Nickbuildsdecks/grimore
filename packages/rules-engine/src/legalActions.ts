@@ -836,6 +836,12 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         if (inst.tapped) continue;
         if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       }
+      // A counter is a cost like the life and the loyalty above: with none left to remove, the
+      // ability is not offered at all rather than offered and then refused.
+      if (ability.cost.removeCounter !== undefined) {
+        const held = inst.counters[ability.cost.removeCounter.counter] ?? 0;
+        if (held < ability.cost.removeCounter.amount) continue;
+      }
       if (ability.cost.mana
         && !canAfford(poolOf(state, seat), parseManaCost(ability.cost.mana), sources)) continue;
       // Life is a cost like any other: an ability you cannot pay for is not offered, which is why

@@ -6319,3 +6319,56 @@ deal to a person — who casts it on turn two, and who can run four copies of it
 That is the same conclusion D143 reached about Kiora's Follower by a different road, and it is
 becoming the honest shape of this pool: the cards this bot cannot use are the cards a person gets
 the most out of.
+
+## D145 — A counter as a cost, last known information, and two cards the bot values less than the slots they took
+
+**Decision: an ability may be paid for by removing a counter from its own permanent; a permanent
+leaving the battlefield is snapshotted so a death trigger can count what it had; Walking Ballista
+and Hangarback Walker ship in Forge Alliance at −1 and −6 of 240.**
+
+The `{X}{X}` cost from D144 made both cards expressible; two small engine additions finished them,
+and both are rules rather than conveniences.
+
+**A counter as a cost.** "Remove a +1/+1 counter from this permanent: it deals 1 damage to any
+target" is the fifth non-mana cost here, after the sacrifice, the life, the discard and the crew. A
+cost, not an effect, and the difference is the card: the counter comes off as the ability is
+activated, so a Ballista firing its last counter is a 0/0 while its own damage is still on the
+stack. The state-based actions kill it and the damage is dealt anyway, because an ability on the
+stack has nothing further to do with its source (CR 608.2). That is how the card is played, not an
+edge case — and a planeswalker's last loyalty was already the same shape, which is why it needed no
+new machinery. It also inherits the rule the whole family has: an ability whose cost cannot be paid
+is **not offered**, so a Ballista with no counters shows no damage ability rather than one the
+engine then refuses.
+
+**Last known information** (CR 608.2h / 603.6e). Hangarback Walker makes a Thopter for each +1/+1
+counter it had, and a card in a graveyard has none — `relocate` takes them off on the way out,
+which is the rule. Tokens already had this solved: a token that ceases to exist leaves its last
+state in `vanished` so its own death trigger can read it. That now covers **every** permanent
+leaving the battlefield, which is a two-line change with the same lifetime (`settle` clears the map
+once the triggers are on the stack) — and because the trigger resolves later than that, the one
+fact it needs rides on the stack object as `subjectCounters`. A counters map rather than a whole
+snapshot, deliberately: when a card needs the power it had, that is where it goes.
+
+**And then the measurement, which is the third of these in a row to say the same thing.**
+
+| the slot | measured |
+| --- | --- |
+| Walking Ballista in Forge Alliance, for a third Monastery Swiftspear | **−1** |
+| Hangarback Walker in Forge Alliance, for a second Firebrand Archer | **−6** |
+| Hangarback Walker in Rot Harvest, for a Doomed Dissenter | −7 |
+| Hangarback Walker in Hollow Tide, for a Returned Centaur | −9 |
+
+All four inside the eighteen-game floor, and all four negative. The Ballista is free: a creature on
+any curve, a mana sink, and the pool's only removal that costs no card. The Walker is not, and this
+time it is **not** the bot playing it badly — instrumented, it was cast in 37 of the 40 games it
+was drawn and **eighteen of those on its second turn**, for X=1 or X=2, which is exactly what a
+person does. It is simply a grindy card, and a 1/1 that grows is worth less to this bot than the
+2/1 that pings every turn. Three homes were measured before shipping it in the least bad one, where
+the Thopters at least have a Loxodon Warhammer and a Hellrider to play with.
+
+Which is worth saying plainly, because it is now a pattern rather than an anecdote: **this pool has
+three cards whose value a one-ply search cannot realise** — Kiora's Follower (D143), Chalice of the
+Void (D144) and Hangarback Walker. Every one of them is a card a person uses well, every one of
+them measured negative-but-noise, and every one shipped anyway, with its number written down. The
+alternative — a pool containing only what the bot pilots well — would be a worse pool for the two
+people this table is built for.

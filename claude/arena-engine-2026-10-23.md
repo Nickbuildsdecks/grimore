@@ -3559,6 +3559,41 @@ the floor, and it ships: correct, tested nine ways, worth nothing to this bot an
 person who casts it on turn two — or who runs four copies of it in a list of their own. Which is
 D143's conclusion about Kiora's Follower reached by a second road.
 
+### A counter as a cost, and the counters a dying permanent leaves behind
+
+The `{X}{X}` cost made two famous artifacts expressible, and finishing them needed two small rules.
+
+**A counter as a cost.** "Remove a +1/+1 counter: 1 damage to any target" is the fifth non-mana
+cost here, and it is a cost rather than an effect, which is the whole of Walking Ballista: the
+counter comes off as the ability is activated, so the Ballista firing its last one is a 0/0 while
+its own damage is on the stack above it. The state-based actions kill it and the damage is dealt
+anyway (CR 608.2). It also inherits the family rule — a cost that cannot be paid is not offered —
+so a Ballista with no counters shows no damage ability at all.
+
+**Last known information** (CR 608.2h). Hangarback Walker makes a Thopter per +1/+1 counter it
+*had*, and a card in a graveyard has none, because leaving the battlefield takes them off. Tokens
+already had this solved: a token that stops existing leaves its last state in `vanished` for its own
+death trigger to read. That now covers every permanent leaving the battlefield, with the same
+lifetime, and the one fact the trigger needs rides on the stack object as `subjectCounters` —
+because the trigger resolves after `settle` has cleared the map.
+
+| the slot | measured |
+| --- | --- |
+| Walking Ballista for a third Monastery Swiftspear | **−1** |
+| Hangarback Walker for a second Firebrand Archer | **−6** |
+| the Walker in Rot Harvest instead | −7 |
+| the Walker in Hollow Tide instead | −9 |
+
+All inside the floor, all negative. The Ballista is free. The Walker is not, and this time it is
+**not** the bot misplaying it: instrumented, it was cast in 37 of the 40 games it was drawn, 18 of
+those on its second turn for X=1 or 2 — what a person does. It is just a grindy card, and a 1/1
+that grows is worth less to this bot than a 2/1 that pings. Three homes were measured; it ships in
+the least bad one, where the Thopters have a Warhammer and a Hellrider to play with.
+
+That makes three cards in a row whose value a one-ply search cannot realise — Kiora's Follower,
+Chalice of the Void, Hangarback Walker — all measured negative-but-noise and all shipped. A pool
+containing only what the bot pilots well would be a worse pool for the two people this is for.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

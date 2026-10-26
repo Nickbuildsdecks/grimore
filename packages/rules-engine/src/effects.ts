@@ -75,6 +75,15 @@ export interface EffectContext {
    */
   readonly subject?: string;
   /**
+   * The counters the permanent this trigger is about had before the event, by counter name.
+   *
+   * Undefined for everything that is not a death trigger, and for a permanent that had none. It
+   * exists because a card in a graveyard has no counters — `relocate` takes them off, which is the
+   * rule — so "for each +1/+1 counter on it" has to be answered from what was true when it died
+   * (CR 608.2h). See `StackObject.subjectCounters`.
+   */
+  readonly subjectCounters?: Readonly<Record<string, number>>;
+  /**
    * How much of a divided quantity each of `targets` was assigned, position by position
    * (CR 601.2d). Undefined for everything that divides nothing.
    *

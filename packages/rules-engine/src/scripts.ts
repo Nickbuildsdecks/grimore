@@ -901,6 +901,12 @@ export const ZOMBIE_TOKEN: CardDef = {
   power: '2', toughness: '2', oracleText: '', colors: ['B'],
 };
 
+/** Hangarback Walker's parting gift: a 1/1 flier per counter it had. */
+export const THOPTER_TOKEN: CardDef = {
+  name: 'Thopter', typeLine: 'Token Artifact Creature — Thopter', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: 'Flying', colors: [],
+};
+
 export const KNIGHT_TOKEN: CardDef = {
   name: 'Knight', typeLine: 'Token Creature — Knight', manaCost: '', cmc: 0,
   power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
@@ -4401,6 +4407,76 @@ const CHALICE_OF_THE_VOID: CardScript = {
   ],
 };
 
+/**
+ * The mana sink that is also removal, and the first ability in the pool paid for with a counter.
+ *
+ * Three of its four lines were already expressible: `{X}{X}` for the counters it enters with (the
+ * cost shape Chalice of the Void brought), `{1}: put one on` as an ordinary ability, and damage to
+ * any target as the commonest effect here. The fourth is the cost — "remove a +1/+1 counter from
+ * this permanent" — which is a *cost* and not an effect, and the distinction is the card.
+ *
+ * Because the counter comes off as the ability is activated, a Ballista on one counter that fires
+ * is a 0/0 before the damage resolves: the state-based actions kill it, and the damage is dealt
+ * anyway, because an ability on the stack has nothing further to do with its source (CR 608.2).
+ * That is not an edge case, it is how the card is played — and it is the same shape as a
+ * planeswalker's last loyalty, which this engine already got right.
+ */
+const WALKING_BALLISTA: CardScript = {
+  name: 'Walking Ballista',
+  entersWith: { counter: '+1/+1', amount: 'x' },
+  abilities: [
+    {
+      cost: { mana: '{1}' },
+      description: '{1}: Put a +1/+1 counter on Walking Ballista.',
+      effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+    },
+    {
+      cost: { removeCounter: { counter: '+1/+1', amount: 1 } },
+      description: 'Remove a +1/+1 counter: 1 damage to any target.',
+      targets: [{ kind: 'any', description: 'any target' }],
+      effect: (c) => {
+        const target = c.targets[0];
+        if (target === undefined) return c.state;
+        return dealDamage(c.state, target, 1, { source: c.source });
+      },
+    },
+  ],
+};
+
+/**
+ * The creature that grows, and then leaves its counters behind as a flock.
+ *
+ * The same `{X}{X}` arrival as the Ballista and the same {1} to grow, with a tap in the cost — so
+ * it cannot both grow and attack in a turn, which is the card's whole tension. What it adds is the
+ * death trigger reading its own counters: "create that many 1/1 Thopters" has to count what was on
+ * it, and a dying permanent's last state is exactly what `dies` is handed (CR 603.6d), so the
+ * count is read off `c.subject` rather than off a battlefield it has already left.
+ */
+const HANGARBACK_WALKER: CardScript = {
+  name: 'Hangarback Walker',
+  entersWith: { counter: '+1/+1', amount: 'x' },
+  abilities: [
+    {
+      cost: { mana: '{1}', tap: true },
+      description: '{1}, {T}: Put a +1/+1 counter on Hangarback Walker.',
+      effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+    },
+  ],
+  triggers: [
+    {
+      on: { kind: 'dies' },
+      description: 'create a 1/1 Thopter with flying for each +1/+1 counter on it',
+      effect: (c) => {
+        // What it had on it when it died, which is the only place that answer still exists: the
+        // card is in a graveyard by now and `relocate` took its counters off on the way, as the
+        // rules say it must. See `EffectContext.subjectCounters`.
+        const counters = c.subjectCounters?.['+1/+1'] ?? 0;
+        return counters === 0 ? c.state : createToken(c.state, c.controller, THOPTER_TOKEN, counters);
+      },
+    },
+  ],
+};
+
 const KIORAS_FOLLOWER: CardScript = {
   name: "Kiora's Follower",
   abilities: [
@@ -4458,7 +4534,7 @@ const PELAKKA_WURM: CardScript = {
 export const TOKEN_DEFS: readonly CardDef[] = [
   GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN,
   SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN, ELEMENTAL_TOKEN,
-  ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN,
+  ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN, THOPTER_TOKEN,
 ];
 
 const ALL: readonly CardScript[] = [
@@ -4541,6 +4617,7 @@ const ALL: readonly CardScript[] = [
   STRIONIC_RESONATOR,
   AJANI_CALLER_OF_THE_PRIDE, NISSA_VOICE_OF_ZENDIKAR,
   EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM, CHALICE_OF_THE_VOID,
+  WALKING_BALLISTA, HANGARBACK_WALKER,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

@@ -9735,3 +9735,118 @@ describe('Chalice of the Void: the permanent that answers a spell by what it cos
     expect(action?.type === 'auto:cast' ? action.x : null).toBe(1);
   });
 });
+
+describe('Walking Ballista and Hangarback Walker: the counter as a cost, and the counters as a flock', () => {
+  /*
+    Two cards the `{X}{X}` cost made possible, and one engine addition between them: an ability
+    paid for by **removing a counter** from the permanent.
+
+    It is a cost and not an effect, which is the whole of what makes a Ballista work. The counter
+    comes off as the ability is activated, so a Ballista on one counter that fires is a 0/0 before
+    the damage resolves: the state-based actions kill it, and the damage is dealt anyway, because
+    an ability on the stack has nothing further to do with its source (CR 608.2). And an ability
+    whose cost cannot be paid is never offered — a Ballista with no counters shows no damage.
+
+    The Walker is the other half: it has to make a Thopter for each counter it *had*, and a card in
+    a graveyard has none, because `relocate` takes them off on the way out. So its last state is
+    snapshotted for the trigger (CR 608.2h) and reaches the effect as `subjectCounters`.
+  */
+  const board = (x: number, lands: number, who: 'Walking Ballista' | 'Hangarback Walker'): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'forge-alliance', 1: 'ember-rush' },
+      hands: { 0: [who] },
+      battlefield: { 0: Array.from({ length: lands }, () => 'Plains'), 1: ['Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', who);
+    s = apply(s, { type: 'auto:cast', by: 0, card, x });
+    return drain(passBoth(s));
+  };
+
+  it('arrives as a 2/2 for four when X is two, and {X}{X} is why that is four', () => {
+    const s = board(2, 4, 'Walking Ballista');
+    const ballista = find(s, 0, 'battlefield', 'Walking Ballista');
+    expect(s.instances[ballista]?.counters['+1/+1']).toBe(2);
+    const ch = characteristicsOf(s, s.instances[ballista]!);
+    expect([ch.power, ch.toughness]).toEqual([2, 2]);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]?.tapped).length).toBe(4);
+  });
+
+  it('shoots by taking a counter off, and the damage does not need it to survive', () => {
+    let s = board(1, 2, 'Walking Ballista');
+    const ballista = find(s, 0, 'battlefield', 'Walking Ballista');
+    // One counter: the only shot it has, and firing it is lethal to itself.
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: ballista, abilityIndex: 1,
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    // The counter is gone as the cost is paid, so the 0/0 is already dying with its damage on the
+    // stack above it.
+    expect(s.instances[ballista]?.counters['+1/+1'] ?? 0).toBe(0);
+    s = drain(passBoth(s));
+    expect(life(s, 1)).toBe(19);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Walking Ballista');
+  });
+
+  it('is not offered a shot it cannot pay for', () => {
+    const s = board(1, 3, 'Walking Ballista');
+    const ballista = find(s, 0, 'battlefield', 'Walking Ballista');
+    const shots = (state: GameState): number => legalActions(state, 0).plays
+      .filter((p) => p.kind === 'activate' && p.card === ballista && p.abilityIndex === 1).length;
+    expect(shots(s)).toBe(1);
+    // With the counter gone there is no ability, rather than one the engine would refuse.
+    const empty = addCounters(s, ballista, '+1/+1', -1);
+    expect(shots(empty)).toBe(0);
+    expect(refusal(empty, {
+      type: 'auto:activate', by: 0, card: ballista, abilityIndex: 1,
+      targets: [{ kind: 'player', seat: 1 }],
+    })).toContain('counter');
+  });
+
+  it('grows for {1}, which is the other half of the mana sink', () => {
+    let s = board(1, 4, 'Walking Ballista');
+    const ballista = find(s, 0, 'battlefield', 'Walking Ballista');
+    s = apply(s, { type: 'auto:activate', by: 0, card: ballista, abilityIndex: 0 });
+    s = drain(passBoth(s));
+    expect(s.instances[ballista]?.counters['+1/+1']).toBe(2);
+  });
+
+  it('leaves a Thopter for every counter the Walker had, counted after they are gone', () => {
+    let s = board(2, 4, 'Hangarback Walker');
+    const walker = find(s, 0, 'battlefield', 'Hangarback Walker');
+    expect(s.instances[walker]?.counters['+1/+1']).toBe(2);
+    // Killed outright: by the time the trigger resolves the card is in the graveyard with no
+    // counters at all, which is exactly the case `subjectCounters` exists for.
+    s = apply(s, { type: 'card:move', by: 0, card: walker, toZone: 'graveyard' });
+    s = drain(passBoth(s));
+    expect(s.instances[walker]?.counters['+1/+1'] ?? 0).toBe(0);
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Thopter')).toHaveLength(2);
+    const thopter = find(s, 0, 'battlefield', 'Thopter');
+    expect(characteristicsOf(s, s.instances[thopter]!).keywords.has('flying')).toBe(true);
+  });
+
+  it('and leaves nothing when it had nothing on it', () => {
+    let s = board(1, 2, 'Hangarback Walker');
+    const walker = find(s, 0, 'battlefield', 'Hangarback Walker');
+    s = addCounters(s, walker, '+1/+1', -1);
+    // A 0/0 dies to the state-based actions on its own, with no counters to leave behind.
+    s = drain(passBoth(apply(s, { type: 'auto:pass', by: 0 })));
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Thopter')).toHaveLength(0);
+  });
+
+  it('cannot grow on the turn it arrives, and cannot both grow and attack after that', () => {
+    let s = board(1, 4, 'Hangarback Walker');
+    const walker = find(s, 0, 'battlefield', 'Hangarback Walker');
+    // {T} on a creature needs it to have been there since the turn began (CR 302.6), so the turn
+    // it is cast it is a 1/1 and nothing else.
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: walker, abilityIndex: 0 }))
+      .toContain('summoning sickness');
+
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: walker, abilityIndex: 0 });
+    s = drain(passBoth(s));
+    // Grown, and tapped for it: the tension the card is, since a tapped creature cannot attack.
+    expect(s.instances[walker]?.counters['+1/+1']).toBe(2);
+    expect(s.instances[walker]?.tapped).toBe(true);
+  });
+});

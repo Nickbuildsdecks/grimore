@@ -1384,6 +1384,33 @@ const ICY_MANIPULATOR: CardDef = {
   colors: [],
 };
 
+const WALKING_BALLISTA: CardDef = {
+  name: 'Walking Ballista',
+  typeLine: 'Artifact Creature — Construct',
+  manaCost: '{X}{X}',
+  cmc: 0,
+  power: '0',
+  toughness: '0',
+  oracleText: 'Walking Ballista enters the battlefield with X +1/+1 counters on it. '
+    + '{1}: Put a +1/+1 counter on Walking Ballista. '
+    + 'Remove a +1/+1 counter from Walking Ballista: It deals 1 damage to any target.',
+  colors: [],
+};
+
+const HANGARBACK_WALKER: CardDef = {
+  name: 'Hangarback Walker',
+  typeLine: 'Artifact Creature — Construct',
+  manaCost: '{X}{X}',
+  cmc: 0,
+  power: '0',
+  toughness: '0',
+  oracleText: 'Hangarback Walker enters the battlefield with X +1/+1 counters on it. '
+    + 'When Hangarback Walker dies, create a 1/1 colorless Thopter artifact creature token with '
+    + 'flying for each +1/+1 counter on it. '
+    + '{1}, {T}: Put a +1/+1 counter on Hangarback Walker.',
+  colors: [],
+};
+
 const CHALICE_OF_THE_VOID: CardDef = {
   name: 'Chalice of the Void',
   typeLine: 'Artifact',
@@ -2806,13 +2833,29 @@ export const FORGE_ALLIANCE: DeckSpec = {
     { card: BOROS_GUILDGATE, count: 3 },
     { card: SECLUDED_STEPPE, count: 2 },
     { card: ELITE_VANGUARD, count: 2 },
-    { card: MONASTERY_SWIFTSPEAR, count: 3 },
+    { card: MONASTERY_SWIFTSPEAR, count: 2 },
+    // Both copies: a vehicles test crews a Sky Skiff with two of them, and `playout.test.ts`
+    // watches one die for its Spirit.
     { card: DOOMED_TRAVELER, count: 2 },
     { card: LEONIN_SKYHUNTER, count: 2 },
     // A two-drop that wins the fight it is in rather than trading, which is what a board of small
     // creatures is short of — and the first first-striker in the pool.
     { card: YOUTHFUL_KNIGHT, count: 1 },
-    { card: FIREBRAND_ARCHER, count: 2 },
+    { card: FIREBRAND_ARCHER, count: 1 },
+    /*
+      Two colourless {X}{X} artifacts, for a Firebrand Archer and a Monastery Swiftspear.
+
+      This deck's plan is a board of small creatures and a sword for one of them, which makes it
+      the right home for both: a **Walking Ballista** is a creature on any curve, a mana sink on
+      the turns the hand is empty, and — the half no other card here has — removal that can be
+      aimed at an X/1 without spending a card, because the counter is the cost. A **Hangarback
+      Walker** is the same arrival and the opposite end of the trade: it grows instead of shooting,
+      and when it dies it leaves a Thopter for every counter, which is a board of small creatures
+      for the Loxodon Warhammer to pick up. The slots came from the places this deck was deepest:
+      a third Swiftspear and a second Archer, both of which it has plenty of.
+    */
+    { card: WALKING_BALLISTA, count: 1 },
+    { card: HANGARBACK_WALKER, count: 1 },
     { card: AJANIS_PRIDEMATE, count: 2 },
     { card: SERRA_ANGEL, count: 2 },
     // The card this deck was already built for: every small creature it plays is another damage

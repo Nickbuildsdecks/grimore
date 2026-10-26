@@ -668,6 +668,16 @@ function activate(
     }
   }
 
+  if (ability.cost.removeCounter !== undefined) {
+    // The same rule as the life and the loyalty: a cost you cannot pay is not one you may choose
+    // to pay (CR 118.4), so this is refused before anything else is spent.
+    const { counter, amount } = ability.cost.removeCounter;
+    if ((inst.counters[counter] ?? 0) < amount) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        `${ch.name} does not have ${amount === 1 ? 'a' : amount} ${counter} counter${amount === 1 ? '' : 's'} to remove`);
+    }
+  }
+
   const specs = ability.targets ?? [];
   const chosen = action.targets ?? [];
   const check = checkTargets(state, specs, chosen, action.by, inst.id);
@@ -726,6 +736,19 @@ function activate(
   // right moment — and what stops those creatures attacking this turn, which is the price.
   for (const id of crewed) next = withInstance(next, id, { tapped: true });
   if (ability.cost.life !== undefined) next = loseLife(next, action.by, ability.cost.life);
+  /*
+    The counter comes off as the cost is paid, before the ability is on the stack.
+
+    Which is the whole of why a Walking Ballista works: removing its last counter makes it a 0/0,
+    and the state-based actions kill it while its own damage is still waiting to resolve. The
+    damage is dealt anyway — an ability on the stack is independent of its source (CR 608.2) — and
+    that is the card people play, not an edge case. A loyalty cost is paid in the same place for
+    the same reason.
+  */
+  if (ability.cost.removeCounter !== undefined) {
+    next = addCounters(next, inst.id,
+      ability.cost.removeCounter.counter, -ability.cost.removeCounter.amount);
+  }
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
   if (ability.cost.loyalty !== undefined) {
     // Paid as the ability is activated (CR 606.2), so the counters move before it is on the

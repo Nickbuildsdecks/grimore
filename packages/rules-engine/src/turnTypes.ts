@@ -128,6 +128,16 @@ export interface StackObject {
    * changed zones as gone, so a creature exiled and returned is not the creature the removal was
    * aimed at. See `CardInstance.objectSeq`.
    */
+  /**
+   * The counters the permanent this ability is about had **before** the event (CR 608.2h).
+   *
+   * Carried on the object because the board cannot answer it any more: `relocate` wipes a
+   * permanent's counters as it leaves the battlefield, so by the time a death trigger resolves
+   * there is nothing left to count. A Hangarback Walker makes one Thopter per +1/+1 counter it
+   * *had*, which is the only thing in this pool that asks — and the reason this is a counters map
+   * rather than a whole snapshot of the instance.
+   */
+  readonly subjectCounters?: Readonly<Record<string, number>>;
   readonly targetSeqs?: Readonly<Record<string, number>>;
   readonly x?: number;
   /**

@@ -184,6 +184,25 @@ export function relocate(
     return detachAllFrom(next, inst.id);
   }
 
+  /*
+    And a permanent that is not a token, leaving the battlefield, is snapshotted for the same reason.
+
+    The counters are wiped below, which is the rule — a card in a graveyard has none — and that is
+    exactly what a death trigger reading them needs to have seen. A Hangarback Walker makes a
+    Thopter for each counter it *had*, so its last state is kept here for `raise` to read and
+    `settle` clears the map once the triggers are on the stack, the same lifetime a token's has.
+    Last known information, CR 608.2h.
+
+    Only on an automated table, which is what keeps the map transient: `settle` is the thing that
+    empties it and only the engine runs it, so on a tabletop this would be a snapshot of every
+    permanent that ever died with nobody to read it or clear it — the state goes to Redis, and a map
+    that only grows is a payload that only grows. The `entered` list above is gated for the same
+    reason.
+  */
+  if (state.automated && !inst.isToken && inst.zone === 'battlefield' && toZone !== 'battlefield') {
+    next = { ...next, vanished: { ...next.vanished, [inst.id]: inst } };
+  }
+
   const arriving = toZone === 'battlefield' && (inst.zone !== 'battlefield' || inst.zoneSeat !== toSeat);
   /*
     A planeswalker enters with its printed loyalty (CR 306.5b).

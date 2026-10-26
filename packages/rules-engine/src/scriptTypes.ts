@@ -150,6 +150,17 @@ export type TriggerEvent =
       readonly subjectIsCreature?: boolean;
       /** Set by the engine when it raises the event. */
       readonly subjectIsToken?: boolean;
+      /**
+       * Set by the engine: the counters the permanent had **before** it left, by counter name.
+       *
+       * Last known information (CR 608.2h / 603.6e), and the one piece of it a card in this pool
+       * actually needs: a Hangarback Walker has to make a Thopter for each +1/+1 counter it had,
+       * and by the time its own death trigger resolves the card is in a graveyard with no counters
+       * at all — `relocate` wipes them on the way out, which is the rule. Read in the effect as
+       * `EffectContext.subjectCounters`. Nothing wider is snapshotted: when a card needs the power
+       * it had, or the types, this is where that goes.
+       */
+      readonly subjectCounters?: Readonly<Record<string, number>>;
       /** Set by the engine when it raises the event: *which* creature died. See `subject`. */
       readonly subject?: string;
     }
@@ -467,6 +478,22 @@ export interface AbilityCost {
    * activating (CR 302.6 is about {T} abilities and attacking). And **any number** means the count
    * is the engine's to choose, like convoke's: see `crewPlan`.
    */
+  /**
+   * "Remove a +1/+1 counter from this permanent:" — a counter as the cost, not as the effect.
+   *
+   * The fifth cost here that is not mana, and the first paid out of the permanent's own counters.
+   * The difference from an effect that removes one is the difference every cost in this list has:
+   * it is paid as the ability is activated, it cannot be responded to, and an ability whose cost
+   * cannot be paid is never offered — so a Walking Ballista with no counters left shows no damage
+   * ability rather than one that would be refused.
+   *
+   * It is also what makes the last counter work the way the card does. The counter is gone before
+   * the ability is on the stack, so a Ballista that removes its last one is a 0/0 that dies to a
+   * state-based action while its own damage is still waiting to resolve — and the damage is dealt
+   * anyway, because the ability no longer needs its source (CR 608.2). A loyalty cost is the same
+   * shape and already worked this way: see `loyalty`.
+   */
+  readonly removeCounter?: { readonly counter: string; readonly amount: number };
   readonly crew?: number;
 }
 
