@@ -189,6 +189,23 @@ export interface ContinuousEffect {
    */
   readonly cantBeBlockedByWalls?: boolean;
   /**
+   * "Can't be blocked" with nothing after it — the absolute kind of evasion, which this pool had
+   * none of. Read off the attacker by `canBlock`, like `cantBeBlockedByWalls`.
+   */
+  readonly cantBeBlocked?: boolean;
+  /**
+   * **Landwalk**: the land subtypes this creature cannot be blocked while the *defending player*
+   * controls (CR 702.14). "Islandwalk" is `['Island']`.
+   *
+   * A list rather than a flag, and a list of subtypes rather than an enum, because the question is
+   * a parameter: there is one landwalk rule and a dozen land types, which is the same argument
+   * `statics`' subtype scope settled (D57). What makes it different from every other evasion here
+   * is *where* it is read — the attacker says which subtype, and the answer is on the other
+   * player's battlefield at the moment blockers are declared, which is why it cannot be a keyword
+   * and cannot be decided when the attack is declared.
+   */
+  readonly landwalk?: readonly string[];
+  /**
    * "Attacks a player other than you if able" (CR 701.38a) — goad's second half, where *you* is
    * this effect's `controller`.
    *
@@ -353,6 +370,10 @@ export interface Characteristics {
   readonly mustAttack: boolean;
   /** "Can't be blocked by Walls", read from the attacker when a block is offered. */
   readonly cantBeBlockedByWalls: boolean;
+  /** "Can't be blocked" outright, read from the attacker when a block is offered. */
+  readonly cantBeBlocked: boolean;
+  /** Landwalk subtypes, checked against the *defending* player's lands (CR 702.14). */
+  readonly landwalk: readonly string[];
   /** Protection from these colours (CR 702.16). Empty for almost everything. */
   readonly protectionFrom: readonly Color[];
   /**
@@ -368,6 +389,8 @@ export interface Characteristics {
 
 /** Shared empties, so the common case allocates nothing at all. */
 const NO_SEATS: readonly SeatIndex[] = Object.freeze([]);
+/** Shared empty list, so a creature with no landwalk allocates nothing. */
+const NO_SUBTYPES: readonly string[] = Object.freeze([]);
 const NO_COLORS: readonly Color[] = Object.freeze([]);
 
 const numeric = (value: string | undefined): number => {
@@ -579,6 +602,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let cantBlock = false;
   let mustAttack = false;
   let cantBeBlockedByWalls = false;
+  let cantBeBlocked = false;
+  let landwalk: string[] | null = null;
   /*
     Allocated only if something actually sets them, because this is the hottest function in the
     engine: the search calls it for every candidate of every target of every play it plays out. Two
@@ -612,6 +637,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       cantBlock = false;
       mustAttack = false;
       cantBeBlockedByWalls = false;
+      cantBeBlocked = false;
+      landwalk = null;
       goadedBy = null;
       protectionFrom = null;
     }
@@ -634,6 +661,11 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.cantBlock) cantBlock = true;
     if (effect.mustAttack) mustAttack = true;
     if (effect.cantBeBlockedByWalls) cantBeBlockedByWalls = true;
+    if (effect.cantBeBlocked) cantBeBlocked = true;
+    for (const subtype of effect.landwalk ?? []) {
+      landwalk ??= [];
+      if (!landwalk.includes(subtype)) landwalk.push(subtype);
+    }
     if (effect.mustAttackAnotherPlayer) {
       goadedBy ??= [];
       if (!goadedBy.includes(effect.controller)) goadedBy.push(effect.controller);
@@ -675,6 +707,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     // (CR 509.1a is the blocking half of the same idea, and 508.1d says "if able").
     mustAttack: mustAttack && !cantAttack,
     cantBeBlockedByWalls,
+    cantBeBlocked,
+    landwalk: landwalk ?? NO_SUBTYPES,
     goadedBy: goadedBy ?? NO_SEATS,
     protectionFrom: protectionFrom ?? NO_COLORS,
   };

@@ -1743,7 +1743,7 @@ describe('cards that stop and ask while they resolve', () => {
   };
 
   it('Rampant Growth offers only basic lands, and the one chosen enters tapped', () => {
-    let s = ready(1, 'verdant-guard', ['Rampant Growth'], ['Forest', 'Forest']);
+    let s = ready(1, 'delta-bloom', ['Rampant Growth'], ['Forest', 'Forest']);
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
 
     // Still on the stack: it is resolving, not resolved, and both tables should say so.
@@ -1751,35 +1751,36 @@ describe('cards that stop and ask while they resolve', () => {
     expect(s.pendingDecision!.seat).toBe(1);
     expect(s.pendingDecision!.from).toBe('library');
     expect(s.stackOrder.length).toBe(1);
-    // Only basic lands, and nothing else from a 59-card library.
-    expect([...new Set(choices(s))]).toEqual(['Forest', 'Plains']);
+    // Only basic lands, and nothing else from a 59-card library. Delta Bloom's two are Forest and
+    // Island, which is the deck this card belongs to since the Boa took its Verdant Guard slot.
+    expect([...new Set(choices(s))]).toEqual(['Forest', 'Island']);
 
-    s = decide(s, ['Plains']);
+    s = decide(s, ['Island']);
     expect(s.pendingDecision).toBeNull();
-    const plains = find(s, 1, 'battlefield', 'Plains');
-    expect(s.instances[plains]!.tapped).toBe(true);
+    const island = find(s, 1, 'battlefield', 'Island');
+    expect(s.instances[island]!.tapped).toBe(true);
     expect(namesIn(s, 1, 'graveyard')).toContain('Rampant Growth');
   });
 
   it('lets a search fail to find, which is legal and sometimes right (CR 701.19c)', () => {
-    let s = ready(1, 'verdant-guard', ['Rampant Growth'], ['Forest', 'Forest']);
+    let s = ready(1, 'delta-bloom', ['Rampant Growth'], ['Forest', 'Forest']);
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
     expect(s.pendingDecision!.min).toBe(0);
-    const lands = countOf(s, 1, 'battlefield', 'Plains') + countOf(s, 1, 'battlefield', 'Forest');
+    const lands = countOf(s, 1, 'battlefield', 'Island') + countOf(s, 1, 'battlefield', 'Forest');
     s = decide(s, []);
     expect(s.pendingDecision).toBeNull();
-    expect(countOf(s, 1, 'battlefield', 'Plains') + countOf(s, 1, 'battlefield', 'Forest')).toBe(lands);
+    expect(countOf(s, 1, 'battlefield', 'Island') + countOf(s, 1, 'battlefield', 'Forest')).toBe(lands);
     expect(namesIn(s, 1, 'graveyard')).toContain('Rampant Growth');
   });
 
   it('opens the searcher’s own library while they look, and shuffles it when they are done', () => {
-    let s = ready(1, 'verdant-guard', ['Rampant Growth'], ['Forest', 'Forest']);
+    let s = ready(1, 'delta-bloom', ['Rampant Growth'], ['Forest', 'Forest']);
     expect(s.seats[1]!.searching).toBe(false);
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
     // Looking through your own library is exactly what a search is, and the view is keyed on this.
     expect(s.seats[1]!.searching).toBe(true);
     const before = ids(s, 1, 'library').join(',');
-    s = decide(s, ['Plains']);
+    s = decide(s, ['Island']);
     expect(s.seats[1]!.searching).toBe(false);
     // Shuffled, so the order they were just shown is no longer the order they will draw in.
     expect(ids(s, 1, 'library').join(',')).not.toBe(before);
@@ -1935,7 +1936,7 @@ describe('cards that stop and ask while they resolve', () => {
   });
 
   it('stops the game dead until it is answered, and will not take a card it did not offer', () => {
-    let s = ready(1, 'verdant-guard', ['Rampant Growth'], ['Forest', 'Forest']);
+    let s = ready(1, 'delta-bloom', ['Rampant Growth'], ['Forest', 'Forest']);
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Rampant Growth') }));
 
     // Nobody holds priority in the middle of a resolution — including the player resolving it.
@@ -3203,7 +3204,28 @@ describe('exile until this leaves the battlefield', () => {
   });
 
   it('two of them hold two different creatures, and each gives back only its own', () => {
-    let s = white(['Journey to Nowhere', 'Journey to Nowhere'], 4, ['Shivan Dragon', 'Raging Goblin']);
+    /*
+      Two copies out of a deck built here, rather than out of whichever starter deck happens to run
+      two today. Verdant Guard ran a pair when this was written and runs one now — the second paid
+      for a River Boa — and a test that asserts something about *the card* should not be a vote on
+      a deck slot.
+    */
+    const exiles = customDeck({
+      id: 'two-journeys',
+      name: 'Two Journeys',
+      entries: [{ name: 'Journey to Nowhere', count: 4 }, { name: 'Plains', count: 56 }],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 1: 'two-journeys' },
+      deckSpecs: { 'two-journeys': exiles },
+      hands: { 1: ['Journey to Nowhere', 'Journey to Nowhere'] },
+      battlefield: {
+        1: ['Plains', 'Plains', 'Plains', 'Plains'],
+        0: ['Shivan Dragon', 'Raging Goblin'],
+      },
+      turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
     const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
     const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
     s = playAndAim(s, 'Journey to Nowhere', dragon);
@@ -7753,10 +7775,12 @@ describe('a static effect scoped to a creature type: the pool’s first tribal l
     [...characteristicsOf(s, s.instances[id]!).keywords];
 
   it('lifts the Vampires Stromkirk Captain shares a type with, and hands them first strike', () => {
-    let s = lord('ashen-rite', ['Mountain', 'Swamp'], ['Blood Artist', 'Goblin Arsonist'],
+    // A Boggart Brute for the non-Vampire, because the Goblin Arsonist this used to borrow is
+    // Tormented Soul's slot now. Any Goblin does: the claim is about the type line.
+    let s = lord('ashen-rite', ['Mountain', 'Swamp'], ['Blood Artist', 'Boggart Brute'],
       'Stromkirk Captain');
     const artist = find(s, 0, 'battlefield', 'Blood Artist');
-    const goblin = find(s, 0, 'battlefield', 'Goblin Arsonist');
+    const goblin = find(s, 0, 'battlefield', 'Boggart Brute');
     expect([power(s, artist), toughness(s, artist)]).toEqual([0, 1]);
 
     s = passBoth(apply(s, {
@@ -7767,7 +7791,7 @@ describe('a static effect scoped to a creature type: the pool’s first tribal l
     // The Vampire grew and can fight; the Goblin is a Goblin.
     expect([power(s, artist), toughness(s, artist)]).toEqual([1, 2]);
     expect(keywordsOf(s, artist)).toContain('first strike');
-    expect([power(s, goblin), toughness(s, goblin)]).toEqual([1, 1]);
+    expect([power(s, goblin), toughness(s, goblin)]).toEqual([3, 2]);
     expect(keywordsOf(s, goblin)).not.toContain('first strike');
 
     /*
@@ -9445,6 +9469,144 @@ describe('copying an ability on the stack (CR 706.10)', () => {
     s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] }));
     expect(s.instances[corpses[0]!]!.zone).toBe('hand');
     expect(s.instances[corpses[1]!]!.zone).toBe('graveyard');
+  });
+});
+
+describe('evasion: can’t be blocked, and landwalk (CR 702.14)', () => {
+  /*
+    Two families the pool had none of, and they fail in opposite directions.
+
+    "Can't be blocked" is absolute: nothing on the blocker's side answers it, so it is read off the
+    attacker and that is the whole rule. **Landwalk** is the only evasion in this engine whose
+    answer is on the *defending player's* battlefield — the attacker says which land type, and
+    whether it matters is a question about somebody else's board at the moment blockers are
+    declared. The same River Boa is unblockable against a deck with Islands and an ordinary 2/1
+    against a deck without.
+  */
+  const boards = (mine: readonly string[], theirs: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+    battlefield: { 0: ['Swamp', ...mine], 1: [...theirs] },
+    turn: 4, firstSeat: 0,
+  }), 'declare-attackers');
+
+  it('a Tormented Soul cannot be blocked by anything', () => {
+    const s = boards(['Tormented Soul'], ['Island', 'Fog Bank', 'Air Elemental']);
+    const soul = find(s, 0, 'battlefield', 'Tormented Soul');
+    for (const name of ['Fog Bank', 'Air Elemental']) {
+      const blocker = find(s, 1, 'battlefield', name);
+      expect(canBlock(s, blocker, soul, 1)?.reason).toContain("can't be blocked");
+    }
+  });
+
+  it('and cannot block either, which is what the evasion is paid for', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'ashen-rite' },
+      battlefield: { 0: ['Island', 'Air Elemental'], 1: ['Swamp', 'Tormented Soul'] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const soul = find(s, 1, 'battlefield', 'Tormented Soul');
+    const attacker = find(s, 0, 'battlefield', 'Air Elemental');
+    expect(canBlock(s, soul, attacker, 1)?.reason).toContain("can't block");
+  });
+
+  it('a River Boa is unblockable while the other player controls an Island', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
+      battlefield: { 0: ['Forest', 'River Boa'], 1: ['Island', 'Fog Bank'] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const boa = find(s, 0, 'battlefield', 'River Boa');
+    const wall = find(s, 1, 'battlefield', 'Fog Bank');
+    expect(canBlock(s, wall, boa, 1)?.reason).toContain('Island');
+  });
+
+  it('and is an ordinary 2/1 against a player with no Island at all', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      battlefield: { 0: ['Forest', 'River Boa'], 1: ['Mountain', 'Raging Goblin'] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const boa = find(s, 0, 'battlefield', 'River Boa');
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    expect(canBlock(s, goblin, boa, 1)).toBeNull();
+  });
+
+  it('reads the defender’s board, not the attacker’s own Islands', () => {
+    /*
+      The Boa's controller holds the Islands and the defender holds none, so the walk does nothing.
+      This is the half of the rule that a flag on the attacker would get backwards, and it needs a
+      deck with both a Boa and an Island in it — which no starter deck has, so the test says what
+      it needs rather than hunting for a deck that happens to.
+    */
+    const simic = customDeck({
+      id: 'boa-and-islands',
+      name: 'Boa and Islands',
+      entries: [{ name: 'River Boa', count: 4 }, { name: 'Island', count: 56 }],
+    }).deck;
+    const s = advanceTo(arena({
+      decks: { 0: 'boa-and-islands', 1: 'ember-rush' },
+      deckSpecs: { 'boa-and-islands': simic },
+      battlefield: { 0: ['Island', 'Island', 'River Boa'], 1: ['Mountain', 'Raging Goblin'] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const boa = find(s, 0, 'battlefield', 'River Boa');
+    expect(canBlock(s, find(s, 1, 'battlefield', 'Raging Goblin'), boa, 1)).toBeNull();
+  });
+
+  it('and the table refuses a block the engine would not take, in the card’s own words', () => {
+    /*
+      Two attackers, because one unblockable attacker is not a *decision*: with nothing it could
+      legally block, the defender is auto-declared past and never asked — which is the engine
+      being right and the reason this test has a Doomed Dissenter in it. With a real choice to
+      make, naming the wall against the Soul is refused and the refusal says why.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      battlefield: { 0: ['Swamp', 'Tormented Soul', 'Doomed Dissenter'], 1: ['Island', 'Fog Bank'] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    const soul = find(s, 0, 'battlefield', 'Tormented Soul');
+    const dissenter = find(s, 0, 'battlefield', 'Doomed Dissenter');
+    s = apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: soul, defender: 1 }, { attacker: dissenter, defender: 1 }],
+    });
+    // Declaring attackers gives priority inside the declare-attackers step; passing moves on to
+    // blockers, which is where the defender is asked.
+    s = passBoth(s);
+    const wall = find(s, 1, 'battlefield', 'Fog Bank');
+    expect(refusal(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: wall, attacker: soul }],
+    })).toContain("can't be blocked");
+    // And the block it *can* make is taken, which is what makes the refusal above a choice.
+    expect(refusal(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: wall, attacker: dissenter }],
+    })).toBeNull();
+  });
+
+  it('regenerates for {G}, which is the other half of the Boa', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      hands: { 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Forest', 'Forest', 'River Boa'], 1: ['Mountain', 'Mountain', 'Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const boa = find(s, 0, 'battlefield', 'River Boa');
+    s = tapAllLands(s, 0);
+    // The ability resolves before it means anything: a shield on the stack saves nothing.
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: boa, abilityIndex: 0 }));
+    expect(s.instances[boa]!.counters['regeneration']).toBe(1);
+    // Seat 0 passes, so seat 1 holds priority in seat 0's main phase and can answer with the Bolt,
+    // which is when a shield is actually tested.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = tapAllLands(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: boa }],
+    })));
+    // Still there, tapped, and with the damage wiped — which is what regeneration does.
+    expect(s.instances[boa]!.zone).toBe('battlefield');
+    expect(s.instances[boa]!.tapped).toBe(true);
   });
 });
 

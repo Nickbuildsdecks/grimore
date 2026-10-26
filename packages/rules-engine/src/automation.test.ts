@@ -1116,6 +1116,9 @@ describe('redaction still holds with the engine running', () => {
     // unpacked view cannot tell. The size claim is the point of doing it, and it is checked on a
     // board where it actually bites — a library open, which is fifty cards and fifteen printings.
     let s = advanceTo(arena({
+      // Delta Bloom rather than the default deck: Rampant Growth moved out of Verdant Guard when
+      // the River Boa took its slot, and a test about *packing* should not also be a vote on one.
+      decks: { 1: 'delta-bloom' },
       hands: { 1: ['Rampant Growth'] }, battlefield: { 1: ['Forest', 'Forest'] }, firstSeat: 1,
     }), 'precombat-main');
     s = tapAllLands(s, 1);
@@ -1161,6 +1164,9 @@ describe('redaction still holds with the engine running', () => {
     // Searching a library is the one moment a player may read their own, and the moment where a
     // leak would be worst: the whole remaining deck, in order, for the rest of the game.
     let s = advanceTo(arena({
+      // Delta Bloom rather than the default deck: Rampant Growth moved out of Verdant Guard when
+      // the River Boa took its slot, and a test about *packing* should not also be a vote on one.
+      decks: { 1: 'delta-bloom' },
       hands: { 1: ['Rampant Growth'] }, battlefield: { 1: ['Forest', 'Forest'] }, firstSeat: 1,
     }), 'precombat-main');
     s = tapAllLands(s, 1);

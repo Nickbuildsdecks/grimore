@@ -195,6 +195,37 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
   if (attacker.ch.cantBeBlockedByWalls && hasSubtype(blocker.ch.typeLine, 'wall')) {
     return { card: blockerId, reason: `${attacker.ch.name} can't be blocked by Walls` };
   }
+  // "Can't be blocked", with nothing after it. Nothing on the blocker's side can answer it, which
+  // is why it is read here and not compared against anything.
+  if (attacker.ch.cantBeBlocked) {
+    return { card: blockerId, reason: `${attacker.ch.name} can't be blocked` };
+  }
+  /*
+    Landwalk (CR 702.14), and the only evasion in this engine whose answer is on the *defending*
+    player's battlefield.
+
+    Everything else here compares the attacker with the blocker. Islandwalk compares the attacker
+    with the lands of whoever is declaring blocks — so a River Boa is unblockable against the two
+    blue decks and an ordinary 2/1 against the rest, and the same creature changes from one block
+    to the next as lands arrive. Checked at the moment a block is offered, which is also when the
+    rules check it: a player who cracks their last Island after blockers are declared has still
+    blocked.
+  */
+  if (attacker.ch.landwalk.length > 0) {
+    for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      const ch = characteristicsOf(state, inst);
+      if (!ch.isLand) continue;
+      const walked = attacker.ch.landwalk.find((subtype) => hasSubtype(ch.typeLine, subtype));
+      if (walked !== undefined) {
+        return {
+          card: blockerId,
+          reason: `${attacker.ch.name} can't be blocked while you control a ${walked}`,
+        };
+      }
+    }
+  }
   return null;
 }
 

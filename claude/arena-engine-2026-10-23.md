@@ -3781,6 +3781,43 @@ symmetric tax is *still* nearly symmetric. That is the honest read of a hate car
 starter pool rather than a constructed format: the tax is real, both players pay it, and the margin
 is thinner than the deckbuilding argument suggested.
 
+### Evasion the engine never had, and a slot the instrument moved
+
+Flying, reach, menace, protection, and one card that cannot be blocked by Walls — that was all the
+evasion in the pool. Two families were missing, and they are not variations of each other.
+
+**"Can't be blocked"**, full stop, is one flag on the attacker and one line in `canBlock`: nothing
+on the blocker's side answers it. **Landwalk** (CR 702.14) is the only evasion in this engine whose
+answer is somewhere else entirely — every other check compares the attacker with the blocker, and
+islandwalk compares the attacker with the *defending player's lands*. It is a list of subtypes
+rather than a keyword, because a keyword is a fact about a creature and this is a fact about
+somebody else's board at the moment blockers are declared.
+
+**Tormented Soul** ({B} 1/1, can't block and can't be blocked) went into Ashen Rite, and the
+instrument is unusually clean: over 120 duels it was drawn in 78 games, attacked **104 times, and
+not one of those attacks could have been blocked by anything the other player controlled**. The
+card does exactly what it says, every time. It still measures **−10 of 240**, because what it
+replaced — a Goblin Arsonist, in a deck with three Blood Artists — was a death trigger this deck is
+built to care about. Cutting a Doomed Dissenter instead measured three games worse, so the Arsonist
+cut is the better of the two and the card ships at a price that is written down.
+
+**River Boa** ({1}{G} 2/1 islandwalk, {G} to regenerate) went into Verdant Guard, and here the
+instrument moved the slot. Islandwalk turned on in **10 of its 20 attacks** — five of the eleven
+decks run Islands, and the measurement matched the deck list almost exactly. The first cut, a second
+Journey to Nowhere, cost eight games of 240. Cutting the **Rampant Growth** instead came back nine
+games better, so that is the slot it ships in — and the shipped deck was then priced on its own
+terms: 157-83 with the Boa against 148-92 with the Growth put back, **+9 of 240** for the card. Nine
+is half the noise floor, so the honest claim is not "better" but **free**: the Boa pays for itself
+in the slot it is in, and that is all 240 games can say. The reading is about the cut rather than
+the card: a deck with five other answers to one creature can spare neither a sixth nor its ramp
+cheaply, and only the instrument knows which. The Growth is not lost — Delta Bloom runs two, which
+is the deck ramp belongs to, and the six tests that had been pulling it out of Verdant Guard's
+library now pull it out of Delta Bloom's.
+
+One thing the engine already did right, found while writing the tests: an attack by a single
+unblockable creature is **not a decision**, so the defender is never asked to block it. Proving that
+a block *is* refused needs a second attacker to make blocking a real choice.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

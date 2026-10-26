@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and thirty-five, today, across eleven starter decks. A
+cards somebody has scripted — two hundred and thirty-seven, today, across eleven starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -125,6 +125,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Use **Toxic Deluge** | {2}{B} in Hollow Tide, and the only card here whose whole text is a number you choose **while it is resolving**. Cast it, let it resolve, and the table asks "Pay how much life?" with a row of numbers to tap. Every creature on the table gets -X/-X until end of turn for X life — **yours too**, which is the card and the reason the question is worth thinking about. Two things about the numbers on offer. They stop one short of your life total, because a cost that kills you is not a cost you may choose to pay (CR 118.4), and they stop at the biggest toughness on the board, because -9/-9 and -4/-4 kill exactly the same creatures when nothing has five toughness. If that leaves only one number, the table takes it and does not ask. This is **not** an X cost: X is announced as a spell is cast and can be countered knowing how big it is, whereas this is chosen after every response, from the board as it ended up — which is why you hold it up rather than casting it on your own turn. |
 | Use **Twincast** | {2}{U}{U} in Tidal Mind: copy any instant or sorcery on the stack, yours or theirs, and **you may point the copy somewhere else**. Cast it while the spell you want to copy is still waiting — your own Fireball on the turn the game ends, or their removal spell on the way to one of your creatures. The copy appears *above* the original, so it resolves first, and the table then asks "Point the copy somewhere else?" with one button per legal target and **Leave it** for keeping what the original chose. Three things follow from the rules and all three are worth knowing at the table. The copy is **not cast**, so a Guttersnipe or a Young Pyromancer across the table does not fire for it (CR 707.10). The copy is **not a card**: it does nothing on the way out and there is no second card in any graveyard afterwards. And the copy **can be countered** like any other spell, which is the answer the other player still has. A spell with two targets, or with damage divided among them, is copied exactly as it was aimed — the question is only asked when there is a single target to move. |
 | Make your spells cheaper, or theirs dearer | Two permanents change what spells **cost**, which is a thing the table does to cards still in your hand. **Goblin Electromancer** ({U}{R} 2/2 in Arc Tempest): every instant and sorcery *you* cast costs {1} less. **Thalia, Guardian of Thraben** ({1}{W} 2/1 first strike in Skyward Writ): every noncreature spell costs {1} more — yours as well as theirs, which is the card. Three things follow from the rules. Only the **generic** part moves (CR 601.2f): an Electromancer leaves Counterspell at {U}{U} and Lightning Bolt at {R}, and takes Arc Lightning from {2}{R} to {1}{R}. A reduction stops at nought and never eats a coloured symbol or hands mana back. And the two cancel out when both are on the table: a {1}{R} spell with a Thalia and an Electromancer costs exactly {1}{R}. The card's printed cost never changes — the play sheet shows it with **−{1}** or **+{1}** beside it, so what you are paying and what the card says are both on the screen. |
+| Get a creature past a blocker | Four ways, now that the pool has two more. **Flying** (and **reach** to block it) and **menace** have been here since combat was written. **Tormented Soul** ({B} 1/1 in Ashen Rite) **can't be blocked** at all — and can't block either, which is what pays for it. **River Boa** ({1}{G} 2/1 in Verdant Guard) has **islandwalk**: it cannot be blocked while the player it is attacking controls an Island, which is five of the eleven decks and nobody else. Landwalk is the one piece of evasion that is not a fact about the creature — it is a fact about the *other* player's lands at the moment blockers are declared, so the same Boa is unblockable in one combat and an ordinary 2/1 in the next. The table refuses a block it would not take and says why in the card's words. One more thing worth knowing: if the only creature attacking you cannot be blocked, you are not asked to block at all — a question with one answer is not asked. |
 | Play a **Saga** | Two cards are Sagas: The Birth of Meletis in Skyward Writ and The Eldest Reborn in Hollow Tide. A Saga is an enchantment that reads itself out over three turns. It arrives with one lore counter and **chapter I happens immediately** — you do not wait a turn for it — and it gets another counter at the start of each of your own main phases, never on anybody else's turn. Each chapter goes on the stack like any other trigger, so an opponent can answer the chapter even though they cannot stop the counter. Once the last chapter has resolved the Saga is sacrificed and goes to your graveyard; the card shows **lore** counters so you can see which chapter is next. Nothing can be killed in response to a Saga except the Saga: a creature removal spell does not touch it, and in this pool only three cards destroy an enchantment. |
 | **Foretell** a card | Two cards have it, in Tidal Mind and in Arc Tempest: Behold the Multiverse and Saw It Coming. On your own turn, tap the card in hand → **Foretell** and pay {2}; the card goes into exile **face down**, and nobody else can see what it is — only that there is a card there. From your next turn onwards it is a play again, out of exile, for the smaller cost printed on it (**{1}{U}** and **{U}{U}**). You cannot cast it on the turn you foretold it. The point is that it splits a four-mana spell across two turns, so you can hold up a counterspell without holding up the mana — which is the hardest thing in this pool to do and the one thing the computer genuinely cannot. Foretelling cannot be answered: no stack, nothing to respond to. |
 | Work out why your creature is bigger than its card | Three creatures are **lords**: they change the other creatures of their own type. Stromkirk Captain in Ashen Rite gives other **Vampires** +1/+1 and first strike, Knight Exemplar in Skyward Writ gives other **Knights** +1/+1 and indestructible, and Imperious Perfect in Rot Harvest gives other **Elves** +1/+1. None of them pumps itself — "other" is printed on all three. The board always shows the current size, and it changes the instant the lord arrives or leaves, with nothing to click: a Knight with three damage on it that was surviving because of the Exemplar dies the moment the Exemplar does. |
@@ -441,7 +442,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and thirty-five scripted cards, which now includes a wrath, a
+The decks share a pool of two hundred and thirty-seven scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -614,7 +615,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 73 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-58 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
-node scripts/e2e-solo.mjs       # one browser, against the computer    — 22 checks
+node scripts/e2e-solo.mjs       # one browser, against the computer    — 23 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 24 checks
 ```
 
@@ -671,7 +672,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (820 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (827 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (209 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
@@ -683,7 +684,7 @@ decks they pasted in).
 
 - **A list of your own plays, but only the pool is automated.** Paste your decklist in the lobby and
   the table deals it (see *Play with your own list*). Every name the engine's pool has — the two
-  hundred and thirty-five cards in the eleven starter decks, commanders included — becomes the real
+  hundred and thirty-seven cards in the eleven starter decks, commanders included — becomes the real
   card and is fully automated. Every name it does not becomes **cardboard**: a card with a name and
   nothing else, which the tabletop plays by hand with **Move by hand** for whatever it says in
   prose, and which Arena mode refuses by name rather than dealing a game with a card nobody can do
@@ -691,7 +692,7 @@ decks they pasted in).
   oracle text — which means a populated `cards` table, which means a machine that can reach
   Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
   exists, the card data does not.
-- **The engine knows two hundred and thirty-five cards.** Everything in the eleven starter decks. It
+- **The engine knows two hundred and thirty-seven cards.** Everything in the eleven starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent
   among its targets (CR 601.2d), a number chosen *as a spell resolves* rather than as it is cast

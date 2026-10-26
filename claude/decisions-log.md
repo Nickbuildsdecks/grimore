@@ -6738,3 +6738,51 @@ engine that asks it, the component that draws it, and the driver that answers it
 are tested by the unit suites; the third is tested by a pod that gets stuck forty turns in, and only
 sometimes.
 
+
+## D153 — Evasion that is not a keyword, and the one that reads the other player's board
+
+**Decision: two more blocking restrictions, both read off the attacker, one of them answered by the
+defending player's lands.**
+
+The pool's evasion was flying and reach, menace, protection, and "can't be blocked by Walls". Two
+families were missing, and they are not variations of each other:
+
+- **"Can't be blocked"**, full stop. Nothing on the blocker's side answers it, so it is one flag on
+  the attacker and one line in `canBlock`. Tormented Soul ({B} 1/1) is the version that pays for
+  itself: it cannot block either.
+- **Landwalk** (CR 702.14), which is the only evasion in this engine whose answer is **somewhere
+  else**. Every other check compares the attacker with the blocker; islandwalk compares the
+  attacker with the *defending player's lands*. The same River Boa is unblockable against the five
+  decks with Islands and an ordinary {1}{G} 2/1 against the rest, and it changes between one combat
+  and the next as lands arrive.
+
+**A list of subtypes rather than a keyword or an enum.** Landwalk is one rule and a dozen land
+types, which is the shape `statics`' subtype scope already settled (D57): "islandwalk" is
+`['Island']`, and the next card that wants swampwalk is a word, not a code change. It cannot be a
+`Keyword` for a sharper reason than taste — a keyword is a fact about the creature, and this one is
+a fact about somebody else's board at the moment blockers are declared.
+
+**Checked when the block is offered, which is when the rules check it** (CR 509.1b). A player who
+plays their first Island after blockers are declared has still blocked, and a player who cracks
+their last one has still been walked past.
+
+**Both are declared the way the Wall clause already was** — a static scoped to the card itself — so
+no new mechanism was added to the script API, and `canBlock` explains the refusal in the card's own
+words: "River Boa can't be blocked while you control an Island".
+
+**Both are priced, and one of them moved a slot.** Tormented Soul costs the deck it is in **10
+games of 240** against the Goblin Arsonist it replaced (a death trigger in a deck with three Blood
+Artists), and the alternative cut measured three games worse still, so the card ships at a price
+that is written down rather than at no price. River Boa's first cut — a second Journey to Nowhere —
+cost eight games; cutting the **Rampant Growth** instead came back nine better, and the shipped deck
+then priced at **157-83 with the Boa against 148-92 without**, +9 of 240. Nine is half this
+instrument's noise floor (D86: 18 games in 240), so the claim is **free**, not better. That is the
+rule this log keeps re-learning: measure the cut as well as the card, and do not promote a number
+the instrument cannot resolve.
+
+**One thing the engine does that is worth knowing**: an attack by one unblockable creature is not a
+decision, so the defender is never asked to block it — the table auto-declares past a choice with
+one possible answer, the same rule that skips a one-word question. The test that proves the refusal
+needs a *second* attacker to make blocking a real choice, which is the engine being right rather
+than the test being awkward.
+

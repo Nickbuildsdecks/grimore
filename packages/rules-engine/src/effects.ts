@@ -899,6 +899,10 @@ export interface PumpOptions {
   readonly mustAttack?: boolean;
   /** See `ContinuousEffect.cantBeBlockedByWalls`. */
   readonly cantBeBlockedByWalls?: boolean;
+  /** See `ContinuousEffect.cantBeBlocked`. */
+  readonly cantBeBlocked?: boolean;
+  /** See `ContinuousEffect.landwalk`: the land subtypes, e.g. `['Island']` for islandwalk. */
+  readonly landwalk?: readonly string[];
   /** See `ContinuousEffect.mustAttackAnotherPlayer` — goad's second half (CR 701.38a). */
   readonly mustAttackAnotherPlayer?: boolean;
   /** See `ContinuousEffect.protectionFrom` — protection from a colour (CR 702.16). */
@@ -946,6 +950,8 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
     ...(opts.mustAttack ? { mustAttack: true } : {}),
     ...(opts.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
+    ...(opts.cantBeBlocked ? { cantBeBlocked: true } : {}),
+    ...(opts.landwalk === undefined ? {} : { landwalk: [...opts.landwalk] }),
     ...(opts.mustAttackAnotherPlayer ? { mustAttackAnotherPlayer: true } : {}),
     ...(opts.protectionFrom ? { protectionFrom: opts.protectionFrom } : {}),
     ...(opts.setPower === undefined ? {} : { setPower: opts.setPower }),

@@ -4377,6 +4377,39 @@ const STRIONIC_RESONATOR: CardScript = {
 };
 
 /*
+  Evasion the pool never had, in both of its printed shapes.
+
+  Until now a creature got past a blocker by flying, by menace, by protection or by being
+  unblockable-by-Walls. Two whole families were missing and both are everywhere in real Magic:
+
+  - **"Can't be blocked"**, full stop, which nothing on the blocker's side can answer. Tormented
+    Soul is the cleanest version printed — a {B} 1/1 that cannot block either, so the evasion is
+    paid for — and in Ashen Rite it is also a body to feed three Blood Artists.
+  - **Landwalk** (CR 702.14), which is the only evasion in this engine whose answer lives on the
+    *defending player's* battlefield. River Boa is islandwalk and regeneration on a {1}{G} 2/1:
+    unblockable against the decks with Islands, an ordinary two-drop against the rest, and the same
+    creature changes from one combat to the next as lands arrive.
+
+  Both are declared the way "can't be blocked by Walls" already was — a static scoped to the card
+  itself — so `canBlock` reads them off the attacker and the table explains the refusal in the
+  card's own words.
+*/
+const TORMENTED_SOUL: CardScript = {
+  name: 'Tormented Soul',
+  statics: [{ scope: 'self', effect: { cantBlock: true, cantBeBlocked: true } }],
+};
+
+const RIVER_BOA: CardScript = {
+  name: 'River Boa',
+  statics: [{ scope: 'self', effect: { landwalk: ['Island'] } }],
+  abilities: [{
+    cost: { mana: '{G}' },
+    description: '{G}: Regenerate River Boa.',
+    effect: (c) => regenerate(c.state, c.source),
+  }],
+};
+
+/*
   The cost family: two permanents that change what other spells cost, in both directions.
 
   This is one of the most common static effects in Magic and the engine had no way to say it. A
@@ -4835,7 +4868,7 @@ const ALL: readonly CardScript[] = [
   AJANI_CALLER_OF_THE_PRIDE, NISSA_VOICE_OF_ZENDIKAR,
   EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM, CHALICE_OF_THE_VOID,
   WALKING_BALLISTA, HANGARBACK_WALKER, TOXIC_DELUGE, TWINCAST,
-  GOBLIN_ELECTROMANCER, THALIA_GUARDIAN_OF_THRABEN,
+  GOBLIN_ELECTROMANCER, THALIA_GUARDIAN_OF_THRABEN, TORMENTED_SOUL, RIVER_BOA,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

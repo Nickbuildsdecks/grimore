@@ -1411,6 +1411,28 @@ const HANGARBACK_WALKER: CardDef = {
   colors: [],
 };
 
+const TORMENTED_SOUL: CardDef = {
+  name: 'Tormented Soul',
+  typeLine: 'Creature — Human Warrior',
+  manaCost: '{B}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: "Tormented Soul can't block and can't be blocked.",
+  colors: ['B'],
+};
+
+const RIVER_BOA: CardDef = {
+  name: 'River Boa',
+  typeLine: 'Creature — Snake',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'Islandwalk\n{G}: Regenerate River Boa.',
+  colors: ['G'],
+};
+
 const GOBLIN_ELECTROMANCER: CardDef = {
   name: 'Goblin Electromancer',
   typeLine: 'Creature — Goblin Wizard',
@@ -2254,7 +2276,6 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: BIRDS_OF_PARADISE, count: 2 },
     // Two rather than three: the third was the slot Secure the Wastes came back into, and a deck
     // with four other mana sources on one and two does not need a third copy of the ramp.
-    { card: RAMPANT_GROWTH, count: 1 },
     { card: GARRUK_WILDSPEAKER, count: 1 },
     { card: SOUL_WARDEN, count: 1 },
     /*
@@ -2307,6 +2328,27 @@ export const VERDANT_GUARD: DeckSpec = {
     // answer to a creature it cannot block rather than a second Pacifism.
     { card: BANISHER_PRIEST, count: 1 },
     { card: JOURNEY_TO_NOWHERE, count: 2 },
+    /*
+      River Boa, for the Rampant Growth.
+
+      The pool's first **landwalk** card (CR 702.14), and the only evasion here whose answer is on
+      the other player's battlefield: islandwalk makes it unblockable against the five decks with
+      Islands in them and an ordinary {1}{G} 2/1 against the rest. The regeneration is the other
+      half and the reason it is a two-drop worth drawing late — {G} answers a blocker, a burn spell
+      or a sweeper, and this deck is the one with spare green mana in the late turns.
+
+      **Which slot it took was measured twice.** The second Journey to Nowhere paid for it first,
+      and that cost eight games of 240; the Rampant Growth paid for it instead and the slot came
+      back +1 — free, and nine games better than the other arrangement. The reading is about the
+      *cut* rather than the card: a deck with five other answers to one creature can spare neither
+      a sixth nor its ramp cheaply, and the instrument says which. The Growth is not lost from the
+      pool — Delta Bloom runs two, which is the deck ramp belongs to.
+
+      A noncreature slot either way, because every creature slot here is load-bearing somewhere
+      else: the Grizzly Bears, the Centaur Courser and the Elvish Visionary are the fixtures two
+      dozen tests build their boards out of (see the note above the Bears).
+    */
+    { card: RIVER_BOA, count: 1 },
     // A Plains and a Pacifism paid for these. Cloudshift is one mana that saves a creature from
     // removal, draws a card off the Visionary, and re-aims a Banisher Priest at something newer —
     // three cards' worth of work from one line of script, because the return is an arrival like
@@ -3051,7 +3093,16 @@ export const ASHEN_RITE: DeckSpec = {
     { card: FORGOTTEN_CAVE, count: 2 },
     // Creatures that want to die: a token on the way out, a drain on the way out, or a body that
     // was only ever fuel.
-    { card: GOBLIN_ARSONIST, count: 1 },
+    /*
+      Tormented Soul, for the Goblin Arsonist.
+
+      A {B} 1/1 that **can't be blocked** — the pool's first creature with evasion that nothing on
+      the other side can answer — and that can't block either, which is what it is paid for. In
+      this deck it is both halves of a one-drop: a clock that never stops ticking while three Blood
+      Artists and two Zulaport Cutthroats are on the table, and a body to feed to them when it is
+      time. The Arsonist's own death trigger is not lost from the pool: Ember Rush runs two.
+    */
+    { card: TORMENTED_SOUL, count: 1 },
     { card: DOOMED_DISSENTER, count: 2 },
     // A body one blocker cannot stop, in the deck that is happy either way: it gets through, or it
     // eats two creatures and feeds the drains on the way out.
