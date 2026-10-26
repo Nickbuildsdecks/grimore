@@ -6254,3 +6254,68 @@ the card is in a Simic deck for.
 **And the deck table was not re-run.** Kiora's Follower is in one deck of eleven, the field has not
 changed, and the paired arms above are the measurement — an eleven-by-eleven refresh would move
 every row by the usual point or two of its own noise and say nothing this does not.
+
+## D144 — The spell the trigger is about, {X}{X}, and a card measured at nothing
+
+**Decision: a `spell-cast` event carries the spell that was cast, a cost may contain two {X}
+symbols, and Chalice of the Void is scripted and shipped in Tidal Mind — at −4 games of 240, with
+the reason it is worth nothing to the bot written down rather than tuned away.**
+
+Three small engine gaps, one card, and one measurement that says more about the pilot than the card.
+
+**The event.** A `spell-cast` trigger has been in the engine since the first red deck, and it said
+what *kind* of spell was cast — creature, noncreature, instant-or-sorcery — which is everything
+prowess, Talrand and Guttersnipe need. It did not say *which* spell, so no card could read a
+spell's mana value or counter it. It carries the object now, and that object reaches the ability as
+`EffectContext.answering` — the channel ward already used for the spell that targeted its creature.
+One field, two callers, no new concept.
+
+**The clause.** The intervening-if condition (CR 603.4) is asked twice, and the second ask always
+had `answering` while the first did not. That asymmetry is invisible until a condition needs it:
+without `answering` in the first ask, Chalice's trigger would go on the stack for *every* spell
+anybody cast and then vanish on resolution — so an opponent casting a two-mana spell into a Chalice
+set to one would see a trigger they could respond to for a spell that was never going to be
+countered. Both asks now get the same context, which is the only way "asked twice" means anything.
+
+**The cost.** `{X}{X}` is one chosen number paid twice (CR 107.3b), and `ManaCost` had a boolean.
+It is a count now, written only when it is more than one so every cost parsed before this field
+existed is deep-equal to what it was. Two readers multiply by it, and the whole of `maxX`,
+`canAfford` and the X prompt follow for free: with three Islands the table offers X=1 and refuses
+X=2, which is a test. It also unlocks the rest of a real family — Walking Ballista and Hangarback
+Walker are both `{X}{X}` — without a line of card-specific code.
+
+**The card.** Chalice enters with X charge counters, counters any spell whose mana value equals
+that number, and counters its controller's spells too. Tidal Mind is its home by arithmetic: that
+deck casts four one-mana spells, and the field it is measured against casts twenty-two in Ember
+Rush, fifteen in Verdant Guard and thirteen each in Forge Alliance and Arc Tempest. Mana value is
+read **on the stack**, which is the one place {X} is not nought (CR 202.3b), so an Endless One cast
+for X=1 is caught by a Chalice on one.
+
+**And the bot's X**, which is the first X in this engine where bigger is worse. Every other X spell
+is cast for as much as the mana allows and the search sees what that buys; a Chalice for four is a
+blank. The number is chosen instead from what the opponents have **shown** — the mana values of
+every nonland card in their graveyards and on their battlefields, commonest first, ties to the
+smaller number, one when they have shown nothing. Public zones only, which is the line D110 drew:
+this is not the bot reading a hand.
+
+**The measurement, and the finding in it.** The slot is −4 of 240 paired games, inside the
+eighteen-game floor. The interesting number is not that one:
+
+| | |
+| --- | --- |
+| games the Chalice reached hand | 25 of 120 |
+| of those, games it was cast in | 21 |
+| earliest turn it was ever cast | **14** |
+| games moved v Ember Rush, Verdant Guard, Forge Alliance | **0, 0, 0** |
+
+It is cast on turn fourteen because **that is when one copy of a sixty-card deck arrives**, not
+because the bot is holding it: a rule that cast it before the search saw anything else — the
+land-drop shape, justified the same way — was written, measured and reverted, because it moved the
+turn it was cast by nothing at all (21 casts to 24, the same turns, 35-85 to 34-86). The card that
+answers the first three turns of a game cannot answer them from the seventh.
+
+So it ships as what it is: correct, tested nine ways, worth nothing to this bot and worth a great
+deal to a person — who casts it on turn two, and who can run four copies of it in a pasted list.
+That is the same conclusion D143 reached about Kiora's Follower by a different road, and it is
+becoming the honest shape of this pool: the cards this bot cannot use are the cards a person gets
+the most out of.

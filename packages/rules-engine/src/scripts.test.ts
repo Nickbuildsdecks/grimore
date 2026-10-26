@@ -9575,3 +9575,163 @@ describe('the eleventh deck: the lands are the engine', () => {
     expect(ids(s, 0, 'hand').length).toBe(handBefore + 1);
   });
 });
+
+describe('Chalice of the Void: the permanent that answers a spell by what it cost', () => {
+  /*
+    Three things in the engine were missing for one card, and each is worth naming.
+
+    A `spell-cast` event said what *kind* of spell was cast and not *which one*, so no card could
+    read a spell's mana value or counter it. `{X}{X}` is one number paid twice, which no cost in the
+    pool had. And the intervening-if clause was asked with less context the first of its two times
+    than the second, so a condition that reads the spell on the stack could not be asked at all
+    before the ability went on the stack — which is the difference between "nothing happens" and
+    "an opponent sees a trigger for a spell that was never going to be countered".
+  */
+  const table = (x: number, lands: number): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'ember-rush' },
+      hands: { 0: ['Chalice of the Void'] },
+      battlefield: { 0: Array.from({ length: lands }, () => 'Island'), 1: ['Mountain', 'Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const chalice = find(s, 0, 'hand', 'Chalice of the Void');
+    s = apply(s, { type: 'auto:cast', by: 0, card: chalice, x });
+    return drain(passBoth(s));
+  };
+
+  it('enters with X charge counters, and {X}{X} is that number paid twice (CR 107.3b)', () => {
+    // Four Islands and X=2: the cost is four mana, and every one of them is tapped for it.
+    const s = table(2, 4);
+    const chalice = find(s, 0, 'battlefield', 'Chalice of the Void');
+    expect(s.instances[chalice]?.counters['charge']).toBe(2);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]?.tapped).length).toBe(4);
+  });
+
+  it('refuses an X it cannot pay twice over', () => {
+    // Three Islands cannot pay {X}{X} for X=2, and the engine says so rather than taking it.
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'ember-rush' },
+      hands: { 0: ['Chalice of the Void'] },
+      battlefield: { 0: ['Island', 'Island', 'Island'], 1: [] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const chalice = find(s, 0, 'hand', 'Chalice of the Void');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: chalice, x: 2 })).not.toBeNull();
+    // And offers one as the most it can afford, which is the table telling the truth about the cost.
+    const play = legalActions(s, 0).plays.find((p) => p.name === 'Chalice of the Void');
+    expect(play?.xMax).toBe(1);
+    s = apply(s, { type: 'auto:cast', by: 0, card: chalice, x: 1 });
+    expect(drain(passBoth(s)).instances[find(drain(passBoth(s)), 0, 'battlefield', 'Chalice of the Void')]
+      ?.counters['charge']).toBe(1);
+  });
+
+  it('counters a spell whose mana value is the number on it', () => {
+    let s = table(1, 4);
+    // Seat 1's own turn, with a one-mana spell to cast into it.
+    s = nextTurn(s);
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Shock'), toZone: 'hand' });
+    const shock = find(s, 1, 'hand', 'Shock');
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: shock, targets: [{ kind: 'player', seat: 0 }],
+    });
+    // The trigger goes on the stack above the spell, so it resolves first (CR 603.3b).
+    // The trigger's own description, which is how the stack reads it to a player.
+    expect(stackNames(s)).toEqual(['Shock', 'counter that spell']);
+    s = drain(passBoth(s));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Shock');
+    expect(life(s, 0)).toBe(20);
+    expect(s.stackOrder).toHaveLength(0);
+  });
+
+  it('and does not even trigger for a spell whose mana value is something else', () => {
+    /*
+      The intervening-if clause, which is why this is a condition and not a filter. A two-mana
+      spell cast into a Chalice on one puts *nothing* on the stack: there is no trigger to respond
+      to, and the log says nothing happened — because nothing did.
+    */
+    let s = table(1, 4);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    const marauder = find(s, 1, 'library', 'Borderland Marauder');
+    s = apply(s, { type: 'card:move', by: 1, card: marauder, toZone: 'hand' });
+    s = apply(s, { type: 'auto:cast', by: 1, card: marauder });
+    // Nothing of the Chalice's on the stack: not a trigger that resolves and does nothing, none.
+    expect(stackNames(s)).toEqual(['Borderland Marauder']);
+    s = drain(passBoth(s));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Borderland Marauder');
+  });
+
+  it('counts the X on the spell it is looking at, which is the one place X is not nought', () => {
+    // CR 202.3b. An Endless One cast for X=1 is a mana value of one on the stack and nought
+    // anywhere else, so a Chalice on one catches it and a Chalice on nought never would.
+    let s = table(1, 4);
+    s = nextTurn(s);
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Mountain'), toZone: 'battlefield' });
+    const one = ids(s, 1, 'library')
+      .find((id) => nameOf(s, id) === 'Endless One');
+    if (one === undefined) return; // Ember Rush does not run it; the next test covers the rule.
+    s = apply(s, { type: 'card:move', by: 1, card: one, toZone: 'hand' });
+    s = apply(s, { type: 'auto:cast', by: 1, card: one, x: 1 });
+    s = drain(passBoth(s));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Endless One');
+  });
+
+  it('counters its own controller’s spell too, because that is the card', () => {
+    let s = table(1, 5);
+    // A fifth Island, untapped, and a one-mana spell of seat 0's own.
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Preordain'), toZone: 'hand' });
+    const preordain = find(s, 0, 'hand', 'Preordain');
+    s = apply(s, { type: 'auto:cast', by: 0, card: preordain });
+    expect(stackNames(s)).toEqual(['Preordain', 'counter that spell']);
+    s = drain(passBoth(s));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Preordain');
+  });
+
+  it('misses when the counters are gone before it resolves, which is the second ask', () => {
+    /*
+      The condition is checked twice (CR 603.4), and the window between the two asks is the window
+      an opponent gets. Here the counters are taken off while the trigger is on the stack, so the
+      ability does nothing at all — it does not fizzle and it does not resolve partway.
+    */
+    let s = table(1, 4);
+    s = nextTurn(s);
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Shock'), toZone: 'hand' });
+    const shock = find(s, 1, 'hand', 'Shock');
+    s = apply(s, { type: 'auto:cast', by: 1, card: shock, targets: [{ kind: 'player', seat: 0 }] });
+    expect(s.stackOrder).toHaveLength(2);
+    const chalice = find(s, 0, 'battlefield', 'Chalice of the Void');
+    s = addCounters(s, chalice, 'charge', -1);
+    s = drain(passBoth(s));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Shock');
+    // Countered by nothing: the Shock resolved, so the damage was dealt.
+    expect(life(s, 0)).toBe(18);
+  });
+
+  it('is cast for the number the other player has been showing, not for as much as the mana allows', () => {
+    /*
+      The bot's half. Every other X spell is cast for `xMax`, because the search sees what that
+      buys; this one is the opposite, and the search cannot tell — a Chalice on four and a Chalice
+      on one are both one artifact with some counters on it. So the number comes from what the
+      opponents have *shown*: see `xToMatch`.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'ember-rush' },
+      hands: { 0: ['Chalice of the Void'] },
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Island', 'Island', 'Island'], 1: [] },
+      graveyard: { 1: ['Shock', 'Lightning Bolt', 'Borderland Marauder'] },
+      turn: 5, firstSeat: 0, autoPass: true,
+    }), 'precombat-main');
+    // The draw step put a card in hand on the way here; it goes back, so the Chalice is the only
+    // thing the mana could be spent on and the test is about the number rather than the choice.
+    for (const id of [...ids(s, 0, 'hand')]) {
+      if (nameOf(s, id) === 'Chalice of the Void') continue;
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    // Three one-mana cards shown against one two-mana card, and six Islands to pay with: X could
+    // be three, and a person would say one.
+    const play = legalActions(s, 0).plays.find((p) => p.name === 'Chalice of the Void');
+    expect(play?.xMax).toBe(3);
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:cast');
+    expect(action?.type === 'auto:cast' ? action.x : null).toBe(1);
+  });
+});

@@ -3528,6 +3528,37 @@ hold mana. That is a reason to leave it in the list rather than cut it — a per
 for the Counterspell they are holding — and the deck stays at one copy, since two is four games
 worse and four games is noise.
 
+### The spell a trigger is about, a cost with two X's, and a card the bot cannot use
+
+A `spell-cast` trigger has been here since the first red deck and it could say what *kind* of spell
+was cast, never which one — so nothing could read a spell's mana value or counter it. It carries
+the object now, reaching the ability as `answering`, the channel ward already used. The
+intervening-if clause got the same field: it is asked twice (CR 603.4) and the first ask had less
+context than the second, which is invisible until a condition needs it. Without it, Chalice of the
+Void would put a trigger on the stack for every spell anybody cast and then take it off again —
+an opponent responding to a trigger for a spell that was never going to be countered.
+
+And `{X}{X}`, which is one number paid twice (CR 107.3b). `ManaCost` had a boolean; it is a count
+now, written only when it is more than one so every cost parsed before reads identically. With
+three Islands the table offers X=1 and refuses X=2. Walking Ballista and Hangarback Walker are the
+same shape and now need no new code.
+
+**Chalice of the Void** enters with X charge counters and counters any spell — including its
+controller's — whose mana value equals that number, read on the stack, which is the one place {X} is
+not nought (CR 202.3b). It is in Tidal Mind by arithmetic: four one-mana spells of its own against
+twenty-two in Ember Rush. The bot's X is the first in this engine where bigger is worse, so it is
+chosen from what the opponents have **shown** — the mana values in their graveyards and on their
+battlefields, commonest first, one when they have shown nothing. Public zones only.
+
+**And then the measurement said the card does nothing, for a reason worth keeping.** Over 120 paired
+games it reached hand in 25, was cast in 21 of those, and was *never cast before turn fourteen* —
+because that is when one copy of a sixty-card deck arrives. Nought games moved against the three
+decks it is in the deck for. A rule that cast it before the search saw anything else, written in
+the land drop's shape, moved the turn by nothing and was reverted. The slot is −4 of 240, inside
+the floor, and it ships: correct, tested nine ways, worth nothing to this bot and a great deal to a
+person who casts it on turn two — or who runs four copies of it in a list of their own. Which is
+D143's conclusion about Kiora's Follower reached by a second road.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -3549,8 +3580,10 @@ worse and four games is noise.
    answered: a quantity **divided among targets** is announced with the spell and checked as a sum
    (`divided` on a target spec, Arc Lightning), which covers the shape printed cards actually use —
    damage or counters split among one, two or three things. What is still missing is a number chosen
-   with nothing to divide it between: "as this enters, choose a number" (a Chalice of the Void) or a
-   cost paid in an amount the player picks mid-resolution. That wants a range on a decision rather
+   with nothing to divide it between: a cost paid in an amount the player picks mid-resolution.
+   (The Chalice of the Void this list used to name as the example turned out not to need it: its
+   number is the X in its cost, which is chosen at cast time and was already in the engine — see
+   *The spell a trigger is about* above.) That wants a range on a decision rather
    than a budget on a target spec, and nothing in the pool asks for one yet.
 2. Loading a real Grimore deck into an automated table. **Half answered, and the other half still
    blocked.** A player can now paste a list and play it: names the engine's pool has become the real

@@ -28,7 +28,7 @@ import {
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
-  becomeCopyOf, wardAsks, staticEffect,
+  becomeCopyOf, wardAsks, staticEffect, manaValueOnStack,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type { CardScript, CardsDecisionSpec, TargetSpec, TriggerDef } from './scriptTypes.js';
@@ -4347,6 +4347,60 @@ const TATYOVA: CardScript = {
   ],
 };
 
+/**
+ * The permanent that answers a spell by what it cost (CR 603.4, CR 202.3b).
+ *
+ * Two things in the engine were missing for this one card and both are small. A `spell-cast` event
+ * used to say what *kind* of spell was cast — creature, noncreature, instant-or-sorcery — which is
+ * everything prowess and Talrand need and nothing this needs: it has to read the spell's mana
+ * value and then counter **that** spell. So the event carries the object now, and it reaches here
+ * as `c.answering`, the same channel a ward uses for the spell that targeted its creature.
+ *
+ * The condition is the second half, and it is an **intervening-if clause** rather than a filter on
+ * the event. The difference is visible at the table: a trigger with a false condition never goes
+ * on the stack at all, so an opponent casting a two-mana spell into a Chalice set to one sees
+ * nothing happen, instead of seeing a trigger they could respond to for a spell that was never
+ * going to be countered. It is asked twice, once before the ability is put on the stack and again
+ * as it resolves, so removing the counters in between makes the Chalice miss — which is the rule.
+ *
+ * `{X}{X}` is the cost, which is one number paid twice, and the counters are X rather than the
+ * mana value: a Chalice cast for two costs four mana and stops Divinations, not Air Elementals.
+ * See `ManaCost.xCount` for the parsing and `manaValueOnStack` for the comparison.
+ *
+ * It counters its controller's spells too. That is the card, and it is the whole reason it lives in
+ * Tidal Mind rather than anywhere else: the deck has four one-mana spells, and the field it is
+ * measured against has twenty-two in Ember Rush alone.
+ *
+ * **What it is worth in this bot's hands is nearly nothing, and the reason is the deck rather than
+ * the search.** Over 120 paired games the Chalice reached hand in 25 and was cast in 21 of those,
+ * every time on turn fourteen or later — which is simply when one copy of a sixty-card deck
+ * arrives. By then the one-drops it was going to answer have been cast, and the per-opponent split
+ * says so: nought games moved against Ember Rush, Verdant Guard or Forge Alliance, the three decks
+ * it is in the deck for. The slot measures −4 of 240, inside the noise floor. A rule that cast it
+ * before the search saw anything else — the land-drop shape — was tried and reverted: it moved the
+ * turn it was cast by nothing at all, because the bot was never the thing making it late. In a
+ * person's hands, or in a pasted list that runs four copies, it is the card it is printed as.
+ */
+const CHALICE_OF_THE_VOID: CardScript = {
+  name: 'Chalice of the Void',
+  entersWith: { counter: 'charge', amount: 'x' },
+  // The one card in the pool where a bigger X is a worse card: see `xIsANumberToMatch`.
+  xIsANumberToMatch: true,
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'any', spell: 'any' },
+      description: 'counter that spell',
+      condition: (c) => {
+        const spell = c.answering;
+        if (spell === undefined || c.state.stackObjects[spell] === undefined) return false;
+        const charges = c.state.instances[c.source]?.counters['charge'] ?? 0;
+        return manaValueOnStack(c.state, spell) === charges;
+      },
+      effect: (c) => (c.answering === undefined ? c.state : counterSpell(c.state, c.answering)),
+    },
+  ],
+};
+
 const KIORAS_FOLLOWER: CardScript = {
   name: "Kiora's Follower",
   abilities: [
@@ -4486,7 +4540,7 @@ const ALL: readonly CardScript[] = [
   ARC_LIGHTNING,
   STRIONIC_RESONATOR,
   AJANI_CALLER_OF_THE_PRIDE, NISSA_VOICE_OF_ZENDIKAR,
-  EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM,
+  EXPLORE, TATYOVA, KIORAS_FOLLOWER, PELAKKA_WURM, CHALICE_OF_THE_VOID,
   guildgate('Simic Guildgate', 'G', 'U'),
 ];
 

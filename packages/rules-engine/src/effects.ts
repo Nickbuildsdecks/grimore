@@ -23,7 +23,7 @@ import {
 } from './cardActions.js';
 import { actionSeed, clampValue, mulberry32, replaceSeat } from './internal.js';
 import type { Color, ManaType } from './mana.js';
-import { addMana, EMPTY_POOL } from './mana.js';
+import { addMana, costValue, EMPTY_POOL, parseManaCost, xMultiplier } from './mana.js';
 import type { AttackedTarget, DecisionAnswer, StackObject, Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
@@ -473,6 +473,24 @@ export function putOntoBattlefield(
   if (inst === undefined) return state;
   const next = relocate(state, inst, 'battlefield', seat, 'bottom');
   return opts.tapped === true ? withInstance(next, id, { tapped: true }) : next;
+}
+
+/**
+ * The mana value of a spell on the stack, which is the one place {X} is not nought (CR 202.3b).
+ *
+ * Everywhere else in the game X is zero — a Hurricane in a hand or a graveyard has mana value one
+ * — and on the stack it is the number its controller chose, counted once per {X} symbol. So a
+ * Chalice of the Void set to two counters a Divination and an Explore cast for X=1, and does not
+ * counter the Endless One cast for X=5 that is sitting next to them.
+ *
+ * Read off the printed cost and the chosen X rather than off `CardDef.cmc`, because that field is
+ * the printed mana value and cannot know about either.
+ */
+export function manaValueOnStack(state: GameState, id: string): number {
+  const object = state.stackObjects[id];
+  if (object === undefined) return 0;
+  const cost = parseManaCost(state.cardDefs[object.cardKey]?.manaCost);
+  return costValue(cost) + Math.max(0, object.x ?? 0) * xMultiplier(cost);
 }
 
 /**

@@ -319,6 +319,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     kind: 'spell-cast',
     spell: spellKind,
     types: characteristics.typeLine.types.map((t) => t.toLowerCase()),
+    // Which spell, as well as what kind of spell: a Chalice of the Void has to read its mana value
+    // and then counter that object. See the `spell-cast` event's `object`.
+    object: object.id,
   }, action.by);
   // And ward, off the same cast, for everything the spell took aim at. After the cast triggers
   // rather than before: both happen as the spell is cast and go on the stack together, and this is
@@ -404,6 +407,7 @@ function castFaceDown(
     kind: 'spell-cast',
     spell: 'creature',
     types: anonymous.typeLine.types.map((t) => t.toLowerCase()),
+    object: object.id,
   }, action.by);
   next = resetPriority(settle(next, state), action.by);
   return {

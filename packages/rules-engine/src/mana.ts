@@ -47,8 +47,22 @@ export interface ManaCost {
   readonly generic: number;
   readonly colors: Readonly<Record<ManaType, number>>;
   readonly x: boolean;
+  /**
+   * How many {X} symbols the cost has, for the costs that have two.
+   *
+   * `{X}{X}` is one chosen number paid twice (CR 107.3b): Chalice of the Void for X=2 costs four
+   * mana and enters with *two* counters, and a Walking Ballista for X=3 costs six. One value and
+   * two payments, which is why this is a count beside `x` rather than a second X — a cost with two
+   * independent X's does not exist.
+   *
+   * Absent means one, so every cost written before this field existed reads the same.
+   */
+  readonly xCount?: number;
   readonly unsupported?: string;
 }
+
+/** What one point of X costs in this cost: two mana for `{X}{X}`, one for `{X}`. */
+export const xMultiplier = (cost: ManaCost): number => (cost.x ? cost.xCount ?? 1 : 0);
 
 export const FREE_COST: ManaCost = Object.freeze({ generic: 0, colors: EMPTY_POOL, x: false });
 
@@ -58,14 +72,15 @@ const SYMBOL = /\{([^}]*)\}/g;
 export function parseManaCost(text: string | null | undefined): ManaCost {
   if (!text) return FREE_COST;
   let generic = 0;
-  let x = false;
+  let xCount = 0;
   let unsupported: string | undefined;
   const colors: Record<ManaType, number> = { ...EMPTY_POOL };
   for (const match of text.matchAll(SYMBOL)) {
     const symbol = (match[1] ?? '').trim().toUpperCase();
     if (symbol === '') continue;
     if (symbol === 'X') {
-      x = true;
+      // Counted rather than flagged: `{X}{X}` is the same X paid twice. See `ManaCost.xCount`.
+      xCount += 1;
       continue;
     }
     if (/^\d+$/.test(symbol)) {
@@ -79,7 +94,13 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
     // Hybrid, phyrexian, snow: refused rather than guessed at.
     unsupported ??= symbol;
   }
-  return unsupported === undefined ? { generic, colors, x } : { generic, colors, x, unsupported };
+  const x = xCount > 0;
+  // `xCount` is only written when it is more than one, so a `{X}` cost is deep-equal to what it
+  // parsed to before this field existed — which a good many tests compare against.
+  const extra = xCount > 1 ? { xCount } : {};
+  return unsupported === undefined
+    ? { generic, colors, x, ...extra }
+    : { generic, colors, x, ...extra, unsupported };
 }
 
 /** Converted mana cost, ignoring {X} (which is 0 anywhere but the stack). */
@@ -125,7 +146,7 @@ export function payCost(pool: ManaPool, cost: ManaCost, xAmount = 0): PaymentRes
     remaining[type] -= needed;
   }
 
-  let generic = cost.generic + (cost.x ? Math.max(0, xAmount) : 0);
+  let generic = cost.generic + Math.max(0, xAmount) * xMultiplier(cost);
   if (generic > 0) {
     // Colourless first, then the colour you have most of: spend what is least likely to be needed.
     const order = ['C' as ManaType, ...[...COLORS].sort((a, b) => (remaining[b] ?? 0) - (remaining[a] ?? 0))];
@@ -207,7 +228,7 @@ function remainingGeneric(pool: ManaPool, cost: ManaCost, xAmount: number): numb
     if (needed === 0) continue;
     remaining[type] = Math.max(0, (remaining[type] ?? 0) - needed);
   }
-  const generic = cost.generic + (cost.x ? Math.max(0, xAmount) : 0);
+  const generic = cost.generic + Math.max(0, xAmount) * xMultiplier(cost);
   const spare = MANA_TYPES.reduce((n, t) => n + (remaining[t] ?? 0), 0);
   return Math.max(0, generic - spare);
 }

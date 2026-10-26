@@ -575,6 +575,20 @@ function apnapSeats(state: GameState): SeatIndex[] {
   return [...live.slice(start), ...live.slice(0, start)];
 }
 
+/**
+ * Which object on the stack an event was about, for the two events that are about one.
+ *
+ * A ward's `targeted` is the spell that took aim at its creature; a `spell-cast` is the spell that
+ * was just cast. Everything else here is about a permanent or a player, and gets nothing. It is a
+ * function rather than a line inside `raise` because both of that function's readers need it — the
+ * intervening-if clause is asked before the ability is built, and it has to be asked the same
+ * question the resolution will ask it later.
+ */
+function answeringFor(event: TriggerEvent): string | undefined {
+  if (event.kind === 'targeted' || event.kind === 'spell-cast') return event.object;
+  return undefined;
+}
+
 function raise(
   state: GameState, event: TriggerEvent, actor?: SeatIndex, subject?: string,
 ): GameState {
@@ -672,6 +686,18 @@ function raise(
         decisions: [],
         kicked: false,
         ...(subject === undefined ? {} : { subject }),
+        /*
+          And the object the event was about, which the *second* ask (in `resolveTop`) has always
+          had and this one did not.
+
+          A condition that reads the spell on the stack is the whole of what Chalice of the Void
+          is: "whenever a player casts a spell with mana value equal to the number of charge
+          counters on this". Without it here, the first ask would answer a different question from
+          the second — the ability would go on the stack for every spell anybody cast and then
+          vanish on resolution — which is observably the wrong card: an opponent would see a
+          trigger they could respond to for a spell that was never going to be countered.
+        */
+        ...(answeringFor(event) === undefined ? {} : { answering: answeringFor(event) }),
       })) continue;
       const specs = trigger.targets ?? [];
       /*
@@ -686,9 +712,7 @@ function raise(
         : event.kind === 'combat-damage' && event.defender !== undefined
           ? { defender: event.defender }
           : undefined;
-      // And which object the event was about, for the one event that is about an object on the
-      // stack rather than about a permanent or a player. See `StackObject.answering`.
-      const answering = event.kind === 'targeted' ? event.object : undefined;
+      const answering = answeringFor(event);
       // And which permanent it was about, for a trigger that has to say "that creature". Only for
       // the three events that have a subject other than the watcher itself — a card watching its
       // own arrival already knows which permanent it means.

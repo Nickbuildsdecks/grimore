@@ -55,6 +55,19 @@ describe('parseManaCost', () => {
     expect(costValue(cost)).toBe(1);
   });
 
+  it('counts a second {X} rather than flattening it, because {X}{X} is one number paid twice', () => {
+    // CR 107.3b. Chalice of the Void and Walking Ballista are both {X}{X}: the player picks one
+    // number and pays it twice, so X=2 is four mana. A boolean cannot say that.
+    const twice = parseManaCost('{X}{X}');
+    expect(twice.x).toBe(true);
+    expect(twice.xCount).toBe(2);
+    expect(costValue(twice)).toBe(0);
+    expect(canPay(pool({ U: 4 }), twice, 2)).toBe(true);
+    expect(canPay(pool({ U: 3 }), twice, 2)).toBe(false);
+    // And a single {X} is left exactly as it parsed before the field existed.
+    expect(parseManaCost('{X}{R}').xCount).toBeUndefined();
+  });
+
   it('refuses a hybrid or phyrexian cost instead of mis-reading it as generic', () => {
     // Reading {R/G} as generic would offer the player a spell they cannot actually cast, which is
     // worse than refusing a card no deck currently contains.
@@ -129,6 +142,11 @@ describe('maxX', () => {
 
   it('is zero for a cost with no X at all', () => {
     expect(maxX(pool({ R: 9 }), parseManaCost('{R}'))).toBe(0);
+  });
+
+  it('halves the most X can be when the cost asks for it twice', () => {
+    expect(maxX(pool({ U: 5 }), parseManaCost('{X}{X}'))).toBe(2);
+    expect(maxX(pool({ U: 6 }), parseManaCost('{X}{X}'))).toBe(3);
   });
 });
 

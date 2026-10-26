@@ -769,6 +769,51 @@ function simulate(state: GameState, action: Action, stopAtAction: boolean): Game
   return next;
 }
 
+/**
+ * The X for a card whose X is a number to match rather than an amount of effect.
+ *
+ * Every other X spell here is cast for as much as the mana allows, and the search sees what that
+ * buys — a Hurricane for six is six damage. A Chalice of the Void is the opposite: X is the mana
+ * value it then answers, so a Chalice for four is a blank and a Chalice for one is a wall in front
+ * of the fastest deck in the pool. The search cannot tell them apart, because the board after the
+ * cast is an artifact with some counters on it either way and what the number is *worth* is a fact
+ * about the cards in somebody else's hand.
+ *
+ * So it is chosen from what the opponents have **shown**: the mana values of every nonland card in
+ * their graveyards and on their battlefields, the commonest of them winning, the smaller number
+ * winning a tie, and one when they have shown nothing at all. A person does the same thing by eye
+ * — "they are playing one-drops, so it goes on one" — and it reads only public zones, so it is not
+ * the bot peeking at a hand (which `claude/decisions-log.md`, D110, is about).
+ *
+ * Mana value **nought** is skipped. A Chalice on zero counters a Tormod's Crypt and nothing else
+ * anybody casts, and lands are left out for the same reason: they are played, not cast.
+ */
+function xToMatch(state: GameState, seat: SeatIndex, xMax: number): number {
+  const shown = new Map<number, number>();
+  for (const foe of foesOf(state, seat)) {
+    for (const zone of ['graveyard', 'battlefield'] as const) {
+      for (const id of listAt(state, zoneKey(foe, zone))) {
+        const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+        if (def === undefined || hasType(parseTypeLine(def.typeLine), 'land')) continue;
+        const mv = costValue(parseManaCost(def.manaCost));
+        if (mv === 0 || mv > xMax) continue;
+        shown.set(mv, (shown.get(mv) ?? 0) + 1);
+      }
+    }
+  }
+  let best = 0;
+  let bestSeen = 0;
+  for (const mv of [...shown.keys()].sort((a, b) => a - b)) {
+    const seen = shown.get(mv) ?? 0;
+    if (seen > bestSeen) {
+      best = mv;
+      bestSeen = seen;
+    }
+  }
+  // One when nothing has been shown, which is where a person starts and where the cheap spells are.
+  return Math.max(1, Math.min(best === 0 ? 1 : best, xMax));
+}
+
 /** How many ways of aiming one spell are worth simulating. */
 const AIM_WIDTH = 4;
 
@@ -1027,9 +1072,19 @@ function candidateActions(
             // the engine is told to cast a card in exile as though it were in hand.
             ...(play.foretold === true ? { foretold: true } : {}),
             ...(fodder === null ? {} : { sacrifice: fodder }),
-            // X as large as the mana allows. The search sees what that buys, which is new: it
-            // will not cast a Hurricane for eight into a board of its own fliers any more.
-            ...(play.xMax === undefined ? {} : { x: play.xMax }),
+            /*
+              X as large as the mana allows. The search sees what that buys, which is new: it
+              will not cast a Hurricane for eight into a board of its own fliers any more.
+
+              Unless X is a *number to match* rather than an amount, which is one card in the pool
+              and the opposite rule: see `xToMatch`.
+            */
+            ...(play.xMax === undefined ? {} : {
+              x: scriptFor(state.cardDefs[state.instances[play.card]?.defKey ?? '']?.name)
+                ?.xIsANumberToMatch === true
+                ? xToMatch(state, seat, play.xMax)
+                : play.xMax,
+            }),
             ...(play.modes === undefined ? {} : { modes: [...play.modes] }),
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
             // And the division, which is not optional on a card that has one: the engine refuses

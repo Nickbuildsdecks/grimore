@@ -1384,6 +1384,18 @@ const ICY_MANIPULATOR: CardDef = {
   colors: [],
 };
 
+const CHALICE_OF_THE_VOID: CardDef = {
+  name: 'Chalice of the Void',
+  typeLine: 'Artifact',
+  // One number paid twice, which is a cost shape nothing here had: see `ManaCost.xCount`.
+  manaCost: '{X}{X}',
+  cmc: 0,
+  oracleText: 'Chalice of the Void enters the battlefield with X charge counters on it. '
+    + 'Whenever a player casts a spell with mana value equal to the number of charge counters on '
+    + 'Chalice of the Void, counter that spell.',
+  colors: [],
+};
+
 const TORMODS_CRYPT: CardDef = {
   name: "Tormod's Crypt",
   typeLine: 'Artifact',
@@ -2522,7 +2534,22 @@ export const TIDAL_MIND: DeckSpec = {
       because deathtouch, flying and lifelink is the one creature in these colours that both holds
       the ground against anything and wins the game on its own if the game goes long.
     */
-    { card: MAN_O_WAR, count: 3 },
+    { card: MAN_O_WAR, count: 2 },
+    /*
+      Chalice of the Void, for the third Man-o'-War.
+
+      The card this deck has never had: an answer that costs two mana *once* and then answers
+      every one-mana spell for the rest of the game. The arithmetic is why it is here rather than
+      anywhere else in the pool — Tidal Mind casts four one-mana spells of its own, and the field
+      it is measured against casts twenty-two in Ember Rush, fifteen in Verdant Guard and thirteen
+      each in Forge Alliance and Arc Tempest. It is symmetrical and it does not care: a Chalice on
+      one costs this deck a Preordain and costs the deck opposite its first three turns.
+
+      `{X}{X}` is one number paid twice, the charge counters are X rather than the mana value, and
+      the trigger is an intervening-if clause so a spell it would not counter never puts anything
+      on the stack. See the script in `scripts.ts` for all three.
+    */
+    { card: CHALICE_OF_THE_VOID, count: 1 },
     { card: VAMPIRE_NIGHTHAWK, count: 2 },
     { card: AIR_ELEMENTAL, count: 1 },
   ],

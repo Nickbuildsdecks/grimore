@@ -237,6 +237,16 @@ export type TriggerEvent =
       readonly spell?: 'creature' | 'noncreature' | 'instant-or-sorcery' | 'any';
       /** Set by the engine when it raises the event: the spell's card types, lowercased. */
       readonly types?: readonly string[];
+      /**
+       * Set by the engine: the spell on the stack, so a trigger can read it or answer it.
+       *
+       * The `spell` and `types` fields above say what *kind* of spell was cast, which is all
+       * prowess and Talrand ever needed. This is *which one*, and it is what a card has to have to
+       * say "counter **it**" — a Chalice of the Void reads the spell's mana value and counters that
+       * spell, and neither half is expressible from a kind. It reaches the ability as
+       * `EffectContext.answering`, the same channel ward uses for the spell that targeted it.
+       */
+      readonly object?: string;
     }
   /**
    * "Whenever this permanent becomes the target of a spell or ability" (CR 115.7, CR 702.21b).
@@ -617,6 +627,20 @@ export interface CardScript {
    * different card that the evaluation already prices correctly.
    */
   readonly makesMana?: boolean;
+  /**
+   * X is a **number to match**, not an amount of effect: bigger is not better.
+   *
+   * Declared for the bot, which otherwise casts every X spell for as much as its mana allows —
+   * right for a Fireball and a Mind Spring, and nonsense for a Chalice of the Void, where X is the
+   * mana value the card then answers. A Chalice cast for four stops nothing anybody plays; a
+   * person casts it on one.
+   *
+   * The search cannot tell the difference on its own, for the reason every other rule in that
+   * family exists: the board after the cast is a permanent with some counters on it either way,
+   * and what the number is *worth* is a fact about the cards the opponents are holding. So the
+   * number is chosen from what they have actually shown. See `xToMatch` in `bot.ts`.
+   */
+  readonly xIsANumberToMatch?: boolean;
   /**
    * "This spell's whole effect is to prevent combat damage" — a Fog, and its white reprint.
    *
