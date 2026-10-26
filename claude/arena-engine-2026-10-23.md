@@ -3610,6 +3610,22 @@ refuses storage never offers it. The server keeps nothing it did not already kee
 
 Checked through a real reload, because that is the whole mechanism. `e2e-table` is at 72 checks.
 
+### The host went first in every game ever played here
+
+`game:start` with no seat named starts seat zero, and the lobby never sent one — so whoever created
+the table went first, every time, on every table. Going first is a real edge and this engine knows
+it: a rematch gives the previous winner the second turn. The first game was the one nobody rolled
+for.
+
+The roll goes in the pod layer rather than the engine, because the engine's default is explicit and
+three hundred tests, the rematch and the testkit all lean on it; "the table rolls" is a fact about a
+table, and `apps/realtime` is the table. A start that names a seat passes through untouched.
+Uniform across seated players, the computer's seats included.
+
+The randomness is an argument rather than a global, so the tests assert the mapping instead of the
+distribution — a test that started twenty tables and checked both seats came up would fail one run
+in a million for being unlucky, which is how a suite earns a retry flag.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

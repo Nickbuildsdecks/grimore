@@ -732,6 +732,7 @@ function PreGame({ table }: { table: UseTable }) {
               <p className="px-1 text-[10px] leading-snug text-[var(--g-text-muted)]">
                 The engine enforces the rules, tracks priority and runs combat. The tabletop
                 enforces nothing and lets you move any card anywhere, the way cardboard does.
+                Either way the table rolls for who goes first.
               </p>
               {unreadable > 0 ? (
                 <p data-testid="unreadable-note" className="px-1 text-[10px] leading-snug text-[var(--g-text-muted)]">

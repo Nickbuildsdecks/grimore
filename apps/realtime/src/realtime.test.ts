@@ -6,6 +6,7 @@ import type { PodErrorEvent, PodStateEvent } from '@grimore/shared';
 import { createRealtime, type Realtime } from './io.js';
 import type { AckResult } from './handlers.js';
 import { TokenBucket } from './ratelimit.js';
+import { withRolledFirstSeat } from './pod.js';
 import { generateCode, toEngineFormat, maxSeatsFor } from './pod.js';
 import { unpackView, type PackedView } from '@grimore/rules-engine';
 import { POD_CODE_REGEX } from '@grimore/shared';
@@ -1245,4 +1246,46 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     }, 30_000);
   });
 
+});
+
+/*
+  Who goes first, which two people decide with a die and this table decided by asking who created
+  it. `game:start` with no seat named starts seat zero, so the host went first in every game ever
+  played here — and the engine itself knows going first is an edge: a rematch gives the previous
+  winner the second turn.
+
+  The roll is injected rather than observed, because the alternative is a test that starts twenty
+  tables and checks both seats came up, which fails one run in a million for being unlucky.
+*/
+describe('rolling for who goes first', () => {
+  const seats = [{ seat: 0 as const }, { seat: 1 as const }];
+  const start = { type: 'game:start', by: 0 } as const;
+
+  it('fills in a seat when the table named none', () => {
+    expect(withRolledFirstSeat(start, seats, () => 0)).toMatchObject({ firstSeat: 0 });
+    expect(withRolledFirstSeat(start, seats, () => 0.99)).toMatchObject({ firstSeat: 1 });
+    // A roll that comes back exactly 1 — which `Math.random` never does, and a stub might — lands
+    // on the last seat rather than past the end of the table.
+    expect(withRolledFirstSeat(start, seats, () => 1)).toMatchObject({ firstSeat: 1 });
+  });
+
+  it('leaves a start that named a seat exactly as it arrived', () => {
+    const named = { type: 'game:start', by: 0, firstSeat: 1 } as const;
+    expect(withRolledFirstSeat(named, seats, () => 0)).toBe(named);
+  });
+
+  it('leaves every other action alone', () => {
+    const pass = { type: 'auto:pass', by: 0 } as const;
+    expect(withRolledFirstSeat(pass, seats, () => 0)).toBe(pass);
+  });
+
+  it('rolls across four seats in a pod, the computer\'s included', () => {
+    const pod = [{ seat: 0 as const }, { seat: 1 as const }, { seat: 2 as const }, { seat: 3 as const }];
+    expect(withRolledFirstSeat(start, pod, () => 0.5)).toMatchObject({ firstSeat: 2 });
+    expect(withRolledFirstSeat(start, pod, () => 0.8)).toMatchObject({ firstSeat: 3 });
+  });
+
+  it('does nothing at a table with no seats, rather than rolling a seat that is not there', () => {
+    expect(withRolledFirstSeat(start, [], () => 0)).toBe(start);
+  });
 });

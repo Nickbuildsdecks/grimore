@@ -6410,3 +6410,33 @@ that outlives the table is in their own browser.
 **Checked through a real reload**, because `localStorage` is the whole mechanism: the browser comes
 back on the same seat, presses the paste box, and finds the list it had. Seventy-two checks in
 `e2e-table` now, up from sixty-eight.
+
+## D147 — The host went first in every game ever played here
+
+**Decision: a `game:start` that names no seat gets one rolled for it, in the server rather than the
+engine.**
+
+`game:start` with no `firstSeat` starts seat zero, and the lobby has never sent one. So the host
+went first in **every game on every table** since this was built — and going first is a real edge,
+which this engine already knows: a rematch hands the previous winner the *second* turn (see
+`rematch`). The only game nobody rolled for was the first one.
+
+**Rolled in the pod layer, not in the engine**, and the split is the usual one. The engine's
+default is explicit and test-friendly — name a seat and you get that seat, name none and you get
+seat zero — and three hundred tests, the rematch and the whole testkit depend on that. "The table
+rolls" is a fact about a *table*, not a rule of Magic, and `apps/realtime` is the table. A
+`game:start` that names a seat is passed through untouched, which is what keeps every one of those
+deterministic.
+
+Uniform across the seated players, the computer's seats included: a bot that always went second
+would be the same unfairness pointed the other way.
+
+**The roll is injected rather than observed.** A test that started twenty tables and checked both
+seats came up would fail one run in a million for being unlucky, which is how a suite earns a
+`--retry` flag. So the function takes its randomness as an argument, and the tests assert the
+mapping: nought lands on the first seat, 0.99 on the last, a stub that returns exactly 1 lands on
+the last rather than past the end of the table, a start that named a seat comes back identical, and
+every other action is returned by reference.
+
+The lobby says it in one line under the two start buttons, because the first thing a player notices
+otherwise is that something changed.

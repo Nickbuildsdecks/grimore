@@ -172,6 +172,10 @@ so neither of you needs this page open while playing.
 | Make tokens | **Token** has the common ones. A token that leaves the battlefield disappears, as it should. |
 | Take something back | **Undo** in the top bar puts the table back to just before the last move — one step, and only the host sees the button. It takes back whatever the engine or the computer's seats did in answer to that move as well, because that is what happened, and everybody is told in the chat that it was used. With nothing left to take back the button is simply gone. It restores the state exactly, so a card that was drawn and then taken back has still been seen by whoever drew it — the same as at a kitchen table, and the reason it is one step and the host's call. For anything further back, move the cards by hand; the log shows what actually happened. |
 
+**The table rolls for who goes first**, in both modes, across every seated player including the
+computer's seats. (It used to be whoever created the table, every time.) The log says who won it,
+and a rematch gives the previous winner the second turn, the way a table does.
+
 The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
 anybody's turn, which is what makes instants and responses work at all.
 
@@ -660,7 +664,7 @@ The layers under them have their own suites: `packages/rules-engine` (769 tests,
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (200 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
-(38 tests against live Redis, including two socket clients playing to a finish, one person
+(43 tests against live Redis, including two socket clients playing to a finish, one person
 playing the server, a deal struck with the server's own seat, and two players rematching on
 decks they pasted in).
 

@@ -218,6 +218,37 @@ function listSummary(list: NonNullable<SeatRecord['pastedList']>): NonNullable<P
   };
 }
 
+/**
+ * The die roll for who goes first, which two people do and this table never did.
+ *
+ * `game:start` with no seat named starts seat zero, so the **host went first in every game on
+ * every table** — and going first is a real edge, which the engine itself knows: a rematch gives
+ * the previous winner the second turn (see `rematch`). The first game was the one nobody rolled
+ * for.
+ *
+ * Rolled here rather than in the engine on purpose. The engine's default is explicit and
+ * test-friendly — a caller that names a seat gets that seat, and a caller that names none gets
+ * seat zero — and "the table rolls" is a fact about a table rather than a rule of Magic. This is
+ * the table. A `game:start` that *does* name a seat is left exactly as it arrived, which is what
+ * keeps the engine's own suite and the rematch deterministic.
+ *
+ * Uniform across the seated players, the computer's seats included: a bot that always went second
+ * would be the same unfairness pointed the other way.
+ */
+export function withRolledFirstSeat(
+  action: Action,
+  seats: readonly { readonly seat: PodSeat['seat'] }[],
+  // The roll, injectable so a test can assert the mapping rather than the distribution: a test
+  // that started twenty tables and checked both seats came up would be a test that fails one time
+  // in a million for being unlucky.
+  roll: () => number = Math.random,
+): Action {
+  if (action.type !== 'game:start' || action.firstSeat !== undefined) return action;
+  if (seats.length === 0) return action;
+  const index = Math.min(seats.length - 1, Math.max(0, Math.floor(roll() * seats.length)));
+  return { ...action, firstSeat: seats[index]!.seat };
+}
+
 export function toSnapshot(record: PodRecord, version: number): PodSnapshot {
   return {
     pod: {
@@ -706,7 +737,7 @@ export class PodStore {
       }
       // Seat index may have been compacted when the table was dealt; re-resolve.
       const mySeat = record.seats.find((s) => s.playerId === playerId)!.seat;
-      const stamped = { ...(action as Action), by: mySeat } as Action;
+      const stamped = withRolledFirstSeat({ ...(action as Action), by: mySeat } as Action, record.seats);
       /*
         The pasted lists this one action is allowed to resolve.
 
