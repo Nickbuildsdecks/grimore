@@ -45,9 +45,10 @@ import {
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
 import { scriptFor } from './scripts.js';
 import type {
-  AbilityCost, AbilityDef, CardScript, ConditionFn, DecisionSpec, ModeDef, TargetSpec, TriggerEvent,
+  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, DecisionSpec, ModeDef,
+  TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
-import { targetCount } from './scriptTypes.js';
+import { isChoiceDecision, targetCount } from './scriptTypes.js';
 import {
   checkTargets, hasAnyLegalTargets, legalTargets, liveTargets, stillHasLegalTarget, targetSeqsFor,
 } from './targeting.js';
@@ -1392,7 +1393,7 @@ function turnOrder(state: GameState): SeatIndex[] {
 
 /** The cards in the chooser's own zone that a decision would accept. */
 export function decisionCandidates(
-  state: GameState, spec: DecisionSpec, chooser: SeatIndex,
+  state: GameState, spec: CardsDecisionSpec, chooser: SeatIndex,
 ): string[] {
   // `library-top` is the top few cards of the chooser's own library rather than a whole zone —
   // scry looks at two cards, not at fifty-three, and the candidate list is also the authorisation
@@ -1412,7 +1413,7 @@ export function decisionCandidates(
 }
 
 /** How many a decision asks for, clamped to what the chooser actually has. */
-function decisionBounds(spec: DecisionSpec, available: number): { min: number; max: number } {
+function decisionBounds(spec: CardsDecisionSpec, available: number): { min: number; max: number } {
   const max = Math.min(spec.max ?? 1, available);
   return { min: Math.min(spec.min ?? 1, max), max };
 }
@@ -1453,6 +1454,36 @@ function askOrFinish(
     // sacrifices a creature" is simultaneous and the second player must not see the first's
     // creature already gone. The consequence is that two questions put to the *same* seat from the
     // same zone would otherwise offer the same card twice, so they are taken out here.
+    /*
+      A question whose answer is a word takes a different path and a shorter one.
+
+      There is no zone to read, nothing already chosen to take out, and no count to clamp — the
+      options are the options. The one thing it shares with a card question is when the engine
+      answers it instead of asking: a list of fewer than two words has one possible answer, and a
+      prompt with one button is noise. See `ChoiceDecisionSpec`.
+    */
+    if (isChoiceDecision(spec)) {
+      const options = spec.options;
+      if (options.length < 2) {
+        answers = [...answers, {
+          seat: entry.seat, ids: [], ...(options[0] === undefined ? {} : { option: options[0] }),
+        }];
+        continue;
+      }
+      return {
+        state: {
+          ...state,
+          priority: null,
+          passed: [],
+          pendingDecision: {
+            seat: entry.seat, stackId: object.id, prompt: spec.prompt,
+            candidates: [], min: 1, max: 1, options: [...options],
+            resume: { plan: [...plan], at: i, answers: [...answers] },
+          },
+        },
+        message: `${object.description} — ${seatName(state, entry.seat)}: ${spec.prompt}`,
+      };
+    }
     const taken = new Set(answers.filter((a) => a.seat === entry.seat).flatMap((a) => [...a.ids]));
     const candidates = decisionCandidates(state, spec, entry.seat).filter((id) => !taken.has(id));
     const { min, max } = decisionBounds(spec, candidates.length);
@@ -1494,7 +1525,7 @@ function askOrFinish(
  * `searching` is the only thing that opens it.
  */
 export function answerDecision(
-  state: GameState, chosen: readonly string[],
+  state: GameState, chosen: readonly string[], option?: string,
 ): { state: GameState; message: string } {
   const pending = state.pendingDecision;
   if (pending === null) return { state, message: 'nothing to decide' };
@@ -1522,8 +1553,32 @@ export function answerDecision(
   // The object leaving the stack mid-resolution should not be possible — nothing else can happen
   // while a decision is outstanding — but a resolution with nothing to resolve is simply over.
   if (object === undefined) return { state: next, message: 'that resolution is gone' };
-  const answers = [...pending.resume.answers, { seat: pending.seat, ids: [...chosen] }];
+  const answers = [...pending.resume.answers, {
+    seat: pending.seat, ids: [...chosen], ...(option === undefined ? {} : { option }),
+  }];
   return askOrFinish(next, object, pending.resume.plan, pending.resume.at + 1, answers);
+}
+
+/**
+ * Which word the engine's opponent would pick for the question that is outstanding.
+ *
+ * Here rather than in `bot.ts` because answering it needs the *spec*, and the spec is reached
+ * through `decisionSpecsFor` — the stack object says which ability is resolving and the script
+ * says what it asks. The bot has no business knowing either. See `ChoiceDecisionSpec.best`.
+ */
+export function preferredOption(state: GameState): string | undefined {
+  const pending = state.pendingDecision;
+  if (pending === null || pending.options === undefined) return undefined;
+  const object = state.stackObjects[pending.stackId];
+  if (object === undefined) return pending.options[0];
+  const specs = decisionSpecsFor(state, object);
+  const spec = specs[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
+  const picked = spec !== undefined && isChoiceDecision(spec)
+    ? spec.best?.(state, pending.seat)
+    : undefined;
+  // Only a word the question actually offered: a card's own hint is still checked against the
+  // list, because a hint that named something else would be a refused action and a stopped table.
+  return picked !== undefined && pending.options.includes(picked) ? picked : pending.options[0];
 }
 
 /** Takes a stack object off the stack, which is the first thing resolving it does. */

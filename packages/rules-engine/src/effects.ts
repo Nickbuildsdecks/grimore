@@ -918,6 +918,16 @@ export const chosenCards = (ctx: EffectContext, index = 0): readonly string[] =>
 export const chosenCard = (ctx: EffectContext, index = 0): string | null =>
   ctx.decisions[index]?.ids[0] ?? null;
 
+/**
+ * The word chosen in answer to a question — a creature type, a colour, "untap".
+ *
+ * `null` when the question was never asked, which happens for real: a choice between fewer than
+ * two words is answered by the engine, and a seat eliminated mid-resolution answers nothing at
+ * all. Every caller has to say what it does then, and for most of them the answer is "nothing".
+ */
+export const chosenOption = (ctx: EffectContext, index = 0): string | null =>
+  ctx.decisions[index]?.option ?? null;
+
 /** Puts chosen cards into a hand, which is what a tutor does. */
 export function moveToHand(state: GameState, ids: readonly string[]): GameState {
   let next = state;

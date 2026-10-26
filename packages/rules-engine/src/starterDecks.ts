@@ -2529,6 +2529,33 @@ const IMPERIOUS_PERFECT: CardDef = {
   colors: ['G'],
 };
 
+// ── The two cards that ask for a word ───────────────────────────────────────────────────────────
+
+/*
+  A creature type and a colour, each chosen as the card enters. See `scripts.ts` for why that is
+  the resolution and not a trigger.
+*/
+
+const OBELISK_OF_URD: CardDef = {
+  name: 'Obelisk of Urd',
+  typeLine: 'Artifact',
+  manaCost: '{5}',
+  cmc: 5,
+  oracleText: 'Convoke\nAs Obelisk of Urd enters the battlefield, choose a creature type.\nCreatures you control of the chosen type get +2/+2.',
+  colors: [],
+};
+
+const VOICE_OF_ALL: CardDef = {
+  name: 'Voice of All',
+  typeLine: 'Creature — Angel',
+  manaCost: '{3}{W}',
+  cmc: 4,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Flying\nAs Voice of All enters the battlefield, choose a color.\nVoice of All has protection from the chosen color.',
+  colors: ['W'],
+};
+
 // ── The two keywords that point at another creature ─────────────────────────────────────────────
 
 /*
@@ -2597,8 +2624,29 @@ export const ROT_HARVEST: DeckSpec = {
     */
     { card: IMPERIOUS_PERFECT, count: 1 },
     { card: ENDLESS_ONE, count: 2 },
-    { card: BLOOD_ARTIST, count: 2 },
+    { card: BLOOD_ARTIST, count: 1 },
     { card: ZULAPORT_CUTTHROAT, count: 1 },
+    /*
+      Obelisk of Urd for the second Blood Artist, and the first card here that asks a question
+      whose answer is a word.
+
+      Convoke makes a five-mana artifact a turn-three play on a board of creatures, and +2/+2 for a
+      whole creature type turns this deck's row of 0/1s and 1/1 tokens into a board that attacks.
+      Which type is the card: Imperious Perfect keeps making **Elf** Warriors, so the Obelisk gets
+      better every turn it is left alone, and the engine's own opponent picks whichever type it
+      controls most of rather than being told one.
+
+      The second Blood Artist went because it was the lowest-cast card in the deck with a copy to
+      spare — 66% of the copies drawn over 96 games — and because one is enough to find one: the
+      drain is a floor, and this deck's problem is that the floor is all it has.
+
+      Measured against the field twice, 240 paired duels each: 101-138 and 100-140 with the
+      Obelisk against 97-142 and 103-137 without, so +4 one seed set and −3 the other. No
+      consistent sign and both arms far inside the eighteen games this instrument can resolve,
+      which is the honest reading — the swap is free, and free is all a new primitive's card has to
+      be.
+    */
+    { card: OBELISK_OF_URD, count: 1 },
     /*
       Consulate Dreadnought, for the second Zulaport Cutthroat.
 
@@ -2999,7 +3047,37 @@ export const SKYWARD_WRIT: DeckSpec = {
     // it is the only card here that proves protection does all four of its jobs.
     { card: PALADIN_EN_VEC, count: 2 },
     { card: MAN_O_WAR, count: 2 },
-    { card: SERRA_ANGEL, count: 2 },
+    { card: SERRA_ANGEL, count: 1 },
+    /*
+      Voice of All for the second Serra Angel, which is this deck trading power for a turn.
+
+      A {3}{W} 2/2 flier that chooses a colour as it enters and cannot be touched by it — not
+      targeted, not blocked, not damaged, and it wins every fight with a creature of that colour
+      (CR 702.16). Against the two decks this one actually loses to, both of which hold their
+      removal in red and black, that is a flier nothing in their list answers.
+
+      The second Serra Angel went because this deck's problem has never been its top end. It lost
+      1-9 to both aggro decks on turns three and four and then had two five-drops to show for it; a
+      three-mana flier that the aggro decks cannot remove is the card those games wanted.
+
+      The colour is chosen as it enters rather than by a trigger, which is the rules difference and
+      a real one: there is no window in which the Voice is on the battlefield with no protection
+      yet, so a removal spell held for exactly that moment does not exist.
+
+      **It costs this deck about one per cent, and it is carried on purpose.** 240 paired duels
+      against the field, two seed sets: 114-126 and 108-132 with the Voice against 117-123 and
+      110-130 without — −3 and −2, the same side both times and a long way inside the floor. The
+      cut was re-asked per D127: taking a *Raise the Alarm* instead gives 113-127 and 105-134,
+      worse again, so the Serra Angel is the better of the two cuts and the card itself is the
+      marginal part.
+
+      Why it stays: a person piloting this deck chooses the colour from the matchup in front of
+      them, and the engine's opponent chooses it by counting what it can already see. That is the
+      one card in the pool where the gap between those two is the whole card, so the bot's record
+      is the least informative number here — and the closed-set half of a new primitive needs a
+      reader. D102 carries the Samite Healer at five times this cost for a weaker reason.
+    */
+    { card: VOICE_OF_ALL, count: 1 },
     /*
       Megamorph, and the Air Elemental it replaced.
 

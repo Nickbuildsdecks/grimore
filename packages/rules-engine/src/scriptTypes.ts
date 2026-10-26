@@ -256,7 +256,12 @@ export type TriggerEvent =
  * same order. A spec whose zone turns out to hold nothing it would accept is not asked at all: a
  * prompt with no answer is a stuck game, which is exactly what the old graveyard-targeting bug was.
  */
-export interface DecisionSpec {
+/**
+ * A question a card asks while it is resolving, and whose answer is a set of **cards**.
+ *
+ * One of the two shapes of `DecisionSpec`. See `ChoiceDecisionSpec` for the other.
+ */
+export interface CardsDecisionSpec {
   /**
    * Who chooses. "Target player discards two cards" is chosen by the player discarding, not by the
    * caster — getting that wrong would make Mind Rot a very different card. `each-player` and
@@ -286,7 +291,52 @@ export interface DecisionSpec {
   readonly max?: number;
   /** Which cards in that zone qualify. Without one, any card in the zone does. */
   readonly filter?: (state: GameState, id: string, chooser: SeatIndex) => boolean;
+  /** Never set on this shape; it is what tells the two apart. */
+  readonly options?: never;
 }
+
+/**
+ * A question whose answer is a **word**: a creature type, a colour, "tap" or "untap", yes or no.
+ *
+ * The other half of what printed cards ask, and the half this engine could not say until now.
+ * Everything in `CardsDecisionSpec` is about objects in a zone, and "choose a creature type" names
+ * no object at all — so a card that wanted one had to be left out of the pool rather than
+ * approximated.
+ *
+ * One shape for all of them rather than a separate yes-or-no: "you may" is a choice between two
+ * words, the table draws the same row of buttons either way, and a single mechanism is a single
+ * place for the rules about it to live. A spec with fewer than two options is answered by the
+ * engine rather than asked, for the same reason a discard of two cards from a hand of two is —
+ * a prompt with one button is noise.
+ */
+export interface ChoiceDecisionSpec {
+  readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent';
+  readonly prompt: string;
+  /** The words, in the order the table shows them. The first is the default a bot falls back on. */
+  readonly options: readonly string[];
+  /**
+   * Which word the engine's own opponent picks, written by the card.
+   *
+   * It has to live here, because only the card knows what its words *mean*: "Vampire" is a
+   * creature type to count on a battlefield and "white" is a colour to fear in a graveyard, and
+   * nothing generic can tell those two lists apart without guessing. So the card answers its own
+   * question the way a player would, from the board — which is the same rule the rest of the bot
+   * follows: read a fact, do not carry a weight.
+   *
+   * Never shown to a person, and never consulted when a person is answering. Returning
+   * `undefined` falls back to the first option, which is why the order of `options` is not
+   * arbitrary.
+   */
+  readonly best?: (state: GameState, chooser: SeatIndex) => string | undefined;
+  /** Never set on this shape; it is what tells the two apart. */
+  readonly from?: never;
+}
+
+export type DecisionSpec = CardsDecisionSpec | ChoiceDecisionSpec;
+
+/** Whether a question is the kind whose answer is a word. Narrows for TypeScript as well. */
+export const isChoiceDecision = (spec: DecisionSpec): spec is ChoiceDecisionSpec =>
+  spec.options !== undefined;
 
 /**
  * A yes-or-no question asked of the board, for an intervening-if clause. See `TriggerDef.condition`.

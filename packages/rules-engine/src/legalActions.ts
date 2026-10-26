@@ -182,10 +182,16 @@ export interface LegalActions {
    */
   readonly mustDecide: {
     readonly prompt: string;
-    readonly from: DecisionZone;
+    /** Absent when the answer is a word rather than a card. See `options`. */
+    readonly from?: DecisionZone;
     readonly candidates: readonly string[];
     readonly min: number;
     readonly max: number;
+    /**
+     * The words to choose between, when that is the question. Present exactly when `from` is not,
+     * and the table draws buttons instead of lighting up cards.
+     */
+    readonly options?: readonly string[];
   } | null;
   /**
    * A ward this seat is being asked to pay (CR 702.21b), and what it loses by declining.
@@ -966,7 +972,9 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   const decision = state.pendingDecision;
   const mustDecide: LegalActions['mustDecide'] = decision !== null && decision.seat === seat
     ? {
-        prompt: decision.prompt, from: decision.from,
+        prompt: decision.prompt,
+        ...(decision.from === undefined ? {} : { from: decision.from }),
+        ...(decision.options === undefined ? {} : { options: [...decision.options] }),
         candidates: decision.candidates, min: decision.min, max: decision.max,
       }
     : null;

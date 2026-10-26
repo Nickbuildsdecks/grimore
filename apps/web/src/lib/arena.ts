@@ -112,6 +112,13 @@ export type ArenaEvent =
   | { kind: "toggleBottom"; card: string }
   | { kind: "startDeciding"; ask: Decision }
   | { kind: "toggleDecision"; card: string }
+  /**
+   * The answer to a question whose answer is a word: a creature type, a colour, "untap".
+   *
+   * Its own event rather than another `toggleDecision`, because there is nothing to toggle — one
+   * tap is the whole answer, and a half-answered word question is not a state the table can be in.
+   */
+  | { kind: "pickOption"; option: string }
   | { kind: "feed"; card: string }
   | { kind: "choosePlay"; play: LegalPlay }
   | { kind: "pickTarget"; target: Target }
@@ -549,6 +556,14 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
     case "startDeciding":
       return { mode: { kind: "deciding", ask: event.ask, chosen: [] }, action: null }
 
+    case "pickOption": {
+      if (mode.kind !== "deciding") return { mode, action: null }
+      // Checked against the list the engine offered, exactly as a card pick is: the table does not
+      // decide what is answerable, it draws what the engine said.
+      if (!(mode.ask.options ?? []).includes(event.option)) return { mode, action: null }
+      return { mode: IDLE, action: { type: "auto:decide", cards: [], option: event.option } }
+    }
+
     case "toggleDecision": {
       if (mode.kind !== "deciding") return { mode, action: null }
       if (!mode.ask.candidates.includes(event.card)) return { mode, action: null }
@@ -920,6 +935,9 @@ export function primaryMove(view: GameView): { label: string; event: ArenaEvent 
 
 /** How a decision's progress reads on the confirm button: "Discard two cards (1 of 2)". */
 export function decisionLabel(ask: Decision, chosen: readonly string[]): string {
+  // A word question has no count to report: the prompt is the whole label, and the options are
+  // the buttons beside it.
+  if (ask.options !== undefined) return ask.prompt
   if (ask.min === ask.max) return `${ask.prompt} (${chosen.length} of ${ask.max})`
   if (ask.min === 0) return chosen.length === 0 ? `${ask.prompt} — or choose nothing` : `${ask.prompt} (${chosen.length})`
   return `${ask.prompt} (${chosen.length}, at least ${ask.min})`

@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 207 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 209 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -3174,6 +3174,53 @@ the other: unpriceable, exactly as D131 said that deck's record is. It ships on 
 "counter target creature spell" is a subset of what Disallow does — and the number is written down
 as unknown.
 
+### The question whose answer is a word
+
+Every mid-resolution question this engine could ask was "choose some cards from a zone" — a search,
+a discard, a scry, a sacrifice. "Choose a creature type", "choose a colour", "tap or untap" and "you
+may" name no object at all, so an entire family of printed cards was unwritable rather than
+approximated: the only yes-or-no in the engine was `pendingPayment`, which is ward's special case
+with a mana cost attached.
+
+`DecisionSpec` is now a union, and the new half is `{ who, prompt, options }`. One shape for all of
+them rather than a separate yes-or-no, because "you may" *is* a choice between two words: the table
+draws the same row of buttons either way, and one mechanism is one place for the rules to live. A
+list of fewer than two words is answered by the engine rather than asked — the rule that already
+keeps a discard of two from a hand of two off the screen.
+
+**The card answers its own question for the bot**, through `ChoiceDecisionSpec.best`, and it has to
+live on the card because only the card knows what its words *mean*: "Vampire" is a type to count on
+a battlefield and "black" is a colour to fear in a graveyard, and nothing generic tells those lists
+apart without guessing. Both implementations read the board rather than carrying a weight, and the
+colour one reads only other seats' *public* zones — a bot that read their hands would be answering a
+question no player can answer. The engine checks the card's hint against the offered list anyway,
+because a hint naming something unoffered would be a refused action and a stopped table.
+
+**Both cards choose as they enter, and that is the rules point.** A `decisions` list is asked during
+the spell's own resolution, before the permanent is on the battlefield, which is exactly what "as ~
+enters the battlefield" means (CR 614.12). A trigger would be a different card: it would go on the
+stack after the permanent arrived, both players would get priority, and killing the Obelisk in that
+window would leave a type chosen and nothing pumped. The test says it directly — after the answer
+the stack is empty, the Obelisk is on the battlefield and the Elf is already a 3/3, in one action.
+
+Obelisk of Urd ({5}, convoke) in Rot Harvest is three things the engine already had and one it did
+not: convoke from D101, the subtype-scoped static from D129 (so an Elf token made four turns later
+is pumped with nothing recomputed), `duration: 'permanent'` ending it when the Obelisk leaves — and
+the choice. Voice of All ({3}{W} 2/2 flier) in Skyward Writ is the closed-set half: five options, no
+approximation, and the card that makes protection's four rules (D83) worth having had.
+
+The honest deviation is the Obelisk's list. The card says "any creature type"; a table cannot draw
+several hundred buttons, so the options are the thirteen types this pool contains in numbers — every
+one with eight copies or more. A derived rule rather than a judged list.
+
+**The numbers, and one of them is a carry.** The Obelisk is +4 and −3 over 240 paired duels on two
+seed sets: no consistent sign, free. The Voice is −3 and −2, the same side both times and still
+inside the floor; the cut was re-asked per D127 and a Raise the Alarm instead gives −4 and −5, so
+the Serra Angel is the better cut and the card is the marginal part. It is carried on purpose and
+the number is written down: this is the one card in the pool where the gap between a bot's answer
+and a person's *is* the card, because a player chooses the colour from the matchup in front of them
+and the engine chooses it by counting what it can already see.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -3188,6 +3235,9 @@ as unknown.
    list is **copying** an ability: "copy target activated or triggered ability" (a Strionic
    Resonator, a Lithoform Engine) means duplicating a stack object with its targets and its
    `subject`, which is different work from pointing at one, and nothing in the pool wants it yet.
+   A question whose answer is a **word** now exists too, so "you may", "tap or untap" and "choose
+   one —" on a trigger are all a few declarative lines; the one shape still missing from that
+   family is a choice whose answer is a *number*, which wants a range rather than a list.
 2. Loading a real Grimore deck into an automated table. **Blocked here rather than undone:**
    `deck:load` already resolves any deck handed to it, but a real list needs card data — type
    lines, mana costs, oracle text — and the `cards` table has never been populated while this

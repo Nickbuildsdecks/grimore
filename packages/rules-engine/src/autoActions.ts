@@ -1259,11 +1259,37 @@ function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Out
  * card from any library. So the id must be one the engine itself offered, for this question, and
  * the count must be what the card asked for.
  */
-function decide(state: GameState, action: { by: SeatIndex; cards?: readonly string[] }): Outcome {
+function decide(
+  state: GameState,
+  action: { by: SeatIndex; cards?: readonly string[]; option?: string },
+): Outcome {
   requireAutomated(state);
   const pending = state.pendingDecision;
   if (pending === null) throw new EngineError('RULE_NOT_APPLICABLE', 'nothing is waiting on a decision');
   if (pending.seat !== action.by) throw new EngineError('FORBIDDEN', 'it is not your decision to make');
+  /*
+    A question whose answer is a word, answered.
+
+    The option is checked against the list the engine put on the question rather than against the
+    script, for the same reason the card candidates are: that list is the *authorisation*, and it
+    was computed when the question was asked. A crafted action naming a word nobody offered is
+    refused here and nowhere else.
+  */
+  if (pending.options !== undefined) {
+    const picked = action.option;
+    if (picked === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'choose one of the options');
+    if (!pending.options.includes(picked)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that is not one of the choices');
+    }
+    const resumedChoice = answerDecision(state, [], picked);
+    const settledChoice = resumedChoice.state.pendingDecision === null
+      ? resetPriority(settle(resumedChoice.state, state))
+      : settle(resumedChoice.state, state);
+    return {
+      state: settledChoice,
+      message: `${seatName(state, action.by)} chooses ${picked} — ${resumedChoice.message}`,
+    };
+  }
   const chosen = action.cards ?? [];
   if (chosen.length < pending.min || chosen.length > pending.max) {
     throw new EngineError('RULE_NOT_APPLICABLE', pending.min === pending.max

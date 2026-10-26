@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and seven, today, across nine starter decks. A
+cards somebody has scripted — two hundred and nine, today, across nine starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -125,6 +125,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Watch a creature grow itself | **Cloudfin Raptor** in Hollow Tide is a 0/1 flier for one mana with **evolve**: whenever another creature you control enters that has **greater power or greater toughness** than the Raptor, it gets a +1/+1 counter. Either one is enough — a 0/2 Fog Bank grows it on toughness alone — and once the Raptor is the biggest thing you control it stops growing. The condition is checked **twice**, which is worth knowing at the table: nothing goes on the stack at all when the creature that arrived is not bigger, and it is checked again when the trigger resolves, so killing or bouncing that creature in reply means no counter. The counters stay on the Raptor through anything that does not kill it. |
 | Read a creature whose power is a **\*** | Two creatures are printed with a star instead of a number, and what it means is that their power is a count of something, read fresh every time anybody looks. Lhurgoyf in Rot Harvest counts the creature cards in *every* graveyard and its toughness is that plus one; Enigma Drake in Arc Tempest counts the instants and sorceries in *your* graveyard and keeps its printed toughness of 4. In hand the card still shows the star, because that is what the card says; on the battlefield the board shows the number it currently is. It changes with nothing announcing it — including downwards, if a graveyard gets exiled. |
 | Send their removal somewhere else | Two cards change what a spell already on the stack is pointed at. **Willbender** in Tidal Mind is a morph: {3} face down, and {1}{U} to turn it up at the moment their removal is on the stack aimed at one of your creatures — then pick the spell, and pick where it goes instead. **Swerve** in Arc Tempest does the same for {1}{U}{R} as an instant, for an instant or a sorcery, and a burn spell aimed at your face can be aimed back at theirs. Three things to know. The new target has to be legal **for their spell** — a "target creature" spell cannot be sent at a player, and if the one you pick is illegal the spell simply keeps the target it had rather than being countered. The spell has to have exactly **one** target. And the table will not offer you a spell with nowhere else to go: if the thing it is aimed at is the only legal target on the table, changing it would change nothing. And Willbender is printed "spell **or ability**", which it now does: an ability is a row in the stack list rather than a card, so you tap the row. Swerve is spells only, because that is what *it* says. |
+| Choose a word rather than a card | Two cards ask something no card can answer. **Obelisk of Urd** in Rot Harvest asks for a **creature type**: it has convoke, so a board of creatures pays for it on turn three, and every creature you control of the type you name gets +2/+2 for as long as the Obelisk is out — including ones that arrive later, so an Imperious Perfect making Elf Warriors keeps feeding it. **Voice of All** in Skyward Writ asks for a **colour**: a 2/2 flier with protection from whichever colour you name, which against the two decks holding this pool's removal is a creature they cannot target, block, damage or kill in combat. The bar shows the words as buttons and one tap is the whole answer — nothing to confirm, nothing to count. Both ask **while the card is still resolving**, which is what "as this enters the battlefield" means: there is no moment where the Obelisk is on the battlefield with no type chosen, so a removal spell held for exactly that window does not exist. The thirteen types offered are the ones this pool actually contains in numbers (eight copies or more); the real card says "any creature type", and a table cannot draw several hundred buttons. |
 | Answer what a permanent is **doing** | Two cards counter an ability on the stack rather than the permanent that made it, and that is a different thing: by the time an Icy Manipulator's tap or a Jace's loyalty ability is waiting to resolve, destroying the card does not stop it — an ability on the stack is its own object and does not care whether its source is still there (CR 113.7a). **Squelch** in Arc Tempest is {1}{U}: counter target **activated** ability, and draw a card. **Disallow** in Tidal Mind is {1}{U}{U}: counter target spell **or** ability, either kind. Abilities are the rows in the stack list, so you tap the row; there is no card to tap, because an ability is a thing a permanent is doing and not an object anybody owns. Two things follow from that. Neither card is castable with nothing there to point at, which is the table refusing to let you throw it away. And a cost that was already paid stays paid: countering an Icy Manipulator's tap does not untap the Icy Manipulator, because the tap was the price of putting the ability on the stack in the first place. |
 | Have a creature with **ward** targeted | Two creatures have it: Dragonsguard Elite (ward {1}) in Verdant Guard and Sedgemoor Witch (ward {3}) in Ashen Rite. When an opponent aims a spell or an ability at one, their spell stops on the stack and **they** are asked: pay the ward cost, or let it be countered. Both answers are offered, because declining is often right — the removal is answered either way, and it cost them the card. If they cannot produce the cost at all they are not asked, and the log says the ward was not paid. It never triggers off its own controller's spells, so you can pump your own warded creature for free. |
 | Turn a permanent face down | Tap it on the battlefield → **Turn face down**. Nobody else can read what it is, and at an automated table it stops being that card for the rules too: it is a **2/2 creature with no name, no colours and no abilities** (CR 707.2) until it is turned back up. A face-down Llanowar Elves taps for nothing, a face-down Glorious Anthem stops lifting the team, and a face-down land is not a land. Counters and pumps still apply to it — a +1/+1 counter makes it a 3/3 — and your opponent sees the 2/2 rather than a blank card. No card in the decks does this to itself yet; it is here as a move you can make. |
@@ -172,8 +173,9 @@ anybody's turn, which is what makes instants and responses work at all.
 **Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange), **Tidal Mind**
 (blue-black control, with counterspells) and **Rot Harvest** (green-black, built on getting
 creatures back out of the graveyard and on feeding them to sacrifice outlets, now with an
-**Imperious Perfect** that taps for an Elf a turn to feed them with), 60 cards each plus a
-commander, so a table can start with no setup at all. **Forge Alliance** (red-white) is the fifth:
+**Imperious Perfect** that taps for an Elf a turn to feed them with, and an **Obelisk of Urd**
+that names a creature type as it lands and makes every one of them +2/+2 — including the Elves the
+Perfect has not made yet), 60 cards each plus a commander, so a table can start with no setup at all. **Forge Alliance** (red-white) is the fifth:
 a board of small creatures and a sword for one of them, with Balan — who pulls every Equipment you
 control onto himself — as its commander. **Ashen Rite** (black-red) is the first
 deck whose costs are decisions: cycling lands that are a land early and a card late, spells with a
@@ -184,8 +186,9 @@ where **Stromkirk Captain** lives: +1/+1 and first strike for the other eight, w
 0/1 Blood Artists into 1/2s that kill an attacker and take nothing back.
 **Skyward Writ** (white-blue) is the first deck whose plan is not to have the best
 board: Walls that hold the ground and attack nowhere, two Counterspells and an Essence Scatter
-because what beats it is a creature, a 2/3 that cannot attack and makes your lone flier bigger, and
-fliers to win over the top. Hanna leads it and buys an artifact or
+because what beats it is a creature, a 2/3 that cannot attack and makes your lone flier bigger, a
+flier that takes protection from whichever colour you name as it lands, and more fliers to win over
+the top. Hanna leads it and buys an artifact or
 enchantment back out of your graveyard once a turn. Its six Knights are the pool's second-deepest
 tribe, and **Knight Exemplar** makes all of them +1/+1 and **indestructible** — with the caveat
 that matters at the table: kill the Exemplar and they are mortal again immediately, including in
@@ -231,18 +234,25 @@ other, both seats, 192 games each (`SEEDS=12 node scripts/measure/deck-table.mjs
 
 ```
  81%  156-36   ember-rush
- 65%  124-68   forge-alliance
- 54%  103-89   verdant-guard
- 51%   98-94   skyward-writ
+ 66%  126-66   forge-alliance
+ 53%  102-90   verdant-guard
+ 51%   97-95   skyward-writ
  46%   89-103  ashen-rite
- 43%   83-109  arc-tempest
- 41%   78-114  hollow-tide
+ 44%   84-108  arc-tempest
+ 40%   77-115  hollow-tide
  39%   75-117  rot-harvest
  30%   57-135  tidal-mind
 ```
 
-That run is after the two cards that counter an ability, and it is the clearest demonstration yet of
-the caveat two paragraphs down. **Both decks that changed a card are the two this table says
+That run is after the two cards that ask for a word, and it is the quietest this table has ever
+been: **nothing moved by more than two games in a hundred and ninety-two**, three rows are identical
+to the last run, and the two decks that changed a card moved by one game and none. Which is what it
+should look like, because both slot measurements said the same thing — the Obelisk is free and the
+Voice costs about one per cent. A table that had moved a lot here would have meant one of those
+numbers was wrong.
+
+The run before it was after the two cards that counter an ability, and it was the clearest
+demonstration of the caveat two paragraphs down. **Both decks that changed a card are the two this table says
 nothing useful about.** Tidal Mind came back on *exactly* the same record as the run before — 57-135
 to the game — with a card swapped, and Arc Tempest came back three points **down** after a swap its
 own paired measurement scored at +2 and +4 on two other seed sets. Six games in a hundred and
@@ -312,7 +322,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and seven scripted cards, which now includes a wrath, a
+The decks share a pool of two hundred and nine scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves

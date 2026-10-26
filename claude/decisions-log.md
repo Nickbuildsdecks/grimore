@@ -5664,3 +5664,77 @@ the one pool-level change here worth noticing.
 target activated or triggered ability" (a Strionic Resonator, a Lithoform Engine) needs the stack
 object duplicated with its targets and its `subject`, which is a different piece of work from
 pointing at one — and nothing in the pool wants it yet.
+
+## D135 — The question whose answer is a word, and two cards that choose as they enter
+
+**Decision: `DecisionSpec` becomes a union — the card question it already had, and a new one whose
+answer is a word — and the card that asks it also answers it for the engine's own opponent.**
+
+Every mid-resolution question this engine could ask was "choose some cards from a zone":
+`pendingDecision` carried `candidates`, a `min`, a `max` and a `DecisionZone`, and `DecisionAnswer`
+carried `ids`. That covers a search, a discard, a scry and a sacrifice, and it cannot express the
+other half of what printed cards ask. "Choose a creature type." "Choose a colour." "Tap or untap."
+"You may." None of those names an object, and the only yes-or-no the engine had was
+`pendingPayment`, which is ward's special case with a mana cost attached.
+
+**One shape for all of them, not a separate yes-or-no.** `ChoiceDecisionSpec` is `{ who, prompt,
+options }`, and "you may" is a choice between two words. The table draws the same row of buttons
+either way, a single mechanism is a single place for the rules about it to live, and a spec with
+fewer than two options is answered by the engine rather than asked — the same rule that already
+keeps a discard of two from a hand of two off the screen, because a prompt with one button is noise.
+
+**The card answers its own question, for the bot.** `ChoiceDecisionSpec.best` is a function on the
+spec, and it has to be there because only the card knows what its words *mean*: "Vampire" is a
+creature type to count on a battlefield and "black" is a colour to fear in a graveyard, and nothing
+generic can tell those two lists apart without guessing. Both implementations are board reads rather
+than weights, which is the line the rest of this bot is held to — and `colourToFear` reads only
+other seats' battlefields and graveyards, both public, because a bot that read their hands would be
+answering a question no player can answer. The engine still checks the card's own hint against the
+offered list before using it: a hint naming something that was not offered would be a refused action
+and a stopped table.
+
+**Both cards choose as they enter, and that is a rule rather than a detail.** A `decisions` list is
+asked during the spell's own resolution — before the permanent is put onto the battlefield — which
+is exactly what "as ~ enters the battlefield" means (CR 614.12). An entry *trigger* would be a
+different card: it would go on the stack after the permanent arrived, both players would get
+priority, and killing the Obelisk in that window would leave a creature type chosen and nothing
+pumping it. The test says so directly: after the answer, the stack is empty, the Obelisk is on the
+battlefield and the Elf is already a 3/3, all in one action.
+
+The same resolution-order fact is why each card installs its own continuous effect from `onResolve`
+rather than declaring a `statics` entry. A declared static is fixed and the engine installs it on
+arrival; these two are not fixed until somebody answers, so the effect is built with the answer in
+it. `duration: 'permanent'` means "while the source is on the battlefield", and state-based actions
+— which are what purge an effect whose source has gone — do not run in the middle of a resolution,
+so pushing it a moment early is safe. A test kills the Obelisk and watches the Elf go back to 1/1.
+
+**Two cards:**
+
+- **Obelisk of Urd** ({5}, convoke) in Rot Harvest. Three things the engine already had and one it
+  did not: convoke pays for a five-mana artifact on turn three (D101), the `controller-subtype`
+  scope performs the filter from a stored string so an Elf token made four turns later is pumped
+  with nothing recomputed (D129), and `duration: 'permanent'` ends it when the Obelisk leaves. The
+  choice is the new part and it is the whole card — the same artifact is an anthem for nine
+  creatures in one deck and three in another.
+- **Voice of All** ({3}{W} 2/2 flier) in Skyward Writ. The closed-set half: five options, so there
+  is no approximation to admit to, and it makes protection's four rules (D83) worth having had.
+
+**The honest deviation** is the Obelisk's option list. The card says "choose a creature type",
+meaning any of several hundred; a table cannot draw several hundred buttons, so the list is the
+thirteen types this pool actually contains in numbers — every one with eight or more copies. It is a
+derived rule rather than a judged list, and it makes the same choices for the same reasons.
+
+**The measurements, and one of them is a carry.** The Obelisk swap is +4 and −3 over 240 paired
+duels on two seed sets: no consistent sign, far inside the floor, free. The Voice is −3 and −2 —
+the same side both times, still inside the floor, and the cut was re-asked per D127 (a *Raise the
+Alarm* instead gives −4 and −5, worse again). So the Serra Angel is the better cut and the card
+itself costs about one per cent, carried on purpose: this is the one card in the pool where the gap
+between a bot's answer and a person's *is* the card, since a player chooses the colour from the
+matchup in front of them and the engine chooses it by counting what it can already see. D102 carries
+the Samite Healer at five times the cost for a weaker reason.
+
+**What this unlocks and nobody has written yet:** "you may", as a two-word choice; "tap or untap";
+"choose one —" on a trigger rather than at cast time. All three are now a few declarative lines. The
+one thing still missing from the family is a choice whose answer is a *number* — "choose a number",
+"pay any amount of life" — which wants a range rather than a list and has no card in the pool asking
+for it.

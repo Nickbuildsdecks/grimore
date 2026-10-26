@@ -17,7 +17,9 @@ import { pactProtects } from './pacts.js';
 import { crewPlan, legalActions, type LegalActions, type LegalPlay } from './legalActions.js';
 import { zoneKey } from './cards.js';
 import { listAt } from './cardActions.js';
-import { bottomOwed, modesOf, pendingDeclaration, stillDeciding } from './automation.js';
+import {
+  bottomOwed, modesOf, pendingDeclaration, preferredOption, stillDeciding,
+} from './automation.js';
 import { characteristicsOf, hasType, parseTypeLine, type Keyword } from './characteristics.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
@@ -59,6 +61,26 @@ const playValue = (play: LegalPlay): number => {
  * would tutor up a Mountain and sacrifice its best creature while passing every test that only
  * checks the game finished.
  */
+/**
+ * The whole answer to an outstanding question, cards or word.
+ *
+ * One function for the two places that answer one, because they were two copies of the same line
+ * and a question whose answer is a *word* would otherwise have been handled in one of them.
+ */
+function decideAction(
+  state: GameState, seat: SeatIndex, ask: NonNullable<LegalActions['mustDecide']>,
+): Action {
+  // A word is answered by the card that asked, which is the only thing that knows what its own
+  // options mean. See `ChoiceDecisionSpec.best`.
+  if (ask.options !== undefined) {
+    return {
+      type: 'auto:decide', by: seat, cards: [],
+      option: preferredOption(state) ?? ask.options[0] ?? '',
+    };
+  }
+  return { type: 'auto:decide', by: seat, cards: decideCards(state, seat, ask) };
+}
+
 function decideCards(
   state: GameState, seat: SeatIndex, ask: NonNullable<LegalActions['mustDecide']>,
 ): string[] {
@@ -995,7 +1017,7 @@ function answerPending(state: GameState): Action | null {
   if (state.pendingDecision !== null) {
     const seat = state.pendingDecision.seat;
     const ask = legalActions(state, seat).mustDecide;
-    return ask === null ? null : { type: 'auto:decide', by: seat, cards: decideCards(state, seat, ask) };
+    return ask === null ? null : decideAction(state, seat, ask);
   }
   if (state.pendingPayment !== null) {
     return { type: 'auto:pay', by: state.pendingPayment.seat, pay: true };
@@ -2006,7 +2028,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
   // A card that stopped mid-resolution to ask this seat something blocks everything, including
   // the player whose spell it is, so it is answered before anything else is even considered.
   const ask = actions.mustDecide;
-  if (ask !== null) return { type: 'auto:decide', by: seat, cards: decideCards(state, seat, ask) };
+  if (ask !== null) return decideAction(state, seat, ask);
 
   // A trigger waiting for its targets blocks everything else, so it is answered next.
   const choice = actions.mustChoose;

@@ -444,8 +444,17 @@ export interface AutomationState {
     readonly candidates: readonly string[];
     readonly min: number;
     readonly max: number;
-    /** Where they are being chosen from, which is what the table needs to draw the picker. */
-    readonly from: DecisionZone;
+    /**
+     * Where they are being chosen from, which is what the table needs to draw the picker. Absent
+     * for a question whose answer is a word rather than a card — see `options`.
+     */
+    readonly from?: DecisionZone;
+    /**
+     * The words to choose between, when that is what the question is: a creature type, a colour,
+     * "tap" or "untap". Present exactly when `from` is absent, and the table draws a row of
+     * buttons instead of lighting up cards.
+     */
+    readonly options?: readonly string[];
     readonly resume: {
       /** Every question this resolution asks, in order: a spec index and who answers it. */
       readonly plan: readonly { readonly seat: SeatIndex; readonly specIndex: number }[];
@@ -483,6 +492,14 @@ export type DecisionZone =
 export interface DecisionAnswer {
   readonly seat: SeatIndex;
   readonly ids: readonly string[];
+  /**
+   * The word chosen, for a question whose answer is not a card — "Vampire", "white", "untap".
+   *
+   * The string rather than its index, because the string is what the effect needs and an index is
+   * a second thing that can be out of step with the list it indexes. It is checked against the
+   * spec's own `options` when the answer arrives, so a crafted action cannot invent one.
+   */
+  readonly option?: string;
 }
 
 // ── Automated actions ────────────────────────────────────────────────────────────────────────────
@@ -589,6 +606,12 @@ export interface AutoChooseAction {
 /** Answers a question a card asked while it was resolving. */
 export interface AutoDecideAction {
   readonly type: 'auto:decide'; readonly by: SeatIndex; readonly cards: readonly string[];
+  /**
+   * The word chosen, for a question whose answer is a word. Carried on the same action as `cards`
+   * rather than on one of its own, because it is the same question at the same moment in the same
+   * resolution — a second action would be a second thing the table has to know when to send.
+   */
+  readonly option?: string;
 }
 /**
  * Answers a ward (CR 702.21): pay the cost, or let the spell or ability be countered.

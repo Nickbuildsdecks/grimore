@@ -12,7 +12,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, canAttack, canBlock, characteristicsOf,
+  SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock,
+  characteristicsOf,
   hasType,
   legalActions,
   parseTypeLine,
@@ -8602,5 +8603,224 @@ describe('an ability on the stack is a thing you can point at', () => {
     expect(s.instances[swift]!.tapped).toBe(true);
     expect(s.stackOrder).toEqual([]);
     expect(legalActions(s, 0).plays.find((p) => p.name === 'Squelch')).toBeUndefined();
+  });
+});
+
+describe('a question whose answer is a word, not a card', () => {
+  /*
+    The other half of what printed cards ask.
+
+    Every mid-resolution question in this engine was "choose some cards from a zone" — a search, a
+    discard, a scry, a sacrifice. "Choose a creature type" and "choose a colour" name no object at
+    all, so a card that asked one had to be left out of the pool rather than approximated.
+
+    Both cards here choose **as they enter**, and that is the rules point rather than an
+    implementation detail: a `decisions` list is asked during the spell's own resolution, before the
+    permanent is on the battlefield (CR 614.12). An entry trigger would leave a window in which the
+    Obelisk is out and nothing is pumped, and these tests are also what says that window does not
+    exist.
+  */
+
+  it('Obelisk of Urd pumps the type that was chosen, and nothing else', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: ['Obelisk of Urd'] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Forest', 'Forest', 'Forest', 'Llanowar Elves', 'Blood Artist'],
+        1: ['Island'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const elf = find(s, 0, 'battlefield', 'Llanowar Elves');
+    const artist = find(s, 0, 'battlefield', 'Blood Artist');
+    expect([power(s, elf), toughness(s, elf)]).toEqual([1, 1]);
+
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Obelisk of Urd') }));
+
+    // It stopped and asked, and the question has words rather than candidates.
+    expect(s.pendingDecision?.options).toEqual([
+      'Human', 'Vampire', 'Shaman', 'Monk', 'Wizard', 'Soldier', 'Warrior', 'Knight', 'Goblin',
+      'Elf', 'Cat', 'Wall', 'Zombie',
+    ]);
+    expect(s.pendingDecision?.candidates).toEqual([]);
+    expect(legalActions(s, 0).mustDecide?.options).toContain('Elf');
+
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Elf' });
+
+    /*
+      Answered, and that is all: the Obelisk is on the battlefield, the anthem is live and the
+      stack is empty — in one action, with nothing for anybody to respond to in between.
+
+      This is the assertion that says "as it enters" rather than "when it enters". A trigger-based
+      version would leave an ability on the stack here, both players would get priority, and a
+      removal spell held for that window would answer a card that had already resolved.
+    */
+    expect(s.stackOrder).toEqual([]);
+    expect(s.instances[find(s, 0, 'battlefield', 'Obelisk of Urd')]!.zone).toBe('battlefield');
+    expect([power(s, elf), toughness(s, elf)]).toEqual([3, 3]);
+    s = drain(s);
+
+    // The Elf grew; the Vampire did not. And the Obelisk is not a creature, so it is nobody's type.
+    expect([power(s, elf), toughness(s, elf)]).toEqual([3, 3]);
+    expect([power(s, artist), toughness(s, artist)]).toEqual([0, 1]);
+  });
+
+  it('and keeps pumping an Elf that did not exist when the type was chosen', () => {
+    /*
+      The scope reads the board rather than a list, which is what makes a chosen type worth having:
+      the token the Imperious Perfect makes three turns later is an Elf, so it is a 3/3, with
+      nothing recomputed and no event saying a new Elf exists.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: ['Obelisk of Urd'] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Imperious Perfect'],
+        1: ['Island'],
+      },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Obelisk of Urd') }));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Elf' }));
+
+    const perfect = find(s, 0, 'battlefield', 'Imperious Perfect');
+    // The lord is an Elf Warrior itself and does not pump itself, so the Obelisk's +2/+2 is all it
+    // gets: a 4/4.
+    expect([power(s, perfect), toughness(s, perfect)]).toEqual([4, 4]);
+
+    /*
+      The token is made two turns later, on purpose and not only for the mana: the point of the
+      assertion is that the type was chosen before this Elf existed.
+    */
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 0);
+    const play = legalActions(s, 0).plays.find((p) => p.name === 'Imperious Perfect' && p.kind === 'activate');
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: perfect, abilityIndex: play!.abilityIndex!,
+    }));
+    // A 1/1 token, +1/+1 from its own lord and +2/+2 from a type chosen before it existed.
+    const token = find(s, 0, 'battlefield', 'Elf Warrior');
+    expect([power(s, token), toughness(s, token)]).toEqual([4, 4]);
+  });
+
+  it('and the anthem is gone the moment the Obelisk is', () => {
+    // `duration: 'permanent'` means "while the source is on the battlefield", and the effect was
+    // pushed by the card's own resolution rather than declared — so this is the one assertion that
+    // says the two behave the same.
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: ['Obelisk of Urd'] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Forest', 'Forest', 'Forest', 'Llanowar Elves'],
+        1: ['Island'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Obelisk of Urd') }));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Elf' }));
+    const elf = find(s, 0, 'battlefield', 'Llanowar Elves');
+    const obelisk = find(s, 0, 'battlefield', 'Obelisk of Urd');
+    expect([power(s, elf), toughness(s, elf)]).toEqual([3, 3]);
+
+    s = drain(apply(s, { type: 'card:move', by: 0, card: obelisk, toZone: 'graveyard' }));
+    expect([power(s, elf), toughness(s, elf)]).toEqual([1, 1]);
+  });
+
+  it('Voice of All takes protection from the colour it was told, all four of its rules', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'ashen-rite' },
+      hands: { 0: ['Voice of All'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains'],
+        1: ['Swamp', 'Swamp', 'Blood Artist'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Voice of All') }));
+    expect(s.pendingDecision?.options).toEqual(['black', 'red', 'white', 'blue', 'green']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'black' }));
+
+    const voice = find(s, 0, 'battlefield', 'Voice of All');
+    expect(protectedFrom(s, voice, find(s, 1, 'battlefield', 'Blood Artist'))).toBe(true);
+    // And not from a colour it did not choose: the choice is the card.
+    expect(protectedFrom(s, voice, find(s, 0, 'battlefield', 'Plains'))).toBe(false);
+  });
+
+  it('and a black removal spell cannot be pointed at it at all', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+      hands: { 0: ['Voice of All'], 1: ['Doom Blade'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains'],
+        1: ['Swamp', 'Swamp'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Voice of All') }));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'black' }));
+    const voice = find(s, 0, 'battlefield', 'Voice of All');
+
+    s = tapAllLands(advanceTo(nextTurn(s), 'precombat-main'), 1);
+    const blade = legalActions(s, 1).plays.find((p) => p.name === 'Doom Blade');
+    expect(blade?.candidates[0] ?? []).not.toContainEqual({ kind: 'card', id: voice });
+  });
+
+  it('refuses a word nobody offered, and refuses an empty answer', () => {
+    /*
+      The question's own option list is the authorisation, exactly as a card question's candidate
+      list is. A crafted action naming a type that was never on the list is refused here and
+      nowhere else — and so is an answer with no word in it at all, because "I did not choose" is
+      not one of the answers.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: ['Obelisk of Urd'] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Forest', 'Forest', 'Forest', 'Llanowar Elves'],
+        1: ['Island'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Obelisk of Urd') }));
+
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [], option: 'Dragon' }))
+      .toContain('not one of the choices');
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [] })).toContain('choose one of the options');
+    // And not by the other player, whose question it is not.
+    expect(refusal(s, { type: 'auto:decide', by: 1, cards: [], option: 'Elf' }))
+      .toContain('not your decision');
+  });
+
+  it('and the engine’s own opponent answers it from the board', () => {
+    /*
+      `ChoiceDecisionSpec.best`, which lives on the card because only the card knows what its words
+      mean. The Obelisk counts the types it controls; the Voice counts the colours it can see in
+      the other seats' public zones. Both are facts rather than weights, which is the line the rest
+      of the bot is held to.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: ['Obelisk of Urd'] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Swamp', 'Forest', 'Forest', 'Forest',
+          'Bloodthrone Vampire', 'Vampire Aristocrat', 'Llanowar Elves'],
+        1: ['Island'],
+      },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Obelisk of Urd') }));
+    // Two Vampires against one Elf, so the bot names Vampire — and the Elf stays a 1/1.
+    expect(botAction(s, 0)).toEqual({ type: 'auto:decide', by: 0, cards: [], option: 'Vampire' });
+    s = drain(apply(s, botAction(s, 0)!));
+    const vampire = find(s, 0, 'battlefield', 'Bloodthrone Vampire');
+    const elves = find(s, 0, 'battlefield', 'Llanowar Elves');
+    expect([power(s, vampire), toughness(s, vampire)]).toEqual([3, 3]);
+    expect([power(s, elves), toughness(s, elves)]).toEqual([1, 1]);
   });
 });

@@ -23,15 +23,16 @@ import { listAt } from './cardActions.js';
 import {
   addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
   dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
-  firstAbilityTarget,
+  chosenOption, firstAbilityTarget,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
-  becomeCopyOf, wardAsks,
+  becomeCopyOf, wardAsks, staticEffect,
   type EffectContext, type PumpOptions,
 } from './effects.js';
-import type { CardScript, DecisionSpec, TargetSpec, TriggerDef } from './scriptTypes.js';
+import type { CardScript, CardsDecisionSpec, TargetSpec, TriggerDef } from './scriptTypes.js';
+import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 import { legalTargets, retarget } from './targeting.js';
 import { targetKey, type Target } from './turnTypes.js';
@@ -231,7 +232,7 @@ const equipment = (name: string, cost: string, bonus: PumpOptions, text: string)
   ],
 });
 
-const scry = (count: number): DecisionSpec => ({
+const scry = (count: number): CardsDecisionSpec => ({
   who: 'controller',
   from: 'library-top',
   look: count,
@@ -1254,7 +1255,9 @@ const GRIM_DISCOVERY: CardScript = {
  * does not want to shuffle, or who would rather not show that they have nothing. The engine will
  * not make that call for them, which means the prompt always has a "choose nothing" answer.
  */
-const searchYourLibrary = (prompt: string, filter?: DecisionSpec['filter']): DecisionSpec => ({
+const searchYourLibrary = (
+  prompt: string, filter?: CardsDecisionSpec['filter'],
+): CardsDecisionSpec => ({
   who: 'controller', from: 'library', prompt, min: 0, max: 1,
   ...(filter === undefined ? {} : { filter }),
 });
@@ -3756,6 +3759,166 @@ const DISALLOW: CardScript = {
   },
 };
 
+// ── The questions whose answers are words ───────────────────────────────────────────────────────
+
+/*
+  Two cards that ask something no card here could ask before: a question whose answer is not a card.
+
+  Every mid-resolution question in this file until now has been "choose some cards from a zone" — a
+  search, a discard, a scry, a sacrifice. "Choose a creature type" and "choose a colour" name no
+  object at all, and the shape for them is `ChoiceDecisionSpec`.
+
+  **Both of them choose as they enter, and that is the rules point.** A `decisions` list is asked
+  during the spell's own resolution, which is *before* the permanent is put onto the battlefield —
+  so the choice is made with the card still on the stack, which is exactly what "as ~ enters the
+  battlefield" means (CR 614.12). An entry *trigger* would be a different card: it would go on the
+  stack after the permanent arrived, both players would get priority, and killing the Obelisk in
+  that window would leave a creature type chosen and nothing pumping it. There is no such window
+  here, and that is not an accident of where the code went.
+
+  The other half is that each card installs its own continuous effect from its own `onResolve`,
+  rather than declaring a `statics` entry. A declared static is a fixed thing the engine installs on
+  arrival; these two are not fixed until somebody answers, so the effect is built with the answer in
+  it. `duration: 'permanent'` means "while the source is on the battlefield", so pushing it a moment
+  before the permanent gets there is fine — state-based actions, which are what purge an effect
+  whose source has gone, do not run in the middle of a resolution.
+*/
+
+/**
+ * The creature types worth choosing between: every one with eight or more copies in the pool.
+ *
+ * A derived list rather than a judged one, and the honest deviation from the printed card is in
+ * the same sentence — Obelisk of Urd says "choose a creature type", meaning any of several hundred.
+ * A table cannot draw several hundred buttons, and a list of the types this pool actually contains
+ * is the version that makes the same choices for the same reasons. The order is the order they are
+ * offered in, which is also the tie-break: commonest first.
+ */
+const CHOOSABLE_TYPES: readonly string[] = [
+  'Human', 'Vampire', 'Shaman', 'Monk', 'Wizard', 'Soldier', 'Warrior', 'Knight', 'Goblin', 'Elf',
+  'Cat', 'Wall', 'Zombie',
+];
+
+/** The type this seat controls the most of, for the bot. Ties go to the earlier type in the list. */
+function commonestTypeOf(state: GameState, seat: SeatIndex): string | undefined {
+  const counts = new Map<string, number>();
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const ch = characteristicsOf(state, inst);
+    if (!ch.isCreature) continue;
+    for (const type of CHOOSABLE_TYPES) {
+      if (hasSubtype(ch.typeLine, type)) counts.set(type, (counts.get(type) ?? 0) + 1);
+    }
+  }
+  let best: string | undefined;
+  let most = 0;
+  for (const type of CHOOSABLE_TYPES) {
+    const n = counts.get(type) ?? 0;
+    if (n > most) { most = n; best = type; }
+  }
+  return best;
+}
+
+/**
+ * Obelisk of Urd: convoke, choose a creature type, and that type gets +2/+2.
+ *
+ * Three things the engine already had and one it did not. Convoke pays for a five-mana artifact on
+ * turn three with a board of creatures (D101); the `controller-subtype` scope performs the filter
+ * from a stored string rather than a list, so the Elf token made four turns later is pumped with
+ * nothing recomputed (D129); `duration: 'permanent'` ends the effect the moment the Obelisk leaves.
+ * The choice is the new part, and it is the whole card: the same artifact is a +2/+2 anthem for
+ * nine creatures in one deck and for three in another.
+ */
+const OBELISK_OF_URD: CardScript = {
+  name: 'Obelisk of Urd',
+  convoke: true,
+  decisions: [{
+    who: 'controller',
+    prompt: 'Choose a creature type',
+    options: CHOOSABLE_TYPES,
+    best: commonestTypeOf,
+  }],
+  onResolve: (c) => {
+    const type = chosenOption(c);
+    if (type === null) return c.state;
+    return staticEffect(
+      c.state, c.source, c.controller,
+      { kind: 'controller-subtype', subtype: type },
+      { power: 2, toughness: 2 },
+    );
+  },
+};
+
+/** The five colours as words, because a button saying "W" is a button nobody can read. */
+const COLOUR_WORDS: Readonly<Record<string, Color>> = {
+  white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G',
+};
+const COLOUR_OPTIONS: readonly string[] = ['black', 'red', 'white', 'blue', 'green'];
+
+/**
+ * The colour this seat has most to fear, read off what it can actually see.
+ *
+ * Opponents' battlefields and graveyards only — both public. A bot that read their hands would be
+ * answering a question no player can answer, which is the line this project keeps drawing: the
+ * search is allowed to be bad, not to be clairvoyant. The graveyard is the better half of the read
+ * anyway, because a removal spell that has already been cast is in it.
+ *
+ * Ties go to black and then red, which is the order `COLOUR_OPTIONS` is in: those are the two
+ * colours that hold this pool's removal, so an empty board gets the answer a player would give.
+ */
+function colourToFear(state: GameState, seat: SeatIndex): string | undefined {
+  const counts = new Map<string, number>();
+  for (const other of state.seats) {
+    if (other.index === seat || other.eliminated) continue;
+    const seen = [
+      ...listAt(state, zoneKey(other.index, 'battlefield')),
+      ...listAt(state, zoneKey(other.index, 'graveyard')),
+    ];
+    for (const id of seen) {
+      const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+      for (const word of COLOUR_OPTIONS) {
+        if ((def?.colors ?? []).includes(COLOUR_WORDS[word]!)) {
+          counts.set(word, (counts.get(word) ?? 0) + 1);
+        }
+      }
+    }
+  }
+  let best: string | undefined;
+  let most = 0;
+  for (const word of COLOUR_OPTIONS) {
+    const n = counts.get(word) ?? 0;
+    if (n > most) { most = n; best = word; }
+  }
+  return best;
+}
+
+/**
+ * Voice of All: a 2/2 flier with protection from a colour nobody declared in advance.
+ *
+ * The closed-set half of the same primitive — five options, so there is no approximation to admit
+ * to — and the card that makes protection's four rules (D83) worth having had: a creature nothing
+ * in one deck can target, kill in combat, block or damage, chosen after seeing which deck it is
+ * facing. Against the two colours holding this pool's removal it simply cannot be answered.
+ */
+const VOICE_OF_ALL: CardScript = {
+  name: 'Voice of All',
+  decisions: [{
+    who: 'controller',
+    prompt: 'Choose a colour',
+    options: COLOUR_OPTIONS,
+    best: colourToFear,
+  }],
+  onResolve: (c) => {
+    const word = chosenOption(c);
+    const colour = word === null ? undefined : COLOUR_WORDS[word];
+    if (colour === undefined) return c.state;
+    return staticEffect(
+      c.state, c.source, c.controller, { kind: 'cards', ids: [c.source] },
+      { protectionFrom: [colour] },
+    );
+  },
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -3927,6 +4090,7 @@ const ALL: readonly CardScript[] = [
   WILLBENDER, SWERVE,
   GUARDIANS_OF_AKRASA, CLOUDFIN_RAPTOR,
   SQUELCH, DISALLOW,
+  OBELISK_OF_URD, VOICE_OF_ALL,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

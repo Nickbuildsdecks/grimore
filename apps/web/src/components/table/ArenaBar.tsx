@@ -174,13 +174,34 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           <span className="font-semibold text-[var(--g-text-high)]">
             {decisionLabel(mode.ask, mode.chosen)}
           </span>
+          {/*
+            A question whose answer is a word draws the words, and nothing else: there is no zone
+            to point at, no count to report and no confirm step — one tap is the whole answer.
+          */}
+          {mode.ask.options !== undefined ? (
+            <span data-testid="decide-options" className="flex flex-wrap gap-1.5">
+              {mode.ask.options.map((option) => (
+                <Button
+                  key={option}
+                  size="sm"
+                  variant="secondary"
+                  data-testid={`decide-option-${option}`}
+                  onClick={() => dispatch({ kind: "pickOption", option })}
+                >
+                  {option}
+                </Button>
+              ))}
+            </span>
+          ) : (
           <span className="text-[var(--g-text-muted)]">
             {mode.ask.from === "library" ? "tap a card in your library below"
               : mode.ask.from === "library-top" ? "tap the ones to put on the bottom"
-                : `tap a card in your ${mode.ask.from}`}
+                : `tap a card in your ${mode.ask.from ?? "hand"}`}
           </span>
+          )}
           <span className="ml-auto flex gap-1.5">
-            {mode.chosen.length >= mode.ask.min && mode.ask.min !== mode.ask.max ? (
+            {mode.ask.options === undefined
+              && mode.chosen.length >= mode.ask.min && mode.ask.min !== mode.ask.max ? (
               <Button size="sm" data-testid="confirm-decision" onClick={() => dispatch({ kind: "confirm" })}>
                 <Check className="size-3.5" />
                 {/* "Choose nothing" is the right words for a sacrifice and the wrong ones for a
