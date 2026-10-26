@@ -3268,6 +3268,38 @@ question. The driver now taps a `decide-option-` button and the arena suite repo
 reports a modal spell, which makes `DECK_A=rot-harvest DECK_B=skyward-writ` the first run in which
 either of those two cards was answered through the real buttons.
 
+### The watcher who could already talk, and the label that was missing
+
+The last line of the setup doc's *what is not done* about watching said a spectator "reads the
+table's chat and cannot write to it". It was wrong in the easy direction, the same way D132's gap
+was: `pod:chat` calls `requireSeat`, and `requireSeat` asks only that the socket is **in** a pod.
+The server has accepted a watcher's chat since the day watching was built. Nothing had ever sent
+one, because the watcher screen had no chat in it.
+
+Two real defects, neither of them a permission. **The drawer was missing** — `Watching` showed both
+boards, both graveyards, the stack and the log, and no way to say anything; the chat markup lived
+inline in the player's screen, so the fix began by extracting `ChatPanel.tsx`, one component now
+used on both screens, which is the only way they stay the same thing as either changes. And **the
+line read "Player"** — with no seat and no name the server fell back to `'Player'`, which is what
+one of the two people playing is called, so a spectator's "I'm responding to that" arrived looking
+like an opponent's. That is a wrong move made in good faith, the worst kind to debug.
+
+`watching` is set on the server from the socket's own seat, not inferred downstream from
+`seat === null`. The client could work it out; it does not, because that is a second answer to a
+question with one, and the second answer is the one that goes stale. Same rule as D132's privacy
+default — asserted where it is enforced — applied to a label rather than a guarantee, with a
+realtime test that seats one client, watches with another, has both talk, and checks that exactly
+one line comes back marked. The name a watcher sends is optional and is about the chat only; with
+none it talks as "Watcher", which is at least not a player's name. Nothing else about watching
+moved: no seat token, no state pushed to the table, the same redacted view.
+
+The proof is in the browser, because it is a two-screen fact. In `e2e-arena` the watcher fills its
+name, opens the drawer, sends "good luck", and the *player's* screen is checked for the
+`chat-watching-` badge on that line — 55 of 55. One harness note that cost more than the feature:
+the first run showed "Player" and no badge with the handler change plainly in the file, because the
+realtime server under `scripts/play.mjs` predated it. Rebuild and restart the play stack before a
+browser suite, every time; a stale server fails in the shape of a bug in the code you just wrote.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -125,11 +125,18 @@ export type PodJoinInput = z.infer<typeof PodJoinInput>;
 /**
  * Watching a table without taking a seat.
  *
- * No name and no seat token: a watcher is not a player, holds nothing and is owed nothing. The
- * only thing it needs is the code, and the only thing it gets back is the spectator view — which
- * the server has been able to build since redaction went in, and nothing could ask for.
+ * No seat token: a watcher is not a player, holds nothing and is owed nothing. The only thing it
+ * *needs* is the code, and the only thing it gets back is the spectator view — which the server
+ * has been able to build since redaction went in, and nothing could ask for.
+ *
+ * The name is optional and is not about the view. A watcher has been able to **talk** in the
+ * table's chat since the day watching was built — `pod:chat` asks only that the socket is in a pod
+ * — and with no name the server fell back to "Player", so every spectator's line arrived looking
+ * exactly like one of the two people playing. At a table where chat is how somebody says "I'm
+ * responding to that", that is a line you can act on wrongly. Sending the name the lobby already
+ * has asks nothing new of anybody and lets the table say who is talking.
  */
-export const PodWatchInput = z.object({ code: PodCode });
+export const PodWatchInput = z.object({ code: PodCode, name: PlayerName.optional() });
 export type PodWatchInput = z.infer<typeof PodWatchInput>;
 
 export const PodLeaveInput = z.object({}).strict();

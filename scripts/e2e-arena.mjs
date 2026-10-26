@@ -35,7 +35,8 @@
 import path from 'node:path';
 import {
   chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
-  readNumber, expectEventually, isMyMove, makeMove as drive, notePrompts, noteMove, press, tap,
+  readNumber, expectEventually, expectEventuallyTrue, isMyMove, makeMove as drive, notePrompts,
+  noteMove, press, tap,
   watchForReactWarnings,
 } from './lib/table-driver.mjs';
 
@@ -318,6 +319,10 @@ async function main() {
       watchForReactWarnings(watcher, 'Watcher', reactWarnings);
       await watcher.goto(BASE);
       await waitFor(watcher, 'lobby');
+      // A name, because watching sends one now: a spectator with none talks as "Watcher", and the
+      // point of the check below is that whatever they are called, the table says they are not
+      // playing.
+      await tid(watcher, 'player-name').fill('Nosy');
       await tid(watcher, 'join-code').fill(code);
       await press(watcher, 'watch-table');
       await waitFor(watcher, 'watching-code');
@@ -340,6 +345,28 @@ async function main() {
       check('a watcher is never offered a move',
         !(await has(watcher, 'arena-bar')) && !(await has(watcher, 'primary-move')),
         `arena-bar ${await has(watcher, 'arena-bar')}, primary-move ${await has(watcher, 'primary-move')}`);
+      /*
+        And it can talk — which it always could, and that was the problem.
+
+        `pod:chat` asks only that the socket is in a pod, so a spectator has been able to type in
+        the table's chat since the day watching was built. With no name the line read "Player",
+        which is what one of the two people playing is called, and a watcher's "I'm responding to
+        that" acted on as an opponent's is a wrong move made in good faith. What is checked is
+        that the player's screen says who is talking.
+      */
+      await press(watcher, 'toggle-chat');
+      await tid(watcher, 'chat-input').fill('good luck');
+      await press(watcher, 'chat-send');
+      await press(nick, 'toggle-chat');
+      const labelled = await expectEventuallyTrue(nick, async () =>
+        (await nick.locator('[data-testid^="chat-watching-"]').count()) > 0
+        && (await text(nick, 'chat-messages')).includes('good luck'));
+      check('a watcher can talk, and the table says they are watching', labelled,
+        `chat: ${(await text(nick, 'chat-messages')).slice(0, 120)}`);
+      await shot(nick, 'a-watcher-talking');
+      // Closed by tapping the backdrop at its top-left corner rather than the toggle, which is
+      // behind the drawer while it is open: a click on a covered button waits for ever.
+      await tid(nick, 'chat-panel').click({ position: { x: 5, y: 5 } });
       await shot(watcher, 'watching');
       await watcherCtx.close();
     }

@@ -33,6 +33,13 @@ export interface ChatLine {
   name: string
   text: string
   at: number
+  /**
+   * Set by the server for a line from somebody who is watching rather than playing.
+   *
+   * From the server and not from `seat === null`, because who is a spectator is the server's fact:
+   * a client that worked it out for itself would be a second answer to a question with one.
+   */
+  watching?: boolean
 }
 
 export interface TableState {
@@ -153,7 +160,7 @@ export interface UseTable extends TableState {
   }) => Promise<void>
   joinTable: (input: { code: string; name: string }) => Promise<void>
   /** Joins a table's room without taking a seat; the server sends the spectator view. */
-  watchTable: (code: string) => Promise<void>
+  watchTable: (code: string, name?: string) => Promise<void>
   leaveTable: () => Promise<void>
   setReady: (ready: boolean) => Promise<void>
   /**
@@ -344,9 +351,12 @@ export function useTable(playerName: string): UseTable {
   )
 
   const watchTable = useCallback<UseTable["watchTable"]>(
-    async (raw) => {
+    async (raw, name) => {
       const code = raw.trim().toUpperCase()
-      const res = await emit("pod:watch", { code })
+      // The name is for the chat and nothing else: a watcher with none talks as "Watcher", which
+      // is at least not what a player is called.
+      const trimmed = (name ?? "").trim()
+      const res = await emit("pod:watch", { code, ...(trimmed === "" ? {} : { name: trimmed }) })
       if (!res.ok) return setState((s) => ({ ...s, error: res.error.message }))
       // No seat token stored: a watcher holds nothing, so there is nothing to reclaim on a reload
       // and nothing to leave behind on somebody else's machine.

@@ -471,7 +471,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 
 ```bash
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 62 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 51-57 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-58 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 20-21 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 23 checks
@@ -567,9 +567,13 @@ playing the server, and a deal struck with the server's own seat).
   socially: three opponents are three strips above your own board, whose turn it is reads as a gold
   border rather than a layout, and the politics is three preset deals and a badge rather than a
   table you can talk at.
-- **Watching is read-only, and that is all it is.** A watcher sees both boards, both graveyards,
-  the stack and the log, with both hands as face-down counts — and is offered no moves at all.
-  There is no spectator chat: a watcher reads the table's chat and cannot write to it.
+- **Watching is read-only about the game, and not about the table.** A watcher sees both boards,
+  both graveyards, the stack and the log, with both hands as face-down counts, and is offered no
+  moves at all. It **can** talk: the chat drawer is on a watcher's screen now, and the line it
+  sends is marked `watching` by the server so the people playing can tell a spectator's "I'm
+  responding to that" from an opponent's. That mark is the reason the drawer was worth adding
+  rather than the other way round — the server had accepted a spectator's chat since the day
+  watching was built, and with no name it arrived reading "Player".
 - **Undo is one step, and the host's.** It puts the table back to before the last move, including
   anything the engine or the computer's seats did in answer to it, and the chat says it was used.
   What it is not is a rewind: there is no second step back, no undoing an undo, and no taking back

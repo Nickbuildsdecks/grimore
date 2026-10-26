@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowDownToLine, ArrowUpToLine, Dices, Hand, Layers, Link2, LogOut, MessageSquare, Minus, Plus,
-  HelpCircle, RotateCcw, Search, Send, Shuffle, Skull, Sparkles, SquareStack, Swords, Undo2,
+  HelpCircle, RotateCcw, Search, Shuffle, Skull, Sparkles, SquareStack, Swords, Undo2,
   Volume2, VolumeX,
 } from "lucide-react"
 import {
@@ -36,6 +36,7 @@ import { CombatArrows } from "@/components/table/CombatArrows"
 import { TableFeed } from "@/components/table/TableFeed"
 import { PhaseBar } from "@/components/table/PhaseBar"
 import { PlaySheet } from "@/components/table/PlaySheet"
+import { ChatPanel } from "@/components/table/ChatPanel"
 import { StackPanel } from "@/components/table/StackPanel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -282,14 +283,16 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
             Join
           </Button>
           {/*
-            Watching takes no seat, works mid-game, and needs no name — so it is the same code box
-            and a quieter button beside it, rather than a second form.
+            Watching takes no seat and works mid-game, so it is the same code box and a quieter
+            button beside it rather than a second form. The name goes with it even though watching
+            does not need one: a watcher can talk in the table's chat, and a spectator whose line
+            reads "Player" is a spectator the table can mistake for an opponent.
           */}
           <Button
             data-testid="watch-table"
             variant="ghost"
             disabled={code.trim().length < 5}
-            onClick={() => void table.watchTable(code)}
+            onClick={() => void table.watchTable(code, name)}
           >
             Watch
           </Button>
@@ -362,7 +365,7 @@ function OpenTables({ table, name }: { table: UseTable; name: string }) {
                 <Button
                   data-testid={`watch-open-${entry.code}`}
                   variant="ghost"
-                  onClick={() => void table.watchTable(entry.code)}
+                  onClick={() => void table.watchTable(entry.code, name)}
                 >
                   Watch
                 </Button>
@@ -1098,7 +1101,6 @@ function Board({ table }: { table: UseTable }) {
     a player is already looking instead of behind the Log button.
   */
   const feed = useTableFeed(view)
-  const [draft, setDraft] = useState("")
   // Unread count, so a message that arrives while the panel is closed is not missed.
   const [seenChat, setSeenChat] = useState(0)
   useEffect(() => {
@@ -1820,47 +1822,11 @@ function Board({ table }: { table: UseTable }) {
       ) : null}
 
       {showChat ? (
-        <div data-testid="chat-panel" className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setShowChat(false)}>
-          <div className="flex w-full max-w-sm flex-col border-l border-white/15 bg-[var(--g-surface-2)]" onClick={(e) => e.stopPropagation()}>
-            <h2 className="border-b border-white/10 p-4 text-sm font-semibold text-[var(--g-text-high)]">
-              Table talk
-            </h2>
-            <div data-testid="chat-messages" className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
-              {table.chat.length === 0 ? (
-                <p className="text-xs text-[var(--g-text-muted)]">
-                  Nothing said yet. This is for the things the table cannot decide for you — whether
-                  you are responding, what a trigger did, taking something back.
-                </p>
-              ) : (
-                table.chat.map((line) => (
-                  <p key={line.id} className="text-xs text-[var(--g-text-high)]">
-                    <span className="font-semibold text-[var(--g-gold-400)]">{line.name}</span>{" "}
-                    {line.text}
-                  </p>
-                ))
-              )}
-            </div>
-            <form
-              className="flex gap-1.5 border-t border-white/10 p-3"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void table.say(draft)
-                setDraft("")
-              }}
-            >
-              <Input
-                data-testid="chat-input"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Say something"
-                maxLength={400}
-              />
-              <Button type="submit" size="icon" data-testid="chat-send" aria-label="Send">
-                <Send className="size-4" />
-              </Button>
-            </form>
-          </div>
-        </div>
+        <ChatPanel
+          lines={table.chat}
+          onSend={(text) => void table.say(text)}
+          onClose={() => setShowChat(false)}
+        />
       ) : null}
 
       {showLog ? (
@@ -1906,6 +1872,13 @@ function Board({ table }: { table: UseTable }) {
 function Watching({ table }: { table: UseTable }) {
   const { view } = table
   const [showLog, setShowLog] = useState(false)
+  const [showChat, setShowChat] = useState(false)
+  // The unread count, kept the way the player's table keeps it: the drawer being open is what
+  // marks them read, so a watcher with it open never sees a badge for a line already on screen.
+  const [seenChat, setSeenChat] = useState(0)
+  useEffect(() => {
+    if (showChat) setSeenChat(table.chat.length)
+  }, [showChat, table.chat.length])
   if (!view) {
     return (
       <div className="mx-auto flex max-w-md flex-col gap-3 p-4">
@@ -1929,13 +1902,37 @@ function Watching({ table }: { table: UseTable }) {
           turn <span data-testid="turn">{view.turn}</span>
           {view.automation === null ? "" : ` · ${view.automation.stepLabel}`}
         </span>
-        <Button size="sm" variant="ghost" className="ml-auto h-7" data-testid="toggle-log" onClick={() => setShowLog(true)}>
+        {/*
+          A watcher can talk, and until now had nowhere to type.
+
+          The server has accepted a spectator's chat since the day watching was built — `pod:chat`
+          asks only that the socket is in a pod — and this screen simply never offered it, which is
+          why the setup doc said a watcher could not write. It can, the line is labelled as a
+          watcher's by the server, and the people playing can tell. See `ChatLine.watching`.
+        */}
+        <Button size="sm" variant="ghost" className="ml-auto h-7" data-testid="toggle-chat" onClick={() => setShowChat((v) => !v)}>
+          Chat
+          {table.chat.length - seenChat > 0 ? (
+            <span data-testid="chat-unread" className="ml-1 rounded-full bg-[var(--g-gold-400)] px-1.5 text-[10px] font-bold text-black">
+              {table.chat.length - seenChat}
+            </span>
+          ) : null}
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7" data-testid="toggle-log" onClick={() => setShowLog(true)}>
           What happened
         </Button>
         <Button size="sm" variant="secondary" className="h-7" data-testid="stop-watching" onClick={() => void table.leaveTable()}>
           Stop watching
         </Button>
       </header>
+
+      {showChat ? (
+        <ChatPanel
+          lines={table.chat}
+          onSend={(text) => void table.say(text)}
+          onClose={() => setShowChat(false)}
+        />
+      ) : null}
 
       {view.finished ? (
         <div data-testid="game-over" className="rounded-md border border-[var(--g-gold-400)]/50 bg-[var(--g-gold-400)]/10 px-3 py-2 text-sm font-semibold text-[var(--g-text-high)]">

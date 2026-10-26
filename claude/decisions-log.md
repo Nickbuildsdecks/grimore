@@ -5811,3 +5811,52 @@ So the driver learned to tap a `decide-option-` button, and the arena suite now 
 it reports a modal spell: asserted when the shuffle produced one, noted when it did not. On
 `DECK_A=rot-harvest DECK_B=skyward-writ` it produced one, and that run is the first time either of
 D135's two cards has been answered through the real buttons by anything.
+
+## D137 — The watcher who could always talk, and the label that was missing
+
+**Decision: a watcher gets the chat drawer, sends its name when it starts watching, and the server
+marks its line `watching` rather than leaving the table to work that out.**
+
+The setup doc's last remaining gap in that paragraph — written at the end of D132 — said a watcher
+"reads the table's chat and cannot write to it". That was wrong in the same easy direction D132's
+own gap was wrong in: `pod:chat` calls `requireSeat`, and `requireSeat` asks only that the socket
+is **in** a pod, which a watcher is. The server has accepted a spectator's chat since the day
+watching was built. Nothing had ever sent one, because the watcher screen had no chat in it.
+
+So there were two real defects, and neither was a permission:
+
+- **The drawer was missing.** `Watching` rendered both boards, both graveyards, the stack and the
+  log, and no way to say anything. The chat markup lived inline in the player's screen, so the fix
+  started by extracting `ChatPanel.tsx` — one component now used on both screens, which is the
+  only way the two stay the same thing as either changes.
+- **The line read "Player".** With no seat and no name the server fell back to `'Player'`, which
+  is exactly what one of the two people playing is called. A spectator's "I'm responding to that"
+  read as an opponent's is a wrong move made in good faith — the worst kind to debug, because
+  everybody involved did what the screen told them.
+
+**The flag is set on the server, from the socket's own seat.** The client could have inferred it:
+a line with `seat === null` is a watcher's, and the web already knows that. It does not, because
+that would be a second answer to a question that has one, and the second answer is the one that
+goes stale in a refactor. This is the same rule as D132's privacy default — *asserted where it is
+enforced* — applied to a label instead of to a guarantee. `apps/realtime` gained a test that seats
+one client, watches with another, has both talk, and checks that exactly one line comes back
+marked.
+
+**The name is optional and is not about the view.** `PodWatchInput` takes the name the lobby box
+already holds, and a watcher who gives none talks as "Watcher" — which is at least not a player's
+name. Nothing else about watching changed: no seat token is stored, no state is sent to the table
+when somebody starts watching, and the spectator view is the same redacted view it has been since
+D100. A watcher still cannot see a hand, still is offered no moves, and now a listing reveals
+nothing a watcher could not already see with the code.
+
+**And the browser suite is where this is really proven**, because it is a two-screen fact and no
+unit test can hold two screens. In `e2e-arena` the watcher now fills its name, opens the drawer,
+sends "good luck", and the *player's* screen is checked for the `chat-watching-` badge on that
+line. The suite reports 55 of 55. The drawer is closed by clicking the backdrop at `{x: 5, y: 5}`
+rather than by pressing the toggle again, because the toggle is behind the overlay — a detail worth
+writing down only because it cost a timeout to learn.
+
+One harness note that cost longer than the feature. The first run of that check showed the line
+reading "Player" with no badge, with the handler change plainly in the file: the realtime server
+running under `scripts/play.mjs` predated it. **Rebuild and restart the play stack before a browser
+suite**, every time; a stale server fails in the shape of a bug in the code you just wrote.

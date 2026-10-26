@@ -205,6 +205,9 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       const snapshot = await store.get(input.code);
       if (!snapshot) throw new PodError('not_found', 'no table with that code');
       socket.data.podCode = input.code;
+      // Kept for the chat and for nothing else: a watcher with no name talked as "Player", which
+      // is what one of the two people playing is called. See `pod:chat`.
+      if (input.name !== undefined) socket.data.name = input.name;
       void socket.join(podRoom(input.code));
       ack?.({ ok: true, code: input.code, stateVersion: snapshot.stateVersion });
       // Only this socket needs the state: nobody at the table has to be told somebody is watching,
@@ -270,14 +273,29 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       await broadcast(code, snap);
     });
 
+    /*
+      Table talk, and the one thing the server has to say about it that the client cannot.
+
+      A watcher may talk — `requireSeat` asks only that the socket is *in* a pod, and it has been
+      that way since watching was built. What it may not do is look like a player: with no seat and
+      no name the line used to read "Player", which is exactly what somebody at the table is
+      called, and a spectator's "I'm responding to that" acted on as an opponent's is a wrong move
+      made in good faith.
+
+      So `watching` is set here from the socket's own seat rather than inferred downstream from
+      `seat === null`. The client's idea of who is a spectator is not the guarantee; this is — the
+      same rule the privacy default in D132 follows.
+    */
     on('pod:chat', async (input, ack) => {
       const { code } = requireSeat();
+      const watching = socket.data.seat === undefined;
       io.to(podRoom(code)).emit('pod:chat', {
         id: randomUUID(),
         seat: socket.data.seat ?? null,
-        name: socket.data.name ?? 'Player',
+        name: socket.data.name ?? (watching ? 'Watcher' : 'Player'),
         text: input.text,
         at: Date.now(),
+        ...(watching ? { watching: true } : {}),
       });
       ack?.({ ok: true });
     });

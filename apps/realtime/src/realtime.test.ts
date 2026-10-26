@@ -306,6 +306,36 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     expect(await chat).toMatchObject({ name: 'Alice', text: 'gg', seat: 0 });
   });
 
+  it('marks a watcher’s chat as a watcher’s, and names them', async () => {
+    /*
+      A watcher could always talk — `pod:chat` asks only that the socket is in a pod — and that was
+      the problem rather than the feature: with no name the line read "Player", which is what one
+      of the two people playing is called, so a spectator's "I'm responding to that" arrived
+      looking like an opponent's.
+
+      The flag comes from the server because who is a spectator is the server's fact. The client
+      could guess it from `seat === null` and would be a second answer to a question with one.
+    */
+    const { a, b, state } = await seatedPair();
+    const watcher = await client('Nosy');
+    okAck(await emitAck(watcher, 'pod:watch', { code: state.pod.code, name: 'Nosy' }));
+
+    const heard = waitFor<{ name: string; text: string; seat: number | null; watching?: boolean }>(
+      b, 'pod:chat',
+    );
+    okAck(await emitAck(watcher, 'pod:chat', { text: 'nice draw' }));
+    expect(await heard).toMatchObject({
+      name: 'Nosy', text: 'nice draw', seat: null, watching: true,
+    });
+
+    // And a seated player is not marked, which is the half that makes the label mean anything.
+    const fromPlayer = waitFor<{ name: string; watching?: boolean }>(b, 'pod:chat');
+    okAck(await emitAck(a, 'pod:chat', { text: 'thanks' }));
+    const line = await fromPlayer;
+    expect(line.name).toBe('Alice');
+    expect(line.watching).toBeUndefined();
+  }, 20_000);
+
   it('rejects malformed payloads with bad_payload', async () => {
     const a = await client('Alice');
     const res = await emitAck(a, 'pod:join', { code: 'nope', name: '' });
