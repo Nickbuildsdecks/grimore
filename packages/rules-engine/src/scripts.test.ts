@@ -8824,3 +8824,169 @@ describe('a question whose answer is a word, not a card', () => {
     expect([power(s, elves), toughness(s, elves)]).toEqual([1, 1]);
   });
 });
+
+describe('the tenth deck: the life total that goes up', () => {
+  /*
+    `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
+    by accident — which is a gap in the pool rather than in the engine. These six cards are the
+    tenth deck's own, and the one of them that needed something new is the commander: "whenever an
+    opponent casts a noncreature spell, **that player** loses 2 life" is the first card here that
+    has to name one opponent rather than all of them.
+  */
+
+  /**
+   * Seat 0's commander moved onto the battlefield by hand, then the turn walked to its main phase.
+   *
+   * By hand and in that order, because a commander starts in the command zone rather than the
+   * library — `arena`'s `battlefield` list can only place cards it can draw — and because a
+   * tabletop move does not settle, so it has to happen before the walk rather than after it.
+   */
+  const withCommanderOut = (state: GameState): GameState => advanceTo(apply(state, {
+    type: 'card:move', by: 0, card: ids(state, 0, 'command')[0]!, toZone: 'battlefield',
+  }), 'precombat-main');
+
+  /** Seat 0 on Dawn Tithe, main phase, mana up. */
+  const dawn = (hand: readonly string[], mine: readonly string[], lands = 4): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'ember-rush' },
+      hands: { 0: [...hand] },
+      battlefield: {
+        0: [...Array.from({ length: lands }, (_, i) => (i % 2 === 0 ? 'Plains' : 'Swamp')), ...mine],
+        1: ['Mountain', 'Mountain'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  it('Impassioned Orator gains a life for anybody’s creature but its own arrival', () => {
+    let s = dawn(['Impassioned Orator', "Healer's Hawk"], []);
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Impassioned Orator'),
+    })));
+    // "Another": its own entry pays nothing.
+    expect(life(s, 0)).toBe(before);
+
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Healer's Hawk") })));
+    expect(life(s, 0)).toBe(before + 1);
+  });
+
+  it('Bloodthirsty Aerialist grows on every gain, whatever caused it', () => {
+    let s = dawn(['Revitalize'], ['Bloodthirsty Aerialist']);
+    const bird = find(s, 0, 'battlefield', 'Bloodthirsty Aerialist');
+    expect([power(s, bird), toughness(s, bird)]).toEqual([2, 2]);
+
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Revitalize') })));
+    // Three life and a card, and one counter — the trigger is "whenever you gain life", once per
+    // event rather than once per point.
+    expect(life(s, 0)).toBe(before + 3);
+    expect([power(s, bird), toughness(s, bird)]).toEqual([3, 3]);
+  });
+
+  it('Cruel Celebrant drains without a target when one of yours dies', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'ember-rush' },
+      hands: { 0: ['Bone Splinters'] },
+      battlefield: {
+        0: ['Plains', 'Swamp', 'Cruel Celebrant', 'Child of Night'],
+        1: ['Mountain', 'Raging Goblin'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const child = find(s, 0, 'battlefield', 'Child of Night');
+    const mine = life(s, 0);
+    const theirs = life(s, 1);
+
+    // Bone Splinters eats the Child as its cost, which is the death the Celebrant reads.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bone Splinters'),
+      sacrifice: child, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Raging Goblin') }],
+    })));
+    expect(life(s, 0)).toBe(mine + 1);
+    expect(life(s, 1)).toBe(theirs - 1);
+  });
+
+  it("Vraska's Contempt exiles rather than destroys, and the two life is a counter", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'ember-rush' },
+      hands: { 0: ["Vraska's Contempt"] },
+      battlefield: {
+        0: ['Plains', 'Swamp', 'Swamp', 'Swamp', 'Bloodthirsty Aerialist'],
+        1: ['Mountain', 'Shivan Dragon'],
+      },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const dragon = find(s, 1, 'battlefield', 'Shivan Dragon');
+    const bird = find(s, 0, 'battlefield', 'Bloodthirsty Aerialist');
+    const before = life(s, 0);
+
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Vraska's Contempt"),
+      targets: [{ kind: 'card', id: dragon }],
+    })));
+
+    // Exiled, not buried: nothing that reads a graveyard can have it back.
+    expect(s.instances[dragon]!.zone).toBe('exile');
+    expect(life(s, 0)).toBe(before + 2);
+    // And the removal spell advanced the clock, which is the argument for the card.
+    expect([power(s, bird), toughness(s, bird)]).toEqual([3, 3]);
+  });
+
+  it('Kambal charges the player who cast the spell, and only that player', () => {
+    /*
+      The first card in the pool to say "that player". In a duel the wrong reading — every opponent
+      — is indistinguishable from the right one, so this is a four-seat table: seat 2 casts a
+      noncreature spell and seat 3 pays nothing at all.
+    */
+    let s = withCommanderOut(arena({
+      seats: 4, format: 'pod',
+      decks: { 0: 'dawn-tithe', 1: 'ember-rush', 2: 'tidal-mind', 3: 'verdant-guard' },
+      hands: { 2: ['Doom Blade'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains'],
+        1: ['Mountain'],
+        2: ['Swamp', 'Swamp'],
+        3: ['Forest', 'Centaur Courser'],
+      },
+      turn: 5, firstSeat: 2,
+    }));
+    s = tapAllLands(s, 2);
+    const mine = life(s, 0);
+    const caster = life(s, 2);
+    const bystander = life(s, 3);
+
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 2, card: find(s, 2, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: find(s, 3, 'battlefield', 'Centaur Courser') }],
+    })));
+
+    expect(life(s, 2)).toBe(caster - 2);
+    expect(life(s, 0)).toBe(mine + 2);
+    // The seat that cast nothing paid nothing, which is the whole of "that player".
+    expect(life(s, 3)).toBe(bystander);
+  });
+
+  it('and Kambal says nothing about a creature spell', () => {
+    let s = withCommanderOut(arena({
+      // A commander format, because that is the only way a commander is on the table at all.
+      format: 'edh',
+      decks: { 0: 'dawn-tithe', 1: 'ember-rush' },
+      hands: { 1: ['Hill Giant'] },
+      battlefield: {
+        0: ['Plains'],
+        1: ['Mountain', 'Mountain', 'Mountain', 'Mountain'],
+      },
+      turn: 5, firstSeat: 1,
+    }));
+    s = tapAllLands(s, 1);
+    const mine = life(s, 0);
+    const theirs = life(s, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Hill Giant') })));
+    expect(life(s, 0)).toBe(mine);
+    expect(life(s, 1)).toBe(theirs);
+  });
+});

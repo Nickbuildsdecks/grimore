@@ -18,11 +18,18 @@ arms comparable at all. They take no database and no server — just the engine.
 | --- | --- | --- |
 | `deck-table.mjs` | how does every deck do against every other? | `SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs` |
 | `deck-probe.mjs` | what would this slot change be worth? | `SUBJECT=tidal-mind CHANGE='Fog Bank:+1,Cancel:-1' SEEDS=17 node scripts/measure/deck-probe.mjs` |
+| `deck-probe.mjs` | what is the **commander** worth? | `SUBJECT=dawn-tithe COMMANDER='Balan, Wandering Knight' SEEDS=15 node scripts/measure/deck-probe.mjs` |
 | `cast-counts.mjs` | which of a deck's sixty cards does the bot actually use? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/cast-counts.mjs` |
 | `bot-duel.mjs` | what is this change to the *opponent* worth? | `TESTED='{"lookahead":false}' SEEDS=3 node scripts/measure/bot-duel.mjs` |
 | `disagree.mjs` | does that change alter any decisions at all? | `TESTED='{"lookahead":false}' SEEDS=2 node scripts/measure/disagree.mjs` |
 | `step-drift.mjs` | how far does the table move on one action? | `SEEDS=2 node scripts/measure/step-drift.mjs` |
 | `morph-use.mjs` | which half of a morph does the bot take, and does it follow through? | `SEEDS=3 node scripts/measure/morph-use.mjs` |
+
+`COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
+commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
+Point it at a legend whose text is **dead** in the subject deck — Balan, Wandering Knight in a deck
+with no Equipment is a plain 2/2 double striker — and the gap between the two arms is what the real
+commander is worth. It is the only lever here that is not a card in the sixty.
 
 A `CHANGE` has to keep the deck at sixty cards, and `deck-probe` says so rather than quietly
 measuring deck size instead of the change: a name it cannot find in the subject deck is looked up

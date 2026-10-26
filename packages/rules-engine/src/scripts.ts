@@ -3919,6 +3919,144 @@ const VOICE_OF_ALL: CardScript = {
   },
 };
 
+// ── White-black: the life total that goes up ────────────────────────────────────────────────────
+
+/*
+  The tenth deck's own cards, and the engine path that had exactly one reader.
+
+  `life-gained` has been a trigger event since the triggers were written, and until this deck the
+  only card that read it was an Ajani's Pridemate sitting in a red-white deck that gains life by
+  accident. Nine decks measured the game in damage or in cards; none of them went *up* on purpose.
+
+  What makes it an archetype rather than a theme is that the gain is an input. Two cards turn life
+  into a creature that grows, two turn a death into both totals moving, and the removal spell gains
+  life while it removes — so the same two mana that answers a threat also puts a counter on a
+  flier. Kambal is the half a deck list cannot be: an opponent's noncreature spell costs them two
+  and buys you two, which is the first card in the pool to say "**that** player" and mean one of
+  them.
+*/
+
+const IMPASSIONED_ORATOR: CardScript = {
+  name: 'Impassioned Orator',
+  triggers: [
+    {
+      // A Soul Warden with a body, and the same "another": it does not pay for its own arrival.
+      on: { kind: 'etb', who: 'another', of: 'any', what: 'creature' },
+      description: 'you gain 1 life',
+      effect: (c) => gainLife(c.state, c.controller, 1),
+    },
+  ],
+};
+
+/**
+ * Bloodthirsty Aerialist: the second card in the pool to read `life-gained`, and the one that makes
+ * it a clock.
+ *
+ * A Pridemate grows on the ground where a 1/1 Hawk can stop it. This one flies, which is what turns
+ * "gain one life a turn" from a cushion into the thing that ends the game — and it is why the
+ * removal spell in this deck gains two life rather than three mana's worth of nothing.
+ */
+const BLOODTHIRSTY_AERIALIST: CardScript = {
+  name: 'Bloodthirsty Aerialist',
+  triggers: [
+    {
+      on: { kind: 'life-gained', by: 'you' },
+      description: 'put a +1/+1 counter on it',
+      effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+    },
+  ],
+};
+
+/**
+ * Cruel Celebrant: a Blood Artist that needs no target and only reads your own side.
+ *
+ * Two differences from the Artist and both are printed: `of: 'you'` rather than any creature
+ * dying, and no target at all — "each opponent" is every one of them rather than one chosen, which
+ * in a pod is three life a death instead of one. The pair of them in one deck is the point: the
+ * Artist aims at whoever is closest to dying, and the Celebrant does not have to.
+ */
+const CRUEL_CELEBRANT: CardScript = {
+  name: 'Cruel Celebrant',
+  triggers: [
+    {
+      on: { kind: 'dies', who: 'another', of: 'you', what: 'creature' },
+      description: 'each opponent loses 1 life and you gain 1 life',
+      effect: (c) => {
+        let next = c.state;
+        for (const seat of opponentsOf(c.state, c.controller)) next = loseLife(next, seat, 1);
+        return gainLife(next, c.controller, 1);
+      },
+    },
+  ],
+};
+
+const REVITALIZE: CardScript = {
+  name: 'Revitalize',
+  // Three life *and* a card, which is what stops a lifegain deck being a worse draw-go: the gain
+  // is an input here, so a one-mana instant that replaces itself is a trigger plus a card.
+  onResolve: (c) => draw(gainLife(c.state, c.controller, 3), c.controller, 1),
+};
+
+/**
+ * Vraska's Contempt: removal that advances the plan it is protecting.
+ *
+ * Exile rather than destroy, which answers the two things this pool has that come back — a
+ * commander and a regenerator — and two life on the way, which in this deck is a +1/+1 counter on
+ * an Aerialist and another on a Pridemate. `removesACreature` applies cleanly: a planeswalker is
+ * the only other thing it can point at, there are two in the pool, and holding it on a board with
+ * nothing but a planeswalker is a far smaller mistake than casting it at your own creature.
+ */
+const VRASKAS_CONTEMPT: CardScript = {
+  name: "Vraska's Contempt",
+  removesACreature: true,
+  targets: [{
+    kind: 'any',
+    description: 'target creature or planeswalker',
+    filter: (state, candidate) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined) return false;
+      const ch = characteristicsOf(state, inst);
+      return ch.isCreature || hasType(ch.typeLine, 'planeswalker');
+    },
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    if (id === null) return c.state;
+    // Exiled first and the life gained second, which is the printed order and also the one that
+    // matters: a creature whose death would have drained somebody is not dying here.
+    return gainLife(exileCard(c.state, id), c.controller, 2);
+  },
+};
+
+/**
+ * Kambal, Consul of Allocation: the first card here that has to say "**that** player".
+ *
+ * Every other trigger in this file talks about its own controller, about a permanent, or about
+ * every opponent. "Whenever an opponent casts a noncreature spell, **that player** loses 2 life"
+ * is about one of them, and in a two-player game the wrong reading is indistinguishable from the
+ * right one — which is the kind of bug a four-player pod finds a year later. `EffectContext.actor`
+ * is who did it, set from the event the same way `subject` is.
+ *
+ * `spell: 'noncreature'` is the filter prowess already used and nothing else in the pool had: it
+ * includes an artifact and an enchantment, which is what makes this card an answer to the decks
+ * whose plan is spells rather than creatures.
+ */
+const KAMBAL: CardScript = {
+  name: 'Kambal, Consul of Allocation',
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'opponent', spell: 'noncreature' },
+      description: 'that player loses 2 life and you gain 2 life',
+      effect: (c) => {
+        const who = c.actor;
+        if (who === undefined || who === c.controller) return c.state;
+        return gainLife(loseLife(c.state, who, 2), c.controller, 2);
+      },
+    },
+  ],
+};
+
 // ── The registry ─────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -4091,6 +4229,9 @@ const ALL: readonly CardScript[] = [
   GUARDIANS_OF_AKRASA, CLOUDFIN_RAPTOR,
   SQUELCH, DISALLOW,
   OBELISK_OF_URD, VOICE_OF_ALL,
+  IMPASSIONED_ORATOR, BLOODTHIRSTY_AERIALIST, CRUEL_CELEBRANT, REVITALIZE, VRASKAS_CONTEMPT,
+  KAMBAL,
+  guildgate('Orzhov Guildgate', 'W', 'B'),
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

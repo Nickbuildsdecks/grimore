@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 209 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 216 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -3220,6 +3220,53 @@ the Serra Angel is the better cut and the card is the marginal part. It is carri
 the number is written down: this is the one card in the pool where the gap between a bot's answer
 and a person's *is* the card, because a player chooses the colour from the matchup in front of them
 and the engine chooses it by counting what it can already see.
+
+### A tenth deck, and the first time anybody measured a commander
+
+`life-gained` has been a trigger event since the triggers were written and until now **one card in
+the pool read it** — an Ajani's Pridemate in a red-white deck that gains life by accident. Nine
+decks measured the game in damage or in cards; none went up on purpose. So Dawn Tithe, white-black,
+where the gain is an *input*: two creatures turn it into a body that grows, two turn a death into
+both totals moving at once, and the removal spell gains two life while it removes. Six new cards and
+a guildgate; the other fifty-odd slots were already here.
+
+One engine addition came with it and it is the third of a family. `EffectContext` could say which
+permanent an event happened to (`subject`) and what an attack was aimed at (`attacked`), and not
+*who did it*. Kambal says "whenever an opponent casts a noncreature spell, **that player** loses 2
+life", so `actor` now rides the stack object the same way — set only when it is somebody other than
+the watcher, because a card that means its own controller says `controller` and always could. The
+test is a four-seat pod, since in a duel the wrong reading is indistinguishable from the right one.
+
+**The deck came in too strong and the number said so first.** 66% against the nine-deck field,
+second in the pool, winning the four slowest matchups between 19-5 and 22-2. Two weakenings were
+measured over 270 paired duels each on two seed sets: −1 Aerialist and −1 Vraska's Contempt gave
+−15 and −7; adding −1 Exsanguinate gave **−14 and −14**, and the consistent one shipped. What it
+costs is the deck's inevitability — the Exsanguinate was the only card that ended a game it was not
+already winning — and the card the archetype is built around is a one-of as a result. That is in the
+deck list in those words.
+
+**And the finding that was not the plan.** The hypothesis was Kambal: a deck of twenty-five
+noncreature spells losing two life a cast looks like a lock, and Arc Tempest was losing 22-2. So
+`deck-probe` gained a `COMMANDER` lever — point it at a legend whose text is dead in the subject
+deck (Balan in a deck with no Equipment is a plain 2/2 double striker) and the gap is what the real
+commander is worth.
+
+Kambal is worth **−2 and −7 of 270**, both inside the floor, and against Arc Tempest the arms are
+23-7 and 21-9 with him against 23-7 and 22-8 without. The 22-2 was never the commander. Every deck
+here has a write-up calling its commander "the half a deck list cannot be"; the first time one was
+measured it was worth at most two per cent. The likely reason is dull — the commander tax, four
+mana, and a bot with sixty other cards to cast — and the lesson is to stop making that claim without
+a number.
+
+**And the browser suite caught something nothing else could.** A pod stalled on turn 110 with "Cleo
+stuck at Main phase 1": a prompt nobody could answer. The cause was the previous entry's own work —
+Rot Harvest now holds an Obelisk of Urd, which asks a question whose answer is a *word*, and the
+driver only knew how to answer by tapping a lit card. It found nothing lit and reported the table as
+stuck, which is precisely what `every prompt the table shows can be answered` is for. The engine was
+right the whole time; 729 tests pass. What had never happened was a *browser* being asked that
+question. The driver now taps a `decide-option-` button and the arena suite reports it the way it
+reports a modal spell, which makes `DECK_A=rot-harvest DECK_B=skyward-writ` the first run in which
+either of those two cards was answered through the real buttons.
 
 ## Next
 

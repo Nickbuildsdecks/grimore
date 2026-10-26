@@ -19,7 +19,7 @@ import {
 
 const ALL = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance',
   'skyward-writ', 'hollow-tide', 'ashen-rite',
-  'arc-tempest'];
+  'arc-tempest', 'dawn-tithe'];
 const SEEDS = Number(process.env.SEEDS ?? 3);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 const TESTED = JSON.parse(process.env.TESTED ?? '{}');

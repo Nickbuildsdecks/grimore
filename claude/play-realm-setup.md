@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and nine, today, across nine starter decks. A
+cards somebody has scripted — two hundred and sixteen, today, across ten starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -168,7 +168,7 @@ so neither of you needs this page open while playing.
 The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
 anybody's turn, which is what makes instants and responses work at all.
 
-### Nine starter decks
+### Ten starter decks
 
 **Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange), **Tidal Mind**
 (blue-black control, with counterspells) and **Rot Harvest** (green-black, built on getting
@@ -201,7 +201,7 @@ eleven a connection from Mirko Vosk, who leads it. Its cheapest blocker is a **C
 a 0/1 for one mana that grows itself every time a bigger creature of yours arrives — which in this
 deck is every creature it has.
 
-**Arc Tempest** (red-blue) is the ninth and the newest, and it is the first deck here whose
+**Arc Tempest** (red-blue) is the ninth, and it is the first deck here whose
 creatures are paid for by its spells. Twenty-five of its sixty cards are instants and sorceries and
 only seven are creatures, and every one of those seven reads the spells: Guttersnipe turns each cast
 into two damage at the face, Young Pyromancer turns it into a 1/1, Gelectrode and Thermo-Alchemist
@@ -218,8 +218,21 @@ empty board. It has no sweeper, no answer to a resolved noncreature permanent an
 expects to be the deck with the shorter clock, and against the two faster than it, to be the one
 holding Counterspell.
 
+**Dawn Tithe** (white-black) is the tenth and the newest, and it is the first deck here whose life
+total goes **up** on purpose. Eight of the others measure the game in damage and one measures it in
+cards; this one measures it in the gap between two life totals. Everything that enters the
+battlefield — yours or theirs — gains it a life, and the gain is an *input*: Ajani's Pridemate grows
+on the ground, Bloodthirsty Aerialist grows in the air, Blood Artist and Cruel Celebrant turn a
+death into both totals moving at once, and Vraska's Contempt gains two life while it exiles the
+thing that was killing you. Exsanguinate is the end of it — X from each opponent and X to you.
+Kambal, Consul of Allocation leads it: an opponent's noncreature spell costs them two life and buys
+you two, which is the one answer in these colours to the four decks whose plan is spells rather than
+creatures. It has no sweeper, no counterspell and no haste, and its clock is two fliers that have to
+survive a few turns — so against the fastest decks it is behind on the board and ahead on life,
+which is the trade the whole list is built around.
+
 Each two-colour deck runs a pair or three of Guildgates: one mana of either colour, and they come in
-tapped, and seven of the nine also run a pair of cycling lands. Any pairing works, including a deck
+tapped, and eight of the ten also run a pair of cycling lands. Any pairing works, including a deck
 against itself. They are also the only decks right now — see *What is not done* below.
 
 A note on what to expect from each: played against each other by the engine's own opponent, the
@@ -230,26 +243,40 @@ plays it better. The same caveat applies twice over to Arc Tempest: holding up C
 its plan against the fast decks, and the bot casts it the turn it can afford it.
 
 **The decks are not all equally strong, and now there is a table of it.** Every deck against every
-other, both seats, 192 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
+other, both seats, 216 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 81%  156-36   ember-rush
- 66%  126-66   forge-alliance
- 53%  102-90   verdant-guard
- 51%   97-95   skyward-writ
- 46%   89-103  ashen-rite
- 44%   84-108  arc-tempest
- 40%   77-115  hollow-tide
- 39%   75-117  rot-harvest
- 30%   57-135  tidal-mind
+ 79%  170-46   ember-rush
+ 65%  141-75   forge-alliance
+ 62%  134-82   dawn-tithe
+ 52%  113-103  verdant-guard
+ 50%  107-109  skyward-writ
+ 48%  103-113  ashen-rite
+ 41%   88-128  arc-tempest
+ 38%   83-133  hollow-tide
+ 38%   81-135  rot-harvest
+ 27%   59-157  tidal-mind
 ```
 
-That run is after the two cards that ask for a word, and it is the quietest this table has ever
-been: **nothing moved by more than two games in a hundred and ninety-two**, three rows are identical
-to the last run, and the two decks that changed a card moved by one game and none. Which is what it
-should look like, because both slot measurements said the same thing — the Obelisk is free and the
-Voice costs about one per cent. A table that had moved a lot here would have meant one of those
-numbers was wrong.
+That run is the first with **ten** decks in it, and it is the field effect D108 found happening
+again on a bigger scale: every row is 216 games rather than 192 because there is one more opponent,
+and nine decks that changed nothing at all moved by one to four points because the field they are
+measured against changed. Read the order, not the numbers.
+
+Dawn Tithe arrives at 62% and third, which is the second number it had. **The first version of the
+list came in at 66%** — second in the pool, winning the four slowest matchups between 19-5 and
+22-2, which is a matchup nobody enjoys from either side. Cutting the second Bloodthirsty Aerialist,
+the second Vraska's Contempt and the Exsanguinate for two more one-mana lifegain spells and a third
+Child of Night measured −14 and −14 over 270 paired duels on two seed sets, and the version above is
+the one that measurement approved. What is left lopsided is Dawn Tithe against Tidal Mind (22-2),
+Arc Tempest (20-4) and the two mill-and-grind decks (18-6 each) — and those four are the bottom of
+this table against *everybody*: Ember Rush beats Tidal Mind 23-1. The deck is third; the bottom of
+the table is the open problem, and it is a bot problem rather than a card problem.
+
+The run before it was after the two cards that ask for a word, with nine decks, and it was the
+quietest this table has ever been: nothing moved by more than two games in a hundred and ninety-two,
+and the two decks that changed a card moved by one game and none — which is what it should look like
+when both slot measurements say the change is free.
 
 The run before it was after the two cards that counter an ability, and it was the clearest
 demonstration of the caveat two paragraphs down. **Both decks that changed a card are the two this table says
@@ -322,7 +349,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and nine scripted cards, which now includes a wrath, a
+The decks share a pool of two hundred and sixteen scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -444,7 +471,7 @@ Four browser suites, one per way of playing. All need the stack running and Play
 
 ```bash
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 62 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 51-54 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 51-57 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 20-21 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 23 checks
@@ -490,6 +517,8 @@ DECK_A=rot-harvest DECK_B=rot-harvest node scripts/e2e-arena.mjs   # graveyards 
 DECK_A=arc-tempest DECK_B=arc-tempest node scripts/e2e-arena.mjs   # the spells deck, and a creature whose power is a *
 DECK_A=skyward-writ DECK_B=hollow-tide node scripts/e2e-arena.mjs  # exalted one side, evolve the other
 DECK_A=tidal-mind DECK_B=arc-tempest node scripts/e2e-arena.mjs    # the two cards that counter an ability
+DECK_A=rot-harvest DECK_B=skyward-writ node scripts/e2e-arena.mjs  # a question whose answer is a word
+DECK_A=dawn-tithe DECK_B=ember-rush node scripts/e2e-arena.mjs     # lifegain against the fastest deck
 FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatever they drew
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
@@ -504,11 +533,11 @@ playing the server, and a deal struck with the server's own seat).
 
 ## What is not done
 
-- **Only the nine starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
+- **Only the ten starter decks.** Loading one of your own Grimore decks, or pasting a decklist, is
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows two hundred and three cards.** Everything in the nine starter decks. It
+- **The engine knows two hundred and sixteen cards.** Everything in the ten starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, and a decision made *while a
   card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

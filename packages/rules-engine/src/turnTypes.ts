@@ -170,6 +170,18 @@ export interface StackObject {
    * ability finds nothing and does nothing, which is what the rules say happens (CR 603.3d).
    */
   readonly subject?: string;
+  /**
+   * The player whose action caused this triggered ability, for a trigger that has to say "**that**
+   * player" (CR 603.3d).
+   *
+   * The third of the same family as `attacked` and `subject`, and the one that is about a person
+   * rather than a thing: "whenever an opponent casts a noncreature spell, **that player** loses 2
+   * life" has no referent without it, and in a two-player game the wrong reading — every opponent
+   * — is indistinguishable from the right one, which is exactly the kind of bug a pod finds a year
+   * later. Not the ability's controller: that is `controller`, and for every card that needs this
+   * the two are different seats.
+   */
+  readonly actor?: SeatIndex;
   /** What to show in the stack, written when the object was put there. */
   readonly description: string;
 }

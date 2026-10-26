@@ -3466,6 +3466,215 @@ export const ARC_TEMPEST: DeckSpec = {
   ],
 };
 
+// ── The tenth deck's own cards ──────────────────────────────────────────────────────────────────
+
+const ORZHOV_GUILDGATE: CardDef = {
+  name: 'Orzhov Guildgate',
+  typeLine: 'Land \u2014 Gate',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'Orzhov Guildgate enters the battlefield tapped.\n{T}: Add {W} or {B}.',
+  colors: [],
+};
+
+const IMPASSIONED_ORATOR: CardDef = {
+  name: 'Impassioned Orator',
+  typeLine: 'Creature \u2014 Human Cleric',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'Whenever another creature enters the battlefield, you gain 1 life.',
+  colors: ['W'],
+};
+
+const BLOODTHIRSTY_AERIALIST: CardDef = {
+  name: 'Bloodthirsty Aerialist',
+  typeLine: 'Creature \u2014 Vampire Soldier',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Flying\nWhenever you gain life, put a +1/+1 counter on Bloodthirsty Aerialist.',
+  colors: ['B'],
+};
+
+const CRUEL_CELEBRANT: CardDef = {
+  name: 'Cruel Celebrant',
+  typeLine: 'Creature \u2014 Vampire Soldier',
+  manaCost: '{W}{B}',
+  cmc: 2,
+  power: '1',
+  toughness: '2',
+  oracleText: 'Whenever another creature you control dies, each opponent loses 1 life and you gain 1 life.',
+  colors: ['W', 'B'],
+};
+
+const REVITALIZE: CardDef = {
+  name: 'Revitalize',
+  typeLine: 'Instant',
+  manaCost: '{W}',
+  cmc: 1,
+  oracleText: 'You gain 3 life.\nDraw a card.',
+  colors: ['W'],
+};
+
+const VRASKAS_CONTEMPT: CardDef = {
+  name: "Vraska's Contempt",
+  typeLine: 'Instant',
+  manaCost: '{2}{B}{B}',
+  cmc: 4,
+  oracleText: 'Exile target creature or planeswalker. You gain 2 life.',
+  colors: ['B'],
+};
+
+const KAMBAL: CardDef = {
+  name: 'Kambal, Consul of Allocation',
+  typeLine: 'Legendary Creature \u2014 Human Advisor',
+  manaCost: '{2}{W}{B}',
+  cmc: 4,
+  power: '2',
+  toughness: '3',
+  oracleText: 'Whenever an opponent casts a noncreature spell, that player loses 2 life and you gain 2 life.',
+  colors: ['W', 'B'],
+};
+
+/**
+ * Dawn Tithe: the tenth deck, and the first whose life total goes up on purpose.
+ *
+ * Nine decks, and eight of them measured the game in damage while one measured it in cards. Not one
+ * of them gained life as a *plan* — and `life-gained` has been a trigger event since the triggers
+ * were written, with exactly one card in the whole pool reading it: an Ajani's Pridemate, sitting
+ * in a red-white deck that gains life by accident. An engine path with one reader is a gap in the
+ * pool rather than a gap in the engine, which is the same argument the ninth deck was built on.
+ *
+ * What makes it an archetype rather than a theme is that the gain is an **input**. Two creatures
+ * turn it into a body that grows (Ajani's Pridemate on the ground, Bloodthirsty Aerialist in the
+ * air); two turn a death into both totals moving at once (Blood Artist, Cruel Celebrant); and the
+ * removal spell gains two life while it removes, so the same four mana that answers the thing
+ * killing you puts a counter on the thing killing them. Exsanguinate is the end of it: X life from
+ * each opponent and X to you, which in this deck is cast for five or six.
+ *
+ * Kambal is the commander because he is the half a deck list cannot be. "Whenever an opponent casts
+ * a noncreature spell, that player loses 2 life and you gain 2 life" is an answer to the four decks
+ * whose plan is spells rather than creatures, it needs nothing to have resolved first, and it is the
+ * first card in this pool to say "**that** player" and mean one of them.
+ *
+ * What the deck does not have, said out loud: a sweeper, a counterspell, any haste, and no way to
+ * win in one turn. Its removal is one-for-one and its clock is two fliers that have to survive a
+ * few turns to be worth attacking with — so against the fastest decks it is racing from behind on
+ * the board while ahead on life, which is the trade the whole list is built around. Where that
+ * actually leaves it is measured rather than claimed: see the table in
+ * `claude/play-realm-setup.md`.
+ */
+export const DAWN_TITHE: DeckSpec = {
+  id: 'dawn-tithe',
+  name: 'Dawn Tithe',
+  description: 'White-black lifegain. Gain life on everything that happens, turn it into counters and drain, and take the difference.',
+  commander: KAMBAL,
+  cards: [
+    { card: PLAINS, count: 8 },
+    { card: SWAMP, count: 8 },
+    { card: ORZHOV_GUILDGATE, count: 3 },
+    // Two cycling lands in each colour, as every slow deck in this pool runs: a land this deck does
+    // not need is a card it could have gained life with.
+    { card: SECLUDED_STEPPE, count: 2 },
+    { card: BARREN_MOOR, count: 2 },
+
+    // ── The engine: everything that puts the life total up ──
+    /*
+      Three one- and two-drops that gain life off the whole table rather than off this deck.
+
+      "Whenever another creature enters" is every creature anybody plays, which is what makes a
+      lifegain deck work at all in a pool where six of ten decks flood the board: the opponent's
+      own Goblin is a +1/+1 counter on an Aerialist. The Orator is the Warden with a body, because
+      a 1/1 that the whole plan runs through is a 1/1 the aggro decks remove for free.
+    */
+    { card: SOUL_WARDEN, count: 1 },
+    { card: IMPASSIONED_ORATOR, count: 2 },
+    // A one-drop flier with lifelink, which is the cheapest repeatable trigger there is: it gains
+    // life every time it connects and every time it blocks.
+    { card: HEALERS_HAWK, count: 2 },
+    // Three, and the third is one of the four slots the balance pass below bought back.
+    { card: CHILD_OF_NIGHT, count: 3 },
+
+    // ── The payoffs: what the life is for ──
+    /*
+      The two halves of "whenever you gain life", and the air is the half that matters.
+
+      A Pridemate grows on the ground, where a 1/1 Hawk or a 0/4 Wall stops it dead. The Aerialist
+      flies, so the counters are a clock rather than a cushion — and in a deck where the lifegain
+      happens on everybody's turn, a 2/2 that is a 5/5 by turn six is the whole win condition.
+
+      **One Aerialist and not two, and the measurement is why.** The first version of this list
+      came in at 66% against the nine-deck field — second in the pool, and winning the four
+      slowest matchups 19-5 to 22-2, which is a matchup nobody enjoys being on either side of. The
+      second copy of the card the deck is built around is the single biggest part of that. Said
+      plainly because it is uncomfortable: the archetype's best card is a one-of so that the
+      archetype is a game.
+    */
+    { card: AJANIS_PRIDEMATE, count: 2 },
+    { card: BLOODTHIRSTY_AERIALIST, count: 1 },
+    /*
+      The two drains, and why both: the Artist aims and the Celebrant does not.
+
+      Blood Artist targets a player, which in a pod means the one closest to dead and in a duel
+      means the only one there is. Cruel Celebrant says "each opponent" and needs no target at all,
+      so it keeps working when the Artist's target is gone — and it only reads this deck's own
+      creatures dying, which with a Bone Splinters is a cost that pays for itself twice.
+    */
+    { card: BLOOD_ARTIST, count: 1 },
+    { card: CRUEL_CELEBRANT, count: 2 },
+    { card: ZULAPORT_CUTTHROAT, count: 1 },
+    { card: VAMPIRE_NIGHTHAWK, count: 2 },
+    // One five-drop, and it is the only creature here that is good without the engine running.
+    { card: SERRA_ANGEL, count: 1 },
+
+    // ── The answers, three of which gain life on the way ──
+    /*
+      Vraska's Contempt is the card that argues for the whole deck: four mana to exile the thing
+      that is killing you and two life, which is a +1/+1 counter on an Aerialist and another on a
+      Pridemate. Exile rather than destroy answers the two things in this pool that come back.
+
+      Swords to Plowshares is the other half of the joke — its own text gains *them* life, and it
+      is still the best removal spell in the pool.
+    */
+    { card: VRASKAS_CONTEMPT, count: 1 },
+    { card: SWORDS_TO_PLOWSHARES, count: 2 },
+    { card: DOOM_BLADE, count: 2 },
+    { card: MURDER, count: 1 },
+    { card: PACIFISM, count: 1 },
+    { card: JOURNEY_TO_NOWHERE, count: 1 },
+    { card: DISENCHANT, count: 1 },
+    // Four mana that is dead on your own turn and kills whatever attacked into it, which is the
+    // card a deck that blocks for five turns actually wants.
+    { card: DIVINE_VERDICT, count: 1 },
+    // A removal spell whose cost is a creature, in the one deck where losing a creature is two
+    // drains and a +1/+1 counter.
+    { card: BONE_SPLINTERS, count: 1 },
+
+    // ── Cards, life, and the end of it ──
+    { card: REVITALIZE, count: 3 },
+    { card: HEALING_SALVE, count: 2 },
+    { card: SIGN_IN_BLOOD, count: 1 },
+    { card: READ_THE_BONES, count: 1 },
+    { card: MIND_STONE, count: 1 },
+    /*
+      And no Exsanguinate, which the first version of this list had.
+
+      X life from each opponent and X to you is *inevitability*: against the four decks that cannot
+      end a game quickly it turned a long position into a won one, and those were exactly the
+      matchups this deck was winning 19-5. Cutting it, the second Aerialist and the second Vraska's
+      Contempt for two more one-mana lifegain spells and a third Child of Night measured −14 and
+      −14 over 270 paired duels on two seed sets: consistent, and the right fourteen games.
+
+      What it costs the deck is the ability to win a game it is not already winning, which is a
+      real loss and the intended one. The clock is now the Pridemates and one Aerialist, and if
+      they are answered the game goes long with nothing at the end of it.
+    */
+  ],
+};
+
 export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [EMBER_RUSH.id]: EMBER_RUSH,
   [VERDANT_GUARD.id]: VERDANT_GUARD,
@@ -3476,6 +3685,7 @@ export const STARTER_DECKS: Readonly<Record<string, DeckSpec>> = Object.freeze({
   [SKYWARD_WRIT.id]: SKYWARD_WRIT,
   [HOLLOW_TIDE.id]: HOLLOW_TIDE,
   [ARC_TEMPEST.id]: ARC_TEMPEST,
+  [DAWN_TITHE.id]: DAWN_TITHE,
 });
 
 export const STARTER_DECK_IDS: readonly string[] = Object.freeze(Object.keys(STARTER_DECKS));

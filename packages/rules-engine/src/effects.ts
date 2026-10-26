@@ -54,6 +54,12 @@ export interface EffectContext {
    */
   readonly answering?: string;
   /**
+   * The player whose action caused this trigger, for a trigger that has to say "**that** player".
+   * Undefined for everything else, and never the ability's own controller when it is set — that is
+   * `controller`. See `StackObject.actor`.
+   */
+  readonly actor?: SeatIndex;
+  /**
    * The permanent the event that caused this trigger happened to, for a trigger that has to say
    * "**that** creature" (CR 603.3d). Undefined for everything else.
    *

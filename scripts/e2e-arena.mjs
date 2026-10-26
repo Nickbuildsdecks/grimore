@@ -377,7 +377,7 @@ async function main() {
     const seen = {
       land: false, mana: false, stack: false, attackers: false, blockers: false,
       lifeChanged: false, combatStep: false, computedBody: false, countered: false, turnsPassed: 0,
-      decided: false, searched: false, scried: false, arrows: false, swung: false, modal: false, x: false, xCast: null,
+      decided: false, searched: false, scried: false, arrows: false, swung: false, modal: false, chose: false, x: false, xCast: null,
       /** A spell cast out of a graveyard for its flashback cost. Sampled, not required. */
       flashback: false,
       /** Whether the host was offered an undo, and whether the other player was not. */
@@ -700,6 +700,21 @@ async function main() {
     } else {
       console.log('      (no modal spell came up in this game — scripts.test.ts covers that path '
         + 'on a fixed board)');
+    }
+    /*
+      A question whose answer is a word, answered through the real buttons.
+
+      Reported rather than asserted for the same reason the modal check is — whether an Obelisk of
+      Urd or a Voice of All is drawn and castable is the shuffle's business. It is in the suite at
+      all because the *driver* could not answer one until it was taught to: a pod stalled on turn
+      110 with a prompt nobody could reply to, which is exactly what "every prompt the table shows
+      can be answered" exists to catch.
+    */
+    if (seen.chose) {
+      check('a question whose answer is a word is answered from the bar', true);
+    } else {
+      console.log('      (no card asked for a creature type or a colour in this game — '
+        + 'scripts.test.ts covers that path on a fixed board)');
     }
     if (finished) {
       /*

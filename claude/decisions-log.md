@@ -5738,3 +5738,76 @@ the Samite Healer at five times the cost for a weaker reason.
 one thing still missing from the family is a choice whose answer is a *number* — "choose a number",
 "pay any amount of life" — which wants a range rather than a list and has no card in the pool asking
 for it.
+
+## D136 — A tenth deck, and the first time anybody measured what a commander is worth
+
+**Decision: Dawn Tithe ships at 62% after a measured weakening, and `deck-probe` grew a
+`COMMANDER` lever that answered a question every deck's write-up had been asserting unmeasured.**
+
+Nine decks, and eight of them measured the game in damage while one measured it in cards. Not one
+gained life on purpose — and `life-gained` has been a trigger event since the triggers were written,
+with **exactly one card in the pool reading it**: an Ajani's Pridemate in a red-white deck that
+gains life by accident. An engine path with one reader is a gap in the pool rather than in the
+engine, which is the argument the ninth deck was built on too.
+
+So Dawn Tithe, white-black, where the gain is an **input**: two creatures turn it into a body that
+grows, two turn a death into both totals moving at once, and the removal spell gains two life while
+it removes. Six new cards (Impassioned Orator, Bloodthirsty Aerialist, Cruel Celebrant, Revitalize,
+Vraska's Contempt, Kambal) and an Orzhov Guildgate; everything else in the sixty was already here.
+
+**One engine addition came with it, and it is the third of a family.** Kambal says "whenever an
+opponent casts a noncreature spell, **that player** loses 2 life" — and `EffectContext` could say
+which permanent an event happened to (`subject`, D134) and what an attack was aimed at (`attacked`)
+but not *who did it*. `actor` is now on the stack object and the context, set from the event the
+same way, and set only when it is somebody other than the watcher: a card that means its own
+controller says `controller` and always could. In a two-player game the wrong reading — every
+opponent — is indistinguishable from the right one, which is the kind of bug a four-seat pod finds
+a year later, so the test is a four-seat pod where the seat that cast nothing pays nothing.
+
+**The deck came in too strong, and the number said so before anybody's judgement did.** 66% against
+the nine-deck field, second in the pool, winning the four slowest matchups between 19-5 and 22-2.
+Two weakenings were measured over 270 paired duels each on two seed sets:
+
+| the list | seeds from 3300 | seeds from 8800 |
+| --- | --- | --- |
+| as first written | 172-98 | 169-101 |
+| −1 Aerialist, −1 Contempt | 157-113 | 162-108 |
+| also −1 Exsanguinate | **158-112** | **155-115** |
+
+The third row is the one that shipped: −14 and −14, the same on both sets, where the second row was
+−15 and −7. What it costs is the deck's *inevitability* — Exsanguinate was the only card that ended
+a game the deck was not already winning — and that is the intended loss rather than a side effect.
+The card the archetype is built around is a one-of as a result, which is uncomfortable and is in the
+deck list in those words.
+
+**And the finding that was not the plan.** The hypothesis was that Kambal was the problem: a deck of
+twenty-five noncreature spells losing 2 life a cast looks like a lock, and Arc Tempest was losing
+22-2. So `deck-probe` gained a `COMMANDER` lever — point it at a legend whose text is *dead* in the
+subject deck (Balan, Wandering Knight in a deck with no Equipment is a plain 2/2 double striker) and
+the gap between the arms is what the real commander is worth.
+
+**Kambal is worth −2 and −7 of 270.** Both inside the floor. Against Arc Tempest the arms are 23-7
+and 21-9 with him and 23-7 and 22-8 without: the 22-2 was never the commander. Every deck in this
+pool has a write-up calling its commander "the half a deck list cannot be", and the first time one
+of them was measured it was worth at most two per cent. That is a claim this project has made nine
+times and should stop making without a number — and the likely reason is dull: the commander tax,
+four mana, and a bot that has sixty other cards to cast.
+
+What is still lopsided is Dawn Tithe against Tidal Mind (22-2), Arc Tempest (20-4) and the two
+grind decks (18-6 each). Those four are the bottom of the table against *everybody* — Ember Rush
+beats Tidal Mind 23-1 — so the open problem is the bottom of the table, and D108 and D110 already
+established that it is a pilot problem rather than a card problem.
+
+**And one thing the browser suite caught that nothing else could.** A four-seat pod stalled on turn
+110 with "Cleo stuck at Main phase 1" — a prompt nobody could answer. The cause was D135's own work:
+Rot Harvest now holds an Obelisk of Urd, which asks a question whose answer is a *word*, and the
+browser driver only knew how to answer a question by tapping a lit card. It found nothing lit and
+reported the table as stuck, which is exactly what `every prompt the table shows can be answered`
+exists to do — the check is three years of this project's convention in one line, and it is the only
+thing in the repository that could have found this: 729 engine tests pass, because the engine is
+right and the *table* had never been driven through that prompt.
+
+So the driver learned to tap a `decide-option-` button, and the arena suite now reports it the way
+it reports a modal spell: asserted when the shuffle produced one, noted when it did not. On
+`DECK_A=rot-harvest DECK_B=skyward-writ` it produced one, and that run is the first time either of
+D135's two cards has been answered through the real buttons by anything.

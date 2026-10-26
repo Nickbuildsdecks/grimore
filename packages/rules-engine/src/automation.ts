@@ -680,6 +680,9 @@ function raise(
       // the three events that have a subject other than the watcher itself — a card watching its
       // own arrival already knows which permanent it means.
       const about: TriggerAbout = {
+        // Whoever did the thing, for "that player". Only when it is somebody other than the
+        // watcher: a card that means its own controller says `controller` and always could.
+        ...(actor === undefined || actor === inst.zoneSeat ? {} : { actor }),
         ...(attacked === undefined ? {} : { attacked }),
         ...(answering === undefined ? {} : { answering }),
         ...(subject === undefined || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks')
@@ -795,6 +798,7 @@ interface TriggerAbout {
   readonly attacked?: AttackedTarget;
   readonly answering?: string;
   readonly subject?: string;
+  readonly actor?: SeatIndex;
 }
 
 function pushAbility(
@@ -815,6 +819,7 @@ function pushAbility(
     ...(about.attacked === undefined ? {} : { attacked: about.attacked }),
     ...(about.answering === undefined ? {} : { answering: about.answering }),
     ...(about.subject === undefined ? {} : { subject: about.subject }),
+    ...(about.actor === undefined ? {} : { actor: about.actor }),
     targetSeqs: targetSeqsFor(state, targets),
   };
   return {
@@ -1680,7 +1685,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       state, source: object.kind === 'spell' ? object.id : object.source,
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
       kicked: object.kicked === true, attacked: object.attacked, answering: object.answering,
-      subject: object.subject,
+      subject: object.subject, actor: object.actor,
     });
     return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
   }
@@ -1707,6 +1712,8 @@ function completeResolution(
     answering: object.answering,
     // And which permanent it is about, for a trigger that has to say "that creature".
     subject: object.subject,
+    // And whose action it was, for one that has to say "that player".
+    actor: object.actor,
   };
 
   if (object.kind === 'spell') {

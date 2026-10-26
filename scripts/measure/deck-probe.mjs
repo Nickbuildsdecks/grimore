@@ -10,6 +10,12 @@
  *
  * CHANGE is "Name:+1,Other:-2" as in deck-swap. A card the change adds need not already be in the
  * subject deck: its definition is looked up anywhere in the pool, which is where every card lives.
+ *
+ * COMMANDER names a card to lead the variant instead of the deck's own, which is the one question
+ * this harness could not ask: every deck's write-up calls its commander "the half a deck list
+ * cannot be", and until now that claim was unmeasured. Point it at a legend whose text is *dead* in
+ * the subject deck — Balan in a deck with no Equipment — and the difference is what the real
+ * commander is worth.
  */
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
@@ -18,7 +24,7 @@ import {
 const SUBJECT = process.env.SUBJECT ?? 'tidal-mind';
 const ALL = ['ember-rush', 'verdant-guard', 'tidal-mind', 'rot-harvest', 'forge-alliance',
   'skyward-writ', 'hollow-tide', 'ashen-rite',
-  'arc-tempest'];
+  'arc-tempest', 'dawn-tithe'];
 const SEEDS = Number(process.env.SEEDS ?? 17);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
@@ -30,6 +36,8 @@ const CHANGE = (process.env.CHANGE ?? '').split(',').filter(Boolean).map((part) 
 
 const defNamed = (name) => Object.values(STARTER_DECKS)
   .flatMap((d) => d.cards).find((e) => e.card.name === name)?.card;
+
+const COMMANDER = process.env.COMMANDER ?? '';
 
 function variant() {
   const stock = STARTER_DECKS[SUBJECT];
@@ -46,7 +54,11 @@ function variant() {
     if (card === undefined) throw new Error(`no card named ${change.name} in the pool`);
     cards.push({ card, count: change.delta });
   }
-  return { ...stock, cards };
+  if (COMMANDER === '') return { ...stock, cards };
+  const lead = Object.values(STARTER_DECKS).map((d) => d.commander).find((c) => c?.name === COMMANDER)
+    ?? defNamed(COMMANDER);
+  if (lead === undefined) throw new Error(`no card named ${COMMANDER} in the pool`);
+  return { ...stock, cards, commander: lead };
 }
 
 const FIELD = ALL.filter((id) => id !== SUBJECT);

@@ -305,6 +305,22 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
   // the player whose spell it is. Answered before priority is even looked at.
   if (await has(page, 'decide-prompt')) {
     const prompt = await text(page, 'decide-prompt');
+    /*
+      A question whose answer is a **word** has no cards to light at all.
+
+      An Obelisk of Urd asks for a creature type and a Voice of All asks for a colour, and the
+      table draws the options as buttons rather than lighting the board — so a driver that only
+      knows how to tap cards finds nothing lit, reports the table as stuck, and is right to: that
+      is precisely the check that caught this. First option in the list, which is the order the
+      card offers them in and the one a bot would take.
+    */
+    if (await has(page, 'decide-options')) {
+      const words = page.locator('[data-testid^="decide-option-"]');
+      if ((await words.count()) > 0) {
+        await tap(words.first());
+        return `chose a word: ${prompt}`;
+      }
+    }
     // The candidates are lit wherever they are — hand, battlefield, graveyard, or the library,
     // which is the one zone the table draws only while a search is open.
     for (let pick = 0; pick < 4; pick++) {
@@ -536,6 +552,13 @@ export async function notePrompts(seen, page, seat) {
   }
   if (await has(page, 'decide-prompt')) {
     seen.decided = true;
+    // A question whose answer is a word, screenshotted the once: the options are the only thing on
+    // screen that answers it, so a run where this never appears is a run that never proved the
+    // buttons are there.
+    if (seen.chose !== true && (await has(page, 'decide-options'))) {
+      seen.chose = true;
+      await shot(page, 'choosing-a-word');
+    }
     if (await has(page, `zone-scry-${seat}`)) {
       if (!seen.scried) await shot(page, 'scrying');
       seen.scried = true;
