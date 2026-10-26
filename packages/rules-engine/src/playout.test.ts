@@ -527,24 +527,39 @@ describe('a whole automated game', () => {
     // a set of games that were fine. Twenty-four saw two — which is the same lesson as the sampled
     // checks in the browser suites, answered here by playing more games rather than by asserting
     // less.
+    //
+    // The two decks are chosen for the two questions, not for the matchup: Tidal Mind brings the
+    // Mind Rot that asks a player to discard, and Hollow Tide brings the Diabolic Tutor that asks
+    // its controller to search. The Tutor used to be in Tidal Mind, and the balance pass moved it
+    // — which broke this test, correctly, rather than quietly leaving it asserting nothing.
     const asked: string[] = [];
     const tutored: number[] = [];
     const pitched: number[] = [];
     let games = 0;
     for (let seed = 1; seed <= 24; seed++) {
-      let s = table(seed * 911, (seed % 2) as SeatIndex, ['tidal-mind', 'ember-rush']);
+      let s = table(seed * 911, (seed % 2) as SeatIndex, ['tidal-mind', 'hollow-tide']);
       for (let i = 0; i < 6000 && !s.finished; i++) {
         const seat = seatToAct(s);
         if (seat === null) break;
         const pending = s.pendingDecision;
+        const prior = s;
         const before = s.stateVersion;
         s = stepOnce(s, seat);
         if (s.stateVersion === before) break;
         if (pending === null) continue;
         asked.push(pending.prompt);
         // What the bot actually picked, which is the half that can be subtly wrong.
+        //
+        // Read out of the state the question was asked in, not the one it was answered in: a card
+        // chosen for a sacrifice can be a token, and a token that reaches a graveyard ceases to
+        // exist (CR 111.7) — so by the next state its instance is gone and there is nothing to
+        // read a cost off. Looking back at `prior` is also the more honest number: what the choice
+        // was worth is what it was worth when it was made.
         const chosen = (s.log[s.log.length - 1]?.data as { cards?: readonly string[] })?.cards ?? [];
-        const values = chosen.map((id) => s.cardDefs[s.instances[id]!.defKey]?.cmc ?? 0);
+        const values = chosen.map((id) => {
+          const def = prior.instances[id]?.defKey ?? s.instances[id]?.defKey;
+          return def === undefined ? 0 : (prior.cardDefs[def]?.cmc ?? 0);
+        });
         if (pending.from === 'library') tutored.push(...values);
         if (pending.from === 'hand') pitched.push(...values);
       }
@@ -593,18 +608,19 @@ describe('a whole automated game', () => {
     // definition once instead of once per copy and leaves out the fields that are false on almost
     // every card. See `view.ts`.
     //
-    // Tidal Mind against itself on purpose, because the peak is not a long game — it is a *search*.
-    // Diabolic Tutor opens the whole library to its controller, and a view that normally carries a
-    // count suddenly carries fifty cards. Measured: 25.3KB at worst packed, against 45.8KB inlined
-    // and a 64KB cap — which is what makes room for a 100-card Commander library. The search case
-    // is measured separately because it used to be the peak and no longer is.
+    // Hollow Tide against itself on purpose, because the peak is not a long game — it is a
+    // *search*. Diabolic Tutor opens the whole library to its controller, and a view that normally
+    // carries a count suddenly carries fifty cards. Hollow Tide is the deck that runs the Tutor
+    // since the balance pass moved it out of Tidal Mind. Measured: 25.7KB at worst packed, against
+    // 55.6KB inlined and a 64KB cap — which is what makes room for a 100-card Commander library.
+    // The search case is measured separately because it used to be the peak and no longer is.
     let worst = 0;
     let searching = 0;
     // Several shuffles rather than one lucky seed: whether a tutor is drawn and castable is the
     // shuffle's business, and a single seed stops opening a library the moment a deck list is
     // edited. It stops as soon as it has seen one, so the usual cost is a single game.
     for (let seed = 0; seed < 8 && searching === 0; seed++) {
-      let s = table(4242 + seed * 101, 0, ['tidal-mind', 'tidal-mind']);
+      let s = table(4242 + seed * 101, 0, ['hollow-tide', 'hollow-tide']);
       for (let i = 0; i < 4000 && !s.finished; i++) {
         const seat = seatToAct(s);
         if (seat === null) break;

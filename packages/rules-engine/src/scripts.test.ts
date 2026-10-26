@@ -1789,7 +1789,9 @@ describe('cards that stop and ask while they resolve', () => {
   });
 
   it('Diabolic Tutor takes any card out of the library and puts it in hand', () => {
-    let s = ready(0, 'tidal-mind', ['Diabolic Tutor'], ['Swamp', 'Swamp', 'Swamp', 'Swamp']);
+    // Hollow Tide rather than Tidal Mind: the Tutor moved decks in the balance pass, and `ready`
+    // takes the card out of that deck's library, so this is the deck that has one to take.
+    let s = ready(0, 'hollow-tide', ['Diabolic Tutor'], ['Swamp', 'Swamp', 'Swamp', 'Swamp']);
     s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Diabolic Tutor') }));
     expect(choices(s)).toContain('Counterspell');
     expect(namesIn(s, 0, 'hand')).not.toContain('Counterspell');

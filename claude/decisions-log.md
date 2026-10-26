@@ -7074,3 +7074,75 @@ table run after the new deck measured the same eleven-deck field as the day befo
 about it. All of them now read `Object.keys(STARTER_DECKS)`. A list in seven files is a list that
 goes stale in six of them, and a measurement that silently answers last week's question is worse
 than one that fails.
+
+## D159 — The worst deck in the pool, and the one card that was most of it
+
+**Decision: cut Tidal Mind's Diabolic Tutor for a third Vampire Nighthawk, move the Tutor to Hollow
+Tide, and stop there — six other candidate changes were priced and none of them did anything.**
+
+The twelve-deck table had said the same thing three times: Tidal Mind last, 22%, sixteen points
+behind the next deck. Three write-ups noted it and nobody acted, which is the failure mode this log
+exists to catch — a number nobody owns.
+
+**The diagnosis took one run of an instrument that already existed.** `cast-counts` on the deck:
+
+```
+ 16%  cast  9 / in hand 55 games   Twincast
+ 17%  cast  8 / in hand 46 games   Diabolic Tutor
+ 38%  cast  9 / in hand 24 games   Counterspell
+```
+
+**Diabolic Tutor was the deadest card in any deck in the pool.** Four mana for a card you then have
+to cast is a turn spent doing nothing, and a deck that spends turns doing nothing against a field
+with a 77% aggro deck in it dies holding answers.
+
+**The fix: a third Vampire Nighthawk, +27 of 264** — nine of eleven matchups up, two level, **none
+down**, which is the largest and most consistent single slot change this project has measured. It is
+the opposite card in every way that matters: three mana, flies, kills whatever it blocks, gains the
+life back, and it is a clock and a wall at the same time.
+
+**Six other changes were priced and six did nothing**, which is the more useful half of the result:
+
+| change | result |
+| --- | --- |
+| Mind Rot → second Wind Drake | +2 |
+| Twincast → third Man-o'-War | −5 |
+| Cancel → third Man-o'-War | −6 |
+| Mind Rot → second Dirgur Nemesis | −2 |
+| Swamp → second Omenspeaker | −19 |
+| Twincast → **fourth** Nighthawk | −13 |
+
+The last two are worth keeping. Cutting a land from a 21-land control deck is not a tempo gain, it
+is a mulligan; and the fourth copy of the card that was worth +27 is worth −13, which is diminishing
+returns written in games rather than in theory. **The rest of the list is not the problem.** This is
+still the deck whose plan — hold mana, answer the threat, win later — is the one the bot cannot
+pilot, and that was already written down twice (D61, and the setup doc's note on Skyward Writ).
+
+**The Tutor kept a home, because a script with no card is an orphan.** It went to Hollow Tide for a
+Tome Scour and measured **−1 of 264** there: free. A tutor in a deck with two cards worth finding is
+a different card from a tutor in a deck that just wants to untap.
+
+**And a measurement trap worth more than the deck change.** The first version of the edit moved the
+Nighthawk entry to where the Tutor had been, and the "same sixty cards" then measured **sixteen games
+worse** than the variant the probe had approved. `deck:load` expands a list in **order** and shuffles
+it afterwards, so the same multiset written in a different order is a different sequence of shuffles.
+`deck-probe` builds its variant by adjusting counts **in place**, so a measured change has to be
+applied in place too. Written into the deck list where the swap happened, because the next person to
+ship a measured change will make exactly this mistake.
+
+**Three tests broke on the move, and all three were right to.** Moving one card between two decks
+failed a Diabolic Tutor script test, a whole-game test that asserts the bot answers mid-resolution
+questions in the direction that helps it, and the view-payload budget test — because each of them had
+named `tidal-mind` as the deck that happens to contain a tutor. That is the test suite doing its job:
+a deck list is a fixture, and a fixture that silently stops containing the card the test is about
+would have left three assertions passing on nothing. They now name the deck that runs the card
+(`hollow-tide`), and the mid-resolution test names *both* decks on purpose — Tidal Mind for the Mind
+Rot that asks a player to discard, Hollow Tide for the Tutor that asks its controller to search.
+
+**And the new matchup found a real bug in that test's instrumentation.** Reading the chosen card's
+cost out of the state *after* the choice was answered throws the moment the chosen card is a token:
+Talrand's Drakes are in the field now, a token that reaches a graveyard ceases to exist (CR 111.7),
+and its instance is gone by the next state. It reads out of the state the question was asked in
+instead, which is also the more honest number — what a choice was worth is what it was worth when it
+was made. Measured peak on the wire moved with the deck too: **25.7KB packed, 55.6KB inlined**,
+against the 64KB cap.

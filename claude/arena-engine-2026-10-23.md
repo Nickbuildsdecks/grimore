@@ -3996,6 +3996,48 @@ in `scripts/measure/` had the deck list written out by hand, so the first table 
 deck quietly measured the same eleven-deck field as the day before. They all read the registry now.
 A list in seven files is a list that goes stale in six of them.
 
+### The worst deck in the pool, and the one card that was most of it
+
+The table had said the same thing three times — Tidal Mind last, 22%, sixteen points behind the next
+deck — and three write-ups had noted it without anybody acting. The diagnosis took one run of an
+instrument that already existed: `cast-counts` put **Diabolic Tutor at 17%**, cast in 8 of the 46
+games it was in hand, the deadest card in any deck in the pool. Four mana for a card you then have to
+cast is a turn spent doing nothing, and a deck that spends turns doing nothing against a field with a
+77% aggro deck in it dies holding answers.
+
+A **third Vampire Nighthawk** in its place measured **+27 of 264**, nine matchups up, two level, none
+down: the largest and most consistent slot change this project has measured, and it takes the deck
+from 22% to 27%. The Tutor moved to Hollow Tide, where a tutor has two cards worth finding, and cost
+that deck one game of 264.
+
+**Six other candidates were priced and six did nothing** — a second Wind Drake (+2), a third
+Man-o'-War for the Twincast (−5), Cancel for a Man-o'-War (−6), a second Dirgur Nemesis (−2), a Swamp
+for an Omenspeaker (−19) and a **fourth** Nighthawk (−13). The last two are the ones to keep: cutting
+a land from a 21-land control deck is a mulligan rather than a tempo gain, and the fourth copy of the
+card that was worth +27 is worth −13. The rest of the list is not the problem; the pilot is, and that
+was already written down twice.
+
+**And a measurement trap worth more than the deck change.** The first version of the edit moved the
+Nighthawk entry to where the Tutor had been, and the same sixty cards measured sixteen games worse
+than the variant the probe had approved: a library is expanded in **list order** and shuffled
+afterwards, so the same multiset in a different order is a different sequence of shuffles.
+`deck-probe` adjusts counts in place, so a measured change has to be applied in place too. It is now
+written in the deck list at the slot where it happened, because the next person to ship a measured
+change will make exactly this mistake.
+
+**Moving one card between two decks failed three tests, and all three deserved to fail.** A Diabolic
+Tutor script test, the whole-game test that asserts the bot answers mid-resolution questions in the
+direction that helps it, and the view-payload budget test had each named `tidal-mind` as "the deck
+that has a tutor in it". A fixture that quietly stops containing the card the test is about leaves
+the assertion passing on nothing, so they now name the deck that runs the card, and the
+mid-resolution one names both on purpose: Tidal Mind for the Mind Rot that asks a player to discard,
+Hollow Tide for the Tutor that asks its controller to search. The new matchup then found a real bug
+in that test's instrumentation — it read the chosen card's cost out of the state *after* the answer,
+which throws the moment the choice is a token, because a token that reaches a graveyard ceases to
+exist (CR 111.7) and Talrand's Drakes are in this field now. It reads the state the question was
+asked in instead. The wire peak moved with the deck: **25.7KB packed, 55.6KB inlined**, against a
+64KB cap.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

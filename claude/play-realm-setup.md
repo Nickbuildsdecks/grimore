@@ -194,7 +194,8 @@ anybody's turn, which is what makes instants and responses work at all.
 0/1 Plant every turn and can put a +1/+1 counter on the whole board), **Tidal Mind**
 (blue-black control, with counterspells, and now with **Twincast** — the pool's only card that
 copies a *spell*, with the printed "you may choose new targets for the copy" answered while it
-resolves) and **Rot Harvest** (green-black, built on getting
+resolves — and with a **third Vampire Nighthawk** where its Diabolic Tutor used to be, which is the
+largest measured slot change in the pool and the reason this deck is 27% rather than 22%) and **Rot Harvest** (green-black, built on getting
 creatures back out of the graveyard and on feeding them to sacrifice outlets, now with an
 **Imperious Perfect** that taps for an Elf a turn to feed them with, an **Obelisk of Urd**
 that names a creature type as it lands and makes every one of them +2/+2 — including the Elves the
@@ -312,27 +313,39 @@ its plan against the fast decks, and the bot casts it the turn it can afford it.
 other, both seats, 240 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 78%  206-58   ember-rush
- 64%  168-96   verdant-guard
+ 77%  204-60   ember-rush
  64%  170-94   forge-alliance
- 62%  163-101  dawn-tithe
- 58%  152-112  skyward-writ
- 46%  121-143  delta-bloom
- 45%  119-145  ashen-rite
- 44%  115-149  arc-tempest
- 42%  112-152  hollow-tide
- 38%  100-164  rot-harvest
- 38%   99-165  blight-vector
- 22%   58-206  tidal-mind
+ 63%  167-97   verdant-guard
+ 61%  160-104  dawn-tithe
+ 58%  154-110  skyward-writ
+ 45%  118-146  ashen-rite
+ 45%  118-146  delta-bloom
+ 43%  113-151  arc-tempest
+ 41%  108-156  hollow-tide
+ 38%  101-163  rot-harvest
+ 37%   98-166  blight-vector
+ 27%   72-192  tidal-mind
 ```
 
-**That run is the twelfth deck's debut, and Blight Vector lands eleventh at 38%** — every row is 264
+**Tidal Mind is 27% in that run rather than 22%, and one card did it.** The table had said "the
+worst deck in the pool by sixteen points" three times without anybody acting on it, so this run is
+the first where somebody did. `cast-counts` found the problem in one line: **Diabolic Tutor, cast in
+8 of the 46 games it was in hand — 17%**, the deadest card in any deck in the pool. Four mana for a
+card you then have to cast is a turn spent doing nothing, and a deck that spends turns doing nothing
+against this field dies holding answers. A **third Vampire Nighthawk** in its place measured **+27 of
+264** with nine matchups up, two level and none down, and it is the largest single slot change this
+project has measured. **Six other candidates were priced and six did nothing**: a second Wind Drake
+for the Mind Rot (+2), a third Man-o'-War for the Twincast (−5), Cancel for a Man-o'-War (−6), a
+Swamp for an Omenspeaker (−19), a second Dirgur Nemesis (−2) and a **fourth** Nighthawk (−13). The
+honest reading is that the rest of the list is not the problem: it is still the deck whose plan —
+hold mana, answer the threat, win later — is the one the computer cannot pilot, and a person plays
+it better than 27%.
+
+**That run is also the twelfth deck's debut, and Blight Vector lands eleventh at 37%** — every row is 264
 games rather than 240 because there is one more opponent, and the order is the order it has been for
 four of these runs with the new row near the bottom. Three movements are worth naming rather than
 leaving to be noticed: **Dawn Tithe is up five points** (57% to 62%), which is Palace Sentinels and
-matches the +15 of 240 the paired probe measured for that slot; **Tidal Mind is down five** (27% to
-22%) and is now the worst deck in the pool by sixteen points, which is a balance question this table
-has now asked three times; and **Blight Vector's own row understates it** — it beats Tidal Mind 15-9
+matches the +15 of 240 the paired probe measured for that slot; and **Blight Vector's own row understates it** — it beats Tidal Mind 15-9
 and Arc Tempest 14-10 and loses 3-21 to Ember Rush, which is a deck with matchups rather than a deck
 that is simply bad. What the row cannot show at all is the thing the deck is for: **80% of its games
 put poison on somebody, and every one of its wins in the last measured run was a poison kill rather

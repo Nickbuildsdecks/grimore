@@ -2801,7 +2801,6 @@ export const TIDAL_MIND: DeckSpec = {
     */
     { card: DIRGUR_NEMESIS, count: 1 },
     { card: MIND_ROT, count: 1 },
-    { card: DIABOLIC_TUTOR, count: 1 },
     { card: SOUL_MANIPULATION, count: 1 },
     /*
       Think Twice for the second Soul Manipulation: a cantrip you cast twice is better in the long
@@ -2859,7 +2858,25 @@ export const TIDAL_MIND: DeckSpec = {
       on the stack. See the script in `scripts.ts` for all three.
     */
     { card: CHALICE_OF_THE_VOID, count: 1 },
-    { card: VAMPIRE_NIGHTHAWK, count: 2 },
+    /*
+      A third Vampire Nighthawk, paid for by cutting the Diabolic Tutor above, and it is the
+      biggest single measurement in this deck's history: **+27 of 264**, with nine of the eleven
+      matchups up, two level and **not one down**.
+
+      The Tutor was this deck's deadest card — cast in 8 of the 46 games it was in hand, 17% — and
+      why is the whole diagnosis. Four mana for a card you then have to cast is a turn spent doing
+      nothing, and a deck that spends turns doing nothing against this field dies holding answers.
+      The Nighthawk is the opposite card: three mana, flies, kills whatever it blocks, gains the
+      life back, and it is the only creature in these colours that is a clock and a wall at once.
+      The Tutor's script keeps a home in Hollow Tide, where a tutor has two cards worth finding.
+
+      **Counted in place rather than appended**, which matters more than it looks: `deck-probe`
+      builds its variant by adjusting counts where the entries already are, and a library is
+      expanded in list order *before* it is shuffled — so the same sixty cards written in a
+      different order shuffle differently and measure differently. Moving this entry to the
+      Tutor's slot was worth sixteen games of nothing at all.
+    */
+    { card: VAMPIRE_NIGHTHAWK, count: 3 },
     { card: AIR_ELEMENTAL, count: 1 },
   ],
 };
@@ -3650,7 +3667,17 @@ export const HOLLOW_TIDE: DeckSpec = {
     { card: NEMESIS_OF_REASON, count: 1 },
     { card: JACE_MEMORY_ADEPT, count: 1 },
     // The payload, all of it cheap enough to cast on a turn that also does something else.
-    { card: TOME_SCOUR, count: 2 },
+    { card: TOME_SCOUR, count: 1 },
+    /*
+      And the Diabolic Tutor's new home, for one Tome Scour.
+
+      It was cut from Tidal Mind for being that deck's deadest card, and a tutor is a different
+      card in a deck with two cards worth finding: a Nemesis of Reason or a Jace is the game, and
+      five mill rather than seven is not. Measured as its own change rather than assumed — see the
+      log — because moving a card that cost one deck games is not the same as giving another deck
+      a card it wants.
+    */
+    { card: DIABOLIC_TUTOR, count: 1 },
     { card: MIND_SCULPT, count: 3 },
     { card: THOUGHT_SCOUR, count: 2 },
     { card: COMPELLING_ARGUMENT, count: 2 },
