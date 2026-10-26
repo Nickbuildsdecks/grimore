@@ -6006,3 +6006,64 @@ trigger of its controller's on the stack — `hasAnyLegalTargets` does that with
 code — and the one-move search prices activating it like any other play. "A card that is a few
 declarative lines" has been the claim in that doc for months; this is the first one that was
 genuinely nothing but lines.
+
+## D140 — Two more planeswalkers, and the reading the paired probe could not resolve
+
+**Decision: the pool gets a third and fourth planeswalker, chosen for having no emblem, and the
+table instrument overrules the paired probe about what one of them is worth.**
+
+Ten decks shared two planeswalkers — a Jace Beleren and a Garruk Wildspeaker — and a planeswalker is
+the one card type here that plays unlike everything else: it arrives, it survives, and it does
+something every turn without being tapped or sacrificed. **Ajani, Caller of the Pride** goes into
+Skyward Writ and **Nissa, Voice of Zendikar** into Verdant Guard, six abilities between them, and
+not one of them needed anything new in the engine. That is the claim `scripts.ts` has been making
+for months — "adding a card is a few declarative lines" — tested on six lines at once: a counter, a
+pump carrying two keywords, five tokens, one token, counters across a team, and a pair of numbers
+read off the board as it resolves.
+
+**The emblem is the constraint on which planeswalkers this pool can carry**, and it is worth
+writing down because it decided the two. An emblem is a permanent ability with no permanent behind
+it, and the engine has nowhere to put one — so a Liliana of the Dark Realms, whose −6 is an emblem,
+is not a card this pool can hold honestly. Both of these end in something that happens *once*: five
+Cats, and a gain-and-draw as big as your lands. The ultimates kill their own planeswalker, which is
+the rules rather than the card (nought loyalty is a state-based action, CR 704.5i), and the test
+says so.
+
+**Ajani measures as free and is used constantly.** Removing it is −1 and −5 of 270 paired duels on
+two seed sets, both well inside the floor. The cast counts are the other half: over 108 games the
+bot cast it in 52 of the 61 games it drew one and **activated it 186 times** — about 1.7 activations
+a game, which is what a permanent that does something every turn looks like when nothing has to
+teach the search to use it.
+
+**Nissa is the interesting one, and it is a finding about the instrument rather than about the
+card.** The paired probe said −15 and −5: the same sign twice, which is rare, and both under the
+eighteen-game floor — so "free, with the number written down". Then the refreshed ten-deck table,
+same seeds as the run before it, moved **Verdant Guard 52% → 61%, +18 games of 216**, with Skyward
+Writ +7 for the Ajani. The two decks that changed a card are the two that moved up, which is the
+D133 signature, and it is the clearest demonstration yet of what the measurement README warns about:
+**a reading at the floor is a reading the paired probe cannot resolve**, and when a second instrument
+with a different design agrees on the sign and lands above the floor, the second instrument is the
+one to read.
+
+So Nissa ships, at 61% and third, in the same band as Dawn Tithe and well under Forge Alliance, with
+no matchup worse than 20-4 against the deck at the bottom of the table — and the note in the deck
+list says that if the next change pushes Verdant Guard further, it is the deck to look at. The
+alternative cut was measured and could not be told apart (cutting the Centaur Courser instead: −6
+and +1), so the cards decided it: six accelerants plus nineteen lands was the most redundant thing
+in the list, and a three-mana permanent is what the second Rampant Growth was ramping towards.
+
+**And a null result both instruments agree on, which is new.** The same seeds were run once more
+with the previous two cards in and the planeswalkers out: 78/66/61/52/50/48/40/39/38/27, the same
+order and within a point of the ten-deck run on every row. Arc Lightning (D138) and the Strionic
+Resonator (D139) each measured free in a paired probe and moved the table by nothing at all — the
+first time this project has had two instruments of different designs agree that a change was worth
+*nothing*, which is the claim that is hardest to support and the one most often asserted without
+evidence.
+
+**And the second instrument gap of the session, found the same way as the first.** `deck-probe`
+splits `CHANGE` on commas, and every legendary creature's name has one in it — "Nissa, Voice of
+Zendikar:-1" became two names the probe could not find, and all four runs died in a second. A `;`
+anywhere in the string now makes `;` the separator for the whole of it, which keeps every
+invocation this project has already written down working and makes the rest expressible. Both gaps
+this session were in the same place and neither was in the engine: an instrument that has only ever
+been pointed at the cards it was built for has corners nobody has stood in.

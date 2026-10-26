@@ -46,7 +46,7 @@ A one-player table is a short step from here: `packages/rules-engine/src/bot.ts`
 | `turnTypes.ts` | Steps, the stack object, combat state, the automated action shapes |
 | `effects.ts` | The vocabulary scripts are written in (damage, draw, pump, tokens, control) |
 | `scriptTypes.ts` | The shape of a card script |
-| `scripts.ts` | All 218 scripted cards, the five basic lands among them |
+| `scripts.ts` | All 220 scripted cards, the five basic lands among them |
 | `targeting.ts` | Legal targets, the duplicate-target rule, the fizzle rule |
 | `combat.ts` | Who can attack, who can block, damage assignment |
 | `automation.ts` | Steps, priority, triggers, state-based actions, resolution |
@@ -3376,6 +3376,40 @@ it in 19 of the 20 games it drew one and activated it 14 times, so the number is
 rather than about a card nobody touched. And it needed no bot teaching whatsoever, which the last
 four cards all did: `legalActions` offers the ability only when there is a trigger of yours on the
 stack, and the search prices activating it like anything else.
+
+### Two more planeswalkers, and the reading the paired probe could not resolve
+
+Ten decks shared two planeswalkers, and a planeswalker is the one card type here that plays unlike
+everything else: it arrives, it survives, and it does something every turn without being tapped or
+sacrificed. **Ajani, Caller of the Pride** goes into Skyward Writ and **Nissa, Voice of Zendikar**
+into Verdant Guard — six abilities between them, and not one needed anything new in the engine. A
+counter, a pump carrying two keywords, five tokens, one token, counters across a team, and a pair of
+numbers read off the board as it resolves: that is the "a card is a few declarative lines" claim
+tested six lines at a time.
+
+The constraint that chose these two is the **emblem**. An emblem is a permanent ability with no
+permanent behind it and the engine has nowhere to put one, so a Liliana of the Dark Realms cannot be
+carried honestly. Both of these end in something that happens once — five Cats, and a gain-and-draw
+as big as your lands — and both ultimates kill their own planeswalker, which is the rules rather than
+the card.
+
+Ajani measures as free (−1 and −5 of 270 removing it) and is used constantly: over 108 games the bot
+cast it in 52 of the 61 games it drew one and activated it **186 times**, with nothing taught.
+
+Nissa produced a finding about the instrument. The paired probe said −15 and −5 — same sign twice,
+both under the eighteen-game floor, so "free with the number written down". The refreshed ten-deck
+table, same seeds as the run before, then moved Verdant Guard **52% → 61% (+18 of 216)** with Skyward
+Writ +7 for the Ajani: the two decks that changed a card are the two that moved up. A reading at the
+floor is a reading the paired probe cannot resolve, and when a second instrument of a different
+design agrees on the sign and lands above the floor, the second one is the one to read. Nissa ships
+at third in the table, in Dawn Tithe's band and under Forge Alliance, with a note in the deck list
+that Verdant Guard is the deck to look at if the next change pushes it further.
+
+And the second instrument gap of the session, in the same place as the first: `deck-probe` split
+`CHANGE` on commas, and every legendary name has one, so "Nissa, Voice of Zendikar:-1" became two
+names it could not find. A `;` in the string now switches the separator for the whole of it. Neither
+gap was in the engine — an instrument only ever pointed at the cards it was built for has corners
+nobody has stood in.
 
 ## Next
 

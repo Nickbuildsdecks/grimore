@@ -29,10 +29,21 @@ const SEEDS = Number(process.env.SEEDS ?? 17);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
 
-const CHANGE = (process.env.CHANGE ?? '').split(',').filter(Boolean).map((part) => {
-  const at = part.lastIndexOf(':');
-  return { name: part.slice(0, at).trim(), delta: Number(part.slice(at + 1)) };
-});
+/*
+  "Name:+1,Other:-1", or "Name:+1;Other:-1" when a name has a comma in it.
+
+  Which every legendary creature does — "Adeliz, the Cinder Wind", "Nissa, Voice of Zendikar" — and
+  a comma-separated list cannot express one: splitting on the comma turned the card into two names
+  and the probe refused both. So a `;` anywhere in the string makes `;` the separator, which keeps
+  every invocation this project has already written down working and makes the rest expressible.
+*/
+const CHANGE = (process.env.CHANGE ?? '')
+  .split((process.env.CHANGE ?? '').includes(';') ? ';' : ',')
+  .filter(Boolean)
+  .map((part) => {
+    const at = part.lastIndexOf(':');
+    return { name: part.slice(0, at).trim(), delta: Number(part.slice(at + 1)) };
+  });
 
 const defNamed = (name) => Object.values(STARTER_DECKS)
   .flatMap((d) => d.cards).find((e) => e.card.name === name)?.card;

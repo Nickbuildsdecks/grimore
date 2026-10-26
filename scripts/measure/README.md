@@ -31,9 +31,29 @@ Point it at a legend whose text is **dead** in the subject deck — Balan, Wande
 with no Equipment is a plain 2/2 double striker — and the gap between the two arms is what the real
 commander is worth. It is the only lever here that is not a card in the sixty.
 
+A `CHANGE` is `Name:+1,Other:-1` — or `Name:+1;Other:-1` when a name has a **comma** in it, which
+every legendary creature's does. A `;` anywhere in the string makes `;` the separator for the whole
+of it; without that, `Nissa, Voice of Zendikar:-1` splits into two names the probe cannot find.
+
 A `CHANGE` has to keep the deck at sixty cards, and `deck-probe` says so rather than quietly
 measuring deck size instead of the change: a name it cannot find in the subject deck is looked up
 anywhere in the pool, and a `-1` on a card the deck no longer runs subtracts nothing.
+
+**"Anywhere in the pool" means anywhere in the ten deck lists**, which is the one thing this
+harness cannot do for a card that is *new*: its definition lives in `starterDecks.ts` but nothing
+runs it yet, so `defNamed` cannot find it and the probe refuses the change. The way round is exact
+rather than approximate, and it is the recipe every new card should be priced with:
+
+```sh
+# 1. Put the card in the list and rebuild.
+# 2. Measure taking it back OUT, which is the same pair of lists with the labels swapped:
+SUBJECT=arc-tempest CHANGE='Arc Lightning:-1,Shock:+1' SEEDS=15 node scripts/measure/deck-probe.mjs
+# 3. Negate the sign. "variant is -9" means the card is worth +9.
+```
+
+A registry of every card in the pool would let step 2 read the other way round, and is deliberately
+not here: it would be a second list of two hundred and eighteen names to keep in step with the
+first, to save a sign flip. See D138.
 
 ## Reading the numbers
 

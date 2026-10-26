@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and eighteen, today, across ten starter decks. A
+cards somebody has scripted — two hundred and twenty, today, across ten starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -108,7 +108,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Respond to their spell | While it is on the stack you hold priority — cast your instant, then pass. |
 | Attack | **Declare attackers**, tap the creatures, confirm. One that cannot attack is not tappable, and says why. |
 | Attack a planeswalker | Pick it from the row of targets in the attack prompt, then tap the creatures that go at it. Different creatures can go at different players and planeswalkers in the same attack. |
-| Use a planeswalker | Tap it on your battlefield and take one of its loyalty abilities. One a turn each, your main phase only, and a minus you cannot pay for is not offered. |
+| Use a planeswalker | Tap it on your battlefield and take one of its loyalty abilities. One a turn each, your main phase only, and a minus you cannot pay for is not offered. Four of them are in the pool, one per deck that wants one: **Jace Beleren** in Tidal Mind (cards, including the opponent's), **Garruk Wildspeaker** in Verdant Guard (untap two lands, a 3/3 Beast, or +3/+3 and trample for the team), **Ajani, Caller of the Pride** in Skyward Writ (a +1/+1 counter, or flying and **double strike** until end of turn — on a Serra Angel that is eight damage out of nowhere — or five 2/2 Cats at −8) and **Nissa, Voice of Zendikar** in Verdant Guard (a 0/1 Plant a turn, a +1/+1 counter on your whole team at −2, or life and cards as big as your lands at −7). The ultimates kill their own planeswalker, which is the rules rather than the card: nought loyalty is a state-based action. |
 | Block | **Declare blockers**, tap your creature, then tap the attacker it blocks. Only attackers it may legally block light up. |
 | See who is attacking whom | Lines on the board: gold from each attacker to the player it is aimed at, dashed from each blocker to what it blocked. In a pod that is how you know an attack is yours to answer. |
 | Work out who the threat is | Every seat strip says `board N` — the total power of that seat's creatures — and `· M up` for how much of that power is untapped. The first number is what can kill you eventually; the second is what can kill you on their *next* turn, and what can stop you on yours. A **lethal** badge on an opponent's strip means their untapped power alone is at least your life and you have nothing untapped to block with. |
@@ -172,7 +172,9 @@ anybody's turn, which is what makes instants and responses work at all.
 
 ### Ten starter decks
 
-**Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange), **Tidal Mind**
+**Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange, and the one deck with
+**two** planeswalkers in it now — Garruk Wildspeaker and **Nissa, Voice of Zendikar**, who makes a
+0/1 Plant every turn and can put a +1/+1 counter on the whole board), **Tidal Mind**
 (blue-black control, with counterspells) and **Rot Harvest** (green-black, built on getting
 creatures back out of the graveyard and on feeding them to sacrifice outlets, now with an
 **Imperious Perfect** that taps for an Elf a turn to feed them with, an **Obelisk of Urd**
@@ -192,7 +194,9 @@ where **Stromkirk Captain** lives: +1/+1 and first strike for the other eight, w
 board: Walls that hold the ground and attack nowhere, two Counterspells and an Essence Scatter
 because what beats it is a creature, a 2/3 that cannot attack and makes your lone flier bigger, a
 flier that takes protection from whichever colour you name as it lands, and more fliers to win over
-the top. Hanna leads it and buys an artifact or
+the top. Its newest card is **Ajani, Caller of the Pride**,
+whose middle ability is the fastest clock in the pool: flying and double strike on a Serra Angel is
+eight damage off a board that was holding the ground. Hanna leads it and buys an artifact or
 enchantment back out of your graveyard once a turn. Its six Knights are the pool's second-deepest
 tribe, and **Knight Exemplar** makes all of them +1/+1 and **indestructible** — with the caveat
 that matters at the table: kill the Exemplar and they are mortal again immediately, including in
@@ -251,22 +255,38 @@ its plan against the fast decks, and the bot casts it the turn it can afford it.
 other, both seats, 216 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 79%  170-46   ember-rush
- 65%  141-75   forge-alliance
- 62%  134-82   dawn-tithe
- 52%  113-103  verdant-guard
- 50%  107-109  skyward-writ
- 48%  103-113  ashen-rite
+ 77%  167-49   ember-rush
+ 66%  142-74   forge-alliance
+ 61%  131-85   verdant-guard
+ 59%  127-89   dawn-tithe
+ 53%  114-102  skyward-writ
+ 45%   97-119  ashen-rite
  41%   88-128  arc-tempest
- 38%   83-133  hollow-tide
- 38%   81-135  rot-harvest
- 27%   59-157  tidal-mind
+ 37%   80-136  rot-harvest
+ 37%   79-137  hollow-tide
+ 25%   53-163  tidal-mind
 ```
 
-That run is the first with **ten** decks in it, and it is the field effect D108 found happening
-again on a bigger scale: every row is 216 games rather than 192 because there is one more opponent,
-and nine decks that changed nothing at all moved by one to four points because the field they are
-measured against changed. Read the order, not the numbers.
+**That run is the two planeswalkers, and the two decks that got one are the two that moved up.**
+Verdant Guard 52% → 61% (+18 games of 216) for Nissa, Voice of Zendikar, and Skyward Writ 50% → 53%
+(+7) for Ajani, Caller of the Pride, on the same seeds as the run before. Both cards' paired probes
+had called them free — Nissa at +15 and +5 of 270, Ajani at +1 and +5 — so this is the clearest case
+yet of the thing the measurement README warns about: a reading at the floor is a reading the paired
+probe cannot resolve, and the table found Nissa's the larger of the two. Verdant Guard is third now
+rather than fourth; it is the same band as Dawn Tithe and well under Forge Alliance, with no matchup
+worse than 20-4 against the deck at the bottom of the table. If the next change pushes it further,
+it is the deck to look at.
+
+**The same seeds were also run with Arc Lightning and the Strionic Resonator in and the two
+planeswalkers out**, and that run came back 78/66/61/52/50/48/40/39/38/27 — the same order and
+within a point of the ten-deck run above it on every row. Two cards whose paired probes said "free"
+moved the table by nothing at all, which is the first time this project has had both instruments
+agree on a *null* result.
+
+The run before it was the first with **ten** decks in it, and it was the field effect D108 found
+happening again on a bigger scale: every row is 216 games rather than 192 because there is one more
+opponent, and nine decks that changed nothing at all moved by one to four points because the field
+they are measured against changed. Read the order, not the numbers.
 
 Dawn Tithe arrives at 62% and third, which is the second number it had. **The first version of the
 list came in at 66%** — second in the pool, winning the four slowest matchups between 19-5 and
@@ -354,7 +374,7 @@ survived, so three counterspell copies became a second Fog Bank, a second Vampir
 third Man-o'-War. That is worth nothing at all against the fastest deck in the pool and five to ten
 games against every slower one. D114 has the whole measurement.
 
-The decks share a pool of two hundred and eighteen scripted cards, which now includes a wrath, a
+The decks share a pool of two hundred and twenty scripted cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -542,7 +562,7 @@ playing the server, and a deal struck with the server's own seat).
   a small addition — `deck:load` already accepts any deck passed through `ActionContext.decks`, so
   it is a deck-source function and a picker in the lobby, not a redesign. In Arena mode an
   unscripted card still works as cardboard, with **Move by hand** for whatever it says in prose.
-- **The engine knows two hundred and eighteen cards.** Everything in the ten starter decks. It
+- **The engine knows two hundred and twenty cards.** Everything in the ten starter decks. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent
   among its targets (CR 601.2d), and a decision made *while a card is resolving*. That last one is what makes a tutor work: Rampant Growth and Diabolic Tutor open your

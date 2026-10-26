@@ -4170,6 +4170,104 @@ const ARC_LIGHTNING: CardScript = {
 };
 
 /*
+  Two more planeswalkers, which doubles how many this pool has.
+
+  Ten decks shared two of them — a Jace Beleren and a Garruk Wildspeaker — and a planeswalker is
+  the one card type that plays differently from everything else here: it arrives, it survives, and
+  it does something every turn without being tapped or sacrificed. Both of these are three
+  abilities that the existing vocabulary already covers, which is the test of whether that claim is
+  true: a counter, a pump, a token, a token, counters on a team, and a pair of numbers read off the
+  board.
+
+  The ultimates are the half worth naming. Neither is an **emblem** — the engine has no way to give
+  a player a permanent ability with no permanent behind it — so both of these were chosen from the
+  walkers whose last ability is a thing that happens once: five Cats, and a gain-and-draw as big as
+  your lands. That is a real constraint on which planeswalkers this pool can carry, and it is why
+  these two rather than a Liliana of the Dark Realms.
+*/
+
+export const CAT_TOKEN: CardDef = {
+  name: 'Cat', typeLine: 'Token Creature — Cat', manaCost: '', cmc: 0,
+  power: '2', toughness: '2', oracleText: '', colors: ['W'],
+};
+
+export const PLANT_TOKEN: CardDef = {
+  name: 'Plant', typeLine: 'Token Creature — Plant', manaCost: '', cmc: 0,
+  power: '0', toughness: '1', oracleText: '', colors: ['G'],
+};
+
+/** The two specs Ajani wants: a creature being *helped*, which is advice the bot needs. */
+const CREATURE_HELPED: TargetSpec = {
+  kind: 'creature', description: 'target creature', friendly: true,
+};
+
+const AJANI_CALLER_OF_THE_PRIDE: CardScript = {
+  name: 'Ajani, Caller of the Pride',
+  abilities: [
+    {
+      cost: { loyalty: 1 },
+      description: '+1: Put a +1/+1 counter on target creature.',
+      targets: [CREATURE_HELPED],
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : addCounters(c.state, id, '+1/+1', 1);
+      },
+    },
+    {
+      cost: { loyalty: -3 },
+      description: '−3: Target creature gains flying and double strike until end of turn.',
+      targets: [CREATURE_HELPED],
+      // The card this deck is built to point it at is a Serra Angel or a Leonin Skyhunter: double
+      // strike on something that already gets through is the fastest clock in the pool.
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : pump(c.state, [id], c.source, c.controller, {
+          keywords: ['flying', 'double strike'],
+        });
+      },
+    },
+    {
+      cost: { loyalty: -8 },
+      description: '−8: Create five 2/2 white Cat creature tokens.',
+      effect: (c) => createToken(c.state, c.controller, CAT_TOKEN, 5),
+    },
+  ],
+};
+
+const NISSA_VOICE_OF_ZENDIKAR: CardScript = {
+  name: 'Nissa, Voice of Zendikar',
+  abilities: [
+    {
+      cost: { loyalty: 1 },
+      description: '+1: Create a 0/1 green Plant creature token.',
+      effect: (c) => createToken(c.state, c.controller, PLANT_TOKEN, 1),
+    },
+    {
+      cost: { loyalty: -2 },
+      description: '−2: Put a +1/+1 counter on each creature you control.',
+      // Counters rather than a pump, which is the difference between this and an Overrun: they
+      // stay, they stack with the next activation, and a sweeper that kills everything else leaves
+      // the survivor bigger.
+      effect: (c) => creaturesControlledBy(c.state, c.controller).reduce(
+        (state, id) => addCounters(state, id, '+1/+1', 1),
+        c.state,
+      ),
+    },
+    {
+      cost: { loyalty: -7 },
+      description: '−7: You gain X life and draw X cards, where X is the number of lands you control.',
+      effect: (c) => {
+        const lands = listAt(c.state, zoneKey(c.controller, 'battlefield')).filter((id) => {
+          const inst = c.state.instances[id];
+          return inst !== undefined && characteristicsOf(c.state, inst).isLand;
+        }).length;
+        return draw(gainLife(c.state, c.controller, lands), c.controller, lands);
+      },
+    },
+  ],
+};
+
+/*
   Copying an ability on the stack, which is the last item this project's own Next list had on it.
 
   "Counter target ability" (D134) and "copy target ability" sound like neighbours and are not: one
@@ -4230,7 +4328,7 @@ const STRIONIC_RESONATOR: CardScript = {
 export const TOKEN_DEFS: readonly CardDef[] = [
   GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN,
   SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN, ELEMENTAL_TOKEN,
-  ELF_WARRIOR_TOKEN,
+  ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN,
 ];
 
 const ALL: readonly CardScript[] = [
@@ -4311,6 +4409,7 @@ const ALL: readonly CardScript[] = [
   guildgate('Orzhov Guildgate', 'W', 'B'),
   ARC_LIGHTNING,
   STRIONIC_RESONATOR,
+  AJANI_CALLER_OF_THE_PRIDE, NISSA_VOICE_OF_ZENDIKAR,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

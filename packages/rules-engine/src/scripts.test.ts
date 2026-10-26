@@ -9296,3 +9296,131 @@ describe('copying an ability on the stack (CR 706.10)', () => {
     expect(s.stackOrder).toEqual([]);
   });
 });
+
+describe('two more planeswalkers', () => {
+  /*
+    Ten decks shared two planeswalkers until now, and six abilities between them. These two add six
+    more and needed nothing new in the engine, which is the claim being tested as much as the cards
+    are: a counter, a pump with two keywords, five tokens, one token, counters on a whole team, and
+    a pair of numbers read off the board.
+  */
+
+  /** A seat with a walker out and its lands tapped, plus whatever else it needs on the board. */
+  const withWalker = (
+    seat: SeatIndex, deck: string, walker: string, basic: string, lands: number,
+    extra: readonly string[] = [],
+  ): GameState => {
+    let s = advanceTo(arena({
+      decks: { [seat]: deck },
+      battlefield: { [seat]: [...Array.from({ length: lands }, () => basic), walker, ...extra] },
+      turn: 3, firstSeat: seat,
+    }), 'precombat-main');
+    for (const id of [...ids(s, seat, 'battlefield')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== basic) continue;
+      s = apply(s, { type: 'auto:activate', by: seat, card: id, abilityIndex: 0 });
+    }
+    return s;
+  };
+
+  /** Loyalty counters added by hand, for an ultimate nobody would reach inside one test. */
+  const charge = (s: GameState, walker: string, to: number): GameState =>
+    addCounters(s, walker, 'loyalty', to - (s.instances[walker]!.counters['loyalty'] ?? 0));
+
+  it('Ajani grows a creature, and goes up doing it', () => {
+    let s = withWalker(0, 'skyward-writ', 'Ajani, Caller of the Pride', 'Plains', 3,
+      ['Leonin Skyhunter']);
+    const ajani = find(s, 0, 'battlefield', 'Ajani, Caller of the Pride');
+    const cat = find(s, 0, 'battlefield', 'Leonin Skyhunter');
+    expect(s.instances[ajani]!.counters['loyalty']).toBe(4);
+
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: ajani, abilityIndex: 0,
+      targets: [{ kind: 'card', id: cat }],
+    })));
+
+    expect([power(s, cat), toughness(s, cat)]).toEqual([3, 3]);
+    expect(s.instances[ajani]!.counters['loyalty']).toBe(5);
+  });
+
+  it('Ajani’s minus three is a clock: flying and double strike, until end of turn', () => {
+    let s = withWalker(0, 'skyward-writ', 'Ajani, Caller of the Pride', 'Plains', 3,
+      ['Youthful Knight']);
+    const ajani = find(s, 0, 'battlefield', 'Ajani, Caller of the Pride');
+    const knight = find(s, 0, 'battlefield', 'Youthful Knight');
+
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: ajani, abilityIndex: 1,
+      targets: [{ kind: 'card', id: knight }],
+    })));
+    expect(characteristicsOf(s, s.instances[knight]!).keywords.has('flying')).toBe(true);
+    expect(characteristicsOf(s, s.instances[knight]!).keywords.has('double strike')).toBe(true);
+    expect(s.instances[ajani]!.counters['loyalty']).toBe(1);
+
+    // Until end of turn, which is what separates it from the +1's counter.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(characteristicsOf(s, s.instances[knight]!).keywords.has('double strike')).toBe(false);
+  });
+
+  it('Ajani’s ultimate makes five 2/2 Cats', () => {
+    let s = withWalker(0, 'skyward-writ', 'Ajani, Caller of the Pride', 'Plains', 3);
+    const ajani = find(s, 0, 'battlefield', 'Ajani, Caller of the Pride');
+    // Nobody reaches eight loyalty inside a test; the counters go on by hand so the ability itself
+    // is what is being checked.
+    s = charge(s, ajani, 8);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: ajani, abilityIndex: 2 })));
+
+    expect(countOf(s, 0, 'battlefield', 'Cat')).toBe(5);
+    const cat = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Cat')!;
+    expect([power(s, cat), toughness(s, cat)]).toEqual([2, 2]);
+    // Zero loyalty is a state-based action, so the ultimate kills its own planeswalker.
+    expect(s.instances[ajani]!.zone).toBe('graveyard');
+  });
+
+  it('Nissa makes a 0/1 Plant a turn', () => {
+    let s = withWalker(0, 'verdant-guard', 'Nissa, Voice of Zendikar', 'Forest', 3);
+    const nissa = find(s, 0, 'battlefield', 'Nissa, Voice of Zendikar');
+    expect(s.instances[nissa]!.counters['loyalty']).toBe(3);
+
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: nissa, abilityIndex: 0 })));
+    expect(countOf(s, 0, 'battlefield', 'Plant')).toBe(1);
+    const plant = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Plant')!;
+    expect([power(s, plant), toughness(s, plant)]).toEqual([0, 1]);
+    expect(s.instances[nissa]!.counters['loyalty']).toBe(4);
+  });
+
+  it('Nissa’s minus two counts your own creatures only, and the counters stay', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Forest', 'Nissa, Voice of Zendikar', 'Grizzly Bears', 'Elvish Visionary'],
+        1: ['Mountain', 'Raging Goblin'],
+      },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const nissa = find(s, 0, 'battlefield', 'Nissa, Voice of Zendikar');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const theirs = find(s, 1, 'battlefield', 'Raging Goblin');
+
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: nissa, abilityIndex: 1 })));
+    expect([power(s, bears), toughness(s, bears)]).toEqual([3, 3]);
+    expect([power(s, theirs), toughness(s, theirs)]).toEqual([1, 1]);
+
+    // Counters rather than a pump: still there next turn, which is the difference from an Overrun.
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect([power(s, bears), toughness(s, bears)]).toEqual([3, 3]);
+  });
+
+  it('Nissa’s ultimate is as big as the lands you control', () => {
+    let s = withWalker(0, 'verdant-guard', 'Nissa, Voice of Zendikar', 'Forest', 5);
+    const nissa = find(s, 0, 'battlefield', 'Nissa, Voice of Zendikar');
+    s = charge(s, nissa, 7);
+    const lifeBefore = life(s, 0);
+    const handBefore = ids(s, 0, 'hand').length;
+
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: nissa, abilityIndex: 2 })));
+
+    // Five lands: five life and five cards, read off the board as it is when it resolves.
+    expect(life(s, 0)).toBe(lifeBefore + 5);
+    expect(ids(s, 0, 'hand').length).toBe(handBefore + 5);
+  });
+});

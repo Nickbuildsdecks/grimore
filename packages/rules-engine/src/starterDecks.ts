@@ -2138,6 +2138,26 @@ export const EMBER_RUSH: DeckSpec = {
   ],
 };
 
+const AJANI_CALLER_OF_THE_PRIDE: CardDef = {
+  name: 'Ajani, Caller of the Pride',
+  typeLine: 'Legendary Planeswalker — Ajani',
+  manaCost: '{1}{W}{W}',
+  cmc: 3,
+  loyalty: '4',
+  oracleText: '+1: Put a +1/+1 counter on target creature.\n−3: Target creature gains flying and double strike until end of turn.\n−8: Create five 2/2 white Cat creature tokens.',
+  colors: ['W'],
+};
+
+const NISSA_VOICE_OF_ZENDIKAR: CardDef = {
+  name: 'Nissa, Voice of Zendikar',
+  typeLine: 'Legendary Planeswalker — Nissa',
+  manaCost: '{1}{G}{G}',
+  cmc: 3,
+  loyalty: '3',
+  oracleText: '+1: Create a 0/1 green Plant creature token.\n−2: Put a +1/+1 counter on each creature you control.\n−7: You gain X life and draw X cards, where X is the number of lands you control.',
+  colors: ['G'],
+};
+
 export const VERDANT_GUARD: DeckSpec = {
   id: 'verdant-guard',
   name: 'Verdant Guard',
@@ -2155,7 +2175,7 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: BIRDS_OF_PARADISE, count: 2 },
     // Two rather than three: the third was the slot Secure the Wastes came back into, and a deck
     // with four other mana sources on one and two does not need a third copy of the ramp.
-    { card: RAMPANT_GROWTH, count: 2 },
+    { card: RAMPANT_GROWTH, count: 1 },
     { card: GARRUK_WILDSPEAKER, count: 1 },
     { card: SOUL_WARDEN, count: 1 },
     /*
@@ -2240,6 +2260,26 @@ export const VERDANT_GUARD: DeckSpec = {
     // the first time round. It went out and had to come straight back: a token finisher is the
     // only thing this deck does with a flooded hand, and the X-cost test casts two of them.
     { card: SECURE_THE_WASTES, count: 2 },
+    /*
+      Nissa, Voice of Zendikar for the second Rampant Growth, and this deck's second planeswalker.
+
+      Three mana for a permanent that makes a blocker every turn, puts a +1/+1 counter on the whole
+      board for −2, and at −7 draws and gains as much as you have lands. In a deck that already
+      wants to stand still and go wide, the +1 alone is what the second Doomed Traveler was for and
+      it never runs out.
+
+      **The largest consistent reading a new card has had here, and still inside the floor.**
+      Removing it is −15 on one seed set and −5 on the other over 270 paired duels: the same sign
+      twice, which is more than most of these get, and both under the eighteen-game floor. So it
+      ships as free with the number written down rather than as an improvement — and if the
+      refreshed table moves this deck up, that is where it will show.
+
+      The cut is the second Rampant Growth: six accelerants plus nineteen lands was the most
+      redundant thing in the list, and a three-mana permanent is exactly what the second one was
+      ramping towards. Cutting the Centaur Courser instead measured −6 and +1 — no consistent sign,
+      so the instrument cannot tell the two cuts apart and the cards decided it.
+    */
+    { card: NISSA_VOICE_OF_ZENDIKAR, count: 1 },
     // The deck's answer to a board it is behind on, which nothing in the pool could do before.
     { card: DAY_OF_JUDGMENT, count: 1 },
   ],
@@ -3071,7 +3111,25 @@ export const SKYWARD_WRIT: DeckSpec = {
       on the ground forever, and this deck already has two Fog Banks for the things that fly.
     */
     { card: THE_BIRTH_OF_MELETIS, count: 1 },
-    { card: RAISE_THE_ALARM, count: 2 },
+    { card: RAISE_THE_ALARM, count: 1 },
+    /*
+      Ajani, Caller of the Pride for the second Raise the Alarm.
+
+      The pool's third planeswalker and the first with a *combat* ability on it: −3 gives a creature
+      flying and double strike until end of turn, which on a Serra Angel is eight damage out of a
+      board that was holding the ground. The +1 is a counter on a Knight that the Exemplar then
+      makes indestructible, and the −8 is five 2/2 Cats — the deck's only way to go wide.
+
+      **It measures as free:** removing it is −1 and −5 of 270 on two seed sets, both well inside
+      the floor, and the sign is the same twice.
+
+      The cut is the second Raise the Alarm, because the Cats and the Alarm do the same job and the
+      planeswalker does it repeatedly. The alternative — cutting an Omenspeaker — measured +19 and
+      −3, which is this instrument's way of saying it cannot tell: one set above the floor, the
+      other the wrong way round. So the argument is the cards', and the Omenspeaker stays because it
+      is this deck's only early card selection.
+    */
+    { card: AJANI_CALLER_OF_THE_PRIDE, count: 1 },
     // And the air, which it does intend to win.
     { card: LEONIN_SKYHUNTER, count: 3 },
     // Two Skyhunters' worth of white two-drops already fly; this one does not and does not need
