@@ -4410,10 +4410,13 @@ whole of combat inside one action.
 3. A stronger opponent still. It plays each option out — plays, attacks and blocks — and keeps the
    position it likes best, which is worth better than two games in three against the bot it
    replaced. But one ply is one ply: the simulation stops at the end of the current combat, so it
-   cannot see the swing back on the opponent's next turn or keep mana up for the counterspell in
-   its hand. "A spell is worth more later than now" has been taught four times by hand instead —
-   the ritual, the Fog, the protection trick and the pump — and each time it was a fact about the
-   board rather than a weight, because the weight cannot be made to work. All three need the *reply*,
+   cannot see the swing back on the opponent's next turn. "A spell is worth more later than now" has
+   been taught by hand instead — the ritual, the Fog, the protection trick, the pump, and now the
+   mana an answer in hand is waiting for — and each time it was a fact about the board rather than a
+   weight, because the weight cannot be made to work. The counterspell is the clearest case of that:
+   the same idea failed twice as a *weight* (D68, D69) and works as a *filter*, and the instrument
+   that said why is `held-answers.mjs` — the handicap was never when it counters, it was that it had
+   already spent the mana. All three need the *reply*,
    which is this same function recursing with the opponent choosing against it — and the cheap
    substitute for the first of them (scoring an untapped creature above a tapped one) was tried and
    measurably lost games, which is written up in `claude/decisions-log.md`. The reply itself has now

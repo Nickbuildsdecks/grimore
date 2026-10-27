@@ -7765,3 +7765,65 @@ the engine never stops to ask about** — the first was the combat arrow that is
 because auto-pass runs the whole of combat inside one action. Both are now written into the
 measurement README, because an instrument that reads `legalActions` for a seat that is not acting
 will print a confident zero.
+
+### The rule, and why it ships at level
+
+A **filter**, not a weight, and that distinction is the whole of why this attempt is different from
+the two that were deleted. A weight can only say "untapped mana is worth a little", and the search
+then spends it anyway on whatever is worth more *right now* — correctly, because the thing the mana
+is for is on the far side of the search horizon. A filter says "not that one" and leaves every other
+play on the table. It is the thirteenth member of the drop-this-option family in `botAction`, beside
+the ritual that buys nothing and the Fog with nothing attacking.
+
+Four conditions keep it narrow: this seat's own turn at sorcery speed (responding is what the mana
+was saved for); the **cheapest** answer in hand only; affordable before the play and unaffordable
+after, so a turn with mana to spare costs nothing; and never the answer itself. One more was added
+after the first measurement — **nobody to answer**: a player with no cards in hand is not going to
+cast a spell, and the fastest decks in this pool empty their hands by about turn six, so without
+that clause a control deck spends the rest of those games holding mana up for nothing. It is worth a
+consistent +8 to +12 on matched seeds.
+
+**What it fixes, measured:**
+
+| Tidal Mind's windows | before | after |
+| --- | --- | --- |
+| cast | 4% | **48%** |
+| affordable, passed | 0% | 11% |
+| **could not pay** | **92%** | **39%** |
+| nothing to point at | 3% | 1% |
+
+**What it is worth, measured twice:**
+
+- Bot against bot, three seed sets of 2808 paired duels: **+72, +17 and +2**. The right sign three
+  times, and the per-set spread is 70 games, so this is **inside the floor**. (The rule without the
+  empty-hand clause: +60, +7, −6.)
+- The thirteen-deck table, the same seeds both ways, 288 games per deck: the five decks that hold
+  counterspells moved **+1 between them** — Hollow Tide +4, Tidal Mind +2, Arc Tempest −1, Skyward
+  Writ −2, Delta Bloom −2. The three fastest decks each gave up a point or two, which is the right
+  direction for "their opponents now answer things".
+
+**It ships on by default anyway, and the reason is not the record.** Level is level, and this project
+deletes terms that measure level — but every member of the filter family shipped because the *play*
+was wrong rather than because it won: a Fog cast with nothing attacking has done nothing at all,
+whatever the win rate says. A counterspell held with no mana for it is the same kind of wrongness,
+and the asymmetry with the deleted terms is real: those cost a scan of the board on every
+evaluation, this costs one affordability check on the bot's own turn while it holds an answer. The
+deciding question was whether fidelity cost the control decks anything, and the table says it does
+not. So the engine's opponent now plays its counterspells, and `reserveForAnswers: false` is the
+control it was measured against.
+
+**The honest limit, written where it bites.** The reservation is only as good as the payment, and the
+payment is not trying to help it: the engine taps to pay the cost in front of it with no opinion
+about what is being held back, so with three Islands and two Swamps a {1}{U} creature can be paid
+for with two Islands, leaving one blue source where a {1}{U}{U} answer needs two. The rule then drops
+a play a smarter payment would have allowed. It errs towards holding the answer, which is the
+direction it exists to err in; a payment solver that preferred to leave a named cost payable is its
+own piece of work.
+
+**And the next problem is now reachable, which is the other reason to ship it.** With the rule on,
+the bot declines an affordable answer in about one window in nine, where before it was none in 271.
+It declined a Shivan Dragon four times in 96 games while countering Monastery Swiftspears and
+Centaur Coursers, and the mana-value proxy says it is not simply spending counters on cheap junk
+(2.4 countered against 2.9 declined). That is D69's judgement problem, finally in a position where
+something could be done about it — and no evaluation weight can read "what the spell *does*", so it
+will want a fact about the board the way `preventionCanMatter` and `somethingToRemove` did.

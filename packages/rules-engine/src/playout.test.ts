@@ -1371,7 +1371,8 @@ describe('the mana an answer in hand is waiting for', () => {
     turn: 4, firstSeat: 0,
   }), 'precombat-main');
 
-  const ON = { reserveForAnswers: true } as const;
+  /** The rule is on by default, so the control arm is the one that has to say so. */
+  const OFF = { reserveForAnswers: false } as const;
 
   it('is not spent on a creature, and the bot passes its own turn holding it', () => {
     // Three lands: the Omenspeaker and the Cancel are both affordable, and not both.
@@ -1385,11 +1386,11 @@ describe('the mana an answer in hand is waiting for', () => {
     expect(legalActions(tight, 0).plays.some((play) => play.card === cancel)).toBe(false);
 
     // Without the rule it taps out for the body, which is what 92% of those windows are.
-    const greedy = botAction(tight, 0);
+    const greedy = botAction(tight, 0, OFF);
     expect(greedy?.type === 'auto:cast' && greedy.card === speaker).toBe(true);
 
-    // With it, nothing is worth the mana this turn.
-    expect(botAction(tight, 0, ON)?.type).toBe('auto:pass');
+    // With it — which is the default — nothing is worth the mana this turn.
+    expect(botAction(tight, 0)?.type).toBe('auto:pass');
   });
 
   it('and is spent the moment there is mana to spare, which is most turns', () => {
@@ -1406,7 +1407,7 @@ describe('the mana an answer in hand is waiting for', () => {
     */
     const rich = holding(['Island', 'Island', 'Island', 'Island', 'Swamp']);
     const speaker = find(rich, 0, 'hand', 'Omenspeaker');
-    const chosen = botAction(rich, 0, ON);
+    const chosen = botAction(rich, 0);
     expect(chosen?.type === 'auto:cast' && chosen.card === speaker).toBe(true);
   });
 
@@ -1420,14 +1421,15 @@ describe('the mana an answer in hand is waiting for', () => {
       nobody ever does anything, and the turn structure says it cannot happen (a pass ends a step
       and the steps run out), but "says it cannot" is what this suite exists to stop trusting.
 
-      Both seats on the rule, and the two decks that hold the most counterspells between them.
+      Both seats on the rule — which is simply the default now — and the two decks that hold the
+      most counterspells between them.
     */
     for (let seed = 1; seed <= 4; seed++) {
       let s = table(seed * 7919, (seed % 2) as SeatIndex, ['tidal-mind', 'skyward-writ']);
       for (let i = 0; i < 9000 && !s.finished; i++) {
         const seat = seatToAct(s);
         if (seat === null) break;
-        const action = botAction(s, seat, ON);
+        const action = botAction(s, seat);
         if (action === null) break;
         const version = s.stateVersion;
         s = applyAction(s, action, HOST);

@@ -1275,9 +1275,12 @@ export interface BotOptions {
   /**
    * Whether to keep back the mana an answer in hand is waiting for, on this seat's own turn.
    *
-   * See `spendsAnAnswersMana`. Off is the bot as it was, and which way round the default goes is a
-   * measurement rather than a preference — two earlier attempts at this idea were *evaluation
-   * terms* and both were deleted.
+   * **On by default, and on for a reason the record does not give.** See `spendsAnAnswersMana` for
+   * the measurement: bot against bot it is +72, +17 and +2 of 2808 across three seed sets — the
+   * right sign three times and inside the floor — and the thirteen-deck table moves the five decks
+   * that hold counterspells by +1 between them. Level, twice over. What it changes is the play: the
+   * deck that counters 4% of the spells it holds an answer for counters 48% of them. Off is the bot
+   * as it was, kept as the control this was measured against.
    */
   readonly reserveForAnswers?: boolean;
 }
@@ -2860,7 +2863,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       the family and the first about a *later* turn rather than this one. See
       `spendsAnAnswersMana` for the measurement that asked for it.
     */
-    if (opts.reserveForAnswers === true && spendsAnAnswersMana(state, after, seat, option.action)) {
+    if (opts.reserveForAnswers !== false && spendsAnAnswersMana(state, after, seat, option.action)) {
       dropped += 1;
       continue;
     }

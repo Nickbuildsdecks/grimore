@@ -358,35 +358,50 @@ Over 144 games each:
 It is not that the computer counters the wrong things. It is that it has already spent the mana: a
 seat that taps out in its own main phase has none for the whole of your turn, because lands untap in
 their own controller's untap step. Tidal Mind's Disallow was cast **once** in 144 games against 145
-moments it could not pay for. So if you are the one piloting a control deck here, the half of it the
-bot gives away for free is the half you get to keep.
+moments it could not pay for.
+
+**That is fixed now, and the fix does not make the decks stronger.** The bot keeps back the mana its
+cheapest answer in hand needs, on its own turn only, and only when a play would actually take that
+answer away — so Tidal Mind's windows read **48% cast and 39% could-not-pay** where they read 4% and
+92%. Its record barely moves for it (the five counterspell decks gained one game between them across
+288 each), because the turns it spends holding two mana up cost roughly what the counterspells buy.
+What changes is that the deck now does the thing it is built to do, which is what you will notice
+sitting across from it. If you would rather play against the old tapped-out version, that is
+`reserveForAnswers: false` in the bot's options.
+
+The judgement half is the part still open: now that it can pay, it declines an affordable answer in
+about one window in nine, and it declined a Shivan Dragon four times in 96 games while countering
+Monastery Swiftspears.
 
 **The decks are not all equally strong, and now there is a table of it.** Every deck against every
 other, both seats, 288 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
 
 ```
- 77%  223-65   ember-rush
- 64%  183-105  dawn-tithe
- 63%  181-107  verdant-guard
- 57%  165-123  forge-alliance
+ 75%  217-71   ember-rush
+ 63%  181-107  dawn-tithe
+ 62%  178-110  verdant-guard
+ 58%  168-120  forge-alliance
  57%  164-124  kindle-grove
- 55%  158-130  skyward-writ
- 43%  124-164  arc-tempest
- 43%  124-164  delta-bloom
- 41%  117-171  ashen-rite
- 38%  109-179  rot-harvest
- 38%  108-180  blight-vector
- 37%  107-181  tidal-mind
- 37%  106-182  hollow-tide
+ 53%  153-135  skyward-writ
+ 42%  120-168  arc-tempest
+ 41%  119-169  ashen-rite
+ 41%  118-170  hollow-tide
+ 41%  118-170  delta-bloom
+ 39%  111-177  tidal-mind
+ 39%  112-176  rot-harvest
+ 39%  111-177  blight-vector
 ```
 
 **The bottom of that table used to be a cliff and is now a cluster.** Tidal Mind spent five runs
-eleven points below the next-worst deck; the six-slot rebuild described below moved it **28% → 37%**
-and the last four decks are now 38, 38, 37 and 37. The spread across the whole field is forty points
-where it was forty-eight. Arc Tempest's three points (40% → 43%) are the Twincast it took in, which
-the paired probe had priced at +3 and +2 — the only movement in the run that a probe predicted
-beforehand. Nothing else in the table moved by more than the three or four games these 288-game rows
-wobble by on a new seed set.
+eleven points below the next-worst deck; the six-slot rebuild described below moved it **28% → 39%**,
+and the bottom five decks are now within two points of each other. The spread across the whole field
+is thirty-six points where it was forty-eight.
+
+That run is also the first with the **mana-reservation rule** on, so the aggressive decks at the top
+each give up a point or two — their opponents now answer things. Measured both ways on the same
+seeds, the five decks that hold counterspells moved **+1 between them**: Hollow Tide +4, Tidal Mind
++2, Arc Tempest −1, Skyward Writ −2, Delta Bloom −2. That is the point of the rule rather than a
+disappointment about it — see the window table above.
 
 **The rest of this section is the history of that table, run by run, newest first.**
 
