@@ -4335,6 +4335,38 @@ so attacking with it costs nothing), **10 traded**, killing a blocker, and **27 
 8.0%, which is the only one of the three the test's claim was ever about. The number had already
 drifted twice as the pool grew, and this is why.
 
+### Why the counterspell is still in hand
+
+Three decks' records have been explained by the same sentence for months — holding mana for an
+answer is half their plan and the bot cannot do it — and nothing had ever measured which part of
+that was true. `held-answers.mjs` counts one *window* per (opponent's spell on the stack, answer in
+hand) and asks `legalActions` what it would offer. A counterspell's life has exactly four ends, and
+which one it meets decides what kind of fix would help:
+
+| deck | windows | cast | could afford, passed | **could not pay** | nothing to point at |
+| --- | --- | --- | --- | --- | --- |
+| Tidal Mind | 271 | 4% | 0% | **92%** | 3% |
+| Arc Tempest | 151 | 11% | 3% | **79%** | 7% |
+| Skyward Writ | 226 | 28% | 8% | **56%** | 7% |
+
+**It is not a judgement problem.** Over 271 of Tidal Mind's windows the bot declined an affordable
+answer **not once**: it almost never gets to make the bad choice two deleted evaluation terms were
+aimed at. It is a tempo
+problem with a precise shape — a seat that taps out in its own main phase has no mana for the whole
+of the opponent's turn, because lands untap in their controller's own untap step. The severity
+tracks the counter's **cost**: Skyward Writ's {U}{U} Counterspell is live three times as often as
+Tidal Mind's {1}{U}{U} Disallow, which was cast **once** in 144 games against 145 windows it could
+not pay for.
+
+**The instrument could not see any of that until it moved priority.** Its first version found 163
+moments with an opponent's spell on the stack and the subject seat offered priority in *three* of
+them — auto-pass passes for a seat whose only legal move is to pass, inside the same applied
+action, so the 160 moments it could not see were exactly the ones it existed to explain. It now puts
+the question counterfactually: `priority` moved to that seat on a local copy of the state, nothing
+applied. That is the second instrument this week whose quarry was something the engine never stops
+to ask about; the first was the combat arrow that is never on screen because auto-pass runs the
+whole of combat inside one action.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

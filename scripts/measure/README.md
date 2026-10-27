@@ -34,6 +34,8 @@ arms comparable at all. They take no database and no server — just the engine.
 | `metalcraft.mjs` | how often is a conditional static actually **on**? | `SEEDS=5 node scripts/measure/metalcraft.mjs` |
 | `mill.mjs` | does the mill deck win by decking, and how close does it get? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/mill.mjs` |
 | `killed-by.mjs` | what took the last of this deck's life, on what turn, holding what? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/killed-by.mjs` |
+| `held-answers.mjs` | why is the counterspell still in hand — no mana, no target, or no nerve? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
+| `held-answers.mjs` | …and does the reservation rule fix it? | `BOT='{"reserveForAnswers":true}' SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
@@ -252,6 +254,34 @@ not in the number.
 against. The floor is derived for a single total; a sign test across ten paired matchups is a
 different question and a sharper one (p≈0.004 here). Read the split before deciding a sub-floor
 total means nothing.
+
+**Do not rebuild `dist/` while a measurement is running.** These harnesses import the built engine,
+and a loop like `for S in 3300 8800 5500; do ... node scripts/measure/bot-duel.mjs; done` starts a
+*fresh* node for each seed set — so a `pnpm --filter @grimore/rules-engine build` in the middle of
+it leaves the finished sets measuring one version of the rule and the rest measuring another, with
+nothing in the output to say so. The already-running process is safe, because it loaded the module
+at startup; the next one in the loop is not. Finish the run, then edit.
+
+**A window `legalActions` would not have offered is still a window, and the harness has to move
+priority to see it.** `held-answers` asked where a counterspell's windows went and the first version
+saw almost nothing: across 24 games there were 163 moments with an opponent's spell on the stack and
+the subject seat was offered priority in **three** of them. Auto-pass is why — it passes for a seat
+whose only legal move is to pass, inside the same applied action — so the 160 moments it could not
+see were exactly the ones it existed to explain. The fix is to put the question to the engine with
+`priority` moved to that seat on a local copy of the state: *if you were asked now, what would you
+offer and what would you refuse?* Nothing is applied. Any instrument that reads `legalActions` for a
+seat that is not the one acting needs the same trick, and an instrument that does not do it will
+print a confident zero.
+
+**`bot-duel`'s total is not diluted by the decks a rule cannot touch, and that is worth knowing
+before narrowing it.** A rule that only fires for the five decks holding counterspells looks like it
+should be measured on those five, and the instinct is wrong: the harness plays each ordered pairing
+twice with only the bots swapped, so a pairing where the rule is inactive for *both* arms is the
+**same game twice** on the same seed — one win credited to each arm, zero variance added. That is
+why the negative control is exactly 468-468 rather than approximately. So leave the field alone: the
+difference between the arms already comes only from the games the rule changed. What narrowing the
+deck list *would* do is break the pairing, because the cancellation is what makes a matchup
+disappear.
 
 **`pod-duel`'s negative control is arithmetic and must not be read as a floor.** With both arms
 identical, all four rotations of a table are the same game, so the winning seat is credited to each

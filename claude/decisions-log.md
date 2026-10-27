@@ -7712,3 +7712,56 @@ that a `deck-table` percentage is a statement about a field rather than about a 
 is now Cancel at 34% and Disallow at 51%, and holding mana for an answer is still the one thing the
 bot cannot do. That is a pilot problem rather than a list problem, and the honest expectation is that
 a person plays this deck above 37%.
+
+## D168 — Why the counterspell is still in hand, and what happens when it is not
+
+**Decision: write `held-answers.mjs`, which says where a counterspell's windows actually go; build
+the reservation rule it asks for; and measure it against the bot without it rather than shipping it
+on the strength of the mechanism.**
+
+Three decks' records have been explained by the same sentence for months, written down three times
+in three different files: holding mana for an answer is half the plan of Tidal Mind, Skyward Writ
+and Arc Tempest, and the bot cannot do it. **Nothing had ever measured which part of that was
+true.**
+
+### Four ends a counterspell can meet
+
+The instrument counts one *window* per (opponent's spell on the stack, answer in hand) and asks
+`legalActions` — the same function the table and the bot read — what it would offer:
+
+- **cast** — the window opened, the mana was there, and the bot spent it.
+- **passed** — the window opened, the mana was there, and the bot chose something else. A judgement
+  problem; only an evaluation change helps.
+- **no mana** — it could not pay. A tempo problem.
+- **no target** — nothing the card could legally point at.
+
+**144 games each against the twelve-deck field:**
+
+| deck | windows | cast | affordable, passed | **could not pay** | nothing to point at |
+| --- | --- | --- | --- | --- | --- |
+| Tidal Mind | 271 | 4% | 0% | **92%** | 3% |
+| Arc Tempest | 151 | 11% | 3% | **79%** | 7% |
+| Skyward Writ | 226 | 28% | 8% | **56%** | 7% |
+
+**It is not a judgement problem.** The bot almost never gets to *make* the bad choice D69 found:
+over 271 of Tidal Mind's windows it declined an affordable answer **not once**. It is a tempo problem with a precise shape — a seat
+that taps out in its own main phase has no mana for the whole of the opponent's turn, because lands
+untap in their controller's own untap step. And the severity tracks the counter's **cost** exactly:
+Skyward Writ's {U}{U} Counterspell is live three times as often as Tidal Mind's {1}{U}{U} Disallow,
+which over 144 games was cast **once** against 145 windows it could not pay for.
+
+### The instrument could not see any of it until priority moved
+
+The first version saw almost nothing: across 24 games there were 163 moments with an opponent's
+spell on the stack, and the subject seat was offered priority in **three** of them. That is not a
+bug in the engine, it is auto-pass doing its job — it passes for a seat whose only legal move is to
+pass, inside the same applied action — and it means the 160 moments the harness could not see were
+exactly the ones it existed to explain.
+
+So the question is put to the engine with `priority` moved to that seat on a local copy of the
+state: *if you were asked now, what would you offer and what would you refuse?* Nothing is applied.
+This is the second instrument in a week to find that **the thing it was built to count is the thing
+the engine never stops to ask about** — the first was the combat arrow that is never on screen
+because auto-pass runs the whole of combat inside one action. Both are now written into the
+measurement README, because an instrument that reads `legalActions` for a seat that is not acting
+will print a confident zero.

@@ -18,6 +18,21 @@ const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 6);
 const SEED0 = Number(process.env.SEED0 ?? 4400);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
+/*
+  `BotOptions` for **every** seat, as JSON, so a change to the opponent can be read as a change to
+  the standings.
+
+  `bot-duel` asks whether a bot setting beats the bot without it, which is the right question about
+  the setting and the wrong one about the pool: a rule that teaches every seat to hold mana for a
+  counterspell does not make the bots better or worse than each other, it makes the five decks that
+  hold counterspells better than the eight that do not. That is a table, not a duel.
+
+  Default empty, so a published table means what it has always meant. Run both ways and read the
+  rows that moved:
+
+    BOT='{"reserveForAnswers":true}' SEEDS=12 node scripts/measure/deck-table.mjs
+*/
+const BOT = JSON.parse(process.env.BOT ?? '{}');
 
 function duel(seed, decks) {
   let s = createGame({ id: `g${seed}`, format: 'modern', players: PLAYERS, seed });
@@ -29,7 +44,7 @@ function duel(seed, decks) {
   for (let move = 0; move < 4000 && !s.finished; move++) {
     const seat = seatsToAct(s)[0];
     if (seat === undefined) break;
-    const action = botAction(s, seat);
+    const action = botAction(s, seat, BOT);
     if (action === null) break;
     const before = s.stateVersion;
     try { s = applyAction(s, action); } catch { break; }

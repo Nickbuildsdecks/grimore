@@ -14,7 +14,7 @@
  * writing before the rules underneath them are trustworthy.
  */
 import { pactProtects } from './pacts.js';
-import { crewPlan, legalActions, type LegalActions, type LegalPlay } from './legalActions.js';
+import { crewPlan, legalActions, manaSources, type LegalActions, type LegalPlay } from './legalActions.js';
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
@@ -26,9 +26,9 @@ import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
   legalDefenders,
 } from './combat.js';
-import { creaturesControlledBy } from './effects.js';
+import { creaturesControlledBy, poolOf } from './effects.js';
 import { applyAction } from './engine.js';
-import { costValue, parseManaCost } from './mana.js';
+import { canAfford, costValue, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
 import { isNumberDecision } from './scriptTypes.js';
 import { targetKey, type Target } from './turnTypes.js';
@@ -1272,6 +1272,14 @@ export interface BotOptions {
    * would be a larger change than the thing being measured. See `foeOrder`.
    */
   readonly chaseTheCrown?: boolean;
+  /**
+   * Whether to keep back the mana an answer in hand is waiting for, on this seat's own turn.
+   *
+   * See `spendsAnAnswersMana`. Off is the bot as it was, and which way round the default goes is a
+   * measurement rather than a preference — two earlier attempts at this idea were *evaluation
+   * terms* and both were deleted.
+   */
+  readonly reserveForAnswers?: boolean;
 }
 
 /**
@@ -2137,6 +2145,118 @@ function foretellIsSpareMana(state: GameState, seat: SeatIndex, action: Action):
   return others.length === 0;
 }
 
+/**
+ * The cheapest answer in this seat's hand that it could pay for right now, or null.
+ *
+ * "An answer" is a card whose text points at something already on the stack — the five hard
+ * counters, the two conditional ones, Soul Manipulation's first mode, Squelch. Matched on the
+ * oracle text rather than a list of names so that a card added to the pool tomorrow is covered
+ * without anybody remembering to come back here, and Chalice of the Void's "counter it" is
+ * deliberately not matched: a permanent that answers spells by sitting there is not something
+ * anybody holds mana for.
+ *
+ * Affordability is asked of `canAfford` — the same solver `legalActions` and the payment both use,
+ * so this cannot disagree with them about a dual land. It is asked *without* a target, which is
+ * the whole reason this cannot be read off `legalActions().plays`: on its controller's own turn
+ * with an empty stack a counterspell has nothing to point at, so the engine correctly refuses to
+ * offer it and the question "could you pay for this if a spell arrived" is not one the offer
+ * answers.
+ */
+function affordableAnswerInHand(state: GameState, seat: SeatIndex): ManaCost | null {
+  let cheapest: ManaCost | null = null;
+  const sources = manaSources(state, seat);
+  const pool = poolOf(state, seat);
+  for (const id of listAt(state, zoneKey(seat, 'hand'))) {
+    const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+    if (def === undefined || !/counter target/i.test(def.oracleText ?? '')) continue;
+    const cost = parseManaCost(def.manaCost);
+    if (!canAfford(pool, cost, sources)) continue;
+    if (cheapest === null || costValue(cost) < costValue(cheapest)) cheapest = cost;
+  }
+  return cheapest;
+}
+
+/**
+ * Whether making this play would spend the mana an answer in hand is waiting for.
+ *
+ * **The thirteenth of the drop-this-option family, and the one with the longest history behind
+ * it.** Two earlier attempts at the same idea were *evaluation terms* — a point for each untapped
+ * land while the hand held something castable at instant speed (D68), and an answer in hand priced
+ * above a generic card (D69) — and both were deleted after measuring level or worse. The corrected
+ * conclusion written beside them is a claim about mechanism rather than about weights: *"it is
+ * often tapped out when the moment comes, and valuing untapped mana does not fix that."*
+ *
+ * `held-answers.mjs` measured that claim and it is an understatement. Of every moment an opponent
+ * had a spell on the stack and this bot held a counterspell, across 144 games each:
+ *
+ * | deck | windows | cast | affordable, passed | **could not pay** | nothing to point at |
+ * | --- | --- | --- | --- | --- | --- |
+ * | Tidal Mind | 271 | 4% | 0% | **92%** | 3% |
+ * | Arc Tempest | 151 | 11% | 3% | **79%** | 7% |
+ * | Skyward Writ | 226 | 28% | 8% | **56%** | 7% |
+ *
+ * So this is not a judgement problem — over 271 of Tidal Mind's windows it declined an affordable
+ * answer not once, so it almost never gets to *make* the bad choice. It is a
+ * tempo problem, and it has a precise shape — a seat that taps out in its own main phase has no
+ * mana for the whole of the opponent's turn, because lands untap in their controller's own untap
+ * step. The severity tracks the counter's cost exactly: Skyward Writ's {U}{U} Counterspell is live
+ * three times as often as Tidal Mind's {1}{U}{U} Disallow, which over 144 games was cast **once**
+ * against 145 windows it could not pay for.
+ *
+ * Which is why this is a filter and not a term. A weight can only say "untapped mana is worth a
+ * little", and the search then spends it anyway on whatever is worth more right now — correctly,
+ * because the thing the mana is *for* is on the far side of the search horizon. A filter says "not
+ * that one", and leaves every other play on the table.
+ *
+ * Four conditions keep it narrow:
+ *
+ *   - **This seat's own turn, at sorcery speed.** Responding is what the mana was saved for, so a
+ *     play made with something on the stack is never dropped.
+ *   - **The cheapest answer only.** A hand with a Cancel and a Disallow reserves for the Cancel;
+ *     keeping three sources up for the expensive one is the behaviour that would tax the deck most
+ *     and buy the least.
+ *   - **Affordable before, unaffordable after.** A play that leaves the answer payable is not
+ *     dropped, so the rule costs nothing on a turn with mana to spare — which is most turns late
+ *     in a game and no turns early in one.
+ *   - **Never the answer itself**, and never a land: the land drop is taken before the search and
+ *     adds mana rather than spending it.
+ *
+ * If every option is dropped the loop's own fallback passes, which is this rule working: a turn
+ * spent holding two mana is what a person does with a Counterspell in hand.
+ *
+ * **It is only ever as good as the payment, and the payment is not trying to help it.** The engine
+ * taps to pay the cost in front of it and has no opinion about what is being held back, so with
+ * three Islands and two Swamps a {1}{U} creature can be paid for with two Islands — leaving one
+ * blue source where a {1}{U}{U} answer needs two, and this rule then drops a play that a smarter
+ * payment would have allowed. That is a real narrowing rather than a bug: the rule errs towards
+ * holding the answer, which is the direction it exists to err in. A payment solver that preferred
+ * to leave a named cost payable is a separate piece of work, and the first place it would show up
+ * is here.
+ */
+function spendsAnAnswersMana(
+  state: GameState, after: GameState, seat: SeatIndex, action: Action,
+): boolean {
+  if (action.type !== 'auto:cast' && action.type !== 'auto:activate') return false;
+  if (state.activeSeat !== seat || state.stackOrder.length > 0) return false;
+  const def = state.cardDefs[state.instances[action.card]?.defKey ?? ''];
+  if (def !== undefined && /counter target/i.test(def.oracleText ?? '')) return false;
+  /*
+    Nobody to answer, which is the one case where this rule is pure tax.
+
+    A counterspell answers a *spell*, and a player with no cards in hand is not going to cast one.
+    Hand sizes are public, so this is a fact the bot is allowed to read rather than a guess about
+    what they hold. It matters most exactly where the rule is most expensive: the fastest decks in
+    this pool empty their hands by about turn six, so without this clause a control deck spends the
+    rest of those games holding two mana up against a player who has nothing left to hold it for.
+  */
+  if (foesOf(state, seat).every((foe) => listAt(state, zoneKey(foe, 'hand')).length === 0)) {
+    return false;
+  }
+  const cost = affordableAnswerInHand(state, seat);
+  if (cost === null) return false;
+  return !canAfford(poolOf(after, seat), cost, manaSources(after, seat));
+}
+
 /** Whether this action activates a crew ability (CR 702.122a). */
 function crewsAVehicle(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
@@ -2732,6 +2852,15 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       first about a question rather than a play. See `chosenNumberIsNothing`.
     */
     if (chosenNumberIsNothing(state, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And a play that spends the mana an answer in hand is waiting for, which is the thirteenth of
+      the family and the first about a *later* turn rather than this one. See
+      `spendsAnAnswersMana` for the measurement that asked for it.
+    */
+    if (opts.reserveForAnswers === true && spendsAnAnswersMana(state, after, seat, option.action)) {
       dropped += 1;
       continue;
     }

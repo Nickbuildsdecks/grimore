@@ -1346,6 +1346,99 @@ describe('removal with nothing to remove', () => {
   });
 });
 
+describe('the mana an answer in hand is waiting for', () => {
+  /*
+    The thirteenth member of the "spent on nothing" family, and the first about a *later* turn.
+
+    `held-answers.mjs` asked where a counterspell's windows go, and the answer was not the one two
+    deleted evaluation terms had assumed. Of every moment an opponent had a spell on the stack and
+    the bot held a counter, Tidal Mind cast 4%, declined an affordable one **not once** in 271, and
+    **could not pay for 92%**. It is not a judgement problem — the bot almost never gets to make the bad choice.
+    It is that a seat which taps out in its own main phase has no mana for the whole of the
+    opponent's turn, because lands untap in their controller's own untap step.
+
+    So the rule is a filter rather than a weight: drop a sorcery-speed play that would leave the
+    cheapest answer in hand unpayable, and leave every other play alone. These two tests are its
+    two halves — it fires when the mana is scarce, and it costs nothing when it is not.
+  */
+  const holding = (lands: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'tidal-mind', 1: 'ember-rush' },
+    // A card in the opponent's hand, because the rule reads hand sizes: holding mana against a
+    // player with nothing left to cast is the one case where it is pure tax, and `arena` empties
+    // both opening hands, so without this line there is nothing to hold the mana *for*.
+    hands: { 0: ['Cancel', 'Omenspeaker'], 1: ['Lightning Bolt'] },
+    battlefield: { 0: [...lands], 1: ['Mountain'] },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  const ON = { reserveForAnswers: true } as const;
+
+  it('is not spent on a creature, and the bot passes its own turn holding it', () => {
+    // Three lands: the Omenspeaker and the Cancel are both affordable, and not both.
+    const tight = holding(['Island', 'Island', 'Swamp']);
+    const speaker = find(tight, 0, 'hand', 'Omenspeaker');
+    const cancel = find(tight, 0, 'hand', 'Cancel');
+    // Offered, as always: the table is never lied to about what the rules allow.
+    expect(legalActions(tight, 0).plays.some((play) => play.card === speaker)).toBe(true);
+    // The Cancel is *not* offered, and that is the whole reason this rule cannot read the offer:
+    // on its controller's own turn with an empty stack a counterspell has nothing to point at.
+    expect(legalActions(tight, 0).plays.some((play) => play.card === cancel)).toBe(false);
+
+    // Without the rule it taps out for the body, which is what 92% of those windows are.
+    const greedy = botAction(tight, 0);
+    expect(greedy?.type === 'auto:cast' && greedy.card === speaker).toBe(true);
+
+    // With it, nothing is worth the mana this turn.
+    expect(botAction(tight, 0, ON)?.type).toBe('auto:pass');
+  });
+
+  it('and is spent the moment there is mana to spare, which is most turns', () => {
+    /*
+      Five lands: the Omenspeaker costs two and leaves three, so the Cancel is still payable and
+      the rule has no opinion. This is the half that keeps it from being a tax — it only ever
+      drops a play that *takes the answer away*, never a play that happens to cost mana.
+
+      **Four of the five are Islands, and that is not padding.** With three Islands and two Swamps
+      the rule still fires, because the engine pays {1}{U} off whichever sources its solver reaches
+      first and can spend two Islands doing it — leaving one blue source for a {1}{U}{U} answer.
+      The reservation is therefore only ever as good as the payment, and the payment is not trying
+      to help it. See the note on `spendsAnAnswersMana`.
+    */
+    const rich = holding(['Island', 'Island', 'Island', 'Island', 'Swamp']);
+    const speaker = find(rich, 0, 'hand', 'Omenspeaker');
+    const chosen = botAction(rich, 0, ON);
+    expect(chosen?.type === 'auto:cast' && chosen.card === speaker).toBe(true);
+  });
+
+  it('and a table where both seats hold mana back still reaches a winner', async () => {
+    /*
+      The one way a rule that answers "pass" could break the game rather than the bot.
+
+      Every other member of this family drops a play and leaves the rest; this one can drop *every*
+      play a seat has, which is the behaviour it exists for — a turn spent holding two mana is what
+      a person does with a Counterspell in hand. The failure mode that would make is a table where
+      nobody ever does anything, and the turn structure says it cannot happen (a pass ends a step
+      and the steps run out), but "says it cannot" is what this suite exists to stop trusting.
+
+      Both seats on the rule, and the two decks that hold the most counterspells between them.
+    */
+    for (let seed = 1; seed <= 4; seed++) {
+      let s = table(seed * 7919, (seed % 2) as SeatIndex, ['tidal-mind', 'skyward-writ']);
+      for (let i = 0; i < 9000 && !s.finished; i++) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const action = botAction(s, seat, ON);
+        if (action === null) break;
+        const version = s.stateVersion;
+        s = applyAction(s, action, HOST);
+        if (s.stateVersion === version) break;
+      }
+      expect(s.finished).toBe(true);
+      await breathe();
+    }
+  });
+});
+
 describe('the land it animates and then attacks with', () => {
   /*
     The eighth "spent on nothing" rule, and the one with the biggest count behind it.

@@ -339,10 +339,27 @@ against itself. They are not the only decks you can play, though: see *Play with
 
 A note on what to expect from each: played against each other by the engine's own opponent, the
 aggressive decks win more. Skyward Writ is the clearest case of the bot rather than the deck: it is
-level with the field at 51% and loses to the two fastest decks there — holding mana for a
-counterspell is half its plan and the bot cannot do it. A person
-plays it better. The same caveat applies twice over to Arc Tempest: holding up Counterspell is half
-its plan against the fast decks, and the bot casts it the turn it can afford it.
+level with the field and loses to the two fastest decks there — holding mana for a counterspell is
+half its plan and the bot cannot do it. A person plays it better. The same caveat applies twice over
+to Arc Tempest: holding up Counterspell is half its plan against the fast decks, and the bot casts
+it the turn it can afford it.
+
+**That caveat is now a number rather than an impression.** `held-answers.mjs` counts every moment an
+opponent had a spell on the stack and the deck held a counterspell, and says which of four things
+happened — cast it, could afford it and chose otherwise, could not pay, or had nothing to point at.
+Over 144 games each:
+
+| | windows | cast | could afford, passed | **could not pay** |
+| --- | --- | --- | --- | --- |
+| Tidal Mind | 271 | 4% | 0% | **92%** |
+| Arc Tempest | 151 | 11% | 3% | **79%** |
+| Skyward Writ | 226 | 28% | 8% | **56%** |
+
+It is not that the computer counters the wrong things. It is that it has already spent the mana: a
+seat that taps out in its own main phase has none for the whole of your turn, because lands untap in
+their own controller's untap step. Tidal Mind's Disallow was cast **once** in 144 games against 145
+moments it could not pay for. So if you are the one piloting a control deck here, the half of it the
+bot gives away for free is the half you get to keep.
 
 **The decks are not all equally strong, and now there is a table of it.** Every deck against every
 other, both seats, 288 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
@@ -841,7 +858,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (887 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (890 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (210 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
