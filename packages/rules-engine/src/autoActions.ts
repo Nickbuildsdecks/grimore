@@ -837,10 +837,13 @@ function activate(
     beside it, and the same reasoning already decides sorcery speed for a loyalty ability.
   */
   const fromHand = ability?.cost.discardSelf === true;
-  const wantedZone = fromHand ? 'hand' : 'battlefield';
+  const fromGraveyard = ability?.cost.fromGraveyard === true;
+  const wantedZone = fromHand ? 'hand' : fromGraveyard ? 'graveyard' : 'battlefield';
   if (inst.zone !== wantedZone || inst.zoneSeat !== action.by) {
     throw new EngineError('RULE_NOT_APPLICABLE',
-      fromHand ? 'that card is not in your hand' : 'you do not control that permanent');
+      fromHand ? 'that card is not in your hand'
+        : fromGraveyard ? 'that card is not in your graveyard'
+          : 'you do not control that permanent');
   }
   if (ability === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'that permanent has no such ability');
   const ch = characteristicsOf(state, inst);

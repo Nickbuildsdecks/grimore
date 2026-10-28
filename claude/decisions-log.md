@@ -9124,3 +9124,74 @@ better reason: its adapt costs {7}{U} reduced by one for each instant and sorcer
 controller's graveyard, which is a cost modification on an *ability* read off the board, and
 `costModifiers` applies to spells with a fixed number. A card the engine can only approximate is
 better left unwritten.
+
+## D183 — Unearth, the self-replacement it needed, and a sacrifice that was moving cards out of exile
+
+**Decision: script unearth as an activated ability whose cost is "from your graveyard", give
+`replaceDeaths` the dying permanent's own effects so the printed exile clause can exist, and fix the
+bug that found: "sacrifice this" was moving a card out of exile and into a graveyard it could be
+bought from again.**
+
+### The third thing a cost can be paid out of a graveyard, and the first that is not a cast
+
+Escape and delve (D171) are **casts** from the graveyard: the card goes on the stack, an opponent can
+counter it, and "whenever a player casts a spell" sees it. Unearth is none of that — an activated
+ability puts the creature straight onto the battlefield with haste, and a delayed trigger exiles it
+at the beginning of the next end step. So it is an ability whose cost carries a **zone**:
+`AbilityCost.fromGraveyard`, which is cycling's `discardSelf` one zone along, and
+`activatablePlays` now walks the graveyard as a third zone for exactly the same reason it walks the
+hand.
+
+Everything else existed. The haste is an ordinary end-of-turn grant; the exile is D135's delayed
+trigger; the sorcery-speed restriction is the keyword's own words.
+
+### The clause that was not optional, and the measurement that proved it
+
+Unearth reads "exile it at the beginning of the next end step **or if it would leave the
+battlefield**", and the second half looked like a nicety. `cast-counts` said otherwise. With one
+Hellspark Elemental in Kindle Grove: **18 casts and 42 unearths across 22 games** — twice the card
+the printed one is.
+
+The reason is a two-line story worth keeping, because the first explanation was wrong. A Hellspark
+carries two end-step abilities: its own printed sacrifice, and the exile unearth schedules. The
+exile resolved **first** and did its job. Then the sacrifice resolved, called `moveToGraveyard`, and
+moved the card **out of exile and into the graveyard** — where it was unearthable again. That is not
+an unearth bug at all: a sacrifice is something you do to a permanent you control, and a card in
+exile is not one (CR 701.17a). So `sacrificeSelf` guards it, and the same latent bug had been
+sitting on Ball Lightning for twenty entries with nothing in the pool able to exile it first.
+
+With that fixed the exile clause is still needed for the ordinary case — an unearthed creature that
+dies in combat. That is a replacement effect a permanent applies to **its own** death, which D181
+decided not to add for undying because undying does not want one. Unearth is the card that does, so
+`replaceDeaths` now considers the dying permanent's own `replaces` entries first (the choice between
+two applicable replacements belongs to the affected object's controller, CR 616.1). It applies to
+the unearthed body alone, read off an `UNEARTHED` counter in the `vanished` snapshot — because a
+Hellspark that was *cast* and died is in a graveyard it can be unearthed from, which is the whole
+point of the card.
+
+One gap remains and is written into the script: "would leave the battlefield" also covers a bounce
+or an exile, and `replaces` only knows `dies`. A bounced unearthed creature goes to its owner's
+hand, where the printed card exiles it. Nothing in this pool bounces its own creature.
+
+### What the cards are worth, before and after the fidelity fix
+
+```
+card                deck            slot                  revert, two seed sets
+Dregscape Zombie    ashen-rite      Gravedigger (59%)      -5 and +1
+Hellspark Elemental kindle-grove    2nd Giant Growth (64%) -10 and -19  (with the leak)
+                                                           -4 and  -6  (fixed)
+```
+
+**The leak was worth about half the card.** A Hellspark that could be unearthed twice measured +10
+and +19; the printed one measures +4 and +6. Both are positive and both are inside the floor — so
+the card ships on a consistent sign and a modest number, which is what it should have measured all
+along. `cast-counts` tracks the same correction: **42 unearths before, 17 after**, from 18 casts.
+A rules deviation nobody notices is worth real games, and that is the argument for fidelity put as
+a number rather than as a principle.
+
+**The Dregscape Zombie is level**, and the slot is the interesting half: it replaced Ashen Rite's
+last **Gravedigger** (59%), which is the same idea one card more expensive — three mana for a 2/2
+that buys a creature back, against two mana for a 2/1 that buys **itself** back for {B}. Its usage
+says the deck means it: **33 casts and 32 unearths in 32 games**, one per game, and in a deck with a
+Vampire Aristocrat, a Bloodthrone Vampire, three Blood Artists and two Zulaport Cutthroats, a body
+that can be eaten twice for three mana in total is the cheapest version of the whole plan.

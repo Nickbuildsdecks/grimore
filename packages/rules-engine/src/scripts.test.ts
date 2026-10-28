@@ -12677,6 +12677,124 @@ describe('a card put into a graveyard from anywhere (CR 400.7)', () => {
   });
 });
 
+describe('unearth: the body bought back out of the graveyard for one turn', () => {
+  /*
+    The third thing this engine can pay for out of a graveyard, and the only one that is not a cast.
+
+    Escape and delve put the card on the stack, where it can be countered and where "whenever a
+    player casts a spell" sees it. Unearth is an **activated ability**: the creature goes straight
+    onto the battlefield with haste, and a delayed trigger exiles it at the beginning of the next
+    end step. So the tests are about the three things that make it different from a cast — the zone
+    the ability is offered from, the haste, and the end of the turn.
+  */
+  const graveyard = (deck: string, basic: string, lands: number, dead: readonly string[]): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: deck, 1: 'tidal-mind' },
+      graveyard: { 0: [...dead] },
+      battlefield: { 0: Array.from({ length: lands }, () => basic) },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  it('is offered from the graveyard and nowhere else, and puts the creature back with haste', () => {
+    let s = graveyard('ashen-rite', 'Swamp', 2, ['Dregscape Zombie']);
+    const zombie = find(s, 0, 'graveyard', 'Dregscape Zombie');
+    const offer = legalActions(s, 0).plays.find((play) => play.card === zombie);
+    expect(offer?.kind).toBe('activate');
+    expect(offer?.fromGraveyard).toBe(true);
+    expect(offer?.manaCost).toBe('{B}');
+
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: zombie, abilityIndex: 0 }), 40);
+    expect(s.instances[zombie]!.zone).toBe('battlefield');
+    expect(characteristicsOf(s, s.instances[zombie]!).keywords.has('haste')).toBe(true);
+    // Nothing was cast: the ability does not use the stack, so there is nothing to counter and
+    // nothing for a cast trigger to see.
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('and it can attack the turn it comes back, then is exiled at the end of it', () => {
+    let s = graveyard('ashen-rite', 'Swamp', 2, ['Dregscape Zombie']);
+    const zombie = find(s, 0, 'graveyard', 'Dregscape Zombie');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: zombie, abilityIndex: 0 }), 40);
+
+    s = advanceTo(s, 'declare-attackers');
+    expect(legalActions(s, 0).attackers).toContain(zombie);
+
+    // Declared empty, because a creature that can attack means a declaration is owed and
+    // `advanceTo` will not walk past one: what this test is about is the end of the turn.
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] });
+    s = drain(advanceTo(s, 'end'), 40);
+    // Exiled rather than put in the graveyard, which is the clause that stops it coming back again.
+    expect(s.instances[zombie]!.zone).toBe('exile');
+  });
+
+  it('is a sorcery-speed ability, and not offered while the card is in hand', () => {
+    const theirTurn = advanceTo(nextTurn(graveyard('ashen-rite', 'Swamp', 2, ['Dregscape Zombie'])), 'precombat-main');
+    const zombie = find(theirTurn, 0, 'graveyard', 'Dregscape Zombie');
+    expect(legalActions(theirTurn, 0).plays.some((play) => play.card === zombie)).toBe(false);
+
+    // And in hand it is a two-mana 2/1 and nothing else: the ability's cost says which zone it
+    // belongs to, so the same card offers one play in each.
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      hands: { 0: ['Dregscape Zombie'] },
+      battlefield: { 0: ['Swamp', 'Swamp'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const inHand = find(s, 0, 'hand', 'Dregscape Zombie');
+    const plays = legalActions(s, 0).plays.filter((play) => play.card === inHand);
+    expect(plays.map((play) => play.kind)).toEqual(['cast']);
+  });
+
+  it('Hellspark Elemental sacrifices itself whether it was cast or unearthed', () => {
+    // The printed card, and the half that is not the keyword: it carries its own end-step
+    // sacrifice as well as the exile unearth schedules, and either one is enough to end its turn.
+    let s = graveyard('kindle-grove', 'Mountain', 2, ['Hellspark Elemental']);
+    const spark = find(s, 0, 'graveyard', 'Hellspark Elemental');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: spark, abilityIndex: 0 }), 40);
+    expect(s.instances[spark]!.zone).toBe('battlefield');
+    const ch = characteristicsOf(s, s.instances[spark]!);
+    expect([ch.power, ch.toughness]).toEqual([3, 1]);
+    expect(ch.keywords.has('trample')).toBe(true);
+
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] });
+    s = drain(advanceTo(s, 'end'), 40);
+    /*
+      **Exiled, not sacrificed into a graveyard it could be bought from again**, and this assertion
+      is the one the measurement asked for: the card's own end-step sacrifice reaches the graveyard
+      first, so without unearth's "or if it would leave the battlefield" clause the same Hellspark
+      came back a second time — 18 casts and 42 unearths across 22 games (D183). The replacement
+      applies to the unearthed body alone, which is the `UNEARTHED` counter in the snapshot.
+    */
+    expect(s.instances[spark]!.zone).toBe('exile');
+    expect(legalActions(s, 0).plays.some((play) => play.card === spark)).toBe(false);
+  });
+
+  it('but a Hellspark that was cast and died is in a graveyard it can be unearthed from', () => {
+    // The other side of the same clause: the replacement is about the body unearth put there, not
+    // about the card, so the printed two-mana 3/1 still goes to the graveyard when it dies.
+    let s = advanceTo(arena({
+      decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
+      hands: { 0: ['Hellspark Elemental'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Hellspark Elemental'),
+    }), 40);
+    const spark = find(s, 0, 'battlefield', 'Hellspark Elemental');
+
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] });
+    s = drain(advanceTo(s, 'end'), 40);
+    expect(s.instances[spark]!.zone).toBe('graveyard');
+  });
+});
+
 describe('monstrosity and adapt: a creature that grows once and stays grown', () => {
   /*
     Two keywords whose difference is one word of placement, and the tests are about that word.

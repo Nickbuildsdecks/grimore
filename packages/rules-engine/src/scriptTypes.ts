@@ -743,6 +743,17 @@ export interface AbilityCost {
    * shape and already worked this way: see `loyalty`.
    */
   readonly removeCounter?: { readonly counter: string; readonly amount: number };
+  /**
+   * "Activate this only from your graveyard" — unearth's zone, and the third thing a cost can be
+   * paid out of the graveyard for (CR 702.84a).
+   *
+   * The sibling of `discardSelf`, which is cycling's "from your hand". Escape and delve (D171) are
+   * *casts* from the graveyard and go through the cast path; unearth is not a cast at all — the
+   * creature is put onto the battlefield by an **activated ability**, so nothing is put on the
+   * stack, an opponent cannot counter it, and "whenever a player casts a spell" does not see it.
+   * That is the whole reason it is an ability here rather than another flag on the cast path.
+   */
+  readonly fromGraveyard?: true;
   readonly crew?: number;
 }
 

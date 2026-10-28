@@ -4861,6 +4861,38 @@ card in this pool. Pteramander, the famous one, is deliberately absent: its adap
 the instants and sorceries in a graveyard, which is a cost modification on an *ability*, and
 `costModifiers` is about spells with a fixed number.
 
+### Unearth, and the sacrifice that was moving cards out of exile
+
+The third thing a cost can be paid out of a graveyard, and the first that is not a cast. Escape and
+delve put the card on the stack; unearth is an **activated ability** that puts the creature straight
+onto the battlefield with haste, so nothing can be countered and nothing that watches for spells
+sees it — and then a delayed trigger exiles it at the beginning of the next end step. One engine
+line: `AbilityCost.fromGraveyard`, which is cycling's `discardSelf` one zone along, with
+`activatablePlays` walking the graveyard as a third zone. **Dregscape Zombie** ({1}{B} 2/1, unearth
+{B}) is in Ashen Rite and **Hellspark Elemental** ({1}{R} 3/1 trample haste, unearth {1}{R}) in
+Kindle Grove.
+
+**The clause that looked optional was worth half the card.** Unearth reads "exile it … or if it
+would leave the battlefield", and `cast-counts` on the first version read **18 casts and 42
+unearths** across 22 games. The cause was not unearth: a Hellspark carries its own end-step
+sacrifice as well, the exile resolved first and did its job, and then the sacrifice called
+`moveToGraveyard` and moved the card **out of exile** into a graveyard it could be bought from
+again. A sacrifice is something you do to a permanent you control (CR 701.17a), so `sacrificeSelf`
+guards it — and the same latent bug had been sitting on Ball Lightning since D55 with nothing in the
+pool able to exile it first.
+
+The ordinary case still needs the clause, so `replaceDeaths` now considers the **dying permanent's
+own** replacement effects first (CR 616.1), which D181 had decided not to add for undying because
+undying does not want one. It applies to the unearthed body alone, read off an `UNEARTHED` counter
+in the `vanished` snapshot: a Hellspark that was cast and died is in a graveyard it can be unearthed
+from, which is the point of the card. The remaining gap is written into the script — "would leave
+the battlefield" also covers a bounce, and `replaces` only knows `dies`.
+
+Measured: the Dregscape Zombie is level (−5 and +1) with **33 casts and 32 unearths in 32 games**,
+and the Hellspark is worth **+4 and +6** — where the leaky version measured +10 and +19. A rules
+deviation nobody notices is worth real games, which is the argument for fidelity as a number rather
+than a principle.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

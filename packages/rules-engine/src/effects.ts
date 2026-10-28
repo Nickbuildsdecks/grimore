@@ -401,6 +401,21 @@ export function loseLife(state: GameState, seat: SeatIndex, amount: number): Gam
 export const REGENERATION = 'regeneration';
 
 /**
+ * The marker an unearthed permanent carries, so its own death can be replaced (CR 702.84a).
+ *
+ * Unearth's second half is "exile it … or if it would leave the battlefield", which only applies to
+ * the body the ability put there: a Hellspark Elemental that was **cast** and dies goes to the
+ * graveyard like anything else, and can be unearthed from there. So the difference is a fact about
+ * the instance rather than about the card, and it is kept the way regeneration's shield is — a
+ * counter, which is already per-permanent, serialised and visible.
+ *
+ * Read off `vanished` rather than off the instance when the death is being replaced: counters are
+ * taken off a card on its way out of the battlefield, so by then the snapshot is the only place the
+ * answer survives (the same read a Hangarback Walker's death trigger makes).
+ */
+export const UNEARTHED = 'unearthed';
+
+/**
  * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).
  *
  * A shield, not a trigger: it sits on the permanent and is spent the next time something would

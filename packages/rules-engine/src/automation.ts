@@ -1241,8 +1241,20 @@ function replaceDeaths(
       continue;
     }
     let handled = false;
-    for (const source of sources) {
-      if (next.instances[source.id]?.zone !== 'battlefield') continue;
+    /*
+      The dying permanent's own effect first, and from the graveyard it has already reached.
+
+      `sources` is everything on the battlefield, which by the time a replacement is asked the dying
+      permanent is not — so a card that replaces its *own* death was unwritable until unearth needed
+      one (D183: "exile it … or if it would leave the battlefield"). First rather than last because
+      the choice between two applicable replacements belongs to the affected object's controller
+      (CR 616.1), and a creature that is meant to be exiled is not handed to somebody else's Kalitas
+      instead.
+    */
+    const candidates = [{ id, controller: inst.zoneSeat, own: true },
+      ...sources.map((source) => ({ ...source, own: false }))];
+    for (const source of candidates) {
+      if (!source.own && next.instances[source.id]?.zone !== 'battlefield') continue;
       for (const rule of scriptOf(next, source.id)?.replaces ?? []) {
         if (rule.on !== 'dies') continue;
         const ctx = { state: next, dying: id, source: source.id, controller: source.controller };

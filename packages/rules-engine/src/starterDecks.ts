@@ -643,6 +643,33 @@ const GIANT_GROWTH: CardDef = {
   colors: ['G'],
 };
 
+const DREGSCAPE_ZOMBIE: CardDef = {
+  name: 'Dregscape Zombie',
+  typeLine: 'Creature — Zombie Warrior',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText: 'Unearth {B} ({B}: Return this card from your graveyard to the battlefield. It gains '
+    + 'haste. Exile it at the beginning of the next end step or if it would leave the battlefield. '
+    + 'Activate only as a sorcery.)',
+  colors: ['B'],
+};
+
+const HELLSPARK_ELEMENTAL: CardDef = {
+  name: 'Hellspark Elemental',
+  typeLine: 'Creature — Elemental',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  power: '3',
+  toughness: '1',
+  oracleText: 'Trample, haste\nAt the beginning of the end step, sacrifice Hellspark Elemental.\n'
+    + 'Unearth {1}{R} ({1}{R}: Return this card from your graveyard to the battlefield. It gains '
+    + 'haste. Exile it at the beginning of the next end step or if it would leave the battlefield. '
+    + 'Activate only as a sorcery.)',
+  colors: ['R'],
+};
+
 const FLEECEMANE_LION: CardDef = {
   name: 'Fleecemane Lion',
   typeLine: 'Creature — Cat Hydra',
@@ -3897,7 +3924,24 @@ export const ASHEN_RITE: DeckSpec = {
     { card: FLESHBAG_MARAUDER, count: 1 },
     { card: VAMPIRE_NIGHTHAWK, count: 1 },
     { card: FLAMETONGUE_KAVU, count: 2 },
-    { card: GRAVEDIGGER, count: 1 },
+    /*
+      **Dregscape Zombie, for the Gravedigger**, and it is the same idea one card cheaper.
+
+      A Gravedigger is three mana for a 2/2 that buys a creature back; a Dregscape Zombie is two
+      mana for a 2/1 that buys **itself** back for {B}, as an activated ability out of the graveyard
+      rather than a cast — so nothing goes on the stack, nothing can counter it, and the body is one
+      attack before it is exiled at end of turn (D183). In the deck with a Vampire Aristocrat, a
+      Bloodthrone Vampire, three Blood Artists and two Zulaport Cutthroats, a creature that can be
+      eaten twice for three mana in total is the cheapest version of this deck's whole plan.
+
+      The slot is this deck's last Gravedigger (59%, 19 casts in the 32 games a copy was in hand),
+      and Rot Harvest keeps the pool's pair — the reanimation the engine needs covered is covered
+      there.
+
+      **It measured level** (−5 and +1 on the revert) and the deck presses it every game it draws
+      one: 33 casts and **32 unearths** in 32 games.
+    */
+    { card: DREGSCAPE_ZOMBIE, count: 1 },
     { card: IMPACT_TREMORS, count: 1 },
     // -1/-1 to every creature on the table, which this deck minds least: its own one-power bodies
     // were only ever fuel, and every death is a drain. One copy, because it is a legend and
@@ -5623,7 +5667,24 @@ export const KINDLE_GROVE: DeckSpec = {
     // Removal that costs a creature rather than a card, which is the red-green trade and the
     // reason this deck can run fourteen noncreature cards under its own commander.
     { card: PREY_UPON, count: 2 },
-    { card: GIANT_GROWTH, count: 2 },
+    { card: GIANT_GROWTH, count: 1 },
+    /*
+      **Hellspark Elemental, for the second Giant Growth**, and it is three damage twice for a deck
+      whose commander taxes every spell that is not a creature.
+
+      {1}{R} for a 3/1 with trample and haste that sacrifices itself at the end of the turn — and
+      then **unearth {1}{R}** buys the same three damage again out of the graveyard, as an ability
+      rather than a cast, which under Ruric Thar is the difference between six damage and six
+      damage plus twelve to its own controller. The second Giant Growth (64%) is the slot because a
+      pump spell *is* a noncreature spell here, and this deck pays six life for each one.
+
+      **+4 and +6 of 288 on the revert**, which is the number *after* a fidelity fix took half of it
+      away: the first version could be unearthed twice (18 casts, 42 unearths) because the card's
+      own end-step sacrifice was moving it out of exile, and that version measured +10 and +19.
+      D183 has the whole story — it is the clearest example in this project of what an unnoticed
+      rules deviation is worth.
+    */
+    { card: HELLSPARK_ELEMENTAL, count: 1 },
     /*
       Rancor, the Aura that comes back: +2/+0 and trample for one mana, and answering the creature
       does not answer the Aura. It is the one card in this list that makes a removal spell a bad

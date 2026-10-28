@@ -83,6 +83,12 @@ export interface LegalPlay {
    * on it is not "use this permanent".
    */
   readonly fromHand?: boolean;
+  /**
+   * And the same for an ability used from the **graveyard**: unearth, which is not a cast (D183).
+   * The table draws it on the card in the graveyard row, beside the flashback and escape plays
+   * that live there.
+   */
+  readonly fromGraveyard?: boolean;
   /** Set on the second of the two plays a kicker offers: this one pays it (CR 702.32a). */
   readonly kicked?: boolean;
   /**
@@ -1056,11 +1062,20 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
     cycling is not offered once the land is on the battlefield.
   */
   const reachable = [
-    ...listAt(state, zoneKey(seat, 'battlefield')).map((id) => ({ id, inHand: false })),
-    ...listAt(state, zoneKey(seat, 'hand')).map((id) => ({ id, inHand: true })),
+    ...listAt(state, zoneKey(seat, 'battlefield'))
+      .map((id) => ({ id, zone: 'battlefield' as const })),
+    ...listAt(state, zoneKey(seat, 'hand')).map((id) => ({ id, zone: 'hand' as const })),
+    /*
+      And the graveyard, which unearth is activated from (CR 702.84a).
+
+      The third zone and the same rule as the other two: an ability is skipped unless the card is
+      in the zone its own cost implies, so a Dregscape Zombie's unearth is offered only while the
+      Zombie is in the graveyard and its 2/1 body is offered only from the hand.
+    */
+    ...listAt(state, zoneKey(seat, 'graveyard')).map((id) => ({ id, zone: 'graveyard' as const })),
   ];
 
-  for (const { id, inHand } of reachable) {
+  for (const { id, zone } of reachable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     // Face down is face down: no name, no types, no abilities to activate (CR 707.2).
@@ -1071,7 +1086,10 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
 
     for (let i = 0; i < abilities.length; i++) {
       const ability = abilities[i]!;
-      if ((ability.cost.discardSelf === true) !== inHand) continue;
+      const wants = ability.cost.discardSelf === true
+        ? 'hand'
+        : ability.cost.fromGraveyard === true ? 'graveyard' : 'battlefield';
+      if (wants !== zone) continue;
       if (ability.sorcerySpeed && !sorcerySpeed) continue;
       // "Activate only if …" — monstrosity's one-shot clause, and the reason the Lion's ability
       // disappears from the table once it has been paid for. See `AbilityDef.activateOnlyIf`.
@@ -1132,7 +1150,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
           ? ability.description
           : `${ability.description} (tapping ${crew.length})`,
         manaCost: ability.cost.mana ?? '', abilityIndex: i,
-        ...(inHand ? { fromHand: true } : {}),
+        ...(zone === 'hand' ? { fromHand: true } : {}),
+        ...(zone === 'graveyard' ? { fromGraveyard: true } : {}),
         targetSpecs: specs, candidates, isManaAbility: ability.produces !== undefined,
         sacrificeOptions: victims,
       });

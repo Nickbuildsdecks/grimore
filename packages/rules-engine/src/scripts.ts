@@ -29,7 +29,7 @@ import {
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
-  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed,
+  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, UNEARTHED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack,
   type EffectContext, type PumpOptions,
 } from './effects.js';
@@ -2754,13 +2754,30 @@ const HELLRIDER: CardScript = {
  * `moveToGraveyard` rather than `destroy`, because a sacrifice is not a destruction: indestructible
  * does not save it and regeneration cannot replace it.
  */
+/**
+ * "Sacrifice this" — which does nothing at all if it is no longer on the battlefield (CR 701.17a).
+ *
+ * Found by unearth rather than by a test: a Hellspark Elemental carries two end-step abilities, its
+ * own sacrifice and the exile unearth schedules, and the exile resolved first — so the sacrifice
+ * then moved the card **out of exile and into the graveyard**, where it could be unearthed again.
+ * Twice the card the printed one is, and the same latent bug sat on Ball Lightning for twenty
+ * entries with nothing in the pool able to exile it first.
+ *
+ * A sacrifice is a thing you do to a permanent you control; a card in exile is not one.
+ */
+const sacrificeSelf = (c: EffectContext): GameState => (
+  c.state.instances[c.source]?.zone === 'battlefield'
+    ? moveToGraveyard(c.state, [c.source])
+    : c.state
+);
+
 const BALL_LIGHTNING: CardScript = {
   name: 'Ball Lightning',
   triggers: [
     {
       on: { kind: 'step', step: 'end', of: 'any' },
       description: 'sacrifice Ball Lightning',
-      effect: (c) => moveToGraveyard(c.state, [c.source]),
+      effect: sacrificeSelf,
     },
   ],
 };
@@ -5183,6 +5200,129 @@ const nameOfCard = (state: GameState, id: string | undefined): string => {
   return inst === undefined ? 'it' : state.cardDefs[inst.defKey]?.name ?? 'it';
 };
 
+/**
+ * Unearth (CR 702.84): the third thing this engine can pay for out of a graveyard, and the only one
+ * that is not a cast.
+ *
+ * Escape and delve (D171) are *casts* — the card goes on the stack, an opponent may counter it, and
+ * "whenever a player casts a spell" sees it. Unearth is an **activated ability** that puts the
+ * creature straight onto the battlefield: nothing is cast, nothing can be countered, and the body
+ * is one attack rather than a permanent, because it is exiled at the beginning of the next end
+ * step. So it is an ability whose cost is "from your graveyard" (`AbilityCost.fromGraveyard`),
+ * which is cycling's `discardSelf` one zone along.
+ *
+ * Three pieces, all of which existed: the graveyard is the third zone `activatablePlays` walks, the
+ * haste is an ordinary end-of-turn grant, and the exile is a **delayed trigger** (D135) scheduled
+ * for the next end step of anybody's turn. "Or if it would leave the battlefield" is the one clause
+ * not here: it needs a replacement effect a permanent applies to its own departure, which D181
+ * decided against adding for undying and which this card would be the first real user of. The
+ * practical difference is small and worth saying rather than hiding — an unearthed creature that
+ * dies this turn goes to the graveyard and can be unearthed again next turn, where the printed card
+ * exiles it.
+ */
+const unearth = (cost: string, script: () => CardScript): AbilityDef => ({
+  cost: { mana: cost, fromGraveyard: true },
+  // Sorcery speed, which the keyword says in its own words: "activate only as a sorcery".
+  sorcerySpeed: true,
+  description: `Unearth ${cost} (${cost}: Return this card from your graveyard to the battlefield. `
+    + 'It gains haste. Exile it at the beginning of the next end step.)',
+  effect: (c) => {
+    let next = putOntoBattlefield(c.state, c.source, c.controller);
+    next = pump(next, [c.source], c.source, c.controller, { keywords: ['haste'] });
+    // The marker the exile half reads: this body was unearthed, so leaving the battlefield means
+    // exile rather than a graveyard it could be unearthed from again. See `UNEARTHED`.
+    next = addCounters(next, c.source, UNEARTHED, 1);
+    return scheduleDelayed(next, {
+      source: c.source,
+      controller: c.controller,
+      abilityIndex: delayedIndexOf(script()),
+      step: 'end',
+      // `any` rather than `you`: unearth is a sorcery-speed ability, so the next end step is this
+      // turn's — but a card that somehow reached the battlefield on somebody else's turn should
+      // still go at the end of *that* one, which is what the printed card says.
+      of: 'any',
+      subject: c.source,
+      description: `exile ${nameOfCard(next, c.source)}`,
+    });
+  },
+});
+
+/**
+ * "… or if it would leave the battlefield", as a replacement on the unearthed body's own death.
+ *
+ * The clause that stops the same creature being bought twice, and the measurement that made it
+ * necessary rather than optional: without it, `cast-counts` read **18 casts and 42 unearths** of a
+ * Hellspark Elemental across 22 games — the card sacrifices itself at end of turn, reached the
+ * graveyard before the delayed exile could find it on the battlefield, and was bought again the
+ * next turn. Twice the card the printed one is.
+ *
+ * It is a replacement rather than a trigger because the printed word is "instead" in effect: the
+ * creature never reaches the graveyard, so nothing that watches for a death sees it either, which
+ * is also the rule (CR 614.6). And it applies to **this body only**, read off the `UNEARTHED`
+ * counter in the `vanished` snapshot — a Hellspark that was cast and died is in a graveyard it can
+ * be unearthed from, which is the whole point of the card.
+ */
+const unearthExileOnLeaving = (): NonNullable<CardScript['replaces']>[number] => ({
+  on: 'dies',
+  description: 'exile it instead, because it was unearthed',
+  applies: (c) => {
+    if (c.dying !== c.source) return false;
+    const was = c.state.vanished[c.dying] ?? c.state.instances[c.dying];
+    return (was?.counters[UNEARTHED] ?? 0) > 0;
+  },
+  instead: (c) => exileCard(c.state, c.dying),
+});
+
+/** The exile half of unearth, as the delayed trigger every unearth card carries. */
+const unearthExile = (): TriggerDef => ({
+  on: { kind: 'step', step: 'end', of: 'any' },
+  delayed: true,
+  description: 'exile it',
+  // No guard beyond the one `exileCard` already is: a creature that has left the battlefield in the
+  // meantime is not there to exile, and the ability does as much as it can (CR 608.2).
+  effect: (c) => (c.subject === undefined ? c.state : exileCard(c.state, c.subject)),
+});
+
+/**
+ * Dregscape Zombie: a 2/1 for two that can be bought back for one, once.
+ *
+ * In the deck with the sacrifice outlets, which is where unearth is an engine rather than a body:
+ * a Vampire Aristocrat eats it, a Blood Artist drains for it, and {B} on a later turn buys the same
+ * creature again to be eaten again. That is the same combination the Young Wolf measured +36 for
+ * (D181) with the recursion on the other side of the card.
+ */
+const DREGSCAPE_ZOMBIE: CardScript = {
+  name: 'Dregscape Zombie',
+  abilities: [unearth('{B}', () => DREGSCAPE_ZOMBIE)],
+  triggers: [unearthExile()],
+  replaces: [unearthExileOnLeaving()],
+};
+
+/**
+ * Hellspark Elemental: three trampling damage now, and three more for {1}{R} later.
+ *
+ * The card sacrifices itself at the beginning of the end step whether it was cast or unearthed,
+ * which is printed on it and not part of the keyword — so it carries two end-step triggers: its
+ * own sacrifice, and the delayed exile unearth schedules. Both are correct and the order does not
+ * matter: whichever resolves first, the card is gone, and the second does nothing because
+ * `moveToGraveyard` and `exileCard` both read an instance that is no longer on the battlefield.
+ */
+const HELLSPARK_ELEMENTAL: CardScript = {
+  name: 'Hellspark Elemental',
+  keywords: ['trample', 'haste'],
+  abilities: [unearth('{1}{R}', () => HELLSPARK_ELEMENTAL)],
+  triggers: [
+    {
+      on: { kind: 'step', step: 'end', of: 'any' },
+      description: 'sacrifice Hellspark Elemental',
+      // Guarded, because unearth's exile may already have taken it: see `sacrificeSelf`.
+      effect: sacrificeSelf,
+    },
+    unearthExile(),
+  ],
+  replaces: [unearthExileOnLeaving()],
+};
+
 const THICKET_BASILISK: CardScript = {
   name: 'Thicket Basilisk',
   triggers: [
@@ -6044,6 +6184,7 @@ const ALL: readonly CardScript[] = [
   PALACE_SENTINELS, THORN_OF_THE_BLACK_ROSE,
   YOUNG_WOLF, BUTCHER_GHOUL, MURDEROUS_REDCAP,
   FLEECEMANE_LION, AEROMUNCULUS,
+  DREGSCAPE_ZOMBIE, HELLSPARK_ELEMENTAL,
   GLISTENER_ELF, PLAGUE_STINGER, ICHORCLAW_MYR, BLIGHT_MAMBA, CYSTBEARER, PHYREXIAN_CRUSADER,
   TAINTED_STRIKE, SKITHIRYX,
   guildgate('Simic Guildgate', 'G', 'U'),
