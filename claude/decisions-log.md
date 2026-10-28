@@ -9957,3 +9957,58 @@ the same `payFrom` every other cast uses.
 than it measures: a free spell off the top of a sixty-card deck is a free spell only when the top of
 the deck is not one of the twenty-three lands. It watches `pendingFreeCast` in the state rather than
 the log, counts the depth of each dig, names the hit, and splits the answers into cast and declined.
+
+First reading, 144 games of Kindle Grove against the field:
+
+```
+20 cascades fired, 1.95 cards exiled each (the hit included)
+of them: 18 cast, 2 declined
+
+what it hit:
+   8  Llanowar Elves      1  Lightning Bolt      1  Thornweald Archer
+   3  Ambush Viper        1  Lightning Strike    1  Prey Upon
+   2  River Boa           1  Rancor              1  Borderland Marauder
+                                                 1  Rampant Growth
+```
+
+**Twenty cascades in 144 games is the number that explains everything else.** A one-of four-drop is
+cast in about one game in seven, so the keyword fires about as often as the card is drawn, and what
+it buys is most often a **Llanowar Elves** — a one-mana creature, which is roughly half a card.
+Two offers of twenty were declined, both because there was no legal way to cast what came up.
+
+### Measured: a small gain this instrument can only just see
+
+Probing the revert — the Elf out, the Giant Growth back — on four seed sets of 288:
+
+```
+seeds 3300   162 against 153   revert  -9
+seeds 5100   174 against 181   revert  +7
+seeds 7100   186 against 169   revert -17
+seeds 9100   177 against 156   revert -21
+```
+
+Three of the four say the card is worth something and one says it is worth less than nothing; the
+mean is about **ten games of 288**, which is half the ±20 noise floor, and only one arm (−21) sits
+outside it. Under the rule this project has been using — two seed sets kill a change, four ship a
+small one — this is the four-set case: the direction is consistent enough to keep and the size is
+too small to publish as a single number.
+
+**That is the honest expectation rather than a disappointment.** Twenty firings in 144 games, each
+worth about half a card, cannot move a win rate by more than a few games — and a keyword shipped
+for the engine path and for the player who knows the card does not need to. What the measurement
+rules out is the opposite worry: a free spell every game, which this is not.
+
+### What it cost, and the one thing not driven in a browser
+
+`pendingFreeCast` is the fourth thing that stops the table, which means four places had to learn
+about it: `resetPriority` and `legalActions` (nobody holds priority while it stands), `seatsToAct`
+(the seat it belongs to is the only one with a move), and the bot in two places — `botAction`, where
+the offer is let past the priority guard so the search picks the target, and `answerPending`, where
+a simulated line takes it greedily rather than searching inside a search (D71's lesson).
+
+The web path is wired and typechecked: a sentence in the arena bar, a Decline button that sends a
+pass, the playable badge on the exile row, and the `free` flag on the action the table builds —
+which is the fifth time that one line has been needed and the sharpest, because without it the
+engine refuses a cast the table had just offered. **It has not been driven in a browser**, because
+a cascade needs a stacked library and the browser suites play real games; the engine tests stack it
+instead. That is the gap worth naming here rather than discovering later.

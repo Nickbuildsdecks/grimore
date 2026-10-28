@@ -347,6 +347,13 @@ function playAction(
   */
   const withForetold = play.foretold === true ? { foretold: true } : {}
   /*
+    And a free cast, which is the same shape of bug a fifth time with a sharper edge: the flag is
+    not a cheaper cost but a **claim on an offer** the engine is holding the table open for, so a
+    cast sent without it is refused outright — "that card is not in your hand", about a card the
+    table had just drawn a Cast row for. Cascade is the one that offers it (CR 702.85a).
+  */
+  const withFree = play.free === true ? { free: true } : {}
+  /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
     answer in. One tap, and the 2/2 is whatever it was all along.
@@ -368,7 +375,7 @@ function playAction(
     return {
       type: "auto:cast", card: play.card,
       ...withModes, ...withX, ...withKicker, ...withFlashback, ...withEscape, ...withFaceDown,
-      ...withForetold,
+      ...withForetold, ...withFree,
       ...withHalf, ...withDivision,
       ...withSacrifice, ...withTargets,
     }

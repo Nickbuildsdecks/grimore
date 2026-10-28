@@ -5165,6 +5165,57 @@ enough to say plainly: measure a rules deviation rather than assuming it, in eit
 D183's leak was worth half a card and these two were worth nothing. The reason to ship them is the
 same either way: the card says so (D190).
 
+### Cascade, and the two engine firsts behind it (D191)
+
+**A trigger that fires from the stack.** Every watcher in this engine was a permanent on a
+battlefield, with three exceptions that fire from wherever a permanent *went* — a death, a leave, a
+card arriving in a graveyard. "When you cast this spell" is none of those: it is an ability of a
+card **on the stack**, which is the shape cascade, storm, replicate, conspire and ripple all
+abbreviate. So the `spell-cast` trigger gained a `self` flag and `raise` puts the card being cast at
+the head of the watcher list for that one event.
+
+The guard matters more than the feature. A card's script may hold an ordinary battlefield cast
+trigger, and a stack watcher that answered those would fire them off the card's own casting on the
+way past — **Chalice of the Void would have countered itself on the way in**, because its trigger is
+`by: 'any', spell: 'any'` and a Chalice cast for X=0 is a nought-cost spell with no charge counters
+on it yet. The loop skips a stack watcher for any trigger that does not say `self`, and there is a
+test on exactly that cast.
+
+**A cast with nothing paid.** The five places a spell could be cast from were all player actions
+with a cost paid and a timing checked. Cascade's cast happens inside the resolution of a triggered
+ability, with a spell on the stack underneath it, and nothing is paid at all — so the resolution
+stops and *offers*: `pendingFreeCast` names a seat, a card in exile, and the rest of the pile bound
+for the bottom of the library. The engine does not cast the card itself, because casting is a choice
+with every other choice inside it; `legalActions` narrows that seat's plays to the casts of that one
+card and `auto:cast` with `free: true` claims the offer. Declining is a pass, which is all a pass can
+mean for a seat holding no priority.
+
+Everything else is ordinary, deliberately: it chooses targets and modes, pays an additional cost,
+rings every cast trigger, can be countered, and reads `(free)` on the stack beside `(flashback)` and
+`(foretold)`. Three refusals make the flag a claim rather than a licence — nothing offered, somebody
+else's offer, a different card — and a fourth refuses an X, because X is nought in a cost that is not
+paid (CR 107.3b).
+
+**Bloodbraid Elf** goes into Kindle Grove for its last Giant Growth, the least-cast card in that
+list (10 casts in 96 games). What the keyword is actually worth is a new instrument,
+`scripts/measure/cascade.mjs`, and the answer is small:
+
+```
+144 games: 20 cascades fired, 1.95 cards exiled each (the hit included)
+of them: 18 cast, 2 declined
+the commonest hit: Llanowar Elves, 8 of 20
+```
+
+Twenty firings in 144 games — a one-of four-drop fires about as often as it is drawn — each buying
+about half a card. Probing the revert on **four** seed sets of 288 gives −9, +7, −17 and −21: three
+say the card is worth something, one says it is worth less than nothing, and the mean of about ten
+games is half the noise floor. Under this project's own rule (two seed sets kill a change, four ship
+a small one) that is a keep, and the number is published as a range rather than a figure.
+
+The web path is wired and typechecked — a sentence in the arena bar, a Decline button, the playable
+badge on the exile row, the `free` flag on the action the table builds — but **not driven in a
+browser**, because a cascade needs a stacked library and the browser suites play real games.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
