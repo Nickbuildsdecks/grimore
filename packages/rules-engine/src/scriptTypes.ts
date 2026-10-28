@@ -1315,27 +1315,45 @@ export interface CardScript {
    * trigger of its own.
    */
   readonly replaces?: readonly {
-    /** The only event this engine replaces. "Dies" is a permanent going to a graveyard from the
-     *  battlefield (CR 700.4). */
-    readonly on: 'dies';
+    /**
+     * Which zone change this replaces. The three are the same move seen at three widths, and a
+     * card that says the widest one really does mean it:
+     *
+     * - `dies` — a permanent going to a graveyard **from the battlefield** (CR 700.4). Kalitas.
+     * - `to-graveyard` — a card going to a graveyard **from anywhere**: a death, a discard, a
+     *   mill, a spell finishing its resolution. Rest in Peace, Leyline of the Void.
+     * - `leaves-battlefield` — a permanent going anywhere that is not another battlefield: dying,
+     *   exiled, bounced, sacrificed. Unearth's "or if it would leave the battlefield".
+     *
+     * **One move is replaced once, and the widest applicable wording wins.** A creature dying
+     * while an opponent has a Leyline of the Void is one event, and whichever effect replaces it
+     * the creature is exiled and did not die — so no death trigger fires and nothing sees a card
+     * reaching a graveyard. `settle` therefore asks the wide wordings first and drops the ids they
+     * handled out of the narrower lists; see `replaceZoneChange`.
+     */
+    readonly on: ReplacementEvent;
     readonly description: string;
     readonly applies: (ctx: ReplacementContext) => boolean;
     readonly instead: (ctx: ReplacementContext) => GameState;
   }[];
 }
 
+/** The zone changes a card's `replaces` entry can be written against. See `CardScript.replaces`. */
+export type ReplacementEvent = 'dies' | 'to-graveyard' | 'leaves-battlefield';
+
 /**
- * What a replacement effect is asked about: the permanent it is replacing the event for, and the
+ * What a replacement effect is asked about: the card it is replacing the event for, and the
  * permanent whose effect this is.
  *
- * `dying` is already in its owner's graveyard when this runs, which is the shape of the engine's
- * answer to replacement effects generally — see `settle`. Read it for what the card *was*, not for
- * where it is.
+ * `subject` has **already made the move** by the time this runs — it is in the graveyard, the hand
+ * or the exile it was heading for — which is the shape of the engine's answer to replacement
+ * effects generally; see `settle`. Read it for what the card *was*, not for where it is, and read
+ * `state.vanished[subject]` when what matters is the counters it was carrying on the battlefield.
  */
 export interface ReplacementContext {
   readonly state: GameState;
-  /** The permanent the event is happening to. */
-  readonly dying: string;
+  /** The card the event is happening to. */
+  readonly subject: string;
   /** The permanent whose replacement effect this is. */
   readonly source: string;
   /** Who controls `source`. */

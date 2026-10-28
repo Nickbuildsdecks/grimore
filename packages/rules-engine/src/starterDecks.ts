@@ -2373,6 +2373,29 @@ const PLANAR_VOID: CardDef = {
   colors: ['B'],
 };
 
+/*
+  Rest in Peace: the printed version of the thing Planar Void only approximates.
+
+  Planar Void is a trigger — the card reaches the graveyard and is exiled afterwards — so a Blood
+  Artist still drains and a Gravedigger that resolves first still buys something back. Rest in Peace
+  says **instead**, which is a replacement effect over the widest zone change there is: a card going
+  to a graveyard from anywhere. It is the card the engine's `replaces` field was generalised for
+  (D185), and the only standing answer in the pool that turns a graveyard off rather than eating it.
+
+  Symmetrical and printed that way, which is why the slot matters more than the card: it is in the
+  one deck with no graveyard of its own to lose.
+*/
+const REST_IN_PEACE: CardDef = {
+  name: 'Rest in Peace',
+  typeLine: 'Enchantment',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  oracleText:
+    'When Rest in Peace enters the battlefield, exile all cards from all graveyards.\n'
+    + 'If a card would be put into a graveyard from anywhere, exile it instead.',
+  colors: ['W'],
+};
+
 const SCAVENGING_OOZE: CardDef = {
   name: 'Scavenging Ooze',
   typeLine: 'Creature — Ooze',
@@ -4286,9 +4309,23 @@ export const SKYWARD_WRIT: DeckSpec = {
     // The deck that loses to a wide board, holding the card that answers a wide board for two
     // mana. The third Swords paid for it: this deck's problem was never the one big creature.
     { card: HOLY_DAY, count: 1 },
-    // Four mana that is dead on your own turn and kills anything that attacks into it. The engine
-    // will not even offer it outside combat, which is the card.
-    { card: DIVINE_VERDICT, count: 1 },
+    /*
+      The graveyard, turned off for both players — which costs this deck's **sixty** nothing.
+
+      It replaced a **Divine Verdict** (57% of the games it was in hand, 16 casts in 96), and the
+      reason it is here rather than in Dawn Tithe is that none of Skyward Writ's sixty cards reads
+      a graveyard: no flashback, no escape, no Gravedigger, nothing that buys back a card it has
+      already spent. A symmetrical card in a deck that pays nothing for it is a one-sided card, and
+      against Ashen Rite's Gravedigger loops, Arc Tempest's flashback, Hollow Tide's delve and Rot
+      Harvest's recursion it is two mana for half a deck.
+
+      **The one place it costs something is a pod**, and it is worth saying rather than glossing:
+      this deck's commander is **Hanna, Ship's Navigator**, whose whole ability is returning an
+      artifact or enchantment from its own graveyard. In a duel Hanna is not in the game and the
+      card is pure upside; at a Commander table the two cards fight, and the player holding both
+      has a real decision rather than an automatic one.
+    */
+    { card: REST_IN_PEACE, count: 1 },
     // Cards, and the artifact Hanna is happy to buy back.
     { card: MIND_STONE, count: 1 },
     /*

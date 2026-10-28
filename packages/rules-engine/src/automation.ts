@@ -46,7 +46,7 @@ import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './inter
 import { scriptFor, soleTargetSpecOf } from './scripts.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, DecisionSpec, ModeDef,
-  TargetSpec, TriggerEvent,
+  ReplacementEvent, TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
 import {
   isChoiceDecision, isNumberDecision, isTargetDecision, targetCount,
@@ -1198,6 +1198,9 @@ export function stateBasedActions(state: GameState): GameState {
  * Life gain is detected by comparing totals rather than being announced by whatever caused it,
  * which is the only way lifelink, a spell and an ability all reach the same trigger.
  */
+/** The answer when nothing moved, so the common case allocates no Set. */
+const EMPTY_REPLACED: ReadonlySet<string> = new Set<string>();
+
 /**
  * "If it would die, exile it instead", and anything else shaped like it (CR 614).
  *
@@ -1222,17 +1225,18 @@ export function stateBasedActions(state: GameState): GameState {
  * Several applicable replacements are not a choice the affected player is offered (CR 616.1); the
  * first in APNAP order wins. Nothing in this pool can produce two.
  */
-function replaceDeaths(
-  state: GameState, dying: readonly string[],
-): { state: GameState; died: readonly string[] } {
-  if (dying.length === 0) return { state, died: dying };
+function replaceZoneChange(
+  state: GameState, on: ReplacementEvent, moving: readonly string[],
+): { state: GameState; unreplaced: readonly string[]; replaced: ReadonlySet<string> } {
+  if (moving.length === 0) return { state, unreplaced: moving, replaced: EMPTY_REPLACED };
   const sources: { id: string; controller: SeatIndex }[] = [];
   for (const seat of apnapSeats(state)) {
     for (const id of listAt(state, zoneKey(seat, 'battlefield'))) sources.push({ id, controller: seat });
   }
   let next = state;
+  const replaced = new Set<string>();
   const survived: string[] = [];
-  for (const id of dying) {
+  for (const id of moving) {
     // A token has already ceased to exist by the time this runs, and every printed version of this
     // effect says "nontoken" anyway — so there is nothing to replace and nothing to look at.
     const inst = next.instances[id];
@@ -1256,8 +1260,8 @@ function replaceDeaths(
     for (const source of candidates) {
       if (!source.own && next.instances[source.id]?.zone !== 'battlefield') continue;
       for (const rule of scriptOf(next, source.id)?.replaces ?? []) {
-        if (rule.on !== 'dies') continue;
-        const ctx = { state: next, dying: id, source: source.id, controller: source.controller };
+        if (rule.on !== on) continue;
+        const ctx = { state: next, subject: id, source: source.id, controller: source.controller };
         if (!rule.applies(ctx)) continue;
         const named = (of: string): string => next.cardDefs[next.instances[of]?.defKey ?? '']?.name ?? 'a card';
         const note = `${named(source.id)}: ${named(id)} — ${rule.description}`;
@@ -1270,9 +1274,10 @@ function replaceDeaths(
       }
       if (handled) break;
     }
-    if (!handled) survived.push(id);
+    if (handled) replaced.add(id);
+    else survived.push(id);
   }
-  return { state: next, died: survived };
+  return { state: next, unreplaced: survived, replaced };
 }
 
 function settle(state: GameState, before: GameState): GameState {
@@ -1290,14 +1295,44 @@ function settle(state: GameState, before: GameState): GameState {
       || next.toGraveyard.length > 0);
     pass++
   ) {
-    const replaced = replaceDeaths(next, next.died);
-    next = replaced.state;
-    const dead = replaced.died;
+    /*
+      Replacements, widest wording first, before anything is announced.
+
+      One move is replaced once (CR 614.1), and the three lists are the same move at three widths —
+      a creature destroyed in combat is in `left`, `toGraveyard` and `died` all at once. So the
+      wide wordings are asked first and whatever they handled is dropped from the narrower lists:
+      an unearthed creature bounced by an opponent's Unsummon is exiled rather than handed back
+      (D183's clause, finally covering the half that is not death), and a creature a Kalitas exiles
+      instead of letting die did not reach a graveyard, so nothing that watches graveyards sees it.
+
+      **Leaving still happened.** A permanent exiled rather than buried has left the battlefield,
+      so `left` keeps it and the leave triggers fire; what it did not do is arrive where it was
+      going.
+    */
+    const leaving = replaceZoneChange(next, 'leaves-battlefield', next.left);
+    next = leaving.state;
+    const buriedPass = replaceZoneChange(
+      next, 'to-graveyard', next.toGraveyard.filter((id) => !leaving.replaced.has(id)),
+    );
+    next = buriedPass.state;
+    const deaths = replaceZoneChange(
+      next, 'dies',
+      next.died.filter((id) => !leaving.replaced.has(id) && !buriedPass.replaced.has(id)),
+    );
+    next = deaths.state;
+    const dead = deaths.unreplaced;
     const gone = next.left;
     const arrived = next.entered;
     const connected = next.dealtCombatDamage;
     const drawn = next.drew;
-    const buried = next.toGraveyard;
+    /*
+      A card whose *death* was replaced did not reach a graveyard either, so the narrow pass can
+      take an id out of the wide list as well as the other way round. Nothing in the pool can see
+      the difference today — Planar Void's exile guards on the card still being in a graveyard, so
+      it was already a no-op — but "exiled instead" means the graveyard was never touched (CR
+      614.6), and the next card that counts graveyards as it resolves would read it.
+    */
+    const buried = buriedPass.unreplaced.filter((id) => !deaths.replaced.has(id));
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [],

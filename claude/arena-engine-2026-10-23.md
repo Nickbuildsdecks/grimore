@@ -4955,6 +4955,53 @@ bonus cannot help — fired **zero times** in 156 games, because every Equipment
 power or a keyword any creature can use. A rule with no measured waste behind it is a rule that will
 be wrong about a card nobody has written yet.
 
+### A replacement for any zone change, and the card that asked for it
+
+`CardScript.replaces` had one event in it from the day it was written for Kalitas (D82): `dies`, a
+permanent going to a graveyard from the battlefield. Printed cards use three widths of the same
+move, and two cards had already settled for less than they say — Rest in Peace could not be written
+at all, and unearth's "or if it would leave the battlefield" shipped as a replacement on death
+alone. So the field is `'dies' | 'to-graveyard' | 'leaves-battlefield'` now.
+
+**One move is replaced once, and that is the whole of the bookkeeping.** A creature destroyed in
+combat is in `left`, `toGraveyard` and `died` at the same time: three names for one zone change. The
+wide passes run first and whatever they handled is dropped from the narrower lists; the narrow pass
+returns the favour, because a creature a Kalitas exiles instead of letting die did not reach a
+graveyard either. `ReplacementContext.dying` became `subject`, since the card it names is no longer
+always dying.
+
+**Rest in Peace** ({1}{W} enchantment, Skyward Writ) is the first card on the widest wording, and
+the pair with Planar Void is the reason the distinction is worth having. The Void is a *trigger*:
+the card arrives in the graveyard, an ability goes on the stack, the exile happens after — so a
+Blood Artist still drains and a Gravedigger resolving first still buys something back. Rest in Peace
+says **instead**, so the creature never died at all. Its arrival empties the graveyards that already
+exist, because the replacement only covers the rest of the game, and it applies to itself: a
+destroyed Rest in Peace exiles itself, which works because the engine asks the moving card's own
+effects first (D183's change, reused here without a line).
+
+**Measured: level, and the number says as much about the bot as about the card.** Probing the
+revert — Rest in Peace out, the Divine Verdict back — gives **+10 and 0** of 288 on two seed sets.
+Both are inside the ±20 floor and neither is in the card's favour, so it ships the way D182's
+Aeromunculus did: for the mechanic, with the number said out loud rather than buried.
+
+And there is a reason to expect that number to be low which is not about the card. The evaluation
+has **no term for an opponent's graveyard**, so a two-mana enchantment whose whole effect is denying
+one scores as a blank — the deck holding it cannot see what it bought, while a person sitting across
+from Ashen Rite's Gravedigger loops or Arc Tempest's flashback can. That is the same shape as the
+counterspell (D148): the handicap was never the card. Teaching the search to read a graveyard is a
+term rather than a slot, and it is on the list.
+
+**And unearth's remaining half is closed, for nothing.** D183 shipped the clause as `on: 'dies'`
+because nothing in this pool bounces its own creature — true, and beside the point, since the
+*opponent's* Unsummon and Man-o'-War do it just as well and four decks run one. An unearthed
+Dregscape Zombie Unsummoned in response went to its owner's hand where the card says exile. Fixed,
+tested, and measured at **exactly zero**: `cast-counts` reads 28 casts and 21 unearths for the
+Zombie and 17 and 16 for the Hellspark, identical with the fix and without it across 96 games each.
+The window is narrow where the sacrifice leak's was not — an unearthed creature is exiled at the end
+of its own turn anyway, so the bounce has to land inside that turn. D183's leak was worth half a
+card; this one is worth nothing, and the two being the same kind of change is the argument for
+measuring a fidelity fix rather than assuming it either way.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -1628,6 +1628,60 @@ const PLANAR_VOID: CardScript = {
   ],
 };
 
+/**
+ * Rest in Peace: the graveyard stops being a zone, for everybody.
+ *
+ * The first card written against the engine's **widest** replacement wording, and the card that
+ * asked for it. Planar Void (D153) is the same idea printed as a *trigger* — "whenever another
+ * card is put into a graveyard, exile that card" — so the card really does reach the graveyard and
+ * is exiled afterwards, which is why a Blood Artist still sees the death. Rest in Peace says
+ * **instead**: nothing ever arrives, so a death is not a card in a graveyard, a flashback card is
+ * gone before its own controller could look at it, and a Gravedigger has nothing to read.
+ *
+ * Two halves and both are the card. The arrival empties every graveyard that already exists,
+ * because otherwise the replacement would only apply to the rest of the game; the replacement is
+ * what keeps them empty.
+ *
+ * **Unconditional, itself included.** A destroyed Rest in Peace exiles itself — the printed card
+ * replaces the move of "a card", not "another card", and its ability still applies to the event
+ * that is taking it away. The engine asks the moving card's own effects first (D183), so this
+ * works without the enchantment having to still be on the battlefield.
+ *
+ * It is in **Skyward Writ**, none of whose sixty cards reads a graveyard: no flashback, no escape,
+ * no Gravedigger, nothing that buys back a card it has already spent. A symmetrical card in a deck
+ * that pays nothing for it is a one-sided card, and that is the whole reason this slot is there
+ * rather than in Dawn Tithe, which runs Bone Splinters and a Blood Artist. The exception is a
+ * **pod**: Skyward Writ's commander is Hanna, Ship's Navigator, who returns an artifact or
+ * enchantment from her controller's graveyard, so in Commander the two cards fight.
+ */
+const REST_IN_PEACE: CardScript = {
+  name: 'Rest in Peace',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'exile all cards from all graveyards',
+      effect: (c) => {
+        let state = c.state;
+        for (const seat of state.seats) {
+          // A copy of the list first: exiling walks the same zone this is iterating.
+          for (const id of [...listAt(state, zoneKey(seat.index, 'graveyard'))]) {
+            state = exileCard(state, id);
+          }
+        }
+        return state;
+      },
+    },
+  ],
+  replaces: [
+    {
+      on: 'to-graveyard',
+      description: 'exile it instead',
+      applies: () => true,
+      instead: (c) => exileCard(c.state, c.subject),
+    },
+  ],
+};
+
 const anyGraveyardCard: TargetSpec = {
   kind: 'graveyard-card',
   // Any graveyard, which is what the card says: no filter, because "a graveyard" is not "your
@@ -3517,12 +3571,12 @@ const KALITAS: CardScript = {
       on: 'dies',
       description: 'exile it instead and create a 2/2 black Zombie creature token',
       applies: (c) => {
-        const dying = c.state.instances[c.dying];
+        const dying = c.state.instances[c.subject];
         if (dying === undefined || dying.isToken === true) return false;
         if (dying.zoneSeat === c.controller) return false;
         return characteristicsOf(c.state, dying).isCreature;
       },
-      instead: (c) => createToken(exileCard(c.state, c.dying), c.controller, ZOMBIE_TOKEN, 1),
+      instead: (c) => createToken(exileCard(c.state, c.subject), c.controller, ZOMBIE_TOKEN, 1),
     },
   ],
 };
@@ -5248,7 +5302,7 @@ const unearth = (cost: string, script: () => CardScript): AbilityDef => ({
 });
 
 /**
- * "… or if it would leave the battlefield", as a replacement on the unearthed body's own death.
+ * "… or if it would leave the battlefield", as a replacement on the unearthed body itself.
  *
  * The clause that stops the same creature being bought twice, and the measurement that made it
  * necessary rather than optional: without it, `cast-counts` read **18 casts and 42 unearths** of a
@@ -5261,16 +5315,24 @@ const unearth = (cost: string, script: () => CardScript): AbilityDef => ({
  * is also the rule (CR 614.6). And it applies to **this body only**, read off the `UNEARTHED`
  * counter in the `vanished` snapshot — a Hellspark that was cast and died is in a graveyard it can
  * be unearthed from, which is the whole point of the card.
+ *
+ * **It covers the bounce as well as the death now, and the gap that closes was reachable.** D183
+ * shipped this as `on: 'dies'` and wrote down that "would leave the battlefield" also means a
+ * bounce or an exile, with the excuse that nothing in the pool bounces its own creature — which
+ * missed that the *opponent's* Unsummon and Man-o'-War bounce it just as well. An unearthed
+ * Dregscape Zombie Unsummoned in response went to its owner's **hand**, a two-mana 2/1 to cast
+ * again or to discard and unearth again, where the printed card exiles it. The engine's widest
+ * replacement wording is exactly this clause, so the fix is the field (D185).
  */
 const unearthExileOnLeaving = (): NonNullable<CardScript['replaces']>[number] => ({
-  on: 'dies',
+  on: 'leaves-battlefield',
   description: 'exile it instead, because it was unearthed',
   applies: (c) => {
-    if (c.dying !== c.source) return false;
-    const was = c.state.vanished[c.dying] ?? c.state.instances[c.dying];
+    if (c.subject !== c.source) return false;
+    const was = c.state.vanished[c.subject] ?? c.state.instances[c.subject];
     return (was?.counters[UNEARTHED] ?? 0) > 0;
   },
-  instead: (c) => exileCard(c.state, c.dying),
+  instead: (c) => exileCard(c.state, c.subject),
 });
 
 /** The exile half of unearth, as the delayed trigger every unearth card carries. */
@@ -6159,6 +6221,7 @@ const ALL: readonly CardScript[] = [
   guildgate('Rakdos Guildgate', 'B', 'R'),
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
+  REST_IN_PEACE,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,

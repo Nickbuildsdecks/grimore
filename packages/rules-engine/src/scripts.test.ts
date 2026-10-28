@@ -4214,7 +4214,9 @@ describe('eleven more cards', () => {
 
   it('Divine Verdict kills an attacker, and cannot be cast when nothing is attacking', () => {
     let s = arena({
-      decks: { 0: 'skyward-writ', 1: 'rot-harvest' },
+      // Dawn Tithe rather than Skyward Writ: the Verdict's other home, since D185 spent that
+      // deck's copy on a Rest in Peace.
+      decks: { 0: 'dawn-tithe', 1: 'rot-harvest' },
       hands: { 0: ['Divine Verdict'] },
       battlefield: {
         0: ['Plains', 'Plains', 'Plains', 'Plains'],
@@ -4239,7 +4241,7 @@ describe('eleven more cards', () => {
     // the next turn of this one, because the Plains above are spent and a seat's lands untap in
     // its own untap step — on the turn the Verdict is wanted, they would all still be tapped.
     let t = arena({
-      decks: { 0: 'skyward-writ', 1: 'rot-harvest' },
+      decks: { 0: 'dawn-tithe', 1: 'rot-harvest' },
       hands: { 0: ['Divine Verdict'] },
       battlefield: {
         0: ['Plains', 'Plains', 'Plains', 'Plains'],
@@ -5854,7 +5856,7 @@ describe('why a card cannot be played', () => {
     // neither. The mana is there, so "not enough mana" would be a lie — and the two are the pair
     // a client could never tell apart on its own.
     let s = arena({
-      decks: { 0: 'skyward-writ' },
+      decks: { 0: 'dawn-tithe' },
       hands: { 0: ['Divine Verdict'] },
       battlefield: { 0: Array(4).fill('Plains') },
       turn: 2, firstSeat: 0,
@@ -12773,6 +12775,42 @@ describe('unearth: the body bought back out of the graveyard for one turn', () =
     expect(legalActions(s, 0).plays.some((play) => play.card === spark)).toBe(false);
   });
 
+  it('and an unearthed creature the opponent bounces is exiled, not handed back', () => {
+    /*
+      The half of "or if it would leave the battlefield" that D183 shipped without, and the excuse
+      it shipped on was wrong.
+
+      That entry implemented the clause as a replacement on the body's own **death** and wrote down
+      that a bounce or an exile is the same clause, with the note that nothing in this pool bounces
+      its own creature. True, and beside the point: the *opponent's* Unsummon and Man-o'-War bounce
+      it perfectly well, and Tidal Mind, Skyward Writ, Hollow Tide and Delta Bloom all run one. An
+      unearthed Dregscape Zombie Unsummoned in response went to its owner's **hand** — a two-mana
+      2/1 to cast again, or to discard and unearth again — where the printed card exiles it.
+
+      The engine's replacement field covers the whole wording now (D185), so this is the fix as the
+      card reads it. The opponent gets priority the honest way: the unearth is an ability that uses
+      no stack, so seat 0 passes and seat 1 answers in the same step.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      graveyard: { 0: ['Dregscape Zombie'] },
+      hands: { 1: ['Unsummon'] },
+      battlefield: { 0: ['Swamp', 'Swamp'], 1: ['Island', 'Island'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const zombie = find(s, 0, 'graveyard', 'Dregscape Zombie');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: zombie, abilityIndex: 0 }), 40);
+    expect(s.instances[zombie]!.zone).toBe('battlefield');
+
+    s = drain(apply(apply(s, { type: 'auto:pass', by: 0 }), {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Unsummon'),
+      targets: [{ kind: 'card', id: zombie }],
+    }), 40);
+    expect(s.instances[zombie]!.zone).toBe('exile');
+    expect(ids(s, 0, 'hand')).not.toContain(zombie);
+  });
+
   it('but a Hellspark that was cast and died is in a graveyard it can be unearthed from', () => {
     // The other side of the same clause: the replacement is about the body unearth put there, not
     // about the card, so the printed two-mana 3/1 still goes to the graveyard when it dies.
@@ -13039,6 +13077,87 @@ describe('Rancor, from anywhere rather than from the battlefield', () => {
     s = drain(apply(s, { type: 'card:move', by: 0, card: elves, toZone: 'graveyard' }), 40);
     expect(s.instances[rancor]!.zone).not.toBe('hand');
     expect(s.instances[rancor]!.zone).toBe('exile');
+  });
+});
+
+describe('Rest in Peace: the graveyard replaced rather than emptied', () => {
+  /*
+    The first card written against the engine's **widest** replacement wording, and the pair that
+    makes the difference between a trigger and a replacement worth having.
+
+    Planar Void (D153) and Rest in Peace read almost the same in English and are two different
+    cards. The Void is a *trigger*: the card reaches the graveyard, an ability goes on the stack,
+    and the card is exiled when it resolves — so a Blood Artist still saw the death and a
+    Gravedigger that resolved first still bought something back. Rest in Peace says **instead**:
+    the card never arrives, which means the creature never died.
+
+    That is the assertion worth having, because it is the one a player gets wrong at the table.
+  */
+  const board = (setup: { theirs?: readonly string[]; mine?: readonly string[] }): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'dawn-tithe' },
+      battlefield: {
+        0: ['Plains', 'Plains', ...(setup.mine ?? [])],
+        1: ['Swamp', 'Swamp', ...(setup.theirs ?? [])],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+  it('exiles a creature that would die, so nothing sees a death at all', () => {
+    let s = board({
+      mine: ['Rest in Peace'],
+      theirs: ['Blood Artist', 'Child of Night'],
+    });
+    const child = find(s, 1, 'battlefield', 'Child of Night');
+    const lifeBefore = [life(s, 0), life(s, 1)];
+
+    s = drain(apply(s, { type: 'card:move', by: 1, card: child, toZone: 'graveyard' }), 40);
+    // Exiled, not buried: "instead" means the graveyard was never touched.
+    expect(s.instances[child]!.zone).toBe('exile');
+    expect(ids(s, 1, 'graveyard')).toEqual([]);
+    /*
+      And the Blood Artist drained nobody, which is the whole difference from a Planar Void.
+
+      A creature that is exiled on its way to the graveyard **did not die** (CR 700.4 and 614.6),
+      so "whenever a creature dies" never happened. With a Void on the table instead, the same
+      board drains for one and then exiles the card.
+    */
+    expect([life(s, 0), life(s, 1)]).toEqual(lifeBefore);
+  });
+
+  it('empties the graveyards that are already there as it arrives', () => {
+    // The other half of the card, and the reason it needs both: the replacement only covers the
+    // rest of the game, so the arrival has to deal with what is already in there.
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'dawn-tithe' },
+      hands: { 0: ['Rest in Peace'] },
+      graveyard: { 0: ['Healing Salve'], 1: ['Child of Night', 'Doom Blade'] },
+      battlefield: { 0: ['Plains', 'Plains'], 1: ['Swamp'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    expect(ids(s, 1, 'graveyard')).toHaveLength(2);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Rest in Peace'),
+    }), 40);
+    expect(ids(s, 0, 'graveyard')).toEqual([]);
+    expect(ids(s, 1, 'graveyard')).toEqual([]);
+  });
+
+  it('and exiles itself when it is destroyed, which is the ruling people argue about', () => {
+    /*
+      The card says "a card", not "another card", and its ability applies to the event that is
+      taking it away — so a Disenchanted Rest in Peace goes to exile.
+
+      It works because the engine asks the **moving card's own** replacement effects first (D183,
+      which unearth needed): by the time a replacement is asked the enchantment is no longer on the
+      battlefield, so a pass that only looked at battlefield permanents could never have found it.
+    */
+    let s = board({ mine: ['Rest in Peace'] });
+    const rip = find(s, 0, 'battlefield', 'Rest in Peace');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: rip, toZone: 'graveyard' }), 40);
+    expect(s.instances[rip]!.zone).toBe('exile');
   });
 });
 

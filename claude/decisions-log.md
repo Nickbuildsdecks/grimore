@@ -9348,3 +9348,100 @@ table.
 cannot help. It fired **zero times** in 156 games, because every Equipment in the pool grants either
 power or a keyword that any creature can use. It is not in the tree. A rule with no measured waste
 behind it is a rule that will be wrong about a card nobody has written yet.
+
+## D185 — A replacement effect for any zone change, Rest in Peace, and a fidelity fix worth nothing
+
+**Decision: widen `CardScript.replaces` from "dies" to the three widths a printed card actually
+uses — `dies`, `to-graveyard` and `leaves-battlefield` — ship Rest in Peace on the widest of them,
+and close unearth's remaining gap while saying out loud that closing it bought no games.**
+
+### The field was one event wide, and printed cards are three
+
+`replaces` has existed since D82 (Kalitas) with a one-member union: `on: 'dies'`, a permanent going
+to a graveyard from the battlefield (CR 700.4). Two cards since then have wanted something wider and
+both settled for less:
+
+- **Rest in Peace** could not be written at all. "If a card would be put into a graveyard **from
+  anywhere**, exile it instead" is not a death — it is a discard, a mill, a spell finishing its
+  resolution, and a death among them.
+- **Unearth** shipped half a clause. D183 implemented "exile it … or if it would leave the
+  battlefield" as a replacement on the body's own *death*, and wrote down that a bounce is the same
+  clause with the excuse that nothing in this pool bounces its own creature.
+
+So the field is now `ReplacementEvent = 'dies' | 'to-graveyard' | 'leaves-battlefield'`, and `settle`
+asks the three in that order of width.
+
+**One move is replaced once, which is the whole of the bookkeeping.** A creature destroyed in combat
+is in `left`, in `toGraveyard` and in `died` all at the same time — three names for one zone change.
+So the wide passes run first and whatever they handled is dropped from the narrower lists, and the
+narrow pass hands back the same favour: a creature a Kalitas exiles instead of letting die never
+reached a graveyard either, so nothing that watches graveyards sees it. `ReplacementContext.dying`
+is `subject` now, because the thing it names is no longer always dying.
+
+Nothing in the pool can observe that last correction today — Planar Void's exile guards on the card
+still being in a graveyard, so it was already a no-op — and it is in because "exiled instead" means
+the graveyard was never touched (CR 614.6), and the next card that counts graveyard cards as it
+resolves would read it.
+
+### Rest in Peace, and why it is not Planar Void
+
+The two read almost the same in English and are different cards. Planar Void is a **trigger** —
+"whenever another card is put into a graveyard, exile that card" — so the card really arrives, an
+ability goes on the stack, and the exile happens afterwards: a Blood Artist still drains, and a
+Gravedigger resolving first still buys something back. Rest in Peace says **instead**. Nothing
+arrives, so **the creature never died**, and that is the assertion the test exists for: the same
+board that drains for one with a Void on it drains for nothing with a Rest in Peace on it.
+
+Two halves and both are the card: the arrival empties every graveyard that already exists, because
+the replacement only covers the rest of the game. And it is unconditional, **itself included** — a
+destroyed Rest in Peace exiles itself, which works only because the engine asks the moving card's
+own effects first (D183's change, made for unearth and reused here without a line).
+
+**The slot is the interesting half.** It replaced Skyward Writ's **Divine Verdict** (57% of the
+games it was in hand, 16 casts in 96), and it is in that deck because none of its sixty cards reads
+a graveyard — no flashback, no escape, no Gravedigger. A symmetrical card in a deck that pays
+nothing for it is a one-sided card. Against Ashen Rite's Gravedigger loops, Arc Tempest's flashback,
+Hollow Tide's delve and Rot Harvest's recursion it is two mana for half a deck.
+
+The exception is written into the deck comment rather than left for somebody to find: in a **pod**,
+Skyward Writ's commander is Hanna, Ship's Navigator, whose whole ability is returning an artifact or
+enchantment from her controller's graveyard. In a duel Hanna is not in the game; at a Commander
+table the two cards fight.
+
+**Measured: level, and the number says as much about the bot as about the card.** Probing the
+revert — Rest in Peace out, the Divine Verdict back — gives **+10 and 0** of 288 on two seed sets.
+Both are inside the ±20 floor and neither is in the card's favour, so it ships the way D182's
+Aeromunculus did: for the mechanic, with the number said out loud rather than buried.
+
+And there is a reason to expect that number to be low which is not about the card. The evaluation
+has **no term for an opponent's graveyard**, so a two-mana enchantment whose whole effect is denying
+one scores as a blank — the deck holding it cannot see what it bought, while a person sitting across
+from Ashen Rite's Gravedigger loops or Arc Tempest's flashback can. That is the same shape as the
+counterspell (D148): the handicap was never the card. Teaching the search to read a graveyard is a
+term rather than a slot, and it is on the list.
+
+### And the fidelity fix that was worth nothing, measured rather than assumed
+
+D183's excuse for shipping half the clause was that nothing in the pool bounces its own creature.
+That is true and beside the point: the **opponent's** Unsummon and Man-o'-War bounce it perfectly
+well, and Tidal Mind, Skyward Writ, Hollow Tide and Delta Bloom all run one. On a constructed board
+an unearthed Dregscape Zombie, Unsummoned in response, went to its owner's **hand** — a two-mana
+2/1 to cast again, or to discard and unearth again — where the printed card exiles it. There is a
+test for it now and the engine gets it right.
+
+**It is worth no games at all, and that is the finding.** `cast-counts` both ways, 96 games each:
+
+```
+                      with the fix        without it
+Dregscape Zombie      28 casts, 21 unearths   28 casts, 21 unearths
+Hellspark Elemental   17 casts, 16 unearths   17 casts, 16 unearths
+```
+
+Not one game in 192 differed. The window is narrow in a way the sacrifice leak's was not: an
+unearthed creature is exiled at the end of the turn it arrived on anyway, so the bounce has to
+happen inside that same turn, and the bot almost never has the chance. D183's leak was worth about
+half a card (+10/+19 leaky against +4/+6 fixed); this one is worth zero.
+
+Both are the same kind of change and only one of them paid, which is the argument for measuring
+fidelity fixes rather than assuming them either way. The reason to ship this one is that the card
+reads that way and a person playing it will expect it to — not a win rate.
