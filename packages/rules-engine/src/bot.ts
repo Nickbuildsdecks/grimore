@@ -1271,6 +1271,11 @@ function candidateActions(
             // flag is not a cheaper cost but a claim on an offer the engine is holding open, so a
             // cast sent without it is refused outright rather than charged the printed cost.
             ...(play.offered === true ? { offered: true } : {}),
+            // And evoke, which is the kicker's shape with the trade reversed: a cheaper cast of a
+            // card in hand, offered as its own play. Sent without the flag the engine would charge
+            // the printed cost — and the bot would be casting a five-mana creature it had priced
+            // at three.
+            ...(play.evoked === true ? { evoked: true } : {}),
             // And which half of a two-faced card, for the fifth time and the same reason: the two
             // halves are separate plays on one card, and a cast sent without this is either the
             // wrong spell or — on a split card, which has no printed face of its own — refused.
@@ -2702,6 +2707,10 @@ function castsARitual(state: GameState, action: Action): boolean {
 /** One play, identified well enough to tell "this is new" from "this was already on offer". */
 const playKey = (play: LegalPlay): string =>
   `${play.kind}|${play.card}|${play.abilityIndex ?? ''}|${play.kicked === true ? 'k' : ''}`
+  // And evoke, for the same reason as the kicker: the two castings of a Mulldrifter are two
+  // plays, and a key that could not tell them apart would read the expensive one as still on
+  // offer after the cheap one had been cast.
+  + `${play.evoked === true ? 'e' : ''}`
   // The half, because two halves of one card are two different plays: without it the "did casting
   // that buy me anything" checks would read Ice as still on offer after Fire had been cast.
   + `|${play.half ?? ''}|${(play.modes ?? []).join(',')}`;

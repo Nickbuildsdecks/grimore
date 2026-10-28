@@ -75,6 +75,17 @@ if (size(SUBJECT_LIST) !== size(STARTER_DECKS[SUBJECT])) {
 }
 
 const used = new Map(); // name -> { cast, used, drawn }
+/*
+  And **which cost was paid**, for the cards that offer more than one.
+
+  A card with an alternative cost is two cards, and the cast column cannot tell them apart: a
+  Mulldrifter cast 30 times is a 2/2 flier or a Divination, and which it was is the only question
+  the keyword raises. So every cast that carries one of the flags is tallied under `name (flag)`
+  as well — the flags are read off the action rather than listed per card, so a keyword added
+  later is counted here without this harness being told about it.
+*/
+const ALT_FLAGS = ['evoked', 'kicked', 'flashback', 'escape', 'foretold', 'offered', 'faceDown'];
+const alt = new Map(); // "name (flag)" -> count
 const bump = (name, key) => {
   const row = used.get(name) ?? { cast: 0, used: 0, drawn: 0 };
   row[key] += 1;
@@ -103,6 +114,11 @@ function duel(seed, decks, mine) {
     if (action === null) break;
     if (seat === mine && (action.type === 'auto:cast' || action.type === 'auto:playLand')) {
       bump(nameOf(s, action.card), 'cast');
+      for (const flag of ALT_FLAGS) {
+        if (action[flag] !== true) continue;
+        const key = `${nameOf(s, action.card)} (${flag})`;
+        alt.set(key, (alt.get(key) ?? 0) + 1);
+      }
     }
     /*
       An activated ability is the other way a card gets used, and for some cards it is the only
@@ -147,4 +163,16 @@ const rows = list.map((e) => {
 for (const r of rows) {
   const rate = r.drawn === 0 ? '   —' : `${Math.round((100 * (r.cast + r.used)) / r.drawn).toString().padStart(3)}%`;
   console.log(`${rate}  cast ${String(r.cast).padStart(4)} + used ${String(r.used).padStart(4)} / in hand ${String(r.drawn).padStart(4)} games  x${r.count}  ${r.name}`);
+}
+/*
+  The alternative costs, under the table rather than in it: these are casts already counted above,
+  split by which cost was paid. A card with an alternative cost and no row here was always cast
+  for what is printed on it, which is a finding rather than a blank.
+*/
+if (alt.size > 0) {
+  console.log('');
+  console.log('of those casts, the ones that paid something other than the printed cost:');
+  for (const [key, n] of [...alt].sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${String(n).padStart(4)}  ${key}`);
+  }
 }

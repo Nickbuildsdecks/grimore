@@ -2351,6 +2351,17 @@ const MUTAVAULT: CardDef = {
 /**
  * The two cards flashback was built for. Both are the same card twice for two different prices.
  */
+const MULLDRIFTER: CardDef = {
+  name: 'Mulldrifter',
+  typeLine: 'Creature — Elemental',
+  manaCost: '{4}{U}',
+  cmc: 5,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Flying\nWhen Mulldrifter enters the battlefield, draw two cards.\nEvoke {2}{U}',
+  colors: ['U'],
+};
+
 const THINK_TWICE: CardDef = {
   name: 'Think Twice',
   typeLine: 'Instant',
@@ -3454,7 +3465,22 @@ export const TIDAL_MIND: DeckSpec = {
       sits beside the Cackling Counterpart above, which is the other card here with flashback —
       both slots are in this deck so one measurement covers the mechanic.
     */
-    { card: THINK_TWICE, count: 1 },
+    /*
+      Mulldrifter for the Think Twice: the same slot played twice, and the player picks which.
+
+      Evoke is the first alternative cost in this engine that changes what happens *after* the
+      spell resolves (D194), and this deck is where the choice it offers is worth the most. Its
+      diagnosis has not moved since `killed-by.mjs` read it: it answers four or five things and
+      kills nobody, and what it does on a turn with three mana and nothing to answer is draw a
+      card and pass. A Mulldrifter is that turn's Divination for {2}{U} and, on a turn the game
+      has gone long, five mana for a 2/2 flier that draws two — one slot doing the deck's two
+      jobs rather than one of them twice.
+
+      The Think Twice is the right slot for it because it is the other card here that draws a card
+      and does nothing else, and because Arc Tempest runs two copies of it: the flashback path
+      keeps a home, which is what the pool's own structure asks before any slot is cut.
+    */
+    { card: MULLDRIFTER, count: 1 },
     /*
       Willbender for the Dive Down, which is one trick for another and not an even trade.
 

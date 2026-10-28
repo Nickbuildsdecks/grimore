@@ -286,6 +286,33 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no kicker`);
   }
 
+  /*
+    Evoke, announced with the spell for the same reason the kicker is (CR 702.74a).
+
+    Both players read the stack to decide whether to answer a spell, and whether this one was
+    evoked is the difference between a creature they will have to deal with and one that is about
+    to sacrifice itself — so it is announced at cast time and public from then on. Refused on a
+    card without evoke rather than ignored, which is the rule this file keeps for every flag: a
+    client sending one has misread the card, and a cast that quietly charged the printed cost
+    would be a different spell from the one that was asked for.
+
+    And refused alongside the other alternative costs, because that is what "alternative" means: a
+    spell is cast for one cost (CR 601.2f). Nothing in the pool has evoke and flashback, and the
+    refusal is there so that the next card to try cannot be cast for two costs at once.
+  */
+  const evoked = action.evoked === true;
+  if (evoked) {
+    if (script?.evoke === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no evoke`);
+    }
+    if (flashback || escape || foretold || offered || kicked) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'evoke is an alternative cost: it is paid instead of another, not beside one');
+    }
+    if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
+    }
+  }
+
   const specs = modes === undefined ? spellTargets(script) : modeTargetSpecs(modesOf(script, modes));
   const chosen = action.targets ?? [];
   const check = checkTargets(state, specs, chosen, action.by, inst.id);
@@ -344,7 +371,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       // Foretell replaces the printed cost, like flashback, which is why it is in the same chain
       // rather than beside the kicker: a foretold spell is cast for one cost and not for two.
       : foretold ? script?.foretell?.cost
-        : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
+        // And evoke, the fourth that replaces it: cheaper than what is printed, and the whole of
+        // what this casting pays. What it costs besides the mana is the permanent, and that is
+        // not paid here — it is paid on the battlefield, by the card's own trigger.
+        : evoked ? script?.evoke?.cost
+          : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
   /*
     And what the permanents on the table have done to the cost: a Goblin Electromancer, a Thalia.
 
@@ -534,6 +565,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // cheaper cost is a spell the player deciding whether to answer it should be able to read as one.
   const foretoldText = foretold ? ' (foretold)' : '';
   /*
+    And evoke, for the seventh time and the sharpest version of the reason: a player deciding
+    whether to counter this creature spell is deciding whether to spend a card on a creature that
+    is about to sacrifice itself anyway. Without the word on the stack they would be answering a
+    Mulldrifter and getting a Divination.
+  */
+  const evokedText = evoked ? ' (evoked)' : '';
+  /*
     And an offered cast, for the sixth time and the same reason: a player deciding whether to answer
     this should be able to read what it cost. "(free)" when nothing was paid and "(madness {R})"
     — the offer's own cost — when something was, because those are different cards to play against.
@@ -555,6 +593,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The flag the card's destination depends on: a spell cast from the graveyard is exiled as it
     // leaves the stack, and by then nothing else remembers where it came from.
     ...(flashback ? { flashback: true as const } : {}),
+    // And the flag the permanent's own life depends on: a creature that arrives from an evoked
+    // casting is marked as it lands, and nothing else remembers by then how it was paid for.
+    ...(evoked ? { evoked: true as const } : {}),
     /*
       And the other flag the destination depends on, for the same reason: an adventure that
       resolves is exiled "on an adventure" rather than put into a graveyard, and once it has left
@@ -565,7 +606,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     */
     ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
     description: `${characteristics.name}${xText}${kickedText}${flashbackText}${escapedText}`
-      + `${delveText}${foretoldText}${offeredText}${modeText}`,
+      + `${delveText}${foretoldText}${evokedText}${offeredText}${modeText}`,
   };
   next = {
     ...next,

@@ -5279,6 +5279,38 @@ payable before the action and gone by the moment of the discard, because the Fai
 cast with the mana that would have paid for the madness cast. The rule stays — there is a position
 where it changes the play and a test that holds it there — and the number stays with it.
 
+### Evoke, the first cost that changes what the permanent does afterwards (D194)
+
+Flashback, escape and foretell each replaced a cost and were done. Evoke (CR 702.74) is the first
+where the cost is half the sentence: cast a Mulldrifter for {2}{U}, it resolves, it draws its two
+cards, and then it sacrifices itself.
+
+The sacrifice needed nothing new. It is printed as a triggered ability with an intervening-if
+clause — "when this enters, **if its evoke cost was paid**, sacrifice it" — and all three pieces of
+that were already here, so it is written out as `evokeSacrifice()` beside `cascade()` and `storm()`.
+What the condition reads is the `EVOKED` counter, written onto the permanent as it arrives, because
+by the time the trigger resolves the stack object is gone and a Mulldrifter is a Mulldrifter however
+it was paid for. The sacrifice is **listed first** in the card's triggers so it goes on the stack
+underneath the draw and resolves after it; the other order is three mana for nothing.
+
+The cast is the kicker's shape with the trade reversed — one card, one zone, two plays — and that
+reversal is the one thing that moved in `legalActions`: a kicker can only make a cast dearer, so it
+can be offered last, while this one is cheaper and has to be offered **above** the affordability
+check, beside morph's and foretell's. The turn the card is in the deck for is the turn the printed
+cost cannot be paid.
+
+**Mulldrifter into Tidal Mind**, for the Think Twice: the pool's weakest deck, whose diagnosis is
+that it answers things and kills nobody, gets one slot that is a Divination on a three-mana turn and
+a 2/2 flier that draws two on a five-mana one. The slot measures level — +10 and −14 on two seed
+sets of 288, opposite signs inside the floor — so it ships on the role and the number is recorded as
+nothing.
+
+`cast-counts.mjs` now splits a card's castings by which cost was paid (any alternative-cost flag,
+so later keywords are counted without being told about). Over 96 games the Mulldrifter is cast in
+**33 of the 44 games it reached hand**, and **one** of those thirty-three paid the evoke cost: the
+bot reaches a five-mana card on a turn it has five lands. The choice the keyword exists for is a
+choice about this turn's mana, and it comes up about once in a hundred games.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

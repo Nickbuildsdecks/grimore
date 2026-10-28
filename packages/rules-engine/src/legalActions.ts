@@ -147,6 +147,16 @@ export interface LegalPlay {
    */
   readonly offered?: boolean;
   /**
+   * Set on the play that casts the card for its evoke cost, which buys the spell and gives up the
+   * permanent (CR 702.74a).
+   *
+   * A second play on the same card like the kicker's, and the opposite kind of choice: the kicker
+   * pays more for more, and this pays less for less. The table needs no new row for it — a card
+   * that is already offered once is offered twice, with a different cost and a description that
+   * says what the cheap one costs you.
+   */
+  readonly evoked?: boolean;
+  /**
    * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
    * (CR 708).
    *
@@ -889,6 +899,52 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       }
     }
 
+    /*
+      Evoke: a second play on the same card, and the first alternative cost that costs the card
+      itself (CR 702.74a).
+
+      **Above** the affordability check below, which is the whole reason it is here rather than
+      beside the kicker it most resembles — and the same reason morph and foretell are up here. The
+      turn this card is in the deck for is the turn its printed cost cannot be paid: a Mulldrifter
+      with three lands untapped is a Divination, and a play offered only after "can you afford
+      {4}{U}" had already skipped the card would be offered exactly when nobody needs it.
+
+      Which is also what makes it the kicker's opposite rather than its sibling. A kicker is a
+      second play that can only ever be *more* expensive, so offering it late costs nothing; this
+      one is cheaper, and everything cheap has to be offered before the expensive question is asked.
+
+      Its own targets, asked here rather than borrowed from below for the same reason: the code
+      below has not run yet. `specsFor` and `playableTargets` are the same two calls the ordinary
+      cast makes, so the two plays point at the same things.
+
+      From the hand only, and never beside a cast that has already replaced the cost: a card cast
+      with flashback is cast for its flashback cost, and one offered by a cascade is cast for
+      nothing. Nothing in the pool has evoke and any of those, and a card that did would be being
+      cast for two costs at once.
+    */
+    if (script?.evoke !== undefined && !flashback && !escape && !foretold && !fromCommand
+      && !fromAdventure && !offered) {
+      const evokeChange = costChangeFor(state, seat, def);
+      const evokeCost = withCostChange(parseManaCost(script.evoke.cost), evokeChange.generic);
+      const evokeTargets = playableTargets(state, specsFor(script), seat, id);
+      if (evokeCost.unsupported === undefined && evokeTargets.ok
+        && canAfford(poolOf(state, seat), evokeCost, sources)) {
+        out.push({
+          kind: 'cast', card: id, name: ch.name, evoked: true,
+          // What it costs in mana and what it costs in card, both said out loud: a player reading
+          // "Cast Mulldrifter for {2}{U}" and then watching it die would have been misled by the
+          // table rather than by the card.
+          description: `Cast ${ch.name} for its evoke cost (${script.evoke.cost}, sacrificed as it arrives)`,
+          manaCost: script.evoke.cost,
+          ...(evokeChange.generic === 0
+            ? {}
+            : { costChange: evokeChange.generic, costNote: evokeChange.notes[0] ?? '' }),
+          targetSpecs: specsFor(script), candidates: evokeTargets.candidates,
+          isManaAbility: false, sacrificeOptions: [],
+        });
+      }
+    }
+
     // Flashback and foretell both replace the cost, so everything from here on — affordability, X,
     // the description — is about that cost rather than the printed one.
     /*
@@ -1130,6 +1186,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         });
       }
     }
+
   }
   return { plays: out, blocked };
 }

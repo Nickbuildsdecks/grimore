@@ -29,7 +29,7 @@ import {
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
-  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, UNEARTHED, RENOWNED,
+  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   type EffectContext, type PumpOptions,
 } from './effects.js';
@@ -1845,6 +1845,64 @@ const FIERY_TEMPER: CardScript = {
   targets: [ANY_TARGET],
   madness: { cost: '{R}' },
   onResolve: (c) => damageFirstTarget(c, 3),
+};
+
+/**
+ * Evoke's second half, written out as the triggered ability the keyword abbreviates (CR 702.74a).
+ *
+ * "Evoke {2}{U}" means two things: an alternative cost, which is `CardScript.evoke` and is the
+ * engine's half, and "when this permanent enters, if its evoke cost was paid, sacrifice it" —
+ * which is an ordinary triggered ability with an intervening-if clause, and so is this. Writing it
+ * out rather than building a mechanism for it is the same decision `cascade()` and `storm()` were:
+ * the engine already asks an intervening-if twice (CR 603.4), already sacrifices permanents, and
+ * already knows how to put two of a card's triggers on the stack at once.
+ *
+ * The condition reads a **counter**, because by the time the ability triggers the stack object is
+ * gone and a Mulldrifter on the battlefield is a Mulldrifter however it was paid for. See `EVOKED`
+ * for why the fact is kept on the permanent, and `completeResolution` for where it is written.
+ *
+ * **Listed first in a card's triggers, and that ordering is the card.** Triggers of one controller
+ * go on the stack in the order their card lists them, so the first listed is at the bottom and
+ * resolves last (CR 603.3b gives the controller that choice, and this is the choice every player
+ * makes). A Mulldrifter whose sacrifice resolved before its draw would be three mana for nothing
+ * at all.
+ */
+const evokeSacrifice = (): TriggerDef => ({
+  on: { kind: 'etb' },
+  description: 'sacrifice it, because its evoke cost was paid',
+  condition: (c) => (c.state.instances[c.source]?.counters[EVOKED] ?? 0) > 0,
+  // Through `sacrificeSelf`, which is a no-op for a permanent that is no longer on the
+  // battlefield: an evoked creature killed in response to its own entry trigger is already gone,
+  // and a sacrifice is something you do to a permanent you control. Called rather than passed,
+  // because it is declared further down this file than the card that wants it.
+  effect: (c) => sacrificeSelf(c),
+});
+
+/**
+ * Mulldrifter: a 2/2 flier that draws two cards, or three mana that draws two cards.
+ *
+ * The card evoke was printed for, and the reason the keyword is worth an engine path at all. Five
+ * mana for a 2/2 flier and two cards is a fair card; {2}{U} for two cards is a Divination; and the
+ * whole of what the player buys is **getting to choose which of the two a turn is for**. No other
+ * card in this pool is two different cards depending on how much mana is untapped.
+ *
+ * It is in Tidal Mind because that deck's documented problem is the one this card is two answers
+ * to. `killed-by.mjs` said the deck loses to combat damage having answered four or five things and
+ * killed nobody (D139), and the six-slot rebuild that followed was all clock: what it still does
+ * on a turn with three mana and nothing to answer is draw a card and pass. A Mulldrifter is the
+ * Divination on that turn and the flier on the turn the game has gone long — the same slot, twice.
+ *
+ * It takes the **Think Twice**, which is the deck's other "draw a card and pass" and the one card
+ * here whose script Arc Tempest also runs two copies of, so flashback keeps a home either way.
+ */
+const MULLDRIFTER: CardScript = {
+  name: 'Mulldrifter',
+  keywords: ['flying'],
+  evoke: { cost: '{2}{U}' },
+  triggers: [
+    evokeSacrifice(),
+    { on: { kind: 'etb' }, description: 'draw two cards', effect: (c) => draw(c.state, c.controller, 2) },
+  ],
 };
 
 const PLANAR_VOID: CardScript = {
@@ -6479,7 +6537,7 @@ const ALL: readonly CardScript[] = [
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
-  BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER,
+  BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER, MULLDRIFTER,
   KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,

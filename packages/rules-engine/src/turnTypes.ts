@@ -222,6 +222,16 @@ export interface StackObject {
    */
   readonly adventure?: true;
   /**
+   * Whether this spell was cast for its evoke cost (CR 702.74a).
+   *
+   * Beside `flashback` and `adventure` because it answers the same kind of question — what becomes
+   * of the card once this object is gone — and a sharper version of it: those two are about which
+   * zone the card goes to, and this one is about whether the permanent that arrives gets to stay.
+   * The stack object is the last thing that knows, so it writes the fact onto the permanent as it
+   * arrives. See `EVOKED`.
+   */
+  readonly evoked?: true;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.
@@ -880,6 +890,16 @@ export interface AutoCastAction {
    * Fireball of twenty.
    */
   readonly offered?: boolean;
+  /**
+   * Cast it for its evoke cost, which is cheaper and sacrifices the permanent as it arrives
+   * (CR 702.74a). Refused on a card with no evoke.
+   *
+   * An ordinary cast in every other way — from the hand, at the card's own timing, with its own
+   * targets — which is why it is a flag on the cast rather than an action of its own. What it
+   * changes is not the casting but the permanent, and that change is made where the permanent
+   * arrives.
+   */
+  readonly evoked?: boolean;
   /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *

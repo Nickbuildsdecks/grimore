@@ -638,24 +638,28 @@ describe('blue-black control', () => {
     expect(namesIn(play(), 0, 'graveyard')).toEqual(namesIn(a, 0, 'graveyard'));
   });
 
-  it('Talrand makes a Drake for an instant, and not for a creature', () => {
+  it('Talrand makes a Drake for a sorcery, and not for a creature', () => {
     /*
-      Think Twice, which is the third card to hold this slot: Tome Scour went to Hollow Tide and
-      Dive Down went to Skyward Writ when Willbender took its place here. The trigger is about any
-      instant or sorcery, so which one is immaterial — it only has to be cheap enough to leave the
-      creature spell below it castable, and to need no target, since Talrand is the only creature
-      on the table and bouncing it would be testing something else.
+      Preordain, which is the fourth card to hold this slot: Tome Scour went to Hollow Tide, Dive
+      Down went to Skyward Writ when Willbender took its place, and Think Twice went when the
+      Mulldrifter took *its* place. The trigger is about any instant **or sorcery**, so which one
+      is immaterial — it only has to be cheap enough to leave the creature spell below it castable,
+      and to need no target, since Talrand is the only creature on the table and bouncing it would
+      be testing something else.
     */
     let s = control(
-      ['Think Twice', 'Omenspeaker'],
+      ['Preordain', 'Omenspeaker'],
       ['Island', 'Island', 'Island', 'Swamp'],
       ['Talrand, Sky Summoner'],
     );
-    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Think Twice') });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Preordain') });
     expect(s.stackOrder.length).toBe(2); // the spell and the trigger
     s = passBoth(s);
     expect(countOf(s, 1, 'battlefield', 'Drake')).toBe(1);
-    s = passBoth(s);
+    // And the Preordain itself, which stops and asks which cards to put back — nothing to do with
+    // the Drake, and answered with "neither" so the stack can empty and the creature spell below
+    // can be cast at sorcery speed.
+    s = decide(passBoth(s), []);
 
     s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Omenspeaker') });
     expect(s.stackOrder.length).toBe(1); // a creature spell is not an instant or sorcery
@@ -4698,7 +4702,9 @@ describe('flashback: casting a spell out of the graveyard', () => {
     The last test is the one that matters: a card cast with flashback is not offered a third time,
     because it is in exile rather than in the graveyard.
   */
-  const graveyard = (name: string, lands: readonly string[], deck = 'tidal-mind'): GameState => {
+  // Arc Tempest, which is where the Think Twice lives: Tidal Mind's copy became a Mulldrifter when
+  // evoke went in, and the two copies here are the pool's remaining home for the card.
+  const graveyard = (name: string, lands: readonly string[], deck = 'arc-tempest'): GameState => {
     let s = advanceTo(arena({
       decks: { 0: deck }, hands: { 0: [name] },
       battlefield: { 0: [...lands] },
@@ -4818,7 +4824,7 @@ describe('flashback: casting a spell out of the graveyard', () => {
       answering it once and answering it twice.
     */
     let s = advanceTo(arena({
-      decks: { 0: 'tidal-mind', 1: 'hollow-tide' },
+      decks: { 0: 'arc-tempest', 1: 'hollow-tide' },
       hands: { 0: ['Think Twice'], 1: ['Counterspell'] },
       battlefield: {
         0: ['Island', 'Island', 'Island', 'Island', 'Island'],
@@ -6516,14 +6522,22 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     // own: `scriptFor` finds a token's script by name like any other card's.
     let s = advanceTo(arena({
       decks: { 0: 'tidal-mind' },
-      hands: { 0: ['Think Twice'] },
+      hands: { 0: ['Unsummon'] },
       battlefield: { 0: ['Island', 'Island', 'Sedgemoor Witch'] },
       turn: 4, firstSeat: 0,
     }), 'precombat-main');
-    // Any instant will do — magecraft reads the cast and not what was cast — and a Think Twice is
-    // the cheapest one in the deck the Witch now lives in.
+    /*
+      Any instant will do — magecraft reads the cast and not what was cast — and an Unsummon is
+      the cheapest one in the deck the Witch now lives in, after the Think Twice became a
+      Mulldrifter.
+
+      Pointed at the Witch itself, which is the only creature on the table and costs this test
+      nothing: magecraft triggers on the **cast**, so the Pest is already on the battlefield by
+      the time the bounce resolves.
+    */
     s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Think Twice'),
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Unsummon'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Sedgemoor Witch') }],
     })));
     expect(namesIn(s, 0, 'battlefield')).toContain('Pest');
 
@@ -14123,5 +14137,127 @@ describe('madness: a card discarded into exile, and a cheaper cast out of it', (
     expect(s.pendingOfferedCast).toBeNull();
     expect(namesIn(s, 0, 'graveyard')).toContain('Fiery Temper');
     expect(life(s, 1)).toBe(17);
+  });
+});
+
+describe('evoke: the same card cast for two prices, and the permanent is the difference', () => {
+  /*
+    The first alternative cost in this engine that changes what happens **after** the spell
+    resolves. Flashback, escape and foretell each replaced a cost and were finished with it; a
+    Mulldrifter cast for {2}{U} resolves exactly as the five-mana one does — onto the battlefield,
+    drawing two — and then sacrifices itself, which is the whole trade and the whole of what these
+    tests are about.
+
+    Tidal Mind for every board, because that is where the card lives and where the deck has the
+    Islands to cast it either way.
+  */
+  const drifter = (lands: readonly string[], hand: readonly string[] = ['Mulldrifter']): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'kindle-grove' },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...lands] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+  const islands = (n: number): string[] => Array.from({ length: n }, () => 'Island');
+
+  it('is offered twice with five lands and once with three', () => {
+    expect(legalActions(drifter(islands(5)), 0).plays
+      .filter((p) => p.name === 'Mulldrifter').map((p) => p.description))
+      .toEqual([
+        'Cast Mulldrifter for its evoke cost ({2}{U}, sacrificed as it arrives)',
+        'Cast Mulldrifter',
+      ]);
+    // Three mana: the printed cost is out of reach and the cheap one is the only play, which is
+    // the turn the card is in the deck for.
+    expect(legalActions(drifter(islands(3)), 0).plays
+      .filter((p) => p.name === 'Mulldrifter').map((p) => p.manaCost))
+      .toEqual(['{2}{U}']);
+    // Two: neither, because evoke is a cheaper cost and not a free one.
+    expect(legalActions(drifter(islands(2)), 0).plays
+      .filter((p) => p.name === 'Mulldrifter')).toEqual([]);
+  });
+
+  it('evoked: draws two cards, and the Mulldrifter is in the graveyard', () => {
+    let s = drifter(islands(3));
+    const before = ids(s, 0, 'hand').length;
+    const card = find(s, 0, 'hand', 'Mulldrifter');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, evoked: true }), 40);
+
+    // Two cards drawn, and the one that was cast is not one of them: the hand is up by two from
+    // what was left after the Mulldrifter went on the stack.
+    expect(ids(s, 0, 'hand').length).toBe(before - 1 + 2);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    // Three lands tapped and no more: the evoke cost is what was paid.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(3);
+  });
+
+  it('cast for its printed cost: draws two and stays on the battlefield', () => {
+    let s = drifter(islands(5));
+    const before = ids(s, 0, 'hand').length;
+    const card = find(s, 0, 'hand', 'Mulldrifter');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card }), 40);
+
+    expect(ids(s, 0, 'hand').length).toBe(before - 1 + 2);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+  });
+
+  it('says on the stack which of the two it is', () => {
+    let s = drifter(islands(3));
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Mulldrifter'), evoked: true,
+    });
+    // The word a player reads before deciding whether to answer it: a creature that is about to
+    // sacrifice itself is not worth a counterspell.
+    expect(stackNames(s)).toEqual(['Mulldrifter (evoked)']);
+  });
+
+  it('draws first and dies second, which is the order a player would choose', () => {
+    /*
+      Both triggers belong to one controller and go on the stack together (CR 603.3b), so the one
+      listed first on the card is underneath and resolves last. The card lists the sacrifice first
+      for exactly this reason — the other order is three mana for nothing at all — and this is the
+      test that says so: after the first of the two resolutions the cards are drawn and the
+      creature is still there.
+    */
+    let s = drifter(islands(3));
+    const before = ids(s, 0, 'hand').length;
+    const card = find(s, 0, 'hand', 'Mulldrifter');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, evoked: true }), 2);
+    // Both abilities on the stack at once, the sacrifice underneath: the stack resolves from the
+    // top, so this is the order written out.
+    expect(s.stackOrder.map((id) => s.stackObjects[id]?.description))
+      .toEqual(['sacrifice it, because its evoke cost was paid', 'draw two cards']);
+
+    // The draw, resolved: two cards in hand and the creature still standing.
+    s = drain(s, 2);
+    expect(ids(s, 0, 'hand').length).toBe(before - 1 + 2);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    // And then the sacrifice, which is the second of the two.
+    s = drain(s, 40);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('a Mulldrifter that reached the battlefield any other way stays', () => {
+    /*
+      "If its evoke cost was paid" is a fact about **this body**, which is why it is a counter on
+      the permanent rather than anything on the card. A Mulldrifter put onto the battlefield by
+      something else was not cast at all, so the trigger's condition is false and nothing is
+      sacrificed — and so is a second Mulldrifter standing beside an evoked one.
+    */
+    let s = drifter(islands(3));
+    const card = find(s, 0, 'hand', 'Mulldrifter');
+    // Onto the battlefield without being cast at all, which is how a reanimation or a copy would
+    // put it there: no cost was paid, so no evoke cost was paid.
+    s = drain(apply(s, { type: 'card:move', by: 0, card, toZone: 'battlefield' }), 40);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(s.instances[card]!.counters['evoked'] ?? 0).toBe(0);
+  });
+
+  it('refuses an evoke on a card that has none, rather than ignoring it', () => {
+    const s = drifter(islands(5), ['Air Elemental']);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Air Elemental'), evoked: true,
+    })).toMatch(/no evoke/);
   });
 });

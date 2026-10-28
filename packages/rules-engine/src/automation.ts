@@ -32,7 +32,7 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, madnessOffer, modsFrom,
+  EVOKED, REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, madnessOffer, modsFrom,
   poolOf, removeEffectsFrom, setPool, spellLeavesStack, spendRegeneration, untapAll,
   type EffectContext, type EffectFn,
 } from './effects.js';
@@ -2362,6 +2362,19 @@ function completeResolution(
         by something else — reanimated, or made as a token — enters with X of zero, which is what
         the rules say rather than a simplification.
       */
+      /*
+        "If its evoke cost was paid" — recorded on the permanent as it arrives (CR 702.74a).
+
+        Here for the same reason `entersWith` is here: this is the last moment anything knows how
+        the spell was paid for. The stack object is about to be gone, and the trigger that reads
+        this fact resolves afterwards, from the battlefield, where a Mulldrifter cast for {4}{U}
+        and one cast for {2}{U} are the same card.
+
+        Before the arrival is announced, which matters: `settle` is what puts the card's entry
+        triggers on the stack, and the sacrifice trigger's intervening-if clause is asked as it
+        triggers (CR 603.4). A counter written afterwards would be a counter written too late.
+      */
+      if (object.evoked === true) next = addCounters(next, inst.id, EVOKED, 1);
       const arrives = script?.entersWith;
       if (arrives !== undefined) {
         const amount = arrives.amount === 'x' ? (object.x ?? 0) : arrives.amount;

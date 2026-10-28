@@ -441,6 +441,23 @@ export const REGENERATION = 'regeneration';
 export const UNEARTHED = 'unearthed';
 
 /**
+ * The marker an **evoked** permanent carries, so its own sacrifice trigger can read it
+ * (CR 702.74a).
+ *
+ * "If its evoke cost was paid" is an intervening-if clause about how this body got here, and the
+ * card itself cannot tell: a Mulldrifter on the battlefield is a Mulldrifter, whether it was cast
+ * for {4}{U}, cast for {2}{U}, reanimated or made as a copy. The stack object knew, and the stack
+ * object is gone by the time the trigger resolves — so the fact is written onto the permanent as
+ * it arrives, the way unearth's is, and for the same three reasons: a counter is already
+ * per-permanent, already serialised and already visible on the card.
+ *
+ * It travels no further than this body. A creature that evoked, died and was reanimated is a new
+ * object with no counters, so it stays — which is exactly what the rules say, and is the reason
+ * the fact cannot live on the card's script.
+ */
+export const EVOKED = 'evoked';
+
+/**
  * The marker a **renowned** creature carries (CR 702.112a).
  *
  * "If it isn't renowned" is an intervening-if about a state the creature holds, and the engine's

@@ -354,6 +354,12 @@ function playAction(
   */
   const withFree = play.offered === true ? { offered: true } : {}
   /*
+    And evoke, which is the kicker's shape with the trade the other way round: the cheap casting is
+    its own play on a card in hand, so a cast sent without the flag is the printed five-mana one
+    and is refused for want of mana on exactly the turn the player reached for the cheap half.
+  */
+  const withEvoked = play.evoked === true ? { evoked: true } : {}
+  /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
     answer in. One tap, and the 2/2 is whatever it was all along.
@@ -375,7 +381,7 @@ function playAction(
     return {
       type: "auto:cast", card: play.card,
       ...withModes, ...withX, ...withKicker, ...withFlashback, ...withEscape, ...withFaceDown,
-      ...withForetold, ...withFree,
+      ...withForetold, ...withFree, ...withEvoked,
       ...withHalf, ...withDivision,
       ...withSacrifice, ...withTargets,
     }

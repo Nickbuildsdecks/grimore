@@ -1203,6 +1203,33 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Evoke: cast this creature for a cheaper cost, and sacrifice it as it arrives (CR 702.74).
+   *
+   * The first alternative cost in this engine that changes what happens to the permanent
+   * **afterwards**. Flashback, escape and foretell each replaced a cost and were done with it; a
+   * Mulldrifter cast for its evoke cost is still a Mulldrifter spell, still resolves onto the
+   * battlefield, still draws two cards — and then goes away, which is the whole trade. So the
+   * keyword is two halves that have to be kept together: the cost, here, and the sacrifice, which
+   * is an ordinary triggered ability on the card itself.
+   *
+   * The sacrifice is **not** in this declaration, and that is deliberate. CR 702.74a words it as
+   * "When this permanent enters, if its evoke cost was paid, sacrifice it" — a triggered ability
+   * with an intervening-if clause, which is a shape the engine already has. So the card carries
+   * `evokeSacrifice()` in its `triggers` and the engine's only job is to record, on the permanent
+   * as it arrives, that the evoke cost was what paid for it. That record is the `EVOKED` counter,
+   * for the reason unearth's is: a fact about this body rather than about the card, already
+   * per-permanent, already serialised, already visible.
+   *
+   * Which means the ETB ability the card is actually in the deck for resolves **first** and the
+   * sacrifice second, because both go on the stack together and the controller orders their own
+   * (CR 603.3b) — the Mulldrifter draws its two cards and only then dies. A player who read the
+   * other order would be reading a card nobody would play.
+   */
+  readonly evoke?: {
+    /** The whole cost of an evoked casting, in the printed `{1}{U}` form. */
+    readonly cost: string;
+  };
+  /**
    * Morph: cast this face down as a 2/2 for {3}, and turn it up later for this cost (CR 702.37).
    *
    * Only the *turn-up* cost lives here. The face-down casting costs {3} for every card that has

@@ -10182,3 +10182,89 @@ explanation the measurement then contradicted. This one is right — there is a 
 changes the play, and a test that holds it there — and it is unreachable today for a reason that is
 documented, measured and not about madness. A correct rule worth nothing is kept and labelled; an
 incorrect rule worth nothing is deleted.
+
+## D194 — Evoke: the first alternative cost that changes what the permanent does afterwards
+
+Flashback, escape and foretell each replaced a cost and were finished with it. Evoke (CR 702.74) is
+the first one in this engine where the cost is only half the sentence: *you may cast this for
+{2}{U}, and when it arrives you sacrifice it.* A Mulldrifter cast for its evoke cost is still a
+Mulldrifter spell — it resolves onto the battlefield, it draws its two cards — and then it goes
+away, which is the whole trade and the whole of what had to be built.
+
+### The sacrifice is a trigger, not a mechanism
+
+The keyword's second half is printed as a triggered ability with an intervening-if clause: "When
+this permanent enters, **if its evoke cost was paid**, sacrifice it." The engine already asks an
+intervening-if twice (CR 603.4), already sacrifices permanents, and already puts two of a card's
+triggers on the stack at once — so evoke's sacrifice is written out as `evokeSacrifice()`, a
+TriggerDef factory beside `cascade()` and `storm()`, and nothing new was added to resolution at all.
+
+What the condition reads is the one thing the card cannot know. By the time the trigger resolves the
+stack object is gone, and a Mulldrifter on the battlefield is a Mulldrifter however it was paid
+for — cast for five, cast for three, reanimated, copied. So the fact is written onto the permanent
+as it arrives, as the `EVOKED` counter, for the three reasons unearth's marker was: a counter is
+already per-permanent, already serialised and already visible on the card. It travels no further
+than this body, which is also the rule — a creature that evoked, died and came back is a new object
+and stays.
+
+**The sacrifice is listed first in the card's triggers, and that ordering is the card.** Triggers of
+one controller go on the stack in the order their script lists them, so the first listed is at the
+bottom and resolves last. A Mulldrifter whose sacrifice resolved before its draw would be three mana
+for nothing at all. There is a test on exactly that: both abilities on the stack, the sacrifice
+underneath.
+
+### Where the play is offered, which is not where the kicker's is
+
+The cast itself is a second play on the same card in the same zone — the kicker's shape, with the
+trade reversed. The kicker can only ever make a cast *more* expensive, so `legalActions` can offer
+it last, after the printed cost has been priced. This one is cheaper, and the turn the card is in
+the deck for is the turn the printed cost cannot be paid: a Mulldrifter with three lands untapped is
+a Divination. So the evoke play is pushed **above** the affordability check, beside morph's and
+foretell's, and it asks `specsFor`/`playableTargets` for itself rather than borrowing the work the
+ordinary cast does further down.
+
+Everything else is the ordinary cast: `evoked` is a flag on `auto:cast`, refused on a card with no
+evoke and refused beside flashback, escape, foretell, an offered cast or a kicker, because an
+alternative cost is paid *instead of* another and not beside one (CR 601.2f). It is announced on the
+stack as "(evoked)" for the reason every other cast flag is announced there: a player deciding
+whether to counter this creature spell is deciding whether to spend a card on a creature that is
+about to sacrifice itself anyway.
+
+### Mulldrifter, and the slot it takes
+
+**Mulldrifter into Tidal Mind**, for the Think Twice. The deck is the pool's weakest and its
+diagnosis has not moved since `killed-by.mjs` read it (D139): it answers four or five things, kills
+nobody, and what it does on a turn with three mana and nothing to answer is draw a card and pass.
+This card is that turn's Divination and, on a turn the game has gone long, five mana for a 2/2 flier
+that draws two — one slot doing the deck's two jobs rather than one of them twice. The Think Twice
+is the right slot because it is the other card there that draws a card and does nothing else, and
+because Arc Tempest runs two copies, so the flashback path keeps a home.
+
+### Measured: the slot is level, and the cheap half is taken once in thirty-three
+
+Two seed sets of 288 paired duels, probing the revert:
+
+```
+3300   with Mulldrifter 119-167   with Think Twice 109-179   +10
+5100   with Mulldrifter  92-193   with Think Twice 106-181   -14
+```
+
+Opposite signs, both inside the ±20 floor this instrument has for a one-slot change on 288 games.
+The slot ships on the rules argument and the role, and the number is written down as nothing.
+
+`cast-counts.mjs` says the thing worth keeping, and it needed one small addition to say it: every
+cast that carries an alternative-cost flag is now tallied under `name (flag)` beneath the table, so
+"which of the two costs did the bot pay" is a question the instrument can answer for any keyword,
+including ones added after it. Over 96 games of Tidal Mind:
+
+```
+75%  cast 33 + used 0 / in hand 44 games  x1  Mulldrifter
+  1  Mulldrifter (evoked)
+```
+
+The card is cast in three quarters of the games it reaches hand, which makes it one of the busier
+slots in the deck — and **one** of those thirty-three castings paid the evoke cost. That is not the
+keyword failing: it is the bot reaching a five-mana card on a turn it has five lands, which is what
+happens when a card is drawn on turn six rather than turn three. The choice the keyword exists for
+is a choice about *this* turn's mana, and the measured answer is that the position comes up about
+once in a hundred games. Written down rather than tuned around.
