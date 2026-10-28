@@ -4829,6 +4829,38 @@ card, each asked for by an instrument and each one delivering exactly what it wa
 113, with the record unmoved. Ten poison counters off one-power creatures is simply a slower clock
 than twenty life off three-power ones. D181 says what that means for the deck.
 
+### Monstrosity and adapt, and the rule the second one asked for
+
+Two keywords one word apart. **Fleecemane Lion** ({G}{W} 3/3, Verdant Guard) has *monstrosity 1*:
+"activate only if this creature isn't monstrous", which is a restriction on the **ability**, so the
+engine grew `AbilityDef.activateOnlyIf` and the table stops offering the button once it has been
+pressed. **Aeromunculus** ({1}{G}{U} 2/3 flier, Delta Bloom) has *adapt 3*: "if it has no +1/+1
+counters on it, put three on it", which is a condition inside the **effect** — so the ability stays
+offered and paying a second time is legal and buys nothing. Both grow the creature permanently,
+which is what makes them unlike every other pump in the pool.
+
+The Lion's other half is the second thing `ContinuousEffect.while` has ever been asked: *hexproof and
+indestructible while it is monstrous* is a condition about the permanent's own counters rather than
+a count of its controller's board, so that field grew a `source-has-counter` kind. The
+simplification is in the test rather than hidden — the engine's answer to "monstrous" is the counter
+it is carrying, so a Toxic Deluge takes the hexproof with the counter where a real Lion stays
+monstrous.
+
+**And adapt found a bot bug in one run.** `cast-counts` on the first version: **29 casts and 88
+adapt activations** across 34 games — three payments of {2}{G}{U} per creature for one effect,
+because after the first the ability still appears and still resolves and does nothing. So
+`AbilityDef.buysNothingIf` is the sixteenth member of the drop-this-option family and the twin of
+`activateOnlyIf`: the rules keep offering what the card allows and the **bot alone** reads this one.
+After it, 29 casts and 24 activations.
+
+What they measured: the Lion is **level** over four seed sets (−28, +11, +6, −1 on the revert — the
+−28 being a reminder of why two arms are the minimum and four better) with 47 casts and 21
+monstrosities in 56 games; the Aeromunculus is about **eight games short** of the four-mana 4/4
+flier it replaced and ships for the mechanic with that said out loud, because adapt has no other
+card in this pool. Pteramander, the famous one, is deliberately absent: its adapt cost is reduced by
+the instants and sorceries in a graveyard, which is a cost modification on an *ability*, and
+`costModifiers` is about spells with a fixed number.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -763,6 +763,36 @@ export interface AbilityDef {
   /** Only activatable when you could cast a sorcery. */
   readonly sorcerySpeed?: boolean;
   /**
+   * "Activate only if …" — a restriction on the ability itself, asked where the ability is
+   * *offered* rather than where it resolves.
+   *
+   * Monstrosity is the card shape that needs it: "Activate only if this creature isn't monstrous"
+   * is the clause that makes the growth one-shot, and a creature that has already paid for it has
+   * no ability left to press. Asked in `legalActions` so the table never offers it, and again in
+   * the activation path so an action arriving from anywhere is refused with a reason — the same
+   * two places every other ability restriction is checked in, for the reason D67 and D89 are both
+   * about: an option offered and then refused is worse than an option that was never there.
+   *
+   * A predicate rather than data, which `ContinuousEffect.while` could not be: a script is code
+   * and is never serialised, so the restriction can read whatever the card's words read.
+   */
+  readonly activateOnlyIf?: (state: GameState, source: string, controller: SeatIndex) => boolean;
+  /**
+   * "The rules let you, and it would do nothing" — read by the **bot** and by nothing else.
+   *
+   * The twin of `activateOnlyIf` and the opposite half of it. Monstrosity's restriction is printed
+   * on the card, so the table must not offer the ability at all; **adapt's** is printed inside the
+   * effect, so a player may legally pay {2}{G}{U} for a creature that already has a +1/+1 counter
+   * on it and get nothing back. Both readings have to be available: the engine owes the player the
+   * play the card allows, and the search owes itself not to take it.
+   *
+   * Measured before it existed, with one Aeromunculus in Delta Bloom: **29 casts and 88 adapt
+   * activations across 34 games** — three payments per creature for one effect, and the deck lost
+   * about ten games of 288 for it (D182). The sixteenth member of the drop-this-option family, and
+   * the first that is about an ability rather than a card in hand.
+   */
+  readonly buysNothingIf?: (state: GameState, source: string, controller: SeatIndex) => boolean;
+  /**
    * See `CardScript.preventsDamage`. On the ability because that is what is spent: a Samite
    * Healer's ability taps it, so using it when no damage is coming costs a blocker for nothing,
    * while the creature itself is a perfectly good play.

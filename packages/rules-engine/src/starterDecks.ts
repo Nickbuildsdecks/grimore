@@ -643,6 +643,31 @@ const GIANT_GROWTH: CardDef = {
   colors: ['G'],
 };
 
+const FLEECEMANE_LION: CardDef = {
+  name: 'Fleecemane Lion',
+  typeLine: 'Creature — Cat Hydra',
+  manaCost: '{G}{W}',
+  cmc: 2,
+  power: '3',
+  toughness: '3',
+  oracleText: '{2}{G}{W}: Monstrosity 1. (If this creature isn\u2019t monstrous, put a +1/+1 counter on '
+    + 'it and it becomes monstrous.)\nAs long as Fleecemane Lion is monstrous, it has hexproof and '
+    + 'indestructible.',
+  colors: ['G', 'W'],
+};
+
+const AEROMUNCULUS: CardDef = {
+  name: 'Aeromunculus',
+  typeLine: 'Creature — Homunculus Mutant',
+  manaCost: '{1}{G}{U}',
+  cmc: 3,
+  power: '2',
+  toughness: '3',
+  oracleText: 'Flying\n{2}{G}{U}: Adapt 3. (If this creature has no +1/+1 counters on it, put three '
+    + '+1/+1 counters on it.)',
+  colors: ['G', 'U'],
+};
+
 const PACIFISM: CardDef = {
   name: 'Pacifism',
   typeLine: 'Enchantment — Aura',
@@ -2913,7 +2938,21 @@ export const VERDANT_GUARD: DeckSpec = {
     // second Banisher Priest, in a deck already holding five other ways to answer one creature.
     { card: FOG, count: 1 },
     // Removal a green deck is actually allowed: the biggest creature on the table eats something.
-    { card: PREY_UPON, count: 1 },
+    /*
+      **Fleecemane Lion, for the Prey Upon**, and it is the pool's first monstrosity.
+
+      A 3/3 for two is already the best rate in this deck; the five mana after it is what makes the
+      card famous. *{2}{G}{W}: Monstrosity 1* puts a +1/+1 counter on it **once** — the growth does
+      not wear off and the ability cannot be pressed twice — and *as long as it is monstrous it has
+      hexproof and indestructible*, which in this pool means no Doom Blade, no Murder, no Day of
+      Judgment and no Prey Upon answers it at all.
+
+      The slot is this deck's own Prey Upon (59%): a fight spell is a creature's worth of removal
+      that needs a creature, and a deck with eighteen of them would rather have the nineteenth. Two
+      other decks keep theirs — Kindle Grove runs the pool's pair and the red-green plan is built
+      around them (D162).
+    */
+    { card: FLEECEMANE_LION, count: 1 },
     { card: LOXODON_WARHAMMER, count: 1 },
     { card: SELESNYA_CHARM, count: 1 },
     { card: PACIFISM, count: 1 },
@@ -5239,7 +5278,20 @@ export const DELTA_BLOOM: DeckSpec = {
       five mana arrives on turn four as often as turn five, and nothing else it does at five is a
       blocker. The Elemental stays in the pool and in this deck at one copy.
     */
-    { card: AIR_ELEMENTAL, count: 1 },
+    /*
+      **Aeromunculus, for the Air Elemental**, and it is adapt's half of the family monstrosity
+      belongs to.
+
+      {1}{G}{U} for a 2/3 flier, and {2}{G}{U} to make it a 5/6 — once. Adapt's "if" is inside the
+      ability rather than on it, which is the printed difference from a Fleecemane Lion's
+      monstrosity: the table still offers this to a creature that already has a +1/+1 counter on
+      it, and paying for it then gets nothing.
+
+      The slot is the **Air Elemental** (76%, four mana for a 4/4 flier): the same role one mana
+      earlier, and a card that keeps scaling in a deck whose mana outgrows its spells. Skyward Writ
+      keeps the pool's other copy.
+    */
+    { card: AEROMUNCULUS, count: 1 },
     { card: THICKET_BASILISK, count: 1 },
     { card: ENDLESS_ONE, count: 2 },
     { card: MIND_SPRING, count: 1 },

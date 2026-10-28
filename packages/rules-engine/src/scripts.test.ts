@@ -4191,7 +4191,9 @@ describe('eleven more cards', () => {
 
   it('Prey Upon makes two creatures fight, and both deal their damage', () => {
     let s = arena({
-      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
+      // Kindle Grove for the seat casting it: Verdant Guard's Prey Upon became a Fleecemane Lion
+      // (D182), and `arena` takes the named card out of whichever deck the seat is given.
+      decks: { 0: 'kindle-grove', 1: 'rot-harvest' },
       hands: { 0: ['Prey Upon'] },
       battlefield: { 0: ['Forest', 'Centaur Courser'], 1: ['Centaur Courser'] },
       turn: 3, firstSeat: 0,
@@ -9571,9 +9573,11 @@ describe('evasion: can’t be blocked, and landwalk (CR 702.14)', () => {
   }), 'declare-attackers');
 
   it('a Tormented Soul cannot be blocked by anything', () => {
-    const s = boards(['Tormented Soul'], ['Island', 'Fog Bank', 'Air Elemental']);
+    // An Aeromunculus rather than an Air Elemental: Delta Bloom's Elemental became one (D182), and
+    // what this test needs on the other side is a flier and a wall, whichever flier that is.
+    const s = boards(['Tormented Soul'], ['Island', 'Fog Bank', 'Aeromunculus']);
     const soul = find(s, 0, 'battlefield', 'Tormented Soul');
-    for (const name of ['Fog Bank', 'Air Elemental']) {
+    for (const name of ['Fog Bank', 'Aeromunculus']) {
       const blocker = find(s, 1, 'battlefield', name);
       expect(canBlock(s, blocker, soul, 1)?.reason).toContain("can't be blocked");
     }
@@ -12670,6 +12674,86 @@ describe('a card put into a graveyard from anywhere (CR 400.7)', () => {
     // Exiled all the same — the ability does that unconditionally — and no counter, no life.
     expect([power(s, ooze), toughness(s, ooze)]).toEqual([2, 2]);
     expect(life(s, 0)).toBe(lifeBefore);
+  });
+});
+
+describe('monstrosity and adapt: a creature that grows once and stays grown', () => {
+  /*
+    Two keywords whose difference is one word of placement, and the tests are about that word.
+
+    **Monstrosity** says "activate only if this creature isn't monstrous" — a restriction on the
+    *ability*, so a creature that has paid for it has nothing left to press and the table stops
+    offering it. **Adapt** says "if it has no +1/+1 counters on it, put N on it" — a condition
+    inside the *effect*, so the ability stays offered and paying for it a second time buys nothing.
+    Both are permanent growth, which is what makes them unlike every other pump in the pool.
+
+    And the Lion's static is the second thing `ContinuousEffect.while` has ever been asked:
+    hexproof and indestructible while it is monstrous is a condition about the permanent's own
+    counters rather than about a player's board.
+  */
+  const board = (deck: string, mine: readonly string[], lands: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: deck, 1: 'ashen-rite' },
+      battlefield: { 0: [...lands, ...mine], 1: ['Swamp', 'Swamp'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+  const FOREST_PLAINS = ['Forest', 'Forest', 'Plains', 'Plains', 'Plains'];
+
+  it('Fleecemane Lion becomes a 4/4 with hexproof and indestructible, once', () => {
+    let s = board('verdant-guard', ['Fleecemane Lion'], FOREST_PLAINS);
+    const lion = find(s, 0, 'battlefield', 'Fleecemane Lion');
+    expect([power(s, lion), toughness(s, lion)]).toEqual([3, 3]);
+    expect(characteristicsOf(s, s.instances[lion]!).keywords.has('hexproof')).toBe(false);
+
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: lion, abilityIndex: 0 }), 40);
+    expect([power(s, lion), toughness(s, lion)]).toEqual([4, 4]);
+    const ch = characteristicsOf(s, s.instances[lion]!);
+    expect(ch.keywords.has('hexproof')).toBe(true);
+    expect(ch.keywords.has('indestructible')).toBe(true);
+
+    // And the ability is gone: "activate only if it isn't monstrous" is read where the play is
+    // offered, so the table never shows a button that would do nothing.
+    expect(legalActions(s, 0).plays
+      .filter((play) => play.card === lion && play.kind === 'activate')).toEqual([]);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: lion, abilityIndex: 0 })).not.toBeNull();
+  });
+
+  it('and the hexproof goes away if the counter does, which is this engine rather than the card', () => {
+    /*
+      Said out loud because it is a deliberate simplification: the engine's answer to "is it
+      monstrous" is the +1/+1 counter it is carrying, so a Toxic Deluge that takes the counter off
+      takes the hexproof with it. A real Fleecemane Lion stays monstrous. The alternative is a flag
+      on the instance for one card, which is the trade D57's rule is about.
+    */
+    let s = board('verdant-guard', ['Fleecemane Lion'], FOREST_PLAINS);
+    const lion = find(s, 0, 'battlefield', 'Fleecemane Lion');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: lion, abilityIndex: 0 }), 40);
+    expect(characteristicsOf(s, s.instances[lion]!).keywords.has('hexproof')).toBe(true);
+
+    s = { ...s, instances: { ...s.instances, [lion]: { ...s.instances[lion]!, counters: {} } } };
+    expect(characteristicsOf(s, s.instances[lion]!).keywords.has('hexproof')).toBe(false);
+    expect([power(s, lion), toughness(s, lion)]).toEqual([3, 3]);
+  });
+
+  it('Aeromunculus adapts to a 5/6, and the second payment buys nothing', () => {
+    // Eight lands, because the test pays for adapt twice and each payment is four mana.
+    let s = board('delta-bloom', ['Aeromunculus'],
+      ['Forest', 'Forest', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island']);
+    const mancus = find(s, 0, 'battlefield', 'Aeromunculus');
+    expect([power(s, mancus), toughness(s, mancus)]).toEqual([2, 3]);
+
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: mancus, abilityIndex: 0 }), 40);
+    expect([power(s, mancus), toughness(s, mancus)]).toEqual([5, 6]);
+
+    /*
+      Adapt's condition is in the effect, so the ability is still offered — which is the printed
+      card: a player may pay {2}{G}{U} again and get nothing at all. The size is the assertion;
+      the offer is the point.
+    */
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: mancus, abilityIndex: 0 }), 40);
+    expect([power(s, mancus), toughness(s, mancus)]).toEqual([5, 6]);
   });
 });
 

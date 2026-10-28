@@ -848,6 +848,12 @@ function activate(
   if (ability.sorcerySpeed && !atSorcerySpeed(state, action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that ability can only be activated in your main phase');
   }
+  // "Activate only if …", checked here as well as where the ability is offered, because an action
+  // can arrive from anywhere. See `AbilityDef.activateOnlyIf`.
+  if (ability.activateOnlyIf !== undefined
+    && !ability.activateOnlyIf(state, action.card, action.by)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that ability cannot be activated right now');
+  }
   // A loyalty ability carries three restrictions with it, all from CR 606: sorcery speed, one
   // per planeswalker per turn, and a minus you can actually pay for. Checked here as well as in
   // `legalActions` because an action can arrive from anywhere, and the third one is the rule that

@@ -9054,3 +9054,73 @@ cards fill the gaps around the infect. Making it better means changing what it i
 commander, a different curve, or accepting that the pool's thirteenth-best deck is the one that
 wins a way nothing else can. Blight Vector gets no more single-card passes; the Butcher Ghoul stays
 because level is not a reason to revert and the card is the pool's cheapest undying.
+
+## D182 — Monstrosity and adapt, and the sixteenth drop-this-option rule the second keyword asked for
+
+**Decision: script both keywords, with the difference between them written where the cards write it
+— monstrosity's "only if" on the ability and adapt's inside the effect. Ship the Fleecemane Lion as
+level over four seed sets and the Aeromunculus for the mechanic with its number stated. And add the
+rule adapt exposed: the bot was paying four mana three times for one effect.**
+
+### Two keywords, one word apart
+
+"{2}{G}{W}: Monstrosity 1" is *activate only if this creature isn't monstrous*; "{2}{G}{U}: Adapt 3"
+is *if this creature has no +1/+1 counters on it, put three on it*. Same growth — permanent, once —
+and the restriction is in two different places, which is observable and now tested both ways:
+
+- **Monstrosity's** is a restriction on the **ability**, so the table must stop offering it. That
+  needed one engine line, `AbilityDef.activateOnlyIf`, asked where the play is offered *and* where
+  an action is validated — the two places every ability restriction is checked in, for D67 and
+  D89's reason: an option offered and then refused is worse than one that was never there.
+- **Adapt's** is a condition inside the **effect**, so the ability stays offered and a player may
+  pay for nothing. That is the printed card, and the engine owes the player the play the rules
+  allow.
+
+And the Lion's other half is the second thing `ContinuousEffect.while` has ever been asked. *Hexproof
+and indestructible as long as it is monstrous* is a condition about the permanent's **own** counters
+rather than a count of its controller's board, so `while` grew a second kind —
+`source-has-counter`. The simplification that comes with it is written into the test rather than
+hidden: the engine's answer to "is it monstrous" is the counter it is carrying, so a Toxic Deluge
+that takes the counter off takes the hexproof with it, where a real Fleecemane Lion stays monstrous.
+A flag on the instance for one card is the trade D57's rule is about.
+
+### The sixteenth of the drop-this-option family, and adapt found it in one run
+
+`cast-counts` on the first version, one Aeromunculus in Delta Bloom: **29 casts and 88 adapt
+activations across 34 games**. Three payments of {2}{G}{U} per creature for one effect — because
+after the first one the ability still appears, still resolves, and does nothing. The search cannot
+see it for the reason this whole family exists: with auto-pass on, the state after a four-mana
+ability can be a turn later, and two positions a turn apart do not compare.
+
+So `AbilityDef.buysNothingIf` is the twin of `activateOnlyIf` and is read by the **bot alone**: the
+rules keep offering what the card allows, and the search stops taking it. After it: **29 casts and
+24 activations**, which is about one per creature. Two tests, as every member of this family has:
+with a counter already on it the bot declines (and `legalActions` still offers it), and with no
+counter the same board takes the same ability.
+
+### What the two cards are worth
+
+```
+card              deck            slot                    revert
+Fleecemane Lion   verdant-guard   Prey Upon (59%)          -28, +11, +6, -1
+Aeromunculus      delta-bloom     Air Elemental (76%)      +13, +8  (before the rule)
+                                                           +11, +5  (after it)
+```
+
+**The Lion is level and ships.** Four arms with a mean of about −3 and one of them −28: that is
+what this instrument does when nothing much has changed, and the −28 is a reminder of why two arms
+are the minimum and four are better. `cast-counts` says the card is live either way — **47 casts and
+21 monstrosities** in the 56 games a copy was in hand, so the bot pays the five mana in about half
+the games it draws it.
+
+**The Aeromunculus is about eight games short of the Air Elemental and ships anyway**, which is the
+second time this session a card has shipped with a number against it (the Murderous Redcap was the
+first, D181) and the reason is the same: **adapt has no other card in this pool**, a 2/3 flier for
+three that becomes a 5/6 is the cleanest version of the mechanic the pool can cast, and four mana
+for a 4/4 flier is simply a strong card to be measured against. The bot rule is worth two or three
+games of the gap and the rest is the card. A reader who wants the strongest Delta Bloom should put
+the Air Elemental back — and Pteramander, which is the famous adapt card, is **not** here for a
+better reason: its adapt costs {7}{U} reduced by one for each instant and sorcery in its
+controller's graveyard, which is a cost modification on an *ability* read off the board, and
+`costModifiers` applies to spells with a fixed number. A card the engine can only approximate is
+better left unwritten.

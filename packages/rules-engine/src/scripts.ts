@@ -34,7 +34,7 @@ import {
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
-  CardScript, CardsDecisionSpec, TargetDecisionSpec, TargetSpec, TriggerDef,
+  AbilityDef, CardScript, CardsDecisionSpec, TargetDecisionSpec, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -5577,6 +5577,92 @@ const artifactsControlled = (state: GameState, seat: SeatIndex): number => {
   return count;
 };
 
+/**
+ * Monstrosity and adapt (CR 701.32, 701.37): a creature that grows **once** and stays grown.
+ *
+ * Every other pump in this pool wears off tonight — the whole eleventh member of the
+ * drop-this-option family is about that (D73) — and these two do not: the growth is +1/+1
+ * counters, which are permanent, and the ability cannot be pressed a second time. The difference
+ * between the two keywords is only where the "once" is written. Monstrosity says *activate only if
+ * this creature isn't monstrous*, which is a restriction on the ability; adapt says *if it has no
+ * +1/+1 counters on it, put N on it*, which is a condition inside the effect — so a creature that
+ * has been given a counter by something else cannot adapt at all, and one that has lost its
+ * counters can adapt again.
+ *
+ * Both are written here against the same two counters, because the engine's answer to "is it
+ * monstrous" is the counter it is carrying. That is a simplification with one visible edge: a real
+ * Fleecemane Lion stays monstrous after a Toxic Deluge takes its counters off and this one does
+ * not. The alternative is a flag on the instance for one card, which is the trade D57's rule is
+ * about — and the edge is written down rather than hidden.
+ */
+const monstrosity = (n: number, cost: string): AbilityDef => ({
+  cost: { mana: cost },
+  description: `Monstrosity ${n} (${cost}: Put ${n} +1/+1 counters on this and it becomes monstrous. `
+    + `Activate only if it isn't monstrous.)`,
+  // The clause that makes it one-shot, where the ability is offered rather than where it resolves.
+  activateOnlyIf: (state, source) => (state.instances[source]?.counters['+1/+1'] ?? 0) === 0,
+  effect: (c) => addCounters(c.state, c.source, '+1/+1', n),
+});
+
+const adapt = (n: number, cost: string): AbilityDef => ({
+  cost: { mana: cost },
+  description: `Adapt ${n} (${cost}: If this creature has no +1/+1 counters on it, put ${n} on it.)`,
+  /*
+    Adapt's "if" is inside the ability rather than on it, which is the printed difference from
+    monstrosity and an observable one: the ability is still **offered** with counters already on
+    the creature — a player may pay for it and get nothing, exactly as the card allows — so this
+    is a condition on the effect and not on the offer.
+  */
+  effect: (c) => ((c.state.instances[c.source]?.counters['+1/+1'] ?? 0) > 0
+    ? c.state
+    : addCounters(c.state, c.source, '+1/+1', n)),
+  // And the same question again for the bot, which is the only reader of this one: the play is
+  // legal and buys nothing, so the table keeps offering it and the search stops taking it. See
+  // `AbilityDef.buysNothingIf`.
+  buysNothingIf: (state, source) => (state.instances[source]?.counters['+1/+1'] ?? 0) > 0,
+});
+
+/**
+ * Fleecemane Lion: a 3/3 for two that becomes a 4/4 nothing in this pool can answer.
+ *
+ * The monstrosity is the cheap half; the static is why the card is famous. *Hexproof and
+ * indestructible as long as it is monstrous* is a condition about the permanent's **own** counters,
+ * which is `while: { kind: 'source-has-counter' }` — the second kind that field has ever had, and
+ * the first that asks about one permanent rather than a player's board. Five mana late in a game is
+ * a creature no Doom Blade, no Day of Judgment and no Prey Upon deals with.
+ */
+const FLEECEMANE_LION: CardScript = {
+  name: 'Fleecemane Lion',
+  abilities: [monstrosity(1, '{2}{G}{W}')],
+  statics: [{
+    scope: 'self',
+    effect: {
+      keywords: ['hexproof', 'indestructible'],
+      while: { kind: 'source-has-counter', counter: '+1/+1', atLeast: 1 },
+    },
+  }],
+};
+
+/**
+ * Aeromunculus: adapt's half of the family, and a 2/3 flier that is a 5/6 when there is mana spare.
+ *
+ * {1}{G}{U} for a 2/3 with flying, and {2}{G}{U} to make it a 5/6 — once. Adapt's "if" sits
+ * **inside** the ability rather than on it, which is the printed difference from monstrosity and an
+ * observable one: a creature that already has a +1/+1 counter on it may still be paid for, and gets
+ * nothing. So the ability stays offered and the effect declines, which is the opposite way round
+ * from the Fleecemane Lion's.
+ *
+ * Pteramander was the obvious card for this and is not here: its adapt costs {7}{U} *reduced by one
+ * for each instant and sorcery card in your graveyard*, which is a cost modification on an
+ * **ability** read off the board, and `costModifiers` applies to spells with a fixed number. A card
+ * the engine can only approximate is a card better left unwritten (D57), and Aeromunculus needs
+ * nothing new at all.
+ */
+const AEROMUNCULUS: CardScript = {
+  name: 'Aeromunculus',
+  abilities: [adapt(3, '{2}{G}{U}')],
+};
+
 /** "Metalcraft — ... as long as you control three or more artifacts." */
 const METALCRAFT = { kind: 'controller-artifacts', atLeast: 3 } as const;
 
@@ -5957,6 +6043,7 @@ const ALL: readonly CardScript[] = [
   WALL_OF_FROST, OPHIDIAN, THICKET_BASILISK, FLICKERWISP,
   PALACE_SENTINELS, THORN_OF_THE_BLACK_ROSE,
   YOUNG_WOLF, BUTCHER_GHOUL, MURDEROUS_REDCAP,
+  FLEECEMANE_LION, AEROMUNCULUS,
   GLISTENER_ELF, PLAGUE_STINGER, ICHORCLAW_MYR, BLIGHT_MAMBA, CYSTBEARER, PHYREXIAN_CRUSADER,
   TAINTED_STRIKE, SKITHIRYX,
   guildgate('Simic Guildgate', 'G', 'U'),

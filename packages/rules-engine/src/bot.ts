@@ -2021,6 +2021,25 @@ function pointlessToHandBack(state: GameState, play: LegalPlay): boolean {
   return ability?.untapsOnly === true || ability?.produces !== undefined;
 }
 
+/**
+ * Whether this activation is one the card allows and the board makes pointless.
+ *
+ * The sixteenth of the "spent on nothing" family, and the first about an **ability** rather than a
+ * card in hand. Adapt is the shape: "if this creature has no +1/+1 counters on it, put N on it" is
+ * a condition inside the effect, so paying for it a second time is legal and does nothing — and
+ * the search cannot see that, because with auto-pass on the state after a four-mana ability can be
+ * a turn later and two positions a turn apart do not compare. Measured before the rule: one
+ * Aeromunculus, **29 casts and 88 activations** across 34 games.
+ *
+ * The card says which question to ask; see `AbilityDef.buysNothingIf`.
+ */
+function activationBuysNothing(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (action.type !== 'auto:activate') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  const ability = scriptFor(name)?.abilities?.[action.abilityIndex ?? 0];
+  return ability?.buysNothingIf !== undefined && ability.buysNothingIf(state, action.card, seat);
+}
+
 /** Whether this action activates an ability whose whole effect is untapping something. */
 function untapsSomething(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
@@ -2902,6 +2921,14 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       And removal with nothing to remove, which ends up pointed at its own board.
     */
     if (castsRemoval(state, option.action) && !somethingToRemove(state, seat)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And an ability the card allows and the board makes pointless: a second adapt, which puts no
+      counters on anything. See `activationBuysNothing`.
+    */
+    if (activationBuysNothing(state, seat, option.action)) {
       dropped += 1;
       continue;
     }

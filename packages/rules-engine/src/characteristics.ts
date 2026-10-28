@@ -335,13 +335,27 @@ export interface ContinuousEffect {
    *
    * **Data rather than a predicate**, which is not a style choice: `state.effects` is part of the
    * game state and the state is serialised to Redis, so a function here would not survive the trip.
-   * One kind, because one card shape needs one count — the rule D57 is about.
+   * One kind per card shape, and the second one arrived with monstrosity: a Fleecemane Lion has
+   * hexproof and indestructible *while it is monstrous*, and "monstrous" is a +1/+1 counter on the
+   * creature itself rather than a count of the board (D182).
    */
-  readonly while?: {
-    readonly kind: 'controller-artifacts';
-    /** "three or more", which is what every metalcraft card printed says. */
-    readonly atLeast: number;
-  };
+  readonly while?:
+    | {
+        readonly kind: 'controller-artifacts';
+        /** "three or more", which is what every metalcraft card printed says. */
+        readonly atLeast: number;
+      }
+    | {
+        /**
+         * "As long as this creature is monstrous" — read off the effect's own **source**, which is
+         * what makes it different from every other condition here: the question is about one
+         * permanent rather than about a player's board, so a Fleecemane Lion that has been
+         * answered and recast is not monstrous again until it is paid for again.
+         */
+        readonly kind: 'source-has-counter';
+        readonly counter: string;
+        readonly atLeast: number;
+      };
   readonly definesSize?: {
     /**
      * One count, because one card needs one count. "Cards in your hand", "lands you control" and
@@ -441,6 +455,17 @@ const numeric = (value: string | undefined): number => {
 function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   const cond = effect.while;
   if (cond === undefined) return true;
+  /*
+    A condition about the effect's own source, which is the whole of monstrosity's second half.
+
+    Read live like the artifact count below and for the same reason: there is no moment at which it
+    turns on that anything could announce. The counter is put on by an ability, and from then on the
+    static applies because the counter is there — nothing stores the fact of being monstrous.
+  */
+  if (cond.kind === 'source-has-counter') {
+    const source = state.instances[effect.source];
+    return source !== undefined && (source.counters[cond.counter] ?? 0) >= cond.atLeast;
+  }
   let count = 0;
   for (const id of state.zones[zoneKey(effect.controller, 'battlefield')] ?? []) {
     const inst = state.instances[id];

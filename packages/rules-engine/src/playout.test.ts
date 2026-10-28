@@ -1346,6 +1346,58 @@ describe('removal with nothing to remove', () => {
   });
 });
 
+describe('an adapt that would put no counters on anything', () => {
+  /*
+    The sixteenth of the "spent on nothing" family, and the first about an ability rather than a
+    card in hand.
+
+    Adapt's condition is inside the effect — "if this creature has no +1/+1 counters on it, put
+    three on it" — so paying {2}{G}{U} for a creature that already has one is legal, which means
+    the table must offer it and the bot must not take it. Measured before the rule, with one
+    Aeromunculus in Delta Bloom: **29 casts and 88 activations across 34 games**, three payments per
+    creature for one effect.
+
+    Two halves, as every member of this family has: it declines the pointless one, and it takes the
+    one that does something.
+  */
+  const grown = (counters: number): GameState => {
+    const base = advanceTo(arena({
+      decks: { 0: 'delta-bloom', 1: 'ashen-rite' },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Island', 'Island', 'Aeromunculus'],
+        1: ['Swamp', 'Swamp'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const mancus = find(base, 0, 'battlefield', 'Aeromunculus');
+    const s = counters === 0 ? base : {
+      ...base,
+      instances: {
+        ...base.instances,
+        [mancus]: { ...base.instances[mancus]!, counters: { '+1/+1': counters } },
+      },
+    };
+    return tapAllLands(s, 0);
+  };
+
+  it('is offered and declined, and taken when the counters are not there yet', () => {
+    const already = grown(3);
+    const mancus = find(already, 0, 'battlefield', 'Aeromunculus');
+    // Offered, because the card allows it: the engine does not lie about what the rules permit.
+    expect(legalActions(already, 0).plays
+      .some((play) => play.card === mancus && play.kind === 'activate')).toBe(true);
+    const declined = botAction(already, 0);
+    expect(declined?.type === 'auto:activate' && declined.card === mancus).toBe(false);
+
+    // And with no counters on it, the same board takes the same ability.
+    const fresh = grown(0);
+    const taken = botAction(fresh, 0);
+    expect(taken?.type).toBe('auto:activate');
+    expect(taken?.type === 'auto:activate' ? taken.card : null)
+      .toBe(find(fresh, 0, 'battlefield', 'Aeromunculus'));
+  });
+});
+
 describe('a Naturalize pointed at its own board', () => {
   /*
     The fifteenth of the "spent on nothing" family, and the first one an instrument asked for by
