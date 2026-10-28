@@ -8287,6 +8287,13 @@ cast count alone.
 
 So the slot became the Raise Dead rather than the Titanic Growth: a card used three times as often,
 given up for coherence. Pool coverage is safe either way — Rot Harvest runs the other Raise Dead.
+Re-measured there, the Void is **+4 and −3**: opposite signs, which is level, and level is the bar
+for a card whose job is to give a dimension an answer.
+
+**What that can and cannot claim.** All four readings — 0, −12, +4, −3 — are inside the ±20 floor,
+so the improvement is consistent with the conflict being the cause and is not proof of it. What the
+four do support is the thing the card had to clear: on the Raise Dead slot it no longer costs its
+deck anything measurable, where on the Titanic Growth slot one of two sets said it did.
 
 `graveyard-costs.mjs` now counts both ends of the dimension in one run, because a harness that
 reports "eleven delved Anglers" and another that reports "nine Planar Void triggers" cannot be
@@ -8294,3 +8301,42 @@ compared and the thing worth knowing is whether the hate ever meets the cost. Wi
 the subject over 144 games: **132 Planar Void triggers reached the stack.** The bot casts the
 one-mana enchantment that does nothing for its own board, and once it is down the table has no
 graveyard.
+
+## D173 — The one card the reservation rule should never have held mana for
+
+**Decision: narrow `affordableAnswerInHand` from "counter target" to "counter target … spell", which
+drops Squelch out of the reservation rule. Ship it on fidelity, because at this pool size it is not
+measurable in isolation — and say so rather than inventing a number for it.**
+
+D170 closed the judgement question with a negative result and left one loose end, the only column
+where the reservation rule costs its own deck something: **nothing to point at**, 20% of Arc
+Tempest's windows and 12% of Skyward Writ's. The per-card rows say where it comes from. Of Squelch's
+17 windows in Arc Tempest, **11 ended with no legal target** — the bot held two mana on its own turn
+for a card that was never going to be castable when the moment came.
+
+The cause is one word in a regular expression. `affordableAnswerInHand` matched `/counter target/`,
+and Squelch reads "Counter target activated ability" — its target is an **ability**, not a spell, so
+it can do nothing whatever about the spell the opponent is about to cast. The rule exists to hold
+mana for an answer to a spell; it now only counts cards that can answer one
+(`/counter target[^.]*spell/`), which keeps every real answer in the pool — Counterspell, Cancel,
+Negate, Essence Scatter, Psychic Strike, Saw It Coming, Disallow ("Counter target spell, activated
+ability, or triggered ability") and Soul Manipulation's first mode — and drops Squelch and Chalice
+of the Void's "counter it".
+
+**It stays a text match rather than a look at the card's target spec**, which is worth saying
+because the spec looks like the better answer. The spec says what the *engine will offer*, and this
+question is asked on a turn when the engine offers nothing at all: the counterfactual D168 is built
+around. A card's own words are the only thing available on the turn the mana is being held.
+
+**What it is worth: unmeasurable, and that is the honest report.** Squelch is one card in one deck —
+780 cards in the pool — and it is in hand in about 19 games in 144, so no 288-game probe can see the
+difference and `bot-duel` cannot either, because the rule it changes is not behind a flag. It ships
+for the reason every member of the drop-this-option family shipped: **the play was wrong**. A Fog
+cast with nothing attacking has done nothing at all whatever the win rate says, and two mana held
+back for a card that cannot be cast is the same kind of wrongness. The check that it costs nothing
+is the thirteen-deck table, which was re-run with it in place.
+
+Two tests, and the second is the one that makes the first mean anything: the same reserving board
+with a Squelch in hand casts the creature, and with a Counterspell in hand passes. Without the
+control, a test that asserts "it cast the creature" could be passing because the board was never a
+reserving board at all.

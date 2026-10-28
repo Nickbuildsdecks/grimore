@@ -2154,14 +2154,39 @@ function foretellIsSpareMana(state: GameState, seat: SeatIndex, action: Action):
 }
 
 /**
+ * Whether this card can counter a **spell**, which is what "an answer" means to the rule below.
+ *
+ * Two words rather than one: "counter target" catches Squelch, whose target is an activated or
+ * triggered *ability* and which therefore cannot answer a spell at all — and holding mana up for a
+ * card that cannot be cast at the moment it is wanted is the one way the reservation rule costs its
+ * own deck something. Read off the oracle text for the reason the whole family is: a card added to
+ * the pool tomorrow is covered without anybody coming back here.
+ *
+ * It stays a text match rather than a look at the card's `targets` spec, because the spec says what
+ * the *engine* will offer and this question is asked on a turn where the engine offers nothing —
+ * the counterfactual D168 is built around.
+ */
+function canCounterASpell(def: CardDef): boolean {
+  const text = def.oracleText ?? '';
+  return /counter target/i.test(text) && /counter target[^.]*spell/i.test(text);
+}
+
+/**
  * The cheapest answer in this seat's hand that it could pay for right now, or null.
  *
- * "An answer" is a card whose text points at something already on the stack — the five hard
- * counters, the two conditional ones, Soul Manipulation's first mode, Squelch. Matched on the
- * oracle text rather than a list of names so that a card added to the pool tomorrow is covered
- * without anybody remembering to come back here, and Chalice of the Void's "counter it" is
- * deliberately not matched: a permanent that answers spells by sitting there is not something
- * anybody holds mana for.
+ * "An answer" is a card that can counter a **spell** — the five hard counters, the two conditional
+ * ones, Soul Manipulation's first mode. Matched on the oracle text rather than a list of names so
+ * that a card added to the pool tomorrow is covered without anybody remembering to come back here,
+ * and Chalice of the Void's "counter it" is deliberately not matched: a permanent that answers
+ * spells by sitting there is not something anybody holds mana for.
+ *
+ * **A spell, not an ability, and that word is the narrowing D170 asked for.** The first version of
+ * this matched "counter target" and so counted **Squelch**, which counters an activated or
+ * triggered ability and can do nothing at all about a spell. `held-answers.mjs` priced the mistake:
+ * 11 of Squelch's 17 windows in Arc Tempest ended in *nothing to point at*, which is the one column
+ * where this rule costs its deck something — mana held up on its own turn for a card that was never
+ * going to be castable. The rule exists to hold mana for an answer to a spell, so it now only
+ * counts cards that can answer one.
  *
  * Affordability is asked of `canAfford` — the same solver `legalActions` and the payment both use,
  * so this cannot disagree with them about a dual land. It is asked *without* a target, which is
@@ -2176,7 +2201,7 @@ function affordableAnswerInHand(state: GameState, seat: SeatIndex): ManaCost | n
   const pool = poolOf(state, seat);
   for (const id of listAt(state, zoneKey(seat, 'hand'))) {
     const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
-    if (def === undefined || !/counter target/i.test(def.oracleText ?? '')) continue;
+    if (def === undefined || !canCounterASpell(def)) continue;
     const cost = parseManaCost(def.manaCost);
     if (!canAfford(pool, cost, sources)) continue;
     if (cheapest === null || costValue(cost) < costValue(cheapest)) cheapest = cost;
@@ -2254,7 +2279,7 @@ function spendsAnAnswersMana(
   if (action.type !== 'auto:cast' && action.type !== 'auto:activate') return false;
   if (state.activeSeat !== seat || state.stackOrder.length > 0) return false;
   const def = state.cardDefs[state.instances[action.card]?.defKey ?? ''];
-  if (def !== undefined && /counter target/i.test(def.oracleText ?? '')) return false;
+  if (def !== undefined && canCounterASpell(def)) return false;
   /*
     Nobody to answer, which is the one case where this rule is pure tax.
 

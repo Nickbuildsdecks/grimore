@@ -1411,6 +1411,41 @@ describe('the mana an answer in hand is waiting for', () => {
     expect(chosen?.type === 'auto:cast' && chosen.card === speaker).toBe(true);
   });
 
+  it('and holds nothing back for a Squelch, which cannot answer a spell at all', () => {
+    /*
+      The narrowing D170 asked for, and the one place this rule was costing its deck something.
+
+      The first version of `affordableAnswerInHand` matched "counter target", which counts
+      **Squelch** — whose target is an activated ability, not a spell. `held-answers.mjs` priced
+      the mistake: 11 of Squelch's 17 windows in Arc Tempest ended in *nothing to point at*, which
+      means mana held up on its own turn for a card that was never going to be castable when the
+      moment came.
+
+      Two lands and a one-mana creature: the Squelch is affordable before the play and not after,
+      so this is exactly the board the rule fires on — and it must not fire, because the card it
+      would be saving the mana for cannot answer the spell the opponent is about to cast.
+    */
+    const board = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'ember-rush' },
+      hands: { 0: ['Squelch', 'Monastery Swiftspear'], 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Island', 'Mountain'], 1: ['Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const swiftspear = find(board, 0, 'hand', 'Monastery Swiftspear');
+    const chosen = botAction(board, 0);
+    expect(chosen?.type === 'auto:cast' && chosen.card === swiftspear).toBe(true);
+
+    // And the control: swap the Squelch for a Counterspell on the same board and the rule fires,
+    // which is what says the board was a reserving board and the card was the difference.
+    const withReal = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'ember-rush' },
+      hands: { 0: ['Counterspell', 'Monastery Swiftspear'], 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Island', 'Island'], 1: ['Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    expect(botAction(withReal, 0)?.type).toBe('auto:pass');
+  });
+
   it('and a table where both seats hold mana back still reaches a winner', async () => {
     /*
       The one way a rule that answers "pass" could break the game rather than the bot.

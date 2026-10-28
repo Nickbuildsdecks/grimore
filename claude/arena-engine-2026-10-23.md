@@ -4546,12 +4546,43 @@ counter and a life if it was a creature. One card asked for a new event; the oth
 vocabulary was already there for a card nobody had written.
 
 Both went into the bottom cluster, both cuts off `cast-counts`: the **Planar Void** into Blight
-Vector for its Titanic Growth (25%, its least-cast card by twelve points, and the one black deck
-with no use for its own graveyard), the **Ooze** into Delta Bloom for a second Divination (81%, in a
-ramp deck short of a mana sink). `graveyard-costs.mjs` now counts both ends of the dimension in one
+Vector (the one black deck with almost no use for its own graveyard) and the **Ooze** into Delta
+Bloom for a second Divination (81%, in a ramp deck short of a mana sink). The Ooze measures **+14
+and +4**.
+
+**The Void took two attempts and the first one is the finding.** Cutting Blight Vector's Titanic
+Growth (25%, its least-cast card by twelve points) for it read **0 and −12** — a card costing its
+own deck games — because the deck's one graveyard card is a **Raise Dead**, cast in 40 of 144
+games, and a Planar Void turns it off completely. A deck that denies graveyards cannot play a card
+that needs its own, which is obvious written down and invisible while choosing a cut by cast count
+alone. On the Raise Dead slot it reads **+4 and −3**, which is level. All four numbers are inside
+the floor, so the improvement is consistent with that conflict rather than proof of it; what it
+does establish is that the card no longer costs its deck anything measurable. `graveyard-costs.mjs` now counts both ends of the dimension in one
 run, and with Blight Vector as the subject **132 Planar Void triggers reached the stack over 144
 games** — the bot does cast the one-mana enchantment that does nothing for its own board, and once
 it is down nobody at the table has a graveyard.
+
+### The one card the reservation rule should never have held mana for
+
+D170 left exactly one loose end: *nothing to point at*, 20% of Arc Tempest's windows, the only
+column where holding mana back costs its own deck something. The per-card rows say where it came
+from — **11 of Squelch's 17 windows had no legal target** — and the cause was one word in a regular
+expression. `affordableAnswerInHand` matched "counter target", and Squelch reads "Counter target
+activated ability": its target is an *ability*, so it can do nothing at all about the spell the
+opponent is about to cast. The bot was holding two mana on its own turn for a card that could never
+be cast when the moment came.
+
+It now matches "counter target … spell", which keeps every real answer in the pool (Counterspell,
+Cancel, Negate, Essence Scatter, Psychic Strike, Saw It Coming, Disallow, Soul Manipulation's first
+mode) and drops Squelch and Chalice of the Void's "counter it". It stays a **text** match rather
+than a look at the card's target spec, because the spec says what the engine will *offer* and this
+question is asked on a turn when the engine offers nothing — the counterfactual the whole rule is
+built around.
+
+**It is not measurable in isolation and the write-up says so**: one card in one deck, in hand in
+about 19 games in 144, with the rule it changes not behind a flag. It ships on the same ground every
+member of the drop-this-option family shipped on — the play was wrong — and the check that it costs
+nothing is the thirteen-deck table below.
 
 ## Next
 
