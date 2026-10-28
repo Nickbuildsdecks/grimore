@@ -331,6 +331,19 @@ export type TriggerEvent =
       readonly kind: 'spell-cast';
       readonly by?: 'you' | 'opponent' | 'any';
       /**
+       * "When you cast **this** spell" — the card's own cast, watched from the stack (CR 603.2d).
+       *
+       * The one trigger in this engine that does not fire from the battlefield. Every other
+       * watcher is a permanent in play; this one is the spell itself, sitting on the stack with its
+       * own ability going on top of it, which is what cascade, storm, replicate and conspire all
+       * abbreviate. `raise` includes the card being cast in the watcher list **only** for triggers
+       * that set this, so an ordinary cast watcher — a Guttersnipe, a prowess creature — cannot
+       * accidentally fire off its own casting on the way to the battlefield.
+       *
+       * It implies the caster is you, so `by` is not asked: a spell is cast by its own controller.
+       */
+      readonly self?: true;
+      /**
        * Which spells count. `noncreature` is prowess; `instant-or-sorcery` is the narrower one
        * Talrand and friends want, and it is a separate option rather than being folded into
        * `noncreature` because an artifact is a noncreature spell and is not an instant.

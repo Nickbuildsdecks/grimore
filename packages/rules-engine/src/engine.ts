@@ -148,6 +148,7 @@ export function createGame(options: CreateGameOptions): GameState {
     openingHands: false,
     pendingChoice: null,
     pendingPayment: null,
+    pendingFreeCast: null,
     pendingDecision: null,
     died: [],
     left: [],
@@ -288,7 +289,7 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
    */
   const blockedByAQuestion = next.openingHands || next.pendingDecision !== null
     || next.pendingChoice !== null || next.pendingPayment !== null || next.pendingDiscard !== null
-    || pendingDeclaration(next) !== null;
+    || next.pendingFreeCast !== null || pendingDeclaration(next) !== null;
   if (
     !next.finished && next.started && next.automated && next.priority === null
     && !blockedByAQuestion && !(NO_PRIORITY_STEPS as readonly string[]).includes(next.step)
@@ -319,6 +320,9 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
       pendingChoice: null,
       // A ward outstanding when the game ends is a question with nobody left to answer it.
       pendingPayment: null,
+      // And so is a free cast on offer: the cards bound for the bottom of a library stay in exile,
+      // which is where a finished game leaves everything else too.
+      pendingFreeCast: null,
       pendingDiscard: null,
     };
   }
@@ -683,6 +687,7 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         openingHands: false,
         pendingChoice: null,
         pendingPayment: null,
+        pendingFreeCast: null,
         pendingDecision: null,
         died: [],
         left: [],

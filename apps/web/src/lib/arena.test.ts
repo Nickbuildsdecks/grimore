@@ -1121,6 +1121,7 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
       passLabel: "Pass", plays: [], attackers: [], mustAttack: [], attackAims: [], blockers: [],
       mustOrder: [], mustDiscard: 0, mustDeclare: null,
       mustSettleHand: false, bottomOwed: 0, mustChoose: null, mustDecide: null, mustPay: null,
+      mustCastFree: null,
       blocked: [],
       pacts: { offer: [], answer: [] },
       pool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, potential: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },

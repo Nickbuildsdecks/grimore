@@ -1908,7 +1908,21 @@ function Board({ table }: { table: UseTable }) {
           {...aiming}
           badgesOf={(card) => (automated && playsForCard(view, card.id).length > 0 ? ["playable"] : [])}
         />
-        <ZoneRow label="Your exile" testId={`zone-exile-${seat}`} size="pile" cards={cardsIn(view, zoneAt(view, seat, "exile"))} onSelect={onSelect} {...aiming} />
+        {/*
+          The badge on this row is newer than the row, and it is cascade that asked for it: a card
+          exiled off the top of your library that you may cast for nothing is the only play on the
+          table that appears in a pile nobody normally looks at. Foretell and adventure cards live
+          here too and wanted it just as much.
+        */}
+        <ZoneRow
+          label="Your exile"
+          testId={`zone-exile-${seat}`}
+          size="pile"
+          cards={cardsIn(view, zoneAt(view, seat, "exile"))}
+          onSelect={onSelect}
+          {...aiming}
+          badgesOf={(card) => (automated && playsForCard(view, card.id).length > 0 ? ["playable"] : [])}
+        />
         {/*
           The badge matters more on the command zone than anywhere: a commander is castable on most
           turns of a Commander game, and with no badge the one card you always want to cast was the

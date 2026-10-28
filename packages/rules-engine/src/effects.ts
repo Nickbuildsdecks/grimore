@@ -14,14 +14,14 @@
  * be a tutor that chooses your card for you, which is worse than one you resolve by hand.
  */
 import {
-  characteristicsOf, hasType, protectedFrom, type ContinuousEffect, type EffectDuration,
-  type Keyword,
+  characteristicsOf, hasType, parseTypeLine, protectedFrom, type ContinuousEffect,
+  type EffectDuration, type Keyword,
 } from './characteristics.js';
 import { defKeyFor, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import {
   drawFromLibrary, listAt, normaliseDef, relocate, requireInstance, withInstance, withZones,
 } from './cardActions.js';
-import { actionSeed, clampValue, mulberry32, replaceSeat } from './internal.js';
+import { actionSeed, clampValue, mulberry32, replaceSeat, shuffled } from './internal.js';
 import { targetSeqsFor } from './targeting.js';
 import type { Color, ManaType } from './mana.js';
 import { addMana, costValue, EMPTY_POOL, parseManaCost, xMultiplier } from './mana.js';
@@ -1352,3 +1352,99 @@ export function moveToGraveyard(state: GameState, ids: readonly string[]): GameS
 export const sourceOf = (ctx: EffectContext) => ctx.state.instances[ctx.source];
 
 export { requireInstance, listAt, withInstance, relocate };
+
+// ── Casting a card the long way round ────────────────────────────────────────────────────────────
+
+/**
+ * Puts a pile of cards on the bottom of their owners' libraries in a random order (CR 701.19).
+ *
+ * The end of a cascade, and the one line of it that is not about casting anything. Random rather
+ * than in the order they were exiled, because the order they were exiled in is the order they were
+ * *in*: a cascade that put them back in sequence would hand the player the top of their library
+ * for the rest of the game, which is the opposite of what the keyword costs them.
+ *
+ * Shuffled against the game's own generator rather than `Math.random`, so a table replayed from
+ * its action log puts the same cards back in the same places — the rule every shuffle in this
+ * engine follows.
+ */
+export function bottomPile(state: GameState, ids: readonly string[]): GameState {
+  if (ids.length === 0) return state;
+  const rng = mulberry32(actionSeed(state.rngSeed, state.stateVersion + state.autoSeq));
+  let next = state;
+  for (const id of shuffled(ids, rng)) {
+    const inst = next.instances[id];
+    if (inst === undefined) continue;
+    next = relocate(next, inst, 'library', inst.owner, 'bottom');
+  }
+  return next;
+}
+
+/**
+ * Cascade (CR 702.85a): exile cards off the top until a cheaper one turns up, and offer it free.
+ *
+ * Two halves, and the second one is why this function stops rather than finishing the job. Exiling
+ * is something the engine can simply do; **casting is a choice**, and it is a choice with every
+ * other choice inside it — which half of a split card, which creature the spell is pointed at, how
+ * the three damage is divided. None of that can be answered here, mid-resolution, and an engine
+ * that answered it for the player would be playing their turn for them.
+ *
+ * So it ends by setting `pendingFreeCast` and getting out of the way: the table stops, the player
+ * casts through the ordinary cast path with the ordinary questions, and the leftovers go to the
+ * bottom whichever way they answer. See `GameState.pendingFreeCast`.
+ *
+ * The mana value compared against is the **printed** value of the card the keyword is on, read
+ * from its definition rather than from the spell on the stack. That is deliberate: a cascading
+ * spell that has already been countered still cascades (the trigger resolves on its own), and by
+ * then the stack object it came from is gone — reading the value from there would compare against
+ * nought and exile the whole library.
+ *
+ * A land is never the hit, however cheap it is, and neither is a card whose value is equal rather
+ * than less: "lesser mana value" and "nonland card" are both load-bearing, and both are the reason
+ * cascade is not simply a free spell. Running out of library is a legal outcome — the whole pile
+ * goes back to the bottom and the cascade did nothing.
+ */
+export function cascadeFrom(ctx: EffectContext): GameState {
+  const { controller } = ctx;
+  const inst = ctx.state.instances[ctx.source];
+  if (inst === undefined) return ctx.state;
+  const def = ctx.state.cardDefs[inst.defKey];
+  const limit = costValue(parseManaCost(def?.manaCost));
+  const name = def?.name ?? 'it';
+  let next = ctx.state;
+  const exiled: string[] = [];
+  let hit: string | undefined;
+  /*
+    One card at a time off the top, with the library re-read each pass.
+
+    A bound of the library's size rather than `while (true)`: a card that somehow failed to move
+    would otherwise spin here, and this runs inside `settle`, which has nowhere to report a hang to.
+  */
+  const size = listAt(next, zoneKey(controller, 'library')).length;
+  for (let i = 0; i < size; i += 1) {
+    const top = listAt(next, zoneKey(controller, 'library'))[0];
+    if (top === undefined) break;
+    const card = next.instances[top];
+    if (card === undefined) break;
+    next = relocate(next, card, 'exile', card.owner, 'bottom');
+    exiled.push(top);
+    const topDef = next.cardDefs[card.defKey];
+    const isLand = hasType(parseTypeLine(topDef?.typeLine), 'land');
+    if (!isLand && costValue(parseManaCost(topDef?.manaCost)) < limit) {
+      hit = top;
+      break;
+    }
+  }
+  if (hit === undefined) return bottomPile(next, exiled);
+  const rest = exiled.filter((id) => id !== hit);
+  const hitName = next.cardDefs[next.instances[hit]?.defKey ?? '']?.name ?? 'it';
+  return {
+    ...next,
+    pendingFreeCast: {
+      seat: controller,
+      card: hit,
+      prompt: `${name} cascades into ${hitName}: you may cast it without paying its mana cost`,
+      bottom: rest,
+      source: ctx.source,
+    },
+  };
+}

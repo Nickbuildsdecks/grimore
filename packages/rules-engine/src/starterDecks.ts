@@ -2454,6 +2454,20 @@ const TOPAN_FREEBLADE: CardDef = {
   colors: ['W'],
 };
 
+const BLOODBRAID_ELF: CardDef = {
+  name: 'Bloodbraid Elf',
+  typeLine: 'Creature — Elf Berserker',
+  manaCost: '{2}{R}{G}',
+  cmc: 4,
+  power: '3',
+  toughness: '2',
+  oracleText:
+    'Haste\nCascade (When you cast this spell, exile cards from the top of your library until you '
+    + 'exile a nonland card that costs less. You may cast it without paying its mana cost. Put the '
+    + 'exiled cards on the bottom of your library in a random order.)',
+  colors: ['R', 'G'],
+};
+
 const GOBLIN_WARDRIVER: CardDef = {
   name: 'Goblin Wardriver',
   typeLine: 'Creature — Goblin Warrior',
@@ -5857,7 +5871,21 @@ export const KINDLE_GROVE: DeckSpec = {
     // Removal that costs a creature rather than a card, which is the red-green trade and the
     // reason this deck can run fourteen noncreature cards under its own commander.
     { card: PREY_UPON, count: 2 },
-    { card: GIANT_GROWTH, count: 1 },
+    /*
+      **Bloodbraid Elf, for the last Giant Growth**: the pool's first cascade card.
+
+      {2}{R}{G} for a 3/2 with haste that casts a second spell for nothing, and this is the deck
+      with the curve to feed it — eleven nonland cards at three mana or less, which is where a
+      cascade hit comes from. Under this deck's own commander it is better than it looks and worse
+      than it reads: Ruric Thar taxes the *cast*, so a cascaded Lightning Bolt still costs its
+      caster six life, and a cascaded creature costs nothing at all.
+
+      The slot is the Giant Growth, which was the least-cast card in the list at **10 casts in 96
+      games** (45% of the games it was in hand) — and a pump spell is the wrong card here twice
+      over: it is a noncreature spell in a deck whose commander charges six life for one, and the
+      same slot already lost its other copy to D183's Hellspark Elemental for the same reason.
+    */
+    { card: BLOODBRAID_ELF, count: 1 },
     /*
       **Hellspark Elemental, for the second Giant Growth**, and it is three damage twice for a deck
       whose commander taxes every spell that is not a creature.

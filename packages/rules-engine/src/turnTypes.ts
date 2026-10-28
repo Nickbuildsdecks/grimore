@@ -600,6 +600,39 @@ export interface AutomationState {
     /** The warded permanent, for the table to point at. */
     readonly source: string;
   } | null;
+  /**
+   * A card somebody may cast **without paying its mana cost**, and the pile it came out of
+   * (CR 702.85a, CR 601.2h).
+   *
+   * The fourth thing that stops the table dead, and the first one that stops it to offer a *play*
+   * rather than to ask a question. Cascade exiles cards off the top of a library until a cheap
+   * enough one turns up and then says "you may cast it": the cast is an ordinary cast — it chooses
+   * targets and modes, it can be countered, it rings every cast trigger on the table — and the only
+   * thing unusual about it is that nothing is paid. So it goes through `castSpell` like every other
+   * cast, with this field as the permission, rather than through a second cast path that would have
+   * to re-answer forty lines of questions about timing, targets and triggers.
+   *
+   * `bottom` is the rest of the exiled pile, which goes to the bottom of its owner's library in a
+   * random order once this is answered either way. It is remembered here because by the time the
+   * answer arrives the cascade ability has left the stack and nothing else on the table says which
+   * cards were part of it.
+   *
+   * **Declining is answered by passing priority**, which is why there is no second action for it:
+   * the table already draws one button for "I am done here", and a free cast nobody wants is the
+   * same gesture as a priority nobody wants. See `castSpell`'s `free` branch and `passPriority`.
+   */
+  readonly pendingFreeCast: {
+    /** Who may cast it: the controller of the ability that offered it. */
+    readonly seat: SeatIndex;
+    /** The card in exile, face up, that may be cast for nothing. */
+    readonly card: string;
+    /** Shown to the player deciding, in their own words. */
+    readonly prompt: string;
+    /** The other cards exiled with it, bound for the bottom of the library in a random order. */
+    readonly bottom: readonly string[];
+    /** The spell whose keyword did this, for the table to point at. */
+    readonly source: string;
+  } | null;
   readonly pendingDecision: {
     /** Who answers. Not always the controller: a discard is chosen by the player discarding. */
     readonly seat: SeatIndex;
@@ -776,6 +809,19 @@ export interface AutoCastAction {
    * foretold, on one foretold by somebody else, and on one foretold this turn.
    */
   readonly foretold?: boolean;
+  /**
+   * Cast it **without paying its mana cost**, because something said you may (CR 702.85a).
+   *
+   * Refused unless `pendingFreeCast` names this seat and this card, which is what makes it a
+   * permission rather than a cheat: the flag does not grant the cast, it claims an offer the
+   * engine has already made and is holding the table open for. Everything else about the cast is
+   * ordinary — targets, modes and an additional cost are all still chosen and still paid.
+   *
+   * X travels with it only as nought. "Without paying its mana cost" means X in that cost is nought
+   * (CR 107.3b), so a client sending an X is refused rather than quietly charged nothing for a
+   * Fireball of twenty.
+   */
+  readonly free?: boolean;
   /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *

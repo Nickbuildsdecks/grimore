@@ -281,7 +281,7 @@ export function atSorcerySpeed(state: GameState, seat: SeatIndex): boolean {
  */
 function resetPriority(state: GameState, to: SeatIndex = state.activeSeat): GameState {
   const blocked = state.openingHands || state.pendingDecision !== null || state.pendingChoice !== null
-    || state.pendingPayment !== null
+    || state.pendingPayment !== null || state.pendingFreeCast !== null
     || state.pendingDiscard !== null || pendingDeclaration(state) !== null;
   if (blocked) return { ...state, priority: null, passed: [] };
   return { ...state, priority: to, passed: [] };
@@ -537,6 +537,15 @@ function triggerMatches(
   switch (want.kind) {
     case 'spell-cast': {
       const e = event as Extract<TriggerEvent, { kind: 'spell-cast' }>;
+      /*
+        "When you cast this spell": the card's own cast and nobody else's (CR 702.85a).
+
+        Asked first and answered on its own terms, because every other clause below is about a
+        spell somebody *else* might have cast. `isSubject` is the whole question — `raise` offers
+        this event to the card on the stack as its own subject — and a watcher that is not the
+        spell is simply not what this trigger is about, however the rest of it reads.
+      */
+      if (want.self === true) return isSubject;
       const by = want.by ?? 'you';
       if (by === 'you' && actorSeat !== sourceSeat) return false;
       if (by === 'opponent' && actorSeat === sourceSeat) return false;
@@ -801,7 +810,18 @@ function raise(
     ? everyBattlefield
     : selfOnly.has(event.kind)
       ? subject === undefined ? [] : [subject]
-      : everyBattlefield;
+      /*
+        A cast is watched from the battlefield **and** by the spell being cast (CR 603.2d).
+
+        The second half is cascade, storm and their family: "when you cast this spell" is an ability
+        of a card that is on the stack, not of a permanent, and until this line there was no way for
+        a watcher to be anywhere but in play. The subject is the card that was cast, and the loop
+        below only offers it to triggers that say `self` — so the Guttersnipes and the prowess
+        creatures already in the pool cannot start firing off their own castings.
+      */
+      : event.kind === 'spell-cast' && subject !== undefined
+        ? [subject, ...everyBattlefield.filter((id) => id !== subject)]
+        : everyBattlefield;
 
   for (const id of watchers) {
     /*
@@ -821,7 +841,15 @@ function raise(
     // watches nothing else that arrives there.
     const fromGraveyard = (event.kind === 'dies' || event.kind === 'leaves'
       || event.kind === 'to-graveyard') && id === subject;
-    if (!fromGraveyard && inst.zone !== 'battlefield') continue;
+    /*
+      And the fourth zone a trigger fires from: the stack, for a spell watching its own cast.
+
+      `zone` is checked rather than assumed, because a cast trigger is raised while the card is on
+      the stack and nothing else about this loop knows that. See the `self` field on the
+      `spell-cast` trigger and the watcher list above.
+    */
+    const fromStack = event.kind === 'spell-cast' && id === subject && inst.zone === 'stack';
+    if (!fromGraveyard && !fromStack && inst.zone !== 'battlefield') continue;
     // From the instance resolved above rather than by id, so a vanished token's own script is
     // still found: `scriptOf` reads `instances`, and a token that ceased to exist is not in it.
     // A face-down permanent has no abilities, so it watches nothing (CR 707.2).
@@ -832,6 +860,16 @@ function raise(
       // A delayed trigger is scheduled, not watched for: the step it names drains it exactly once
       // and the ordinary event path must never fire it (CR 603.7). See `TriggerDef.delayed`.
       if (trigger.delayed === true) continue;
+      /*
+        A spell on the stack watches its own cast and nothing else.
+
+        Without this a card being cast would fire every battlefield trigger printed on it on the
+        way past: a Guttersnipe cast as a creature spell is not a Guttersnipe in play, and a
+        prowess creature does not get +1/+1 for being cast. `self` is what tells the two apart,
+        and it is asked here rather than in `triggerMatches` because this is a fact about where the
+        watcher *is* rather than about what the event was.
+      */
+      if (fromStack && !(trigger.on.kind === 'spell-cast' && trigger.on.self === true)) continue;
       if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor, id === subject)) continue;
       /*
         The intervening-if clause, asked the first of its two times (CR 603.4).

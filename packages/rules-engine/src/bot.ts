@@ -1222,6 +1222,10 @@ function candidateActions(
             // And foretell, which is a different zone as well as a different cost: without this
             // the engine is told to cast a card in exile as though it were in hand.
             ...(play.foretold === true ? { foretold: true } : {}),
+            // And a free cast, for the fourth time and the same reason, with one difference: this
+            // flag is not a cheaper cost but a claim on an offer the engine is holding open, so a
+            // cast sent without it is refused outright rather than charged the printed cost.
+            ...(play.free === true ? { free: true } : {}),
             // And which half of a two-faced card, for the fifth time and the same reason: the two
             // halves are separate plays on one card, and a cast sent without this is either the
             // wrong spell or — on a split card, which has no printed face of its own — refused.
@@ -1377,6 +1381,20 @@ function answerPending(state: GameState): Action | null {
   }
   if (state.pendingPayment !== null) {
     return { type: 'auto:pay', by: state.pendingPayment.seat, pay: true };
+  }
+  /*
+    A free cast inside a simulated line, taken whenever there is a legal way to take it.
+
+    Greedy rather than searched, which is this function's whole contract: it is what keeps a
+    *simulation* moving, and a search inside a search is how a four-seat pod came to spend minutes
+    on one decision (D71). The real decision — which target, which mode — is made by the search
+    that owns the position, up in `botAction`; this is the stand-in for the other seats.
+  */
+  if (state.pendingFreeCast !== null) {
+    const seat = state.pendingFreeCast.seat;
+    const inside = legalActions(state, seat);
+    const options = inside.mustCastFree === null ? [] : candidateActions(state, seat, inside);
+    return options[0]?.action ?? { type: 'auto:pass', by: seat };
   }
   return null;
 }
@@ -2801,7 +2819,23 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     return declareBySearch(state, seat, owed.kind, opts);
   }
 
-  if (!actions.hasPriority) return null;
+  /*
+    A free cast on offer holds no priority, and is the one play made without it (CR 702.85a).
+
+    Let past this guard rather than answered above it, because unlike every other question that
+    stops the table this one is a *play*: `legalActions` has already narrowed `plays` to the casts
+    of the one card on offer, so everything below — the aimings, the search, the scoring — works on
+    it unchanged, and the bot picks a target for a cascaded Lightning Bolt the same way it picks
+    one for a Lightning Bolt in hand.
+
+    Declining falls out of the same machinery: `candidateActions` returns nothing when there is no
+    legal way to cast the card, and the line below answers that with a pass — which is what a
+    decline is. What the search will not do is weigh casting against declining, because it has no
+    baseline for doing nothing (see the note below); a free spell is nearly always worth casting,
+    and a bot that threw one away on a bad target would be making the same mistake it makes with a
+    paid one rather than a new one.
+  */
+  if (!actions.hasPriority && actions.mustCastFree === null) return null;
 
   /*
     One move ahead.
@@ -3139,6 +3173,9 @@ export function seatsToAct(state: GameState): SeatIndex[] {
   if (state.pendingChoice !== null) return [state.pendingChoice.seat];
   // And a ward, which stops the table for the player who is not resolving anything.
   if (state.pendingPayment !== null) return [state.pendingPayment.seat];
+  // And a free cast on offer, which stops it for the player who is: a cascade hit is answered
+  // before anybody does anything else, by casting it or by declining.
+  if (state.pendingFreeCast !== null) return [state.pendingFreeCast.seat];
   if (state.pendingDiscard !== null) return [state.pendingDiscard.seat];
   const owed = pendingDeclaration(state);
   if (owed !== null) return [...owed.seats, ...offeredSeats(state, owed.seats)];

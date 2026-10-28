@@ -23,7 +23,7 @@ import {
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
   type AutoOrderAction,
 } from './automation.js';
-import { addCounters, addToPool, counterSpell, loseLife, poolOf } from './effects.js';
+import { addCounters, addToPool, bottomPile, counterSpell, loseLife, poolOf } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
@@ -60,7 +60,16 @@ const spellTargets = (script: CardScript | undefined): readonly TargetSpec[] =>
 
 function castSpell(state: GameState, action: AutoCastAction): Outcome {
   requireAutomated(state);
-  requirePriority(state, action.by);
+  /*
+    Priority, which a free cast does not have and does not need (CR 702.85a).
+
+    Nobody holds priority while a cascade hit is on offer — `resetPriority` clears it the way it
+    does for every other question that stops the table — so a cast made from inside that window has
+    to be let past this check. What authorises it instead is the offer itself, checked a few dozen
+    lines down against the seat and the card it names: a `free` flag with no offer behind it is
+    refused there, so skipping the check here gains a client nothing.
+  */
+  if (action.free !== true) requirePriority(state, action.by);
   const inst = requireInstance(state, action.card);
   // A commander is cast from the command zone (CR 903.8); everything else from hand — or, with
   // flashback, from its owner's graveyard (CR 702.33).
@@ -122,6 +131,31 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     cast, and a card foretold **this turn** is not castable yet — which is the clause that stops
     foretell being a straight discount on a spell you were going to cast anyway.
   */
+  /*
+    A free cast, claimed against the offer the engine is holding the table open for (CR 702.85a).
+
+    Four checks, and each refuses a different way of asking for something that was never offered:
+    nothing is on offer at all, the offer belongs to somebody else, it is for a different card, or
+    it is for this card and the client also sent an X. The first three are the whole of why this
+    flag is safe — it is not permission to cast for free, it is a claim on a specific permission
+    already in the state.
+  */
+  const free = action.free === true;
+  if (free) {
+    const offer = state.pendingFreeCast;
+    if (offer === null) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'nothing is on offer to cast for free');
+    }
+    if (offer.seat !== action.by) throw new EngineError('FORBIDDEN', 'that free cast is not yours');
+    if (offer.card !== inst.id) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that is not the card on offer');
+    }
+    // CR 107.3b: X is nought in a cost that is not being paid, so an X on the action is a client
+    // trying to buy something for nothing rather than a choice the rules offer.
+    if (action.x !== undefined && action.x !== 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'X is 0 when a spell is cast without paying its mana cost');
+    }
+  }
   const foretold = action.foretold === true;
   if (foretold) {
     if (script?.foretell === undefined) {
@@ -164,7 +198,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       throw new EngineError('RULE_NOT_APPLICABLE',
         `escape asks for ${script.escape.exile} other cards in your graveyard`);
     }
-  } else if (!foretold && !fromCommand && !fromAdventure
+  } else if (!foretold && !fromCommand && !fromAdventure && !free
     && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', inst.zone === 'exile' && inst.onAdventure === true
       ? 'that card is on an adventure in somebody else\'s exile'
@@ -194,7 +228,15 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const instantSpeed =
     characteristics.typeLine.types.some((t) => t.toLowerCase() === 'instant') ||
     characteristics.keywords.has('flash');
-  if (!instantSpeed && !atSorcerySpeed(state, action.by)) {
+  /*
+    A free cast ignores the timing, because the thing offering it said when (CR 702.85a).
+
+    Cascade's cast happens while the cascade ability is resolving: there is a spell on the stack
+    underneath it and it is nobody's main phase in the sense this check means. "You may cast that
+    card without paying its mana cost" is itself the permission to cast a sorcery there, and a
+    check that refused it would make the keyword do nothing for most of the cards it can hit.
+  */
+  if (!instantSpeed && !free && !atSorcerySpeed(state, action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} can only be cast in your main phase with an empty stack`);
   }
 
@@ -351,7 +393,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     counted against what is left.
   */
   let delved: readonly string[] = [];
-  if (script?.delve === true) {
+  if (script?.delve === true && !free) {
     const printed = parseManaCost(costText);
     const taxed = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
     const full = withCostChange(taxed, change.generic);
@@ -364,7 +406,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     toPay = plan.cost;
     taxToPay = 0;
   }
-  if (script?.convoke === true) {
+  if (script?.convoke === true && !free) {
     const printed = parseManaCost(costText);
     const taxed = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
     const full = withCostChange(taxed, change.generic);
@@ -379,6 +421,19 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   }
   let beforePay = state;
   for (const id of convoked) beforePay = withInstance(beforePay, id, { tapped: true });
+  /*
+    And the one line that makes this a free cast: nothing is paid.
+
+    An empty cost through the same `payFrom` as every other cast rather than a branch around it,
+    so that everything else that function does on the way — emptying nothing from the pool, tapping
+    nothing, reporting an empty `tapped` list the message then reads — happens exactly as it would
+    for a {0} spell. The commander tax goes with it: a tax is part of a cost, and this cost is not
+    being paid.
+  */
+  if (free) {
+    toPay = parseManaCost('');
+    taxToPay = 0;
+  }
   const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay);
   let next = paid.state;
   /*
@@ -427,6 +482,19 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     it eventually reaches.
   */
   if (fromAdventure) next = withInstance(next, inst.id, { onAdventure: undefined });
+  /*
+    And a free cast consumes the offer that allowed it, taking the rest of the pile with it.
+
+    Both halves here rather than one here and one in the resolution, because the offer is answered
+    the moment the cast happens: the cards bound for the bottom of the library are not waiting on
+    anything else, and leaving the field set would hold the table open for a cast that has already
+    been made. The spell on the stack can still be countered — the pile is on the bottom either
+    way, which is what the keyword says (CR 702.85a).
+  */
+  if (free && next.pendingFreeCast !== null) {
+    const offer = next.pendingFreeCast;
+    next = bottomPile({ ...next, pendingFreeCast: null }, offer.bottom);
+  }
   // The card physically moves to the stack, and an object describes how it was cast.
   next = relocate(next, requireInstance(next, inst.id), 'stack', action.by, 'bottom');
   /*
@@ -463,6 +531,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // And foretell, for the fourth time and the same reason: a spell coming out of exile for a
   // cheaper cost is a spell the player deciding whether to answer it should be able to read as one.
   const foretoldText = foretold ? ' (foretold)' : '';
+  // And a free cast, for the sixth time and the same reason: a player deciding whether to answer
+  // this should be able to see that it cost its caster nothing, because that is what tells them
+  // there is still mana up across the table.
+  const freeText = free ? ' (free)' : '';
   const object: StackObject = {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
     // The **face**, not the card: the stack object is what resolution reads the script off, and
@@ -485,7 +557,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     */
     ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
     description: `${characteristics.name}${xText}${kickedText}${flashbackText}${escapedText}`
-      + `${delveText}${foretoldText}${modeText}`,
+      + `${delveText}${foretoldText}${freeText}${modeText}`,
   };
   next = {
     ...next,
@@ -501,7 +573,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // Which spell, as well as what kind of spell: a Chalice of the Void has to read its mana value
     // and then counter that object. See the `spell-cast` event's `object`.
     object: object.id,
-  }, action.by);
+    // Which card, so the spell can watch its own cast from the stack: cascade, and the family of
+    // keywords printed as "when you cast this spell". See the `self` field on the trigger.
+  }, action.by, inst.id);
   // And ward, off the same cast, for everything the spell took aim at. After the cast triggers
   // rather than before: both happen as the spell is cast and go on the stack together, and this is
   // the order a player watched them in — the spell, then what it is pointed at answering.
@@ -1045,6 +1119,31 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
   }
   if (state.pendingPayment !== null) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${state.pendingPayment.prompt} must be answered first`);
+  }
+  /*
+    Declining a free cast, which is the one thing a pass means that is not passing (CR 702.85a).
+
+    Answered here rather than by an action of its own because that is what the gesture already is:
+    "you may cast it" has two answers, the table draws a button for the second one on every other
+    turn of the game, and a seat holding no priority has nothing else a pass could mean. The pile
+    goes to the bottom exactly as it would have if the cast had happened — declining costs the
+    cards, not the shuffle — and the table carries on from where the resolution left it.
+
+    Refused for anybody else: a free cast on offer stops the whole table, so a seat that is not the
+    one deciding is not passing anything either.
+  */
+  const offer = state.pendingFreeCast;
+  if (offer !== null) {
+    if (offer.seat !== action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${offer.prompt} must be answered first`);
+    }
+    const name = state.cardDefs[state.instances[offer.card]?.defKey ?? '']?.name ?? 'it';
+    const pile = bottomPile({ ...state, pendingFreeCast: null }, [offer.card, ...offer.bottom]);
+    return {
+      state: resetPriority(settle(pile, state)),
+      message: `${seatName(state, action.by)} declines to cast ${name}`,
+      data: { declined: offer.card, bottomed: offer.bottom.length + 1 },
+    };
   }
   const owed = pendingDeclaration(state);
   if (owed !== null) {

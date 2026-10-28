@@ -30,7 +30,7 @@ import {
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, UNEARTHED, RENOWNED,
-  becomeCopyOf, wardAsks, staticEffect, manaValueOnStack,
+  becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -1718,6 +1718,51 @@ const GOBLIN_WARDRIVER: CardScript = {
       return pump(c.state, others, c.source, c.controller, { power: 1 });
     },
   }],
+};
+
+/**
+ * Cascade, written out as the triggered ability the keyword abbreviates (CR 702.85a).
+ *
+ * "Cascade" means "When you cast this spell, exile cards from the top of your library until you
+ * exile a nonland card that costs less. You may cast it without paying its mana cost. Put the
+ * exiled cards on the bottom of your library in a random order" — and writing it as a trigger is
+ * what lets it use the machinery that is already here, the way `ward` does. What it needed that
+ * nothing else did is the **zone**: this is an ability of a card on the *stack*, so the trigger
+ * says `self` and `raise` offers a cast to the card being cast. See the `self` field on the
+ * `spell-cast` trigger, and `cascadeFrom` for the half that is not casting anything.
+ *
+ * A function rather than a constant because the family is bigger than this one card — storm,
+ * replicate and conspire are all "when you cast this spell" — and because the day a card has
+ * cascade *and* text of its own, its script wants this in a list beside the rest.
+ */
+function cascade(): TriggerDef {
+  return {
+    on: { kind: 'spell-cast', self: true },
+    description: 'Cascade',
+    effect: (c) => cascadeFrom(c),
+  };
+}
+
+/**
+ * Bloodbraid Elf: a 3/2 with haste that casts a second spell for nothing.
+ *
+ * The pool's first cascade card, and the one every player who knows the keyword expects to see.
+ * Four mana for a hasty 3/2 is a fair rate on its own; the cascade is the reason the card has been
+ * printed in six formats, because a deck of cheap cards turns it into two spells for one card and
+ * one of them is free.
+ *
+ * It wants a curve rather than a theory, which is why this deck is where it goes: Kindle Grove runs
+ * eleven nonland cards at three mana or less — two Lightning Bolts, two Lightning Strikes, two
+ * Rancors, two Prey Upons, a Flame Slash, a Giant Growth and a Rampant Growth — so the hit is
+ * usually a real card rather than the first land off the top. Which is also the honest limit of
+ * the keyword in a sixty-card deck: twenty-three of those cards are lands, and a cascade that
+ * walks past four of them before finding a Bolt has given its owner a worse library as well as a
+ * free spell.
+ */
+const BLOODBRAID_ELF: CardScript = {
+  name: 'Bloodbraid Elf',
+  keywords: ['haste'],
+  triggers: [cascade()],
 };
 
 const PLANAR_VOID: CardScript = {
@@ -6352,6 +6397,7 @@ const ALL: readonly CardScript[] = [
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
+  BLOODBRAID_ELF,
   KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,

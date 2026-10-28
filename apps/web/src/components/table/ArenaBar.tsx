@@ -11,7 +11,7 @@
  * `legalActions.attackers`, and the mana comes from the pool the server sent.
  */
 import { useState } from "react"
-import { Check, FastForward, Hand, Handshake, Shield, Skull, Swords, Undo2, X } from "lucide-react"
+import { Check, FastForward, Hand, Handshake, Shield, Skull, Sparkles, Swords, Undo2, X } from "lucide-react"
 import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -603,6 +603,42 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
               onClick={() => onAct({ type: "auto:pay", pay: false })}
             >
               <X className="size-3.5" /> Let it be countered
+            </Button>
+          </span>
+        </div>
+      ) : null}
+
+      {/*
+        A free cast on offer, which is a prompt and a play rather than a prompt and two buttons
+        (CR 702.85a).
+
+        The sentence is here because the play is not readable without it: a "Cast Lightning Bolt
+        without paying its mana cost" row appears on a card that was in a library a moment ago, and
+        in a pile — your exile — that nothing else in the game asks you to look at. So the bar says
+        what happened, says where the card is, and offers the one answer that is not a cast.
+
+        Declining is a pass, which is the engine's own reading of the gesture rather than a shortcut
+        taken here: a seat with a free cast on offer holds no priority, so there is nothing else a
+        pass could mean. See `pendingFreeCast`.
+      */}
+      {you.mustCastFree !== null ? (
+        <div data-testid="free-cast-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <Sparkles className="size-3.5 text-[var(--g-gold-400)]" />
+          <span className="font-semibold text-[var(--g-text-high)]">{you.mustCastFree.prompt}</span>
+          <span className="text-[var(--g-text-low)]">
+            — tap it in your exile to cast it
+            {you.mustCastFree.bottom > 0
+              ? `; ${you.mustCastFree.bottom} other card${you.mustCastFree.bottom === 1 ? "" : "s"} go to the bottom of your library`
+              : ""}
+          </span>
+          <span className="ml-auto flex gap-1.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="free-cast-decline"
+              onClick={() => onAct({ type: "auto:pass" })}
+            >
+              <X className="size-3.5" /> Decline
             </Button>
           </span>
         </div>

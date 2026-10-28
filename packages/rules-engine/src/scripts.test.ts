@@ -13690,3 +13690,185 @@ describe('Woe Strider: escape’s second card, and the outlet that comes back', 
     expect(namesIn(after, 0, 'battlefield')).toContain('Goat');
   });
 });
+
+describe('cascade: a spell that casts the next one for nothing', () => {
+  /*
+    Two engine firsts in one keyword, and the tests are split along that line.
+
+    The first is a **trigger that fires from the stack**: "when you cast this spell" is an ability
+    of a card that is not on the battlefield, so `raise` has to offer the cast to the spell being
+    cast — and must not start firing every other cast trigger printed on the card on its way past,
+    which is the Chalice case at the bottom of this block.
+
+    The second is a **cast with nothing paid**. That is not a cheaper cost: the mana is not paid,
+    the timing is not checked, and the whole thing happens inside somebody else's resolution. What
+    makes it safe is that it is not a flag a client may simply set — the engine has to be holding an
+    offer open for that seat and that card, and `pendingFreeCast` is that offer.
+  */
+  /**
+   * Puts a named card of seat 0's on top of its library, from wherever it is.
+   *
+   * Hand *or* library, because a board fast-forwarded to turn five has drawn four cards and the
+   * one a test wants on top may be among them — which is a mistake worth making only once.
+   */
+  const toTop = (s: GameState, name: string): GameState => {
+    const inHand = ids(s, 0, 'hand').find((id) => nameOf(s, id) === name);
+    const card = inHand ?? find(s, 0, 'library', name);
+    return apply(s, { type: 'card:move', by: 0, card, toZone: 'library', position: 'top' });
+  };
+
+  /** A board with Bloodbraid Elf in hand, four lands up, and a library stacked from the top. */
+  const cascading = (top: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
+      hands: { 0: ['Bloodbraid Elf'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Forest', 'Forest'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    // Stacked in reverse, so the first name asked for is the one on top.
+    for (const name of [...top].reverse()) s = toTop(s, name);
+    return s;
+  };
+
+  const cast = (s: GameState): GameState => drain(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bloodbraid Elf'),
+  }), 40);
+
+  /** How many of this seat's permanents are tapped, which is what a cost would have moved. */
+  const tappedLands = (s: GameState): number =>
+    ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped === true).length;
+
+  it('exiles off the top until a cheaper nonland card, and offers that one free', () => {
+    // A Mountain first, which is never the hit however cheap it is, then a Bolt at one mana.
+    const s = cast(cascading(['Mountain', 'Lightning Bolt']));
+    const offer = s.pendingFreeCast;
+    expect(offer?.seat).toBe(0);
+    expect(nameOf(s, offer?.card ?? '')).toBe('Lightning Bolt');
+    expect(offer?.prompt).toContain('Bloodbraid Elf cascades into Lightning Bolt');
+    // The land it walked past is exiled with it, waiting for the bottom of the library.
+    expect(offer?.bottom.map((id) => nameOf(s, id))).toEqual(['Mountain']);
+    expect(namesIn(s, 0, 'exile').sort()).toEqual(['Lightning Bolt', 'Mountain']);
+
+    // The table is stopped: nobody holds priority, and the only seat with anything to do is the
+    // one being asked.
+    expect(s.priority).toBeNull();
+    const you = legalActions(s, 0);
+    expect(you.mustCastFree?.prompt).toBe(offer?.prompt);
+    expect(you.mustCastFree?.bottom).toBe(1);
+    expect(legalActions(s, 1).plays).toEqual([]);
+
+    // And the play offered on it is a cast with no cost at all, not a cheap one.
+    const play = you.plays.find((p) => p.card === offer?.card);
+    expect(play?.free).toBe(true);
+    expect(play?.manaCost).toBe('');
+    expect(play?.description).toBe('Cast Lightning Bolt without paying its mana cost');
+  });
+
+  it('casts it for no mana, and the rest of the pile goes under the library', () => {
+    let s = cast(cascading(['Mountain', 'Lightning Bolt']));
+    const bolt = s.pendingFreeCast!.card;
+    const library = ids(s, 0, 'library').length;
+    const theirLife = life(s, 1);
+    const tappedBefore = tappedLands(s);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: bolt, free: true, targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+
+    // Nothing was paid, which is the whole of the keyword: the four lands the Elf itself cost are
+    // tapped, and the Bolt tapped nothing on top of them.
+    expect(tappedLands(s)).toBe(tappedBefore);
+    expect(life(s, 1)).toBe(theirLife - 3);
+    // The offer is spent, and the card it walked past is back in the library — at the bottom, so
+    // the Mountain it exiled is not the next card drawn.
+    expect(s.pendingFreeCast).toBeNull();
+    expect(nameOf(s, ids(s, 0, 'library').at(-1) ?? '')).toBe('Mountain');
+    expect(ids(s, 0, 'library')).toHaveLength(library + 1);
+    // And the Elf itself resolved into play behind it.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Bloodbraid Elf');
+  });
+
+  it('is declined by passing, and then the whole pile goes under the library', () => {
+    let s = cast(cascading(['Mountain', 'Lightning Bolt']));
+    const library = ids(s, 0, 'library').length;
+    expect(legalActions(s, 0).passLabel).toBe('Decline');
+
+    s = drain(apply(s, { type: 'auto:pass', by: 0 }), 40);
+    expect(s.pendingFreeCast).toBeNull();
+    expect(ids(s, 0, 'exile')).toHaveLength(0);
+    expect(ids(s, 0, 'library')).toHaveLength(library + 2);
+    expect(life(s, 1)).toBe(20);
+    // Declining does not cost the Elf: it is still on its way to the battlefield.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Bloodbraid Elf');
+  });
+
+  it('casts a sorcery it could not otherwise cast, because the keyword says when', () => {
+    /*
+      Flame Slash is a sorcery, and when this cast happens there is a creature spell on the stack
+      underneath it — so none of the timing an ordinary cast is checked against holds (CR 702.85a).
+      That it resolves and kills something is the proof: a cast that was merely *allowed* and then
+      sat there would leave the Drake alive.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
+      hands: { 0: ['Bloodbraid Elf'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Forest', 'Forest'], 1: ['Wind Drake'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = cast(toTop(s, 'Flame Slash'));
+    const slash = s.pendingFreeCast!.card;
+    expect(nameOf(s, slash)).toBe('Flame Slash');
+    expect(s.stackOrder.length).toBeGreaterThan(0);
+
+    const drake = find(s, 1, 'battlefield', 'Wind Drake');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: slash, free: true, targets: [{ kind: 'card', id: drake }],
+    }), 40);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Flame Slash');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Wind Drake');
+  });
+
+  it('walks past a card of equal mana value, because "less" means less', () => {
+    // Flametongue Kavu costs {3}{R} and so does the Elf, so it is exiled and passed over.
+    const s = cast(cascading(['Flametongue Kavu', 'Lightning Bolt']));
+    expect(nameOf(s, s.pendingFreeCast?.card ?? '')).toBe('Lightning Bolt');
+    expect(s.pendingFreeCast?.bottom.map((id) => nameOf(s, id))).toEqual(['Flametongue Kavu']);
+  });
+
+  it('refuses a free cast nobody offered, and an X on one that was', () => {
+    const board = cascading(['Mountain', 'Lightning Bolt']);
+    const elf = find(board, 0, 'hand', 'Bloodbraid Elf');
+    expect(refusal(board, { type: 'auto:cast', by: 0, card: elf, free: true }))
+      .toContain('nothing is on offer');
+
+    const offered = cast(board);
+    const bolt = offered.pendingFreeCast!.card;
+    // Somebody else's offer is not yours, and neither is a different card.
+    expect(refusal(offered, { type: 'auto:cast', by: 1, card: bolt, free: true }))
+      .toContain('not yours');
+    expect(refusal(offered, {
+      type: 'auto:cast', by: 0, card: bolt, free: true, x: 3, targets: [{ kind: 'player', seat: 1 }],
+    })).toContain('X is 0');
+    // And nothing else may happen while the question stands, including by the other seat.
+    expect(refusal(offered, { type: 'auto:pass', by: 1 })).toContain('must be answered first');
+  });
+
+  it('does not let a cast trigger fire off the casting of its own card', () => {
+    /*
+      The guard that makes the stack a watcher safe, asserted on the card that would otherwise
+      break: Chalice of the Void counters every spell whose mana value equals its charge counters,
+      and a Chalice cast for X=0 is a nought-cost spell that has not got its counters yet. Without
+      the `self` rule in `raise` it would answer its own cast and counter itself on the way in.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'kindle-grove' },
+      hands: { 0: ['Chalice of the Void'] },
+      battlefield: { 0: ['Island', 'Island'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const chalice = find(s, 0, 'hand', 'Chalice of the Void');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: chalice, x: 0 }), 40);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Chalice of the Void');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Chalice of the Void');
+  });
+});
