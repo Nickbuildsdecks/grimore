@@ -351,6 +351,19 @@ export type TriggerEvent =
       readonly object?: string;
     }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
+  /**
+   * "Whenever you draw a card" (CR 121.2), and the opponents' half of it.
+   *
+   * One event per card, so "draw three cards" fires it three times. `by` works the way it does on
+   * `spell-cast` rather than the way it does on `life-gained`: `you` is the default, `opponent` is
+   * Underworld Dreams, and `any` is a card that does not care whose draw it was.
+   *
+   * It does **not** fire for a card put into a hand by anything other than a draw — a tutor, a
+   * Gravedigger, a Man-o'-War. That is the rules rather than a simplification, and it is the whole
+   * reason the event is recorded where a draw happens instead of being noticed afterwards. See
+   * `GameState.drew`.
+   */
+  | { readonly kind: 'draws'; readonly by?: 'you' | 'opponent' | 'any' }
   | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' }
   /**
    * A Saga's chapter, which fires when its lore counter *reaches* this number (CR 714.2b).

@@ -472,6 +472,25 @@ export interface AutomationState {
    */
   readonly dealtCombatDamage: readonly { readonly creature: string; readonly defender: SeatIndex }[];
   /**
+   * One entry per card drawn and not yet announced — the seat that drew it. Drained by `settle`.
+   *
+   * The fifth member of the detect-rather-than-announce family, and the second that **cannot** be
+   * found by comparing two states. `died`, `entered` and `left` are all visible on the board
+   * afterwards; a draw is not, because a card arriving in a hand is not the same thing as a card
+   * being drawn. A Diabolic Tutor, a Gravedigger and a Man-o'-War all put a card in a hand without
+   * anybody drawing one, so a hand-size comparison would fire "whenever you draw a card" on all
+   * three — and a draw whose card is immediately discarded would make the comparison come out
+   * level and fire on nothing. `draw` is the one place a card is actually drawn, so it is the one
+   * place that knows.
+   *
+   * Per *card* rather than per draw: "draw three cards" is three events, which is what the rules
+   * say (CR 121.2) and what makes a Chasm Skulker three counters bigger rather than one.
+   *
+   * It records only the cards that were really drawn. A seat drawing from an empty library draws
+   * nothing and loses the game (CR 704.5b), and nothing should trigger off the card it did not get.
+   */
+  readonly drew: readonly SeatIndex[];
+  /**
    * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
    * Drained by `settle` alongside `died`.
    *

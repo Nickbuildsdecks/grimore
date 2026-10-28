@@ -1017,6 +1017,19 @@ const MIRKO_VOSK: CardDef = {
   colors: ['U', 'B'],
 };
 
+const CHASM_SKULKER: CardDef = {
+  name: 'Chasm Skulker',
+  typeLine: 'Creature — Squid Horror',
+  manaCost: '{1}{U}{U}',
+  cmc: 3,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Whenever you draw a card, put a +1/+1 counter on Chasm Skulker.\n'
+    + 'When Chasm Skulker dies, create X 1/1 blue Squid creature tokens with islandwalk, where X is '
+    + 'the number of +1/+1 counters on Chasm Skulker.',
+  colors: ['U'],
+};
+
 const THIEVING_MAGPIE: CardDef = {
   name: 'Thieving Magpie',
   typeLine: 'Creature \u2014 Bird',
@@ -1511,6 +1524,17 @@ const PALACE_SENTINELS: CardDef = {
   toughness: '3',
   oracleText: 'When Palace Sentinels enters the battlefield, you become the monarch.',
   colors: ['W'],
+};
+
+const FATE_UNRAVELER: CardDef = {
+  name: 'Fate Unraveler',
+  typeLine: 'Creature — Elder',
+  manaCost: '{3}{B}',
+  cmc: 4,
+  power: '2',
+  toughness: '4',
+  oracleText: 'Whenever an opponent draws a card, Fate Unraveler deals 1 damage to that player.',
+  colors: ['B'],
 };
 
 const THORN_OF_THE_BLACK_ROSE: CardDef = {
@@ -3628,7 +3652,18 @@ export const ASHEN_RITE: DeckSpec = {
       time. The Arsonist's own death trigger is not lost from the pool: Ember Rush runs two.
     */
     { card: TORMENTED_SOUL, count: 1 },
-    { card: DOOMED_DISSENTER, count: 2 },
+    /*
+      One Doomed Dissenter rather than two, for the Fate Unraveler at the bottom of this list.
+
+      A 1/1 that leaves a 2/2 behind is sacrifice fodder, and this deck has more of that than it
+      can use: two Vampire Aristocrats, a Bloodthrone Vampire, a Bone Splinters and a Village
+      Rites all want a body, and between the Doomed Dissenter, the Tormented Soul, three Blood
+      Artists and two Zulaport Cutthroats there is always one. The deck's two deadest cards are
+      the Bone Splinters at 34% and the Night of Souls' Betrayal at 43%, and both are the pool's
+      only copy of their card — the Bone Splinters is also the only card that pays a cost by
+      sacrificing, which is a rules path rather than a slot.
+    */
+    { card: DOOMED_DISSENTER, count: 1 },
     // A body one blocker cannot stop, in the deck that is happy either way: it gets through, or it
     // eats two creatures and feeds the drains on the way out.
     { card: BOGGART_BRUTE, count: 1 },
@@ -3740,6 +3775,22 @@ export const ASHEN_RITE: DeckSpec = {
       Tidal Mind's own write-up is about.
     */
     { card: PHYREXIAN_ARENA, count: 1 },
+    /*
+      Fate Unraveler: the other half of the `draws` event, on a body this deck can cast.
+
+      "Whenever an opponent draws a card, that player loses 1 life" — a drain stapled to the one
+      thing every deck does every turn, in the deck whose whole plan is a life total going down a
+      point at a time beside three Blood Artists and two Zulaport Cutthroats. A 2/4 also blocks,
+      which the drains do not.
+
+      **The card this deck would rather have is Underworld Dreams, and it is not here on purpose.**
+      Same trigger, one mana cheaper, and {B}{B}{B} in a list with eleven black sources and seven
+      Mountains is a card that sits in hand — which is the exact failure `cast-counts` keeps
+      finding and the reason the Diabolic Tutor and the Behold the Multiverse have both been cut
+      from decks this week. Four mana for the same text on a creature is the version this pool can
+      actually put on the table.
+    */
+    { card: FATE_UNRAVELER, count: 1 },
   ],
 };
 
@@ -4038,7 +4089,16 @@ export const HOLLOW_TIDE: DeckSpec = {
     { card: DIABOLIC_TUTOR, count: 1 },
     { card: MIND_SCULPT, count: 3 },
     { card: THOUGHT_SCOUR, count: 2 },
-    { card: COMPELLING_ARGUMENT, count: 2 },
+    /*
+      One Compelling Argument rather than two, for the Chasm Skulker at the bottom of this list.
+
+      Three cards off the top for two mana, cycling for {2} when the board needs something else —
+      the most replaceable of this deck's mill spells, because the three Mind Sculpts do the same
+      job for the same mana and the cycling half is what the second copy was for. It is the only
+      slot here that could go: `cast-counts` puts the deck's deadest cards at the Diabolic Tutor
+      (52%) and The Eldest Reborn (52%), and both are the pool's only copy of their card.
+    */
+    { card: COMPELLING_ARGUMENT, count: 1 },
     { card: RETURNED_CENTAUR, count: 1 },
     /*
       Toxic Deluge, for the second Returned Centaur.
@@ -4133,6 +4193,20 @@ export const HOLLOW_TIDE: DeckSpec = {
       it is the only copy of that card in the pool.
     */
     { card: MERFOLK_SECRETKEEPER, count: 1 },
+    /*
+      Chasm Skulker, and the deck that draws the most cards in the pool.
+
+      A 1/1 for three that is worth whatever the deck draws: two Thought Scours, a Preordain, a
+      Divination, two Thieving Magpies and a Jace, Memory Adept, on top of a draw step. It is the
+      first card in the pool to read the `draws` event, which until now was raised by nothing —
+      `draw` is the one place a card is drawn and it announced it to nobody.
+
+      The other half is the reason it is in *this* deck rather than Tidal Mind, which also draws:
+      when it dies it leaves a 1/1 **islandwalker** for every counter, and the two decks it is
+      measured against most often are the two with Islands in them. A 1/1 that cannot be blocked is
+      a clock a mill deck can afford to wait behind.
+    */
+    { card: CHASM_SKULKER, count: 1 },
   ],
 };
 

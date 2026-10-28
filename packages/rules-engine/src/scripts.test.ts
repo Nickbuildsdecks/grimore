@@ -11901,6 +11901,159 @@ describe('a static that comes and goes: metalcraft (CR 702.75)', () => {
   `etb` trigger's `subject` plus the same `fight` Prey Upon has, and an Aura that comes back is a
   `dies` trigger on a permanent that is not a creature.
 */
+describe('whenever you draw a card (CR 121.2)', () => {
+  /*
+    The fifth event in the detect-rather-than-announce family, and the first added for cards.
+
+    `draw` in `effects.ts` is the only place a card is actually drawn — the draw step, the crown,
+    and two dozen card effects all come through it — and it announced the fact to nobody, so
+    "whenever you draw a card" could not be written. The event is *recorded* there rather than
+    noticed afterwards for a reason these tests pin twice: a card arriving in a hand is not the
+    same thing as a card being drawn.
+  */
+  it('fires once per card, so drawing three is three counters', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'ember-rush' },
+      hands: { 0: ['Divination'] },
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Chasm Skulker'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const skulker = find(s, 0, 'battlefield', 'Chasm Skulker');
+    /*
+      Counted as a *delta*, because this board has already drawn a card.
+
+      `advanceTo` walks the turn from the untap step, so reaching the main phase goes through the
+      draw step — and a Skulker that was on the battlefield for it has a counter before the test
+      does anything. That is the engine being right about the most ordinary draw there is, and the
+      first version of this test asserted it away.
+    */
+    const before = s.instances[skulker]!.counters['+1/+1'] ?? 0;
+    expect(before).toBe(1);
+
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Divination'),
+    })));
+    // Two cards drawn, two more counters — one ability per card rather than one per draw.
+    expect(s.instances[skulker]!.counters['+1/+1']).toBe(before + 2);
+    const ch = characteristicsOf(s, s.instances[skulker]!);
+    expect([ch.power, ch.toughness]).toEqual([1 + before + 2, 1 + before + 2]);
+  });
+
+  it('and not for a card put into a hand without drawing it', () => {
+    /*
+      The whole reason the event is recorded where the draw happens. A Gravedigger returns a card
+      to its controller's hand, and a hand-size comparison cannot tell that from a draw — so an
+      instrument that watched hands would make this a counter, and the rules do not.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'hollow-tide' },
+      hands: { 0: ['Gravedigger'] },
+      graveyard: { 0: ['Centaur Courser'] },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Swamp', 'Swamp'],
+        1: ['Island', 'Island', 'Island', 'Chasm Skulker'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const skulker = find(s, 1, 'battlefield', 'Chasm Skulker');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gravedigger'),
+    })));
+    expect(namesIn(s, 0, 'hand')).toContain('Centaur Courser');
+    // Their card moved into their hand and nothing was drawn, so nothing triggered — and the
+    // Skulker belongs to the other seat anyway, which is the next test.
+    expect(s.instances[skulker]!.counters['+1/+1']).toBeUndefined();
+  });
+
+  it('watches its own controller and not the other player', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'hollow-tide' },
+      hands: { 0: ['Divination'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island'],
+        1: ['Island', 'Chasm Skulker'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const skulker = find(s, 1, 'battlefield', 'Chasm Skulker');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Divination'),
+    })));
+    // `by` defaults to `you`, so the opponent's two cards are none of the Skulker's business.
+    expect(s.instances[skulker]!.counters['+1/+1']).toBeUndefined();
+  });
+
+  it('leaves a Squid for every counter when it dies, and they have islandwalk', () => {
+    /*
+      The second half reads counters the permanent no longer has: it is in a graveyard by the time
+      the ability resolves and `relocate` took its counters off on the way, as the rules require.
+      The number travels with the event through `EffectContext.subjectCounters`, the path Hangarback
+      Walker found first.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'ember-rush' },
+      hands: { 0: ['Divination'] },
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Chasm Skulker'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const skulker = find(s, 0, 'battlefield', 'Chasm Skulker');
+    // One from the draw step, two from the Divination — see the note on the first test.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Divination'),
+    })));
+    const counters = s.instances[skulker]!.counters['+1/+1'] ?? 0;
+    expect(counters).toBe(3);
+
+    // Moved by hand rather than killed with a spell: what is being tested is the death trigger
+    // reading counters the card no longer has, and the zone change is where they come off.
+    s = drain(apply(s, { type: 'card:move', by: 0, card: skulker, toZone: 'graveyard' }));
+    expect(s.instances[skulker]!.zone).toBe('graveyard');
+    const squids = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Squid');
+    expect(squids.length).toBe(counters);
+    // Islandwalk is a static scoped to the token itself, found by its name like the Pest's
+    // trigger — so a 1/1 token cannot be blocked by a player with an Island.
+    expect(characteristicsOf(s, s.instances[squids[0]!]!).landwalk).toEqual(['Island']);
+  });
+
+  it('and leaves nothing at all when it never grew', () => {
+    /*
+      On the *opponent's* turn, so this seat has not had a draw step and the Skulker is still a 1/1.
+      The clause being pinned is the one that reads "where X is the number of +1/+1 counters": with
+      none, a dying Skulker leaves nothing rather than a 0-count token nobody could put on a board.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'ember-rush' },
+      battlefield: { 0: ['Island', 'Chasm Skulker'], 1: ['Mountain'] },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const skulker = find(s, 0, 'battlefield', 'Chasm Skulker');
+    expect(s.instances[skulker]!.counters['+1/+1']).toBeUndefined();
+    s = drain(apply(s, { type: 'card:move', by: 0, card: skulker, toZone: 'graveyard' }));
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Squid').length).toBe(0);
+  });
+
+  it("drains an opponent for each card they draw, and never its own controller", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'hollow-tide' },
+      hands: { 1: ['Divination'] },
+      battlefield: {
+        0: ['Swamp', 'Fate Unraveler'],
+        1: ['Island', 'Island', 'Island'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const them = life(s, 1);
+    const me = life(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Divination'),
+    })));
+    // Two cards drawn, two points of life — and the trigger says `by: 'opponent'` out loud,
+    // because the default on this event is `you`.
+    expect(life(s, 1)).toBe(them - 2);
+    expect(life(s, 0)).toBe(me);
+  });
+});
+
 describe('red-green: the thirteenth deck’s cards', () => {
   /** Seat 0 on Kindle Grove, main phase, every land tapped for mana. */
   const grove = (hand: readonly string[], lands: readonly string[], board: readonly string[] = []): GameState => {

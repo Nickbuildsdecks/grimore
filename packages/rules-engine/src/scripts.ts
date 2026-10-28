@@ -923,6 +923,19 @@ export const ZOMBIE_TOKEN: CardDef = {
 };
 
 /** Hangarback Walker's parting gift: a 1/1 flier per counter it had. */
+/*
+  Chasm Skulker's Squid, declared up here with the other tokens rather than beside its own script.
+
+  `TOKEN_DEFS` is built a few hundred lines below this and a `const` is only in scope after its own
+  line, so a token defined beside the card that makes it is a token the list cannot name — which is
+  an error at import rather than a test failure. The script that gives it islandwalk stays with
+  Chasm Skulker, because that is where the reason for it is written down.
+*/
+export const SQUID_TOKEN: CardDef = {
+  name: 'Squid', typeLine: 'Token Creature — Squid', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: 'Islandwalk', colors: ['U'],
+};
+
 export const THOPTER_TOKEN: CardDef = {
   name: 'Thopter', typeLine: 'Token Artifact Creature — Thopter', manaCost: '', cmc: 0,
   power: '1', toughness: '1', oracleText: 'Flying', colors: [],
@@ -4800,7 +4813,7 @@ const PELAKKA_WURM: CardScript = {
 export const TOKEN_DEFS: readonly CardDef[] = [
   GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN, ELEPHANT_TOKEN,
   SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN, ELEMENTAL_TOKEN,
-  ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN, THOPTER_TOKEN,
+  ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN, THOPTER_TOKEN, SQUID_TOKEN,
 ];
 
 /*
@@ -5511,6 +5524,91 @@ const THRAGTUSK: CardScript = {
   ],
 };
 
+/*
+  ── The three cards that read a draw ───────────────────────────────────────────────────────────
+
+  `draws` is the fifth event in the detect-rather-than-announce family and the first one added for
+  cards rather than for a rule. `draw` in `effects.ts` is the only place a card is actually drawn —
+  the draw step, the crown, and two dozen card effects all come through it — and until now it
+  raised nothing, so "whenever you draw a card" was unwritable. See `GameState.drew` for why a draw
+  has to be *recorded* rather than noticed: a Diabolic Tutor and a Gravedigger both put a card in a
+  hand without anybody drawing one, and a hand-size comparison cannot tell those from a draw.
+
+  Two cards, one for each half of the event, because an option with no card behind it is worse than
+  no option: Chasm Skulker watches its own controller and Fate Unraveler watches the others. `any`
+  is deliberately not offered — nothing is printed in this pool that wants it.
+*/
+/*
+  Islandwalk on a token, which needs a script rather than a line of oracle text.
+
+  Flying on the Thopter token is read straight off `oracleText` by `printedKeywords`, and landwalk
+  cannot be: it is a land *type* plus a rule, so it is declared the way River Boa declares it — a
+  static scoped to the card itself, which `canBlock` reads off the attacker. The token finds this
+  script the same way the Pest does, by its name.
+*/
+const SQUID: CardScript = {
+  name: 'Squid',
+  statics: [{ scope: 'self', effect: { landwalk: ['Island'] } }],
+};
+
+/*
+  Chasm Skulker: the card the `draws` event was built for.
+
+  A 1/1 for three that is worth whatever the deck draws, and in Hollow Tide that is two Thought
+  Scours, a Preordain, a Divination, two Thieving Magpies and a Jace, Memory Adept on top of the
+  draw step. Both halves of it are a test of something: the first is the only `draws` trigger in
+  the pool that watches its own controller, and the second reads **counters the permanent no longer
+  has** — it is in a graveyard by the time the ability resolves and `relocate` took its counters
+  off on the way, as the rules require, so the number travels with the event through
+  `EffectContext.subjectCounters`. Hangarback Walker found that path first; this is the second card
+  on it, and the first where the counters were put there by a trigger rather than paid for.
+*/
+const CHASM_SKULKER: CardScript = {
+  name: 'Chasm Skulker',
+  triggers: [
+    {
+      on: { kind: 'draws' },
+      description: 'put a +1/+1 counter on Chasm Skulker',
+      effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+    },
+    {
+      on: { kind: 'dies' },
+      description: 'create a 1/1 Squid with islandwalk for each +1/+1 counter on it',
+      effect: (c) => {
+        const counters = c.subjectCounters?.['+1/+1'] ?? 0;
+        return counters === 0 ? c.state : createToken(c.state, c.controller, SQUID_TOKEN, counters);
+      },
+    },
+  ],
+};
+
+/*
+  Fate Unraveler, for the other half of the event.
+
+  "Whenever an opponent draws a card, that player loses 1 life" — a 2/4 body with a drain stapled
+  to the one thing every deck does every turn, in the deck whose plan is already a life total going
+  down a point at a time beside three Blood Artists and two Zulaport Cutthroats.
+
+  The card the pool's black decks would rather have is Underworld Dreams, and it is not here for a
+  reason worth writing down: {B}{B}{B} in a deck with eleven black sources and seven Mountains is a
+  card that sits in hand, which is the failure `cast-counts` keeps finding. Four mana for the same
+  trigger on a body that blocks is the version this pool can actually cast.
+
+  `by: 'opponent'` has to be said out loud, because the default on this event is `you` — the same
+  default every other trigger here takes. A pod is what makes the distinction real: "whenever an
+  opponent draws" is three players' draw steps, not the table's.
+*/
+const FATE_UNRAVELER: CardScript = {
+  name: 'Fate Unraveler',
+  triggers: [
+    {
+      on: { kind: 'draws', by: 'opponent' },
+      description: 'that player loses 1 life',
+      effect: (c) => loseLife(c.state, c.actor ?? c.controller, 1),
+    },
+  ],
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -5605,6 +5703,7 @@ const ALL: readonly CardScript[] = [
   RANCOR, THRAGTUSK,
   guildgate('Gruul Guildgate', 'R', 'G'),
   tapLand('Hagra Broodpit', 'B'), tapLand('Vastwood Thicket', 'G'),
+  SQUID, CHASM_SKULKER, FATE_UNRAVELER,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

@@ -804,12 +804,21 @@ export function discardAtRandom(state: GameState, seat: SeatIndex, count: number
 
 export function draw(state: GameState, seat: SeatIndex, count: number): GameState {
   const result = drawFromLibrary(state, seat, count);
+  /*
+    One `drew` entry per card that actually arrived, for `settle` to announce. See `GameState.drew`
+    for why it is recorded here rather than worked out by comparing hands: every path that draws a
+    card comes through this function — the draw step, the crown, and two dozen card effects — and
+    no other path puts a card in a hand *by drawing it*.
+  */
+  const drew = result.drawn > 0
+    ? [...result.state.drew, ...Array.from({ length: result.drawn }, () => seat)]
+    : result.state.drew;
   // A player who could not draw has lost (CR 704.5b) — recorded here, acted on by state-based
   // actions, because losing is not Harmonize's business.
   if (result.drawn < count && !result.state.drewFromEmpty.includes(seat)) {
-    return { ...result.state, drewFromEmpty: [...result.state.drewFromEmpty, seat] };
+    return { ...result.state, drew, drewFromEmpty: [...result.state.drewFromEmpty, seat] };
   }
-  return result.state;
+  return { ...result.state, drew };
 }
 
 export function tap(state: GameState, id: string, tapped = true): GameState {

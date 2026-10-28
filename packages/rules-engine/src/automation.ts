@@ -551,6 +551,21 @@ function triggerMatches(
     }
     case 'life-gained':
       return (want.by ?? 'you') === 'any' || actorSeat === sourceSeat;
+    /*
+      A draw, with the same three-way `by` a cast has.
+
+      `you` by default rather than `any`, so a card that says nothing watches its own controller —
+      the same default every other event here takes, and the one that is right for the card that
+      grows when *you* draw. `opponent` is the one Underworld Dreams needs and the one a default of
+      `any` would have made unwritable: "whenever an opponent draws a card" is not "whenever a card
+      is drawn" at a four-seat table.
+    */
+    case 'draws': {
+      const by = want.by ?? 'you';
+      if (by === 'you') return actorSeat === sourceSeat;
+      if (by === 'opponent') return actorSeat !== sourceSeat;
+      return true;
+    }
     case 'step': {
       const e = event as Extract<TriggerEvent, { kind: 'step' }>;
       if (e.step !== want.step) return false;
@@ -1214,7 +1229,7 @@ function settle(state: GameState, before: GameState): GameState {
   for (
     let pass = 0;
     pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0
-      || next.dealtCombatDamage.length > 0);
+      || next.dealtCombatDamage.length > 0 || next.drew.length > 0);
     pass++
   ) {
     const replaced = replaceDeaths(next, next.died);
@@ -1223,7 +1238,8 @@ function settle(state: GameState, before: GameState): GameState {
     const gone = next.left;
     const arrived = next.entered;
     const connected = next.dealtCombatDamage;
-    next = { ...next, died: [], left: [], entered: [], dealtCombatDamage: [] };
+    const drawn = next.drew;
+    next = { ...next, died: [], left: [], entered: [], dealtCombatDamage: [], drew: [] };
     /*
       Damage before deaths, because that is the order the two happened in: combat damage is dealt,
       and only then do state-based actions notice what it killed. Both triggers go on the stack
@@ -1253,6 +1269,18 @@ function settle(state: GameState, before: GameState): GameState {
         next, { kind: 'combat-damage', defender }, next.instances[creature]?.zoneSeat, creature,
       );
     }
+    /*
+      Draws, before the deaths and the arrivals in this pass.
+
+      Order matters here for one reason and it is not subtle: a Chasm Skulker that draws a card as
+      it dies should take its counter *before* the death trigger reads how many it has. Putting
+      draws first is also the order a player watched — the card was drawn, and then whatever the
+      drawing killed or made happened afterwards.
+
+      One ability per card, which is what makes `drew` a list of seats rather than a count: three
+      cards drawn is three triggers on the stack, each able to be answered on its own.
+    */
+    for (const seat of drawn) next = raise(next, { kind: 'draws' }, seat);
     for (const id of dead) next = raise(next, { kind: 'dies' }, next.instances[id]?.zoneSeat, id);
     // Leaving comes after dying, so a card that does both raises the narrower event first and its
     // death trigger goes on the stack under the leave trigger — which is the order the rules put
