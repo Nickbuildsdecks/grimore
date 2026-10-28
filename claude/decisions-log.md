@@ -9881,3 +9881,79 @@ and two is enough to say the thing plainly: a rules deviation is worth *measurin
 assuming, in either direction. D183's unearth leak was worth half a card; these two were worth
 nothing. The reason to ship them is the same either way: the card says so, and a player who knows
 the card will expect it to work.
+
+## D191 — Cascade: the first trigger that fires from the stack, and the first cast with nothing paid
+
+Two engine firsts arrived behind one keyword, and they are worth separating because only one of
+them is about cascade.
+
+### A trigger that fires from the stack
+
+Every watcher in this engine, up to now, was a permanent on a battlefield. `raise` walks the
+battlefields in APNAP order, offers each permanent the event, and `triggerMatches` decides from the
+trigger's own wording whether it wants it; the three exceptions — a death, a leave, a card arriving
+in a graveyard — fire from wherever the permanent *went*, and only for the permanent it happened
+to.
+
+"When you cast this spell" is none of those. It is an ability of a card that is **on the stack**,
+and it is the shape a whole family of keywords abbreviates: cascade, storm, replicate, conspire,
+ripple. So the `spell-cast` trigger gained a `self` flag, `raise` puts the card being cast at the
+head of the watcher list for that event, and the zone check lets it through — `fromStack`, beside
+the `fromGraveyard` that Rancor needed in D157.
+
+**The guard matters more than the feature.** A card's script may hold a battlefield cast trigger —
+Guttersnipe, Firebrand Archer, Chalice of the Void — and a stack watcher that answered those would
+fire them off the card's own casting on the way past. Chalice is the one that would have been
+visibly wrong: its trigger is `by: 'any', spell: 'any'` and its condition compares the spell's mana
+value with its own charge counters, which a Chalice still on the stack has none of. A Chalice cast
+for X=0 is a nought-cost spell, so it would have **countered itself** on the way in. The loop
+therefore skips a stack watcher for any trigger that does not say `self`, and there is a test on
+exactly that cast.
+
+### A cast with nothing paid
+
+The engine had five places a spell could be cast *from* — hand, command zone, graveyard (flashback,
+escape), exile (foretell, an adventure) — and every one of them was a player action with a cost
+paid and a timing checked. Cascade needs neither: the cast happens **inside the resolution of a
+triggered ability**, with a spell on the stack underneath it, and nothing is paid at all.
+
+The design question was whether to have the engine cast the card itself. It cannot: casting is a
+choice with every other choice inside it — which half of a split card, which creature the spell is
+pointed at, how three damage is divided — and an engine that answered those for the player would be
+playing their turn for them. So the resolution stops and **offers**:
+
+```ts
+readonly pendingFreeCast: {
+  readonly seat: SeatIndex;     // who may cast it
+  readonly card: string;        // the card in exile, face up
+  readonly prompt: string;      // what the table says
+  readonly bottom: readonly string[];  // the rest of the pile, bound for the bottom
+  readonly source: string;      // the spell whose keyword did this
+} | null;
+```
+
+The fourth thing that stops the table dead, after a mid-resolution question, a trigger waiting for
+its targets and a ward — and the first one that is answered with a **play** rather than an answer.
+`legalActions` narrows that seat's plays to the casts of that one card, every other seat is given
+nothing, and `auto:cast` with `free: true` claims the offer. Three refusals make the flag a claim
+rather than a licence: nothing on offer, an offer belonging to somebody else, an offer for a
+different card. A fourth refuses an X, because X is nought in a cost that is not paid
+(CR 107.3b) — otherwise "without paying its mana cost" would buy a Fireball for twenty.
+
+**Declining is a pass.** No second action for it: a seat with a free cast on offer holds no
+priority, so there is nothing else a pass could mean, and the table already draws that button on
+every other turn of the game. The pile goes under the library either way, which is what the
+keyword costs.
+
+Everything else about the cast is ordinary, and deliberately so. It goes through `castSpell`, so it
+chooses targets and modes, it pays an additional cost if the card has one, it rings every cast
+trigger on the table, it can be countered, and it reads `(free)` on the stack beside the
+`(flashback)` and `(foretold)` labels. The one line that makes it free is an empty cost handed to
+the same `payFrom` every other cast uses.
+
+### What cascade is worth, and what it hits
+
+`scripts/measure/cascade.mjs` is the new instrument, and it exists because the keyword reads better
+than it measures: a free spell off the top of a sixty-card deck is a free spell only when the top of
+the deck is not one of the twenty-three lands. It watches `pendingFreeCast` in the state rather than
+the log, counts the depth of each dig, names the hit, and splits the answers into cast and declined.

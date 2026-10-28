@@ -42,6 +42,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `creature-fate.mjs` | what takes its creatures away, and how long do they live? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/creature-fate.mjs` |
 | `wasted-plays.mjs` | which of the bot's plays bought nothing at all? | `SEEDS=4 node scripts/measure/wasted-plays.mjs` |
 | `hidden-info.mjs` | does the computer opponent read what it cannot see? | `SEEDS=2 node scripts/measure/hidden-info.mjs` |
+| `cascade.mjs` | what does cascade actually hit, how deep does it dig, and is the free spell taken? | `SUBJECT=kindle-grove SEEDS=4 node scripts/measure/cascade.mjs` |
 
 `hidden-info` asks the fairness question, and it is the one no win rate answers: it puts the same
 position to the bot twice, the second time with **every card the acting seat cannot identify dealt
@@ -57,6 +58,16 @@ attack whenever an opponent holds a Lightning Bolt — showed up as **26 of 764 
 so a leak about one rarely-hidden card is visible but not loud. A difference is a **suspect**, not a
 verdict: a card whose own text reads a hidden zone would show up too, which is why the output names
 the position.
+
+`cascade` is the instrument for a keyword that reads better than it measures. A free spell off the
+top of a sixty-card deck is a free spell twenty-three times out of sixty-ish lands, and the output
+is the distribution that says which: how many cascades fired, how many cards came off the library
+each time (the hit included), what the hit was by name, and whether the offer was **cast or
+declined** — the bot declines whenever there is no legal way to cast the card, which is the gap
+between what the keyword offers and what it is worth. It watches `pendingFreeCast` in the state
+rather than the log, so a cascade answered inside one action cannot hide from it, and it counts
+casts of cascade cards separately so a cascade that read the whole library and found nothing shows
+up as the difference.
 
 `wasted-plays` is the generic form of a question sixteen bot rules had each answered once, by
 hand: a ritual into nothing, a Fog with nothing attacking, a pump that wears off, removal with
