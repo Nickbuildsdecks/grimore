@@ -1755,6 +1755,17 @@ const THALIA_GUARDIAN_OF_THRABEN: CardDef = {
   colors: ['W'],
 };
 
+const FIERY_TEMPER: CardDef = {
+  name: 'Fiery Temper',
+  typeLine: 'Sorcery',
+  manaCost: '{1}{R}{R}',
+  cmc: 3,
+  oracleText:
+    'Fiery Temper deals 3 damage to any target.\nMadness {R} (If you discard this card, discard it '
+    + 'into exile. When you do, cast it for its madness cost or put it into your graveyard.)',
+  colors: ['R'],
+};
+
 const GRAPESHOT: CardDef = {
   name: 'Grapeshot',
   typeLine: 'Sorcery',
@@ -4093,7 +4104,26 @@ export const ASHEN_RITE: DeckSpec = {
       this deck **0 and −12 games on two seed sets**. That is the whole price of the rebuild Tidal
       Mind's write-up measures at +47 and +38, and the deck best able to pay it is this one.
     */
-    { card: BLOOD_ARTIST, count: 3 },
+    { card: BLOOD_ARTIST, count: 2 },
+    /*
+      **Fiery Temper, for the third Blood Artist**: the pool's first madness card, in the deck with
+      the pool's busiest discard outlet.
+
+      {1}{R}{R} for three damage is a fair card and not why it is here. **Faithless Looting** is in
+      this list and cast in 23 games of 96 — it draws three and discards two, and every discard it
+      has ever made has been a pure cost until now. A Temper discarded to it is a Lightning Bolt for
+      {R}, cast the moment the discard happens and at whatever speed the discard happened at.
+
+      **The slot is a redundant copy rather than the least-cast card, and that is a finding about
+      this list rather than a preference.** Every card below the Temper in usage is the only card in
+      any deck behind some engine path: Hagra Mauling is the pool's one modal double-faced card (0
+      casts in 96 and staying), Bone Splinters is the one removal spell with an additional cost,
+      Phyrexian Arena and Dark Confidant each carry tests nothing else can carry. A third Blood
+      Artist is one more than a deck needs to find one — the same argument D129 made when it took
+      the third copy out of Rot Harvest — and two Artists, two Zulaport Cutthroats and a Fate
+      Unraveler are still five cards that drain on a death.
+    */
+    { card: FIERY_TEMPER, count: 1 },
     { card: ZULAPORT_CUTTHROAT, count: 2 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },
     { card: BLOODTHRONE_VAMPIRE, count: 1 },

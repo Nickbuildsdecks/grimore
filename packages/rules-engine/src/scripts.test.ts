@@ -1006,7 +1006,7 @@ describe('the commander, which a Commander format is about', () => {
 
     s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: krenko }));
     expect(namesIn(s, 0, 'battlefield')).toContain('Krenko, Mob Boss');
-    // The tax goes up *after* the cast, so the first one is free of it.
+    // The tax goes up *after* the cast, so the first one is offered of it.
     expect(s.seats[0]!.commanderTax).toBe(2);
 
     // Killed, so it is back in the command zone and castable again — at {2} more.
@@ -3340,7 +3340,7 @@ describe('costs that are choices: cycling, kicker, and a creature on the altar',
       kicked: true, targets: [{ kind: 'player', seat: 1 }],
     }));
     expect(life(kicked, 1)).toBe(16);
-    // Five mana spent, not one: the kicker is part of the cost rather than a free upgrade.
+    // Five mana spent, not one: the kicker is part of the cost rather than an offered upgrade.
     expect(Object.values(kicked.pools[0] ?? {}).reduce((a, b) => a + b, 0)).toBe(0);
   });
 
@@ -5499,7 +5499,7 @@ describe('answering a permanent, and answering an answer', () => {
     const aura = find(s, 0, 'battlefield', 'Pacifism');
     s = drain(cast(s, 1, 'Naturalize', [{ kind: 'card', id: aura }]));
     expect(namesIn(s, 0, 'graveyard')).toContain('Pacifism');
-    // And the creature is free again, which is the point of casting it.
+    // And the creature is offered again, which is the point of casting it.
     expect(characteristicsOf(s, s.instances[bearer]!).cantAttack).toBe(false);
   });
 
@@ -7979,7 +7979,7 @@ describe('a static effect scoped to a creature type: the pool’s first tribal l
   it('reads the type line layer 4 produced, not the printed one', () => {
     /*
       Ordering rather than a feature: no card in the pool adds a creature type, so this is built on
-      a hand-made effect. It is tested anyway because the ordering is free to get right now and
+      a hand-made effect. It is tested anyway because the ordering is offered to get right now and
       expensive to find later — CR 613.1d (types) before 613.1f (power and toughness), so a
       permanent that was *given* a type is inside the lord's scope.
 
@@ -11598,7 +11598,7 @@ describe('a card with two halves you can cast (CR 708)', () => {
       type: 'auto:cast', by: 0, card, half: 1, targets: [{ kind: 'card', id: aura }],
     }));
     expect(namesIn(s, 1, 'graveyard')).toContain('Pacifism');
-    // And the Courser is free again, because destroying the aura is what unpacifies it.
+    // And the Courser is offered again, because destroying the aura is what unpacifies it.
     expect(characteristicsOf(s, s.instances[courser]!).cantAttack).toBe(false);
   });
 
@@ -11802,7 +11802,7 @@ describe('a land on the back of a spell (CR 712)', () => {
     const action = botAction(s, 0);
     expect(action?.type).toBe('auto:playLand');
     // The Swamp, not the Broodpit: a land that is ready now beats one that is not, and keeping the
-    // flexible card is free. The tie-break reads the *face*, which is the bug this guards.
+    // flexible card is offered. The tie-break reads the *face*, which is the bug this guards.
     expect(nameOf(s, (action as { card: string }).card)).toBe('Swamp');
   });
 });
@@ -13623,7 +13623,7 @@ describe('Woe Strider: escape’s second card, and the outlet that comes back', 
       Asserted on the **stack** rather than on the life totals, and the reason is the card: a Blood
       Artist's drain targets a player, so following it through to a life total means answering a
       targeting question that has nothing to do with Woe Strider. What this test is about is that
-      the free sacrifice reached the payoff at all — the ability is on the stack, which is where a
+      the offered sacrifice reached the payoff at all — the ability is on the stack, which is where a
       trigger is observable, and its own tests cover what it does from there.
 
       Matched on the ability's own words rather than the card's name, because that is what the
@@ -13703,7 +13703,7 @@ describe('cascade: a spell that casts the next one for nothing', () => {
     The second is a **cast with nothing paid**. That is not a cheaper cost: the mana is not paid,
     the timing is not checked, and the whole thing happens inside somebody else's resolution. What
     makes it safe is that it is not a flag a client may simply set — the engine has to be holding an
-    offer open for that seat and that card, and `pendingFreeCast` is that offer.
+    offer open for that seat and that card, and `pendingOfferedCast` is that offer.
   */
   /**
    * Puts a named card of seat 0's on top of its library, from wherever it is.
@@ -13738,10 +13738,10 @@ describe('cascade: a spell that casts the next one for nothing', () => {
   const tappedLands = (s: GameState): number =>
     ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped === true).length;
 
-  it('exiles off the top until a cheaper nonland card, and offers that one free', () => {
+  it('exiles off the top until a cheaper nonland card, and offers that one offered', () => {
     // A Mountain first, which is never the hit however cheap it is, then a Bolt at one mana.
     const s = cast(cascading(['Mountain', 'Lightning Bolt']));
-    const offer = s.pendingFreeCast;
+    const offer = s.pendingOfferedCast;
     expect(offer?.seat).toBe(0);
     expect(nameOf(s, offer?.card ?? '')).toBe('Lightning Bolt');
     expect(offer?.prompt).toContain('Bloodbraid Elf cascades into Lightning Bolt');
@@ -13753,26 +13753,26 @@ describe('cascade: a spell that casts the next one for nothing', () => {
     // one being asked.
     expect(s.priority).toBeNull();
     const you = legalActions(s, 0);
-    expect(you.mustCastFree?.prompt).toBe(offer?.prompt);
-    expect(you.mustCastFree?.bottom).toBe(1);
+    expect(you.mustCastOffered?.prompt).toBe(offer?.prompt);
+    expect(you.mustCastOffered?.bottom).toBe(1);
     expect(legalActions(s, 1).plays).toEqual([]);
 
     // And the play offered on it is a cast with no cost at all, not a cheap one.
     const play = you.plays.find((p) => p.card === offer?.card);
-    expect(play?.free).toBe(true);
+    expect(play?.offered).toBe(true);
     expect(play?.manaCost).toBe('');
     expect(play?.description).toBe('Cast Lightning Bolt without paying its mana cost');
   });
 
   it('casts it for no mana, and the rest of the pile goes under the library', () => {
     let s = cast(cascading(['Mountain', 'Lightning Bolt']));
-    const bolt = s.pendingFreeCast!.card;
+    const bolt = s.pendingOfferedCast!.card;
     const library = ids(s, 0, 'library').length;
     const theirLife = life(s, 1);
     const tappedBefore = tappedLands(s);
 
     s = drain(apply(s, {
-      type: 'auto:cast', by: 0, card: bolt, free: true, targets: [{ kind: 'player', seat: 1 }],
+      type: 'auto:cast', by: 0, card: bolt, offered: true, targets: [{ kind: 'player', seat: 1 }],
     }), 40);
 
     // Nothing was paid, which is the whole of the keyword: the four lands the Elf itself cost are
@@ -13781,7 +13781,7 @@ describe('cascade: a spell that casts the next one for nothing', () => {
     expect(life(s, 1)).toBe(theirLife - 3);
     // The offer is spent, and the card it walked past is back in the library — at the bottom, so
     // the Mountain it exiled is not the next card drawn.
-    expect(s.pendingFreeCast).toBeNull();
+    expect(s.pendingOfferedCast).toBeNull();
     expect(nameOf(s, ids(s, 0, 'library').at(-1) ?? '')).toBe('Mountain');
     expect(ids(s, 0, 'library')).toHaveLength(library + 1);
     // And the Elf itself resolved into play behind it.
@@ -13794,7 +13794,7 @@ describe('cascade: a spell that casts the next one for nothing', () => {
     expect(legalActions(s, 0).passLabel).toBe('Decline');
 
     s = drain(apply(s, { type: 'auto:pass', by: 0 }), 40);
-    expect(s.pendingFreeCast).toBeNull();
+    expect(s.pendingOfferedCast).toBeNull();
     expect(ids(s, 0, 'exile')).toHaveLength(0);
     expect(ids(s, 0, 'library')).toHaveLength(library + 2);
     expect(life(s, 1)).toBe(20);
@@ -13816,13 +13816,13 @@ describe('cascade: a spell that casts the next one for nothing', () => {
       turn: 5, firstSeat: 0,
     }), 'precombat-main');
     s = cast(toTop(s, 'Flame Slash'));
-    const slash = s.pendingFreeCast!.card;
+    const slash = s.pendingOfferedCast!.card;
     expect(nameOf(s, slash)).toBe('Flame Slash');
     expect(s.stackOrder.length).toBeGreaterThan(0);
 
     const drake = find(s, 1, 'battlefield', 'Wind Drake');
     s = drain(apply(s, {
-      type: 'auto:cast', by: 0, card: slash, free: true, targets: [{ kind: 'card', id: drake }],
+      type: 'auto:cast', by: 0, card: slash, offered: true, targets: [{ kind: 'card', id: drake }],
     }), 40);
     expect(namesIn(s, 0, 'graveyard')).toContain('Flame Slash');
     expect(namesIn(s, 1, 'graveyard')).toContain('Wind Drake');
@@ -13831,23 +13831,23 @@ describe('cascade: a spell that casts the next one for nothing', () => {
   it('walks past a card of equal mana value, because "less" means less', () => {
     // Flametongue Kavu costs {3}{R} and so does the Elf, so it is exiled and passed over.
     const s = cast(cascading(['Flametongue Kavu', 'Lightning Bolt']));
-    expect(nameOf(s, s.pendingFreeCast?.card ?? '')).toBe('Lightning Bolt');
-    expect(s.pendingFreeCast?.bottom.map((id) => nameOf(s, id))).toEqual(['Flametongue Kavu']);
+    expect(nameOf(s, s.pendingOfferedCast?.card ?? '')).toBe('Lightning Bolt');
+    expect(s.pendingOfferedCast?.bottom.map((id) => nameOf(s, id))).toEqual(['Flametongue Kavu']);
   });
 
-  it('refuses a free cast nobody offered, and an X on one that was', () => {
+  it('refuses an offered cast nobody offered, and an X on one that was', () => {
     const board = cascading(['Mountain', 'Lightning Bolt']);
     const elf = find(board, 0, 'hand', 'Bloodbraid Elf');
-    expect(refusal(board, { type: 'auto:cast', by: 0, card: elf, free: true }))
+    expect(refusal(board, { type: 'auto:cast', by: 0, card: elf, offered: true }))
       .toContain('nothing is on offer');
 
     const offered = cast(board);
-    const bolt = offered.pendingFreeCast!.card;
+    const bolt = offered.pendingOfferedCast!.card;
     // Somebody else's offer is not yours, and neither is a different card.
-    expect(refusal(offered, { type: 'auto:cast', by: 1, card: bolt, free: true }))
+    expect(refusal(offered, { type: 'auto:cast', by: 1, card: bolt, offered: true }))
       .toContain('not yours');
     expect(refusal(offered, {
-      type: 'auto:cast', by: 0, card: bolt, free: true, x: 3, targets: [{ kind: 'player', seat: 1 }],
+      type: 'auto:cast', by: 0, card: bolt, offered: true, x: 3, targets: [{ kind: 'player', seat: 1 }],
     })).toContain('X is 0');
     // And nothing else may happen while the question stands, including by the other seat.
     expect(refusal(offered, { type: 'auto:pass', by: 1 })).toContain('must be answered first');
@@ -13971,5 +13971,126 @@ describe('storm: a spell copied for each spell cast before it this turn', () => 
     // One damage, not two: the Bolt was cast after the Grapeshot and bought it no copies.
     expect(life(s, 1)).toBe(19);
     expect(life(s, 0)).toBe(17);
+  });
+});
+
+describe('madness: a card discarded into exile, and a cheaper cast out of it', () => {
+  /*
+    The third shape of answer to a zone change in this pool, after a death replaced (Kalitas) and a
+    graveyard replaced (Rest in Peace) — and the first that replaces a move out of a **hand**.
+
+    Every board here discards through **Faithless Looting**, which is the card in Ashen Rite the
+    Temper is in the deck for: it draws two and discards two, and the discard happens inside the
+    resolution where the replacement can see it. An earlier version of these tests moved the card
+    by hand with `card:move` and watched nothing happen, which is correct — a tabletop move is not
+    a discard inside a resolution, and settle is what runs replacements.
+  */
+  const looting = (lands: readonly string[], hand: readonly string[]): GameState => {
+    const board = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'kindle-grove' },
+      hands: { 0: ['Faithless Looting', ...hand] },
+      battlefield: { 0: [...lands] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return apply(board, {
+      type: 'auto:cast', by: 0, card: find(board, 0, 'hand', 'Faithless Looting'),
+    });
+  };
+
+  /** Resolves the Looting, discarding the Temper and whatever else is named. */
+  const discarding = (s: GameState, names: readonly string[]): GameState =>
+    drain(decide(drain(s, 8), names), 40);
+
+  it('goes to exile instead of the graveyard, and offers itself for its madness cost', () => {
+    let s = looting(['Mountain', 'Mountain'], ['Fiery Temper', 'Swamp']);
+    s = discarding(s, ['Fiery Temper', 'Swamp']);
+
+    const offer = s.pendingOfferedCast;
+    expect(offer?.seat).toBe(0);
+    expect(nameOf(s, offer?.card ?? '')).toBe('Fiery Temper');
+    expect(offer?.cost).toBe('{R}');
+    expect(offer?.toGraveyard).toBe(true);
+    expect(namesIn(s, 0, 'exile')).toContain('Fiery Temper');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Fiery Temper');
+    // The other discard went where discards go, which is what says this is about the one card.
+    expect(namesIn(s, 0, 'graveyard')).toContain('Swamp');
+
+    // And the play on it costs {R} rather than the printed {1}{R}{R}.
+    const play = legalActions(s, 0).plays.find((p) => p.card === offer?.card);
+    expect(play?.offered).toBe(true);
+    expect(play?.manaCost).toBe('{R}');
+    expect(legalActions(s, 0).mustCastOffered?.cost).toBe('{R}');
+  });
+
+  it('is cast for one mana and deals its three damage', () => {
+    let s = looting(['Mountain', 'Mountain'], ['Fiery Temper', 'Swamp']);
+    s = discarding(s, ['Fiery Temper', 'Swamp']);
+    const temper = s.pendingOfferedCast!.card;
+    const tappedBefore = ids(s, 0, 'battlefield')
+      .filter((id) => s.instances[id]!.tapped === true).length;
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: temper, offered: true,
+      targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect(life(s, 1)).toBe(17);
+    // One more land tapped, not three: {R} was paid rather than the printed {1}{R}{R}.
+    const tappedAfter = ids(s, 0, 'battlefield')
+      .filter((id) => s.instances[id]!.tapped === true).length;
+    expect(tappedAfter - tappedBefore).toBe(1);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Fiery Temper');
+  });
+
+  it('goes to the graveyard when the offer is declined', () => {
+    let s = looting(['Mountain', 'Mountain'], ['Fiery Temper', 'Swamp']);
+    s = discarding(s, ['Fiery Temper', 'Swamp']);
+    expect(legalActions(s, 0).passLabel).toBe('Decline');
+
+    s = drain(apply(s, { type: 'auto:pass', by: 0 }), 40);
+    expect(s.pendingOfferedCast).toBeNull();
+    // The move the replacement interrupted, finished: the graveyard it was discarded to.
+    expect(namesIn(s, 0, 'graveyard')).toContain('Fiery Temper');
+    expect(namesIn(s, 0, 'exile')).not.toContain('Fiery Temper');
+    expect(life(s, 1)).toBe(20);
+  });
+
+  it('is not offered when the madness cost cannot be paid, and the card is simply discarded', () => {
+    /*
+      One Mountain, spent on the Looting itself — so {R} is unpayable when the discard happens, and
+      a question with one answer is not asked at all (CR 601.2h). The same rule the ward follows,
+      and the same channel for saying so.
+    */
+    let s = looting(['Mountain'], ['Fiery Temper', 'Swamp']);
+    s = discarding(s, ['Fiery Temper', 'Swamp']);
+
+    expect(s.pendingOfferedCast).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Fiery Temper');
+    expect(namesIn(s, 0, 'exile')).not.toContain('Fiery Temper');
+    // And said out loud, because nobody pressed anything: the note travels on the message of the
+    // action that provoked it, the same channel a ward nobody could pay uses. See
+    // `reduceAutoAction`, which drains `replacements` onto the log.
+    expect(s.log.map((entry) => entry.message).join(' ')).toContain('could not be paid');
+  });
+
+  it('says nothing when the card reaches a graveyard any other way', () => {
+    /*
+      The clause the `discarded` list exists for. A Fiery Temper that has finished resolving as a
+      spell is a card put into a graveyard like any other, and a madness that fired for it would be
+      reading "discard" as "goes to the graveyard" — which is two different cards, and an infinite
+      one: the card would offer itself again every time it resolved.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'kindle-grove' },
+      hands: { 0: ['Fiery Temper'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Swamp'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fiery Temper'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect(s.pendingOfferedCast).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Fiery Temper');
+    expect(life(s, 1)).toBe(17);
   });
 });

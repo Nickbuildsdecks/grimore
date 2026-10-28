@@ -142,10 +142,10 @@ export interface LegalPlay {
    *
    * Not a cheaper cost but no cost, which is why it is a flag rather than a `manaCost` of `{0}`:
    * the table draws no mana symbols at all for it, and the engine refuses the cast unless
-   * `pendingFreeCast` still names this card. The play carries everything else a cast carries —
-   * targets, modes, a creature to sacrifice — because a free cast chooses all of them.
+   * `pendingOfferedCast` still names this card. The play carries everything else a cast carries —
+   * targets, modes, a creature to sacrifice — because an offered cast chooses all of them.
    */
-  readonly free?: boolean;
+  readonly offered?: boolean;
   /**
    * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
    * (CR 708).
@@ -288,12 +288,20 @@ export interface LegalActions {
    * go back under the library either way, which is the cost of the keyword and the other thing a
    * player wants to see.
    */
-  readonly mustCastFree: {
+  readonly mustCastOffered: {
     readonly prompt: string;
     /** The card on offer, so the table can show it rather than only name it. */
     readonly card: string;
-    /** The spell whose keyword offered it. */
+    /** The spell or permanent whose keyword offered it. */
     readonly source: string;
+    /**
+     * What taking it costs, in the printed `{R}` form, and the empty string for nothing at all.
+     *
+     * Cascade's offer is free and madness's is not, and the difference is the whole of what the
+     * player is deciding — a {R} they may not have untapped. The play itself carries the cost too;
+     * this is the one on the sentence above it.
+     */
+    readonly cost: string;
     /** How many other cards were exiled with it, bound for the bottom of the library. */
     readonly bottom: number;
   } | null;
@@ -548,7 +556,7 @@ export function graveyardFodder(
  * (CR 702.112).
  *
  * **The smallest number, not the largest**, which is the one real decision in the mechanic. Delve
- * is free in mana and expensive in everything else: the graveyard is what the escape card and the
+ * is offered in mana and expensive in everything else: the graveyard is what the escape card and the
  * flashback card spend, so a plan that always exiled the maximum would be paying for a Gurmag
  * Angler with cards the deck had other uses for. So this walks up from nothing and stops at the
  * first count that can be paid for — a spell castable without delving at all delves nothing, and
@@ -600,7 +608,7 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
       if (cost > 0 && life <= cost) continue;
       usable.push({ index: i, produces: ability.produces as readonly ManaType[], life: cost });
     }
-    // A permanent with both a free tap and a paid one keeps only the free ones. No scripted card
+    // A permanent with both an offered tap and a paid one keeps only the offered ones. No scripted card
     // is shaped that way; if one ever is, the conservative half of it is the half to offer, since
     // charging life for a tap that did not need it is the one mistake that cannot be taken back.
     if (usable.some((u) => u.life === 0)) usable = usable.filter((u) => u.life === 0);
@@ -652,7 +660,7 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
         // A creature's tap ability is unavailable while it is summoning sick.
         if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       }
-      // Only free mana abilities count towards what is reachable; one that costs mana would need
+      // Only offered mana abilities count towards what is reachable; one that costs mana would need
       // the mana first, and pretending otherwise would offer spells that cannot be cast.
       if (ability.cost.mana) continue;
       // A life cost is reachable while there is life to pay it with. Shown rather than hidden,
@@ -713,12 +721,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   */
   const zones = [
     ...listAt(state, zoneKey(seat, 'hand'))
-      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false, free: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false, offered: false })),
     ...listAt(state, zoneKey(seat, 'command'))
-      .map((id) => ({ id, fromCommand: true, flashback: false, escape: false, foretold: false, fromAdventure: false, free: false })),
+      .map((id) => ({ id, fromCommand: true, flashback: false, escape: false, foretold: false, fromAdventure: false, offered: false })),
     ...listAt(state, zoneKey(seat, 'graveyard'))
       .filter((id) => scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name)?.flashback !== undefined)
-      .map((id) => ({ id, fromCommand: false, flashback: true, escape: false, foretold: false, fromAdventure: false, free: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: true, escape: false, foretold: false, fromAdventure: false, offered: false })),
     /*
       And the second narrow list over the graveyard: a card with escape (CR 702.139).
 
@@ -732,7 +740,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       .filter((id) => scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name)?.escape !== undefined)
       .map((id) => ({
         id, fromCommand: false, flashback: false, escape: true, foretold: false,
-        fromAdventure: false, free: false,
+        fromAdventure: false, offered: false,
       })),
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => {
@@ -740,7 +748,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         if (inst?.foretoldTurn === undefined || inst.foretoldTurn === state.turn) return false;
         return scriptFor(state.cardDefs[inst.defKey]?.name)?.foretell !== undefined;
       })
-      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: true, fromAdventure: false, free: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: true, fromAdventure: false, offered: false })),
     /*
       And the fifth: a creature in exile whose adventure resolved (CR 708).
 
@@ -752,20 +760,20 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     */
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => state.instances[id]?.onAdventure === true)
-      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: true, free: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: true, offered: false })),
     /*
       And the sixth: the one card somebody has been told they may cast for nothing (CR 702.85a).
 
-      A list of at most one, read off `pendingFreeCast` rather than off the zone, because what makes
+      A list of at most one, read off `pendingOfferedCast` rather than off the zone, because what makes
       this card castable is not where it is — it is sitting in exile beside everything else that has
       ever been exiled — but the offer the engine is holding the table open for. Which is also why
       it is not filtered by anything: the offer was made to this seat about this card, and the only
       question left below is what the spell needs chosen before it goes on the stack.
     */
-    ...(state.pendingFreeCast !== null && state.pendingFreeCast.seat === seat
+    ...(state.pendingOfferedCast !== null && state.pendingOfferedCast.seat === seat
       ? [{
-          id: state.pendingFreeCast.card, fromCommand: false, flashback: false, escape: false,
-          foretold: false, fromAdventure: false, free: true,
+          id: state.pendingOfferedCast.card, fromCommand: false, flashback: false, escape: false,
+          foretold: false, fromAdventure: false, offered: true,
         }]
       : []),
   ];
@@ -786,7 +794,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       : [{ ...entry, half: undefined as number | undefined }, ...halves];
   });
 
-  for (const { id, fromCommand, flashback, escape, foretold, fromAdventure, free, half } of castable) {
+  for (const { id, fromCommand, flashback, escape, foretold, fromAdventure, offered, half } of castable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     /*
@@ -852,9 +860,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     }
 
     const instantSpeed = ch.typeLine.types.some((t) => t.toLowerCase() === 'instant') || ch.keywords.has('flash');
-    // A free cast ignores the timing, because the ability offering it is what says when: cascade
+    // An offered cast ignores the timing, because the ability offering it is what says when: cascade
     // casts its hit mid-resolution, with a spell on the stack underneath. See `castSpell`.
-    if (!instantSpeed && !sorcerySpeed && !free) {
+    if (!instantSpeed && !sorcerySpeed && !offered) {
       why(id, 'sorcery speed: your own main phase, with nothing on the stack');
       continue;
     }
@@ -883,9 +891,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
 
     // Flashback and foretell both replace the cost, so everything from here on — affordability, X,
     // the description — is about that cost rather than the printed one.
-    // And a free cast replaces it with nothing at all, which is the shortest arm of the chain and
-    // the only one where the printed cost is not even looked at.
-    const costShown = free ? ''
+    /*
+      And an offered cast replaces it with whatever the offer says, which is the shortest arm of
+      the chain and the only one where the printed cost is not looked at at all: cascade pays
+      nothing and madness pays a cost of its own, and both are on the offer rather than on the card.
+    */
+    const costShown = offered ? state.pendingOfferedCast?.cost ?? ''
       : flashback ? script?.flashback?.cost ?? ''
         // Escape replaces the printed cost like flashback and foretell, which is why it is in the
         // same chain: the mana half of "Escape—{2}{R}{R}, Exile three other cards" is the whole of
@@ -968,9 +979,16 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       why(id, 'not enough mana, counting every land you could tap and every creature you could convoke');
       continue;
     }
-    // Affordability is not a question about a cost nobody is paying: a cascade hit is castable
-    // off an empty board with every land tapped, which is most of what the keyword is worth.
-    if (!free && convoked === null && !canAfford(poolOf(state, seat), payable, sources)) {
+    /*
+      Affordability, asked of everything with a price on it.
+
+      A cascade hit is castable off an empty board with every land tapped, which is most of what
+      that keyword is worth — so an offer with no cost skips this. A madness cast has a cost and is
+      asked like any other: a Fiery Temper discarded with no red mana up is not a play, and the
+      card goes to the graveyard instead (CR 601.2h).
+    */
+    if ((!offered || costShown !== '') && convoked === null
+      && !canAfford(poolOf(state, seat), payable, sources)) {
       why(id, 'not enough mana, counting every land you could still tap');
       continue;
     }
@@ -1010,12 +1028,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         }
         out.push({
           kind: 'cast', card: id, name: ch.name,
-          description: `${free ? 'Cast for free' : 'Cast'} ${ch.name}`
+          description: `${offered ? (costShown === '' ? 'Cast for free' : `Cast for ${costShown}`) : 'Cast'} ${ch.name}`
             + ` — ${chosen.map((m) => m.description).join('; and ')}`,
           manaCost: costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
           modes, targetSpecs: specs, candidates,
           ...(half === undefined ? {} : { half }),
-          ...(free ? { free: true } : {}),
+          ...(offered ? { offered: true } : {}),
           isManaAbility: false, sacrificeOptions: victims,
         });
       }
@@ -1041,14 +1059,17 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       ? ` (convoking ${convoked.tapped.length})`
       : '';
     /*
-      A free cast is named for what it is rather than for where it is.
+      An offered cast is named for what it is rather than for where it is.
 
       The card is sitting in exile, but "from exile" is not what the player needs to read off this
       row — the pile it came out of is named in the prompt above it, and what is new here is that
       the spell costs nothing. Its own line rather than another arm of the chain below, which is
       about which *cost* is being paid.
     */
-    const castLabel = free ? `Cast ${ch.name} without paying its mana cost`
+    const castLabel = offered
+      ? (costShown === ''
+          ? `Cast ${ch.name} without paying its mana cost`
+          : `Cast ${ch.name} for ${costShown}`)
       : flashback
         ? `Cast ${ch.name} from your graveyard (flashback ${costShown})`
         : escape
@@ -1074,7 +1095,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       targetSpecs: specs, candidates,
       ...(flashback ? { flashback: true } : {}),
       ...(foretold ? { foretold: true } : {}),
-      ...(free ? { free: true } : {}),
+      ...(offered ? { offered: true } : {}),
       ...(half === undefined ? {} : { half }),
       isManaAbility: false, sacrificeOptions: victims,
     });
@@ -1345,7 +1366,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
    */
   const hasPriority = state.automated && state.priority === seat
     && !state.openingHands && state.pendingDecision === null && state.pendingChoice === null
-    && state.pendingPayment === null && state.pendingFreeCast === null
+    && state.pendingPayment === null && state.pendingOfferedCast === null
     && state.pendingDiscard === null && pendingDeclaration(state) === null;
   const potential = potentialMana(state, seat);
   // What could still be tapped, which is what decides affordability. `potential` above is the
@@ -1399,13 +1420,14 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
       }
     : null;
 
-  const freeCast = state.pendingFreeCast;
-  const mustCastFree: LegalActions['mustCastFree'] = freeCast !== null && freeCast.seat === seat
+  const offer = state.pendingOfferedCast;
+  const mustCastOffered: LegalActions['mustCastOffered'] = offer !== null && offer.seat === seat
     ? {
-        prompt: freeCast.prompt,
-        card: freeCast.card,
-        source: freeCast.source,
-        bottom: freeCast.bottom.length,
+        prompt: offer.prompt,
+        card: offer.card,
+        source: offer.source,
+        cost: offer.cost ?? '',
+        bottom: (offer.bottom ?? []).length,
       }
     : null;
 
@@ -1424,7 +1446,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     canPass: false, passLabel: '', plays: [], attackers: [], mustAttack: [], attackAims: [],
     blockers: [], mustOrder: [],
     mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat), mustChoose,
-    mustDecide, mustPay, mustCastFree, blocked: [], pacts: pactOptions(state, seat),
+    mustDecide, mustPay, mustCastOffered, blocked: [], pacts: pactOptions(state, seat),
     pool: poolOf(state, seat),
     potential,
   };
@@ -1440,7 +1462,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   // table is the one answer this seat owes.
   if (payment !== null) return mustPay === null ? empty : { ...empty, passLabel: `Pay ${payment.cost}` };
   /*
-    And so does a free cast on offer, which is the one of these five that is answered with a *play*.
+    And so does an offered cast on offer, which is the one of these five that is answered with a *play*.
 
     The seat it belongs to is given its casts and nothing else — no lands, no abilities, no attacks
     — because the table is stopped mid-resolution and those moves are not available there. Passing
@@ -1450,11 +1472,10 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
     Everybody else is given nothing at all, the same as for a ward: there is one move at this table
     and it is not theirs.
   */
-  const offer = state.pendingFreeCast;
   if (offer !== null) {
     if (offer.seat !== seat) return empty;
-    const free = castablePlays(state, seat, sources).plays.filter((play) => play.free === true);
-    return { ...empty, canPass: true, passLabel: 'Decline', plays: free };
+    const offered = castablePlays(state, seat, sources).plays.filter((play) => play.offered === true);
+    return { ...empty, canPass: true, passLabel: 'Decline', plays: offered };
   }
   if (mustDiscard > 0) return { ...empty, passLabel: `Discard ${mustDiscard}` };
   // A declaration comes before priority, so it is offered to the seat that owes it even though

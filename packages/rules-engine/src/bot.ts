@@ -408,7 +408,7 @@ const readyBlockers = (state: GameState, seat: SeatIndex): string[] =>
  * it ran a 1/1 into an untapped 3/3 every turn because the engine said it was allowed to. Now
  * each attacker is weighed against the blocks it could actually face:
  *
- *  - nothing can block it — attack, that is free damage;
+ *  - nothing can block it — attack, that is offered damage;
  *  - nothing that blocks it can kill it — attack, the worst case is no damage;
  *  - it dies but takes something at least as good with it — attack, that is a trade;
  *  - it dies for nothing — stay home.
@@ -660,7 +660,7 @@ const LIBRARY_CARD = 0.3;
   The diagnostic in D69 found the one thing this search demonstrably gets wrong: over sixty games
   it never once declined to counter a spell it could pay for, because by this evaluation countering
   anything is a gain while the counterspell in hand is priced as any other card — so spending it is
-  nearly free, and Counterspells go on Rampant Growths.
+  nearly offered, and Counterspells go on Rampant Growths.
 
   Pricing an answer above a generic card is the cheapest way to say "do not spend this on nothing".
   It did not work. Eighty-four paired games per value, the same seeds and pairings as D68:
@@ -1183,7 +1183,7 @@ function candidateActions(
           Shallow in the same way as every other judgement in this file, and deliberately so: it
           feeds the cheapest creature it has, and it will not do it unless that creature is worth
           less than what the spell is aimed at — or, for a spell with no target, unless the
-          creature is nearly free anyway. Without this it was happy to eat its best creature to
+          creature is nearly offered anyway. Without this it was happy to eat its best creature to
           draw two cards, which loses games while passing every test that only checks one finished.
         */
         let fodder: string | null = null;
@@ -1222,10 +1222,10 @@ function candidateActions(
             // And foretell, which is a different zone as well as a different cost: without this
             // the engine is told to cast a card in exile as though it were in hand.
             ...(play.foretold === true ? { foretold: true } : {}),
-            // And a free cast, for the fourth time and the same reason, with one difference: this
+            // And an offered cast, for the fourth time and the same reason, with one difference: this
             // flag is not a cheaper cost but a claim on an offer the engine is holding open, so a
             // cast sent without it is refused outright rather than charged the printed cost.
-            ...(play.free === true ? { free: true } : {}),
+            ...(play.offered === true ? { offered: true } : {}),
             // And which half of a two-faced card, for the fifth time and the same reason: the two
             // halves are separate plays on one card, and a cast sent without this is either the
             // wrong spell or — on a split card, which has no printed face of its own — refused.
@@ -1383,17 +1383,17 @@ function answerPending(state: GameState): Action | null {
     return { type: 'auto:pay', by: state.pendingPayment.seat, pay: true };
   }
   /*
-    A free cast inside a simulated line, taken whenever there is a legal way to take it.
+    An offered cast inside a simulated line, taken whenever there is a legal way to take it.
 
     Greedy rather than searched, which is this function's whole contract: it is what keeps a
     *simulation* moving, and a search inside a search is how a four-seat pod came to spend minutes
     on one decision (D71). The real decision — which target, which mode — is made by the search
     that owns the position, up in `botAction`; this is the stand-in for the other seats.
   */
-  if (state.pendingFreeCast !== null) {
-    const seat = state.pendingFreeCast.seat;
+  if (state.pendingOfferedCast !== null) {
+    const seat = state.pendingOfferedCast.seat;
     const inside = legalActions(state, seat);
-    const options = inside.mustCastFree === null ? [] : candidateActions(state, seat, inside);
+    const options = inside.mustCastOffered === null ? [] : candidateActions(state, seat, inside);
     return options[0]?.action ?? { type: 'auto:pass', by: seat };
   }
   return null;
@@ -2255,7 +2255,7 @@ function foretellIsSpareMana(state: GameState, seat: SeatIndex, action: Action):
   /*
     Anything else worth doing with the mana, where "else" means **another card**.
 
-    Lands are excluded because the land drop is free and taken before the search, and mana abilities
+    Lands are excluded because the land drop is offered and taken before the search, and mana abilities
     because tapping for mana is not spending it. The clause that matters is the third: every play on
     *this* card is excluded, its own ordinary cast included, because the question is whether the
     mana has a better home and casting the card now is the thing being compared against rather than
@@ -2433,7 +2433,7 @@ function crewsAVehicle(state: GameState, action: Action): boolean {
  * Only the creatures that **could have attacked** are counted as a cost, which is the half that
  * makes this a fact about the board rather than a weight. A creature that arrived this turn, or is
  * already tapped, or cannot attack, was not going into this combat anyway: tapping it to crew is
- * free, and a Vehicle crewed by summoning-sick creatures is the best thing that can happen to a
+ * offered, and a Vehicle crewed by summoning-sick creatures is the best thing that can happen to a
  * deck that just emptied its hand.
  *
  * Power rather than a fuller measure of what a creature is worth, deliberately: the question is
@@ -2820,7 +2820,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
   }
 
   /*
-    A free cast on offer holds no priority, and is the one play made without it (CR 702.85a).
+    An offered cast on offer holds no priority, and is the one play made without it (CR 702.85a).
 
     Let past this guard rather than answered above it, because unlike every other question that
     stops the table this one is a *play*: `legalActions` has already narrowed `plays` to the casts
@@ -2835,7 +2835,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     and a bot that threw one away on a bad target would be making the same mistake it makes with a
     paid one rather than a new one.
   */
-  if (!actions.hasPriority && actions.mustCastFree === null) return null;
+  if (!actions.hasPriority && actions.mustCastOffered === null) return null;
 
   /*
     One move ahead.
@@ -2892,7 +2892,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     /*
       The face, not the card, because a modal double-faced card's land is on its **back**: reading
       `entersTapped` off the front face says "ready now" about a tapped land, and the tie-break then
-      plays the flexible card over the basic that was free. The same lookup also keeps a Hagra
+      plays the flexible card over the basic that was offered. The same lookup also keeps a Hagra
       Mauling in hand while an untapped Swamp is there, which is what the card is for.
     */
     const landDef = (p: LegalPlay): CardDef | undefined => {
@@ -3067,7 +3067,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       cannot see is the *price*: crewing taps creatures, so making a 4/3 Vehicle swing by tapping a
       3/3 and a 1/1 is four power of attack bought with four power of attack, plus a card's worth of
       bodies taken out of the combat. The search scores the board after the crew and the Vehicle is
-      genuinely a creature, so the trade looks free.
+      genuinely a creature, so the trade looks offered.
     */
     if (crewsAVehicle(state, option.action) && !crewBuysMoreThanItCosts(state, seat, option.action)) {
       dropped += 1;
@@ -3119,7 +3119,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
  * Applies one bot action for one seat.
  *
  * There is no mana bookkeeping here on purpose: the engine taps for a cost it can pay, so a play
- * `legalActions` offered is one the engine will accept. A bot that tapped lands itself would be
+ * `legalActions` offers is one the engine will accept. A bot that tapped lands itself would be
  * second-guessing that, and would get it wrong the first time a land made two colours.
  */
 export function botStep(state: GameState, seat: SeatIndex, opts: BotOptions = {}): GameState {
@@ -3173,9 +3173,9 @@ export function seatsToAct(state: GameState): SeatIndex[] {
   if (state.pendingChoice !== null) return [state.pendingChoice.seat];
   // And a ward, which stops the table for the player who is not resolving anything.
   if (state.pendingPayment !== null) return [state.pendingPayment.seat];
-  // And a free cast on offer, which stops it for the player who is: a cascade hit is answered
+  // And an offered cast on offer, which stops it for the player who is: a cascade hit is answered
   // before anybody does anything else, by casting it or by declining.
-  if (state.pendingFreeCast !== null) return [state.pendingFreeCast.seat];
+  if (state.pendingOfferedCast !== null) return [state.pendingOfferedCast.seat];
   if (state.pendingDiscard !== null) return [state.pendingDiscard.seat];
   const owed = pendingDeclaration(state);
   if (owed !== null) return [...owed.seats, ...offeredSeats(state, owed.seats)];

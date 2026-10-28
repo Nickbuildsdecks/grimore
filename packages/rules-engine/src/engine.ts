@@ -148,7 +148,7 @@ export function createGame(options: CreateGameOptions): GameState {
     openingHands: false,
     pendingChoice: null,
     pendingPayment: null,
-    pendingFreeCast: null,
+    pendingOfferedCast: null,
     spellsCastThisTurn: 0,
     pendingDecision: null,
     died: [],
@@ -159,6 +159,7 @@ export function createGame(options: CreateGameOptions): GameState {
     dealtCombatDamage: [],
     drew: [],
     toGraveyard: [],
+    discarded: [],
     delayed: [],
     step: 'precombat-main',
     priority: null,
@@ -290,7 +291,7 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
    */
   const blockedByAQuestion = next.openingHands || next.pendingDecision !== null
     || next.pendingChoice !== null || next.pendingPayment !== null || next.pendingDiscard !== null
-    || next.pendingFreeCast !== null || pendingDeclaration(next) !== null;
+    || next.pendingOfferedCast !== null || pendingDeclaration(next) !== null;
   if (
     !next.finished && next.started && next.automated && next.priority === null
     && !blockedByAQuestion && !(NO_PRIORITY_STEPS as readonly string[]).includes(next.step)
@@ -323,7 +324,7 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
       pendingPayment: null,
       // And so is a free cast on offer: the cards bound for the bottom of a library stay in exile,
       // which is where a finished game leaves everything else too.
-      pendingFreeCast: null,
+      pendingOfferedCast: null,
       pendingDiscard: null,
     };
   }
@@ -688,7 +689,7 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         openingHands: false,
         pendingChoice: null,
         pendingPayment: null,
-        pendingFreeCast: null,
+        pendingOfferedCast: null,
         spellsCastThisTurn: 0,
         pendingDecision: null,
         died: [],
@@ -699,6 +700,7 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         dealtCombatDamage: [],
         drew: [],
         toGraveyard: [],
+        discarded: [],
         delayed: [],
         step: 'precombat-main',
         priority: null,

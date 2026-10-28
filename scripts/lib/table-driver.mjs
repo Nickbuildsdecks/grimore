@@ -47,7 +47,7 @@ export const checks = [];
 /** How many times each seat has mulliganed, for `forceMulligan`. */
 const seatMulligans = {};
 /** Whether this run has already photographed a free cast on offer. See `makeMove`. */
-let shotAFreeCast = false;
+let shotAnOffer = false;
 
 /**
  * Prints the tally and sets the exit code.
@@ -253,7 +253,7 @@ export async function isMyMove(page) {
     game that is fine. Which is what happened the first time this was run: the game stopped at turn
     seven, one move after a Bloodbraid Elf was cast.
   */
-  if (await has(page, 'free-cast-prompt')) return true;
+  if (await has(page, 'offered-cast-prompt')) return true;
   return has(page, 'primary-move');
 }
 /**
@@ -553,8 +553,8 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     instead of choosing what to enchant — forty moves of a Bloodbraid Elf cascading into the same
     Rancor, which is what the browser suite is for.
   */
-  if (await has(page, 'free-cast-prompt')) {
-    const prompt = await text(page, 'free-cast-prompt');
+  if (await has(page, 'offered-cast-prompt')) {
+    const prompt = await text(page, 'offered-cast-prompt');
     /*
       Shot once, before the answer, because the thing worth a picture is the offer: the sentence
       naming what cascaded into what, beside a card in exile with a Cast row on it.
@@ -562,9 +562,9 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
       Once per run rather than once per cascade. A deck built to cascade offers several a game and
       the first version wrote one file each — seventy-six of them in a run, all of the same bar.
     */
-    if (!shotAFreeCast) {
-      shotAFreeCast = true;
-      await shot(page, 'a-free-cast-on-offer');
+    if (!shotAnOffer) {
+      shotAnOffer = true;
+      await shot(page, 'a-cast-on-offer');
     }
     /*
       The button first, the card second.
@@ -573,13 +573,13 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
       common case and the one a person would press. The exile row is the fallback and the only path
       for a hit with modes or halves, where the bar deliberately offers no menu of its own.
     */
-    if (await has(page, 'free-cast-take')) {
-      await press(page, 'free-cast-take');
+    if (await has(page, 'offered-cast-take')) {
+      await press(page, 'offered-cast-take');
       return `took a free cast: ${prompt.replace(/\s+/g, ' ').slice(0, 80)}`;
     }
     const played = await tryToPlayFromZone(page, `zone-exile-${seat}`);
     if (played !== null) return `took a free cast: ${prompt.replace(/\s+/g, ' ').slice(0, 80)}`;
-    await press(page, 'free-cast-decline');
+    await press(page, 'offered-cast-decline');
     return `declined a free cast: ${prompt.replace(/\s+/g, ' ').slice(0, 80)}`;
   }
 

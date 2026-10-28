@@ -56,7 +56,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
   if (!auto || !you) return null
   const move = primaryMove(view)
   /**
-   * The free cast on offer, with the plays that would take it (CR 702.85a).
+   * The offered cast on offer, with the plays that would take it (CR 702.85a).
    *
    * The plays come from `playsForCard` rather than from the prompt, because the prompt says *that*
    * a card may be cast and the plays say *how* — one per mode, one per half. A single play gets a
@@ -64,11 +64,11 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
    * several means the card is tapped in the exile row for the menu, which is the same gesture every
    * other modal spell needs and not worth a second menu in the bar.
    */
-  const freeCast = you.mustCastFree === null
+  const freeCast = you.mustCastOffered === null
     ? null
     : {
-        ask: you.mustCastFree,
-        plays: playsForCard(view, you.mustCastFree.card).filter((p) => p.free === true),
+        ask: you.mustCastOffered,
+        plays: playsForCard(view, you.mustCastOffered.card).filter((p) => p.offered === true),
       }
   /**
    * What an attack can be sent at: every player still in the game but you, and each planeswalker
@@ -624,7 +624,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
       ) : null}
 
       {/*
-        A free cast on offer, which is a prompt and a play rather than a prompt and two buttons
+        An offered cast on offer, which is a prompt and a play rather than a prompt and two buttons
         (CR 702.85a).
 
         The sentence is here because the play is not readable without it: a "Cast Lightning Bolt
@@ -633,11 +633,11 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         what happened, says where the card is, and offers the one answer that is not a cast.
 
         Declining is a pass, which is the engine's own reading of the gesture rather than a shortcut
-        taken here: a seat with a free cast on offer holds no priority, so there is nothing else a
-        pass could mean. See `pendingFreeCast`.
+        taken here: a seat with an offered cast on offer holds no priority, so there is nothing else a
+        pass could mean. See `pendingOfferedCast`.
       */}
       {freeCast !== null ? (
-        <div data-testid="free-cast-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+        <div data-testid="offered-cast-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <Sparkles className="size-3.5 text-[var(--g-gold-400)]" />
           <span className="font-semibold text-[var(--g-text-high)]">{freeCast.ask.prompt}</span>
           <span className="text-[var(--g-text-low)]">
@@ -650,7 +650,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             {freeCast.plays.length === 1 ? (
               <Button
                 size="sm"
-                data-testid="free-cast-take"
+                data-testid="offered-cast-take"
                 onClick={() => dispatch({ kind: "choosePlay", play: freeCast.plays[0]! })}
               >
                 <Check className="size-3.5" /> Cast it
@@ -659,7 +659,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             <Button
               size="sm"
               variant="ghost"
-              data-testid="free-cast-decline"
+              data-testid="offered-cast-decline"
               onClick={() => onAct({ type: "auto:pass" })}
             >
               <X className="size-3.5" /> Decline

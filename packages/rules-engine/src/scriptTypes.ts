@@ -1387,6 +1387,15 @@ export interface ReplacementContext {
   readonly source: string;
   /** Who controls `source`. */
   readonly controller: SeatIndex;
+  /**
+   * Whether the move being replaced was a **discard**: a card going from a hand to a graveyard.
+   *
+   * Only madness asks (CR 702.35a), and only madness could: a Fiery Temper milled off the top of a
+   * library, or put into a graveyard after resolving as a spell, is in the same `to-graveyard` list
+   * as one that was discarded, and the card is already in the graveyard by the time this runs — so
+   * the zone it came from is not readable from the board. See `GameState.discarded`.
+   */
+  readonly discarded: boolean;
 }
 
 export const targetCount = (spec: TargetSpec): number => Math.max(1, spec.count ?? 1);

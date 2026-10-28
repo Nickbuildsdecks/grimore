@@ -281,7 +281,7 @@ export function atSorcerySpeed(state: GameState, seat: SeatIndex): boolean {
  */
 function resetPriority(state: GameState, to: SeatIndex = state.activeSeat): GameState {
   const blocked = state.openingHands || state.pendingDecision !== null || state.pendingChoice !== null
-    || state.pendingPayment !== null || state.pendingFreeCast !== null
+    || state.pendingPayment !== null || state.pendingOfferedCast !== null
     || state.pendingDiscard !== null || pendingDeclaration(state) !== null;
   if (blocked) return { ...state, priority: null, passed: [] };
   return { ...state, priority: to, passed: [] };
@@ -1312,7 +1312,17 @@ function replaceZoneChange(
       if (!source.own && next.instances[source.id]?.zone !== 'battlefield') continue;
       for (const rule of scriptOf(next, source.id)?.replaces ?? []) {
         if (rule.on !== on) continue;
-        const ctx = { state: next, subject: id, source: source.id, controller: source.controller };
+        const ctx = {
+          state: next, subject: id, source: source.id, controller: source.controller,
+          /*
+            Whether this move was a **discard**, which only madness asks and only madness could.
+
+            Read off the list `relocate` keeps rather than from the card's position, because by the
+            time a replacement runs the card has already moved and the zone it came from is gone.
+            See `GameState.discarded`.
+          */
+          discarded: next.discarded.includes(id),
+        };
         if (!rule.applies(ctx)) continue;
         const named = (of: string): string => next.cardDefs[next.instances[of]?.defKey ?? '']?.name ?? 'a card';
         const note = `${named(source.id)}: ${named(id)} — ${rule.description}`;
@@ -1387,6 +1397,10 @@ function settle(state: GameState, before: GameState): GameState {
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [],
+      // Drained here with the rest, and *after* the replacement passes above have read it: a
+      // discard is a fact about a move that has already happened, and madness is the one thing
+      // that asks about it.
+      discarded: [],
     };
     /*
       Damage before deaths, because that is the order the two happened in: combat damage is dealt,
@@ -1537,7 +1551,7 @@ function settle(state: GameState, before: GameState): GameState {
     game attached. An ability still resolving reads its source from the stack object, not from here.
   */
   if (Object.keys(next.vanished).length > 0) next = { ...next, vanished: {} };
-  return stateBasedActions(settlePayment(next));
+  return stateBasedActions(settleOffer(settlePayment(next)));
 }
 
 /**
@@ -1553,6 +1567,36 @@ function settle(state: GameState, before: GameState): GameState {
  * It is `canAfford` and not a second opinion about the pool, for the reason `legalActions` is: two
  * answers to "can this be paid" is how a table comes to offer a payment the engine then refuses.
  */
+/**
+ * Takes back an offered cast whose cost nobody can pay, because that is not a choice (CR 601.2h).
+ *
+ * The same rule as `settlePayment` below and for the same reason: a prompt with one button is
+ * noise, and worse than noise here — a madness card offered to a player with no red mana would stop
+ * the table to ask a question whose only answer is "no". So the engine answers it, and the card
+ * finishes the move the replacement interrupted.
+ *
+ * Only an offer **with a cost**. Cascade's offer is free, so there is always something to decide.
+ */
+function settleOffer(state: GameState): GameState {
+  const offer = state.pendingOfferedCast;
+  if (offer === null || offer.cost === undefined || offer.cost === '') return state;
+  const cost = parseManaCost(offer.cost);
+  if (cost.unsupported === undefined
+    && canAfford(poolOf(state, offer.seat), cost, manaSources(state, offer.seat))) return state;
+  const named = state.cardDefs[state.instances[offer.card]?.defKey ?? '']?.name ?? 'a card';
+  // Said in words through the channel the replacements use, because nothing was shown and nothing
+  // was pressed: without a note the card simply turns up in a graveyard.
+  const note = `${named}: ${offer.cost} could not be paid, so it is not cast`;
+  let next: GameState = {
+    ...state, pendingOfferedCast: null, replacements: [...state.replacements, note],
+  };
+  if (offer.toGraveyard === true) {
+    const card = next.instances[offer.card];
+    if (card !== undefined) next = relocate(next, card, 'graveyard', card.owner, 'bottom');
+  }
+  return next;
+}
+
 function settlePayment(state: GameState): GameState {
   const pending = state.pendingPayment;
   if (pending === null) return state;

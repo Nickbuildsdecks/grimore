@@ -1380,6 +1380,39 @@ export function bottomPile(state: GameState, ids: readonly string[]): GameState 
 }
 
 /**
+ * Madness (CR 702.35a): a discarded card goes to exile instead, to be cast for a different cost.
+ *
+ * The same offer cascade makes, with a price on it — which is why it is the same field. The card is
+ * in the graveyard when this runs (the engine replaces a zone change by letting it happen and then
+ * moving the card on, see `settle`), so this is two moves and a sentence: out of the graveyard into
+ * exile, and `pendingOfferedCast` naming the seat, the card and what casting it costs.
+ *
+ * `toGraveyard` on the offer is the half that makes declining mean what it says. A cascade hit
+ * nobody wants is already where it belongs; a madness card nobody wants has to finish the move it
+ * interrupted and go to the graveyard it was being discarded to.
+ *
+ * Whose offer it is: the card's **owner**, not the controller of whatever made them discard. Mind
+ * Rot makes you discard and the madness is yours.
+ */
+export function madnessOffer(state: GameState, card: string, cost: string): GameState {
+  const inst = state.instances[card];
+  if (inst === undefined) return state;
+  const name = state.cardDefs[inst.defKey]?.name ?? 'it';
+  const next = relocate(state, inst, 'exile', inst.owner, 'bottom');
+  return {
+    ...next,
+    pendingOfferedCast: {
+      seat: inst.owner,
+      card,
+      cost,
+      prompt: `${name} was discarded: you may cast it for ${cost} (madness)`,
+      toGraveyard: true,
+      source: card,
+    },
+  };
+}
+
+/**
  * Cascade (CR 702.85a): exile cards off the top until a cheaper one turns up, and offer it free.
  *
  * Two halves, and the second one is why this function stops rather than finishing the job. Exiling
@@ -1388,9 +1421,9 @@ export function bottomPile(state: GameState, ids: readonly string[]): GameState 
  * the three damage is divided. None of that can be answered here, mid-resolution, and an engine
  * that answered it for the player would be playing their turn for them.
  *
- * So it ends by setting `pendingFreeCast` and getting out of the way: the table stops, the player
+ * So it ends by setting `pendingOfferedCast` and getting out of the way: the table stops, the player
  * casts through the ordinary cast path with the ordinary questions, and the leftovers go to the
- * bottom whichever way they answer. See `GameState.pendingFreeCast`.
+ * bottom whichever way they answer. See `GameState.pendingOfferedCast`.
  *
  * The mana value compared against is the **printed** value of the card the keyword is on, read
  * from its definition rather than from the spell on the stack. That is deliberate: a cascading
@@ -1439,7 +1472,7 @@ export function cascadeFrom(ctx: EffectContext): GameState {
   const hitName = next.cardDefs[next.instances[hit]?.defKey ?? '']?.name ?? 'it';
   return {
     ...next,
-    pendingFreeCast: {
+    pendingOfferedCast: {
       seat: controller,
       card: hit,
       prompt: `${name} cascades into ${hitName}: you may cast it without paying its mana cost`,

@@ -265,7 +265,7 @@ export interface StackObject {
    * later. Not the ability's controller: that is `controller`.
    *
    * **Absent means the actor was the source's own controller**, which `raise` leaves off rather
-   * than writing out. That was free while every card asking the question asked it about an
+   * than writing out. That was offered while every card asking the question asked it about an
    * *opponent*; Ruric Thar is the first that taxes the table including its own side, and reading
    * an absent actor as "nobody" made it deal no damage to its controller at all. A card reading
    * this field wants `actor ?? controller`.
@@ -521,6 +521,16 @@ export interface AutomationState {
    */
   readonly toGraveyard: readonly string[];
   /**
+   * Cards that went from a **hand** to a graveyard since the last settle: discards.
+   *
+   * The narrowest of the zone-change lists, and the one that exists for a mechanic rather than for
+   * a wording: madness replaces the discard itself (CR 702.35a), so the engine has to be able to
+   * tell a discarded card from a milled one and from a spell that has finished resolving. By the
+   * time anything reads `toGraveyard` the card has moved and where it came from is gone, so the
+   * question is answered where the move happens — see `relocate` — and drained by `settle`.
+   */
+  readonly discarded: readonly string[];
+  /**
    * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
    * Drained by `settle` alongside `died`.
    *
@@ -628,8 +638,8 @@ export interface AutomationState {
    * cards were part of it.
    *
    * **Declining is answered by passing priority**, which is why there is no second action for it:
-   * the table already draws one button for "I am done here", and a free cast nobody wants is the
-   * same gesture as a priority nobody wants. See `castSpell`'s `free` branch and `passPriority`.
+   * the table already draws one button for "I am done here", and an offered cast nobody wants is the
+   * same gesture as a priority nobody wants. See `castSpell`'s `offered` branch and `passPriority`.
    */
   /**
    * How many spells have been cast this turn, by anybody (CR 702.40a).
@@ -645,16 +655,39 @@ export interface AutomationState {
    * `StackObject.castNumber`: this field is the running total and that one is the snapshot.
    */
   readonly spellsCastThisTurn: number;
-  readonly pendingFreeCast: {
+  readonly pendingOfferedCast: {
     /** Who may cast it: the controller of the ability that offered it. */
     readonly seat: SeatIndex;
-    /** The card in exile, face up, that may be cast for nothing. */
+    /** The card in exile, face up, that may be cast. */
     readonly card: string;
     /** Shown to the player deciding, in their own words. */
     readonly prompt: string;
-    /** The other cards exiled with it, bound for the bottom of the library in a random order. */
-    readonly bottom: readonly string[];
-    /** The spell whose keyword did this, for the table to point at. */
+    /**
+     * What it costs, in the printed `{R}` form — absent for a cast with **nothing** paid.
+     *
+     * The field that makes this one offer rather than two. Cascade offers a cast without paying
+     * the mana cost (CR 702.85a); madness offers a cast for a *different* cost (CR 702.35a), which
+     * is the same question with a price on it and the same answer either way. An offer with a cost
+     * the seat cannot pay is not made: a cost that cannot be paid is not a cost you may pay
+     * (CR 601.2h), and the card simply goes where declining would have sent it.
+     */
+    readonly cost?: string;
+    /**
+     * The other cards exiled with it, bound for the bottom of the library in a random order.
+     *
+     * Cascade's pile. Absent for an offer that exiled nothing else, which is every madness card.
+     */
+    readonly bottom?: readonly string[];
+    /**
+     * Where the card goes if the offer is declined: the graveyard, rather than staying in exile.
+     *
+     * Madness is the reason. A cascade hit that is declined is already where it belongs — in exile,
+     * on its way to the bottom of the library with the rest of the pile — but a madness card
+     * declined goes to the graveyard it was being discarded to in the first place (CR 702.35a), so
+     * declining has to finish the move the replacement interrupted.
+     */
+    readonly toGraveyard?: true;
+    /** The spell or permanent whose keyword did this, for the table to point at. */
     readonly source: string;
   } | null;
   readonly pendingDecision: {
@@ -834,9 +867,10 @@ export interface AutoCastAction {
    */
   readonly foretold?: boolean;
   /**
-   * Cast it **without paying its mana cost**, because something said you may (CR 702.85a).
+   * Cast it because something offered you the cast: for nothing, or for a different cost
+   * (CR 702.85a, CR 702.35a).
    *
-   * Refused unless `pendingFreeCast` names this seat and this card, which is what makes it a
+   * Refused unless `pendingOfferedCast` names this seat and this card, which is what makes it a
    * permission rather than a cheat: the flag does not grant the cast, it claims an offer the
    * engine has already made and is holding the table open for. Everything else about the cast is
    * ordinary — targets, modes and an additional cost are all still chosen and still paid.
@@ -845,7 +879,7 @@ export interface AutoCastAction {
    * (CR 107.3b), so a client sending an X is refused rather than quietly charged nothing for a
    * Fireball of twenty.
    */
-  readonly free?: boolean;
+  readonly offered?: boolean;
   /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *

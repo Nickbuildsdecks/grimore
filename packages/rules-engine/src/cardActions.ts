@@ -177,6 +177,22 @@ export function relocate(
   if (state.automated && inst.zone !== 'graveyard' && toZone === 'graveyard') {
     next = { ...next, toGraveyard: [...next.toGraveyard, inst.id] };
   }
+  /*
+    And the narrowest of them: a card going from a **hand** to a graveyard, which is a discard.
+
+    Its own list rather than a filter on `toGraveyard`, because by the time anything reads that
+    list the card has moved and the zone it came from is gone — and the difference matters more
+    here than anywhere else in this function. Madness is a replacement on *discarding* the card
+    (CR 702.35a): a Fiery Temper milled off the top, or put into the graveyard after resolving as a
+    spell, must not offer its madness cost, and a list that could not tell those apart would offer
+    it twice for every one it should.
+
+    Recorded here for the reason every other list in this function is: this is the one place a card
+    changes zone, so there is no path that can forget. Drained by `settle`.
+  */
+  if (state.automated && inst.zone === 'hand' && toZone === 'graveyard') {
+    next = { ...next, discarded: [...next.discarded, inst.id] };
+  }
 
   /*
     A token that leaves the battlefield ceases to exist, as it does on a real table.

@@ -30,7 +30,7 @@ import {
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, UNEARTHED, RENOWNED,
-  becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
+  becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom, madnessOffer,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -1820,6 +1820,56 @@ const GRAPESHOT: CardScript = {
   targets: [ANY_TARGET],
   triggers: [storm()],
   onResolve: (c) => damageFirstTarget(c, 1),
+};
+
+/**
+ * Madness, written out as the replacement effect the keyword abbreviates (CR 702.35a).
+ *
+ * "Madness {cost}" means "if you discard this card, discard it into exile; when you do, you may
+ * cast it for {cost}" — a **replacement** of the discard rather than a trigger, which is what makes
+ * it the third shape in this pool's answer to zone changes (after Kalitas's death replacement and
+ * Rest in Peace's graveyard one, D185) and the first that replaces a move out of a *hand*.
+ *
+ * Two things make it work and both are the engine's rather than the card's. `ReplacementContext`
+ * carries whether the move was a discard, which is the only way to tell a discarded Fiery Temper
+ * from a milled one or from one that has finished resolving as a spell — the card is in the
+ * graveyard by the time this is asked either way. And the offer it makes is the same
+ * `pendingOfferedCast` cascade uses, with a cost on it: the table stops, the player casts it for
+ * {R} or declines, and declining finishes the move into the graveyard.
+ *
+ * `applies` asks for its own card, because madness is about discarding *this* card. The owner's
+ * ability to pay is not asked here: the engine takes the offer back when nobody can pay for it
+ * (see `settleOffer`), which keeps the one-button prompt off the table without this needing to
+ * know what a mana source is.
+ */
+function madness(cost: string): NonNullable<CardScript['replaces']>[number] {
+  return {
+    on: 'to-graveyard',
+    description: `madness ${cost} — exiled instead, to be cast for ${cost}`,
+    applies: (c) => c.discarded && c.subject === c.source,
+    instead: (c) => madnessOffer(c.state, c.subject, cost),
+  };
+}
+
+/**
+ * Fiery Temper: three damage for three mana, or for one if you were throwing it away anyway.
+ *
+ * The pool's first madness card, and it is in Ashen Rite for the card already in that list:
+ * **Faithless Looting**, which discards two and is cast in 23 games of 96 — the busiest discard
+ * outlet in the pool. That is the whole of what madness is for. A Temper discarded to the Looting
+ * is a Lightning Bolt for {R} and a card that would otherwise have been a cost.
+ *
+ * The printed card is a sorcery, and the madness cast is not bound by that: the offer is made the
+ * moment the discard happens, which can be in anybody's turn with anything on the stack
+ * (CR 702.35a). That is the keyword rather than a liberty — it is why the card is played in decks
+ * that discard at instant speed — and the engine gets it for nothing, because an offered cast
+ * ignores the timing the way cascade's does.
+ */
+const FIERY_TEMPER: CardScript = {
+  name: 'Fiery Temper',
+  targets: [ANY_TARGET],
+  replaces: [madness('{R}')],
+  onResolve: (c) => damageFirstTarget(c, 3),
 };
 
 const PLANAR_VOID: CardScript = {
@@ -6454,7 +6504,7 @@ const ALL: readonly CardScript[] = [
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
-  BLOODBRAID_ELF, GRAPESHOT,
+  BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER,
   KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,

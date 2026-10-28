@@ -16,7 +16,7 @@
  *    a Flame Slash with nothing to burn. That number is the gap between what the keyword offers
  *    and what it is worth.
  *
- * It watches `pendingFreeCast` rather than the log, which keeps it honest about one thing in
+ * It watches `pendingOfferedCast` rather than the log, which keeps it honest about one thing in
  * particular: the offer is in the *state*, so a cascade that fired and was answered inside the same
  * settle cannot hide from it. The pile that goes to the bottom is counted off the same field.
  *
@@ -83,7 +83,7 @@ function duel(seed, decks) {
     try { s = applyAction(s, action); } catch { break; }
     if (s.stateVersion === before) break;
 
-    const now = s.pendingFreeCast;
+    const now = s.pendingOfferedCast;
     /*
       A new offer: record what it found and how far it dug for it.
 
