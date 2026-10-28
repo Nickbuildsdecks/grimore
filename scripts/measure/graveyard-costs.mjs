@@ -62,6 +62,27 @@ for (const deck of Object.values(STARTER_DECKS)) {
 */
 const MINE = new Set((STARTER_DECKS[SUBJECT]?.cards ?? []).map((entry) => entry.card.name));
 
+/*
+  And the other side of the same dimension: the cards that *answer* a graveyard.
+
+  A cost paid out of the graveyard and a card that exiles graveyards are the same question asked
+  from two ends, so they belong in one harness rather than two — a run that says "eleven delved
+  Anglers" and a run that says "nine Planar Void triggers" cannot be compared, and the thing worth
+  knowing is whether the two ever meet.
+
+  Discovered from the scripts, like everything else here: a card is watched because its script has
+  a `to-graveyard` trigger.
+*/
+const ANSWERS = new Map();
+for (const deck of Object.values(STARTER_DECKS)) {
+  for (const entry of deck.cards) {
+    const script = scriptFor(entry.card.name);
+    if ((script?.triggers ?? []).some((trigger) => trigger.on.kind === 'to-graveyard')) {
+      ANSWERS.set(entry.card.name, 0);
+    }
+  }
+}
+
 /** Per card: how many times it was cast this way, and the cards that paid for it. */
 const rows = new Map();
 const row = (name) => {
@@ -85,6 +106,8 @@ function duel(seed, decks, mine) {
   /** Stack objects already counted, so a spell sitting on the stack is one casting. */
   const counted = new Set();
   const perCard = new Map();
+  /** Triggered abilities already counted, keyed by stack object. */
+  const countedTriggers = new Set();
   for (let move = 0; move < 4000 && !s.finished; move++) {
     for (const id of s.stackOrder) {
       const object = s.stackObjects[id];
@@ -104,6 +127,20 @@ function duel(seed, decks, mine) {
       r.cards += spent;
       r.counts.set(spent, (r.counts.get(spent) ?? 0) + 1);
       perCard.set(name, (perCard.get(name) ?? 0) + 1);
+    }
+    /*
+      And the answers, counted the same way and for the same reason: a triggered ability on the
+      stack is one firing, and the stack is the one place a trigger is observable from outside the
+      engine. Both seats, not just the subject's — a Planar Void in the field is the half of this
+      measurement that says whether the hate ever meets the cost.
+    */
+    for (const id of s.stackOrder) {
+      const object = s.stackObjects[id];
+      if (object?.kind !== 'triggered' || countedTriggers.has(id)) continue;
+      const name = s.cardDefs[object.cardKey]?.name;
+      if (!ANSWERS.has(name)) continue;
+      countedTriggers.add(id);
+      ANSWERS.set(name, ANSWERS.get(name) + 1);
     }
     const seat = seatsToAct(s)[0];
     if (seat === undefined) break;
@@ -142,4 +179,11 @@ if (WATCHED.size === 0) {
   }
   console.log('');
   console.log(`games where one card paid this way more than once: ${twiceGames} of ${games}`);
+}
+if (ANSWERS.size > 0) {
+  console.log('');
+  console.log('and the answers to a graveyard, counting abilities that reached the stack:');
+  for (const [name, count] of ANSWERS) {
+    console.log(`${String(count).padStart(7)}  ${name}`);
+  }
 }

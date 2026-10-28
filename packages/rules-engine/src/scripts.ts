@@ -1543,6 +1543,80 @@ const GURMAG_ANGLER: CardScript = {
   delve: true,
 };
 
+/*
+  ── And the two answers to a graveyard ─────────────────────────────────────────────────────────
+
+  The pool spent a year making the graveyard worth having — flashback, Raise Dead, Zombify, a
+  Gravedigger, a Lhurgoyf whose power *is* the graveyard, and now escape and delve — with exactly
+  one card able to interfere with one: a Tormod's Crypt, once. That is a dimension with no answer
+  in it, which in a thirteen-deck field is a balance hole rather than a flavour choice.
+
+  **Planar Void is the card the new event exists for** and the reason it is a trigger rather than a
+  replacement: it is printed as a trigger. "Whenever another card is put into a graveyard from
+  anywhere, exile that card" means the card really does reach the graveyard and really is exiled
+  afterwards, so a Blood Artist still sees the death and a flashback card is gone before anybody
+  could cast it. Implementing it as a replacement would be implementing a different, stronger card.
+
+  **Scavenging Ooze needed nothing new at all**, which is the other half of why this pair is worth
+  shipping together: a `graveyard-card` target and an activated ability with a mana cost have been
+  in the engine for months, so the second answer to the graveyard is twelve lines and no engine
+  change. One card asks for a new event and the other proves the vocabulary was already there.
+*/
+const PLANAR_VOID: CardScript = {
+  name: 'Planar Void',
+  triggers: [
+    {
+      on: { kind: 'to-graveyard' },
+      description: 'exile that card',
+      /*
+        No target: "that card" is the one the event was about, which arrives through
+        `EffectContext.subject` the way exalted's creature does. A targeted version would be a
+        different card — it would be answerable by moving the card, and it would stop at one
+        choice per trigger rather than exiling everything.
+      */
+      effect: (c) => (c.subject === undefined ? c.state : exileCard(c.state, c.subject)),
+    },
+  ],
+};
+
+const anyGraveyardCard: TargetSpec = {
+  kind: 'graveyard-card',
+  // Any graveyard, which is what the card says: no filter, because "a graveyard" is not "your
+  // graveyard" and the Ooze is at its best eating somebody else's.
+  description: 'target card in a graveyard',
+};
+
+const SCAVENGING_OOZE: CardScript = {
+  name: 'Scavenging Ooze',
+  abilities: [
+    {
+      cost: { mana: '{G}' },
+      targets: [anyGraveyardCard],
+      description: '{G}: Exile target card from a graveyard. If it was a creature card, put a '
+        + '+1/+1 counter on Scavenging Ooze and you gain 1 life.',
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        if (id === null) return c.state;
+        /*
+          Asked **before** the exile, because "if it was a creature card" is a question about the
+          card that was there and a card in exile is no easier to read than one in a graveyard —
+          but the order is what makes the sentence true rather than a coincidence, and the next
+          effect written this way might move the card somewhere that forgets.
+
+          The printed type line rather than `characteristicsOf`: a card in a graveyard has no
+          continuous effects applied to it, so what it is is what is printed on it.
+        */
+        const inst = c.state.instances[id];
+        const wasCreature = inst !== undefined
+          && hasType(parseTypeLine(c.state.cardDefs[inst.defKey]?.typeLine), 'creature');
+        const next = exileCard(c.state, id);
+        if (!wasCreature) return next;
+        return gainLife(addCounters(next, c.source, '+1/+1', 1), c.controller, 1);
+      },
+    },
+  ],
+};
+
 const TREASURE_CRUISE: CardScript = {
   name: 'Treasure Cruise',
   delve: true,
@@ -5718,7 +5792,7 @@ const ALL: readonly CardScript[] = [
     'equipped creature is indestructible'),
   guildgate('Rakdos Guildgate', 'B', 'R'),
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
-  PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE,
+  PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,

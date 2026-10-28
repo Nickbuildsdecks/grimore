@@ -2266,6 +2266,36 @@ const PHOENIX_OF_ASH: CardDef = {
   colors: ['R'],
 };
 
+/*
+  And the two answers to it, because a pool whose graveyard is a resource needs cards that attack
+  one.
+
+  Escape, delve, flashback, Raise Dead, Zombify, Gravedigger and a Lhurgoyf whose power *is* the
+  graveyard were all printed here before anything could interfere with a graveyard except Tormod's
+  Crypt, which is one card in one deck and a single shot. These two are the standing answers: one
+  stops a graveyard existing at all, and one eats it a card at a time and grows for it.
+*/
+const PLANAR_VOID: CardDef = {
+  name: 'Planar Void',
+  typeLine: 'Enchantment',
+  manaCost: '{B}',
+  cmc: 1,
+  oracleText: 'Whenever another card is put into a graveyard from anywhere, exile that card.',
+  colors: ['B'],
+};
+
+const SCAVENGING_OOZE: CardDef = {
+  name: 'Scavenging Ooze',
+  typeLine: 'Creature — Ooze',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: '{G}: Exile target card from a graveyard. If it was a creature card, put a +1/+1 '
+    + 'counter on Scavenging Ooze and you gain 1 life.',
+  colors: ['G'],
+};
+
 const GURMAG_ANGLER: CardDef = {
   name: 'Gurmag Angler',
   typeLine: 'Creature — Zombie Fish',
@@ -3262,18 +3292,20 @@ export const TIDAL_MIND: DeckSpec = {
     { card: BLOODTHIRSTY_AERIALIST, count: 2 },
     { card: THORN_OF_THE_BLACK_ROSE, count: 1 },
     /*
-      And three cards for {U} once the graveyard is deep enough (delve, CR 702.112).
+      The Preordain, back where it was, because the card that replaced it did not earn the slot.
 
-      The deck already plays the two cards that make delve work — a Think Twice that wants to be
-      cast twice and a graveyard it fills with Doom Blades, Murders and Unsummons — so the
-      question is only which of the two spends it. `delvePlan` takes the fewest cards it can get
-      away with for exactly that reason.
+      A Treasure Cruise went here for one night: three cards for {U} once the graveyard is deep,
+      against one card deeper for {U}. The probe disagreed four times — **−9, −1, −4 and −3** of
+      288 on four seed sets, every set the same sign — and four negatives out of four is a verdict
+      even when each one is inside the floor.
 
-      It replaced the **Preordain** (75%, and the pool runs four others, so no script loses its
-      only test). One card deeper for one mana against three cards for one mana is not a close
-      comparison in a deck that was rebuilt for a clock and still needs to find it.
+      The reason is in the mana base rather than in the card. This deck runs **six Islands** and
+      eight Swamps, so a {U} on turn four is not a given; and its graveyard is already spoken for
+      by a Think Twice that wants to be cast out of it. Delve works in the deck whose graveyard
+      nothing else is spending — which is Hollow Tide, where the Gurmag Angler measured +17 and +2,
+      and where the Cruise now lives.
     */
-    { card: TREASURE_CRUISE, count: 1 },
+    { card: PREORDAIN, count: 1 },
   ],
 };
 
@@ -4222,7 +4254,7 @@ export const HOLLOW_TIDE: DeckSpec = {
     */
     { card: THE_ELDEST_REBORN, count: 1 },
     { card: OMENSPEAKER, count: 2 },
-    { card: THIEVING_MAGPIE, count: 2 },
+    { card: THIEVING_MAGPIE, count: 1 },
     { card: VAMPIRE_NIGHTHAWK, count: 2 },
     // The answers. Three counters, four removal spells and two Man-o'-Wars, because the thing that
     // beats this deck is one creature it cannot block. The fourth counter was the second Psychic
@@ -4280,6 +4312,27 @@ export const HOLLOW_TIDE: DeckSpec = {
       long enough — but a 1/5 flier was buying turns this deck had no way to spend.
     */
     { card: GURMAG_ANGLER, count: 1 },
+    /*
+      And the second delve card, which arrived here by being wrong somewhere else.
+
+      The Treasure Cruise spent one night in Tidal Mind and the probe disagreed four times —
+      −9, −1, −4 and −3 of 288 on four seed sets, every set the same sign. The reason was the
+      mana base and the competition: six Islands there against eight here, and a graveyard
+      already being spent by a Think Twice that wants to be cast out of it.
+
+      This deck is where delve already works. The Angler above it measured +17 and +2, the
+      library it mills is its own, and three Mind Sculpts and two Thought Scours put cards in a
+      graveyard nothing else in the list wants. Three cards for {U} is also the one thing a mill
+      deck is short of: it wins with about four cards and has to find them.
+
+      It replaced the **second Thieving Magpie** (81%, and the deck keeps the first). The Magpie
+      is two cards over two turns if it connects and nothing at all if it is blocked; the Cruise is
+      three cards the turn it is cast. The Divination beside it measured a point worse and is the
+      card seven engine tests reach for when they want a plain draw-two, which is a reason to cut
+      the Magpie rather than a reason the Magpie is worse — the two are within the noise of each
+      other and the pool's test coverage broke the tie.
+    */
+    { card: TREASURE_CRUISE, count: 1 },
   ],
 };
 
@@ -5032,7 +5085,7 @@ export const DELTA_BLOOM: DeckSpec = {
     // ── Eight that find the next land, or the next spell ──
     { card: ELVISH_VISIONARY, count: 2 },
     { card: WALL_OF_BLOSSOMS, count: 2 },
-    { card: DIVINATION, count: 2 },
+    { card: DIVINATION, count: 1 },
     // Two Preordains rather than one: the second is the slot the second Kiora's Follower left.
     { card: PREORDAIN, count: 2 },
     /*
@@ -5093,6 +5146,20 @@ export const DELTA_BLOOM: DeckSpec = {
     { card: ENDLESS_ONE, count: 2 },
     { card: MIND_SPRING, count: 1 },
     { card: HURRICANE, count: 1 },
+    /*
+      A two-mana creature that is also a mana sink, which is the shape a ramp deck is always
+      short of.
+
+      This deck makes more mana than it has things to spend it on by about turn six — the lands
+      are the engine and the top of the curve is one Pelakka Wurm — so a 2/2 that turns every
+      spare {G} into a +1/+1 counter and a life is a better late card than a fourth way to draw
+      two. It is also the pool's only *repeatable* interaction with a graveyard: a Planar Void
+      stops one existing, and this eats one at a card a turn while getting bigger for it.
+
+      It replaced the **second Divination** (81%): four mana for two cards, in a deck that
+      already runs two Preordains, a Mind Spring and a Tatyova drawing a card for every land.
+    */
+    { card: SCAVENGING_OOZE, count: 1 },
   ],
 };
 
@@ -5190,7 +5257,6 @@ export const BLIGHT_VECTOR: DeckSpec = {
 
     // ── The ten that make them connect ──
     { card: GIANT_GROWTH, count: 3 },
-    { card: TITANIC_GROWTH, count: 1 },
     /*
       One Titanic Growth for the pool's other modal card, which is three cards in one slot here.
 
@@ -5227,13 +5293,33 @@ export const BLIGHT_VECTOR: DeckSpec = {
     // the one removal spell in the pool that gets *better* for being cast by this deck.
     { card: PREY_UPON, count: 1 },
     { card: NATURALIZE, count: 1 },
-    // One Raise Dead, because the deck's creatures are cheap and the game is usually lost to
-    // running out of bodies rather than to running out of time.
-    { card: RAISE_DEAD, count: 1 },
+    { card: TITANIC_GROWTH, count: 1 },
 
     // ── And four cards to find the rest ──
     { card: READ_THE_BONES, count: 2 },
     { card: SIGN_IN_BLOOD, count: 2 },
+    /*
+      The pool's standing answer to a graveyard, in the deck that has the least use for its own
+      (CR 400.7).
+
+      Every other black deck wants its graveyard: Ashen Rite buys creatures back, Hollow Tide
+      delves and mills, Rot Harvest has a Lhurgoyf whose power *is* a graveyard. This one wants a
+      poison counter on a creature nobody blocks, and the cards it has spent are spent — so a
+      one-mana enchantment that exiles every card the table discards, mills, destroys or resolves
+      costs it nothing and takes a dimension away from four decks at once.
+
+      **It replaced the Raise Dead, and the probe is why.** The first version of this change cut
+      the Titanic Growth (25%, the deck's least-cast card by twelve points) and measured **0 and
+      −12** of 288 on two seed sets — a card that costs its own deck games. The reason was a
+      conflict I had not looked for: this deck's one graveyard card is a Raise Dead, cast in 40 of
+      144 games, and a Planar Void turns it off completely. A deck that denies graveyards cannot
+      be playing a card that needs its own.
+
+      So the Raise Dead is the slot, which gives up a card used three times as often for one the
+      deck can actually hold. Pool coverage is safe either way: Rot Harvest runs the other Raise
+      Dead, and the Titanic Growth stays.
+    */
+    { card: PLANAR_VOID, count: 1 },
   ],
 };
 

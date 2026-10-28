@@ -8150,6 +8150,36 @@ The delve spread is the mechanic doing what it says: the Angler is cast one to f
 which is a deck casting it the turn it becomes affordable rather than the turn the graveyard is
 deepest, and the Cruise goes six or seven deep because {7}{U} has further to come down.
 
+### What the three slots are worth
+
+Priced by probing the **revert**, so a negative revert means the new card earns its place. Two seed
+sets of 288 duels each, and four for the one that disagreed:
+
+| | seeds 3300 | seeds 8800 | the card is worth |
+| --- | --- | --- | --- |
+| Phoenix of Ash out of Arc Tempest | revert −10 | revert −5 | **+10 and +5**, positive both sets |
+| Gurmag Angler out of Hollow Tide | revert −17 | revert −2 | **+17 and +2**, positive both sets |
+| Treasure Cruise out of Tidal Mind | revert **+9** | revert **+1** | **−9 and −1** — and then −4 and −3 |
+
+**The Cruise lost its slot and the probe is the only reason anybody knows.** Four seed sets, every
+one of them negative: −9, −1, −4, −3 of 288. Each is inside the ±20 floor on its own and the sign
+test is what makes it a verdict — this project's own measurement README says two seed sets are
+enough to *kill* a change and four are what it takes to ship a small one, and this is the first time
+that rule has had to be applied against a card I had already written up.
+
+The reason it lost is a fact about the deck rather than about the mechanic. **Tidal Mind runs six
+Islands** against eight Swamps, so a {U} is not a given on turn four; and its graveyard is already
+being spent by a Think Twice that wants to be cast out of it. Delve wants the deck whose graveyard
+nothing else is spending.
+
+**So it moved rather than went.** Into Hollow Tide, where the Angler had just measured +17 and +2,
+for that deck's second Thieving Magpie (81%): eight Islands, three Mind Sculpts and two Thought
+Scours filling its own graveyard, and a deck that wins with about four cards and has to find them.
+There it measures **−9 and +15** — opposite signs on two sets, which is level, and level is the bar
+for a slot that gives a mechanic a second card. The Divination beside it was the better cut on cast
+counts by two points and is the card seven engine tests reach for when they want a plain draw-two,
+so the test coverage broke a tie the measurement could not.
+
 **The honest limit, and where it bites.** The search prices a position by what is on the board and
 in hand; **nothing in the evaluation knows a graveyard is worth anything**, so to the bot a cost
 paid in cards is free. That is why `delvePlan` taking the minimum is not a refinement but the only
@@ -8158,3 +8188,109 @@ quietly empty the zone two other mechanics in this pool are built on. A term for
 graveyard you could still use" is the obvious next thing to want, and on this project's record with
 evaluation terms (D68, D69, three deleted) it would have to be measured rather than argued — and
 the thing to measure it against is a Phoenix that failed to escape, not a win rate.
+
+## D172 — A card put into a graveyard from anywhere, and the two cards that answer one
+
+**Decision: add `to-graveyard` as the sixth member of the detect-rather-than-announce family —
+recorded in `relocate`, drained by `settle`, carrying which card it was — and use it for Planar
+Void, the pool's first standing answer to a graveyard. Ship Scavenging Ooze beside it, which needed
+no engine change at all, because the pair is the point: the graveyard had become a resource with
+nothing that could touch it.**
+
+D171 made the graveyard something you spend. It was already something you *used* — flashback, Raise
+Dead, Zombify, a Gravedigger, a Lhurgoyf whose power **is** the graveyard — and the only card in
+thirteen decks that could interfere with one was a Tormod's Crypt: one copy, one deck, one shot.
+That is a whole dimension of the game with no answer in it, which in a field this size is a balance
+hole rather than a flavour choice.
+
+### Why it is a sixth event rather than a widening of `dies`
+
+`died` is the **battlefield** half of a printed wording that says "put into a graveyard **from
+anywhere**", and the other three anywheres are not deaths:
+
+- a card **milled** off a library,
+- a card **discarded** out of a hand,
+- a **spell** that has finished resolving.
+
+Nothing in the engine could see any of them, and none of them can be reached by adding a `who` to
+the death event — they are not deaths and a card that treated them as deaths would trigger a Blood
+Artist off a discard. So it is recorded where the other five are recorded: in `relocate`, the one
+place a card changes zone, which is why no path can forget. There is one test per anywhere, because
+"no path can forget" is a claim and four callers are four chances to be wrong about it.
+
+**Both events are raised for the same card**, death first. A creature destroyed in combat really is
+a death *and* a card put into a graveyard, which is what the two printed wordings say about it —
+and the order puts a Blood Artist's drain on the stack underneath a Planar Void's exile, which is
+the order a player watching the table would describe.
+
+### Planar Void is a trigger because Planar Void is printed as a trigger
+
+The tempting version of this card is a replacement effect: "if a card would be put into a graveyard,
+exile it instead". That is Rest in Peace and Leyline of the Void, it is a **stronger** card, and
+building it would have meant moving the replacement pass upstream into `relocate` — which the
+`replaceDeaths` comment has said for months would be the right response to a card that earns it.
+
+Planar Void does not earn it, because it is not that card. "Whenever another card is put into a
+graveyard from anywhere, exile that card" means the card genuinely reaches the graveyard and is
+exiled afterwards, so a Blood Artist still sees the creature die and a trigger can still be answered
+on the way down. Implementing it as a replacement would have been implementing a different card and
+calling it this one.
+
+**"Another" is the whole of the matcher**, and it is not a formality: a Planar Void that is destroyed
+would otherwise exile itself on the way down, which is the one reading the printed word exists to
+rule out. And a Naturalize that destroys it is **not** exiled, which a test asserts: a spell goes to
+its owner's graveyard as the last step of its own resolution (CR 608.2m), by which time the
+enchantment has already left the battlefield and nothing is watching.
+
+### No options, again, and for the third time the same reason
+
+The event has no `by` and no `what`. Planar Void does not care whose graveyard or what kind of card,
+and the rule this engine keeps is that **an option with no card behind it is worse than no option**
+— `becomes-tapped` is the one trigger with no card at all and that is deliberate, `draws` has no
+`any` for the same reason. The event already carries the subject and the seat, so the day a card
+wants "whenever a creature card is put into *your* graveyard", the two facts it needs are there and
+the matcher grows a line.
+
+### Scavenging Ooze, which needed nothing
+
+The other half of why this pair ships together. A `graveyard-card` target spec and an activated
+ability with a mana cost have both been in the engine for months, so the second answer to a
+graveyard is **twelve lines of script and no engine change**: `{G}`, exile target card from a
+graveyard, and if it was a creature card take a +1/+1 counter and a life. One card asked for a new
+event; the other proved the vocabulary was already there for a card nobody had written.
+
+Its one piece of care is ordering: "if it was a creature card" is asked **before** the exile, off
+the printed type line rather than `characteristicsOf`, because a card in a graveyard has no
+continuous effects applied to it and what it is is what is printed on it.
+
+### Where they went, and what fired
+
+Both into the bottom cluster of the table, and both cuts taken off `cast-counts` over 144 games
+with a card the pool keeps elsewhere:
+
+| deck | in | out | why |
+| --- | --- | --- | --- |
+| Blight Vector (39%) | Planar Void | Titanic Growth (25%, 2 in the pool) | the one black deck with no use for its own graveyard, and the deck's least-cast card by twelve points |
+| Delta Bloom (41%) | Scavenging Ooze | second Divination (81%) | a ramp deck short of a mana sink, and four mana for two cards in a deck that already runs two Preordains, a Mind Spring and a Tatyova |
+
+### What they are worth, and the conflict the probe found
+
+**Scavenging Ooze: +14 and +4** of 288, probing the revert on two seed sets — positive both times,
+which for a two-mana creature in a deck short of a mana sink is the expected shape.
+
+**Planar Void took two attempts, and the first one is the finding.** Cutting the Titanic Growth for
+it measured **0 and −12**: a card that costs its own deck games. The reason was a conflict I had not
+looked for — this deck's one graveyard card is a **Raise Dead**, cast in 40 of 144 games, and a
+Planar Void turns it off completely. *A deck that denies graveyards cannot be playing a card that
+needs its own*, which is obvious written down and was invisible while I was choosing the cut by
+cast count alone.
+
+So the slot became the Raise Dead rather than the Titanic Growth: a card used three times as often,
+given up for coherence. Pool coverage is safe either way — Rot Harvest runs the other Raise Dead.
+
+`graveyard-costs.mjs` now counts both ends of the dimension in one run, because a harness that
+reports "eleven delved Anglers" and another that reports "nine Planar Void triggers" cannot be
+compared and the thing worth knowing is whether the hate ever meets the cost. With Blight Vector as
+the subject over 144 games: **132 Planar Void triggers reached the stack.** The bot casts the
+one-mana enchantment that does nothing for its own board, and once it is down the table has no
+graveyard.

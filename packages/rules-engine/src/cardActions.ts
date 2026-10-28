@@ -161,6 +161,22 @@ export function relocate(
   if (state.automated && inst.zone !== 'battlefield' && toZone === 'battlefield') {
     next = { ...next, entered: [...next.entered, inst.id] };
   }
+  /*
+    And a card arriving in a graveyard **from anywhere**, which is wider than dying and is its own
+    printed wording (CR 400.7 and every card that says it).
+
+    `died` above is the battlefield half and was never the whole of it: a card milled off a library,
+    a card discarded out of a hand and a spell that has finished resolving are all cards put into a
+    graveyard, and none of them is a death. Recorded here for the reason the three above it are —
+    this is the one place a card changes zone, so there is no path that can forget — and recorded
+    *as well as* `died` rather than instead of it, because a creature destroyed in combat really is
+    both things at once.
+
+    Moving within a graveyard is not arriving in one.
+  */
+  if (state.automated && inst.zone !== 'graveyard' && toZone === 'graveyard') {
+    next = { ...next, toGraveyard: [...next.toGraveyard, inst.id] };
+  }
 
   /*
     A token that leaves the battlefield ceases to exist, as it does on a real table.

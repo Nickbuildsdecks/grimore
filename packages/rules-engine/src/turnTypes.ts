@@ -491,6 +491,26 @@ export interface AutomationState {
    */
   readonly drew: readonly SeatIndex[];
   /**
+   * Cards that have arrived in somebody's graveyard and whose arrival nobody has announced yet.
+   * Drained by `settle`.
+   *
+   * The sixth member of the detect-rather-than-announce family, and the one that makes the
+   * graveyard an event rather than only a place. `died` is the battlefield half of this and was
+   * never the whole of it: the printed wording is "put into a graveyard **from anywhere**", and
+   * three of those anywheres are not deaths — a card milled off a library, a card discarded from
+   * a hand, and a spell that finishes resolving. Nothing in the engine could see any of them.
+   *
+   * Recorded in `relocate` for the reason every member of this family is: that is the one place a
+   * card changes zone, so it is the one place that cannot forget. A card already in a graveyard
+   * that moves within it is not arriving, and the initial deal is not either — the table is not
+   * automated yet when a test or a deck loader puts cards anywhere.
+   *
+   * It is **not** the same list as `died` and the two are both raised: a creature destroyed in
+   * combat is a death *and* a card put into a graveyard, which is exactly what the two printed
+   * wordings say about it.
+   */
+  readonly toGraveyard: readonly string[];
+  /**
    * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
    * Drained by `settle` alongside `died`.
    *

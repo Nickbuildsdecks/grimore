@@ -12414,11 +12414,11 @@ describe('a cost paid out of the graveyard: escape and delve', () => {
 
   it('draws three for one blue mana, and the Cruise is a sorcery either way', () => {
     let s = advanceTo(arena({
-      decks: { 0: 'tidal-mind', 1: 'ember-rush' },
+      decks: { 0: 'hollow-tide', 1: 'ember-rush' },
       hands: { 0: ['Treasure Cruise'] },
       graveyard: {
-        0: ['Doom Blade', 'Murder', 'Unsummon', 'Think Twice', 'Man-o\'-War', 'Ravenous Rats',
-          'Mind Rot'],
+        0: ['Doom Blade', 'Murder', 'Thought Scour', 'Mind Sculpt', 'Man-o\'-War',
+          'Returned Centaur', 'Tome Scour'],
       },
       battlefield: { 0: ['Island'], 1: ['Mountain'] },
       turn: 4, firstSeat: 0,
@@ -12482,5 +12482,190 @@ describe('a cost paid out of the graveyard: escape and delve', () => {
     const phoenix = find(theirs, 0, 'graveyard', 'Phoenix of Ash');
     expect(refusal(theirs, { type: 'auto:cast', by: 1, card: phoenix, escape: true }))
       .not.toBeNull();
+  });
+});
+
+describe('a card put into a graveyard from anywhere (CR 400.7)', () => {
+  /*
+    The sixth member of the detect-rather-than-announce family, and the one that is wider than a
+    death in four directions at once.
+
+    `died` is the battlefield half. The printed wording is "put into a graveyard **from
+    anywhere**", and the other three anywheres were invisible to the engine: a card milled off a
+    library, a card discarded out of a hand, and a spell that has finished resolving. These tests
+    are one per direction, because the whole point of recording this in `relocate` is that no path
+    can forget — and a test per path is the only way to know.
+  */
+  const voided = (setup: {
+    hands?: Record<number, readonly string[]>;
+    graveyard?: Record<number, readonly string[]>;
+    mine?: readonly string[];
+    theirs?: readonly string[];
+    opponent?: string;
+    /** Whose turn it is. Seat 1's, for the tests where seat 1 is the one casting. */
+    firstSeat?: SeatIndex;
+  }): GameState => advanceTo(arena({
+    decks: { 0: 'blight-vector', 1: setup.opponent ?? 'hollow-tide' },
+    ...(setup.hands === undefined ? {} : { hands: setup.hands }),
+    ...(setup.graveyard === undefined ? {} : { graveyard: setup.graveyard }),
+    battlefield: {
+      // Green and black, because this deck is: the Void costs {B} and the Naturalize and the
+      // Giant Growth the tests below cast are {G}.
+      0: ['Swamp', 'Swamp', 'Forest', 'Forest', 'Planar Void', ...(setup.mine ?? [])],
+      1: ['Island', 'Island', 'Island', 'Island', ...(setup.theirs ?? [])],
+    },
+    turn: 4, firstSeat: setup.firstSeat ?? 0,
+  }), 'precombat-main');
+
+  it('exiles a creature that died, so the graveyard never keeps it', () => {
+    const s = voided({ mine: ['Plague Stinger'] });
+    const stinger = find(s, 0, 'battlefield', 'Plague Stinger');
+    const after = drain(apply(s, { type: 'card:move', by: 0, card: stinger, toZone: 'graveyard' }), 40);
+    expect(after.instances[stinger]!.zone).toBe('exile');
+    expect(namesIn(after, 0, 'graveyard')).toEqual([]);
+  });
+
+  it('exiles cards milled off a library, which no death event could ever have seen', () => {
+    // Seat 1's own turn, because seat 1 is the one casting and a pass with an empty stack would
+    // walk the table on to the next step rather than hand priority over.
+    let s = voided({ hands: { 1: ['Thought Scour'] }, firstSeat: 1 });
+    s = tapAllLands(s, 1);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Thought Scour'),
+      targets: [{ kind: 'player', seat: 0 }],
+    }), 40);
+    // Two cards milled and both exiled, and the Scour itself went the same way out of the stack.
+    expect(namesIn(s, 0, 'graveyard')).toEqual([]);
+    expect(ids(s, 0, 'exile')).toHaveLength(2);
+    expect(namesIn(s, 1, 'graveyard')).toEqual([]);
+    expect(namesIn(s, 1, 'exile')).toContain('Thought Scour');
+  });
+
+  it('exiles a card discarded out of a hand', () => {
+    // A Swamp on their side as well, because Mind Rot is {2}{B} and Tidal Mind's blue half
+    // cannot pay for it.
+    let s = voided({
+      // Exactly two cards in the hand being emptied, so the discard has no choice to make and the
+      // test can name what left. A Swamp on their side as well, because Mind Rot is {2}{B} and
+      // Tidal Mind's blue half cannot pay for it.
+      hands: { 0: ['Giant Growth', 'Naturalize'], 1: ['Mind Rot'] },
+      theirs: ['Swamp'], opponent: 'tidal-mind', firstSeat: 1,
+    });
+    s = tapAllLands(s, 1);
+    expect(ids(s, 0, 'hand')).toHaveLength(2);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Mind Rot'),
+      targets: [{ kind: 'player', seat: 0 }],
+    }), 40);
+    // Two cards discarded, neither of them in the graveyard they were discarded into.
+    expect(ids(s, 0, 'hand')).toHaveLength(0);
+    expect(namesIn(s, 0, 'graveyard')).toEqual([]);
+    expect(namesIn(s, 0, 'exile').sort()).toEqual(['Giant Growth', 'Naturalize']);
+  });
+
+  it('exiles a spell that has finished resolving', () => {
+    let s = voided({ hands: { 0: ['Giant Growth'] }, mine: ['Plague Stinger'] });
+    s = tapAllLands(s, 0);
+    const stinger = find(s, 0, 'battlefield', 'Plague Stinger');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: stinger }],
+    }), 40);
+    // The spell did its work and then went to exile instead of to the graveyard.
+    expect(namesIn(s, 0, 'exile')).toContain('Giant Growth');
+    expect(namesIn(s, 0, 'graveyard')).toEqual([]);
+  });
+
+  it('does not exile itself, because the card says another', () => {
+    /*
+      The one reading the printed word "another" exists to rule out, and the whole of the matcher
+      for this event: a Planar Void that is destroyed would otherwise exile itself on the way down.
+      Naturalize is in this deck, which makes the test the game rather than a `card:move`.
+    */
+    let s = voided({ hands: { 0: ['Naturalize'] } });
+    s = tapAllLands(s, 0);
+    const voidCard = find(s, 0, 'battlefield', 'Planar Void');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Naturalize'),
+      targets: [{ kind: 'card', id: voidCard }],
+    }), 40);
+    expect(s.instances[voidCard]!.zone).toBe('graveyard');
+    /*
+      And the Naturalize stays in the graveyard too, which is the rules rather than a gap.
+
+      A spell is put into its owner's graveyard as the **last** step of its own resolution
+      (CR 608.2m), by which time the enchantment it destroyed has already left the battlefield —
+      so there is nothing watching when the Naturalize arrives. Worth asserting because the
+      opposite would mean the engine was asking permanents that are no longer there, which is the
+      bug class `raise` guards against by checking the watcher's zone.
+    */
+    expect(namesIn(s, 0, 'graveyard').sort()).toEqual(['Naturalize', 'Planar Void']);
+  });
+
+  it('takes the escape card away before it can escape', () => {
+    /*
+      What the card is for, now that the pool has a graveyard worth spending. A Phoenix of Ash is
+      a 2/2 that comes back for three cards out of the graveyard — unless it never reaches one.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'blight-vector' },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Phoenix of Ash'],
+        1: ['Swamp', 'Planar Void'],
+      },
+      graveyard: { 0: ['Lava Spike', 'Burst Lightning', 'Magma Jet'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const phoenix = find(s, 0, 'battlefield', 'Phoenix of Ash');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: phoenix, toZone: 'graveyard' }), 40);
+
+    expect(s.instances[phoenix]!.zone).toBe('exile');
+    // Which is also the only thing that stops the escape: there is no play on a card in exile.
+    expect(legalActions(s, 0).plays.some((play) => play.name === 'Phoenix of Ash')).toBe(false);
+  });
+
+  it('Scavenging Ooze eats a creature card, grows and gains a life', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'delta-bloom', 1: 'ember-rush' },
+      battlefield: { 0: ['Forest', 'Scavenging Ooze'], 1: ['Mountain'] },
+      graveyard: { 1: ['Raging Goblin', 'Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const ooze = find(s, 0, 'battlefield', 'Scavenging Ooze');
+    const goblin = find(s, 1, 'graveyard', 'Raging Goblin');
+    const lifeBefore = life(s, 0);
+
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: ooze, abilityIndex: 0,
+      targets: [{ kind: 'card', id: goblin }],
+    }), 40);
+
+    expect(s.instances[goblin]!.zone).toBe('exile');
+    expect([power(s, ooze), toughness(s, ooze)]).toEqual([3, 3]);
+    expect(life(s, 0)).toBe(lifeBefore + 1);
+  });
+
+  it('and eats a land for nothing, because the card asks what it was', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'delta-bloom', 1: 'ember-rush' },
+      battlefield: { 0: ['Forest', 'Scavenging Ooze'], 1: ['Mountain'] },
+      graveyard: { 1: ['Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const ooze = find(s, 0, 'battlefield', 'Scavenging Ooze');
+    const mountain = find(s, 1, 'graveyard', 'Mountain');
+    const lifeBefore = life(s, 0);
+
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: ooze, abilityIndex: 0,
+      targets: [{ kind: 'card', id: mountain }],
+    }), 40);
+
+    expect(s.instances[mountain]!.zone).toBe('exile');
+    // Exiled all the same — the ability does that unconditionally — and no counter, no life.
+    expect([power(s, ooze), toughness(s, ooze)]).toEqual([2, 2]);
+    expect(life(s, 0)).toBe(lifeBefore);
   });
 });

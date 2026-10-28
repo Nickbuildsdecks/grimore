@@ -4497,6 +4497,62 @@ in, so an escape that would spend a Counterspell's mana is dropped before the se
 two features interact exactly as written, and the pool's first escape card happens to live in the
 deck least able to use it.
 
+**Priced by probing the revert**, two seed sets of 288 duels each: the Phoenix is **+10 and +5** and
+the Angler **+17 and +2**, both positive on both sets. The Cruise is the one that lost its slot:
+−9, −1, −4 and −3 on four seed sets, every one of them negative, which is a verdict even though
+each is inside the ±20 floor. The measurement README has said since D143 that two seed sets are
+enough to *kill* a change; this is the first time that rule has had to be applied to a card already
+written up.
+
+Its reason was the deck rather than the mechanic — **six Islands** against eight Swamps, and a
+graveyard already being spent by a Think Twice that wants to be cast out of it — so it **moved**
+into Hollow Tide for that deck's second Thieving Magpie (81%), where it reads −9 and +15: opposite
+signs, which is level, and level is the bar for a slot whose job is to give a mechanic its second
+card.
+
+### The graveyard as a thing you can answer
+
+The entry above made the graveyard something you spend. It was already something the pool *used* —
+flashback, Raise Dead, Zombify, a Gravedigger, a Lhurgoyf whose power is a graveyard — and the only
+card in thirteen decks that could interfere with one was a Tormod's Crypt: one copy, one deck, one
+shot. A whole dimension with no answer in it.
+
+**`to-graveyard` is the sixth member of the detect-rather-than-announce family**, and the reason it
+is a sixth event rather than a `who` on `dies` is that three of the four printed anywheres are not
+deaths: a card milled off a library, a card discarded out of a hand, and a spell that has finished
+resolving. Recorded in `relocate` like the five before it — the one place a card changes zone, so no
+path can forget — with a test per anywhere, because "no path can forget" is a claim and four callers
+are four chances to be wrong about it. Both events are raised for the same card, death first, so a
+Blood Artist's drain sits on the stack under a Planar Void's exile.
+
+**Planar Void is a trigger because Planar Void is printed as a trigger.** The tempting version is a
+replacement effect — "if a card *would* be put into a graveyard, exile it instead" — which is Rest
+in Peace, is a stronger card, and would have meant moving the replacement pass upstream into
+`relocate`. The card as printed means the card really does reach the graveyard and is exiled
+afterwards, so a Blood Artist still sees the creature die. Building the replacement would have been
+building a different card and calling it this one. "Another" is the whole of the matcher and not a
+formality: a Planar Void that is destroyed would otherwise exile itself on the way down, and a
+Naturalize that kills it is *not* exiled, because a spell reaches its graveyard as the last step of
+its own resolution (CR 608.2m) and by then nothing is watching.
+
+The event has **no `by` and no `what`**, for the third time and the same reason: an option with no
+card behind it is worse than no option. It carries the subject and the seat, so the day something
+wants "whenever a creature card is put into *your* graveyard" the facts are already there.
+
+**Scavenging Ooze needed nothing at all**, which is the other half of why the pair ships together: a
+`graveyard-card` target and a mana-cost ability have been in the engine for months, so the second
+answer to a graveyard is twelve lines of script — {G}, exile one card from any graveyard, and a
+counter and a life if it was a creature. One card asked for a new event; the other proved the
+vocabulary was already there for a card nobody had written.
+
+Both went into the bottom cluster, both cuts off `cast-counts`: the **Planar Void** into Blight
+Vector for its Titanic Growth (25%, its least-cast card by twelve points, and the one black deck
+with no use for its own graveyard), the **Ooze** into Delta Bloom for a second Divination (81%, in a
+ramp deck short of a mana sink). `graveyard-costs.mjs` now counts both ends of the dimension in one
+run, and with Blight Vector as the subject **132 Planar Void triggers reached the stack over 144
+games** — the bot does cast the one-mana enchantment that does nothing for its own board, and once
+it is down nobody at the table has a graveyard.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -4514,6 +4570,10 @@ deck least able to use it.
    every card printed with either keyword is a line or two, and the shape beyond them (a cost paid
    by exiling cards from *somebody else's* graveyard, or from exile) is the same primitive with a
    different zone key.
+   **A card reaching a graveyard is an event too** (`to-graveyard`, carrying which card it was), so
+   "whenever another card is put into a graveyard from anywhere" is a line — and the family it
+   completes means every zone change the engine makes is now visible to a card except a move into
+   exile, which nothing printed here watches.
    `turned-face-up` has two cards behind it, morph has megamorph and a cost paid in life, target
    redirection has Willbender and Swerve, the three board-watching events carry *which* permanent
    they were about, and an ability on the stack can be pointed at — so exalted, evolve, "that

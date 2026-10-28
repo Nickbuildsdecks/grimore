@@ -566,6 +566,16 @@ function triggerMatches(
       if (by === 'opponent') return actorSeat !== sourceSeat;
       return true;
     }
+    /*
+      "Whenever **another** card is put into a graveyard from anywhere."
+
+      The self-exclusion is the whole of the matcher and it is not a formality: a Planar Void that
+      is destroyed would otherwise exile itself on the way down, which is the one reading of the
+      card the printed word "another" exists to rule out. Nothing else is asked, because the event
+      carries no options — see the note on its declaration in `scriptTypes.ts`.
+    */
+    case 'to-graveyard':
+      return !isSubject;
     case 'step': {
       const e = event as Extract<TriggerEvent, { kind: 'step' }>;
       if (e.step !== want.step) return false;
@@ -708,11 +718,22 @@ function raise(
   if (subject !== undefined
     && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
       || event.kind === 'blocks' || event.kind === 'becomes-blocked'
-      || event.kind === 'attacks-unblocked')) {
+      || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.
     event = { ...event, subject };
+  }
+  /*
+    Whose graveyard the card arrived in, for the event that has no other way to say it.
+
+    Narrower than the block below on purpose: a card in a graveyard has no `vanished` snapshot to
+    read and nothing in the pool asks whether it was a creature, so the one fact the event carries
+    is the seat — which is what the next card to want "put into *your* graveyard" will need.
+  */
+  if (subject !== undefined && event.kind === 'to-graveyard') {
+    const inst = next.instances[subject];
+    if (inst !== undefined) event = { ...event, subjectSeat: inst.zoneSeat };
   }
   if (subject !== undefined && (event.kind === 'etb' || event.kind === 'dies')) {
     // The event carries who controlled the permanent and whether it was a creature, so a watcher
@@ -855,7 +876,7 @@ function raise(
         ...(subject === undefined
           || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
             || event.kind === 'blocks' || event.kind === 'becomes-blocked'
-            || event.kind === 'attacks-unblocked')
+            || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard')
           ? {}
           : { subject }),
         // The attacker a block was against, for "that creature". Its own field rather than the
@@ -1229,7 +1250,8 @@ function settle(state: GameState, before: GameState): GameState {
   for (
     let pass = 0;
     pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0
-      || next.dealtCombatDamage.length > 0 || next.drew.length > 0);
+      || next.dealtCombatDamage.length > 0 || next.drew.length > 0
+      || next.toGraveyard.length > 0);
     pass++
   ) {
     const replaced = replaceDeaths(next, next.died);
@@ -1239,7 +1261,11 @@ function settle(state: GameState, before: GameState): GameState {
     const arrived = next.entered;
     const connected = next.dealtCombatDamage;
     const drawn = next.drew;
-    next = { ...next, died: [], left: [], entered: [], dealtCombatDamage: [], drew: [] };
+    const buried = next.toGraveyard;
+    next = {
+      ...next,
+      died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [],
+    };
     /*
       Damage before deaths, because that is the order the two happened in: combat damage is dealt,
       and only then do state-based actions notice what it killed. Both triggers go on the stack
@@ -1286,6 +1312,19 @@ function settle(state: GameState, before: GameState): GameState {
     // death trigger goes on the stack under the leave trigger — which is the order the rules put
     // them in for one event raising two abilities of the same controller.
     for (const id of gone) next = raise(next, { kind: 'leaves' }, next.instances[id]?.zoneSeat, id);
+    /*
+      And the card arriving in a graveyard, which is a different event from the death that often
+      caused it and is raised after it.
+
+      After, because a creature destroyed in combat is both at once and the narrower, older event
+      should be the one underneath on the stack: a Blood Artist's drain goes on first and a Planar
+      Void's exile on top of it, which is the order a player watching the table would describe.
+      It also means the card is still in the graveyard when the death trigger resolves, which is
+      what the rules say about a card that is exiled by something else's trigger afterwards.
+    */
+    for (const id of buried) {
+      next = raise(next, { kind: 'to-graveyard' }, next.instances[id]?.zoneSeat, id);
+    }
     for (const id of arrived) {
       const arrival = next.instances[id];
       if (arrival?.zone !== 'battlefield') continue;

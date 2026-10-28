@@ -364,6 +364,33 @@ export type TriggerEvent =
    * `GameState.drew`.
    */
   | { readonly kind: 'draws'; readonly by?: 'you' | 'opponent' | 'any' }
+  /**
+   * "Whenever another card is put into a graveyard from anywhere" (CR 400.7).
+   *
+   * The wider half of `dies`, and the four ways it happens are four different callers: a permanent
+   * destroyed, a card milled off a library, a card discarded out of a hand, and a spell that has
+   * finished resolving. Only the first of those is a death, which is why this is its own event and
+   * not a `who` on that one — see `GameState.toGraveyard`.
+   *
+   * **"Another" is built in and there are no options.** The one card in the pool that reads this
+   * event is Planar Void, which says "another card", means any player's graveyard, and does not
+   * care what kind of card it was. A `by` and a `what` would both be fields nothing fires, and the
+   * rule this engine keeps is that an option with no card behind it is worse than no option:
+   * `becomes-tapped` is the trigger with no card at all and it is deliberate, `draws` has no `any`
+   * for the same reason. The day a card wants "whenever a *creature* card is put into *your*
+   * graveyard", the event already carries the subject and the seat to ask with.
+   */
+  | {
+      readonly kind: 'to-graveyard';
+      /**
+       * Set by the engine when it raises the event: **which** card arrived in a graveyard, so the
+       * ability can say "exile that card" (CR 400.7). Read through `EffectContext.subject`, the
+       * same channel exalted and evolve read their creature through.
+       */
+      readonly subject?: string;
+      /** Set by the engine: whose graveyard it arrived in. Nothing reads it yet; see above. */
+      readonly subjectSeat?: SeatIndex;
+    }
   | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' }
   /**
    * A Saga's chapter, which fires when its lore counter *reaches* this number (CR 714.2b).
