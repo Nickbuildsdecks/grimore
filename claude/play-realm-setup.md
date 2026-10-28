@@ -414,33 +414,38 @@ check now runs in the test suite, so a future version that peeks fails before it
 other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
 ```
- 75%  217-71   ember-rush
- 65%  186-102  dawn-tithe
- 61%  175-113  verdant-guard
- 57%  163-125  forge-alliance
- 56%  160-128  kindle-grove
+ 75%  215-73   ember-rush
+ 65%  187-101  verdant-guard
+ 65%  187-101  dawn-tithe
+ 56%  161-127  forge-alliance
+ 55%  158-130  kindle-grove
  49%  142-146  skyward-writ
  46%  133-155  ashen-rite
- 45%  131-157  rot-harvest
- 44%  128-160  delta-bloom
+ 45%  129-159  rot-harvest
+ 44%  126-162  delta-bloom
  42%  121-167  hollow-tide
- 39%  113-175  arc-tempest
- 35%  100-188  tidal-mind
- 34%  98-190   blight-vector
+ 39%  112-176  arc-tempest
+ 34%  97-191   tidal-mind
+ 34%  99-189   blight-vector
 ```
 
-**One deck is clearly ahead, ten are spread between 39% and 65%, and two are measurably short.**
-The spread is forty-one points, and the bottom of the table is two decks rather than a cluster:
-Tidal Mind and Blight Vector at 35% and 34%, four points below the deck above them. This run has all
-nine of the cards added in the last pass in it — undying, persist, monstrosity, adapt and unearth —
-and the two rows that moved most are the two those cards were measured in: Verdant Guard +7 with a
-**Fleecemane Lion** and Kindle Grove +7 with a **Hellspark Elemental**, which is the number that
-card's own probe gave (+4 and +6) arriving in the field almost exactly. An earlier run of this
-table read "the bottom is a cluster now" and "the spread is thirty-six points"; this run says
-neither, and the sentences have been replaced rather than left standing — a published number that
-has been re-measured is worth more corrected than defended.
+**One deck is clearly ahead, two share second, and two are measurably short.** The spread is
+forty-one points. Ember Rush is alone at 75%, Verdant Guard and Dawn Tithe are level at 65%, nine
+decks sit between 39% and 56%, and the bottom is Tidal Mind and Blight Vector at 34% — five points
+below the deck above them. Earlier runs of this table read "the bottom is a cluster now" and "the
+spread is thirty-six points"; neither is true any more, and those sentences have been replaced
+rather than left standing — a published number that has been re-measured is worth more corrected
+than defended.
 
-**This run has four new cards in it and the table cannot see them, which is worth saying out
+**The row that moved is the one with a new card in it, and the table can only see half of what the
+card's own probe saw.** Verdant Guard gained a **Kitchen Finks** in place of a Pacifism (D190), and
+its paired probe — the same list against itself, the card in and out, on two seed sets of 288 —
+priced that swap at between fifteen and thirty games. The table moved it twelve, from 175-113 to
+187-101, which is the same direction and *inside* the instrument's own ±20-game floor. So the
+standings confirm the sign and cannot confirm the size: this is the one reading the paired probe
+exists for, and the reason both numbers are published rather than the larger one.
+
+**The run before this one had four new cards in it that the table could not see, which is worth saying out
 loud.** Battalion, mentor, renown and battle cry went into four different decks (D188), and every
 row of the thirteen moved inside the instrument's own ±20-game floor: the biggest move is Kindle
 Grove at four games. Measured properly — each change probed against its own deck on the same seeds,
