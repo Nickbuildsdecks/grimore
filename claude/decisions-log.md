@@ -8454,3 +8454,45 @@ is bad*, or *the bot plays it badly*. D170 found an instrument that invented a p
 card that exposed one. The order to ask them in is fixed from now on: **before pricing a slot, ask
 `cast-counts` whether the bot uses the card, and how often.** 348 activations in 144 games is not a
 number anybody has to interpret.
+
+## D176 — Blight Vector is a turn short, and the instruments say so in one voice
+
+**Decision: measure before touching the deck, and the measurement says the plan is fine and the
+clock is not. One change — a Wall of Blossoms for the Titanic Growth (25%) — because what the deck
+needs is the two turns that let the reach it already has arrive.**
+
+The re-run thirteen-deck table put Blight Vector last at **31%** (88-200), five points below the
+next deck and the first time since the Tidal Mind rebuild that the bottom of the table was a cliff
+rather than a cluster. Some of that is the field rather than the deck: Hollow Tide and Delta Bloom
+each gained about seven points in the same run, and wins come from somewhere. The Planar Void is
+level on its own seeds (+4, −3), so it is not the cause.
+
+### Two instruments, one answer
+
+`killed-by` over 144 games:
+
+- it loses on the table's **turn 20.4** (its own turn 10.2) **holding 2.2 cards** — not flooding,
+  not starving;
+- **71% of the time to plain combat damage**, with the next cause at 10%;
+- and the games it wins, it wins on turn 18.4 **with 15.6 life left**.
+
+`poison` over the same games:
+
+- poison is dealt in **117 of 144 games (81%)**, 903 counters in all;
+- **50 of its 53 wins are by poison**, 3 by damage;
+- by opponent: 40 poison and 2-10 against Ember Rush, **108 poison and 6-6 against Hollow Tide**.
+
+Nothing is broken. The win condition D138 built this deck for is the win condition it wins with. It
+never gets going against fast red and nearly gets there against everything slow — so it is losing a
+race by about a turn, and more reach would not help a deck that already has 903 counters' worth.
+
+### The cheapest two turns in these colours
+
+A **Wall of Blossoms** ({1}{G} 0/4, draws a card) blocks every one- and two-power creature Ember
+Rush and Forge Alliance have, replaces itself so playing defence does not shrink the hand, and —
+the part that makes it right for *this* deck rather than any deck — **it is never dead**. An infect
+deck's creatures all have to attack to do anything; a card that only blocks is a card none of the
+others can be.
+
+It replaced the **Titanic Growth** (25%, the deck's least-cast card by ten points, and Kindle Grove
+runs the other copy). Pricing by probing the revert is running; the numbers go here when they land.

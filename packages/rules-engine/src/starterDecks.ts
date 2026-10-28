@@ -5322,7 +5322,6 @@ export const BLIGHT_VECTOR: DeckSpec = {
     // the one removal spell in the pool that gets *better* for being cast by this deck.
     { card: PREY_UPON, count: 1 },
     { card: NATURALIZE, count: 1 },
-    { card: TITANIC_GROWTH, count: 1 },
 
     // ── And four cards to find the rest ──
     { card: READ_THE_BONES, count: 2 },
@@ -5349,6 +5348,28 @@ export const BLIGHT_VECTOR: DeckSpec = {
       Dead, and the Titanic Growth stays.
     */
     { card: PLANAR_VOID, count: 1 },
+    /*
+      A 0/4 that draws a card, in the deck the instruments say is losing a race by one turn.
+
+      `killed-by` is unusually clear about this deck: it dies on the table's turn 20.4 holding
+      2.2 cards — not flooding, not starving — and **71% of the time to plain combat damage**,
+      while the games it wins it wins on turn 18.4 with 15.6 life left. `poison` says the plan
+      itself is fine: 81% of games deal poison, 903 counters in all, and **50 of its 53 wins come
+      by poison**. Nothing is broken. It is a turn short.
+
+      The split by opponent says the same thing twice: against Ember Rush it deals 40 poison over
+      twelve games and goes 2-10, and against Hollow Tide it deals 108 and goes 6-6. It never
+      gets going against fast red and nearly gets there against everything slow — so what it
+      needs is not more reach, it is the two turns that let the reach it already has arrive.
+
+      A Wall of Blossoms is the cheapest version of those turns in these colours. It blocks every
+      one- and two-power creature Ember Rush and Forge Alliance have, it replaces itself so the
+      hand does not shrink for playing defence, and **it is never dead**: an infect deck's
+      creatures all have to attack, so a card that only blocks is a card none of the others can
+      be. It replaced the **Titanic Growth** (25%, the deck's least-cast card by ten points, and
+      Kindle Grove runs the other copy).
+    */
+    { card: WALL_OF_BLOSSOMS, count: 1 },
   ],
 };
 
