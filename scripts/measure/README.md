@@ -42,7 +42,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `creature-fate.mjs` | what takes its creatures away, and how long do they live? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/creature-fate.mjs` |
 | `wasted-plays.mjs` | which of the bot's plays bought nothing at all? | `SEEDS=4 node scripts/measure/wasted-plays.mjs` |
 | `hidden-info.mjs` | does the computer opponent read what it cannot see? | `SEEDS=2 node scripts/measure/hidden-info.mjs` |
-| `cascade.mjs` | what does cascade actually hit, how deep does it dig, and is the free spell taken? | `SUBJECT=kindle-grove SEEDS=4 node scripts/measure/cascade.mjs` |
+| `offers.mjs` | what does the engine offer you to cast — a cascade hit, a madness card — and is it taken? | `SUBJECT=kindle-grove SEEDS=4 node scripts/measure/offers.mjs` |
 | `storm.mjs` | how many spells does a turn actually hold, and what was the count on each storm spell? | `SUBJECT=arc-tempest SEEDS=4 node scripts/measure/storm.mjs` |
 
 `hidden-info` asks the fairness question, and it is the one no win rate answers: it puts the same
@@ -60,7 +60,10 @@ so a leak about one rarely-hidden card is visible but not loud. A difference is 
 verdict: a card whose own text reads a hidden zone would show up too, which is why the output names
 the position.
 
-`cascade` is the instrument for a keyword that reads better than it measures. A free spell off the
+`offers` is the instrument for the two keywords that read better than they measure, and it watches
+the machinery they share — the engine stopping the table to say "you may cast this". For madness it
+answers the only question that matters about the card: whether the mana was up when the discard
+happened. For cascade: A free spell off the
 top of a sixty-card deck is a free spell twenty-three times out of sixty-ish lands, and the output
 is the distribution that says which: how many cascades fired, how many cards came off the library
 each time (the hit included), what the hit was by name, and whether the offer was **cast or

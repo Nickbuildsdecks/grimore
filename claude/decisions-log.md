@@ -9953,7 +9953,8 @@ the same `payFrom` every other cast uses.
 
 ### What cascade is worth, and what it hits
 
-`scripts/measure/cascade.mjs` is the new instrument, and it exists because the keyword reads better
+`scripts/measure/offers.mjs` (built here as `cascade.mjs`, renamed in D193 when madness joined it)
+is the new instrument, and it exists because the keyword reads better
 than it measures: a free spell off the top of a sixty-card deck is a free spell only when the top of
 the deck is not one of the twenty-three lands. It watches `pendingFreeCast` in the state rather than
 the log, counts the depth of each dig, names the hit, and splits the answers into cast and declined.
@@ -10105,3 +10106,79 @@ The filter is deleted, and this is the second rule in nine entries to be built a
 it says the ceiling on storm in this engine is the mana curve, not the bot's judgement, and that a
 card which multiplies by a turn's spell count is a card for the two people at the table rather than
 for the computer opponent.
+
+## D193 — Madness, the offer with a price on it, and a bot rule that is right and worth nothing
+
+Cascade's `pendingFreeCast` has become `pendingOfferedCast` with a `cost`, because madness
+(CR 702.35a) turned out to be the same question with a price on it: *you may cast this card, now,
+out of exile*. One field, two keywords, and the action flag is `offered` rather than `free` for the
+same reason — the flag claims an offer, and what the offer costs is the offer's business.
+
+### What madness needed that cascade did not
+
+**A discard has to be distinguishable from every other way a card reaches a graveyard.** Madness
+replaces the *discard* — not a mill, not a spell finishing its resolution — and by the time a
+replacement runs the card has already moved, so the zone it came from is gone. `relocate` now
+records hand-to-graveyard moves in `GameState.discarded`, in the one place a card changes zone, and
+`ReplacementContext` carries it. Without that the keyword would fire on a Fiery Temper that had just
+resolved as a spell, and offer it again, every time, forever.
+
+**And an offer nobody can pay for is not a choice.** A Temper discarded with no red mana up would
+otherwise stop the table to ask a question with one answer. `settleOffer` takes it back and says so
+through the replacement channel, which is the rule and the mechanism `settlePayment` already used
+for a ward nobody can pay.
+
+Declining now finishes the move the replacement interrupted: a cascade hit goes to the bottom of the
+library with the rest of its pile, a madness card to the graveyard it was being discarded to.
+
+The keyword is a **field** on the script rather than a replacement each card writes out —
+`madness: { cost: '{R}' }` — because the cost has to be readable by everything that wants it:
+`legalActions` prices the play from it, `settleOffer` asks whether it can be paid, and the bot's
+discard policy reads it. A cost inside a closure is a cost only that closure can see.
+
+**Fiery Temper** goes into Ashen Rite for its third Blood Artist. The slot is a redundant copy
+rather than the least-cast card, and that is a finding about the list rather than a preference:
+every card below the Temper in usage is the only card in any deck behind some engine path — Hagra
+Mauling is the pool's one modal double-faced card, Bone Splinters the one removal spell with an
+additional cost, Phyrexian Arena and Dark Confidant each carry tests nothing else carries.
+
+### Measured: level, and the keyword never fires in a bot's hands
+
+The paired probe on the slot, two seed sets of 288: **153-150** and **132-133**. Level to within
+three games, which is what a three-mana removal spell traded for a third copy of a drain effect
+should be.
+
+`offers.mjs` — the cascade instrument, generalised to the machinery both keywords share — says the
+more interesting thing. Over 96 games of Ashen Rite:
+
+```
+281 cards discarded, 0 of them a madness card
+ 41 discards made out of a hand that was holding one
+ 29 of those had the madness cost payable *before* the action
+  0 offers made, 0 taken back
+```
+
+The bot had the Temper in hand and discarded something else forty-one times, because both discard
+policies rank by mana value — one pitches the cheapest card, the other the dearest, and a
+three-mana sorcery is neither.
+
+### The rule, and the honest number for it
+
+So the rule writes itself: **when a discard is owed and a madness card is in hand whose cost is
+payable, give up that card first.** It is not a discard at all; it is a cheap spell. There is a test
+on both halves — with two Mountains the bot pitches the Temper and the offer appears, with one (the
+Looting having spent it) it leaves the Temper alone and the ordinary policy wins.
+
+And it fires **zero times in 96 games**, which the same instrument says and which this entry has to
+say too. The 29 chances were payable *before* the action and not at the moment of the discard: the
+bot casts the Faithless Looting with the mana that would have paid for the madness cast, or it is
+discarding at cleanup because it has spent everything. That is not a new finding — it is the ceiling
+D108, D110 and D119 each measured from a different direction: **this bot does not hold mana.**
+
+The rule stays, and the difference from the two rules this project has built and deleted on a zero
+(D184's `equipAddsNothing`, D192's storm filter) is worth being precise about. Those two were
+*wrong*: one was subsumed by a rule that already caught the case, and the other was written from an
+explanation the measurement then contradicted. This one is right — there is a position where it
+changes the play, and a test that holds it there — and it is unreachable today for a reason that is
+documented, measured and not about madness. A correct rule worth nothing is kept and labelled; an
+incorrect rule worth nothing is deleted.

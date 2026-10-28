@@ -5198,7 +5198,7 @@ paid (CR 107.3b).
 
 **Bloodbraid Elf** goes into Kindle Grove for its last Giant Growth, the least-cast card in that
 list (10 casts in 96 games). What the keyword is actually worth is a new instrument,
-`scripts/measure/cascade.mjs`, and the answer is small:
+`scripts/measure/offers.mjs`, and the answer is small:
 
 ```
 144 games: 20 cascades fired, 1.95 cards exiled each (the hit included)
@@ -5249,6 +5249,35 @@ castable, and 42% of turns hold no spell at all. The filter is deleted and the n
 ceiling on storm here is the mana curve rather than the bot's judgement, which makes it a card for
 the two people at the table. The paired probe agrees it costs the deck nothing: 126-128 and 114-113
 on two seed sets of 288, level to within two games.
+
+### Madness, the offer with a price on it, and a rule that is right and worth nothing (D193)
+
+Cascade's `pendingFreeCast` is now `pendingOfferedCast` with a **cost**, because madness
+(CR 702.35a) is the same question with a price on it: you may cast this card, now, out of exile.
+One field, two keywords, and the action flag is `offered` rather than `free`.
+
+Two things madness needed that cascade did not. **A discard has to be tellable from every other way
+a card reaches a graveyard** — a mill, a spell finishing its resolution — and by the time a
+replacement runs the card has moved and the zone it came from is gone; so `relocate` records
+hand-to-graveyard moves in `discarded`, in the one place a card changes zone. And **an offer nobody
+can pay for is not a choice**, so `settleOffer` takes it back and says so, the way a ward nobody can
+pay is answered without a prompt.
+
+**Fiery Temper** goes into Ashen Rite for its third Blood Artist — a redundant copy rather than the
+least-cast card, because every card below it in usage is the only card in any deck behind some
+engine path. The slot measures level: 153-150 and 132-133 on two seed sets of 288.
+
+The instrument found the interesting part. Over 96 games: **281 discards, none of them a madness
+card, 41 of them made out of a hand that was holding one.** Both of the bot's discard policies rank
+by mana value — one pitches the cheapest card, the other the dearest — and a three-mana sorcery is
+neither. So the rule writes itself: when a discard is owed and a madness card is in hand whose cost
+is payable, give up that card first.
+
+It fires **zero times in 96 games**, and the reason is a ceiling this project has measured three
+times from three directions (D108, D110, D119): **the bot does not hold mana.** The chances were
+payable before the action and gone by the moment of the discard, because the Faithless Looting was
+cast with the mana that would have paid for the madness cast. The rule stays — there is a position
+where it changes the play and a test that holds it there — and the number stays with it.
 
 ## Next
 

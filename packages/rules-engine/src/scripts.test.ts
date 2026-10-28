@@ -14072,6 +14072,37 @@ describe('madness: a card discarded into exile, and a cheaper cast out of it', (
     expect(s.log.map((entry) => entry.message).join(' ')).toContain('could not be paid');
   });
 
+  it('is the card the computer gives up first — but only with the mana to cast it', () => {
+    /*
+      The bot rule, and both halves of it. Asked of the same board twice: with one Mountain the
+      Looting has spent it and the Temper is a three-mana sorcery in a graveyard, so the ordinary
+      policy wins and something else goes; with two, the madness cast follows and the Temper is the
+      first card given up.
+
+      Written after the measurement rather than before it — `offers.mjs` over 96 games found 281
+      discards and not one madness card among them, 41 of them out of a hand that was holding one.
+      What the same instrument then said about the rule is in D193: it fires here and still never
+      fires in a real game, because the bot spends its mana before it discards.
+    */
+    const board = (lands: number): GameState => advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'kindle-grove' },
+      hands: { 0: ['Faithless Looting', 'Fiery Temper', 'Swamp', 'Dark Ritual'] },
+      battlefield: { 0: Array.from({ length: lands }, () => 'Mountain') },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const discardsChosen = (lands: number): string[] => {
+      const s = drain(apply(board(lands), {
+        type: 'auto:cast', by: 0, card: find(board(lands), 0, 'hand', 'Faithless Looting'),
+      }), 8);
+      const chosen = botAction(s, 0);
+      return chosen?.type === 'auto:decide' ? chosen.cards.map((id) => nameOf(s, id)) : [];
+    };
+
+    expect(discardsChosen(2)).toContain('Fiery Temper');
+    // One Mountain, spent on the Looting: the madness cast cannot follow, so the rule stands aside.
+    expect(discardsChosen(1)).not.toContain('Fiery Temper');
+  });
+
   it('says nothing when the card reaches a graveyard any other way', () => {
     /*
       The clause the `discarded` list exists for. A Fiery Temper that has finished resolving as a

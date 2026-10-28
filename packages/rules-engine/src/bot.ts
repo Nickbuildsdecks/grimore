@@ -169,7 +169,52 @@ function decideCards(
   const gaining = ask.from === 'library' || ask.from === 'graveyard';
   const ranked = [...ask.candidates].sort((a, b) => cardWorth(state, b) - cardWorth(state, a));
   const take = gaining ? ask.max : ask.min;
-  return (gaining ? ranked : ranked.reverse()).slice(0, take);
+  const order = gaining ? ranked : ranked.reverse();
+  /*
+    And a madness card goes first when cards are being given up rather than gained.
+
+    Ahead of the ordinary order rather than inside it, because that order is about mana value and
+    this is about the card not being lost at all — see `madnessToPitch` for the 41 discards made
+    out of a hand holding one, and none of them it.
+  */
+  if (!gaining) {
+    const pitch = madnessToPitch(state, seat, order);
+    if (pitch !== null) return [pitch, ...order.filter((id) => id !== pitch)].slice(0, take);
+  }
+  return order.slice(0, take);
+}
+
+/**
+ * A card in this hand that would rather be **discarded**: a madness card whose cost is payable now.
+ *
+ * Not a discard at all, which is the whole of the rule. A Fiery Temper pitched to a Faithless
+ * Looting with a Mountain untapped is a Lightning Bolt for {R}; the same card kept in hand is a
+ * three-mana sorcery that may never be cast. So when the bot owes a discard it gives up that card
+ * first, ahead of whatever its ordinary policy would have chosen.
+ *
+ * **Measured before it was written**, which is the discipline this project keeps for bot rules.
+ * `offers.mjs` over 96 games of Ashen Rite: 281 real discards, **none** of them a madness card, and
+ * **41** of them made out of a hand that was holding one. The keyword had never once fired in a
+ * real game — not because the engine was wrong but because the discard policies rank by mana value,
+ * and a three-mana sorcery is neither the cheapest card in a hand nor the dearest.
+ *
+ * Affordability is asked, because the rule is only right when the cast follows: a Temper discarded
+ * with no red mana up is a card in a graveyard, and giving it up ahead of a land would then be
+ * strictly worse than the policy it replaced. It is the same question `settleOffer` asks when it
+ * decides whether to stop the table at all, through the same solver.
+ */
+function madnessToPitch(
+  state: GameState, seat: SeatIndex, candidates: readonly string[],
+): string | null {
+  for (const id of candidates) {
+    const name = state.cardDefs[state.instances[id]?.defKey ?? '']?.name;
+    const madness = scriptFor(name)?.madness;
+    if (madness === undefined) continue;
+    const cost = parseManaCost(madness.cost);
+    if (cost.unsupported !== undefined) continue;
+    if (canAfford(poolOf(state, seat), cost, manaSources(state, seat))) return id;
+  }
+  return null;
 }
 
 /**
@@ -2798,9 +2843,13 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
   if (ward !== null) return { type: 'auto:pay', by: seat, pay: true };
 
   if (actions.mustDiscard > 0) {
-    // Pitch the most expensive thing, which is the card least likely to be castable.
-    const worst = handByCost(state, seat)[0];
-    return worst === undefined ? null : { type: 'auto:discard', by: seat, card: worst.id };
+    /*
+      A madness card first, because discarding it is how it gets cast (see `madnessToPitch`), and
+      otherwise the most expensive thing — the card least likely to be castable.
+    */
+    const hand = handByCost(state, seat);
+    const pitch = madnessToPitch(state, seat, hand.map((card) => card.id)) ?? hand[0]?.id;
+    return pitch === undefined ? null : { type: 'auto:discard', by: seat, card: pitch };
   }
 
   /*

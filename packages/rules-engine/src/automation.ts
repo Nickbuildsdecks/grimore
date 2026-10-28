@@ -32,8 +32,8 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, modsFrom, poolOf,
-  removeEffectsFrom, setPool, spellLeavesStack, spendRegeneration, untapAll,
+  REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, madnessOffer, modsFrom,
+  poolOf, removeEffectsFrom, setPool, spellLeavesStack, spendRegeneration, untapAll,
   type EffectContext, type EffectFn,
 } from './effects.js';
 import { manaSources } from './legalActions.js';
@@ -1308,6 +1308,29 @@ function replaceZoneChange(
     */
     const candidates = [{ id, controller: inst.zoneSeat, own: true },
       ...sources.map((source) => ({ ...source, own: false }))];
+    /*
+      Madness, installed by the engine rather than written out by the card (CR 702.35a).
+
+      First, before any other replacement, because it is the affected card's own and the choice
+      between two applicable replacements belongs to the affected object's controller (CR 616.1) —
+      the same reason the card's own `replaces` entries are asked before everybody else's. And only
+      for a **discard**: a milled card, or one that has finished resolving as a spell, is in this
+      same list and is not a discard at all.
+    */
+    const madness = on === 'to-graveyard' && next.discarded.includes(id)
+      ? scriptOf(next, id)?.madness
+      : undefined;
+    if (madness !== undefined) {
+      const named = next.cardDefs[inst.defKey]?.name ?? 'a card';
+      next = madnessOffer(next, id, madness.cost);
+      next = {
+        ...next,
+        replacements: [...next.replacements,
+          `${named}: discarded into exile, to be cast for ${madness.cost} (madness)`],
+      };
+      replaced.add(id);
+      continue;
+    }
     for (const source of candidates) {
       if (!source.own && next.instances[source.id]?.zone !== 'battlefield') continue;
       for (const rule of scriptOf(next, source.id)?.replaces ?? []) {

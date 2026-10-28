@@ -1343,6 +1343,21 @@ export interface CardScript {
    * it — which is what the rules say and the whole reason this is a replacement rather than a
    * trigger of its own.
    */
+  /**
+   * Madness: if you discard this card, it goes to exile instead and you may cast it for this cost
+   * (CR 702.35a).
+   *
+   * A field rather than a `replaces` entry the card writes itself, for the reason flashback and
+   * escape are fields: the **cost** has to be readable by everything that wants it. `legalActions`
+   * prices the play from it, `settleOffer` asks whether it can be paid, and the bot's discard
+   * policy reads it to decide that a madness card is not a discard at all but a cheap spell. A
+   * cost buried inside a replacement effect's closure is a cost only that closure can see.
+   *
+   * The replacement itself is installed by the engine — see `replaceZoneChange` — which also keeps
+   * the keyword's two halves from disagreeing: the engine that offers the cast is the engine that
+   * replaced the discard.
+   */
+  readonly madness?: { readonly cost: string };
   readonly replaces?: readonly {
     /**
      * Which zone change this replaces. The three are the same move seen at three widths, and a
