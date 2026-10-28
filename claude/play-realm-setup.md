@@ -397,6 +397,17 @@ of those 13 spent on another instant in the same window, and the spells it let t
 than the ones it countered rather than more expensive. So there is nothing here to fix, which is
 also why it does not read as a cheat: it counters your creatures and lets your cantrips through.
 
+**And it does not read your hand, which is now a measurement rather than a promise.** The card in
+your opponent's hand never reaches your machine (that is the redaction above), but the computer
+opponent runs on the server where the whole game state lives, so nothing stopped it peeking except
+the code being written not to. Asked properly — the same position put to it twice, the second time
+with every card it cannot see dealt out again, 8,945 decisions across 78 games — it chose a
+**different move exactly 0 times**. Not one cast, attack, block or activation anywhere depends on
+what you are holding, on either library's order, or on what is under a face-down creature. A
+deliberate cheat was wired in to prove the test can catch one, and it showed up immediately. The
+check now runs in the test suite, so a future version that peeks fails before it reaches you —
+`claude/decisions-log.md`, D186.
+
 **The decks are not all equally strong, and now there is a table of it.** Every deck against every
 other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
@@ -936,7 +947,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (944 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (945 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (210 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`

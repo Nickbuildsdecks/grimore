@@ -41,6 +41,22 @@ arms comparable at all. They take no database and no server — just the engine.
 | `infect-clock.mjs` | of the infect creatures it could attack with, how many does it send? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/infect-clock.mjs` |
 | `creature-fate.mjs` | what takes its creatures away, and how long do they live? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/creature-fate.mjs` |
 | `wasted-plays.mjs` | which of the bot's plays bought nothing at all? | `SEEDS=4 node scripts/measure/wasted-plays.mjs` |
+| `hidden-info.mjs` | does the computer opponent read what it cannot see? | `SEEDS=2 node scripts/measure/hidden-info.mjs` |
+
+`hidden-info` asks the fairness question, and it is the one no win rate answers: it puts the same
+position to the bot twice, the second time with **every card the acting seat cannot identify dealt
+out again** — another seat's hand, every library, the card under somebody else's face-down
+permanent — and compares the two answers. What counts as hidden is `viewFor`'s own redaction rather
+than the harness's opinion, and the scramble only permutes `defKey`s inside one seat's hidden pool,
+so hand and library sizes (which are public) never move.
+
+Read two numbers, not one. The second line of the output says how many card identities the
+scrambles actually moved, because a zero in the column that matters means nothing if the scramble
+did nothing. And its sensitivity is bounded: a deliberate cheat wired in as a control — refuse to
+attack whenever an opponent holds a Lightning Bolt — showed up as **26 of 764 attack declarations**,
+so a leak about one rarely-hidden card is visible but not loud. A difference is a **suspect**, not a
+verdict: a card whose own text reads a hidden zone would show up too, which is why the output names
+the position.
 
 `wasted-plays` is the generic form of a question sixteen bot rules had each answered once, by
 hand: a ritual into nothing, a Fog with nothing attacking, a pump that wears off, removal with

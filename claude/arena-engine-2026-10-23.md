@@ -5002,6 +5002,40 @@ of its own turn anyway, so the bounce has to land inside that turn. D183's leak 
 card; this one is worth nothing, and the two being the same kind of change is the argument for
 measuring a fidelity fix rather than assuming it either way.
 
+### Does the opponent read your hand? Asked properly, and the answer is no
+
+The "Next" list has said for five months that the search reasons "from everybody's hand". That was
+true of the **reply** (D110) and is why the reply was reverted; nobody had ever checked the bot that
+stayed. Reading the code says it probably does not — `evaluate` sums life, hand *count*, library
+*count* and the battlefield, and hand size is public — but "probably does not" is the kind of claim
+this project has been wrong about before, and it is the exact claim a person would most want to be
+true.
+
+`hidden-info.mjs` asks it in the only way that cannot be argued with: the same position twice, the
+second time with **every card the acting seat cannot identify dealt out again**. Hidden means
+`viewFor`'s own redaction — another seat's hand identities, every library's identities and order, and
+the card under somebody else's face-down permanent — and the scramble permutes `defKey`s inside one
+seat's hidden pool, so every zone keeps its length and every card keeps its owner. A scry or a tutor
+pending is dropped, because reading a library is what the card on the stack is for.
+
+**0 of 8,945 decisions changed**, across 78 games, with **1,583,797** card identities moved by the
+scrambles. Not one cast, attack, block, activation or pass.
+
+Both halves of that are controls. The moved-identities count is in the output rather than in a
+comment, because a scramble that silently did nothing would report a perfectly honest bot about a bot
+reading everything. And a **deliberate cheat** was wired into `legalDeclaration` — refuse to attack
+whenever any opponent holds a Lightning Bolt — built to its own `dist` and run on the same 78 games:
+26 of 764 attack declarations changed and nothing else did, so the harness can see a leak and name
+the kind of decision that leaked. The floor it sets is honest too: a cheat keyed to one card name in
+a thirteen-deck field only shows up when the scramble moves that card at the moment an attack is
+declared, so a rarer leak could hide. What the zero rules out is any leak of the size a person would
+notice.
+
+`playout.test.ts` keeps the check — three pairings, every decision asked both ways, and two
+assertions that stop it being vacuous — in about a second, so a future search that peeks fails the
+suite rather than shipping (D186).
+
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -5073,8 +5107,15 @@ measuring a fidelity fix rather than assuming it either way.
    measurably lost games, which is written up in `claude/decisions-log.md`. The reply itself has now
    been built and measured too — level over 240 paired duels, at a quarter more time per decision,
    and clairvoyant into the bargain because the search reads the whole game state (D110). What is
-   missing is not depth: it is an evaluation worth searching with, and a search that reasons from
-   the redacted view a person gets rather than from everybody's hand.
+   missing is not depth: it is an evaluation worth searching with.
+   **The clairvoyance half of this item was a stale claim and is now measured rather than asserted.**
+   It was true of the *reply*, which is why the reply was reverted; the bot that shipped is honest,
+   and `hidden-info.mjs` says so by asking it the same position twice with every card it cannot
+   identify dealt out again — **0 of 8,945 decisions changed** across 78 games, with 1.58 million
+   identities moved by the scrambles, and a deliberate cheat wired in as a control shows up at 26
+   of 764 attack declarations. `playout.test.ts` holds the regression test (D186). What a *future*
+   deeper search would still need is the honest version of the opponent model: the redacted view
+   plus what their deck could be holding and whether their open mana pays for it.
 4. The pod interface beyond "it works". Three opponents side by side, combat drawn rather than
    described, a threat read on every seat and on every button that sends an attack, one press to
    send the whole swing at one player, and three preset deals that the table records and never

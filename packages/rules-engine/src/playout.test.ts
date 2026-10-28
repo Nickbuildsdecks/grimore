@@ -2139,3 +2139,123 @@ describe('the crown as a fact the bot reads (CR 720)', () => {
     expect(withRule).toEqual(without);
   });
 });
+
+describe('the opponent cannot read your hand', () => {
+  /*
+    The property a person actually cares about in a computer opponent, asserted rather than
+    asserted-about.
+
+    D110 built the *reply* — the search letting the opponent answer inside it — measured it level
+    over 240 paired duels, and reverted it with a sentence that outlived the code: "a bot that
+    declines to attack because of the exact card you are holding is not a better opponent; it is a
+    cheating one." The reply went. Nothing ever checked the bot that stayed, and the "Next" list
+    went on saying the search reasons from everybody's hand for five months.
+
+    The check is the only one that cannot be argued with: ask the bot the same position twice, the
+    second time with **every card it is not entitled to identify dealt out again**, and compare the
+    answers. What counts as hidden is `viewFor`'s own answer, not this test's opinion — another
+    seat's hand identities, every library's identities and order, and the card under somebody
+    else's face-down permanent. Hand and library *sizes* are public and the scramble preserves them,
+    because it only ever permutes `defKey`s within one seat's hidden pool.
+
+    `scripts/measure/hidden-info.mjs` is the same question asked across the whole field: **0 of
+    8,945 decisions** in 78 games changed, with 1.58 million card identities moved by the
+    scrambles. This is the regression test for it, and it is cheap enough to live in the suite.
+
+    Its own negative control is in the assertions: `moved` has to be large, or a scramble that
+    silently did nothing would report a perfectly honest bot about a bot reading everything.
+  */
+  const rng = (seed: number): (() => number) => {
+    let x = seed | 0 || 1;
+    return () => {
+      x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+      return ((x >>> 0) % 100000) / 100000;
+    };
+  };
+
+  /** The ids whose identity this seat is not entitled to, grouped by the seat that owns them. */
+  const hiddenPools = (state: GameState, seat: SeatIndex): string[][] => {
+    const pools: string[][] = [];
+    for (const other of state.seats) {
+      const hidden: string[] = [];
+      if (other.index !== seat) hidden.push(...(state.zones[`${other.index}:hand`] ?? []));
+      hidden.push(...(state.zones[`${other.index}:library`] ?? []));
+      if (other.index !== seat) {
+        for (const id of state.zones[`${other.index}:battlefield`] ?? []) {
+          if (state.instances[id]?.faceDown === true) hidden.push(id);
+        }
+      }
+      if (hidden.length > 1) pools.push(hidden);
+    }
+    return pools;
+  };
+
+  let moved = 0;
+  const scramble = (state: GameState, seat: SeatIndex, seed: number): GameState => {
+    const next = rng(seed);
+    const instances = { ...state.instances };
+    for (const pool of hiddenPools(state, seat)) {
+      const keys = pool.map((id) => state.instances[id]?.defKey);
+      if (keys.some((key) => key === undefined)) continue;
+      for (let i = keys.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(next() * (i + 1));
+        [keys[i], keys[j]] = [keys[j], keys[i]];
+      }
+      pool.forEach((id, i) => {
+        const inst = instances[id];
+        if (inst === undefined) return;
+        if (inst.defKey !== keys[i]) moved += 1;
+        instances[id] = { ...inst, defKey: keys[i]! };
+      });
+    }
+    return { ...state, instances };
+  };
+
+  it('chooses the same move when every card it cannot see is a different card', () => {
+    const pairs: readonly (readonly [string, string])[] = [
+      ['ember-rush', 'tidal-mind'],
+      ['ashen-rite', 'skyward-writ'],
+      ['hollow-tide', 'forge-alliance'],
+    ];
+    const differences: string[] = [];
+    let asked = 0;
+
+    for (const [a, b] of pairs) {
+      let s = createGame({
+        id: `honest-${a}`, format: 'modern', players: PLAYERS, seed: 4242,
+      });
+      for (const seat of [0, 1] as const) {
+        s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: seat === 0 ? a : b }, HOST);
+      }
+      s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, HOST);
+      s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, HOST);
+
+      for (let move = 0; move < 1200 && !s.finished; move += 1) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const chosen = botAction(s, seat);
+        if (chosen === null) break;
+        /*
+          A pending question is skipped, because reading a library is what the card asking it is
+          for: a scry looks at the top three and a tutor is entitled to the order.
+        */
+        if (s.pendingChoice === null && s.pendingDecision === null
+          && !s.seats.some((row) => row.searching)) {
+          asked += 1;
+          const other = botAction(scramble(s, seat, move * 31 + 7), seat);
+          if (JSON.stringify(other) !== JSON.stringify(chosen)) {
+            differences.push(`${a} v ${b} turn ${s.turn} ${s.step}: ${chosen.type}`);
+          }
+        }
+        const before = s.stateVersion;
+        s = applyAction(s, chosen, HOST);
+        if (s.stateVersion === before) break;
+      }
+    }
+
+    expect(differences).toEqual([]);
+    // And the two numbers that stop the assertion above being vacuous.
+    expect(asked).toBeGreaterThan(200);
+    expect(moved).toBeGreaterThan(10000);
+  });
+});

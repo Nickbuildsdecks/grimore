@@ -9445,3 +9445,80 @@ half a card (+10/+19 leaky against +4/+6 fixed); this one is worth zero.
 Both are the same kind of change and only one of them paid, which is the argument for measuring
 fidelity fixes rather than assuming them either way. The reason to ship this one is that the card
 reads that way and a person playing it will expect it to — not a win rate.
+
+## D186 — Does the opponent read your hand? Measured, and now enforced by a test
+
+**Decision: build `hidden-info.mjs`, which asks the bot the same position twice with every card it
+cannot identify dealt out again; find that the shipped bot uses no hidden information at all (0 of
+8,945 decisions); keep the check as a test; and correct the published claim that said otherwise.**
+
+### A claim that outlived its code
+
+D110 built the *reply* — the search letting the opponent answer inside it — measured it level over
+240 paired duels, and reverted it with a sentence that has been quoted in the "Next" list ever
+since: *a bot that declines to attack because of the exact card you are holding is not a better
+opponent; it is a cheating one.* The reply went. The sentence stayed, and the item next to it has
+read "a search that reasons from the redacted view a person gets rather than from everybody's hand"
+for five months — which states, in the present tense, that the bot that ships reads your hand.
+
+Nobody had checked. Reading the code says it probably does not: `evaluate` sums life, hand **count**,
+library **count**, and the battlefield, and the only other hand it touches is its own
+(`affordableAnswerInHand`). Hand size is public. But "probably does not" is the kind of claim this
+project has been wrong about four times, and it is the exact claim a person would most want to be
+true.
+
+### The check that cannot be argued with
+
+Ask the bot the position twice: once as it is, and once with **everything the acting seat cannot
+identify replaced by something else**. A bot using hidden information must sometimes answer
+differently; a bot answering identically every time is not reading it.
+
+What counts as hidden is `viewFor`'s own redaction rather than the harness's opinion — another
+seat's hand identities (the ids and the count travel so a hand can be drawn and counted; the cards
+do not), every library's identities and order including the acting seat's own, and the card under
+somebody else's face-down permanent, which is publicly a 2/2 (CR 707.2). The scramble permutes
+`defKey`s **inside one seat's hidden pool**, so every zone keeps its length and every card keeps its
+owner: the only thing that changes is which card is which.
+
+Positions where a scry or a tutor is pending are dropped, because reading a library is what the card
+on the stack is for.
+
+### The answer
+
+```
+78 games, 8,945 decisions asked both ways, 2 scrambles each
+1,583,797 card identities moved by the scrambles
+
+decisions that changed: 0 (0%)
+   0 of 4,268  auto:pass       0 of   764  auto:attack
+   0 of 1,718  auto:cast       0 of   655  auto:activate
+   0 of 1,000  auto:playLand   0 of   334  auto:block
+   0 of   156  auto:keep       0 of    35  auto:order
+```
+
+**Not one decision in 8,945.** The computer opponent plays from what it can see.
+
+**And the instrument has a positive control, which is what makes that zero worth printing.** A
+deliberate cheat was wired into `legalDeclaration` — refuse to attack whenever any opponent holds a
+Lightning Bolt — built to its own `dist` and measured on the same 78 games: **26 of 764 attack
+declarations changed**, and nothing else did. So the harness can see a leak, and it can say which
+kind of decision leaked. The 1.58 million moved identities are the other half of the control: a
+scramble that silently did nothing would report a perfectly honest bot about a bot reading
+everything, which is why that number is in the output and not in a comment.
+
+**The sensitivity is bounded and worth stating.** The cheat fires on one card name in a
+thirteen-deck field, and it only shows up when a scramble moves that card into or out of a hand at a
+moment an attack is being declared — 3% of attacks. A leak about something rarer, or one that
+changes a decision only occasionally, could sit below this floor. What the zero rules out is any leak
+of the size a person would notice.
+
+### What is kept
+
+`playout.test.ts` has the regression test: three pairings played out, every decision asked both ways,
+and two assertions that stop it being vacuous — more than 200 decisions asked and more than 10,000
+identities moved. It runs in about a second, so the property is now enforced rather than believed,
+and a future search that peeks fails the suite instead of shipping.
+
+The "Next" item is corrected rather than left standing. The honest version of the opponent model —
+the redacted view *plus* what their deck could be holding and whether their open mana pays for it —
+is still the missing piece for any deeper search, and that is what the entry now says.
