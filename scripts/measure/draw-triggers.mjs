@@ -136,7 +136,8 @@ if (WATCHED.size === 0) {
   console.log('abilities that reached the stack:');
   for (const [key, count] of fired) {
     const row = WATCHED.get(key);
-    console.log(`  ${String(count).padStart(5)}  ${row.card} (whenever ${row.by} draws)`);
+    const whose = row.by === 'you' ? 'you draw' : row.by === 'opponent' ? 'an opponent draws' : 'anybody draws';
+    console.log(`  ${String(count).padStart(5)}  ${row.card} (whenever ${whose})`);
   }
 }
 if (skulkerGames > 0) {

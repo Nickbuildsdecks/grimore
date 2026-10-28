@@ -7827,3 +7827,100 @@ Centaur Coursers, and the mana-value proxy says it is not simply spending counte
 (2.4 countered against 2.9 declined). That is D69's judgement problem, finally in a position where
 something could be done about it — and no evaluation weight can read "what the spell *does*", so it
 will want a fact about the board the way `preventionCanMatter` and `somethingToRemove` did.
+
+## D169 — The event every deck raised every turn and nothing watched
+
+**Decision: add `draws` as the fifth member of the detect-rather-than-announce family, recorded
+where a card is actually drawn rather than noticed afterwards; script the two cards that read it,
+one per half of the event; and offer no `any` option, because nothing in this pool wants one.**
+
+`draw` in `effects.ts` is the single choke point for every card anybody draws — the draw step, the
+crown, and about two dozen card effects all come through it — and it announced the fact to nobody.
+So the most frequent event in the engine was the one event no card could read, and a whole shelf of
+printed Magic was unwritable: Chasm Skulker, Underworld Dreams, Niv-Mizzet.
+
+### Why it is recorded and not compared
+
+`died`, `entered` and `left` are all found by looking at the board afterwards, and `life-gained` is
+found by comparing two life totals. A draw cannot be found either way, and the two failures are
+opposite:
+
+- **A card arriving in a hand is not a card being drawn.** A Diabolic Tutor, a Gravedigger and a
+  Man-o'-War all put a card in a hand without anybody drawing one. A hand-size comparison fires
+  "whenever you draw a card" on all three, and the rules say it fires on none of them.
+- **A draw does not always change hand size.** Draw a card and discard it in the same breath and the
+  comparison comes out level, so the trigger that should have fired does not.
+
+So `draw` appends one entry per card that actually arrived — `dealtCombatDamage` is the precedent,
+the other member of the family that has to be recorded rather than compared — and `settle` drains
+the queue. **Per card rather than per draw**, which is what the rules say (CR 121.2) and what makes
+a Chasm Skulker three counters bigger for a Harmonize rather than one. And only for cards that
+really arrived: a seat drawing from an empty library draws nothing and loses the game, and nothing
+should trigger off the card it did not get.
+
+Draws are raised **before** the deaths and arrivals in the same pass, which matters for exactly one
+reason and it is not subtle: a Chasm Skulker that draws a card as it dies should take its counter
+before the death trigger reads how many it has.
+
+### Two cards, and the option with no card behind it
+
+`by` works the way it does on `spell-cast` rather than on `life-gained`: `you` by default,
+`opponent` said out loud. The three-way `any` is **not offered**, because nothing printed in this
+pool wants it and a trigger option nothing fires is worse than no option — the same rule that keeps
+`becomes-tapped` the one trigger in the engine with no card behind it.
+
+- **Chasm Skulker** ({1}{U}{U} 1/1) in Hollow Tide, for a second Compelling Argument. Its second
+  half reads **counters the permanent no longer has**: it is in a graveyard by the time the ability
+  resolves and `relocate` took its counters off on the way, as the rules require, so the number
+  travels with the event through `EffectContext.subjectCounters`. Hangarback Walker found that path;
+  this is the second card on it and the first whose counters were put there by a trigger rather than
+  paid for. It leaves a 1/1 **islandwalker** per counter, which needed a script on the token —
+  flying on the Thopter is read straight off oracle text by `printedKeywords`, and landwalk is a
+  land *type* plus a rule, so the Squid declares it the way River Boa does.
+- **Fate Unraveler** ({3}{B} 2/4) in Ashen Rite, for a second Doomed Dissenter. A drain stapled to
+  the one thing every deck does every turn, in the deck whose plan is already a life total going
+  down a point at a time. **Underworld Dreams is the card that deck would rather have and it is not
+  here on purpose:** same trigger, one mana cheaper, and {B}{B}{B} in a list with eleven black
+  sources and seven Mountains is a card that sits in hand — the exact failure `cast-counts` keeps
+  finding, and the reason a Diabolic Tutor and a Behold the Multiverse were both cut from decks this
+  week.
+
+**Both cuts came off `cast-counts` rather than instinct, and in both decks the genuinely deadest
+card was untouchable.** Hollow Tide's deadest are the Diabolic Tutor (52%) and The Eldest Reborn
+(52%); Ashen Rite's are the Bone Splinters (34%) and the Night of Souls' Betrayal (43%). Every one
+of those is the pool's only copy of its card, and the Bone Splinters is additionally the only card
+in the game that pays a cost by sacrificing — a rules path rather than a slot. That is the orphanage
+constraint D167 documented, biting for the second time in a week.
+
+### What the probes and the instrument say
+
+Priced by probing the **revert**, two seed sets of 288 duels each, so a negative revert means the
+new card earns its place:
+
+| | seeds 3300 | seeds 8800 | the card is worth |
+| --- | --- | --- | --- |
+| Chasm Skulker out of Hollow Tide | revert +3 | revert −2 | **−0.5**, level |
+| Fate Unraveler out of Ashen Rite | revert −7 | revert −3 | **+5**, positive both sets |
+
+Neither loses, which is the bar for a slot whose job is to give a new event a card. The Unraveler's
++5 is inside the floor and consistent in sign; the Skulker is a free swap.
+
+**And `draw-triggers.mjs` says the abilities actually fire**, which is the claim a unit test cannot
+make. It counts the ability reaching the *stack* rather than reading `GameState.drew` — that list is
+filled and drained inside a single applied action, so a harness watching between actions would see
+an empty list every time and print a confident zero. Over 144 games with each deck as the subject:
+
+```
+hollow-tide:  36 Chasm Skulker triggers; it reached the battlefield in 51 of 144 games,
+              got as big as 13/13, averaged 4.0 at its best, and its death trigger made Squids
+ashen-rite:   75 Fate Unraveler triggers
+```
+
+A 13/13 squid is the engine working rather than a bug: thirteen cards drawn with it on the board is
+a long game in a deck with two Thought Scours, a Preordain, a Divination, two Thieving Magpies and a
+Jace, Memory Adept in it.
+
+**One test caught me rather than the engine.** Three of the six new tests asserted a Chasm Skulker
+with no counters on a board that `advanceTo` had already walked through its own draw step — so the
+card had a counter before the test did anything, which is the engine being right about the most
+ordinary draw there is. They measure the delta now and say why.

@@ -4367,6 +4367,39 @@ applied. That is the second instrument this week whose quarry was something the 
 to ask about; the first was the combat arrow that is never on screen because auto-pass runs the
 whole of combat inside one action.
 
+### Whenever you draw a card
+
+`draw` in `effects.ts` is the single choke point for every card anybody draws — the draw step, the
+crown, and about two dozen card effects — and it announced the fact to nobody. So the most frequent
+event in the engine was the one event no card could read, and a shelf of printed Magic was
+unwritable. It is now the fifth member of the detect-rather-than-announce family beside `died`,
+`entered`, `left` and `dealtCombatDamage`.
+
+**It has to be recorded rather than compared, and the two failures are opposite.** A card arriving
+in a hand is not a card being drawn — a Diabolic Tutor, a Gravedigger and a Man-o'-War all put one
+there without a draw, and a hand-size comparison would fire on all three. And a draw does not always
+change hand size: draw a card, discard it in the same breath, and the comparison comes out level
+while the trigger that should have fired does not. One entry per *card*, which is what makes a
+Harmonize three counters rather than one, and raised before the deaths in the same pass so a Skulker
+that draws as it dies takes its counter before the death trigger counts them.
+
+Two cards read it, one per half. **Chasm Skulker** in Hollow Tide grows on your own draws and leaves
+a 1/1 islandwalker per counter — reading counters the permanent no longer has, through the channel
+Hangarback Walker opened. **Fate Unraveler** in Ashen Rite drains on the opponents'. `any` is
+deliberately not offered: nothing printed here wants it, and an option nothing fires is worse than no
+option.
+
+Both slots were priced by probing the revert, two seed sets of 288 duels: the Skulker is **level**
+(−0.5) and the Unraveler **+5**, positive on both sets. Neither loses, which is the bar for a slot
+whose job is to give a new event a card. And `draw-triggers.mjs` confirms the thing a unit test
+cannot — 36 Skulker triggers and 75 Unraveler triggers over 144 games each, with the Skulker
+reaching 13/13 in its best game.
+
+In both decks the genuinely deadest card was untouchable: Hollow Tide's Diabolic Tutor and The
+Eldest Reborn, Ashen Rite's Bone Splinters and Night of Souls' Betrayal, are each the pool's only
+copy of their card — and the Bone Splinters is the only card in the game that pays a cost by
+sacrificing. That is D167's orphanage constraint biting a second time in a week.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -4374,6 +4407,10 @@ whole of combat inside one action.
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. Every
    keyword and every static scope now has a card behind it, the subtype scope included;
    `becomes-tapped` is the one trigger left without one, and deliberately so (see the entry above).
+   **A draw is an event now** (`draws`, with `you` and `opponent` halves and no `any`, because
+   nothing printed here wants one), which was the most frequent thing in the engine and the one
+   nothing could read — so "whenever you draw a card" and its mirror are both a few declarative
+   lines.
    `turned-face-up` has two cards behind it, morph has megamorph and a cost paid in life, target
    redirection has Willbender and Swerve, the three board-watching events carry *which* permanent
    they were about, and an ability on the stack can be pointed at — so exalted, evolve, "that

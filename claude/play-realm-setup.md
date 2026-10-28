@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — two hundred and sixty-eight, today, across thirteen starter decks. A
+cards somebody has scripted — two hundred and seventy, today, across thirteen starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -221,7 +221,11 @@ kicker you may pay for a bigger version of the same card, and removal whose cost
 creatures. Judith leads it, and makes every creature you lose a Shock on the way out. Eight of its creatures
 are Vampires, which is more of one creature type than any other deck in the pool has, so it is also
 where **Stromkirk Captain** lives: +1/+1 and first strike for the other eight, which turns a row of
-0/1 Blood Artists into 1/2s that kill an attacker and take nothing back.
+0/1 Blood Artists into 1/2s that kill an attacker and take nothing back. Its newest card is a
+**Fate Unraveler**, a 2/4 that takes a point off an opponent for every card they draw — the drain
+plan attached to the one thing every deck does every turn, and the other half of the pool's new
+draw trigger. Over 144 games it fires 75 times, and against the field the slot measures +5 on both
+seed sets it was priced on.
 **Skyward Writ** (white-blue) is the first deck whose plan is not to have the best
 board: Walls that hold the ground and attack nowhere, two Counterspells and an Essence Scatter
 because what beats it is a creature, a 2/3 that cannot attack and makes your lone flier bigger, a
@@ -244,7 +248,13 @@ slot: {2}{B} for "pay X life, all creatures get -X/-X", and the only card in the
 text is a number you choose *while it is resolving*. It hits your own blockers too, so the number is
 a real decision rather than a maximum — and against the field the slot measures three games of 240
 either way, which is well inside the noise. It is in the deck because a mill deck with four removal
-spells and no sweeper has no answer to a board it has already fallen behind.
+spells and no sweeper has no answer to a board it has already fallen behind. Beside it now sits a
+**Chasm Skulker**, the first card in the pool that reads a *draw*: a 1/1 for three that takes a
++1/+1 counter every time you draw a card — the draw step, two Thought Scours, a Preordain, a
+Divination, two Thieving Magpies and a Jace, Memory Adept — and leaves a 1/1 **islandwalker** for
+every counter when it dies. Measured over 144 games it reaches the battlefield in about a third of
+them and got as big as 13/13; against the field the slot is level, which is what a card that exists
+to give a new rule something to read should be.
 
 **And it does win that way, which somebody finally measured.** `mill.mjs` over 144 games: the deck
 mills 22 cards a game, gets somebody's library to nought in **28% of its games**, and **40 of its
@@ -634,7 +644,7 @@ along with the reason the earlier passes were boxed in: nineteen of this deck's 
 the pool's only copy of that card, so its deadest cards could not be cut without deleting a script's
 only test. Two of them moved to decks that wanted them instead.
 
-The decks share a pool of two hundred and sixty-eight cards, which now includes a wrath, a
+The decks share a pool of two hundred and seventy cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -873,7 +883,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (890 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (896 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (210 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
@@ -893,7 +903,7 @@ decks they pasted in).
   oracle text — which means a populated `cards` table, which means a machine that can reach
   Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
   exists, the card data does not.
-- **The engine knows two hundred and sixty-eight cards.** Everything in the thirteen starter decks,
+- **The engine knows two hundred and seventy cards.** Everything in the thirteen starter decks,
   plus the ten castable *faces* of the seven cards printed with more than one. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent
