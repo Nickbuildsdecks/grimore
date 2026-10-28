@@ -46,6 +46,8 @@ export { chromium };
 export const checks = [];
 /** How many times each seat has mulliganed, for `forceMulligan`. */
 const seatMulligans = {};
+/** Whether this run has already photographed a free cast on offer. See `makeMove`. */
+let shotAFreeCast = false;
 
 /**
  * Prints the tally and sets the exit code.
@@ -242,6 +244,16 @@ export async function isMyMove(page) {
   if (await has(page, 'order-prompt')) return true;
   if (await has(page, 'discard-prompt')) return true;
   if (await has(page, 'ward-prompt')) return true;
+  /*
+    A free cast on offer, which stops the table for the seat that may take it.
+
+    On this list for exactly the reason the comment above gives: the control bar shows no primary
+    action while a cascade hit is waiting — nobody holds priority — so without this line a table
+    mid-cascade reads as "nobody has anything to do" and the suite waits out its idle budget on a
+    game that is fine. Which is what happened the first time this was run: the game stopped at turn
+    seven, one move after a Bloodbraid Elf was cast.
+  */
+  if (await has(page, 'free-cast-prompt')) return true;
   return has(page, 'primary-move');
 }
 /**
@@ -528,6 +540,51 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
   }
 
   /*
+    A free cast on offer, taken rather than declined (CR 702.85a).
+
+    The table is stopped, nobody holds priority, and this is the only move there is — so it is
+    taken rather than declined, on the same reasoning as the ward above: a driver that always
+    declined would never once cast a spell for nothing, and the engine's own tests cover the
+    decline. Declining is the fallback, for a hit with no legal target.
+
+    **Below every prompt that is this browser's own half-finished interaction**, which is where the
+    first version of this got it wrong. A cascade into an Aura opens the targeting prompt while the
+    offer is still on the table, so a branch placed above `target-prompt` pressed "Cast it" again
+    instead of choosing what to enchant — forty moves of a Bloodbraid Elf cascading into the same
+    Rancor, which is what the browser suite is for.
+  */
+  if (await has(page, 'free-cast-prompt')) {
+    const prompt = await text(page, 'free-cast-prompt');
+    /*
+      Shot once, before the answer, because the thing worth a picture is the offer: the sentence
+      naming what cascaded into what, beside a card in exile with a Cast row on it.
+
+      Once per run rather than once per cascade. A deck built to cascade offers several a game and
+      the first version wrote one file each — seventy-six of them in a run, all of the same bar.
+    */
+    if (!shotAFreeCast) {
+      shotAFreeCast = true;
+      await shot(page, 'a-free-cast-on-offer');
+    }
+    /*
+      The button first, the card second.
+
+      The bar offers "Cast it" whenever there is exactly one way to cast the hit, which is the
+      common case and the one a person would press. The exile row is the fallback and the only path
+      for a hit with modes or halves, where the bar deliberately offers no menu of its own.
+    */
+    if (await has(page, 'free-cast-take')) {
+      await press(page, 'free-cast-take');
+      return `took a free cast: ${prompt.replace(/\s+/g, ' ').slice(0, 80)}`;
+    }
+    const played = await tryToPlayFromZone(page, `zone-exile-${seat}`);
+    if (played !== null) return `took a free cast: ${prompt.replace(/\s+/g, ' ').slice(0, 80)}`;
+    await press(page, 'free-cast-decline');
+    return `declined a free cast: ${prompt.replace(/\s+/g, ' ').slice(0, 80)}`;
+  }
+
+
+  /*
     Nothing to do after all.
 
     Not a defect, and reporting it as one was wrong: between "is it this page's move" and here,
@@ -629,6 +686,15 @@ export async function noteMove(seen, page, did) {
   // board and an opponent with something that targets it.
   if (/^paid a ward/.test(did) && seen.ward !== true) seen.ward = true;
   /*
+    A spell cast for nothing, which is the one play on the table with no cost at all.
+
+    Sampled like flashback and the ward: it needs a cascade card drawn, cast, and a cheap enough
+    nonland card on top of the library — a game the shuffle has to produce. The cascade scenario in
+    the solo suite stacks a deck that produces it nearly every game, and `LIST=cascade` is what
+    turns the sample into a requirement.
+  */
+  if (/^(took|declined) a free cast/.test(did) && seen.freeCast !== true) seen.freeCast = true;
+  /*
     The damage assignment order (CR 509.2), which only happens when a creature is blocked by two or
     more — so it is a *sampled* observation and not something a run can be required to see.
     Recorded when it happens and reported only then, which is how the scry and the library search
@@ -721,7 +787,14 @@ export async function tryToPlayFromHand(page, seat) {
     the same way ("playable"), so the same badge-driven loop works on either.
   */
   return (await tryToPlayFromZone(page, `zone-hand-${seat}`))
-    ?? (await tryToPlayFromZone(page, `zone-graveyard-${seat}`));
+    ?? (await tryToPlayFromZone(page, `zone-graveyard-${seat}`))
+    /*
+      And exile, which is the third. A foretold card, a creature back from its adventure and a
+      cascade hit all wait there, and all three are marked playable the same way — so a driver
+      that stopped at the graveyard left every card in the pool that is cast from exile
+      unexercised in a browser.
+    */
+    ?? (await tryToPlayFromZone(page, `zone-exile-${seat}`));
 }
 
 /** Taps the first card in one zone that says it is playable, and takes one of its plays. */

@@ -898,8 +898,9 @@ Four browser suites, one per way of playing. All need the stack running and Play
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 73 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-58 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
-node scripts/e2e-solo.mjs       # one browser, against the computer    — 23 checks
+node scripts/e2e-solo.mjs       # one browser, against the computer    — 22-23 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 24 checks
+LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 23-24 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -962,7 +963,17 @@ DECK_A=dawn-tithe DECK_B=ember-rush node scripts/e2e-arena.mjs     # lifegain ag
 FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatever they drew
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
+LIST=cascade node scripts/e2e-solo.mjs           # eight Bloodbraid Elves, pasted in as text
 ```
+
+`LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
+it is there because cascade cannot be reached by playing a normal game: one copy in a sixty-card
+deck fires about once every seven games. So it pastes sixty cards built for the keyword — eight
+Bloodbraid Elves, twenty-three lands, nothing else over three mana — through the same paste-a-list
+path a player uses, and then **requires** the free cast that every other run only reports. It earned
+its place immediately: it found a table that stopped dead on its own cascade offer, and a cascade
+into Rancor that asked for a target the driver answered by pressing "Cast it" forty times. Both were
+in the table rather than the rules, which is what a browser suite is for.
 
 The layers under them have their own suites: `packages/rules-engine` (966 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander

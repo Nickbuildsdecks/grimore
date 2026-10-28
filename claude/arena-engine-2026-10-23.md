@@ -5212,9 +5212,14 @@ say the card is worth something, one says it is worth less than nothing, and the
 games is half the noise floor. Under this project's own rule (two seed sets kill a change, four ship
 a small one) that is a keep, and the number is published as a range rather than a figure.
 
-The web path is wired and typechecked — a sentence in the arena bar, a Decline button, the playable
-badge on the exile row, the `free` flag on the action the table builds — but **not driven in a
-browser**, because a cascade needs a stacked library and the browser suites play real games.
+The web path is a sentence in the arena bar with **Cast it** and **Decline** beside it, the playable
+badge on the exile row, and the `free` flag on the action the table builds — and it is **driven in a
+browser**: `LIST=cascade node scripts/e2e-solo.mjs` pastes sixty cards built for the keyword and
+requires the free cast the default run only samples. That run found the two defects the engine's own
+tests could not, both of them in the table: nobody holds priority while the offer stands, so the
+suite read a stopped table as "nobody has anything to do"; and a cascade into **Rancor** needs a
+target, so taking the offer opens the targeting prompt while the offer is still up, which a driver
+branch placed too early answered by pressing "Cast it" forty times.
 
 ## Next
 

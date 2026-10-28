@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
   attackRead, decisionLabel, dividedAmount, manaPips, orderingDone, pactAsked, pactOffers,
-  primaryMove, specAt, targetKey, targetName, targetsRequired, targetsWanted,
+  playsForCard, primaryMove, specAt, targetKey, targetName, targetsRequired, targetsWanted,
   type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
 import { pactWords } from "@grimore/rules-engine"
@@ -55,6 +55,21 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
   const you = auto?.you
   if (!auto || !you) return null
   const move = primaryMove(view)
+  /**
+   * The free cast on offer, with the plays that would take it (CR 702.85a).
+   *
+   * The plays come from `playsForCard` rather than from the prompt, because the prompt says *that*
+   * a card may be cast and the plays say *how* — one per mode, one per half. A single play gets a
+   * button of its own in the bar beside Decline, the way a ward's two answers are both buttons;
+   * several means the card is tapped in the exile row for the menu, which is the same gesture every
+   * other modal spell needs and not worth a second menu in the bar.
+   */
+  const freeCast = you.mustCastFree === null
+    ? null
+    : {
+        ask: you.mustCastFree,
+        plays: playsForCard(view, you.mustCastFree.card).filter((p) => p.free === true),
+      }
   /**
    * What an attack can be sent at: every player still in the game but you, and each planeswalker
    * they control (CR 506.2).
@@ -621,17 +636,26 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         taken here: a seat with a free cast on offer holds no priority, so there is nothing else a
         pass could mean. See `pendingFreeCast`.
       */}
-      {you.mustCastFree !== null ? (
+      {freeCast !== null ? (
         <div data-testid="free-cast-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <Sparkles className="size-3.5 text-[var(--g-gold-400)]" />
-          <span className="font-semibold text-[var(--g-text-high)]">{you.mustCastFree.prompt}</span>
+          <span className="font-semibold text-[var(--g-text-high)]">{freeCast.ask.prompt}</span>
           <span className="text-[var(--g-text-low)]">
-            — tap it in your exile to cast it
-            {you.mustCastFree.bottom > 0
-              ? `; ${you.mustCastFree.bottom} other card${you.mustCastFree.bottom === 1 ? "" : "s"} go to the bottom of your library`
+            {freeCast.plays.length > 1 ? "— tap it in your exile to choose how" : ""}
+            {freeCast.ask.bottom > 0
+              ? `${freeCast.plays.length > 1 ? ";" : "—"} ${freeCast.ask.bottom} other card${freeCast.ask.bottom === 1 ? "" : "s"} go to the bottom of your library`
               : ""}
           </span>
           <span className="ml-auto flex gap-1.5">
+            {freeCast.plays.length === 1 ? (
+              <Button
+                size="sm"
+                data-testid="free-cast-take"
+                onClick={() => dispatch({ kind: "choosePlay", play: freeCast.plays[0]! })}
+              >
+                <Check className="size-3.5" /> Cast it
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="ghost"

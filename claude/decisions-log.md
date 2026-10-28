@@ -10006,9 +10006,31 @@ about it: `resetPriority` and `legalActions` (nobody holds priority while it sta
 the offer is let past the priority guard so the search picks the target, and `answerPending`, where
 a simulated line takes it greedily rather than searching inside a search (D71's lesson).
 
-The web path is wired and typechecked: a sentence in the arena bar, a Decline button that sends a
+The web path is a sentence in the arena bar, a **Cast it** button beside a **Decline** that sends a
 pass, the playable badge on the exile row, and the `free` flag on the action the table builds —
 which is the fifth time that one line has been needed and the sharpest, because without it the
-engine refuses a cast the table had just offered. **It has not been driven in a browser**, because
-a cascade needs a stacked library and the browser suites play real games; the engine tests stack it
-instead. That is the gap worth naming here rather than discovering later.
+engine refuses a cast the table had just offered.
+
+**And it is now driven in a browser**, which the first version of this entry said it was not. The
+gap was real and the way round it was a deck rather than a harness: `LIST=cascade` in
+`scripts/e2e-solo.mjs` pastes sixty cards built for the keyword — eight Bloodbraid Elves,
+twenty-three lands, and nothing else over three mana — through the same pasted-list path a player
+uses, and then **requires** the free cast that the default run only samples. Four runs in a row
+reach it, take it, and finish the game.
+
+That run found two things the engine's own tests could not, and both were in the table rather than
+in the rules:
+
+1. **The table stalled on its own offer.** Nobody holds priority while a free cast stands, so the
+   control bar had no primary action and `isMyMove` read the table as "nobody has anything to do" —
+   the game stopped at turn seven, one move after a Bloodbraid Elf was cast. The driver's list of
+   prompts that block the bar carries a comment warning about exactly this, written the last time
+   somebody left one off it.
+2. **A cascade into an Aura looped.** Rancor needs a target, so taking the free cast opens the
+   targeting prompt *while the offer is still on the table* — and a driver branch placed above the
+   targeting prompt pressed "Cast it" again instead of choosing what to enchant, forty moves
+   running. The branch belongs below every prompt that is the browser's own half-finished
+   interaction, which is where it is now.
+
+Neither is a rules bug and both are the reason a browser suite exists: the engine was right both
+times and the table was unusable.

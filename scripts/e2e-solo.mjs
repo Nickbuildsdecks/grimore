@@ -32,6 +32,19 @@ const OPPONENT_DECK = process.env.OPPONENT_DECK ?? 'tidal-mind';
  * copy of the play loop, and this project has already learned what that costs.
  */
 const SOLO_POD = process.env.SOLO_POD === '1';
+/**
+ * `LIST=cascade` pastes a deck built to cascade instead of Ember Rush's own sixty.
+ *
+ * Cascade is the one mechanic in the pool a browser suite cannot reach by playing a real game: the
+ * keyword fires about once every seven games with one copy in a sixty-card deck, and what it finds
+ * has to be a nonland card cheaper than four. So the scenario stacks the odds the only way a player
+ * could — by building a deck for it — with four Bloodbraid Elves and thirty-three cards at three
+ * mana or less, and then **requires** what the default run only samples.
+ *
+ * It is still the pasted-list path, so it is still a check on the engine with nothing special about
+ * it: the deck is text a player could type, and every card in it is one of the pool's.
+ */
+const LIST = process.env.LIST ?? '';
 const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '2000', 10);
 
 /**
@@ -42,6 +55,27 @@ const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '2000', 10);
  * stalled game at turn seven because its own copy had never heard of it. A third copy of "what
  * does this prompt mean" is a third thing to forget.
  */
+/**
+ * Sixty cards built to cascade: twenty-three lands, **eight** Bloodbraid Elves, and nothing else
+ * over three mana.
+ *
+ * Every card is one the pool already holds and scripts, so the engine is offered on it — which is
+ * the whole point of the pasted path. The curve is the scenario: a cascade off a four-mana Elf
+ * needs a nonland card of mana value three or less, and in this list every nonland card but the
+ * Elves themselves is one.
+ *
+ * Eight rather than the four it started with, and the number is a measurement rather than a
+ * preference: with four, one run in three finished before an Elf was ever cast and the required
+ * check failed on a game that was fine. A scenario that is only usually reached is not a scenario,
+ * and eight copies is what a player building a deck for one card would actually do.
+ */
+const CASCADE_LIST = [
+  '12 Mountain', '11 Forest',
+  '8 Bloodbraid Elf',
+  '4 Lightning Bolt', '4 Lightning Strike', '4 Llanowar Elves', '4 Ambush Viper',
+  '4 Borderland Marauder', '4 Burning-Tree Emissary', '3 River Boa', '2 Rancor',
+].join('\n');
+
 const myMove = (page) => isMyMove(page);
 /** Aggression 1: a solo game has nobody to hold mana up against, so it always develops. */
 const takeTurn = (page) => makeMove(page, 0, { aggression: 1 });
@@ -95,8 +129,10 @@ async function main() {
     } else {
       const { STARTER_DECKS } = await import(
         new URL('../packages/rules-engine/dist/index.js', import.meta.url));
-      const asText = STARTER_DECKS['ember-rush'].cards
-        .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
+      const asText = LIST === 'cascade'
+        ? CASCADE_LIST
+        : STARTER_DECKS['ember-rush'].cards
+          .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
       await waitFor(page, 'deck-text');
       await tid(page, 'deck-text').fill(asText);
@@ -129,6 +165,13 @@ async function main() {
     let moves = 0;
     /** Whether this game ever asked for a damage assignment order. Sampled, not required. */
     let ordered = false;
+    /**
+     * How many free casts the table offered, which `LIST=cascade` turns into a requirement.
+     *
+     * Counted rather than flagged because the interesting failure is "once": a cascade that fired
+     * and left the table unable to answer it again would show up here as a one and nowhere else.
+     */
+    let freeCasts = 0;
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -155,7 +198,9 @@ async function main() {
         search are handled in the arena suite.
       */
       if (did === 'assigned combat damage') ordered = true;
-      if (moves % 15 === 0) console.log(`      move ${moves}: ${did}`);
+      if (typeof did === 'string' && /a free cast/.test(did)) freeCasts += 1;
+      if (process.env.VERBOSE === '1') console.log(`      move ${moves}: ${did}`);
+      else if (moves % 15 === 0) console.log(`      move ${moves}: ${did}`);
       await page.waitForTimeout(60);
       const turn = await readNumber(page, 'turn');
       if (turn !== null && turn > lastTurn) {
@@ -171,6 +216,20 @@ async function main() {
     } else {
       console.log('      (nothing was blocked by two creatures in this game — combat.test.ts '
         + 'covers the damage order on a fixed board)');
+    }
+    /*
+      A spell cast for nothing, which is the one play on the table with no cost at all.
+
+      Required under `LIST=cascade` and reported otherwise, which is the same rule this suite uses
+      for the damage order: a check that can fail for a board the game never built says nothing
+      about the code. The scenario builds the board on purpose — four Bloodbraid Elves and nothing
+      else over three mana — so under it the absence of a single cascade is a real failure.
+    */
+    if (LIST === 'cascade') {
+      check('a cascade offers its hit as a free cast, and the table answers it',
+        freeCasts > 0, `free casts offered: ${freeCasts}`);
+    } else if (freeCasts > 0) {
+      console.log(`      (${freeCasts} free casts were offered and answered in this game)`);
     }
     check('the opponent plays its own turns without being asked to', turnsSeen >= 4, `turns ${turnsSeen}`);
     check('the game reaches a winner', await has(page, 'game-over'),
