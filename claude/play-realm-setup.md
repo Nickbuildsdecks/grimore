@@ -355,33 +355,37 @@ to Arc Tempest: holding up Counterspell is half its plan against the fast decks,
 it the turn it can afford it.
 
 **That caveat is now a number rather than an impression.** `held-answers.mjs` counts every moment an
-opponent had a spell on the stack and the deck held a counterspell, and says which of four things
-happened — cast it, could afford it and chose otherwise, could not pay, or had nothing to point at.
-Over 144 games each:
+opponent had a spell on the stack and the deck held a counterspell, and says what happened — cast
+it, answered the spell with a different card, could afford it and chose otherwise, was never
+actually offered it, could not pay, or had nothing to point at. Over 144 games each, with the fix
+below turned off:
 
-| | windows | cast | could afford, passed | **could not pay** |
+| | windows | cast | **affordable, declined** | **could not pay** |
 | --- | --- | --- | --- | --- |
-| Tidal Mind | 271 | 4% | 0% | **92%** |
-| Arc Tempest | 151 | 11% | 3% | **79%** |
-| Skyward Writ | 226 | 28% | 8% | **56%** |
+| Tidal Mind | 229 | 7% | **0%** | **87%** |
+| Arc Tempest | 151 | 12% | **3%** | **77%** |
+| Skyward Writ | 218 | 30% | **0%** | **54%** |
 
 It is not that the computer counters the wrong things. It is that it has already spent the mana: a
 seat that taps out in its own main phase has none for the whole of your turn, because lands untap in
-their own controller's untap step. Tidal Mind's Disallow was cast **once** in 144 games against 145
-moments it could not pay for.
+their own controller's untap step. Tidal Mind's Disallow was cast **4 times** in 144 games against
+**118** moments it could not pay for.
 
 **That is fixed now, and the fix does not make the decks stronger.** The bot keeps back the mana its
 cheapest answer in hand needs, on its own turn only, and only when a play would actually take that
-answer away — so Tidal Mind's windows read **48% cast and 39% could-not-pay** where they read 4% and
-92%. Its record barely moves for it (the five counterspell decks gained one game between them across
+answer away — so Tidal Mind's windows read **44% cast and 41% could-not-pay** where they read 7% and
+87%. Its record barely moves for it (the five counterspell decks gained one game between them across
 288 each), because the turns it spends holding two mana up cost roughly what the counterspells buy.
 What changes is that the deck now does the thing it is built to do, which is what you will notice
 sitting across from it. If you would rather play against the old tapped-out version, that is
 `reserveForAnswers: false` in the bot's options.
 
-The judgement half is the part still open: now that it can pay, it declines an affordable answer in
-about one window in nine, and it declined a Shivan Dragon four times in 96 games while countering
-Monastery Swiftspears.
+**And the judgement half turned out not to be a problem.** The worry was that a bot which can now
+pay would spend its Counterspell on a Rampant Growth while the Shivan Dragon waited a turn. Over 432
+games across the three decks it declined an affordable answer **13 times in 556 windows**, every one
+of those 13 spent on another instant in the same window, and the spells it let through were cheaper
+than the ones it countered rather than more expensive. So there is nothing here to fix, which is
+also why it does not read as a cheat: it counters your creatures and lets your cantrips through.
 
 **The decks are not all equally strong, and now there is a table of it.** Every deck against every
 other, both seats, 288 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):

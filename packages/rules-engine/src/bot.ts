@@ -2190,21 +2190,28 @@ function affordableAnswerInHand(state: GameState, seat: SeatIndex): ManaCost | n
  * often tapped out when the moment comes, and valuing untapped mana does not fix that."*
  *
  * `held-answers.mjs` measured that claim and it is an understatement. Of every moment an opponent
- * had a spell on the stack and this bot held a counterspell, across 144 games each:
+ * had a spell on the stack and this bot held a counterspell, across 144 games each, with this rule
+ * off:
  *
- * | deck | windows | cast | affordable, passed | **could not pay** | nothing to point at |
- * | --- | --- | --- | --- | --- | --- |
- * | Tidal Mind | 271 | 4% | 0% | **92%** | 3% |
- * | Arc Tempest | 151 | 11% | 3% | **79%** | 7% |
- * | Skyward Writ | 226 | 28% | 8% | **56%** | 7% |
+ * | deck | windows | cast | the other card | **declined** | never offered | **no mana** | no target |
+ * | --- | --- | --- | --- | --- | --- | --- | --- |
+ * | Tidal Mind | 229 | 7% | 0% | **0%** | 0% | **87%** | 6% |
+ * | Arc Tempest | 151 | 12% | 0% | **3%** | 0% | **77%** | 8% |
+ * | Skyward Writ | 218 | 30% | 7% | **0%** | 1% | **54%** | 8% |
  *
- * So this is not a judgement problem — over 271 of Tidal Mind's windows it declined an affordable
+ * So this is not a judgement problem — over 229 of Tidal Mind's windows it declined an affordable
  * answer not once, so it almost never gets to *make* the bad choice. It is a
  * tempo problem, and it has a precise shape — a seat that taps out in its own main phase has no
  * mana for the whole of the opponent's turn, because lands untap in their controller's own untap
- * step. The severity tracks the counter's cost exactly: Skyward Writ's {U}{U} Counterspell is live
- * three times as often as Tidal Mind's {1}{U}{U} Disallow, which over 144 games was cast **once**
- * against 145 windows it could not pay for.
+ * step. The severity tracks the counter's cost exactly: Skyward Writ's {U}{U} Counterspell is cast
+ * in 30% of its windows, where Tidal Mind's {1}{U}{U} Disallow was cast **4 times** against **118**
+ * windows it could not pay for.
+ *
+ * With the rule on, Tidal Mind casts one in 44% of them and could not pay in 41%. The two middle
+ * columns are the correction D168 carries: `declined` once counted windows another answer in the
+ * same hand had already covered, and windows this seat was never actually offered, and both read
+ * as judgement when neither was. The genuine declines are six of 208, and D170 is why no filter
+ * was written for them.
  *
  * Which is why this is a filter and not a term. A weight can only say "untapped mana is worth a
  * little", and the search then spends it anyway on whatever is worth more right now — correctly,

@@ -35,7 +35,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `mill.mjs` | does the mill deck win by decking, and how close does it get? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/mill.mjs` |
 | `killed-by.mjs` | what took the last of this deck's life, on what turn, holding what? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/killed-by.mjs` |
 | `held-answers.mjs` | why is the counterspell still in hand — no mana, no target, or no nerve? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
-| `held-answers.mjs` | …and does the reservation rule fix it? | `BOT='{"reserveForAnswers":true}' SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
+| `held-answers.mjs` | …and what did the reservation rule change? (it is on by default, so this is the control arm) | `BOT='{"reserveForAnswers":false}' SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
 | `draw-triggers.mjs` | does "whenever you draw a card" fire in real games, and what does it add up to? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/draw-triggers.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
@@ -273,6 +273,17 @@ see were exactly the ones it existed to explain. The fix is to put the question 
 offer and what would you refuse?* Nothing is applied. Any instrument that reads `legalActions` for a
 seat that is not the one acting needs the same trick, and an instrument that does not do it will
 print a confident zero.
+
+**The unit a harness counts in is a claim about the engine, and it has to be said out loud.**
+`held-answers` counts one window per (opponent's spell on the stack, answer in hand), which is the
+right unit for *could this card have been cast* and the wrong unit for *what did this seat decide* —
+and the column everybody reads is the second question. Two kinds of non-decision ended up in it, and
+both inflated it: a hand holding two answers facing one spell is two windows, so casting either left
+the other recorded as affordable and passed over (**26 of Skyward Writ's 31 "declines" were `cast
+Counterspell`**), and a (spell, answer) pair is usually *first* seen on a move this seat was not
+making, which was never a decision at all (**8 of Tidal Mind's 14**). They are now `covered` and
+`unseen`, their own columns, and the numbers D168 published off the four-bucket version are
+corrected there. Before publishing a bucket, ask what one row of it is a row *of*.
 
 **`bot-duel`'s total is not diluted by the decks a rule cannot touch, and that is worth knowing
 before narrowing it.** A rule that only fires for the five decks holding counterspells looks like it

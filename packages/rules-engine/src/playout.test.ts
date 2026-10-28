@@ -1352,8 +1352,8 @@ describe('the mana an answer in hand is waiting for', () => {
 
     `held-answers.mjs` asked where a counterspell's windows go, and the answer was not the one two
     deleted evaluation terms had assumed. Of every moment an opponent had a spell on the stack and
-    the bot held a counter, Tidal Mind cast 4%, declined an affordable one **not once** in 271, and
-    **could not pay for 92%**. It is not a judgement problem — the bot almost never gets to make the bad choice.
+    the bot held a counter, Tidal Mind cast 7%, declined an affordable one **not once** in 229, and
+    **could not pay for 87%**. It is not a judgement problem — the bot almost never gets to make the bad choice.
     It is that a seat which taps out in its own main phase has no mana for the whole of the
     opponent's turn, because lands untap in their controller's own untap step.
 
@@ -1385,7 +1385,7 @@ describe('the mana an answer in hand is waiting for', () => {
     // on its controller's own turn with an empty stack a counterspell has nothing to point at.
     expect(legalActions(tight, 0).plays.some((play) => play.card === cancel)).toBe(false);
 
-    // Without the rule it taps out for the body, which is what 92% of those windows are.
+    // Without the rule it taps out for the body, which is what 87% of those windows are.
     const greedy = botAction(tight, 0, OFF);
     expect(greedy?.type === 'auto:cast' && greedy.card === speaker).toBe(true);
 

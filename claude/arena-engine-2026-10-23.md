@@ -4340,23 +4340,31 @@ drifted twice as the pool grew, and this is why.
 Three decks' records have been explained by the same sentence for months — holding mana for an
 answer is half their plan and the bot cannot do it — and nothing had ever measured which part of
 that was true. `held-answers.mjs` counts one *window* per (opponent's spell on the stack, answer in
-hand) and asks `legalActions` what it would offer. A counterspell's life has exactly four ends, and
-which one it meets decides what kind of fix would help:
+hand) and asks `legalActions` what it would offer. A counterspell's life has six ends, and which one
+it meets decides what kind of fix would help — 144 games each with the rule off:
 
-| deck | windows | cast | could afford, passed | **could not pay** | nothing to point at |
-| --- | --- | --- | --- | --- | --- |
-| Tidal Mind | 271 | 4% | 0% | **92%** | 3% |
-| Arc Tempest | 151 | 11% | 3% | **79%** | 7% |
-| Skyward Writ | 226 | 28% | 8% | **56%** | 7% |
+| deck | windows | cast | the other card | **declined** | never offered | **could not pay** | no target |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Tidal Mind | 229 | 7% | 0% | **0%** | 0% | **87%** | 6% |
+| Arc Tempest | 151 | 12% | 0% | **3%** | 0% | **77%** | 8% |
+| Skyward Writ | 218 | 30% | 7% | **0%** | 1% | **54%** | 8% |
 
-**It is not a judgement problem.** Over 271 of Tidal Mind's windows the bot declined an affordable
+**It is not a judgement problem.** Over 229 of Tidal Mind's windows the bot declined an affordable
 answer **not once**: it almost never gets to make the bad choice two deleted evaluation terms were
 aimed at. It is a tempo
 problem with a precise shape — a seat that taps out in its own main phase has no mana for the whole
 of the opponent's turn, because lands untap in their controller's own untap step. The severity
-tracks the counter's **cost**: Skyward Writ's {U}{U} Counterspell is live three times as often as
-Tidal Mind's {1}{U}{U} Disallow, which was cast **once** in 144 games against 145 windows it could
-not pay for.
+tracks the counter's **cost**: Skyward Writ's {U}{U} Counterspell is cast in 30% of its windows,
+where Tidal Mind's {1}{U}{U} Disallow was cast **4 times** in 144 games against **118** windows it
+could not pay for.
+
+**Two of those six columns were added after this was first written, and they corrected it.** The
+first instrument had four buckets and folded both into "passed", which is the one column a
+conclusion gets drawn from: a hand with two answers facing one spell is two windows, so spending
+either left the other looking passed over (26 of Skyward Writ's 31 "declines" were `cast
+Counterspell`), and a pair only ever seen on a move this seat was not making was never a decision at
+all (8 of Tidal Mind's 14). The table above and everything below is the corrected instrument; D168
+in the decisions log lists what it supersedes.
 
 **The instrument could not see any of that until it moved priority.** Its first version found 163
 moments with an opponent's spell on the stack and the subject seat offered priority in *three* of
@@ -4399,6 +4407,43 @@ In both decks the genuinely deadest card was untouchable: Hollow Tide's Diabolic
 Eldest Reborn, Ashen Rite's Bone Splinters and Night of Souls' Betrayal, are each the pool's only
 copy of their card — and the Bone Splinters is the only card in the game that pays a cost by
 sacrificing. That is D167's orphanage constraint biting a second time in a week.
+
+### The counterspell it declines, which turned out not to be a problem
+
+D168 shipped the reservation rule and closed by naming the next thing to fix: now that the bot can
+pay, *which* spells does it wrongly let through? That is D69's judgement problem, unanswered since
+July. The measurement says it is not there.
+
+With the rule on, across 432 games, the three counterspell decks declined an affordable answer **13
+times in 556 windows** — 3% of Tidal Mind's, 1% of Skyward Writ's, 4% of Arc Tempest's. And both
+diagnostics added to describe those declines say there is nothing to describe:
+
+- **What it did instead was another instant, all thirteen times.** Murder ×2, Cackling Counterpart
+  ×2, Unsummon ×2; Swerve ×4, a Think Twice, a Twincast; one activated ability. The mana never went
+  on a creature or a sorcery — the bot was responding, it just responded with the other card.
+- **It counters the expensive half.** Mana value countered against declined is 2.6/2.0, 2.4/2.0 and
+  2.2/1.0, and twelve of the thirteen declined spells have mana value 2 or less: a Burst Lightning,
+  a Galvanic Blast, a Think Twice, a Chalice of the Void for {0}. The countered lists are headed by
+  Vampire Nighthawk, Shivan Dragon and Flametongue Kavu. That is the opposite of the failure D69
+  predicted.
+
+So no filter was written, and D69 is closed by measurement rather than argument: the thing that made
+it true was that the bot could almost never pay.
+
+**The instrument had been counting two things that are not decisions, and both inflated the one
+column a conclusion gets drawn from.** A hand holding two answers facing one spell is two windows,
+so casting either left the other recorded as passed over — 26 of Skyward Writ's 31 "declines" were
+`cast Counterspell`. And a (spell, answer) pair is usually first seen on a move this seat was not
+making, which is not a decision either — 8 of Tidal Mind's 14. Both are now their own columns. It is
+the same lesson as the priority counterfactual one entry up: **the unit a harness counts in is a
+claim about the engine, and it has to be said out loud.** "One window per spell the deck could have
+answered" and "one decision per spell the deck was asked about" differ by a factor of three here,
+and the numbers published in D168 answered the first question while the sentence beside them
+answered the second. Every figure is corrected in place, and D168 lists what it supersedes.
+
+The real cost of the reservation rule is somewhere else and nothing has measured it yet: **20% of
+Arc Tempest's windows and 12% of Skyward Writ's have nothing to point at** — a Squelch or an Essence
+Scatter holding mana up for a spell type that is not coming.
 
 ## Next
 
@@ -4453,7 +4498,9 @@ sacrificing. That is D167's orphanage constraint biting a second time in a week.
    weight, because the weight cannot be made to work. The counterspell is the clearest case of that:
    the same idea failed twice as a *weight* (D68, D69) and works as a *filter*, and the instrument
    that said why is `held-answers.mjs` — the handicap was never when it counters, it was that it had
-   already spent the mana. All three need the *reply*,
+   already spent the mana — and with the mana there, the judgement is fine (13 declines in 556
+   windows, every one of them spent on another instant, and the spells it lets through cheaper than
+   the ones it counters). All three need the *reply*,
    which is this same function recursing with the opponent choosing against it — and the cheap
    substitute for the first of them (scoring an untapped creature above a tapped one) was tried and
    measurably lost games, which is written up in `claude/decisions-log.md`. The reply itself has now

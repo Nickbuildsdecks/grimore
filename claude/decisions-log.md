@@ -7724,31 +7724,50 @@ in three different files: holding mana for an answer is half the plan of Tidal M
 and Arc Tempest, and the bot cannot do it. **Nothing had ever measured which part of that was
 true.**
 
-### Four ends a counterspell can meet
+### Six ends a counterspell can meet
 
 The instrument counts one *window* per (opponent's spell on the stack, answer in hand) and asks
 `legalActions` — the same function the table and the bot read — what it would offer:
 
 - **cast** — the window opened, the mana was there, and the bot spent it.
-- **passed** — the window opened, the mana was there, and the bot chose something else. A judgement
-  problem; only an evaluation change helps.
+- **answered by the other card** — the spell was countered, by a *different* answer in the same
+  hand. Nothing was declined; this window is the same decision counted twice.
+- **genuinely declined** — the window opened on a move this seat was making, the mana was there, and
+  the bot chose something else. A judgement problem; only an evaluation change helps.
+- **never offered** — the pair was only ever seen on a move this seat was not making, so there was
+  no decision to get wrong.
 - **no mana** — it could not pay. A tempo problem.
 - **no target** — nothing the card could legally point at.
 
-**144 games each against the twelve-deck field:**
+**The middle two were added after this entry was first published, and they correct the numbers it
+published.** The first instrument had four buckets and folded both into `passed`, which is the one
+column a reader draws a conclusion from. Both inflated it, and for the same underlying reason — one
+window per (spell, answer in hand) is the right unit for *could this card have been cast* and the
+wrong unit for *what did this seat decide*:
 
-| deck | windows | cast | affordable, passed | **could not pay** | nothing to point at |
-| --- | --- | --- | --- | --- | --- |
-| Tidal Mind | 271 | 4% | 0% | **92%** | 3% |
-| Arc Tempest | 151 | 11% | 3% | **79%** | 7% |
-| Skyward Writ | 226 | 28% | 8% | **56%** | 7% |
+- A hand holding two answers facing one spell is two windows, so spending either leaves the other
+  looking passed over. **26 of Skyward Writ's 31 "declines" were `cast Counterspell`.**
+- A pair is usually first seen on a move this seat was not making, and where no later sighting on
+  its own move exists there was never a decision at all. **8 of Tidal Mind's 14 were those.**
+
+Everything below is the corrected instrument, both arms re-run against the current pool. What it
+supersedes is listed at the end of this entry.
+
+**144 games each against the twelve-deck field, the rule off:**
+
+| deck | windows | cast | the other card | **declined** | never offered | **could not pay** | no target |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Tidal Mind | 229 | 7% | 0% | **0%** | 0% | **87%** | 6% |
+| Arc Tempest | 151 | 12% | 0% | **3%** | 0% | **77%** | 8% |
+| Skyward Writ | 218 | 30% | 7% | **0%** | 1% | **54%** | 8% |
 
 **It is not a judgement problem.** The bot almost never gets to *make* the bad choice D69 found:
-over 271 of Tidal Mind's windows it declined an affordable answer **not once**. It is a tempo problem with a precise shape — a seat
-that taps out in its own main phase has no mana for the whole of the opponent's turn, because lands
-untap in their controller's own untap step. And the severity tracks the counter's **cost** exactly:
-Skyward Writ's {U}{U} Counterspell is live three times as often as Tidal Mind's {1}{U}{U} Disallow,
-which over 144 games was cast **once** against 145 windows it could not pay for.
+over 229 of Tidal Mind's windows it declined an affordable answer **not once**. It is a tempo
+problem with a precise shape — a seat that taps out in its own main phase has no mana for the whole
+of the opponent's turn, because lands untap in their controller's own untap step. And the severity
+tracks the counter's **cost** exactly: Skyward Writ's {U}{U} Counterspell is cast in 30% of its
+windows, where Tidal Mind's {1}{U}{U} Disallow was cast **4 times** against **118** windows it
+could not pay for.
 
 ### The instrument could not see any of it until priority moved
 
@@ -7785,12 +7804,15 @@ consistent +8 to +12 on matched seeds.
 
 **What it fixes, measured:**
 
-| Tidal Mind's windows | before | after |
+| Tidal Mind's windows | rule off | rule on |
 | --- | --- | --- |
-| cast | 4% | **48%** |
-| affordable, passed | 0% | 11% |
-| **could not pay** | **92%** | **39%** |
-| nothing to point at | 3% | 1% |
+| windows | 229 | 208 |
+| cast | 7% | **44%** |
+| the other card | 0% | 0% |
+| declined | 0% | 3% |
+| never offered | 0% | 4% |
+| **could not pay** | **87%** | **41%** |
+| no target | 6% | 8% |
 
 **What it is worth, measured twice:**
 
@@ -7821,12 +7843,30 @@ direction it exists to err in; a payment solver that preferred to leave a named 
 own piece of work.
 
 **And the next problem is now reachable, which is the other reason to ship it.** With the rule on,
-the bot declines an affordable answer in about one window in nine, where before it was none in 271.
-It declined a Shivan Dragon four times in 96 games while countering Monastery Swiftspears and
-Centaur Coursers, and the mana-value proxy says it is not simply spending counters on cheap junk
-(2.4 countered against 2.9 declined). That is D69's judgement problem, finally in a position where
-something could be done about it — and no evaluation weight can read "what the spell *does*", so it
-will want a fact about the board the way `preventionCanMatter` and `somethingToRemove` did.
+Tidal Mind casts an answer in 44% of its windows against 7%, and the windows it declines are now
+visible at all: six of 208, where before there were none. Six is not a judgement problem, and
+**D170 is the measurement that says so** — what the bot did instead was another answer every time,
+and the spells it let through are the cheap ones. D69's judgement problem does not appear once the
+bot can pay.
+
+### Corrections to this entry
+
+Published first and superseded above, in this file, in `claude/arena-engine-2026-10-23.md`,
+`claude/play-realm-setup.md`, the `spendsAnAnswersMana` comment in `bot.ts` and the
+`held-answers` describe in `playout.test.ts`:
+
+- the four-bucket control table (`4%/0%/92%/3%`, `11%/3%/79%/7%`, `28%/8%/56%/7%`) — the `passed`
+  column included windows another card answered and windows this seat was never offered;
+- the before/after table reading `4% → 48%` cast and `0% → 11%` passed;
+- "it declines an affordable answer in about one window in nine" — it is one in 35;
+- "it declined a Shivan Dragon four times in 96 games" — once, in 144;
+- the mana-value proxy "2.4 countered against 2.9 declined" — it is **2.6 countered against 2.0
+  declined**, which points the other way: the spells it lets through are the cheaper ones.
+
+The rule itself was not measured by the broken buckets — it was priced by `bot-duel` and the
+thirteen-deck table, which read win rates and not windows — so nothing about what shipped depends
+on the correction.
+
 
 ## D169 — The event every deck raised every turn and nothing watched
 
@@ -7924,3 +7964,84 @@ Jace, Memory Adept in it.
 with no counters on a board that `advanceTo` had already walked through its own draw step — so the
 card had a counter before the test did anything, which is the engine being right about the most
 ordinary draw there is. They measure the delta now and say why.
+
+## D170 — The judgement problem that is not there, and the instrument that invented it
+
+**Decision: write no fact-about-the-board filter for the counterspell the bot declines, because
+with the reservation rule on it declines 13 of 556 windows, spends the mana on another instant every
+one of those times, and lets through spells that are *cheaper* than the ones it counters. Close
+D69's judgement problem as not-reproducing, and fix the instrument that made it look open.**
+
+D68 and D69 both built an evaluation term for holding mana and both were deleted. D168 built the
+filter instead, measured that the real failure was tempo, and closed with a sentence that has turned
+out to be wrong: *"with the rule on, the bot declines an affordable answer in about one window in
+nine… that is D69's judgement problem, finally in a position where something could be done about
+it."* This entry is the measurement that was supposed to characterise that problem, and the result is
+that it does not exist.
+
+### The instrument was counting two things that are not decisions
+
+`held-answers.mjs` counts one window per (opponent's spell on the stack, answer in hand), which is
+the right unit for *could this card have been cast* and the wrong unit for *what did this seat
+decide*. Both errors pushed the same way, into the one column a conclusion gets drawn from:
+
+- **A window another answer covered.** A hand holding a Counterspell and an Essence Scatter facing
+  one spell is two windows. Casting either leaves the other recorded as affordable and passed over —
+  so the deck answering the spell reads as the deck declining to. **26 of Skyward Writ's 31
+  "declines" were `cast Counterspell`.**
+- **A window this seat was never offered.** The loop looks at every move and most moves belong to
+  the opponent, so a (spell, answer) pair is usually *first* seen on a move this seat was not
+  making. Where a later sighting on its own move exists that one wins — but sometimes there is none,
+  because a trigger goes on the stack above the spell and the pair gets a new key, or the bot spends
+  the mana first and the answer stops being affordable. **8 of Tidal Mind's 14 were those.**
+
+So `covered` and `unseen` are now their own columns and `passed` means what it says. Both bugs are
+the same bug the priority counterfactual was: **the unit a harness counts in is a claim about the
+engine, and it needs stating out loud.** "One window per spell the deck could have answered" and
+"one decision per spell the deck was asked about" differ by a factor of three here, and the first
+version silently answered the first question while the entry it fed answered the second.
+
+### What the corrected instrument says, 144 games each with the rule on
+
+| deck | windows | cast | the other card | **declined** | never offered | could not pay | no target |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Tidal Mind | 208 | 44% | 0% | **3%** (6) | 4% | 41% | 8% |
+| Skyward Writ | 196 | 60% | 13% | **1%** (1) | 2% | 12% | 12% |
+| Arc Tempest | 152 | 34% | 1% | **4%** (6) | 4% | 38% | 20% |
+
+**Thirteen declines in 556 windows over 432 games**, and the two diagnostics that were added to
+describe them both say there is nothing to describe:
+
+- **What it did instead was another instant, all thirteen times.** Murder ×2, Cackling Counterpart
+  ×2 and Unsummon ×2 for Tidal Mind; Swerve ×4, a Think Twice and a Twincast for Arc Tempest; one
+  activated ability for Skyward Writ. Not one of them is the mana going on a creature or a sorcery —
+  the bot was responding, it just responded with the other card.
+- **It counters the expensive half and lets the cheap half through**, which is the opposite of the
+  failure D69 predicted. Mana value countered against declined: **2.6 / 2.0** (Tidal Mind), **2.4 /
+  2.0** (Skyward Writ), **2.2 / 1.0** (Arc Tempest). Twelve of the thirteen declined spells have
+  mana value 2 or less — Burst Lightning, Galvanic Blast, Tainted Strike, Think Twice, Golgari
+  Charm, Chalice of the Void for {0} — against countered lists headed by Vampire Nighthawk, Shivan
+  Dragon and Flametongue Kavu. And the spell it counters is a creature 49–71% of the time.
+
+The four board facts recorded for a candidate filter — creature or not, mana value, ahead on
+creatures, ahead on life — separate the two lists in the *right* direction on every deck. There is
+no filter to write, because the behaviour the filter would correct is already correct.
+
+### Why this is a result and not a non-event
+
+Three things come out of it that are worth more than a thirteenth bot rule:
+
+1. **D69 is closed by measurement rather than by argument.** It stood for months as "the bot will
+   counter anything it can pay for", quoted in `bot.ts` and in two progress docs, and the thing that
+   made it true was that the bot could almost never pay. Fix the paying and the judgement is fine.
+2. **A published number was wrong and is now corrected in all five places it was quoted** —
+   D168 above, `claude/arena-engine-2026-10-23.md`, `claude/play-realm-setup.md`, the
+   `spendsAnAnswersMana` comment in `bot.ts`, and the `held-answers` describe in `playout.test.ts`.
+   The rule that shipped does not depend on the correction: it was priced by `bot-duel` and the
+   thirteen-deck table, which read win rates and never read a window.
+3. **The next thing to doubt is named.** `no target` is 20% of Arc Tempest's windows and 12% of
+   Skyward Writ's, which is Squelch and Essence Scatter holding up mana for a spell type that is not
+   coming. That is a real cost of the reservation rule and nothing has measured it; it would be a
+   narrowing of the rule (reserve only for an answer that can point at something) rather than a new
+   family member.
+
