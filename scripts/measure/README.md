@@ -36,6 +36,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `killed-by.mjs` | what took the last of this deck's life, on what turn, holding what? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/killed-by.mjs` |
 | `held-answers.mjs` | why is the counterspell still in hand — no mana, no target, or no nerve? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
 | `held-answers.mjs` | …and does the reservation rule fix it? | `BOT='{"reserveForAnswers":true}' SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
+| `draw-triggers.mjs` | does "whenever you draw a card" fire in real games, and what does it add up to? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/draw-triggers.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
