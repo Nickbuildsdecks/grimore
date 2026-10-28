@@ -8390,6 +8390,21 @@ own ability on an empty board. A test asserts the refusal.
 It replaced Ashen Rite's **Thorn of the Black Rose** (65%, the deck's weakest card that is not the
 pool's only copy — Tidal Mind runs the other, so the monarch keeps its coverage).
 
+### What it is worth, and the weakest "keep" in the pool
+
+Probing the revert, and the first two readings are the reason D175 exists: **−20 and −8** before the
+fodder bug was found, and **−4, −2, +1 and −4** on four seed sets after it. Mean −2.25 of 288, every
+one of them well inside the ±20 floor, three of the four with a negative sign.
+
+**It stays, and the comparison that decides it is the Treasure Cruise's.** That card read −9, −1,
+−4 and −3 — mean −4.25, four signs out of four — and was moved out of the deck it was in. This is a
+weaker signal than that one, there is no better home for a `{0}` outlet in the pool (Rot Harvest is
+the only other deck that wants it, and its Lhurgoyf's power *is* the graveyard an escape cost
+exiles), and escape needs a second card for the same reason any mechanic does. So it is kept with
+the condition written down: **when the field next changes, measure it again** — if the sign holds
+negative over another two sets, the Thorn comes back and escape stays a one-card mechanic until a
+better home exists.
+
 ## D175 — The sacrifice outlet that was eating its own engine
 
 **Decision: rank fodder by what a creature is *worth to its own deck* rather than by its power, and

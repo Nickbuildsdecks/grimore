@@ -4608,6 +4608,14 @@ than in a graveyard when it is eaten, because a token that leaves the battlefiel
 rather than the card. It replaced the Thorn of the Black Rose (65%, and Tidal Mind runs the other,
 so the monarch keeps its coverage).
 
+**Priced at −20 and −8, which turned out to be a bot bug rather than a card** — see the entry
+below. With that fixed it reads **−4, −2, +1 and −4** on four seed sets: mean −2.25 of 288, every
+reading inside the floor, three of four with a negative sign. That is a weaker signal than the one
+that moved the Treasure Cruise out of Tidal Mind (−9, −1, −4, −3), there is no better home for a
+`{0}` outlet in the pool — Rot Harvest is the only other deck that wants one and its Lhurgoyf's
+power *is* the graveyard an escape cost exiles — and escape needs a second card. So it is kept with
+the condition written down: measure it again when the field next changes.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
