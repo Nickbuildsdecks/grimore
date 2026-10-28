@@ -193,6 +193,8 @@ export interface SeatView {
   readonly life: number;
   readonly poison: number;
   readonly commanderDamage: Readonly<Record<string, number>>;
+  /** All damage this seat has taken from each other seat. See `Seat.damageFrom`. */
+  readonly damageFrom: Readonly<Record<string, number>>;
   readonly counters: Readonly<Record<string, number>>;
   readonly eliminated: boolean;
   readonly eliminatedReason: EliminatedReason | null;
@@ -608,6 +610,7 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     life: seat.life,
     poison: seat.poison,
     commanderDamage: seat.commanderDamage,
+    damageFrom: seat.damageFrom,
     counters: seat.counters,
     eliminated: seat.eliminated,
     eliminatedReason: seat.eliminatedReason,

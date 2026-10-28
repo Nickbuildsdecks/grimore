@@ -5079,6 +5079,34 @@ the 61st-best card in a deck with two better two-drops. The same card in Verdant
 **27 times in 42**. `cast-counts` answered that before any win rate could have, which is the whole
 argument for reading usage before pricing a slot (D188).
 
+### The pod's politics, recorded
+
+`Seat.damageFrom` is all damage dealt to a seat by each other seat this game, keyed by seat index —
+`commanderDamage`'s wider sibling, sitting beside it because that record was already per-seat,
+already in the view and already keyed by the *player* rather than the card.
+
+It is the **first field in this state that no rule reads.** Twenty-one commander damage eliminates
+a player, so that tally is machinery; this one decides nothing and no state-based action looks at
+it. It exists because a four-player table asks a question every turn that nothing on the screen
+could answer — *who has been coming at me, and who has left me alone* — which the pod's own notes
+had listed as the missing half of its politics for as long as deals have existed.
+
+Attribution is the most specific thing the caller passed: the attacking creature for combat, then
+`source` (a permanent belongs to the seat controlling it, a spell on the stack to its owner), then
+`controller`, which callers pass for lifelink rather than for attribution. Damage with no source is
+counted against nobody rather than against a guess. Prevented damage is not in it, because it was
+never dealt; life *paid* as a cost is not in it either, so a player bleeding themselves for cards
+does not read as somebody attacking them.
+
+Each opponent's strip in a pod reads `hit you N`, beside the deal badge and the broke-a-deal badge,
+and only when it is not nought — a strip with no badge is itself the answer to the other half of the
+question. `damageTakenFrom` is the helper, beside `pactBadge` and `brokeADeal`, so it is tested
+where the other political reads are.
+
+What it deliberately is not: an aggression score, a most-hated badge, or anything the software acts
+on. The deals drew that line first and it is the right one (D189).
+
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -5164,4 +5192,8 @@ argument for reading usage before pricing a slot (D188).
    send the whole swing at one player, and three preset deals that the table records and never
    enforces. What is still missing is the rest of what a pod is *socially*: no table talk beyond the
    chat panel and those three sentences, and nothing that records who was politically on whose side
-   over a game — the badge says who broke a deal, not who was helping whom.
+   over a game. **Half of that is now built**: every opponent's strip reads `hit you N`, all the
+   damage that player has dealt you this game, so the table remembers what people did as well as
+   what they promised (D189). What is still missing is the other direction — nothing records who was
+   *helping* whom, because helping is not a thing the engine sees: a player who attacked somebody
+   else instead of you looks identical to a player who could not attack you at all.

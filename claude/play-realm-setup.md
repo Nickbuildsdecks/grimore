@@ -112,6 +112,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Play two lands in one turn | **Explore** in Delta Bloom ({G}, sorcery) says "you may play an additional land this turn", and the table simply offers the land again: a land in hand that said **you have already played a land this turn** goes back to saying **playable**. The order does not matter — cast it before or after the turn's land and you still get two — and the permission ends with the turn, so an Explore cast with no land in hand is just a card. With Tatyova out each of those lands is also a card and a life, which is what the deck is for. Nothing else in the pool gives one, and the engine counts them per turn: a third land is refused with **you have already played 2 lands this turn**. |
 | Block | **Declare blockers**, tap your creature, then tap the attacker it blocks. Only attackers it may legally block light up. |
 | See who is attacking whom | Lines on the board: gold from each attacker to the player it is aimed at, dashed from each blocker to what it blocked. In a pod that is how you know an attack is yours to answer. |
+| Work out who has been hitting you | In a pod, each opponent's strip reads **hit you N** — all the damage that player has dealt you this game, combat and spells alike, from the first turn on. It is the question a four-player table asks every turn and nothing on the screen could answer: life totals are everybody's work added up, and the log tells you one event at a time. Damage that was *prevented* reads as nothing, because it never happened, and a swing your blockers ate reads as nothing either — what you see is what landed on you. A strip with no badge is the other half of the read: that is the player who has left you alone. Nothing here is enforced and nothing is judged; the table just remembers, which is the same line the deals draw. |
 | Work out who the threat is | Every seat strip says `board N` — the total power of that seat's creatures — and `· M up` for how much of that power is untapped. The first number is what can kill you eventually; the second is what can kill you on their *next* turn, and what can stop you on yours. A **lethal** badge on an opponent's strip means their untapped power alone is at least your life and you have nothing untapped to block with. |
 | Choose who to attack | The attack prompt lists every player and planeswalker you may send an attack at, and each player's button says their life, their untapped power, and how many of your creatures are already pointed at them — plus **lethal** when that swing would finish them with nothing able to block. Tap a player, then tap the creatures that go at them; tap a different player and the next creatures go there instead. |
 | Send everything at one player | With two or more creatures declared, **All at ⟨name⟩** re-points the whole swing at whoever is selected. For the turn where somebody's life total drops and the plan changes. |
@@ -413,24 +414,24 @@ check now runs in the test suite, so a future version that peeks fails before it
 other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
 ```
- 75%  216-72   ember-rush
- 64%  184-104  dawn-tithe
+ 75%  217-71   ember-rush
+ 65%  186-102  dawn-tithe
  61%  175-113  verdant-guard
- 57%  165-123  forge-alliance
- 57%  164-124  kindle-grove
- 49%  141-147  skyward-writ
+ 57%  163-125  forge-alliance
+ 56%  160-128  kindle-grove
+ 49%  142-146  skyward-writ
  46%  133-155  ashen-rite
- 45%  129-159  rot-harvest
+ 45%  131-157  rot-harvest
  44%  128-160  delta-bloom
- 43%  124-164  hollow-tide
+ 42%  121-167  hollow-tide
  39%  113-175  arc-tempest
- 34%  99-189   blight-vector
- 34%  97-191   tidal-mind
+ 35%  100-188  tidal-mind
+ 34%  98-190   blight-vector
 ```
 
-**One deck is clearly ahead, ten are spread between 39% and 64%, and two are measurably short.**
+**One deck is clearly ahead, ten are spread between 39% and 65%, and two are measurably short.**
 The spread is forty-one points, and the bottom of the table is two decks rather than a cluster:
-Tidal Mind and Blight Vector level at 34%, five points below the deck above them. This run has all
+Tidal Mind and Blight Vector at 35% and 34%, four points below the deck above them. This run has all
 nine of the cards added in the last pass in it — undying, persist, monstrosity, adapt and unearth —
 and the two rows that moved most are the two those cards were measured in: Verdant Guard +7 with a
 **Fleecemane Lion** and Kindle Grove +7 with a **Hellspark Elemental**, which is the number that
@@ -438,6 +439,15 @@ card's own probe gave (+4 and +6) arriving in the field almost exactly. An earli
 table read "the bottom is a cluster now" and "the spread is thirty-six points"; this run says
 neither, and the sentences have been replaced rather than left standing — a published number that
 has been re-measured is worth more corrected than defended.
+
+**This run has four new cards in it and the table cannot see them, which is worth saying out
+loud.** Battalion, mentor, renown and battle cry went into four different decks (D188), and every
+row of the thirteen moved inside the instrument's own ±20-game floor: the biggest move is Kindle
+Grove at four games. Measured properly — each change probed against its own deck on the same seeds,
+both arms — Forge Alliance's two cards are worth **9 and 36 games** of 288. Both readings are
+honest and they are answering different questions: a paired probe compares one list against one
+list, and this table is zero-sum across thirteen decks that changed at once. A four-deck pass is not
+readable from the standings, and the standings are not the place to look for it.
 
 **This run has one more bot rule in it than the last, and it is deliberately invisible.** The
 computer used to pick an Equipment up and put it on a different creature that was no bigger — a
@@ -948,9 +958,9 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (950 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (952 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (210 tests, the interaction reducer behind every prompt and the deck panel) and
+pods as well as duels), `apps/web` (212 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
 (43 tests against live Redis, including two socket clients playing to a finish, one person
 playing the server, a deal struck with the server's own seat, and two players rematching on
@@ -1016,10 +1026,14 @@ decks they pasted in).
   something three moves ago — for that, move the cards by hand and read the log. It also cannot
   unsee: the state it restores is exact, so a card drawn and taken back has still been looked at.
 - **Pod politics is half the pod's own business.** The table says what going at each player is
-  walking into, sends the whole swing at one of them in a press, and now records a deal: three
-  preset things you can say to another player, their answer, and a badge on whoever went back on
-  one. What it does not do is enforce any of it, deliberately — a table where the software stops
-  you breaking your word is a table where your word costs nothing. Anything said beyond those three
-  sentences is still between the people at the table, in the chat panel or out loud.
+  walking into, sends the whole swing at one of them in a press, records a deal — three preset
+  things you can say to another player, their answer, and a badge on whoever went back on one — and
+  now **remembers what everybody has actually done to you**: each opponent's strip reads `hit you N`
+  for the damage that player has dealt you over the whole game, combat and spells alike, and a strip
+  with no badge at all is the player who has left you alone. That pair is the whole political read:
+  what somebody promised, and what they did. What the table does not do is enforce any of it,
+  deliberately — a table where the software stops you breaking your word is a table where your word
+  costs nothing. Anything said beyond those three sentences is still between the people at the
+  table, in the chat panel or out loud.
 - **Websocket only.** A network that blocks WebSockets cannot play, because the server has polling
   disabled. Rare, but it would look like a table that never connects.

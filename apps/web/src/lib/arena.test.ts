@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest"
 import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-engine"
 import {
   IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, brokeADeal, candidatesAt,
-  cardBadges, decisionLabel, pactAsked, pactBadge, pactOffers,
+  cardBadges, damageTakenFrom, decisionLabel, pactAsked, pactBadge, pactOffers,
   manaPips, playsForCard, primaryMove, reasonCannotPlay, specAt, splitBattlefield, targetKey,
   targetsRequired,
   targetsWanted,
@@ -1610,6 +1610,30 @@ describe("deals between players", () => {
     expect(pactBadge(view({ turn: 3, seats, pacts: [deal({ broken: true })] }), 1)).toBeNull()
     expect(pactBadge(view({ turn: 3, seats, pacts: [deal({ status: "offered", throughTurn: null })] }), 1))
       .toBeNull()
+  })
+
+  it("says how much each other seat has dealt you, and nothing about yourself", () => {
+    /*
+      The other half of a pod's politics, and the half that was missing: a deal says what somebody
+      promised, and this says what they have actually done to you.
+
+      Nought rather than null when nothing has landed, because the caller draws nothing at nought
+      — a badge reading "hit you 0" on every strip from turn one is noise, and a strip with no
+      badge is itself the answer to "who has left me alone".
+    */
+    const hit = [
+      { index: 0, name: "Nick", damageFrom: { "1": 7, "2": 0 } },
+      { index: 1, name: "Friend", damageFrom: { "0": 3 } },
+      { index: 2, name: "Third", damageFrom: {} },
+    ] as unknown as GameView["seats"]
+    const v = view({ seats: hit, seat: 0 })
+    expect(damageTakenFrom(v, 1)).toBe(7)
+    expect(damageTakenFrom(v, 2)).toBe(0)
+    // Your own row is never a read about somebody else, even though a Fireball at your own face
+    // is recorded there by the engine.
+    expect(damageTakenFrom(v, 0)).toBe(0)
+    // And a watcher, who has no seat, is owed no political read at all.
+    expect(damageTakenFrom(view({ seats: hit, seat: null }), 1)).toBe(0)
   })
 
   it("remembers who went back on one, for the rest of the game", () => {

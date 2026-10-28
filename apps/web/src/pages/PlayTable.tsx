@@ -45,7 +45,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
   IDLE, arenaReducer, boardRead, brokeADeal, candidatesAt, cardBadges, choiceCandidatesAt,
-  dividedAmount,
+  damageTakenFrom, dividedAmount,
   eliminatedLabel, pactBadge, playsForCard, reasonCannotPlay, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
@@ -926,6 +926,7 @@ function SeatStrip({
   myBlockers,
   pact,
   brokeDeal,
+  hitMe,
 }: {
   seat: SeatView
   isMe: boolean
@@ -959,6 +960,13 @@ function SeatStrip({
   pact?: string | null
   /** Whether this seat has gone back on a deal in this game. */
   brokeDeal?: boolean
+  /**
+   * How much damage this seat has dealt *you* over the whole game, on an automated table.
+   *
+   * The political question a four-player table asks every turn and the software could not answer.
+   * Passed only for somebody else's strip, and only when the engine is counting.
+   */
+  hitMe?: number
 }) {
   const life = (delta: number) => onAct({ type: "life:adjust", seat: seat.index, delta })
   /**
@@ -1105,6 +1113,32 @@ function SeatStrip({
           className="rounded bg-[var(--g-mana-r)]/20 px-1 text-[9px] font-bold uppercase text-[var(--g-mana-r)]"
         >
           broke a deal
+        </span>
+      ) : null}
+      {/*
+        What this player has done to you, all game, in one number.
+
+        A pod's politics is mostly memory: who hit you on turn five, who has left you alone, who
+        said they would and did. Life totals show the sum of everybody's work and the log shows one
+        event at a time, so the question *who has been coming at me* had no answer anywhere on the
+        table — which the pod's own notes listed as the missing half of its politics.
+
+        **Damage, not attacks.** A swing that was blocked cost you nothing and reads as nothing
+        here; a Fireball to the face reads as three. It counts every kind of damage that landed,
+        which is the shape of the question a player means. And it is **information and never
+        enforcement**, the same line the deals draw: the table remembers, and does nothing about it.
+
+        Shown only when it is not zero, because a row of "hit you 0" on every strip from turn one
+        is noise rather than a read — and a seat with no badge at all is itself the answer to the
+        other half of the question.
+      */}
+      {typeof hitMe === "number" && hitMe > 0 ? (
+        <span
+          data-testid={`hit-me-${seat.index}`}
+          title="Damage this player has dealt you this game. The table remembers; nothing enforces it."
+          className="flex items-center gap-1 text-[10px] text-[var(--g-mana-r)]"
+        >
+          <Swords className="size-3" /> hit you {hitMe}
         </span>
       ) : null}
       {seat.poison > 0 ? <span className="text-[var(--g-mana-g)]">poison {seat.poison}</span> : null}
@@ -1775,6 +1809,7 @@ function Board({ table }: { table: UseTable }) {
             onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat: o.index } })}
             pact={pactBadge(view, o.index)}
             brokeDeal={brokeADeal(view, o.index)}
+            hitMe={automated ? damageTakenFrom(view, o.index) : undefined}
           />
           <div className="flex gap-1.5">
             <ZoneRow

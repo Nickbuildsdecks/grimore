@@ -321,6 +321,31 @@ export function dealDamage(
       ? {}
       : { commanderDamage: { ...seat.commanderDamage, [key]: (seat.commanderDamage[key] ?? 0) + left } };
     /*
+      And the wider tally, which is for the table rather than for the rules: all damage, by the
+      seat that dealt it (`Seat.damageFrom`).
+
+      Attributed from the most specific thing the caller passed, in this order: the attacking
+      creature when this is combat, then whatever `source` is — a permanent on the battlefield
+      belongs to the seat controlling it, a spell on the stack to its owner — and `controller` last,
+      which is the one callers pass for lifelink and not for attribution. Damage with no source at
+      all (a state-based action, a cost) is counted against nobody rather than against a guess.
+    */
+    const dealer = from !== undefined
+      ? from.zoneSeat
+      : (() => {
+        const src = opts.source === null ? undefined : next.instances[opts.source];
+        if (src !== undefined) return src.zone === 'battlefield' ? src.zoneSeat : src.owner;
+        return opts.controller;
+      })();
+    const dealt = dealer === undefined
+      ? {}
+      : {
+        damageFrom: {
+          ...seat.damageFrom,
+          [String(dealer)]: (seat.damageFrom[String(dealer)] ?? 0) + left,
+        },
+      };
+    /*
       Poison instead of life, and the commander tally **still counts** (CR 702.90b, 903.10).
 
       The damage is dealt either way — infect replaces what being dealt it does to you, not whether
@@ -328,8 +353,8 @@ export function dealDamage(
       player while putting poison on them. Both at once is the rule rather than a generosity.
     */
     next = infect
-      ? replaceSeat(next, target.seat, { poison: clampValue(seat.poison + left), ...tally })
-      : replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally });
+      ? replaceSeat(next, target.seat, { poison: clampValue(seat.poison + left), ...tally, ...dealt })
+      : replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally, ...dealt });
   } else {
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') return next;

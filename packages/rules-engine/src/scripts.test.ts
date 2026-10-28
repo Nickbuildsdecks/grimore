@@ -13082,6 +13082,75 @@ describe('Rancor, from anywhere rather than from the battlefield', () => {
   });
 });
 
+describe('who has been hitting whom, recorded for the table', () => {
+  /*
+    `commanderDamage`'s wider sibling, and the first field in this state that no rule reads.
+
+    Twenty-one from one commander eliminates a player, so that tally is machinery. This one decides
+    nothing: it is the answer to the question a four-player table asks every turn and the software
+    could not answer — *who has been coming at me, and who has left me alone*. The pod's own notes
+    had listed it as the missing half of its politics for as long as deals have existed, and the
+    line it keeps is the one the deals keep: the table remembers, and enforces nothing (D189).
+  */
+  it('counts combat and a burn spell, keyed by the seat that dealt it', () => {
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: { 0: ['Lightning Bolt'] },
+      battlefield: { 0: ['Mountain', 'Raging Goblin'], 1: ['Island'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    // Three from a spell, attributed to the seat that cast it rather than to the card.
+    expect(s.seats[1]!.damageFrom['0']).toBe(3);
+
+    // And one more from combat, on the same key: the tally is about the player, not the source.
+    s = advanceTo(s, 'declare-attackers');
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+    s = drain(advanceTo(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: goblin, defender: 1 }],
+    }), 'end'), 60);
+    expect(s.seats[1]!.damageFrom['0']).toBe(4);
+    expect(life(s, 1)).toBe(16);
+    // Nobody has hit seat 0 at all, which is the other half of the read.
+    expect(s.seats[0]!.damageFrom).toEqual({});
+  });
+
+  it('does not count damage that was prevented, or life paid as a cost', () => {
+    /*
+      Both halves are the rules' own line rather than a convenience. Damage prevented by a Fog was
+      never dealt, so it is not in the tally and the player it was aimed at is right to read
+      nothing. And life *paid* is not damage at all — a Toxic Deluge's own payment, a Phyrexian
+      Arena's upkeep — so a player bleeding themselves for cards does not show up as somebody
+      attacking them.
+    */
+    let s = arena({
+      decks: { 0: 'verdant-guard', 1: 'ember-rush' },
+      hands: { 0: ['Fog'] },
+      battlefield: { 0: ['Forest', 'Forest'], 1: ['Mountain', 'Raging Goblin'] },
+      turn: 4, firstSeat: 1,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: goblin, defender: 0 }] });
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    for (const id of [...ids(s, 0, 'battlefield')]) {
+      if (nameOf(s, id) !== 'Forest') continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = drain(advanceTo(drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fog'),
+    }), 40), 'end'), 60);
+
+    expect(life(s, 0)).toBe(20);
+    expect(s.seats[0]!.damageFrom['1'] ?? 0).toBe(0);
+  });
+});
+
 describe('four keywords that read the attack rather than the creature', () => {
   /*
     Every one of the engine's seventeen keywords is a fact about a permanent — flying, deathtouch,

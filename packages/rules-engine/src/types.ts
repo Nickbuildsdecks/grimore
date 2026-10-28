@@ -59,6 +59,27 @@ export interface Seat {
   readonly poison: number;
   /** Damage dealt to this seat by each other seat's commander, keyed by seat index. */
   readonly commanderDamage: Readonly<Record<string, number>>;
+  /**
+   * **All** damage dealt to this seat by each other seat this game, keyed by seat index.
+   *
+   * `commanderDamage`'s wider sibling, and it exists for the table rather than for the rules:
+   * nothing is decided by it, and no state-based action reads it. It is the answer to the question
+   * a four-player table asks every turn and the software could not answer — *who has been coming
+   * at me, and who has left me alone* — which the pod's own notes had listed as the missing half of
+   * its politics for as long as deals have existed (D189).
+   *
+   * Every kind of damage counts and is keyed by the seat that **dealt** it: combat, a burn spell,
+   * a ping from a permanent. Damage prevented by a shield or by protection is damage that was never
+   * dealt and is not in here. Life paid as a cost is not damage either, so a Phyrexian Arena's
+   * upkeep and a Toxic Deluge's own payment leave no mark — which is the rules' line, not a
+   * convenience, and it is the right line for the political question too.
+   *
+   * A seat's own id can appear: a Fireball aimed at yourself is damage you dealt yourself. The
+   * table draws the other seats' entries and skips that one.
+   *
+   * Empty on a tabletop, where damage is recorded by hand through `life:adjust` rather than dealt.
+   */
+  readonly damageFrom: Readonly<Record<string, number>>;
   /** Arbitrary named counters (energy, experience, rad, tickets, ...). */
   readonly counters: Readonly<Record<string, number>>;
   readonly eliminated: boolean;

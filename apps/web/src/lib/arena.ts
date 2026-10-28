@@ -1131,6 +1131,25 @@ export function pactBadge(view: GameView, other: SeatIndex): string | null {
   return live === undefined ? null : pactShort(live.kind)
 }
 
+/**
+ * How much damage another seat has dealt **you** this game, from your own view.
+ *
+ * The political read a pod had nowhere to show. Life totals are the sum of everybody's work and
+ * the log is one event at a time, so "who has been coming at me" was a question a player could
+ * only answer from memory — which is exactly the half of a pod's politics the table was missing.
+ *
+ * Nought when the view has no seat (a watcher), when the pair is you and yourself, and when
+ * nothing has landed. The caller draws nothing at nought on purpose: a badge saying "hit you 0" on
+ * every strip from turn one is noise, and a strip with no badge is itself the answer to the other
+ * half of the question.
+ */
+export function damageTakenFrom(view: GameView, other: SeatIndex): number {
+  const mine = view.seat
+  if (mine === null || mine === other) return 0
+  const me = view.seats.find((s) => s.index === mine)
+  return me?.damageFrom[String(other)] ?? 0
+}
+
 /** Whether this seat has gone back on a deal in this game. The table remembers; that is the point. */
 export function brokeADeal(view: GameView, seat: SeatIndex): boolean {
   return view.pacts.some((p) => p.broken === true && p.from === seat)

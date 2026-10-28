@@ -9709,3 +9709,68 @@ Cutting cards moves the boards other tests stand on: the two Soul Warden tests a
 board now use Dawn Tithe (which keeps its Soul Warden), and the renown test uses Verdant Guard. That
 is the fourth time a deck change has done this, and the pattern is stable enough to be a habit:
 after cutting a card, run the suite before measuring anything.
+
+## D189 — The pod's politics, recorded: who has been hitting whom
+
+**Decision: give each seat a tally of all damage taken from each other seat, ship it in the view,
+and read it on every opponent's strip in a pod as `hit you N`. Information, never enforcement.**
+
+### The question the table could not answer
+
+The pod's own notes have listed this as the missing half of its politics since deals were built:
+*"nothing that records who was politically on whose side over a game — the badge says who broke a
+deal, not who was helping whom."*
+
+A four-player table asks it every turn. **Who has been coming at me, and who has left me alone.**
+Nothing on the screen could answer it: a life total is everybody's work added up, and the log is one
+event at a time in a panel nobody scrolls mid-combat. Players answer it from memory, badly, and
+memory is exactly what a pod's politics runs on.
+
+### The field
+
+`Seat.damageFrom` — all damage dealt to this seat by each other seat this game, keyed by seat index.
+It is `commanderDamage`'s wider sibling and sits beside it, which is the whole of its design: that
+record was already per-seat, already serialised, already in the view, and already keyed by *the
+player* rather than by the card, for reasons D33 wrote down.
+
+It is also **the first field in this state that no rule reads.** Twenty-one commander damage
+eliminates a player, so that tally is machinery; this one decides nothing and no state-based action
+looks at it. That is the point rather than a weakness: a pod needs a memory more than it needs
+another rule.
+
+**Attribution is the most specific thing the caller passed**, in order: the attacking creature when
+the damage is combat, then whatever `source` is — a permanent on the battlefield belongs to the seat
+controlling it, a spell on the stack to its owner — and `controller` last, which callers pass for
+lifelink rather than for attribution. Damage with no source at all is counted against nobody rather
+than against a guess.
+
+Two lines the rules draw and this follows:
+
+- **Prevented damage is not damage.** A Fog, a shield, protection from the source's colour: the
+  points were never dealt, so they are not in the tally and the player they were aimed at is right
+  to read nothing.
+- **Life paid is not damage.** A Phyrexian Arena's upkeep, a Toxic Deluge's own payment, a Thoughtseize's
+  two. A player bleeding themselves for cards does not show up as somebody attacking them, which is
+  both the rule and the right answer to the political question.
+
+A seat's own id can appear — a Fireball at your own face is damage you dealt yourself — and the
+table skips that entry rather than the engine lying about it.
+
+### What it looks like
+
+Each opponent's strip in a pod reads `hit you 7`, next to the deal badge and the broke-a-deal badge.
+Shown only when it is not nought, for a reason worth stating: a row of "hit you 0" on every strip
+from turn one is noise rather than a read, and **a strip with no badge is itself the answer to the
+other half of the question**. The pair is the whole political picture — what somebody promised, and
+what they have actually done.
+
+`damageTakenFrom(view, other)` is the helper, beside `pactBadge` and `brokeADeal`, so the logic is
+tested where the other political reads are tested rather than inside a component: nought for a
+watcher with no seat, nought for your own row, nought when nothing has landed.
+
+### What it deliberately is not
+
+It does not enforce, judge, or score. There is no "aggression" rating, no "most hated player"
+badge, no table talk generated from it. The deals already drew that line and it is the right one: a
+table where the software stops you breaking your word is a table where your word costs nothing, and
+a table that told you who to be angry with would be playing the politics for you.
