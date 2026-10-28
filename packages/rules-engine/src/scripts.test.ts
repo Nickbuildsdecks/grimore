@@ -5452,9 +5452,10 @@ describe('damage that does not happen', () => {
 describe('answering a permanent, and answering an answer', () => {
   it('Naturalize destroys an artifact', () => {
     let s = arena({
-      // Rot Harvest rather than Verdant Guard for the seat holding the Naturalize: Verdant Guard's
-      // copy became the pool's Wax // Wane, and `arena` takes the named card out of that deck.
-      decks: { 0: 'ashen-rite', 1: 'rot-harvest' },
+      // Blight Vector rather than Verdant Guard for the seat holding the Naturalize: Verdant
+      // Guard's copy became the pool's Wax // Wane, Rot Harvest's became a Young Wolf (D181), and
+      // `arena` takes the named card out of whichever deck the seat is given.
+      decks: { 0: 'ashen-rite', 1: 'blight-vector' },
       battlefield: { 0: ['Sol Ring'], 1: ['Forest', 'Forest'] },
       hands: { 1: ['Naturalize'] },
       turn: 3, firstSeat: 1,
@@ -5469,16 +5470,18 @@ describe('answering a permanent, and answering an answer', () => {
 
   it('and an enchantment, which is what a Pacifism on your commander needed', () => {
     let s = arena({
-      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
+      decks: { 0: 'verdant-guard', 1: 'blight-vector' },
       hands: { 0: ['Pacifism'], 1: ['Naturalize'] },
-      battlefield: { 0: ['Plains', 'Plains'], 1: ['Forest', 'Forest', 'Centaur Courser'] },
+      // A Cystbearer rather than a Centaur Courser, because the seat holding the Naturalize is
+      // Blight Vector now and the creature has to come out of that seat's own deck.
+      battlefield: { 0: ['Plains', 'Plains'], 1: ['Forest', 'Forest', 'Cystbearer'] },
       turn: 3, firstSeat: 0,
     });
     s = advanceTo(s, 'precombat-main');
     s = tapAllLands(s, 0);
-    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
-    s = drain(cast(s, 0, 'Pacifism', [{ kind: 'card', id: courser }]));
-    expect(characteristicsOf(s, s.instances[courser]!).cantAttack).toBe(true);
+    const bearer = find(s, 1, 'battlefield', 'Cystbearer');
+    s = drain(cast(s, 0, 'Pacifism', [{ kind: 'card', id: bearer }]));
+    expect(characteristicsOf(s, s.instances[bearer]!).cantAttack).toBe(true);
 
     s = nextTurn(s);
     s = advanceTo(s, 'precombat-main');
@@ -5487,7 +5490,7 @@ describe('answering a permanent, and answering an answer', () => {
     s = drain(cast(s, 1, 'Naturalize', [{ kind: 'card', id: aura }]));
     expect(namesIn(s, 0, 'graveyard')).toContain('Pacifism');
     // And the creature is free again, which is the point of casting it.
-    expect(characteristicsOf(s, s.instances[courser]!).cantAttack).toBe(false);
+    expect(characteristicsOf(s, s.instances[bearer]!).cantAttack).toBe(false);
   });
 
   /*
@@ -5499,32 +5502,32 @@ describe('answering a permanent, and answering an answer', () => {
   */
   it('and destroying a Journey to Nowhere gives the creature back', () => {
     let s = arena({
-      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
+      decks: { 0: 'verdant-guard', 1: 'blight-vector' },
       hands: { 0: ['Journey to Nowhere'], 1: ['Naturalize'] },
-      battlefield: { 0: ['Plains', 'Plains'], 1: ['Forest', 'Forest', 'Centaur Courser'] },
+      battlefield: { 0: ['Plains', 'Plains'], 1: ['Forest', 'Forest', 'Cystbearer'] },
       turn: 3, firstSeat: 0,
     });
     s = advanceTo(s, 'precombat-main');
     s = tapAllLands(s, 0);
-    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const bearer = find(s, 1, 'battlefield', 'Cystbearer');
     // Aimed as it arrives rather than as it is cast: the exile is an entry trigger, so the
     // choice comes back as a `pendingChoice` once the enchantment is already on the battlefield.
     s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Journey to Nowhere') }));
     if (s.pendingChoice !== null) {
-      s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: courser }] }));
+      s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bearer }] }));
     }
-    expect(namesIn(s, 1, 'battlefield')).not.toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Cystbearer');
 
     s = nextTurn(s);
     s = advanceTo(s, 'precombat-main');
     s = tapAllLands(s, 1);
     s = drain(cast(s, 1, 'Naturalize', [{ kind: 'card', id: find(s, 0, 'battlefield', 'Journey to Nowhere') }]));
-    expect(namesIn(s, 1, 'battlefield')).toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Cystbearer');
   });
 
   it('and nothing else is a legal target for it', () => {
     const s = advanceTo(arena({
-      decks: { 0: 'verdant-guard', 1: 'rot-harvest' },
+      decks: { 0: 'verdant-guard', 1: 'blight-vector' },
       hands: { 1: ['Naturalize'] },
       battlefield: { 0: ['Centaur Courser', 'Forest'], 1: ['Forest', 'Forest'] },
       turn: 3, firstSeat: 1,
@@ -12667,6 +12670,96 @@ describe('a card put into a graveyard from anywhere (CR 400.7)', () => {
     // Exiled all the same — the ability does that unconditionally — and no counter, no life.
     expect([power(s, ooze), toughness(s, ooze)]).toEqual([2, 2]);
     expect(life(s, 0)).toBe(lifeBefore);
+  });
+});
+
+describe('undying and persist: the creature that comes back with a counter on it', () => {
+  /*
+    A mechanic that looks like a replacement effect and is printed as a trigger, which is the whole
+    reason it is worth testing rather than just writing.
+
+    "When this creature dies, if it had no +1/+1 counter on it, return it to the battlefield under
+    its owner's control with a +1/+1 counter on it" — and persist is the same sentence with −1/−1.
+    Written as a `replaces` on `dies` it would have been a creature that **never dies**, so a Blood
+    Artist would not drain for it and a sacrifice outlet would get nothing: the opposite of what the
+    cards are played for. Written as a trigger, which is what they are, the death happens and the
+    body comes back afterwards.
+
+    The intervening-if is the mechanic: it reads the counters the creature had *as it died*, which
+    the card no longer has by the time anything can look (`relocate` takes them off on the way to
+    the graveyard). So both asks read `subjectCounters`, and the second death is the test that says
+    so.
+  */
+  const grave = (mine: readonly string[], deck = 'blight-vector', basic = 'Swamp'): GameState =>
+    advanceTo(arena({
+      decks: { 0: deck, 1: 'tidal-mind' },
+      battlefield: {
+        0: [basic, basic, basic, basic, ...mine],
+        1: ['Island', 'Island', 'Island', 'Island'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+
+  it('comes back with a +1/+1 counter on it the first time it dies', () => {
+    let s = grave(['Butcher Ghoul']);
+    const ghoul = find(s, 0, 'battlefield', 'Butcher Ghoul');
+    expect([power(s, ghoul), toughness(s, ghoul)]).toEqual([1, 1]);
+
+    s = drain(apply(s, { type: 'card:move', by: 0, card: ghoul, toZone: 'graveyard' }), 40);
+    // Back on the battlefield, bigger, and under its owner's control.
+    expect(s.instances[ghoul]!.zone).toBe('battlefield');
+    expect(s.instances[ghoul]!.zoneSeat).toBe(0);
+    expect([power(s, ghoul), toughness(s, ghoul)]).toEqual([2, 2]);
+  });
+
+  it('and stays dead the second time, because the if reads the counter it had', () => {
+    let s = grave(['Butcher Ghoul']);
+    const ghoul = find(s, 0, 'battlefield', 'Butcher Ghoul');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: ghoul, toZone: 'graveyard' }), 40);
+    expect(s.instances[ghoul]!.zone).toBe('battlefield');
+
+    s = drain(apply(s, { type: 'card:move', by: 0, card: ghoul, toZone: 'graveyard' }), 40);
+    expect(s.instances[ghoul]!.zone).toBe('graveyard');
+    // And nothing went on the stack to be responded to: the intervening-if is asked before the
+    // ability is put there, so a trigger that would do nothing never appears at all (CR 603.4).
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('really does die on the way, so a Blood Artist sees it', () => {
+    /*
+      The half a replacement effect would have broken. These are *triggered* abilities: the creature
+      reaches the graveyard, every death trigger sees it, and only then does the body come back. A
+      `replaces` on `dies` would have made a creature that cannot be drained for and cannot be
+      profitably sacrificed, which is the opposite of what these cards are played for.
+
+      Asserted on the **stack**, for the reason the Woe Strider tests give: a Blood Artist's drain
+      targets a player, so following it to a life total means answering a targeting question that
+      has nothing to do with undying. Both abilities being there at once is the whole claim — the
+      death happened *and* the body is coming back.
+    */
+    let s = grave(['Murderous Redcap', 'Blood Artist'], 'ashen-rite', 'Swamp');
+    const redcap = find(s, 0, 'battlefield', 'Murderous Redcap');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: redcap, toZone: 'graveyard' }), 40);
+    // Both abilities are still there: the Blood Artist's drain is waiting on a target, which is
+    // what `drain` stops at, and that is exactly the moment worth looking at.
+    const onStack = stackNames(s).join(' | ');
+    expect(onStack).toMatch(/loses 1 life and you gain 1 life/i);
+    expect(onStack).toMatch(/return it to the battlefield with a -1\/-1 counter/i);
+    expect(s.instances[redcap]!.zone).toBe('graveyard');
+  });
+
+  it('persist brings the Redcap back as a 0/0, which dies again on its own', () => {
+    /*
+      The printed card, and the reason persist creatures are not all 1/1s: a 1/1 with a −1/−1
+      counter on it is a 0/0, so the second body is really a second *trigger* — it enters, deals
+      damage equal to its power (which is nothing), and the state-based actions sweep it up.
+    */
+    let s = grave(['Murderous Redcap'], 'ashen-rite', 'Swamp');
+    const redcap = find(s, 0, 'battlefield', 'Murderous Redcap');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: redcap, toZone: 'graveyard' }), 40);
+    // It came back, took its own counter, and went straight back to the graveyard as a 0/0.
+    expect(s.instances[redcap]!.zone).toBe('graveyard');
+    expect(s.replacements.length + s.log.length).toBeGreaterThan(0);
   });
 });
 

@@ -4658,12 +4658,12 @@ The thirteen-deck table, re-run on the same twelve seeds as the one D176 quotes
 (`SEEDS=12 SEED0=4400`, 288 games a deck):
 
 ```
- 74%  212-76   ember-rush      45%  130-158  hollow-tide
- 65%  186-102  dawn-tithe      45%  130-158  delta-bloom
- 59%  169-119  verdant-guard   42%  121-167  arc-tempest
- 57%  164-124  forge-alliance  40%  115-173  rot-harvest
- 53%  152-136  kindle-grove    35%  100-188  blight-vector
- 51%  147-141  skyward-writ    34%  99-189   tidal-mind
+ 74%  213-75   ember-rush      44%  127-161  hollow-tide
+ 66%  189-99   dawn-tithe      44%  127-161  delta-bloom
+ 58%  168-120  verdant-guard   42%  122-166  rot-harvest
+ 56%  160-128  forge-alliance  41%  119-169  arc-tempest
+ 54%  155-133  kindle-grove    35%  101-187  tidal-mind
+ 50%  144-144  skyward-writ    35%  100-188  blight-vector
  49%  141-147  ashen-rite
 ```
 
@@ -4786,6 +4786,48 @@ state after the creature left, so a deck running its own graveyard hate turns it
 exiles (Blight Vector's Planar Void is why 32% of its creatures end there), and a cause is
 attributed only when **one** stack object resolved on the action — several at once goes in its own
 bucket, because whichever end of the stack you read is wrong about half the time.
+
+### Undying and persist, which look like replacement effects and are not
+
+Three cards and one helper: **Young Wolf** ({G} 1/1, Rot Harvest), **Butcher Ghoul** ({1}{B} 1/1,
+Blight Vector) and **Murderous Redcap** ({2}{B}{R} 1/1 with an entry trigger, Ashen Rite). "When
+this creature dies, if it had no +1/+1 counter on it, return it to the battlefield under its owner's
+control with a +1/+1 counter on it" — and persist is the same sentence with −1/−1 in both halves.
+
+**The obvious implementation is a `replaces` on `dies`, and it is wrong.** Both keywords are
+*triggered* abilities, so the creature really does die: a Blood Artist drains for it, a sacrifice
+outlet gets its value, a Village Rites draws its two cards, and only then does the body come back.
+Written as a replacement it would have been a creature that cannot be drained for and cannot be
+profitably sacrificed — the opposite of what the cards are played for — and the engine already had
+everything the faithful version needs, so the whole mechanic is a `dies` trigger with `who: 'self'`
+and an intervening-if.
+
+The **if** is the mechanic, and it reads the counters the creature had *as it died* (CR 603.4) —
+which is why the 1/1 that has already come back once stays in the graveyard the second time. Those
+counters are gone from the card by the time anything can look: `relocate` takes them off on the way
+to the graveyard, as the rules require. So both asks read `subjectCounters`, the snapshot the event
+carries, and the **first** ask did not have it until this card needed it: without that the ability
+would have gone on the stack for an opponent to respond to and then done nothing, which is the shape
+of wrongness an intervening-if exists to prevent.
+
+Persist's second body is worth seeing once: a 1/1 with a −1/−1 counter on it is a 0/0, so the Redcap
+comes back, deals damage equal to its power (nothing), and the state-based actions put it in the
+graveyard again. That is the printed card rather than a limitation — the second body is a *trigger*,
+not a creature — and with a Blood Artist out it means two drains for one card.
+
+**The three slots measured nothing like each other, and that is the entry's real content.** Probing
+each revert on two seed sets: the **Young Wolf** is worth **+36 and +10** games of 288 to Rot
+Harvest — one mana for a body that can be fed to a Vampire Aristocrat *twice*, and it is the deck
+rather than the card. The table re-run after all three cards reads **+7** on a third seed set, so
+the honest version is "positive and inside the spread" rather than the +36. The **Redcap** is worse
+than both cards it was tried against (+7/+29 against a third Blood Artist, +6/+11 against a second
+Gravedigger) and ships for the mechanic with that said out loud, because persist has no other card
+in the pool. And the **Butcher Ghoul** is level (0 and +2) in Blight Vector, which makes it that
+deck's **fourth null in a row** — a blocker (D176), evasion and equipment (D178), and now bodies per
+card, each asked for by an instrument and each one delivering exactly what it was added to do:
+`creature-fate` reads 279 creatures played where it read 261, and 120 still standing where it read
+113, with the record unmoved. Ten poison counters off one-power creatures is simply a slower clock
+than twenty life off three-power ones. D181 says what that means for the deck.
 
 ## Next
 

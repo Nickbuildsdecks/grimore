@@ -859,6 +859,19 @@ function raise(
           trigger they could respond to for a spell that was never going to be countered.
         */
         ...(answeringFor(event) === undefined ? {} : { answering: answeringFor(event) }),
+        /*
+          And what the subject had on it, which the second ask has always had for the same reason.
+
+          Undying is the card that needs it: "if it had no +1/+1 counter on it" is an intervening-if
+          about a creature that is already in a graveyard with its counters taken off, so the only
+          place the answer survives is the snapshot the event carries. Without this line the first
+          ask would say yes for a creature that had a counter and the second would say no — the
+          ability would go on the stack for an opponent to respond to and then do nothing, which is
+          the shape of wrongness this clause exists to prevent.
+        */
+        ...('subjectCounters' in event && event.subjectCounters !== undefined
+          ? { subjectCounters: event.subjectCounters }
+          : {}),
       })) continue;
       const specs = trigger.targets ?? [];
       /*

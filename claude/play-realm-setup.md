@@ -138,6 +138,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | **Foretell** a card | Two cards have it: **Behold the Multiverse** in Arc Tempest and **Saw It Coming** in both Arc Tempest and Tidal Mind. On your own turn, tap the card in hand → **Foretell** and pay {2}; the card goes into exile **face down**, and nobody else can see what it is — only that there is a card there. From your next turn onwards it is a play again, out of exile, for the smaller cost printed on it (**{1}{U}** and **{U}{U}**). You cannot cast it on the turn you foretold it. The point is that it splits a four-mana spell across two turns, so you can hold up a counterspell without holding up the mana — which is the hardest thing in this pool to do and the one thing the computer genuinely cannot. Foretelling cannot be answered: no stack, nothing to respond to. |
 | **Escape** a creature out of your graveyard | Two cards escape, and they are different kinds of card. **Phoenix of Ash** in Arc Tempest is a 2/2 flier with haste for {1}{R}{R}, and the line under it reads *Escape—{2}{R}{R}, Exile three other cards from your graveyard.* Once it has died, the card in your graveyard says **playable**: tap it and the table offers "Cast Phoenix of Ash from your graveyard (escape {2}{R}{R}, exiling 3)". Both halves of that are the cost. The three cards go the moment you cast it, before anybody can answer, and which three is the engine's choice — it spends the cards nothing else in your deck can use first, so a Think Twice down there is the last thing to go. **It is not flashback:** a Phoenix that escaped is an ordinary creature, so when it dies it is in the graveyard again, and it can escape again for three more cards. The graveyard is the limit, not the card. You need three *other* cards in there — three cards counting the Phoenix is not enough, and then the play is simply not offered. **Woe Strider** in Ashen Rite is the other kind: a {2}{B} 3/2 that arrives with a 0/1 Goat and has `{0}: Sacrifice another creature. Scry 1.` — a free sacrifice outlet for a deck with eight cards that read a creature dying, and one the opponent cannot answer by killing it, because it escapes for {4}{B} and three cards and arrives with a *new* Goat. It cannot eat itself: "another" is part of the cost, so the table never offers it. |
 | Cast a seven-mana spell for one | Two cards have **delve**, both in Hollow Tide: **Gurmag Angler** (a {6}{B} 5/5) and **Treasure Cruise** ({7}{U}, draw three cards). Each card you exile from your own graveyard pays for {1} of the cost, so the Angler is a seven-mana creature on turn three and a one-mana creature once your graveyard is six deep. You do not choose the number: the table works out the fewest cards that make the spell payable and says so on the play — "Cast Gurmag Angler (delving 3)" — because your graveyard is also what your Think Twice and your Phoenix are waiting for, and spending it to save mana you were not going to use is the way to lose a long game. Delve only ever pays **generic** mana: seven Islands and a full graveyard still cannot cast the Angler, because nothing turns a card into a {B}. |
+| Play a creature that **comes back by itself** | Three cards do it, and they are two keywords printed almost identically. **Undying** is on **Butcher Ghoul** ({1}{B} 1/1 in Blight Vector) and **Young Wolf** ({G} 1/1 in Rot Harvest): when the creature dies, *if it had no +1/+1 counter on it*, it comes straight back with one — so a 1/1 blocks, dies, and is a 2/2 on the battlefield again before anybody has priority. Kill it a second time and it stays dead, because the counter it is carrying is the same counter the ability asks about. **Persist** is the mirror: **Murderous Redcap** ({2}{B}{R} 1/1 in Ashen Rite) deals damage equal to its power as it enters, dies, comes back with a −​1/−​1 counter — which makes it a 0/0 — deals nothing on the way in, and goes to the graveyard again on its own. The thing worth knowing at the table is that these creatures **really die**: a Blood Artist drains for them, a sacrifice outlet gets its value, and a Village Rites draws its two cards. Undying is not protection; it is a second body, and the first one is spent.
 | Take somebody's graveyard away | Two cards answer the graveyard, and they are opposites. **Planar Void** in Blight Vector is a {B} enchantment: *whenever another card is put into a graveyard from anywhere, exile that card* — so while it is on the table nobody has a graveyard at all, including its own controller. No flashback, no escape, no delve, no Raise Dead, and a Lhurgoyf stays a 0/1. It is a trigger rather than a replacement, which is exactly how the card is printed: the card really does reach the graveyard and really is exiled afterwards, so a Blood Artist still sees the creature die. **Scavenging Ooze** in Delta Bloom is the patient version — {1}{G} for a 2/2, then {G} as often as you like to exile one card from any graveyard, and if it was a creature card the Ooze gets a +1/+1 counter and you gain a life. Point it at the card somebody is about to escape or delve with and it is removal and a clock at once. |
 | Work out why your creature is bigger than its card | Three creatures are **lords**: they change the other creatures of their own type. Stromkirk Captain in Ashen Rite gives other **Vampires** +1/+1 and first strike, Knight Exemplar in Skyward Writ gives other **Knights** +1/+1 and indestructible, and Imperious Perfect in Rot Harvest gives other **Elves** +1/+1. None of them pumps itself — "other" is printed on all three. The board always shows the current size, and it changes the instant the lord arrives or leaves, with nothing to click: a Knight with three damage on it that was surviving because of the Exemplar dies the moment the Exemplar does. |
 | Attack with **one** creature on purpose | **Guardians of Akrasa** in Skyward Writ is a 2/3 that cannot attack and has **exalted**: whenever exactly one creature you control attacks, *that* creature gets +1/+1 until end of turn. It is the number of attackers you **declared** that decides, not what is left in combat afterwards — so two attackers get nothing even if one of them is removed from combat before damage, and one attacker keeps the +1/+1 even if it is blocked by three creatures. The Guardians themselves are never the creature that grows, because a creature with defender never attacks. The pump goes on the stack as a trigger, so it resolves before blockers are declared and both players can see it coming. |
@@ -398,24 +399,24 @@ also why it does not read as a cheat: it counters your creatures and lets your c
 other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
 ```
- 74%  212-76   ember-rush
- 65%  186-102  dawn-tithe
- 59%  169-119  verdant-guard
- 57%  164-124  forge-alliance
- 53%  152-136  kindle-grove
- 51%  147-141  skyward-writ
+ 74%  213-75   ember-rush
+ 66%  189-99   dawn-tithe
+ 58%  168-120  verdant-guard
+ 56%  160-128  forge-alliance
+ 54%  155-133  kindle-grove
+ 50%  144-144  skyward-writ
  49%  141-147  ashen-rite
- 45%  130-158  hollow-tide
- 45%  130-158  delta-bloom
- 42%  121-167  arc-tempest
- 40%  115-173  rot-harvest
+ 44%  127-161  hollow-tide
+ 44%  127-161  delta-bloom
+ 42%  122-166  rot-harvest
+ 41%  119-169  arc-tempest
+ 35%  101-187  tidal-mind
  35%  100-188  blight-vector
- 34%  99-189   tidal-mind
 ```
 
 **One deck is clearly ahead, nine are within nine points of even, and two are measurably short.**
-The spread is forty points, and the bottom of the table is two decks rather than a cluster: Blight
-Vector at 35% and Tidal Mind at 34%, five points below the deck above them. An earlier run of this
+The spread is thirty-nine points, and the bottom of the table is two decks rather than a cluster:
+Tidal Mind and Blight Vector level at 35%, six points below the deck above them. An earlier run of this
 table read "the bottom is a cluster now" and "the spread is thirty-six points"; this run says
 neither, and the sentences have been replaced rather than left standing — a published number that
 has been re-measured is worth more corrected than defended.

@@ -8955,3 +8955,102 @@ infect deck is not losing its creatures to something unusual; it has fewer of th
 anything, and nothing in the list replaces them. Which makes the next question for that deck
 "where do more bodies come from" — tokens, or a creature that leaves one behind — rather than
 evasion or resilience, and both of the shapes D178 priced were answers to the wrong question.
+
+## D181 — Undying and persist, and the fourth null on the same deck
+
+**Decision: script undying and persist as the triggered abilities they are printed as, with three
+cards. Ship the Young Wolf on a +36/+10 measurement, the Butcher Ghoul as level, and the Murderous
+Redcap for the mechanic with the honest number against it. And stop asking Blight Vector the same
+question a fifth way.**
+
+### The mechanic, and the implementation that would have been wrong
+
+"When this creature dies, if it had no +1/+1 counter on it, return it to the battlefield under its
+owner's control with a +1/+1 counter on it." Persist is that sentence with −1/−1 in both halves.
+
+The obvious reading is a replacement effect — the creature *looks* like it never dies — and the
+engine has had `replaces: [{ on: 'dies' }]` since regeneration (D37), so it would have been three
+lines. It is wrong. Both keywords are **triggered abilities** (CR 702.92a, 702.79a): the creature
+reaches the graveyard, every death trigger sees it, and only then does the body come back. As a
+replacement it would have been a creature a Blood Artist cannot drain for, a sacrifice outlet gets
+nothing from, and a Village Rites cannot pay with — which is the opposite of what these cards are
+played for, and the first thing the tests check.
+
+So the whole mechanic is a `dies` trigger with `who: 'self'` and an **intervening-if**, over
+machinery that already existed. Two notes worth keeping:
+
+- **The if reads the counters it had as it died** (CR 603.4), which is what makes the second death
+  permanent. Those counters are gone from the card by the time anything can look — `relocate` takes
+  them off on the way to the graveyard — so both asks read `subjectCounters`, the snapshot the event
+  carries. The **first** ask did not have it; it does now, because without it the ability would go
+  on the stack for an opponent to respond to and then do nothing, which is the shape of wrongness
+  an intervening-if exists to prevent.
+- **The return is guarded** like Rancor's (D179): a card that has left the graveyard in between
+  stays where it is.
+
+Four tests: it comes back bigger the first time, it stays dead the second (and nothing goes on the
+stack at all), a Blood Artist and the persist trigger are on the stack together — so the death
+really happened — and the Redcap's second body is a 0/0 that dies on its own, which is the printed
+card rather than a limitation.
+
+### Three cards, three decks, and the measurements are not alike
+
+```
+card              deck            slot                      revert, two seed sets
+Young Wolf        rot-harvest     Naturalize (70%)           -36 and -10
+Butcher Ghoul     blight-vector   Blossoming Defense (44%)     0 and  +2
+Murderous Redcap  ashen-rite      3rd Blood Artist (92%)      +7 and +29
+Murderous Redcap  ashen-rite      2nd Gravedigger (83%)       +6 and +11
+```
+
+**The Young Wolf is the clearest single-card result this pool has produced in weeks, and the reason
+is the deck rather than the card.** One mana for a 1/1 that comes back as a 2/2, in the deck with a
+Vampire Aristocrat, a Bloodthrone Vampire, a Lotleth Giant and a Blood Artist in it: a body that can
+be spent **twice** is two activations of an outlet for one draw, and D175's fodder fix means the bot
+now reaches for the cheap end of the board when it feeds one. Rot Harvest wins 142 of 288 with it
+and 106 without on the same seeds — 37% to 49% on one arm, 43% to 47% on the other.
+
+**And the field run on a third seed set says +7, which is the number to believe.** The thirteen-deck
+table was re-run after all three cards (same twelve seeds from 4400) and Rot Harvest moved 115 →
+122, with Ashen Rite and Blight Vector unmoved — both consistent with their own probes. So the
+honest statement of the Young Wolf's worth is *positive and inside the spread*: +36 was the top of
+the range rather than the expectation, and three arms read +36, +10 and +7. A card measured once at
+the high end of the noise and published as that number is how a deck list drifts away from what the
+instrument actually said, which is why the third arm is here rather than left out.
+
+**The Redcap is worse than the cards it was tried against, twice.** Against the third Blood Artist
+it measured +7 and +29 on the revert, which says plainly that a Blood Artist is a better card than a
+Redcap and that the drain payoff was never what this deck had too much of. Against the second
+Gravedigger it measures **+6 and +11**: inside the ±20 floor on both arms, the right sign on
+neither. It ships there anyway, and the reason is stated rather than dressed up — **persist has no
+other card in the pool**, the mechanic is the point, and the Gravedigger slot is the one it loses
+least in. A reader who wants the strongest Ashen Rite should put the Gravedigger back.
+
+### And the Butcher Ghoul is Blight Vector's fourth null in a row
+
+The hypothesis was D180's: that deck's problem is the **denominator** — 261 creatures onto the
+battlefield where Skyward Writ puts 401, each living 1.5 of its own turns — so a 1/1 that arrives
+twice is bodies per card, which is the one thing it is short of.
+
+`creature-fate.mjs` says the bodies arrived:
+
+```
+                     before   after
+creatures played        261     279
+still standing at end   113     120
+lifetime (table turns)  3.0     3.1
+```
+
+**And the win rate did not move: 0 and +2.** So that deck has now been asked four different
+questions with four different cards and answered null to all of them: a blocker that buys turns
+(D176, level), evasion and an equipment package (D178, −11/−10 and −3/+23), and bodies per card
+(this entry, level). Each hypothesis came from an instrument, each was implemented as the instrument
+asked, and each time the cards did what they were added to do while the record stayed where it was.
+
+The honest conclusion is about the deck rather than the next card: **ten poison counters off
+one-power creatures is a slower clock than twenty life off three-power ones, in a field where both
+sides' creatures die at the same rate.** It is 35% because of what it is, not because of which forty
+cards fill the gaps around the infect. Making it better means changing what it is — a different
+commander, a different curve, or accepting that the pool's thirteenth-best deck is the one that
+wins a way nothing else can. Blight Vector gets no more single-card passes; the Butcher Ghoul stays
+because level is not a reason to revert and the card is the pool's cheapest undying.

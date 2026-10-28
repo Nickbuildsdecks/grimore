@@ -1548,6 +1548,43 @@ const THORN_OF_THE_BLACK_ROSE: CardDef = {
   colors: ['B'],
 };
 
+const YOUNG_WOLF: CardDef = {
+  name: 'Young Wolf',
+  typeLine: 'Creature — Wolf',
+  manaCost: '{G}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Undying (When this creature dies, if it had no +1/+1 counter on it, return it to the '
+    + 'battlefield under its owner\u2019s control with a +1/+1 counter on it.)',
+  colors: ['G'],
+};
+
+const BUTCHER_GHOUL: CardDef = {
+  name: 'Butcher Ghoul',
+  typeLine: 'Creature — Zombie',
+  manaCost: '{1}{B}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Undying (When this creature dies, if it had no +1/+1 counter on it, return it to the '
+    + 'battlefield under its owner\u2019s control with a +1/+1 counter on it.)',
+  colors: ['B'],
+};
+
+const MURDEROUS_REDCAP: CardDef = {
+  name: 'Murderous Redcap',
+  typeLine: 'Creature — Goblin Assassin',
+  manaCost: '{2}{B}{R}',
+  cmc: 4,
+  power: '1',
+  toughness: '1',
+  oracleText: 'When Murderous Redcap enters the battlefield, it deals damage equal to its power to '
+    + 'any target.\nPersist (When this creature dies, if it had no -1/-1 counter on it, return it to '
+    + 'the battlefield under its owner\u2019s control with a -1/-1 counter on it.)',
+  colors: ['B', 'R'],
+};
+
 const GLISTENER_ELF: CardDef = {
   name: 'Glistener Elf',
   typeLine: 'Creature — Elf Warrior',
@@ -3449,7 +3486,21 @@ export const ROT_HARVEST: DeckSpec = {
     { card: DRUDGE_SKELETONS, count: 1 },
 
     { card: GOLGARI_CHARM, count: 2 },
-    { card: NATURALIZE, count: 1 },
+    /*
+      **Young Wolf, for the Naturalize**, and it is the sacrifice deck's half of undying.
+
+      One mana for a 1/1 that comes back as a 2/2 the first time it dies, in the deck with a Vampire
+      Aristocrat, a Bloodthrone Vampire and a Lotleth Giant in it: a body that can be spent twice is
+      two activations of an outlet for one card, and the fodder fix (D175) means the bot now reaches
+      for the cheap end of the board when it feeds one. The Naturalize was the slot because it is
+      this deck's second-least-cast card at 70%, and because Blight Vector keeps the pool's other
+      copy — the artifact-and-enchantment answer is covered either way.
+
+      **It measured −36 and −10 on its revert**, which is the largest single-card result this pool
+      has produced: 142 wins of 288 with it and 106 without, on the same seeds. The card is one
+      mana; the number is the deck.
+    */
+    { card: YOUNG_WOLF, count: 1 },
     { card: BLOSSOMING_DEFENSE, count: 1 },
     /*
       The pool's first tribal lord, and the deck that has the Elves for it.
@@ -3807,7 +3858,7 @@ export const ASHEN_RITE: DeckSpec = {
     { card: FLESHBAG_MARAUDER, count: 1 },
     { card: VAMPIRE_NIGHTHAWK, count: 1 },
     { card: FLAMETONGUE_KAVU, count: 2 },
-    { card: GRAVEDIGGER, count: 2 },
+    { card: GRAVEDIGGER, count: 1 },
     { card: IMPACT_TREMORS, count: 1 },
     // -1/-1 to every creature on the table, which this deck minds least: its own one-power bodies
     // were only ever fuel, and every death is a drain. One copy, because it is a legend and
@@ -3823,6 +3874,22 @@ export const ASHEN_RITE: DeckSpec = {
     */
     { card: KALITAS, count: 1 },
     { card: BONE_SPLINTERS, count: 1 },
+    /*
+      **Murderous Redcap, for the third Blood Artist**, and persist is the other half of the family
+      undying belongs to.
+
+      Four mana for two damage now, a 1/1, and then one more damage later: it dies, comes back as a
+      0/0 with a −1/−1 counter on it, deals its damage on the way in and goes straight back to the
+      graveyard when the state-based actions catch up. Which is the printed card — the second body
+      is a trigger rather than a creature — and in *this* deck it is a third thing as well: eight
+      cards here read a creature dying, and a Redcap dies **twice** for one draw.
+
+      The slot is the second Gravedigger (83%), and the first slot it was tried in is worth writing
+      down: against the **third Blood Artist** it measured +7 and +29 on the revert, which is to say
+      a Blood Artist is simply a better card than a Redcap and the drain payoff was never the thing
+      this deck had too much of.
+    */
+    { card: MURDEROUS_REDCAP, count: 1 },
     /*
       The morph whose cost is not mana: three life, and no mana at all (CR 702.37a).
 
@@ -5310,8 +5377,32 @@ export const BLIGHT_VECTOR: DeckSpec = {
     // the same card, and the only card in it that protects a creature somebody is trying to kill.
     // It is the deck's least-cast card at 44% and it survived a reshape that cut it anyway (D178):
     // a card the bot only gets to use in a third of the games it holds one is still better here
-    // than five mana of Equipment in a deck whose curve stops at three.
-    { card: BLOSSOMING_DEFENSE, count: 2 },
+    // than five mana of Equipment in a deck whose curve stops at three. One copy went for the
+    // Butcher Ghoul below, which is the body D180 asked for.
+    { card: BLOSSOMING_DEFENSE, count: 1 },
+    /*
+      **A 1/1 that arrives twice, which is the shape the instrument asked for rather than a card
+      anybody would pick by reading it.**
+
+      `creature-fate.mjs` put every deck's creatures side by side and this one's problem was the
+      denominator: **261 creatures onto the battlefield where Skyward Writ puts 401**, each living
+      1.5 of its own turns, with the causes (half combat, half their removal) in the same ratio as
+      everybody else's. So what it is short of is bodies per card, and undying is the cheapest
+      bodies-per-card in Magic: two blockers for one draw, and the second one is bigger.
+
+      It has no infect, which is the honest cost — it does not advance the poison clock at all. It
+      blocks, twice, in the deck that loses 71% of its games to plain combat damage (D176), and it
+      is the only creature here that an opponent's removal spell does not actually answer.
+
+      **And it measured level — 0 and +2 of 288 — which makes it this deck's fourth null in a row.**
+      The bodies did arrive: `creature-fate` reads 279 creatures onto the battlefield where it read
+      261, and 120 still standing at the end where it read 113. The record did not move. A blocker
+      (D176), evasion and an equipment package (D178), and now bodies per card have each been asked
+      for by an instrument, delivered exactly what they were added to do, and changed nothing — so
+      the thing to say about this deck is in D181 and it is not about its next card. The Ghoul stays
+      because level is no reason to revert and it is the pool's cheapest undying creature.
+    */
+    { card: BUTCHER_GHOUL, count: 1 },
     /*
       Two Tainted Strikes, which are the deck's reach and the card that reads the whole table.
 

@@ -3415,6 +3415,84 @@ const FOG_BANK: CardScript = {
  * creature for this; "an opponent controls" is read off the graveyard it went to, which is the
  * same approximation the death event itself makes.
  */
+/**
+ * Undying and persist (CR 702.92, 702.79), which look like replacement effects and are not.
+ *
+ * "When this creature dies, if it had no +1/+1 counter on it, return it to the battlefield under
+ * its owner's control with a +1/+1 counter on it" — and persist is the same sentence with
+ * −1/−1 in both halves. The obvious implementation is a `replaces` on `dies`, and it is wrong:
+ * both keywords are **triggered** abilities, so the creature really does die, a Blood Artist really
+ * does drain for it, and a sacrifice outlet really does get its value before the body comes back.
+ * Writing it as a replacement would have made it a creature that cannot be sacrificed for profit,
+ * which is the opposite of what the cards are played for.
+ *
+ * So it is a `dies` trigger with `who: 'self'` and an **intervening-if**, and the if is the whole
+ * mechanic: it is checked against the counters the creature had *as it died* (CR 603.4), which is
+ * why a 1/1 that has already come back once stays in the graveyard the second time. Those counters
+ * are gone from the card by the time anything can look — `relocate` takes them off on the way to
+ * the graveyard, as the rules require — so both asks read `subjectCounters`, the snapshot the event
+ * carries. The first ask did not have it until this card needed it (D181).
+ *
+ * The return is guarded the way Rancor's is: a card that has left the graveyard in between (a
+ * Planar Void, a Scavenging Ooze) stays where it is, because an ability does as much as it can and
+ * no more (CR 608.2).
+ */
+const comesBackWithACounter = (kind: 'undying' | 'persist'): readonly TriggerDef[] => {
+  const counter = kind === 'undying' ? '+1/+1' : '-1/-1';
+  return [{
+    on: { kind: 'dies', who: 'self' },
+    description: `return it to the battlefield with a ${counter} counter on it`,
+    condition: (c) => (c.subjectCounters?.[counter] ?? 0) === 0,
+    effect: (c) => {
+      const inst = c.state.instances[c.source];
+      if (inst === undefined || inst.zone !== 'graveyard') return c.state;
+      return addCounters(putOntoBattlefield(c.state, c.source, inst.owner), c.source, counter, 1);
+    },
+  }];
+};
+
+/** Young Wolf: a one-mana body that arrives twice, and the cheapest undying there is. */
+const YOUNG_WOLF: CardScript = {
+  name: 'Young Wolf',
+  triggers: comesBackWithACounter('undying'),
+};
+
+/** Butcher Ghoul: the same card in black, in the deck whose creatures last a turn and a half. */
+const BUTCHER_GHOUL: CardScript = {
+  name: 'Butcher Ghoul',
+  triggers: comesBackWithACounter('undying'),
+};
+
+/**
+ * Murderous Redcap: persist, and the half of the family that has text of its own.
+ *
+ * "When this enters, it deals damage equal to its power to any target" plus persist is two cards in
+ * one: two damage now, one damage later, and the 1/1 that comes back is a 0/0 with a −1/−1 counter
+ * on it — which the layer system kills on arrival unless something is adding to it. That is the
+ * printed card and the reason persist creatures are 3/2s and 1/1s rather than 1/1s alone: a
+ * Redcap's second body is a *trigger*, not a creature, and the engine's state-based actions put the
+ * 0/0 back in the graveyard the moment the trigger has resolved.
+ */
+const MURDEROUS_REDCAP: CardScript = {
+  name: 'Murderous Redcap',
+  triggers: [
+    {
+      on: { kind: 'etb', who: 'self' },
+      description: 'it deals damage equal to its power to any target',
+      targets: [ANY_TARGET],
+      effect: (c) => {
+        // Its power as the trigger resolves, which for the body that persist brings back is zero:
+        // a 1/1 with a −1/−1 counter on it deals nothing, and the state-based actions put it in
+        // the graveyard again the moment this has resolved. That is the printed card.
+        const inst = c.state.instances[c.source];
+        const power = inst === undefined ? 0 : characteristicsOf(c.state, inst).power;
+        return power <= 0 ? c.state : damageFirstTarget(c, power);
+      },
+    },
+    ...comesBackWithACounter('persist'),
+  ],
+};
+
 const KALITAS: CardScript = {
   name: 'Kalitas, Traitor of Ghet',
   replaces: [
@@ -5878,6 +5956,7 @@ const ALL: readonly CardScript[] = [
   GOBLIN_ELECTROMANCER, THALIA_GUARDIAN_OF_THRABEN, TORMENTED_SOUL, RIVER_BOA,
   WALL_OF_FROST, OPHIDIAN, THICKET_BASILISK, FLICKERWISP,
   PALACE_SENTINELS, THORN_OF_THE_BLACK_ROSE,
+  YOUNG_WOLF, BUTCHER_GHOUL, MURDEROUS_REDCAP,
   GLISTENER_ELF, PLAGUE_STINGER, ICHORCLAW_MYR, BLIGHT_MAMBA, CYSTBEARER, PHYREXIAN_CRUSADER,
   TAINTED_STRIKE, SKITHIRYX,
   guildgate('Simic Guildgate', 'G', 'U'),
