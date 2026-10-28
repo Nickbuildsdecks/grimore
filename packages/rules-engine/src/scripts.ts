@@ -3673,6 +3673,27 @@ const MURDEROUS_REDCAP: CardScript = {
   ],
 };
 
+/**
+ * Kitchen Finks: persist's second card, and the first hybrid cost the engine can pay.
+ *
+ * Two declarative lines and nothing new. `{1}{G/W}{G/W}` is the mana layer's business (D190), the
+ * life is `gainLife`, and persist has been `comesBackWithACounter` since D181 — which is the point
+ * of adding it: a mechanic with one card behind it has one card's worth of coverage, and the Redcap
+ * is a 1/1 whose second body is a 0/0 that dies again immediately. The Finks is a 3/2, so the body
+ * that comes back is a **2/1 that lives**, which is the half of persist the pool could not show.
+ */
+const KITCHEN_FINKS: CardScript = {
+  name: 'Kitchen Finks',
+  triggers: [
+    {
+      on: { kind: 'etb', who: 'self' },
+      description: 'you gain 2 life',
+      effect: (c) => gainLife(c.state, c.controller, 2),
+    },
+    ...comesBackWithACounter('persist'),
+  ],
+};
+
 const KALITAS: CardScript = {
   name: 'Kalitas, Traitor of Ghet',
   replaces: [
@@ -6331,6 +6352,7 @@ const ALL: readonly CardScript[] = [
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
+  KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,

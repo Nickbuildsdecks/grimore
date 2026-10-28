@@ -7,11 +7,13 @@
  *
  * ## What is supported, and what is not
  *
- * Generic (`{2}`), coloured (`{R}`), colourless (`{C}`) and `{X}`. Hybrid (`{R/G}`), phyrexian
- * (`{R/P}`) and snow (`{S}`) are **not** parsed and a cost containing them is reported as
- * unpayable rather than silently mis-parsed — see `parseManaCost`. No card in the current pool uses
- * them, and quietly treating `{R/G}` as generic would let a player cast a spell they cannot afford,
- * which is worse than refusing it.
+ * Generic (`{2}`), coloured (`{R}`), colourless (`{C}`), `{X}`, and **colour hybrid** (`{R/G}`:
+ * one mana, either of two colours).
+ *
+ * Phyrexian (`{R/P}`), snow (`{S}`) and *monocoloured* hybrid (`{2/W}`, which is two generic or one
+ * white) are still **not** parsed, and a cost containing them is reported as unpayable rather than
+ * silently mis-parsed — see `parseManaCost`. Quietly treating a symbol as generic would let a
+ * player cast a spell they cannot afford, which is worse than refusing it.
  */
 
 export const COLORS = ['W', 'U', 'B', 'R', 'G'] as const;
@@ -58,6 +60,17 @@ export interface ManaCost {
    * Absent means one, so every cost written before this field existed reads the same.
    */
   readonly xCount?: number;
+  /**
+   * The colour-hybrid symbols, one entry per symbol, each listing the types that may pay it.
+   *
+   * `{B/R}{B/R}` is `[['B','R'],['B','R']]`: two mana, each of them either black or red. Kept as a
+   * list rather than folded into `colors`, because the choice is per symbol and the whole point is
+   * that two of them can be paid two different ways — a Murderous Redcap is castable off four
+   * Swamps, off two Swamps and two Mountains, or anything between.
+   *
+   * Absent means none, so every cost written before this field existed reads the same.
+   */
+  readonly hybrids?: readonly (readonly ManaType[])[];
   readonly unsupported?: string;
 }
 
@@ -74,6 +87,7 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
   let generic = 0;
   let xCount = 0;
   let unsupported: string | undefined;
+  const hybrids: ManaType[][] = [];
   const colors: Record<ManaType, number> = { ...EMPTY_POOL };
   for (const match of text.matchAll(SYMBOL)) {
     const symbol = (match[1] ?? '').trim().toUpperCase();
@@ -91,21 +105,38 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
       colors[symbol as ManaType] += 1;
       continue;
     }
-    // Hybrid, phyrexian, snow: refused rather than guessed at.
+    /*
+      Colour hybrid: one mana, either of two types (CR 107.4e).
+
+      Only when **both** halves are mana types. `{2/W}` is monocoloured hybrid — two generic or one
+      white — and `{R/P}` is phyrexian, two mana of life; both are a different shape from this one
+      and both stay refused below rather than being approximated into it.
+    */
+    const halves = symbol.split('/');
+    if (halves.length === 2 && halves.every((h) => (MANA_TYPES as readonly string[]).includes(h))) {
+      hybrids.push(halves as ManaType[]);
+      continue;
+    }
+    // Phyrexian, snow, monocoloured hybrid: refused rather than guessed at.
     unsupported ??= symbol;
   }
   const x = xCount > 0;
   // `xCount` is only written when it is more than one, so a `{X}` cost is deep-equal to what it
   // parsed to before this field existed — which a good many tests compare against.
   const extra = xCount > 1 ? { xCount } : {};
+  // Same reasoning as `xCount`: only written when there is one, so a cost with no hybrid symbol is
+  // deep-equal to what it parsed to before this field existed.
+  const mixed = hybrids.length > 0 ? { hybrids } : {};
   return unsupported === undefined
-    ? { generic, colors, x, ...extra }
-    : { generic, colors, x, ...extra, unsupported };
+    ? { generic, colors, x, ...extra, ...mixed }
+    : { generic, colors, x, ...extra, ...mixed, unsupported };
 }
 
 /** Converted mana cost, ignoring {X} (which is 0 anywhere but the stack). */
 export function costValue(cost: ManaCost): number {
-  return cost.generic + MANA_TYPES.reduce((n, t) => n + cost.colors[t], 0);
+  // A hybrid symbol is one mana towards the mana value, whichever half pays it (CR 202.3f).
+  return cost.generic + MANA_TYPES.reduce((n, t) => n + cost.colors[t], 0)
+    + (cost.hybrids?.length ?? 0);
 }
 
 /** The cost with `extra` generic added — commander tax, kicker-style surcharges. */
@@ -119,6 +150,27 @@ export interface PaymentResult {
   readonly pool: ManaPool;
   /** Why it could not be paid, for the message a player sees. */
   readonly shortfall?: string;
+}
+
+/**
+ * Assigns each hybrid symbol a type it can be paid with, or null when no assignment exists.
+ *
+ * Depth-first over the symbols, trying each half in turn: exact rather than greedy, because the
+ * symbols compete for the same mana. See the note in `payCost`.
+ */
+function assignHybrids(
+  remaining: Readonly<Record<ManaType, number>>,
+  hybrids: readonly (readonly ManaType[])[],
+  at: number,
+): Record<ManaType, number> | null {
+  if (at >= hybrids.length) return { ...remaining };
+  for (const type of hybrids[at] ?? []) {
+    if ((remaining[type] ?? 0) <= 0) continue;
+    const next = { ...remaining, [type]: (remaining[type] ?? 0) - 1 };
+    const solved = assignHybrids(next, hybrids, at + 1);
+    if (solved !== null) return solved;
+  }
+  return null;
 }
 
 /**
@@ -145,6 +197,25 @@ export function payCost(pool: ManaPool, cost: ManaCost, xAmount = 0): PaymentRes
     }
     remaining[type] -= needed;
   }
+
+  /*
+    Then the hybrid symbols, and this is the one part of a payment that **cannot be greedy**.
+
+    Two symbols and one pool is an assignment problem: `{G/W}{G/W}` against one green and one white
+    is paid two ways, and `{G/W}{W/U}` against one white and one blue is paid exactly one way — take
+    the white for the first symbol and the second cannot be paid at all. A greedy pass in symbol
+    order gets that second case wrong, so this searches: at most a handful of symbols with two
+    options each, which is a few dozen possibilities at the very worst.
+
+    Before the generic part, for the same reason colours come before it: a hybrid can only be paid
+    with one of its two types, and generic can be paid with anything.
+  */
+  const assigned = assignHybrids(remaining, cost.hybrids ?? [], 0);
+  if (assigned === null) {
+    const wanted = (cost.hybrids ?? []).map((pair) => `{${pair.join('/')}}`).join('');
+    return { paid: false, pool, shortfall: `needs ${wanted} and the colours are not there` };
+  }
+  for (const type of MANA_TYPES) remaining[type] = assigned[type] ?? 0;
 
   let generic = cost.generic + Math.max(0, xAmount) * xMultiplier(cost);
   if (generic > 0) {
@@ -215,6 +286,24 @@ export interface ManaPick {
 }
 
 /**
+ * The pool with the mana a hybrid assignment spent taken out of it, colours aside.
+ *
+ * `assignHybrids` is handed a pool that already has the coloured symbols removed, so its answer
+ * cannot be used as a pool directly: this puts the difference back against the original.
+ */
+function hybridSpend(
+  pool: ManaPool, cost: ManaCost, assigned: Readonly<Record<ManaType, number>>,
+): Record<ManaType, number> {
+  const out: Record<ManaType, number> = { ...pool };
+  for (const type of MANA_TYPES) {
+    const afterColors = Math.max(0, (pool[type] ?? 0) - cost.colors[type]);
+    const spentOnHybrids = afterColors - (assigned[type] ?? 0);
+    out[type] = Math.max(0, (pool[type] ?? 0) - spentOnHybrids);
+  }
+  return out;
+}
+
+/**
  * How much of a cost is still unpaid once every colour requirement is met from the pool.
  *
  * Only used to decide how big a source to tap for the generic part, so it counts what is left
@@ -222,7 +311,21 @@ export interface ManaPick {
  * first, exactly as `payCost` takes them, and whatever the remainder cannot cover is the number.
  */
 function remainingGeneric(pool: ManaPool, cost: ManaCost, xAmount: number): number {
-  const remaining: Record<ManaType, number> = { ...pool };
+  const paid = assignHybrids(
+    (() => {
+      const after: Record<ManaType, number> = { ...pool };
+      for (const type of MANA_TYPES) {
+        after[type] = Math.max(0, (after[type] ?? 0) - cost.colors[type]);
+      }
+      return after;
+    })(),
+    cost.hybrids ?? [],
+    0,
+  );
+  // Hybrids that cannot be paid at all leave the generic estimate to the colour pass below, which
+  // is the honest answer: there is no sensible "how much generic is left" for an unpayable cost.
+  const pool2: ManaPool = paid === null ? pool : { ...pool, ...hybridSpend(pool, cost, paid) };
+  const remaining: Record<ManaType, number> = { ...pool2 };
   for (const type of MANA_TYPES) {
     const needed = cost.colors[type];
     if (needed === 0) continue;
@@ -233,9 +336,24 @@ function remainingGeneric(pool: ManaPool, cost: ManaCost, xAmount: number): numb
   return Math.max(0, generic - spare);
 }
 
-/** Colours a cost needs more of than the pool holds. */
+/**
+ * Colours a cost needs more of than the pool holds.
+ *
+ * Hybrids are included as the **union of the halves** of the symbols that cannot be paid, which is
+ * what `solveTap` wants from this: "any of these would help". It is deliberately not a claim that
+ * every one of them is needed — a `{B/R}` wants a black *or* a red source, and the loop that reads
+ * this re-asks after every tap, so the first useful one ends the shortfall.
+ */
 export function shortColors(pool: ManaPool, cost: ManaCost): ManaType[] {
-  return MANA_TYPES.filter((t) => cost.colors[t] > (pool[t] ?? 0));
+  const short = MANA_TYPES.filter((t) => cost.colors[t] > (pool[t] ?? 0));
+  const hybrids = cost.hybrids ?? [];
+  if (hybrids.length === 0 || short.length > 0) return short;
+  const remaining: Record<ManaType, number> = { ...pool };
+  for (const type of MANA_TYPES) remaining[type] = Math.max(0, (remaining[type] ?? 0) - cost.colors[type]);
+  if (assignHybrids(remaining, hybrids, 0) !== null) return [];
+  const union = new Set<ManaType>();
+  for (const pair of hybrids) for (const type of pair) union.add(type);
+  return MANA_TYPES.filter((t) => union.has(t));
 }
 
 /**
@@ -358,5 +476,8 @@ export function maxAffordableX(
 
 /** The colours in a cost, for colour-identity and devotion style questions. */
 export function costColors(cost: ManaCost): Color[] {
-  return COLORS.filter((c) => cost.colors[c] > 0);
+  // Both halves of a hybrid symbol: the cost can be paid with either, so either is a colour this
+  // cost is interested in. The card's own `colors` field is what decides what colour the *card* is.
+  const hybrid = new Set((cost.hybrids ?? []).flat());
+  return COLORS.filter((c) => cost.colors[c] > 0 || hybrid.has(c));
 }

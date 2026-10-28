@@ -17,7 +17,7 @@ import {
   hasType,
   legalActions,
   parseTypeLine,
-  packView, pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor,
+  packView, parseManaCost, pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor,
   scriptedCardNames,
   staticEffect, unpackView, viewFor,
   type ContinuousEffect,
@@ -342,6 +342,9 @@ describe('green and white', () => {
 
   it('Pacifism stops a creature attacking or blocking, and dies with its host', () => {
     let s = arena({
+      // Skyward Writ rather than the default Verdant Guard: D190 spent that deck's Pacifism on a
+      // Kitchen Finks, and this deck still runs one.
+      decks: { 1: 'skyward-writ' },
       hands: { 1: ['Pacifism'] },
       battlefield: { 1: ['Plains', 'Plains'], 0: ['Hill Giant'] },
       turn: 2, firstSeat: 1,
@@ -1809,7 +1812,8 @@ describe('cards that stop and ask while they resolve', () => {
 
   it('Mind Rot is answered by the player discarding, not by the player who cast it', () => {
     let s = arena({
-      decks: { 0: 'tidal-mind' }, hands: { 0: ['Mind Rot'], 1: ['Giant Growth', 'Serra Angel', 'Pacifism'] },
+      decks: { 0: 'tidal-mind', 1: 'skyward-writ' },
+      hands: { 0: ['Mind Rot'], 1: ['Healing Salve', 'Serra Angel', 'Pacifism'] },
       battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'] }, turn: 2, firstSeat: 0,
     });
     s = advanceTo(s, 'precombat-main');
@@ -1822,12 +1826,12 @@ describe('cards that stop and ask while they resolve', () => {
     }));
     // Seat 0 cast it; seat 1 chooses. Getting this round the wrong way would be a different card.
     expect(s.pendingDecision!.seat).toBe(1);
-    expect(choices(s)).toEqual(['Giant Growth', 'Pacifism', 'Serra Angel']);
+    expect(choices(s)).toEqual(['Healing Salve', 'Pacifism', 'Serra Angel']);
     expect(refusal(s, { type: 'auto:decide', by: 0, cards: [] })).toContain('not your decision');
 
-    s = decide(s, ['Giant Growth', 'Pacifism']);
+    s = decide(s, ['Healing Salve', 'Pacifism']);
     expect(namesIn(s, 1, 'hand')).toEqual(['Serra Angel']);
-    expect(namesIn(s, 1, 'graveyard').sort()).toEqual(['Giant Growth', 'Pacifism']);
+    expect(namesIn(s, 1, 'graveyard').sort()).toEqual(['Healing Salve', 'Pacifism']);
   });
 
   it('asks for only what a short hand holds, and asks nothing of an empty one', () => {
@@ -4024,7 +4028,7 @@ describe('white-blue: the seventh deck', () => {
 
   it('and not out of somebody else’s graveyard', () => {
     let s = arena({
-      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      decks: { 0: 'skyward-writ', 1: 'dawn-tithe' },
       battlefield: { 0: ['Plains', 'Plains', 'Island', "Hanna, Ship's Navigator"] },
       graveyard: { 1: ['Pacifism'] },
       turn: 3, firstSeat: 0,
@@ -5476,7 +5480,7 @@ describe('answering a permanent, and answering an answer', () => {
 
   it('and an enchantment, which is what a Pacifism on your commander needed', () => {
     let s = arena({
-      decks: { 0: 'verdant-guard', 1: 'blight-vector' },
+      decks: { 0: 'dawn-tithe', 1: 'blight-vector' },
       hands: { 0: ['Pacifism'], 1: ['Naturalize'] },
       // A Cystbearer rather than a Centaur Courser, because the seat holding the Naturalize is
       // Blight Vector now and the creature has to come out of that seat's own deck.
@@ -6317,20 +6321,28 @@ describe('deck coverage', () => {
   });
 
   it('gives every scripted mana cost a cost the engine can pay', () => {
+    /*
+      Asked of the **parser** rather than of the text, which is the change D190 made necessary and
+      which is a better test anyway.
+
+      This used to look for a `/` in the printed cost and call any of them unpayable, because the
+      engine refused every slashed symbol outright. Colour hybrid is paid now, so the text no longer
+      says: `{G/W}` is fine and `{2/W}` is not. The property that actually matters is the one the
+      parser reports — nothing in this pool may carry a symbol the payment cannot read — and asking
+      it directly means the next symbol taught does not need this test edited.
+    */
     const unpayable: string[] = [];
     for (const deck of Object.values(STARTER_DECKS)) {
       for (const card of [...deck.cards.map((c) => c.card), deck.commander!]) {
         // Each face as well, because a half is cast for its own cost — and a split card's printed
         // cost is the two of them with a `//` between, which is never paid as written.
         for (const face of card.faces?.cards ?? []) {
-          const faceCost = (face.manaCost ?? '').match(/\{[^}]*\}/g) ?? [];
-          if (faceCost.some((symbol) => /\//.test(symbol))) unpayable.push(face.name);
+          if (parseManaCost(face.manaCost).unsupported !== undefined) unpayable.push(face.name);
         }
         if (card.faces?.kind === 'split') continue;
         if (scriptFor(card.name) === undefined) continue;
         if (/land/i.test(card.typeLine)) continue;
-        const cost = (card.manaCost ?? '').match(/\{[^}]*\}/g) ?? [];
-        if (cost.some((symbol) => /\//.test(symbol))) unpayable.push(card.name);
+        if (parseManaCost(card.manaCost).unsupported !== undefined) unpayable.push(card.name);
       }
     }
     expect(unpayable).toEqual([]);
@@ -13079,6 +13091,96 @@ describe('Rancor, from anywhere rather than from the battlefield', () => {
     s = drain(apply(s, { type: 'card:move', by: 0, card: elves, toZone: 'graveyard' }), 40);
     expect(s.instances[rancor]!.zone).not.toBe('hand');
     expect(s.instances[rancor]!.zone).toBe('exile');
+  });
+});
+
+describe('hybrid mana, at a real table', () => {
+  /*
+    `parseManaCost` refused every slashed symbol until D190, and the refusal was honest: reading
+    `{R/G}` as generic would offer a player a spell they could not cast. What it also did was keep
+    a card in this pool with the wrong cost on it — **Murderous Redcap** is `{2}{B/R}{B/R}` and was
+    written as `{2}{B}{R}`, which is strictly harsher than the printed card.
+
+    These two are the table's half of it: the Redcap off Swamps alone, which it could not do before,
+    and Kitchen Finks paying its two `{G/W}` symbols from one of each.
+  */
+  it('casts a Redcap off four Swamps, which its old cost could not do', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      hands: { 0: ['Murderous Redcap'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const redcap = find(s, 0, 'hand', 'Murderous Redcap');
+    // Offered with no red source anywhere: both hybrid symbols are paid in black.
+    expect(legalActions(s, 0).plays.some((play) => play.card === redcap)).toBe(true);
+
+    // The creature spell takes no targets; its arrival trigger does, and asks once it is on the
+    // battlefield — which is why the cast and the aim are two actions.
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: redcap }), 40);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Murderous Redcap');
+    s = drain(apply(s, {
+      type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    // Its own arrival trigger: one damage, its power.
+    expect(life(s, 1)).toBe(19);
+    // Four lands for a four-mana spell, and nothing left over.
+    expect([...ids(s, 0, 'battlefield')]
+      .filter((id) => nameOf(s, id) === 'Swamp' && s.instances[id]!.tapped)).toHaveLength(4);
+  });
+
+  it('and pays Kitchen Finks one of each colour, or two of one', () => {
+    /** Verdant Guard holding the Finks, with the lands named. */
+    const holding = (lands: readonly string[]): GameState => tapAllLands(advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
+      hands: { 0: ['Kitchen Finks'] },
+      battlefield: { 0: [...lands], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+
+    for (const lands of [
+      ['Forest', 'Plains', 'Forest'],
+      ['Forest', 'Forest', 'Forest'],
+      ['Plains', 'Plains', 'Plains'],
+    ]) {
+      const s = holding(lands);
+      expect(legalActions(s, 0).plays
+        .some((play) => play.card === find(s, 0, 'hand', 'Kitchen Finks'))).toBe(true);
+    }
+
+    // Two lands is not three, whatever colours they make: the hybrid symbols are each one mana and
+    // the generic one still has to come from somewhere.
+    const short = holding(['Forest', 'Plains']);
+    expect(legalActions(short, 0).plays
+      .some((play) => play.card === find(short, 0, 'hand', 'Kitchen Finks'))).toBe(false);
+    // Three mana of a colour neither half can use is covered where it belongs, in `mana.test.ts`:
+    // this deck has no source that is not green or white, so the board cannot be built here.
+  });
+
+  it('gains two life as it lands, and comes back a 2/1 that lives', () => {
+    /*
+      Persist's second card, and the half the pool could not show. A Murderous Redcap is a 1/1, so
+      the body persist returns is a 0/0 that the state-based actions put straight back in the
+      graveyard — correct, and not much of a demonstration. The Finks is a 3/2, so what comes back
+      is a **2/1 still standing**.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
+      hands: { 0: ['Kitchen Finks'] },
+      battlefield: { 0: ['Forest', 'Plains', 'Forest'], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Kitchen Finks') }), 40);
+    expect(life(s, 0)).toBe(22);
+    const finks = find(s, 0, 'battlefield', 'Kitchen Finks');
+    expect([power(s, finks), toughness(s, finks)]).toEqual([3, 2]);
+
+    s = drain(apply(s, { type: 'card:move', by: 0, card: finks, toZone: 'graveyard' }), 40);
+    // Back on the battlefield with a -1/-1 counter: a 2/1, and the life does not come again.
+    expect(s.instances[finks]!.zone).toBe('battlefield');
+    expect([power(s, finks), toughness(s, finks)]).toEqual([2, 1]);
+    expect(life(s, 0)).toBe(24);
   });
 });
 

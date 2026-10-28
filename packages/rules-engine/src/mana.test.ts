@@ -68,17 +68,55 @@ describe('parseManaCost', () => {
     expect(parseManaCost('{X}{R}').xCount).toBeUndefined();
   });
 
-  it('refuses a hybrid or phyrexian cost instead of mis-reading it as generic', () => {
-    // Reading {R/G} as generic would offer the player a spell they cannot actually cast, which is
-    // worse than refusing a card no deck currently contains.
-    expect(parseManaCost('{R/G}').unsupported).toBe('R/G');
+  it('reads a colour hybrid as one mana, either half', () => {
+    // D190. `{R/G}` is one mana that red or green can pay, and it counts one towards the mana
+    // value whichever half pays it (CR 202.3f) — not two, and not generic.
+    const cost = parseManaCost('{2}{B/R}{B/R}');
+    expect(cost.hybrids).toEqual([['B', 'R'], ['B', 'R']]);
+    expect(cost.unsupported).toBeUndefined();
+    expect(costValue(cost)).toBe(4);
+    // Four black, four red, or two of each: a Murderous Redcap off Swamps alone is the whole point.
+    expect(canPay(pool({ B: 4 }), cost)).toBe(true);
+    expect(canPay(pool({ R: 4 }), cost)).toBe(true);
+    expect(canPay(pool({ B: 2, R: 2 }), cost)).toBe(true);
+    // And three mana of the right colours is still three mana.
+    expect(canPay(pool({ B: 3 }), cost)).toBe(false);
+  });
+
+  it('and a cost with no hybrid symbol parses exactly as it did before the field existed', () => {
+    // The same reasoning as `xCount`: absent rather than empty, so every comparison written
+    // against a parsed cost before D190 still holds.
+    expect(parseManaCost('{2}{R}{R}').hybrids).toBeUndefined();
+  });
+
+  it('still refuses phyrexian, snow and monocoloured hybrid rather than guessing', () => {
+    /*
+      Each of the three is a *different* shape from colour hybrid, and approximating any of them
+      into it would be wrong in a way a player would feel: `{2/W}` is two generic **or** one white,
+      and `{R/P}` is one red or two life.
+    */
     expect(parseManaCost('{R/P}').unsupported).toBe('R/P');
     expect(parseManaCost('{2}{S}').unsupported).toBe('S');
-    expect(canPay(pool({ R: 9, G: 9, C: 9 }), parseManaCost('{R/G}'))).toBe(false);
+    expect(parseManaCost('{2/W}').unsupported).toBe('2/W');
+    expect(canPay(pool({ R: 9, G: 9, C: 9 }), parseManaCost('{R/P}'))).toBe(false);
   });
 
   it('reports the first unsupported symbol it meets, not the last', () => {
-    expect(parseManaCost('{R/G}{W/U}').unsupported).toBe('R/G');
+    expect(parseManaCost('{R/P}{S}').unsupported).toBe('R/P');
+  });
+
+  it('solves two hybrid symbols that compete for the same mana', () => {
+    /*
+      The case a greedy payment gets wrong, and the reason `payCost` searches: `{G/W}{W/U}` against
+      one white and one blue has exactly one answer — the white pays the first symbol and the blue
+      the second. Take the white for the second and the first cannot be paid at all.
+    */
+    const cost = parseManaCost('{G/W}{W/U}');
+    expect(canPay(pool({ W: 1, U: 1 }), cost)).toBe(true);
+    expect(canPay(pool({ W: 2 }), cost)).toBe(true);
+    expect(canPay(pool({ U: 2 }), cost)).toBe(false);
+    expect(canPay(pool({ G: 1, U: 1 }), cost)).toBe(true);
+    expect(canPay(pool({ G: 2 }), cost)).toBe(false);
   });
 
   it('adds commander tax as generic', () => {
@@ -243,8 +281,23 @@ describe('solveTap', () => {
     expect(plan!.flatMap((pick) => pick.types).sort()).toEqual(['B', 'U']);
   });
 
+  it('taps for a hybrid with whichever colour it can find', () => {
+    // `solveTap` learns it through `shortColors`, which reports the union of the halves it still
+    // cannot pay — "any of these would help" — and re-asks after every tap.
+    const cost = parseManaCost('{1}{B/R}{B/R}');
+    expect(solveTap(EMPTY_POOL, cost, [land('s1', 'B'), land('s2', 'B'), land('s3', 'B')]))
+      .toHaveLength(3);
+    expect(solveTap(EMPTY_POOL, cost, [land('m1', 'R'), land('m2', 'R'), land('s1', 'B')]))
+      .toHaveLength(3);
+    // Two sources cannot pay three mana, whatever colours they make.
+    expect(solveTap(EMPTY_POOL, cost, [land('m1', 'R'), land('s1', 'B')])).toBeNull();
+    // And nothing that makes either half is nothing, however many lands there are.
+    expect(solveTap(EMPTY_POOL, cost, [land('f1', 'G'), land('f2', 'G'), land('f3', 'G')]))
+      .toBeNull();
+  });
+
   it('refuses a cost it cannot read rather than tapping hopefully', () => {
-    expect(solveTap(EMPTY_POOL, parseManaCost('{R/G}'), [land('m1', 'R')])).toBeNull();
+    expect(solveTap(EMPTY_POOL, parseManaCost('{R/P}'), [land('m1', 'R')])).toBeNull();
   });
 
   it('pays for X out of the sources available', () => {

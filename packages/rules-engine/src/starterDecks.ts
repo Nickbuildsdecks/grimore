@@ -1627,7 +1627,16 @@ const BUTCHER_GHOUL: CardDef = {
 const MURDEROUS_REDCAP: CardDef = {
   name: 'Murderous Redcap',
   typeLine: 'Creature — Goblin Assassin',
-  manaCost: '{2}{B}{R}',
+  /*
+    `{2}{B/R}{B/R}`, which is what is printed on it — and for five entries it was in this pool as
+    `{2}{B}{R}`, because the engine refused a hybrid symbol outright rather than mis-reading it.
+
+    The approximation is strictly harsher than the card: the real Redcap is castable off four
+    Swamps, and the pool's copy demanded one of each colour. In a deck with seven Swamps, seven
+    Mountains and five other sources that is a real difference on turn four, and it is the kind of
+    deviation that is invisible until somebody holds the card with the wrong three lands out (D190).
+  */
+  manaCost: '{2}{B/R}{B/R}',
   cmc: 4,
   power: '1',
   toughness: '1',
@@ -2458,6 +2467,27 @@ const GOBLIN_WARDRIVER: CardDef = {
   colors: ['R'],
 };
 
+/*
+  Kitchen Finks: the card hybrid mana was taught for, and it needed nothing else new.
+
+  `{1}{G/W}{G/W}` is three mana in a two-colour deck that can pay it any way round, a 3/2 that gains
+  two life as it lands, and **persist** — which has been in the engine since D181 and had exactly
+  one card behind it. A mechanic with one card has one card's worth of coverage.
+*/
+const KITCHEN_FINKS: CardDef = {
+  name: 'Kitchen Finks',
+  typeLine: 'Creature — Elemental',
+  manaCost: '{1}{G/W}{G/W}',
+  cmc: 3,
+  power: '3',
+  toughness: '2',
+  oracleText:
+    'When Kitchen Finks enters the battlefield, you gain 2 life.\n'
+    + 'Persist (When this creature dies, if it had no -1/-1 counter on it, return it to the '
+    + 'battlefield under its owner\u2019s control with a -1/-1 counter on it.)',
+  colors: ['G', 'W'],
+};
+
 const SCAVENGING_OOZE: CardDef = {
   name: 'Scavenging Ooze',
   typeLine: 'Creature — Ooze',
@@ -3088,7 +3118,16 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: FLEECEMANE_LION, count: 1 },
     { card: LOXODON_WARHAMMER, count: 1 },
     { card: SELESNYA_CHARM, count: 1 },
-    { card: PACIFISM, count: 1 },
+    /*
+      Three mana for a 3/2 that gains two life and comes back once, in the deck that can pay
+      `{1}{G/W}{G/W}` any way round.
+
+      It replaced this deck's **Pacifism** (64% of the games it was in hand, 27 casts in 96) — the
+      fifth piece of removal in a list that already holds two Journeys to Nowhere, a Swords, a
+      Conclave Tribunal, a Selesnya Charm and a Banisher Priest. What the deck is short of is
+      bodies that survive, which is exactly what persist is.
+    */
+    { card: KITCHEN_FINKS, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 1 },
     /*
       Five mana of removal is unplayable on a creature deck's curve; three is not, and with a board
