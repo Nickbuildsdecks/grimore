@@ -401,24 +401,28 @@ also why it does not read as a cheat: it counters your creatures and lets your c
 other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
 ```
- 74%  213-75   ember-rush
- 66%  189-99   dawn-tithe
- 58%  168-120  verdant-guard
+ 75%  215-73   ember-rush
+ 64%  185-103  dawn-tithe
+ 61%  175-113  verdant-guard
+ 56%  162-126  kindle-grove
  56%  160-128  forge-alliance
- 54%  155-133  kindle-grove
- 50%  144-144  skyward-writ
- 49%  141-147  ashen-rite
- 44%  127-161  hollow-tide
- 44%  127-161  delta-bloom
- 42%  122-166  rot-harvest
- 41%  119-169  arc-tempest
- 35%  101-187  tidal-mind
- 35%  100-188  blight-vector
+ 50%  143-145  skyward-writ
+ 47%  134-154  ashen-rite
+ 44%  128-160  delta-bloom
+ 43%  124-164  rot-harvest
+ 43%  124-164  hollow-tide
+ 41%  117-171  arc-tempest
+ 34%  99-189   tidal-mind
+ 34%  99-189   blight-vector
 ```
 
 **One deck is clearly ahead, nine are within nine points of even, and two are measurably short.**
-The spread is thirty-nine points, and the bottom of the table is two decks rather than a cluster:
-Tidal Mind and Blight Vector level at 35%, six points below the deck above them. An earlier run of this
+The spread is forty-one points, and the bottom of the table is two decks rather than a cluster:
+Tidal Mind and Blight Vector level at 34%, nine points below the deck above them. This run has all
+nine of the cards added in the last pass in it — undying, persist, monstrosity, adapt and unearth —
+and the two rows that moved most are the two those cards were measured in: Verdant Guard +7 with a
+**Fleecemane Lion** and Kindle Grove +7 with a **Hellspark Elemental**, which is the number that
+card's own probe gave (+4 and +6) arriving in the field almost exactly. An earlier run of this
 table read "the bottom is a cluster now" and "the spread is thirty-six points"; this run says
 neither, and the sentences have been replaced rather than left standing — a published number that
 has been re-measured is worth more corrected than defended.

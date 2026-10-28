@@ -4658,14 +4658,18 @@ The thirteen-deck table, re-run on the same twelve seeds as the one D176 quotes
 (`SEEDS=12 SEED0=4400`, 288 games a deck):
 
 ```
- 74%  213-75   ember-rush      44%  127-161  hollow-tide
- 66%  189-99   dawn-tithe      44%  127-161  delta-bloom
- 58%  168-120  verdant-guard   42%  122-166  rot-harvest
- 56%  160-128  forge-alliance  41%  119-169  arc-tempest
- 54%  155-133  kindle-grove    35%  101-187  tidal-mind
- 50%  144-144  skyward-writ    35%  100-188  blight-vector
- 49%  141-147  ashen-rite
+ 75%  215-73   ember-rush      44%  128-160  delta-bloom
+ 64%  185-103  dawn-tithe      43%  124-164  rot-harvest
+ 61%  175-113  verdant-guard   43%  124-164  hollow-tide
+ 56%  162-126  kindle-grove    41%  117-171  arc-tempest
+ 56%  160-128  forge-alliance  34%  99-189   tidal-mind
+ 50%  143-145  skyward-writ    34%  99-189   blight-vector
+ 47%  134-154  ashen-rite
 ```
+
+(Re-run with all nine of the pass's new cards in it. The two rows that moved most are the two those
+cards were measured in: Verdant Guard +7 with a Fleecemane Lion, Kindle Grove +7 with a Hellspark
+Elemental — the latter being that card's own probe number, +4 and +6, arriving in the field.)
 
 (Dawn Tithe's second place is D180's 19 games, not a card: this run already has the fifteenth
 drop-this-option rule in it.)
