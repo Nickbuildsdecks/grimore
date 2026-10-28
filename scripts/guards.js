@@ -154,6 +154,44 @@ function checkNoNewSqliteOnlyInserts() {
 }
 checkNoNewSqliteOnlyInserts();
 
+/**
+ * `server.js` may initialise the database exactly once.
+ *
+ * It used to do it twice: `db.initDb()` at the top of the boot chain and a second, un-awaited call
+ * near the end of the file, both starting at module load against a pool of 35 connections. Postgres
+ * DDL is **not** race-safe between sessions, so every cold boot raced its own schema creation —
+ * reproduced at **20 of 20** runs, refusing statements with `duplicate key value violates unique
+ * constraint "pg_type_typname_nsp_index"` and `relation "players" already exists`, every one of them
+ * swallowed into a `Postgres DDL statement notice` line (D187).
+ *
+ * A source-text guard rather than a test, and deliberately: the legacy Postgres suite builds its
+ * database from the v2 baseline and every migration **before** the server boots, so by the time
+ * `initDb()` runs every table already exists, no creation is attempted, and nothing races. That
+ * suite could not have caught this and re-introducing the second call does not fail it — which is
+ * exactly the situation a guard is for.
+ */
+function checkSingleInitDb() {
+  let src;
+  try {
+    src = readFileSync('server.js', 'utf8');
+  } catch {
+    return; // not in a checkout that has the legacy server
+  }
+  // Comments stripped first, because the note left at the old call site names the call it removed
+  // — and a guard that counts its own explanation is a guard that fails on the fix.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const calls = code.split('\n').filter((line) => /db\.initDb\s*\(/.test(line));
+  if (calls.length !== 1) {
+    console.error(
+      `[guards] server.js calls db.initDb() ${calls.length} time(s), expected exactly 1. ` +
+        'Two concurrent initialisations race the schema on Postgres (D187); await the first instead.',
+    );
+    for (const line of calls) console.error(`[guards]   ${line.trim().slice(0, 100)}`);
+    bad++;
+  }
+}
+checkSingleInitDb();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);

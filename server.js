@@ -8142,9 +8142,18 @@ server.listen(PORT, () => {
   console.log(`Grimore Server (with Socket.IO & better-sqlite3) running on http://localhost:${PORT}`);
 });
 
-db.initDb().then(() => {
-  console.log("Database initialized successfully.");
-}).catch(err => {
-  console.error("Database initialization warning:", err);
-});
+/*
+  There is exactly one `db.initDb()` in this file, and it is the one at the top of the boot chain.
+
+  A second, un-awaited call used to sit here. Both ran at module load against a pool of 35
+  connections, so every boot on Postgres raced its own schema creation against itself — and
+  `CREATE TABLE IF NOT EXISTS` is **not** race-safe between sessions. Reproduced by calling
+  `initDb()` twice concurrently against a fresh database: **20 of 20 runs** had statements refused,
+  with `duplicate key value violates unique constraint "pg_type_typname_nsp_index"`, the same on
+  `pg_class_relname_nsp_index`, and `relation "players" already exists`. Every one of them was
+  swallowed into a `Postgres DDL statement notice` line, which is why it ran for months looking
+  like container-log noise (see claude/decisions-log.md, D187).
+
+  If a second initialisation is ever needed, await the first instead of starting another.
+*/
 

@@ -253,6 +253,36 @@ test.after(async () => {
   }
 });
 
+/**
+ * `test`, with the server's own error lines attached to whatever the body throws.
+ *
+ * This suite drives the legacy server over HTTP, so a failing assertion usually says "expected 200,
+ * got 500" and the reason is in a log this process is holding and nobody prints. CI run 235 failed
+ * one of these 26 tests, passed on a rerun of a superset of the same code, and cost the whole
+ * diagnosis: the spec reporter now names which test failed, and this names *why* — the server's own
+ * log, trimmed to the last sixty lines, in the message of the error the runner prints.
+ *
+ * Attached on failure only, so a green run says nothing extra. See task #111; the one thing this
+ * must not become is a retry.
+ */
+const pgTest = (name, fn) => test(name, { skip }, async (t) => {
+  try {
+    return await fn(t);
+  } catch (err) {
+    /*
+      The whole tail rather than the lines that match an error pattern. A healthy boot log is about
+      1.7KB here, so the last sixty lines are cheap and complete — and a filter is the thing that
+      loses the one line that explains it, which is how this failure stayed undiagnosed once already.
+    */
+    const log = (server && server.serverLog ? server.serverLog.join('') : '').split('\n');
+    if (log.length > 1 && err instanceof Error) {
+      err.message = `${err.message}\n--- the server's own log, last 60 lines ---\n`
+        + `${log.slice(-60).join('\n')}`;
+    }
+    throw err;
+  }
+});
+
 /** A registered, logged-in player, with its own cookie jar. */
 async function newPlayer(tag) {
   const client = makeClient();
@@ -334,7 +364,7 @@ async function grantRole(playerId, role) {
   await appClient.query('UPDATE players SET role = $1 WHERE id = $2', [role, playerId]);
 }
 
-test('following a player writes a follows row on Postgres', { skip }, async () => {
+pgTest('following a player writes a follows row on Postgres', async () => {
   const a = await newPlayer('a');
   const b = await newPlayer('b');
 
@@ -355,7 +385,7 @@ test('following a player writes a follows row on Postgres', { skip }, async () =
   assert.equal(check.body.following, true, 'the follow state must read back');
 });
 
-test('unfollowing removes the row', { skip }, async () => {
+pgTest('unfollowing removes the row', async () => {
   const a = await newPlayer('c');
   const b = await newPlayer('d');
   await a.client(`/api/players/${b.id}/follow`, { method: 'POST' });
@@ -368,7 +398,7 @@ test('unfollowing removes the row', { skip }, async () => {
   assert.equal(rows.length, 0);
 });
 
-test('adding a card to a collection writes a collection_cards row', { skip }, async () => {
+pgTest('adding a card to a collection writes a collection_cards row', async () => {
   const p = await newPlayer('e');
   const created = await p.client('/api/collections', {
     method: 'POST',
@@ -394,7 +424,7 @@ test('adding a card to a collection writes a collection_cards row', { skip }, as
   assert.equal(Number(rows[0].foil), 1, 'the foil flag must survive the write');
 });
 
-test('adding the same card again increments instead of duplicating', { skip }, async () => {
+pgTest('adding the same card again increments instead of duplicating', async () => {
   const p = await newPlayer('f');
   const created = await p.client('/api/collections', {
     method: 'POST',
@@ -421,7 +451,7 @@ test('adding the same card again increments instead of duplicating', { skip }, a
   assert.equal(Number(rows[0].quantity), 2);
 });
 
-test('deleting a collection and restoring it round-trips the cards', { skip }, async () => {
+pgTest('deleting a collection and restoring it round-trips the cards', async () => {
   const p = await newPlayer('g');
   const created = await p.client('/api/collections', {
     method: 'POST',
@@ -458,7 +488,7 @@ test('deleting a collection and restoring it round-trips the cards', { skip }, a
   assert.equal(rows[0].language, 'JA');
 });
 
-test('a follow notifies the followed player', { skip }, async () => {
+pgTest('a follow notifies the followed player', async () => {
   const a = await newPlayer('h');
   const b = await newPlayer('i');
   const res = await a.client(`/api/players/${b.id}/follow`, { method: 'POST' });
@@ -475,7 +505,26 @@ test('a follow notifies the followed player', { skip }, async () => {
   assert.match(follow.message, /started following you/);
 });
 
-test('the boot-time deck_cards sanitizer runs without error on Postgres', { skip }, async () => {
+pgTest('the server boots without the database refusing a single statement', async () => {
+  /*
+    `initDb()` runs 85 `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` statements and
+    swallows every failure into a `Postgres DDL statement notice` line, so a statement that is wrong
+    for this dialect leaves no mark anywhere except that log. This reads it: on a database built
+    from the baseline and the migrations, the boot should refuse nothing at all.
+
+    **It would not have caught the bug that made it worth writing, and that is worth knowing.**
+    `server.js` used to call `initDb()` twice, un-awaited, at module load — a race that refused
+    statements on 20 of 20 cold boots (D187). This suite pre-builds the schema before the server
+    starts, so by the time `initDb()` runs every table already exists, no creation is attempted and
+    nothing races: re-introducing the second call does **not** fail this test. That is what
+    `scripts/guards.js` is for, and the two checks cover different halves.
+  */
+  const notices = server.serverLog.join('').split('\n')
+    .filter((line) => line.includes('Postgres DDL statement notice'));
+  assert.deepEqual(notices, [], `the database refused ${notices.length} statement(s) at boot`);
+});
+
+pgTest('the boot-time deck_cards sanitizer runs without error on Postgres', async () => {
   // It joins scryfall_cards on the UUID column, which is named differently per dialect, and it
   // swallows its own errors into a console line -- so the only way it can be seen to work is to
   // read the log the server produced at boot.
@@ -496,7 +545,7 @@ test('the boot-time deck_cards sanitizer runs without error on Postgres', { skip
 // to prove the ON CONFLICT targets resolve, because a wrong one is rejected outright.
 // ---------------------------------------------------------------------------------------------
 
-test('checking in writes one active_roster row, and re-checking in replaces it', { skip }, async () => {
+pgTest('checking in writes one active_roster row, and re-checking in replaces it', async () => {
   const p = await newPlayer('j');
   const deck = await seedDeck(p.id, 'Roster Deck');
 
@@ -525,7 +574,7 @@ test('checking in writes one active_roster row, and re-checking in replaces it',
   assert.equal(status.body.deckId, other);
 });
 
-test('reporting a pod score rebuilds player and deck standings', { skip }, async () => {
+pgTest('reporting a pod score rebuilds player and deck standings', async () => {
   const a = await newPlayer('k');
   const b = await newPlayer('l');
   // Created before seedPod opens this test's season: registering a player also seeds a zeroed
@@ -640,7 +689,7 @@ test('reporting a pod score rebuilds player and deck standings', { skip }, async
   );
 });
 
-test('a score report refuses anyone not seated at the pod or running the event', { skip }, async () => {
+pgTest('a score report refuses anyone not seated at the pod or running the event', async () => {
   const a = await newPlayer('k3');
   const b = await newPlayer('l3');
   const outsider = await newPlayer('m3');
@@ -739,7 +788,7 @@ test('a score report refuses anyone not seated at the pod or running the event',
 // the expression every reader already joins on.
 // ---------------------------------------------------------------------------------------------
 
-test('repricing a card feeds the shared price cache', { skip }, async () => {
+pgTest('repricing a card feeds the shared price cache', async () => {
   const p = await newPlayer('m');
   const deckId = await seedDeck(p.id, 'Reprice Deck');
   await appClient.query(
@@ -762,7 +811,7 @@ test('repricing a card feeds the shared price cache', { skip }, async () => {
   assert.ok(rows[0].cached_at, 'cached_at is the Postgres column; last_updated does not exist here');
 });
 
-test('repricing the same card again updates the cache row in place', { skip }, async () => {
+pgTest('repricing the same card again updates the cache row in place', async () => {
   const p = await newPlayer('n');
   const deckId = await seedDeck(p.id, 'Reprice Twice Deck');
   await appClient.query(
@@ -794,7 +843,7 @@ test('repricing the same card again updates the cache row in place', { skip }, a
   assert.equal(Number(rows[0].price), 2.22, 'the newer price must overwrite');
 });
 
-test('migration 0013 leaves card_price_cache with a usable upsert target', { skip }, async () => {
+pgTest('migration 0013 leaves card_price_cache with a usable upsert target', async () => {
   // The migration's own job, asserted against the schema the server is actually running on: a
   // statement whose conflict target is the expression index resolves. Before 0013 this raised
   // "there is no unique or exclusion constraint matching the ON CONFLICT specification".
@@ -833,7 +882,7 @@ function hashResetToken(token) {
   return require('node:crypto').createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-test('requesting a reset stores a hashed, player-keyed token', { skip }, async () => {
+pgTest('requesting a reset stores a hashed, player-keyed token', async () => {
   const p = await newPlayer('o');
   const res = await p.client('/api/auth/forgot-password', {
     method: 'POST',
@@ -860,7 +909,7 @@ test('requesting a reset stores a hashed, player-keyed token', { skip }, async (
   assert.equal(res.body.devResetLink, undefined);
 });
 
-test('the reset response is identical for an account that does not exist', { skip }, async () => {
+pgTest('the reset response is identical for an account that does not exist', async () => {
   const p = await newPlayer('p');
   const known = await p.client('/api/auth/forgot-password', {
     method: 'POST',
@@ -874,7 +923,7 @@ test('the reset response is identical for an account that does not exist', { ski
   assert.deepEqual(unknown.body, known.body);
 });
 
-test('redeeming a reset sets the password and consumes the token', { skip }, async () => {
+pgTest('redeeming a reset sets the password and consumes the token', async () => {
   const p = await newPlayer('q');
   await p.client('/api/auth/forgot-password', { method: 'POST', body: { usernameOrEmail: p.username } });
 
@@ -917,7 +966,7 @@ test('redeeming a reset sets the password and consumes the token', { skip }, asy
   assert.equal(again.status, 400, 'a consumed token must not be redeemable');
 });
 
-test('a reset survives a username change between issue and redemption', { skip }, async () => {
+pgTest('a reset survives a username change between issue and redemption', async () => {
   // The legacy row keyed on username and redeemed with `WHERE lower(username) = lower(?)`, so a rename
   // in between matched nobody -- or, if someone took the freed username, a different account entirely.
   const p = await newPlayer('r');
@@ -941,7 +990,7 @@ test('a reset survives a username change between issue and redemption', { skip }
   assert.equal(login.status, 200, 'the renamed account must be able to sign in');
 });
 
-test('the password policy is enforced on register and on reset', { skip }, async () => {
+pgTest('the password policy is enforced on register and on reset', async () => {
   // Legacy's policy was `length >= 8` and nothing else.
   const client = makeClient();
   const weak = await client('/api/auth/register', {
@@ -968,7 +1017,7 @@ test('the password policy is enforced on register and on reset', { skip }, async
   assert.equal(sequential.status, 400, '12345678 cleared the old length-only policy');
 });
 
-test('logging in issues a new session id', { skip }, async () => {
+pgTest('logging in issues a new session id', async () => {
   // Legacy wrote the identity onto whatever session the client arrived with, which is session fixation:
   // an attacker who can plant a session cookie holds an authenticated session once the victim logs in.
   const p = await newPlayer('s');
@@ -983,7 +1032,7 @@ test('logging in issues a new session id', { skip }, async () => {
   assert.notEqual(p.sessionId(), before, 'the session id must change when an identity is established');
 });
 
-test('a password reset signs out a session held elsewhere', { skip }, async () => {
+pgTest('a password reset signs out a session held elsewhere', async () => {
   // The property a reset exists to provide: the reason someone resets a password is that another person
   // is in their account. Legacy wrote `sessions_valid_from` but nothing read it, so the write did nothing
   // -- and a comment in the reset route claimed otherwise, which is worse than no comment.
@@ -1017,7 +1066,7 @@ test('a password reset signs out a session held elsewhere', { skip }, async () =
   assert.equal(after.body.loggedIn, false, 'the other session must be signed out by the reset');
 });
 
-test('a session epoch check does not sign out unrelated accounts', { skip }, async () => {
+pgTest('a session epoch check does not sign out unrelated accounts', async () => {
   const victim = await newPlayer('u');
   const bystander = await newPlayer('v');
   assert.equal((await bystander.client('/api/auth/me')).body.loggedIn, true);
@@ -1042,7 +1091,7 @@ test('a session epoch check does not sign out unrelated accounts', { skip }, asy
   );
 });
 
-test('the recovery link targets the path that always handles a token', { skip }, async () => {
+pgTest('the recovery link targets the path that always handles a token', async () => {
   // Why the link is `/?resetToken=` and not `/reset-password?token=`.
   //
   // `/` always serves the legacy page, which loads `app.js` -- the script that reads the token out of the
@@ -1076,7 +1125,7 @@ test('the recovery link targets the path that always handles a token', { skip },
   }
 });
 
-test('email verification works end to end on the legacy server', { skip }, async () => {
+pgTest('email verification works end to end on the legacy server', async () => {
   const p = await newPlayer('x');
   const requested = await p.client('/api/auth/verify-email/request', { method: 'POST', body: {} });
   assert.equal(requested.status, 200, `verify request: ${JSON.stringify(requested.body)}`);
@@ -1107,7 +1156,7 @@ test('email verification works end to end on the legacy server', { skip }, async
   assert.equal(replay.status, 400, 'a consumed verification token must not be redeemable');
 });
 
-test('a verification token does not verify an address changed since it was issued', { skip }, async () => {
+pgTest('a verification token does not verify an address changed since it was issued', async () => {
   const p = await newPlayer('y');
   await p.client('/api/auth/verify-email/request', { method: 'POST', body: {} });
   const row = await appClient.query('SELECT id FROM email_verifications WHERE player_id = $1', [p.id]);
@@ -1125,7 +1174,7 @@ test('a verification token does not verify an address changed since it was issue
   assert.equal(after.rows[0].email_verified_at, null);
 });
 
-test('signing out everywhere ends other sessions and the calling one', { skip }, async () => {
+pgTest('signing out everywhere ends other sessions and the calling one', async () => {
   const p = await newPlayer('z');
   const elsewhere = makeClient();
   const signedIn = await elsewhere('/api/auth/login', {
@@ -1151,7 +1200,7 @@ test('signing out everywhere ends other sessions and the calling one', { skip },
 // and it is unset on the VM. The harness sets no affiliate env vars, so this exercises the default.
 // ---------------------------------------------------------------------------------------------
 
-test('the affiliate config serves the documented id with no env var set', { skip }, async () => {
+pgTest('the affiliate config serves the documented id with no env var set', async () => {
   const res = await makeClient()('/api/config/affiliates');
   assert.equal(res.status, 200);
   assert.equal(

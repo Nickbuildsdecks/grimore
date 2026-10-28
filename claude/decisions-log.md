@@ -9522,3 +9522,87 @@ and a future search that peeks fails the suite instead of shipping.
 The "Next" item is corrected rather than left standing. The honest version of the opponent model —
 the redacted view *plus* what their deck could be holding and whether their open mana pays for it —
 is still the missing piece for any deeper search, and that is what the entry now says.
+
+## D187 — The legacy server initialised its database twice, and raced itself every boot
+
+**Decision: delete the second `db.initDb()` from `server.js`, guard against its return in
+`scripts/guards.js`, and record that the Postgres container log's refused statements were evidence
+rather than noise — which is the one thing task #111 had written off.**
+
+### What was there
+
+```js
+// line 558
+db.initDb().then(async () => { /* the whole boot chain */ });
+// line 8145
+db.initDb().then(() => { console.log("Database initialized successfully."); });
+```
+
+Two un-awaited calls, both starting at module load, against a pool with `max: 35`. `initDb()` runs
+**85** `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` statements and swallows each
+failure into a `console.warn("Postgres DDL statement notice:", …)`.
+
+`CREATE TABLE IF NOT EXISTS` is **not race-safe between sessions** in Postgres: two sessions that
+both find the table missing both try to create it, and the loser fails inserting into `pg_type` or
+`pg_class` rather than being quietly skipped. So every cold boot of the legacy server on Postgres
+raced its own schema creation.
+
+### Reproduced, 20 of 20
+
+A fresh database per run, `initDb()` called twice concurrently in one process, 20 runs:
+
+```
+20 of 20 concurrent double-init runs hit an error
+
+duplicate key value violates unique constraint "pg_type_typname_nsp_index"
+duplicate key value violates unique constraint "pg_class_relname_nsp_index"
+relation "players" already exists
+type "players" already exists
+relation "deck_cards" already exists
+relation "card_price_cache" already exists
+relation "price_overrides" already exists
+```
+
+Not one run in twenty was clean. The outcome was benign — every refusal is an "already exists"
+variant, so the schema ends up complete — which is exactly why it survived: the symptom was a log
+line nobody read, on a boot that worked.
+
+### The note this corrects
+
+Task #111 — the intermittent `legacy-postgres` failure — had this written down:
+
+> A service container's error log records every statement the database refused, not anything the
+> program minded — do not go back down that path.
+
+That sentence is right about the `column "id" does not exist` lines it was written for (`db.js`'s
+`run()` appends `RETURNING id` and retries without it, by design). It was **wrong as a general
+rule**, and the generalisation hid this: the refused DDL in the same log was the fingerprint of a
+double initialisation. The lesson is narrower than either version — a refused statement is not
+automatically a problem, and it is not automatically noise either; it has to be attributed to the
+code that issued it.
+
+### Is this the flake? Unproven, and #111 stays open
+
+It is the right shape — a race, on a cold database, invisible locally — but the race's observed
+outcome is an "already exists" refusal that leaves the schema correct, and the suite passed 25 of 25
+cold-start runs locally both before and after the fix. So this is a real bug fixed on its own merits,
+not a diagnosis. #111 keeps its instruction to wait for an occurrence and to add no retry.
+
+### What guards it
+
+A **source-text guard**, not a test, and the reason is worth keeping: the legacy Postgres suite
+builds its database from the v2 baseline and every migration *before* the server boots, so by the
+time `initDb()` runs every table already exists, no creation is attempted, and nothing races.
+Re-introducing the second call does not fail that suite — measured, not assumed. `guards.js` now
+counts the calls and fails on anything but one.
+
+Two smaller things from the same session, both about making the next occurrence readable:
+
+- Every test in `test/postgres-write-paths.test.js` goes through a `pgTest` wrapper that attaches
+  **the server's own log, last sixty lines**, to whatever the body throws. The suite drives the
+  legacy server over HTTP, so a failure usually reads "expected 200, got 500" with the reason in a
+  log this process is holding and nobody printed. The whole tail rather than lines matching an error
+  pattern, because a healthy boot log is 1.7KB and a filter is what loses the line that explains it.
+- A new test asserts the boot refuses **no** statement at all. It could not have caught the race, for
+  the reason above, but it catches the other half: a statement that is simply wrong for this dialect,
+  which is what this file exists for.
