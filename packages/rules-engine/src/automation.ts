@@ -567,15 +567,21 @@ function triggerMatches(
       return true;
     }
     /*
-      "Whenever **another** card is put into a graveyard from anywhere."
+      "Whenever **another** card is put into a graveyard from anywhere" — or this one.
 
-      The self-exclusion is the whole of the matcher and it is not a formality: a Planar Void that
-      is destroyed would otherwise exile itself on the way down, which is the one reading of the
-      card the printed word "another" exists to rule out. Nothing else is asked, because the event
-      carries no options — see the note on its declaration in `scriptTypes.ts`.
+      `another` is the default and the self-exclusion is not a formality: a Planar Void that is
+      destroyed would otherwise exile itself on the way down, which is the one reading of the card
+      the printed word "another" exists to rule out. `self` is the other card shape — Rancor's
+      "when this is put into a graveyard from anywhere" — and it needs the watcher loop in `raise`
+      to ask a card that is already in the graveyard, the way it does for a death. Nothing else is
+      asked: the event carries no `by` and no `what`, for the reason its declaration gives.
     */
-    case 'to-graveyard':
-      return !isSubject;
+    case 'to-graveyard': {
+      const who = want.who ?? 'another';
+      if (who === 'self') return isSubject;
+      if (who === 'another') return !isSubject;
+      return true;
+    }
     case 'step': {
       const e = event as Extract<TriggerEvent, { kind: 'step' }>;
       if (e.step !== want.step) return false;
@@ -806,7 +812,12 @@ function raise(
     // watcher has to still be on the battlefield to be watching.
     // A `dies` or `leaves` trigger fires from wherever the permanent went, but only for the
     // permanent it happened to: any other watcher has to still be on the battlefield.
-    const fromGraveyard = (event.kind === 'dies' || event.kind === 'leaves') && id === subject;
+    // `to-graveyard` is the third of those and the one where it is the whole card: Rancor's
+    // trigger is *about* the graveyard it is now in, so a watcher that has to be on the
+    // battlefield could never fire it. Still only for the subject — a card sitting in a graveyard
+    // watches nothing else that arrives there.
+    const fromGraveyard = (event.kind === 'dies' || event.kind === 'leaves'
+      || event.kind === 'to-graveyard') && id === subject;
     if (!fromGraveyard && inst.zone !== 'battlefield') continue;
     // From the instance resolved above rather than by id, so a vanished token's own script is
     // still found: `scriptOf` reads `instances`, and a token that ceased to exist is not in it.

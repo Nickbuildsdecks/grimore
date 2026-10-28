@@ -5653,13 +5653,24 @@ const SAVAGE_TWISTER: CardScript = {
 };
 
 /**
- * Rancor: the Aura that comes back, and the first `dies` trigger in the pool on a permanent that is
- * not a creature.
+ * Rancor: the Aura that comes back, and the card that reads a graveyard it is in itself.
  *
- * "When Rancor is put into a graveyard from the battlefield" is a death (CR 700.4) like any other,
- * and `relocate` has recorded it for every permanent since the engine was written — so the trigger
- * is `what: 'permanent'` and nothing else had to change. What makes the card is the interaction:
- * answering the creature does not answer the Aura, so a removal spell trades one-for-nothing.
+ * What makes the card is the interaction — answering the creature does not answer the Aura, so a
+ * removal spell trades one card for nothing — and what makes the *trigger* interesting is one
+ * word of its printed text. It was written here as a `dies` trigger (`what: 'permanent'`, because
+ * an Aura is not a creature), which is the old printing: "put into a graveyard **from the
+ * battlefield**". The card has read **"from anywhere"** for years, and the three other anywheres
+ * were invisible to that event: a Rancor discarded out of a hand, milled off a library, or put
+ * into a graveyard by anything that is not a death came back in the old version and does now.
+ *
+ * So it is a `to-graveyard` trigger with `who: 'self'` — the option that event grew for this card,
+ * since it was written for a Planar Void whose printed word is "another" (D172, D179). Two things
+ * travel with it. The watcher fires from the graveyard it has just reached, which `raise` now
+ * allows for a `to-graveyard` subject the way it always has for a death. And the effect is
+ * **guarded**: by the time the ability resolves the card may have been exiled — by the Planar Void
+ * whose own trigger was on the stack beside it, or by a Scavenging Ooze in between — and an
+ * unguarded return would pull it back out of exile. An ability does as much as it can and no more
+ * (CR 608.2), so a Rancor that is no longer in a graveyard stays where it is.
  */
 const RANCOR: CardScript = {
   name: 'Rancor',
@@ -5668,9 +5679,11 @@ const RANCOR: CardScript = {
     effect: { power: 2, keywords: ['trample'] },
   },
   triggers: [{
-    on: { kind: 'dies', who: 'self', what: 'permanent' },
+    on: { kind: 'to-graveyard', who: 'self' },
     description: 'return Rancor to its owner’s hand',
-    effect: (c) => moveToHand(c.state, [c.source]),
+    effect: (c) => (c.state.instances[c.source]?.zone === 'graveyard'
+      ? moveToHand(c.state, [c.source])
+      : c.state),
   }],
 };
 

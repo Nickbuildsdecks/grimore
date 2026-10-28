@@ -372,16 +372,27 @@ export type TriggerEvent =
    * finished resolving. Only the first of those is a death, which is why this is its own event and
    * not a `who` on that one — see `GameState.toGraveyard`.
    *
-   * **"Another" is built in and there are no options.** The one card in the pool that reads this
-   * event is Planar Void, which says "another card", means any player's graveyard, and does not
-   * care what kind of card it was. A `by` and a `what` would both be fields nothing fires, and the
-   * rule this engine keeps is that an option with no card behind it is worse than no option:
-   * `becomes-tapped` is the trigger with no card at all and it is deliberate, `draws` has no `any`
-   * for the same reason. The day a card wants "whenever a *creature* card is put into *your*
-   * graveyard", the event already carries the subject and the seat to ask with.
+   * **`who` defaults to `another`, which is the opposite of every other event here**, and the
+   * default is the card rather than a convention: Planar Void was written first and says "another
+   * card", so a trigger that says nothing means what that card means. `self` is Rancor — "when
+   * Rancor is put into a graveyard from anywhere, return it to its owner's hand" — which is the
+   * one shape that needs a watcher to fire from the graveyard it has just reached, the way a
+   * `dies` trigger fires from the one its creature is in.
+   *
+   * There is still no `by` and no `what`. Both would be fields nothing fires, and the rule this
+   * engine keeps is that an option with no card behind it is worse than no option: `becomes-tapped`
+   * is the trigger with no card at all and it is deliberate, `draws` has no `any` for the same
+   * reason. The day a card wants "whenever a *creature* card is put into *your* graveyard", the
+   * event already carries the subject and the seat to ask with.
    */
   | {
       readonly kind: 'to-graveyard';
+      /**
+       * Which card the trigger is about: `another` (the default, Planar Void), `self` (Rancor), or
+       * `any`. The same three words the five board events take, so a reader who knows one knows
+       * this — except for the default, which is `another` here and `self` there.
+       */
+      readonly who?: 'self' | 'another' | 'any';
       /**
        * Set by the engine when it raises the event: **which** card arrived in a graveyard, so the
        * ability can say "exile that card" (CR 400.7). Read through `EffectContext.subject`, the

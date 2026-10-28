@@ -5003,7 +5003,7 @@ const RANCOR: CardDef = {
   typeLine: 'Enchantment \u2014 Aura',
   manaCost: '{G}',
   cmc: 1,
-  oracleText: 'Enchant creature\nEnchanted creature gets +2/+0 and has trample.\nWhen Rancor is put into a graveyard from the battlefield, return Rancor to its owner\u2019s hand.',
+  oracleText: 'Enchant creature\nEnchanted creature gets +2/+0 and has trample.\nWhen Rancor is put into a graveyard from anywhere, return Rancor to its owner\u2019s hand.',
   colors: ['G'],
 };
 

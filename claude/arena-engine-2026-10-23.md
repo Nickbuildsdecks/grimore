@@ -4183,8 +4183,9 @@ in a card pool is easier to see from a card than from a list of decks.
 **Kindle Grove** is eight new cards and **no new machinery**, which is what the entry is really
 about. Ruric Thar, the Unbowed is a `spell-cast` trigger plus `mustAttack` on an `all-creatures`
 scope; Gruul Ragebeast is the `etb` event's `subject` plus the same `fight` Prey Upon already had;
-Rancor is a `dies` trigger on a permanent that is not a creature; Thragtusk is `leaves`, which fires
-for exile and bounce as well as death. The only refactor was pulling `fight` out of Prey Upon so
+Rancor is a `dies` trigger on a permanent that is not a creature (and is a `to-graveyard` trigger
+now — see *Rancor, from anywhere* below); Thragtusk is `leaves`, which fires for exile and bounce as
+well as death. The only refactor was pulling `fight` out of Prey Upon so
 both cards share it — both powers have to be read before either is dealt, and writing that twice
 gets the simultaneity wrong eventually.
 
@@ -4717,6 +4718,29 @@ where nine cards target. Measured in **Forge Alliance** instead, against that de
 and 26 equips in 37 games) and the record went **617–669 of 1152** across four seed sets. A card the
 bot reaches for eagerly while losing is a trap rather than an option, so the definition, the script
 and the tests are gone: D144's precedent, *built, measured, deleted*.
+
+### Rancor, from anywhere — and the self-subject half of the newest event
+
+Rancor has been in the pool since the thirteenth deck, scripted as a `dies` trigger on a permanent
+that is not a creature. That is the **old** printing: the card says *put into a graveyard from
+**anywhere***, and the three other anywheres — a discard, a mill, anything that is not a death —
+were invisible to that event. D172 had built the event for exactly that difference and had given it
+no way to watch *itself*, because the card it was built for (Planar Void) says "another".
+
+So `to-graveyard` has a `who` now, with `another` as its default — the opposite of the five board
+events, and the default is the card rather than a convention, since every script written against
+this event so far means "another". `who: 'self'` brings two things with it. The watcher fires **from
+the graveyard it has just reached**, which `raise` previously allowed only for the subject of a
+`dies` or a `leaves`; and the effect is **guarded**, because by the time the ability resolves the
+card may have been exiled by the Planar Void whose own trigger was on the stack beside it (CR
+608.2 — an ability does as much as it can and no more).
+
+The two new tests are the two new directions: a Rancor discarded out of hand by a Mind Rot, never
+cast and never on the battlefield, back in hand a moment later; and the Planar Void, which is the
+one card in the pool that beats it. Worth nothing in a win rate and said so — the paths it adds are
+rare — but `cast-counts` has the number that makes the card: Kindle Grove casts its two copies
+**139 times in the 64 games it draws one**, which is 217%, and that was true before this fix as
+well. It ships on fidelity, which is the same reason the Squelch narrowing shipped.
 
 ## Next
 

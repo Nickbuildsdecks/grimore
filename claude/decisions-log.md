@@ -7398,7 +7398,7 @@ vocabulary has been ahead of the pool for a long time; this is what that is wort
 | Burning-Tree Emissary | an `etb` trigger and `addToPool` |
 | Gruul Ragebeast | the `etb` event's `subject`, plus the `fight` Prey Upon already had |
 | Savage Twister | the {X} that has been in the engine since the fifth deck |
-| Rancor | a `dies` trigger on a permanent that is **not** a creature |
+| Rancor | a `dies` trigger on a permanent that is **not** a creature (corrected in D179: the card says *from anywhere*, so it is a `to-graveyard` trigger) |
 | Thragtusk | `leaves`, which fires for exile and bounce as well as death |
 | Gruul Guildgate | the `guildgate` helper |
 
@@ -8761,6 +8761,89 @@ the first), and both were priced rather than argued.
 And the reshape is not getting a third guess. The next thing for this deck is an instrument, not a
 list: **what takes its creatures away** — blockers, removal, or its own costs — because the three
 answers point at three different decks and two reshapes have now been priced on a hunch and both
-measured worse. That is #158. The one card the reshape wanted at the right price is **Rancor**
-({G}, +2/+0 and trample, and it comes back when it reaches the graveyard), which needs the
-`to-graveyard` event to grow a self-subject filter first (#157).
+measured worse. That is #158.
+
+**One sentence of this entry was wrong when it was written and the correction is D179.** It said the
+card the reshape wanted at the right price is a **Rancor** — {G} for +2/+0 and trample that comes
+back when it reaches a graveyard — and that the event needed a self-subject filter before it could
+be written. The event did need the filter. But Rancor has been in the pool since the thirteenth deck
+(D162), two copies in Kindle Grove, and **Blight Vector cannot run it at all**: its Planar Void
+exiles every card that reaches a graveyard, which is the third time that card has turned out to be
+incompatible with something its own deck would otherwise want.
+
+## D179 — Rancor says "from anywhere", and the event grows the option that lets it
+
+**Decision: give `to-graveyard` a `who` filter with `another` as its default, move Rancor's trigger
+onto it, and correct three places that described the card by its old printing. The engine gains the
+self-subject half of its newest event; the card gains the three directions a death could not see.**
+
+### What was actually wrong, which is one word of card text
+
+Rancor has been in the pool since the thirteenth deck (D162), two copies in Kindle Grove, scripted
+as `{ kind: 'dies', who: 'self', what: 'permanent' }` — the first and still the only `dies` trigger
+in the pool on a permanent that is not a creature. That is the **old** printing: *"when Rancor is
+put into a graveyard **from the battlefield**"*. The card has read **"from anywhere"** for years,
+and D172 built the event for exactly that difference: a card discarded out of a hand, milled off a
+library, or put into a graveyard by anything that is not a death were all invisible to `dies`.
+
+So this is a fidelity fix with an engine capability under it, not a new card. The capability is the
+part worth describing.
+
+### `who` on `to-graveyard`, and why its default is the opposite of every other event's
+
+The five board events (`etb`, `dies`, `attacks`, `blocks`, `becomes-blocked`) default `who` to
+`self`, because a trigger that says nothing watches its own permanent. `to-graveyard` defaults to
+**`another`**, and the default is a card rather than a convention: the event was written for Planar
+Void, whose printed word is "another", and every script written against it means that. A default of
+`self` would have silently changed the one card already using it.
+
+Two things travel with `who: 'self'`:
+
+- **The watcher fires from the graveyard it has just reached.** `raise` skips any watcher that is
+  not on the battlefield, with an exception for the subject of a `dies` or a `leaves` — a creature
+  that died is in a graveyard by the time its own trigger is offered. `to-graveyard` is the third
+  member of that exception now, and for this card it is the whole thing: the trigger is *about* the
+  graveyard the card is in.
+- **The effect is guarded.** By the time the ability resolves the card may have been exiled — by the
+  Planar Void whose own trigger was on the stack beside it, or by a Scavenging Ooze in between — and
+  an unguarded return would pull it back out of exile. An ability does as much as it can and no more
+  (CR 608.2), so a Rancor that is no longer in a graveyard stays where it is.
+
+There is still no `by` and no `what` on this event, for the reason its declaration gives: an option
+with no card behind it is worse than no option.
+
+### Two new tests, and they are the two new directions
+
+The battlefield half already had a test and still passes. The new ones are a **discard** — a Rancor
+that was never cast, taken out of hand by Tidal Mind's Mind Rot, back in hand a moment later — and
+the **Planar Void**, which is the one card in the pool that beats it: both are `to-graveyard`
+watchers of the same event, and whichever order they resolve in the Rancor ends in exile. 925 engine
+tests green.
+
+### What it is worth, said honestly
+
+**Unmeasurable in a win rate, and the usage number is the interesting one instead.** `cast-counts`
+over 144 games says Kindle Grove casts its two Rancors **139 times in the 64 games it draws one** —
+217%, more than twice per game, which is what a card that comes back is worth and was already worth
+before this change. The paths this fix adds are a Rancor discarded or milled, which in a deck with
+no self-discard happens when an opponent's Mind Rot or Tome Scour finds it: rare enough that no
+288-game probe could see the difference. It ships on fidelity, which is D173's precedent — *the play
+was wrong* — and here the printed card was being played incorrectly.
+
+### Three corrections, because the old description is in three places
+
+- `claude/decisions-log.md` D162's capability table said *"Rancor | a `dies` trigger on a permanent
+  that is not a creature"*. Annotated rather than rewritten: it was true of the script, and the
+  script was wrong about the card.
+- `claude/arena-engine-2026-10-23.md` said the same thing in the Kindle Grove section.
+- `claude/play-realm-setup.md` told a player the card *"comes back to your hand when it leaves the
+  battlefield"*, which is the sentence a person would have found to be false at the table. It now
+  says from anywhere, names the three directions, and names the Planar Void as the answer.
+
+And one correction inside **D178**, written an hour earlier in this same session: it said the card
+the Blight Vector reshape wanted was a Rancor that *needed* the self-subject filter to exist. The
+filter did need building. The card did not — it was already in the pool — and Blight Vector cannot
+play it in any case, because its own Planar Void exiles it. That is the third thing the Void has
+turned out to be incompatible with inside its own deck (a Raise Dead in D172, a Naturalize's own
+resolution in the same entry, and now this), and it is the clearest argument yet that a deck running
+graveyard denial has to be built as a denial deck rather than one with a hate card in it.

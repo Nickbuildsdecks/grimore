@@ -12670,6 +12670,83 @@ describe('a card put into a graveyard from anywhere (CR 400.7)', () => {
   });
 });
 
+describe('Rancor, from anywhere rather than from the battlefield', () => {
+  /*
+    The other half of `to-graveyard`, and the half Planar Void's wording ruled out.
+
+    Rancor was scripted with a `dies` trigger, which is the *old* printing — "put into a graveyard
+    from the battlefield". The card has read **"from anywhere"** for years, and the three other
+    anywheres were invisible to that event. So it is a `to-graveyard` trigger now, with the `who:
+    'self'` the event grew for it: the default there is `another`, because the event was written
+    for a Planar Void whose printed word is "another", and a watcher that fires from the graveyard
+    it has just reached is what a `dies` trigger has always been allowed to do and this one was not.
+
+    The battlefield half is covered by the thirteenth deck's own tests above. These two are the
+    directions a `dies` trigger could never have seen, and the one card in the pool that beats it.
+  */
+  const grove = (setup: {
+    hands?: readonly string[];
+    mine?: readonly string[];
+    theirs?: readonly string[];
+    opponent?: string;
+  }): GameState => advanceTo(arena({
+    decks: { 0: 'kindle-grove', 1: setup.opponent ?? 'tidal-mind' },
+    ...(setup.hands === undefined ? {} : { hands: { 0: setup.hands } }),
+    battlefield: {
+      0: ['Forest', 'Forest', 'Forest', 'Mountain', ...(setup.mine ?? [])],
+      // Named by the caller rather than defaulted: the two tests sit across from two different
+      // decks, and a land this one does not run is a card `arena` cannot find to put there.
+      1: [...(setup.theirs ?? [])],
+    },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('comes back from a discard, which no death event could have seen', () => {
+    // Never cast, never on the battlefield: a Rancor in hand, discarded by a Mind Rot, is in the
+    // hand again a moment later. The second card in hand is what the discard takes instead.
+    // Tidal Mind holds the pool's Mind Rot, and an Island and two Swamps pay for it.
+    let s = grove({ hands: ['Rancor', 'Shivan Dragon'], theirs: ['Island', 'Swamp', 'Swamp'] });
+    const rancor = find(s, 0, 'hand', 'Rancor');
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Mind Rot'), toZone: 'hand' });
+    s = tapAllLands(s, 1);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Mind Rot'),
+      targets: [{ kind: 'player', seat: 0 }],
+    }), 40);
+    expect(s.instances[rancor]!.zone).toBe('hand');
+  });
+
+  it('but a Planar Void takes it away for good, which is why one deck cannot run both', () => {
+    /*
+      Two triggers on one event, and the Void's exile is the one that matters.
+
+      Both are `to-graveyard` watchers — the Void says "another card", the Rancor says this one —
+      so a Rancor reaching a graveyard while a Void is on the table raises both, and the Rancor
+      does not come back: if the exile resolves first the return finds no card in a graveyard and
+      does nothing (CR 608.2, and the guard in the script), and if the return resolves first the
+      exile has nothing left to exile but the next trip to the graveyard starts the race again.
+      D172 found the same conflict between the Void and a Raise Dead, which is why the infect deck
+      that wanted a Rancor cannot have one.
+    */
+    let s = grove({
+      hands: ['Rancor'], mine: ['Llanowar Elves'],
+      opponent: 'blight-vector', theirs: ['Swamp', 'Swamp', 'Planar Void'],
+    });
+    s = tapAllLands(s, 0);
+    const elves = find(s, 0, 'battlefield', 'Llanowar Elves');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Rancor'),
+      targets: [{ kind: 'card', id: elves }],
+    }), 40);
+    const rancor = find(s, 0, 'battlefield', 'Rancor');
+    // The creature goes, the Aura falls off into the graveyard (CR 704.5m), and the Void has it.
+    s = drain(apply(s, { type: 'card:move', by: 0, card: elves, toZone: 'graveyard' }), 40);
+    expect(s.instances[rancor]!.zone).not.toBe('hand');
+    expect(s.instances[rancor]!.zone).toBe('exile');
+  });
+});
+
 describe('Woe Strider: escape’s second card, and the outlet that comes back', () => {
   /*
     A mechanic with one card has one card's worth of coverage, and escape shipped with one.

@@ -336,8 +336,12 @@ Elves, two Rampant Growths), and then Thragtusks, a Shivan Dragon, a Pelakka Wur
 Ragebeast. It is the only deck here whose removal is mostly **combat**: two Prey Upons and the
 Ragebeast point your creature at theirs rather than pointing a spell at anything, which is the
 red-green trade — the answer costs a creature instead of a card. Two cards are worth knowing at the
-table. **Rancor** is +2/+0 and trample for one mana that **comes back to your hand** when it leaves
-the battlefield, so killing the creature does not answer the Aura. And **Thragtusk** gains five as
+table. **Rancor** is +2/+0 and trample for one mana that **comes back to your hand** whenever it
+reaches a graveyard — from the battlefield, from your hand if somebody makes you discard it, or off
+the top of your library if somebody mills it — so killing the creature does not answer the Aura and
+neither does making you throw it away. The one card that does is a **Planar Void**, which exiles it
+on the way past; the bot casts the two copies in this deck **139 times in the 64 games it draws
+one**, which is what a card that will not stay gone is worth. And **Thragtusk** gains five as
 it arrives and leaves a 3/3 behind when it *leaves* — exiled or bounced as well as killed — so a
 removal spell spent on it trades a card for half a card and five life. **Ruric Thar, the Unbowed**
 leads it, and he is a tax on the whole table including his own side: six damage to **whoever** casts
