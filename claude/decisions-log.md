@@ -9606,3 +9606,106 @@ Two smaller things from the same session, both about making the next occurrence 
 - A new test asserts the boot refuses **no** statement at all. It could not have caught the race, for
   the reason above, but it catches the other half: a statement that is simply wrong for this dialect,
   which is what this file exists for.
+
+## D188 — Four keywords that read the attack, and the one field they needed
+
+**Decision: script battalion, mentor, renown and battle cry; add one field to the `attacks` event
+(`withAtLeast`, the sibling of exalted's `alone`); and report that the first slot chosen for renown
+was wrong, which `cast-counts` said long before any win rate could.**
+
+### What the trigger vocabulary was missing
+
+The engine's seventeen keywords are all facts about a permanent — flying, deathtouch, first strike —
+and its combat triggers could already say "whenever this attacks", with `who`, `of` and `attacked`
+on the event. What none of them could say is anything about the **shape of the declaration**.
+
+`alone` was already there for exalted, and its comment says why it has to be: "attacks alone" is a
+fact about the *declaration*, and a creature removed from combat before the trigger resolves leaves
+a board that cannot be counted (CR 506.4). Battalion is the same question with a number, so the
+event now carries `declared` (how many creatures were declared) and a trigger may ask
+`withAtLeast: 3`. `alone` is kept separate rather than folded in, because it means *exactly* one and
+five entries depend on it; `withAtLeast` is **at least** N, which is what every printed card that
+counts attackers says.
+
+That is the whole engine change. The other three needed nothing:
+
+- **Mentor** is a target filter: attacking, and lesser power than the source. Both are read off the
+  board as the trigger goes on the stack — `state.combat.attacks` is the declaration and
+  `characteristicsOf` is the comparison — and `TargetSpec.filter` has taken a `source` since D35.
+- **Renown** is an intervening-if about a state the creature holds, so the engine's answer is a
+  counter: `RENOWNED`, beside `REGENERATION` and `UNEARTHED`. A creature that leaves and comes back
+  is a new object with no counters and renown is available again, which is what the rules say.
+- **Battle cry** reads the declaration in its *effect* rather than its condition: every other
+  attacker in `state.combat.attacks` gets +1/+0, as the list stands when it resolves.
+
+One thing worth writing down because it was checked rather than assumed: renown needs no `to:
+'player'` option on `combat-damage`, because the engine raises that event **only** for damage that
+actually took a player's life total down. Blocked damage and a swing stopped by a Fog raise nothing.
+
+### The cards
+
+```
+card               deck            replaced                       casts in 96 games
+Firemane Avenger   forge-alliance  Hellrider (28%, 7 casts)        25, every game in hand
+Sunhome Stalwart   forge-alliance  Firebrand Archer (63%, 20)      29
+Goblin Wardriver   kindle-grove    Pelakka Wurm (18%, 3 casts)     15
+Topan Freeblade    verdant-guard   Soul Warden (60%, 25 casts)     27
+```
+
+The Pelakka Wurm's **3 casts in 96 games** is the lowest usage of any nonland card ever measured in
+this pool; Delta Bloom keeps the other copy, where seven mana is reachable.
+
+### What they are worth
+
+Probing the revert — the new card out, the old one back — on two seed sets of 288:
+
+```
+deck            revert, seeds 3300   seeds 5100
+forge-alliance        -9                -36
+verdant-guard        -10                 -3
+kindle-grove          -2                 +8
+```
+
+**Forge Alliance is the real result: −9 and −36, and −36 is outside the ±20 floor.** Two arms of the
+same sign with one of them large is as close to a settled card result as this instrument gets. It is
+also a **two-card** change, so it cannot be split between battalion and mentor from these numbers —
+what it says is that the pair beats the pair it replaced, in the deck that attacks with the most
+creatures.
+
+**Verdant Guard is level and positive** (−10 and −3, both inside the floor), which is the same
+reading D183's Hellspark shipped on. **Kindle Grove is a wash** (−2 and +8, mixed signs): battle cry
+costs the deck nothing against a seven-drop it cast three times in 96 games, and it ships for the
+mechanic and for the curve rather than for a win rate.
+
+### The slot was wrong first, and the instrument said so
+
+Renown went into **Skyward Writ** first — the other white deck, the one whose plan is to still be
+alive later, which a 2/2 with vigilance that grows looked built for. `cast-counts`:
+
+```
+Topan Freeblade    3 casts in the 16 games it was in hand   (19%)
+Leonin Skyhunter  44 casts, same cost
+Omenspeaker       53 casts, same cost
+```
+
+Three casts in 96 games. The obvious suspect was the mana-reservation rule (D152) — a deck holding
+two mana for a Counterspell is exactly the deck that cannot afford a two-drop — and it was wrong:
+with `reserveForAnswers: false` the same card is cast **twice**. It was simply the 61st-best card in
+a deck that already has two better two-drops and bigger things to do by turn four.
+
+In **Verdant Guard**, in place of the last Soul Warden, the same card is cast **27 times in 42**.
+Same card, same cost, three times the usage.
+
+**And a correction to a number this entry nearly published.** The first probe of the Verdant Guard
+slot replaced its **Centaur Courser** and measured 50 casts in 48 — higher again. That is not the
+slot that shipped: cutting the Courser breaks **49 tests** that use it as the board's default
+creature, so the shipped list cuts the Soul Warden, and the number in the deck comment is the one
+this list actually produces. A measurement taken against a change that was not made is worth exactly
+nothing, however good it looks.
+
+### Four tests repointed
+
+Cutting cards moves the boards other tests stand on: the two Soul Warden tests and a Fire // Ice
+board now use Dawn Tithe (which keeps its Soul Warden), and the renown test uses Verdant Guard. That
+is the fourth time a deck change has done this, and the pattern is stable enough to be a habit:
+after cutting a card, run the suite before measuring anything.

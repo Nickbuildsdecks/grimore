@@ -5036,6 +5036,49 @@ assertions that stop it being vacuous — in about a second, so a future search 
 suite rather than shipping (D186).
 
 
+### Keywords that read the attack, and the one field they needed
+
+Seventeen keywords, all of them facts about a permanent, and combat triggers that could already say
+"whenever this attacks" with `who`, `of` and what it was `attacked` into. What the vocabulary could
+not say was anything about the **shape of a declaration**.
+
+Exalted's `alone` was the one exception and its comment says why it has to live on the event: a
+creature removed from combat before the trigger resolves leaves a board that cannot be counted
+(CR 506.4). Battalion is the same question with a number, so the event carries `declared` now and a
+trigger may ask `withAtLeast: 3`. `alone` stays separate — it means *exactly* one, and this means
+**at least** N, which is what every printed card that counts attackers says. That is the entire
+engine change for four keywords.
+
+- **Firemane Avenger** ({2}{R}{W} 3/3 flier, Forge Alliance) — battalion. Three damage anywhere and
+  three life on any turn three creatures attack.
+- **Sunhome Stalwart** ({1}{W} 2/1 first strike, Forge Alliance) — mentor. A target filter rather
+  than a new primitive: *attacking*, and *lesser power than the source*, both read off
+  `state.combat.attacks` and `characteristicsOf` as the trigger goes on the stack.
+- **Topan Freeblade** ({1}{W} 2/2 vigilance, Verdant Guard) — renown 1. "If it isn't renowned" is an
+  intervening-if about a state the creature holds, so the answer is a counter (`RENOWNED`, beside
+  `REGENERATION` and `UNEARTHED`); a creature that leaves and comes back is a new object and renown
+  is available again, which is the rule.
+- **Goblin Wardriver** ({1}{R} 2/2, Kindle Grove) — battle cry. The one whose *effect* reads the
+  declaration: every other attacker gets +1/+0, as the list stands when it resolves.
+
+Renown needs no "to a player" option on `combat-damage`, which was checked rather than assumed: the
+engine raises that event only for damage that actually took a player's life total down, so blocked
+damage and a swing stopped by a Fog raise nothing at all.
+
+**What they measured.** Probing each revert on two seed sets of 288: Forge Alliance **−9 and −36**,
+Verdant Guard **−10 and −3**, Kindle Grove **−2 and +8**. The Forge Alliance pair is the real result
+— two arms of the same sign with one outside the ±20 floor — and it is a two-card change, so it says
+the pair beats the pair it replaced rather than anything about battalion or mentor alone. The other
+two are level: a positive sign twice for renown, a wash for battle cry, which ships for the mechanic
+and for taking a seven-drop out of a deck that cast it three times in 96 games.
+
+**And the slot mattered more than the card.** Renown went into Skyward Writ first and was cast
+**3 times in the 16 games it was in hand**, against 44 for a Leonin Skyhunter and 53 for an
+Omenspeaker at the same cost. Not the mana-reservation rule (2 casts with it switched off) — just
+the 61st-best card in a deck with two better two-drops. The same card in Verdant Guard is cast
+**27 times in 42**. `cast-counts` answered that before any win rate could have, which is the whole
+argument for reading usage before pricing a slot (D188).
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
