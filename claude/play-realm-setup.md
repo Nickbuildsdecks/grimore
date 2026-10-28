@@ -401,24 +401,24 @@ also why it does not read as a cheat: it counters your creatures and lets your c
 other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
 ```
- 75%  215-73   ember-rush
- 64%  185-103  dawn-tithe
+ 75%  216-72   ember-rush
+ 64%  184-104  dawn-tithe
  61%  175-113  verdant-guard
- 56%  162-126  kindle-grove
- 56%  160-128  forge-alliance
- 50%  143-145  skyward-writ
- 47%  134-154  ashen-rite
+ 57%  165-123  forge-alliance
+ 57%  164-124  kindle-grove
+ 49%  141-147  skyward-writ
+ 46%  133-155  ashen-rite
+ 45%  129-159  rot-harvest
  44%  128-160  delta-bloom
- 43%  124-164  rot-harvest
  43%  124-164  hollow-tide
- 41%  117-171  arc-tempest
- 34%  99-189   tidal-mind
+ 39%  113-175  arc-tempest
  34%  99-189   blight-vector
+ 34%  97-191   tidal-mind
 ```
 
-**One deck is clearly ahead, nine are within nine points of even, and two are measurably short.**
+**One deck is clearly ahead, ten are spread between 39% and 64%, and two are measurably short.**
 The spread is forty-one points, and the bottom of the table is two decks rather than a cluster:
-Tidal Mind and Blight Vector level at 34%, nine points below the deck above them. This run has all
+Tidal Mind and Blight Vector level at 34%, five points below the deck above them. This run has all
 nine of the cards added in the last pass in it — undying, persist, monstrosity, adapt and unearth —
 and the two rows that moved most are the two those cards were measured in: Verdant Guard +7 with a
 **Fleecemane Lion** and Kindle Grove +7 with a **Hellspark Elemental**, which is the number that
@@ -426,6 +426,16 @@ card's own probe gave (+4 and +6) arriving in the field almost exactly. An earli
 table read "the bottom is a cluster now" and "the spread is thirty-six points"; this run says
 neither, and the sentences have been replaced rather than left standing — a published number that
 has been re-measured is worth more corrected than defended.
+
+**This run has one more bot rule in it than the last, and it is deliberately invisible.** The
+computer used to pick an Equipment up and put it on a different creature that was no bigger — a
+Basilisk Collar moved onto a Wall of Blossoms twenty-one times in 156 games, onto a Gravedigger
+twelve, onto Llanowar Elves ten — which is mana spent for nothing. It does not do that any more.
+The instrument behind it counts the whole pool's pointless plays at once rather than one card at a
+time (`wasted-plays.mjs`), and the fix took the wasted equips from **124 to 36** while moving the
+table by nothing: measured both ways on two seed sets, Forge Alliance and Rot Harvest read +5 and +5
+on one and 0 and 0 on the other. What you notice across the table is a Bonesplitter that stays where
+it is useful, not a stronger opponent — D184.
 
 **Two rows moved for a reason, and neither of them is a card.** Ashen Rite gained **29 games of
 288** (39% → 49%, fourth-worst to seventh) when the sacrifice-fodder fix stopped a Vampire

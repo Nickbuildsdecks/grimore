@@ -9195,3 +9195,156 @@ that buys a creature back, against two mana for a 2/1 that buys **itself** back 
 says the deck means it: **33 casts and 32 unearths in 32 games**, one per game, and in a deck with a
 Vampire Aristocrat, a Bloodthrone Vampire, three Blood Artists and two Zulaport Cutthroats, a body
 that can be eaten twice for three mana in total is the cheapest version of the whole plan.
+
+## D184 — An instrument for plays that bought nothing, and the seventeenth drop-this-option rule it found
+
+**Decision: build `wasted-plays.mjs`, which asks of every card at once the question sixteen bot
+rules had each answered about one card, and ship the first rule it found by itself — an Equipment
+moved onto a creature that is no bigger.**
+
+### The family, and why it needed an instrument
+
+Sixteen members of the "spent on nothing" family exist and **every one of them was found by hand**:
+a Dark Ritual into nothing (D63), a Fog with nothing attacking (D66), a pump that wears off before
+it matters (D73), an animated land that never attacks, a Clone with nothing to copy, removal with
+nothing to remove (D89), a goad in a duel, a foretell with nothing spare, an untap cycle that
+changes nothing (D124), a Naturalize aimed at its own board (D180), a second adapt (D182). Each one
+cost a session of suspicion, instrumentation and measurement, and each was worth between nothing and
+twenty-nine games of 288 — D175 was +29 to Ashen Rite, D180 was +19 to Dawn Tithe, and several were
+level. The pattern is strong enough to have a name and weak enough that nobody could say which card
+was next.
+
+So `wasted-plays.mjs` asks it generically. For every `auto:cast` and `auto:activate` the bot takes,
+it fingerprints everything a player would call value — life and poison, permanents per seat, total
+power, toughness, counters and granted keywords on the battlefield, untapped permanents, and the
+size of every zone — before the action and again after it has finished resolving. A play where
+**nothing** in that fingerprint changed, except the card paying for itself out of hand, is a
+suspect, and suspects are grouped by card name.
+
+### Three things it had to get right to say anything at all
+
+**Drain the stack first.** A cast, and every activation that is not a mana ability, only puts an
+object on the **stack** — so comparing the two states either side of the action says "nothing
+moved" about every spell in the game. The first version reported 78% of a Scavenging Ooze's
+activations and 94% of a Basilisk Collar's equips as waste. The fix is to pass priority while there
+is something on the stack and nothing is owed; passing never buys the acting seat anything, which
+is what makes it fair, and it does let the opponent respond, which is the same question asked of a
+board that includes their answer.
+
+**Drop the samples where the turn advanced.** With auto-pass on, applying one action can resolve the
+stack, finish the combat and hand the turn over, and two positions a turn apart are not comparable.
+This is the trap every member of the family fell into — D99 is the entry about it — and 771 of 3,771
+plays hit it here. They are dropped rather than guessed at.
+
+**Count the right things, and not the cost.** Three false-positive classes were found and fixed by
+reading the flagged list rather than by reasoning:
+
+- an Equipment that grants only keywords is invisible to a power-and-toughness sum, so a Basilisk
+  Collar's deathtouch read as nothing. The fingerprint counts **granted keywords**.
+- tapping something is value and leaves everything else alone, so an Icy Manipulator read as
+  nothing. It counts **untapped permanents**.
+- and counting untapped permanents naively counts **the payer's own lands**, which every paid play
+  taps. That made every spell look as if it had changed the board: the flagged list collapsed from
+  two hundred suspects to five. A land tapped for mana is the cost, not the thing bought, so the
+  payer's lands are left out.
+
+The header documents the five blind spots that are left — information, later, denial, mana in the
+pool, and where a bonus is — which is why the output is a list of **suspects** rather than a list of
+bugs.
+
+### What it found
+
+```
+156 games, 3,771 casts and activations watched, 170 suspects (5%)
+
+    62 of  106  58%  Basilisk Collar
+    27 of   57  47%  Darksteel Plate
+    20 of   67  30%  Loxodon Warhammer
+    15 of   44  34%  Bonesplitter
+    10 of   10 100%  Fog
+     7 of    9  78%  Disallow
+     5 of   10  50%  Soul Manipulation
+     4 of    4 100%  Dark Ritual
+     4 of    7  57%  Rancor
+     3 of   10  30%  Glistener Elf
+```
+
+**124 of the 170 suspects are equips**, and the top four rows are the only four Equipment in the
+pool. Most of what is left is the instrument's own blind spots answering back, which is the evidence
+that it is calibrated rather than broken: Fog is prevention, and damage that did not happen is not
+in any fingerprint; Disallow and Soul Manipulation are **denial**, and a countered spell leaves a
+board that looks exactly like the board where it was never cast; Dark Ritual's mana is in the pool,
+which this does not read. Those three rows are 26 of the 46 non-equip suspects and not one of them
+is a bug.
+
+The small rows — Rancor at 4, Glistener Elf at 3, a Lightning Bolt, a Mind Sculpt, a Doom Blade —
+were not run down, and there is one mechanism that makes them expected: draining the stack lets the
+**opponent respond**, so a spell answered in response reads as a play that bought nothing. That is
+true of the measurement and arguably true of the play. It is also why a single-digit row here is not
+worth a session: the instrument's job is to find the rows with three digits of waste behind them.
+
+### The rule: an Equipment moved sideways
+
+D35 taught the engine not to **offer** an equip onto the creature the Equipment is already on,
+because that does nothing at all. This is the shell outside it: a different creature, the same
+bonus, no gain. A Basilisk Collar was moved onto a Wall of Blossoms twenty-one times, onto a
+Gravedigger twelve, onto Llanowar Elves ten — a 0/4 defender, a 2/2 and a 1/1 — while the Collar was
+already on something.
+
+So `equipMovesSideways` drops an equip that moves an Equipment off a creature this seat controls and
+onto one whose power is no greater. **Power is the test, and it is a proxy** — deathtouch is worth
+more on the creature that will block than on the bigger one that will not, and the rule drops that
+move too. What it keeps is every first equip, every move onto something bigger, and every move off a
+host that has left, tapped, or stopped being a creature, which is what the printed reason to move an
+Equipment usually is.
+
+After it:
+
+```
+156 games, 3,597 casts and activations watched, 79 suspects (2%)
+
+    17 of   46  37%  Darksteel Plate
+    12 of   41  29%  Bonesplitter
+     7 of   49  14%  Basilisk Collar
+```
+
+**Equip suspects fall from 124 to 36 and Loxodon Warhammer disappears from the list entirely.** The
+36 that are left are the blind spot the header now names by itself: the fingerprint *sums* power
+across the battlefield, so an Equipment moved from one creature to a bigger one changes nothing in
+it — same sum, different carrier. Those rows are the moves that are upgrades, and the instrument
+cannot tell them from the ones that are not. Reading that needs the board, which is what the bot
+rule does.
+
+### What it is worth, which is nothing in the standings and a quarter of the pool's waste
+
+**And it is level in the standings, which took two seed sets to say.** Paired thirteen-deck tables,
+the rule off and on, on the same seeds. At `SEED0=4400` the two decks whose Equipment it governs
+both gained five games of 288 — Forge Alliance 160→165, Rot Harvest 124→129 — and nothing else moved
+more than four. That looks like a signal. At `SEED0=5600` the same pairing gives Forge Alliance
+**0** and Rot Harvest **0**, and the largest move anywhere in the table is +4 on Ember Rush, the
+Bonesplitter deck. So the +5s were the ±20 floor talking, and the discipline that usually kills a
+change here confirmed a level one instead. The rule ships the way D35 did: on the play being wrong,
+and on the instrument's own count going from 124 wasted equips to 36.
+
+The republished table (`SEEDS=12 SEED0=4400`, 288 games a deck, the rule in it):
+
+```
+ 75%  216-72   ember-rush      44%  128-160  delta-bloom
+ 64%  184-104  dawn-tithe      43%  124-164  hollow-tide
+ 61%  175-113  verdant-guard   39%  113-175  arc-tempest
+ 57%  165-123  forge-alliance  34%  99-189   blight-vector
+ 57%  164-124  kindle-grove    34%  97-191   tidal-mind
+ 49%  141-147  skyward-writ
+ 46%  133-155  ashen-rite
+ 45%  129-159  rot-harvest
+```
+
+Every row is within five games of D183's run, which is what a level change looks like on a zero-sum
+table.
+
+### And one rule built, measured and deleted
+
+`equipAddsNothing` was the obvious companion: drop an equip onto a creature the Equipment's bonus
+cannot help. It fired **zero times** in 156 games, because every Equipment in the pool grants either
+power or a keyword that any creature can use. It is not in the tree. A rule with no measured waste
+behind it is a rule that will be wrong about a card nobody has written yet.

@@ -4897,6 +4897,64 @@ and the Hellspark is worth **+4 and +6** — where the leaky version measured +1
 deviation nobody notices is worth real games, which is the argument for fidelity as a number rather
 than a principle.
 
+### An instrument for plays that bought nothing, and the seventeenth drop-this-option rule
+
+Sixteen members of the drop-this-option family exist and **every one was found by hand** — a Dark
+Ritual into nothing, a Fog with nothing attacking, a pump that wears off, an animated land that
+never attacks, a Clone with nothing to copy, removal with nothing to remove, a goad in a duel, a
+foretell with nothing spare, an untap cycle, a Naturalize aimed at its own board, a second adapt.
+Each cost a session of suspicion and measurement, and each was worth between nothing and
+twenty-nine games of 288. `wasted-plays.mjs` asks the question generically instead: for every
+`auto:cast` and `auto:activate`, it fingerprints everything a player would call value — life,
+poison, permanents per seat, total power, toughness, counters, granted keywords, untapped
+permanents, and every zone's size — before the action and again once it has finished resolving, and
+reports the plays where nothing in it moved.
+
+Three things it had to get right before it could say anything. **The stack has to be drained**,
+because a cast only puts an object on it — the first version called 94% of a Basilisk Collar's
+equips waste. **Samples where the turn advanced have to be dropped**, which is D99's trap and 771 of
+3,771 plays here. And **the fingerprint must not count the cost**: counting untapped permanents
+naively counts the payer's own tapped lands, which collapsed the flagged list from two hundred
+suspects to five until those were excluded. Granted keywords and untapped permanents are both in
+there because leaving them out made a Basilisk Collar's deathtouch and an Icy Manipulator's tap read
+as nothing.
+
+What it found, over 156 games and 3,771 plays: **170 suspects, and 124 of them equips** — the four
+Equipment in the pool are the top four rows (Basilisk Collar 62 of 106, Darksteel Plate 27 of 57,
+Loxodon Warhammer 20 of 67, Bonesplitter 15 of 44). Most of the rest is the instrument's own blind
+spots answering back, which is how it is calibrated rather than broken: Fog is prevention, Disallow
+and Soul Manipulation are denial, Dark Ritual's mana is in the pool. The five blind spots —
+information, later, denial, mana, and where a bonus is — are in the file's header, and the output is
+a list of **suspects** rather than bugs for that reason.
+
+So the seventeenth rule is `equipMovesSideways`: drop an equip that moves an Equipment off a
+creature this seat controls and onto one whose power is no greater. D35 had already stopped the
+engine *offering* an equip onto the creature it is already on; this is the shell outside it, a
+different creature with the same bonus. The Collar was moved onto a Wall of Blossoms twenty-one
+times, onto a Gravedigger twelve, onto Llanowar Elves ten. **Power is the test and it is a proxy**,
+said out loud: deathtouch is worth more on the creature that will block than on the bigger one that
+will not, and the rule drops that move too. It keeps every first equip, every move onto something
+bigger, and every move off a host that has left, tapped or stopped being a creature.
+
+After it: **79 suspects of 3,597 plays, and 36 equips** — Loxodon Warhammer off the list entirely.
+The 36 left are the blind spot the header now names, because the fingerprint *sums* power across the
+battlefield: an Equipment moved onto a bigger creature changes nothing in it, same sum and a
+different carrier. Those are the upgrades, and only the bot rule can tell them apart.
+
+**And it is level in the standings, which took two seed sets to say.** Paired thirteen-deck tables,
+the rule off and on, on the same seeds. At `SEED0=4400` the two decks whose Equipment it governs
+both gained five games of 288 — Forge Alliance 160→165, Rot Harvest 124→129 — and nothing else moved
+more than four. That looks like a signal. At `SEED0=5600` the same pairing gives Forge Alliance
+**0** and Rot Harvest **0**, and the largest move anywhere in the table is +4 on Ember Rush, the
+Bonesplitter deck. So the +5s were the ±20 floor talking, and the discipline that usually kills a
+change here confirmed a level one instead. The rule ships the way D35 did: on the play being wrong,
+and on the instrument's own count going from 124 wasted equips to 36.
+
+And one rule was built, measured and deleted. `equipAddsNothing` — drop an equip onto a creature the
+bonus cannot help — fired **zero times** in 156 games, because every Equipment here grants either
+power or a keyword any creature can use. A rule with no measured waste behind it is a rule that will
+be wrong about a card nobody has written yet.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
