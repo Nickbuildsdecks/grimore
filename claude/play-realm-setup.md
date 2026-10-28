@@ -103,7 +103,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | What you want to do | How |
 | --- | --- |
 | Play a land, cast a spell, use an ability | Tap the card. Everything you can legally do with it is listed; everything else is not. A card you can play right now says **playable**. |
-| Pay for it | Nothing. The engine taps what the spell costs — including picking which colour a dual land makes, and spending a Sol Ring's two mana before it taps a second land. Tap lands yourself first if you want particular ones spent. |
+| Pay for it | Nothing. The engine taps what the spell costs — including picking which colour a dual land makes, and spending a Sol Ring's two mana before it taps a second land. Tap lands yourself first if you want particular ones spent. **A hybrid symbol is paid either way**: `{B/R}` is one mana that a Swamp or a Mountain can pay, so **Murderous Redcap** ({2}{B/R}{B/R} in Ashen Rite) comes down off four Swamps, four Mountains, or any mixture, and **Kitchen Finks** ({1}{G/W}{G/W} in Verdant Guard) off any three of that deck's Forests and Plains. The engine works out which half of each symbol to pay — and it has to *search* rather than guess, because two hybrid symbols can compete for the same land. |
 | Choose a target | The legal ones light up. Tap one. A spell on the stack is targeted by tapping its row in the stack panel. |
 | Respond to their spell | While it is on the stack you hold priority — cast your instant, then pass. |
 | Attack | **Declare attackers**, tap the creatures, confirm. One that cannot attack is not tappable, and says why. |
@@ -958,7 +958,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (952 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (959 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (212 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`

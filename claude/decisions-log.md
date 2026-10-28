@@ -9774,3 +9774,110 @@ It does not enforce, judge, or score. There is no "aggression" rating, no "most 
 badge, no table talk generated from it. The deals already drew that line and it is the right one: a
 table where the software stops you breaking your word is a table where your word costs nothing, and
 a table that told you who to be angry with would be playing the politics for you.
+
+## D190 — Hybrid mana, and the cost this pool had been carrying wrong
+
+**Decision: teach the mana layer colour-hybrid symbols (`{B/R}`: one mana, either colour), fix
+Murderous Redcap's cost to the one printed on it, add Kitchen Finks — and report that the fix to
+the Redcap changed nothing measurable, which is the second fidelity fix in a row worth zero.**
+
+### A refusal that was right, and what it was hiding
+
+`parseManaCost` has refused every slashed symbol since it was written, and its header said why:
+reading `{R/G}` as generic would offer a player a spell they cannot cast, which is worse than
+refusing a card no deck contains. That reasoning is sound and the refusal was the right call at the
+time.
+
+What it was hiding is that a deck *did* contain one. **Murderous Redcap is `{2}{B/R}{B/R}`**, and
+D181 put it into Ashen Rite written as `{2}{B}{R}` — the closest thing the parser could read. The
+approximation is strictly harsher than the card: the real Redcap is castable off four Swamps, and
+the pool's copy demanded one of each colour. Nobody noticed because it is invisible until somebody
+holds the card with the wrong three lands out.
+
+### What hybrid needed
+
+`ManaCost.hybrids` is a list of symbols, each listing the types that may pay it:
+`{2}{B/R}{B/R}` is `[['B','R'],['B','R']]`. A list rather than anything folded into `colors`,
+because the choice is **per symbol** and the whole point is that two of them can be paid two
+different ways.
+
+**The payment cannot be greedy, and that is the one interesting line of this entry.** Two symbols
+and one pool is an assignment problem: `{G/W}{W/U}` against one white and one blue has exactly one
+answer — the white pays the first symbol and the blue the second — and a greedy pass in symbol
+order that takes the white for `{W/U}` leaves `{G/W}` unpayable and the cost refused. So `payCost`
+searches: depth-first over the symbols, at most a handful with two options each, which is a few
+dozen possibilities at the very worst. Hybrids are assigned **after** the coloured symbols and
+**before** the generic part, for the same reason colours come first — a hybrid can only be paid two
+ways and generic can be paid any way.
+
+`solveTap` learns it through `shortColors`, which now reports the **union of the halves** of the
+symbols it cannot pay: "any of these would help". That is deliberately not a claim that all of them
+are needed, and it is enough because the tap loop re-asks after every land.
+
+And the mana value counts a hybrid symbol as **one** (CR 202.3f), whichever half pays it.
+
+**Still refused, and each for its own reason:** phyrexian (`{R/P}`, one red *or two life*), snow
+(`{S}`), and *monocoloured* hybrid (`{2/W}`, two generic *or* one white). Each is a different shape,
+and approximating any of them into colour hybrid would be wrong in a way a player would feel.
+
+### The test that got better rather than edited
+
+A deck-coverage test asserted that no scripted card's printed cost contains a `/`. That was a proxy
+for "the engine can read this", and the proxy is now false: `{G/W}` is fine and `{2/W}` is not. It
+asks `parseManaCost(...).unsupported` instead — the property that actually matters — so the next
+symbol taught will not need the test edited. A guard written against a limitation ages into a guard
+against the fix.
+
+### Kitchen Finks, and persist's second card
+
+`{1}{G/W}{G/W}`, a 3/2 that gains two life as it arrives, with persist. Two declarative lines and
+nothing else new: the cost is the mana layer's business, the life is `gainLife`, and persist has
+been `comesBackWithACounter` since D181.
+
+Adding it is the point. **Persist had exactly one card behind it**, and that card is a 1/1 — so the
+body persist returns is a 0/0 that the state-based actions put straight back in the graveyard.
+Correct, and not much of a demonstration. The Finks is a 3/2, so what comes back is a **2/1 still
+standing**, which is the half of the mechanic the pool could not show. It replaced Verdant Guard's
+**Pacifism** (64% of the games it was in hand, 27 casts in 96) — the fifth piece of removal in a
+list that already holds two Journeys to Nowhere, a Swords, a Conclave Tribunal, a Selesnya Charm
+and a Banisher Priest. Measured at **36 casts in the 43 games it was in hand**.
+
+**Measured: the largest single-slot card result this pool has produced.** Probing the revert — the
+Finks out, the Pacifism back — on two seed sets of 288:
+
+```
+seeds 3300   203 against 173   revert -30
+seeds 5100   196 against 181   revert -15
+```
+
+Both negative and one of them **outside the ±20 floor**, which no card in this pool had managed
+before: the biggest previous card number was D183's Hellspark at +4 and +6, and the only larger
+moves of any kind were bot rules (D175's +29, D180's +19).
+
+Three things to keep it honest. It prices the **pair** — this Pacifism out, this Finks in — and
+cannot say how much of thirty games is the body arriving and how much is the fifth removal spell
+leaving; a deck with six answers and fourteen creatures was probably over-answered. One arm outside
+the floor is one arm, and the second is inside it, so "between fifteen and thirty" is the honest
+range rather than thirty. And a gain this size is a **balance fact** as much as a card result:
+Verdant Guard was third at 61%, and a card worth twenty-odd games moves it towards the top of the
+field, which is why the thirteen-deck table is republished with this entry rather than after it.
+
+### And the Redcap's fix is worth nothing, measured
+
+`cast-counts` on Ashen Rite, before and after the cost was corrected:
+
+```
+                       casts   games in hand
+{2}{B}{R}  (wrong)       35         67
+{2}{B/R}{B/R} (printed)  35         67
+```
+
+Identical. The reason is the mana base: seven Swamps, seven Mountains, two Rakdos Guildgates and a
+City of Brass mean that by the turn four mana is available, one of each colour almost always is too.
+The harsher cost never actually bit in 96 games.
+
+**That is the second fidelity fix in a row measured at zero** — D185's unearth bounce was the first —
+and two is enough to say the thing plainly: a rules deviation is worth *measuring* rather than
+assuming, in either direction. D183's unearth leak was worth half a card; these two were worth
+nothing. The reason to ship them is the same either way: the card says so, and a player who knows
+the card will expect it to work.

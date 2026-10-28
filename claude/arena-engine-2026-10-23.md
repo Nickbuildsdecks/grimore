@@ -5107,6 +5107,64 @@ What it deliberately is not: an aggression score, a most-hated badge, or anythin
 on. The deals drew that line first and it is the right one (D189).
 
 
+### Hybrid mana, and the cost this pool had been carrying wrong
+
+`parseManaCost` refused every slashed symbol from the day it was written, and the refusal was the
+right call with the reasoning in its own header: reading `{R/G}` as generic would offer a player a
+spell they cannot cast. What it was hiding is that a deck already held one. **Murderous Redcap is
+`{2}{B/R}{B/R}`** and went into Ashen Rite as `{2}{B}{R}` — the closest thing the parser could read,
+and strictly harsher than the card, which is castable off four Swamps.
+
+`ManaCost.hybrids` is a list of symbols, each listing the types that may pay it, because the choice
+is **per symbol**: `{2}{B/R}{B/R}` is four mana paid in any mixture of black and red.
+
+**The payment cannot be greedy**, which is the one interesting line here. `{G/W}{W/U}` against one
+white and one blue has exactly one answer, and a greedy pass in symbol order that spends the white
+on `{W/U}` leaves `{G/W}` unpayable. So `payCost` searches — depth-first over the symbols, a few
+dozen possibilities at the very worst — and assigns hybrids after the coloured symbols and before
+the generic part, for the reason colours come first: a hybrid can be paid two ways and generic any
+way. `solveTap` learns it through `shortColors`, which reports the union of the halves it cannot
+pay ("any of these would help") and re-asks after every land. A hybrid symbol is one towards the
+mana value (CR 202.3f).
+
+Phyrexian (`{R/P}`), snow (`{S}`) and *monocoloured* hybrid (`{2/W}`: two generic **or** one white)
+are still refused, each being a different shape that approximating into this one would get wrong in
+a way a player would feel.
+
+**Kitchen Finks** ({1}{G/W}{G/W} 3/2, gain 2 life, persist — Verdant Guard, for its Pacifism) is two
+declarative lines and nothing else new. It is here because **persist had one card behind it**, and
+that card is a 1/1: the body persist returns is a 0/0 the state-based actions bury immediately,
+which is correct and not a demonstration. The Finks is a 3/2, so what comes back is a 2/1 still
+standing. Measured at 36 casts in the 43 games it was in hand.
+
+**Measured: the largest single-slot card result this pool has produced.** Probing the revert — the
+Finks out, the Pacifism back — on two seed sets of 288:
+
+```
+seeds 3300   203 against 173   revert -30
+seeds 5100   196 against 181   revert -15
+```
+
+Both negative and one of them **outside the ±20 floor**, which no card in this pool had managed
+before: the biggest previous card number was D183's Hellspark at +4 and +6, and the only larger
+moves of any kind were bot rules (D175's +29, D180's +19).
+
+Three things to keep it honest. It prices the **pair** — this Pacifism out, this Finks in — and
+cannot say how much of thirty games is the body arriving and how much is the fifth removal spell
+leaving; a deck with six answers and fourteen creatures was probably over-answered. One arm outside
+the floor is one arm, and the second is inside it, so "between fifteen and thirty" is the honest
+range rather than thirty. And a gain this size is a **balance fact** as much as a card result:
+Verdant Guard was third at 61%, and a card worth twenty-odd games moves it towards the top of the
+field, which is why the thirteen-deck table is republished with this entry rather than after it.
+
+**And the Redcap's corrected cost is worth nothing in measured games**: 35 casts in 67 games in hand
+either way. Seven Swamps, seven Mountains, two Guildgates and a City of Brass mean that by the turn
+four mana is available one of each colour almost always is too, so the harsher cost never bit. That
+is the second fidelity fix in a row measured at zero (D185's unearth bounce was the first), which is
+enough to say plainly: measure a rules deviation rather than assuming it, in either direction —
+D183's leak was worth half a card and these two were worth nothing. The reason to ship them is the
+same either way: the card says so (D190).
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
