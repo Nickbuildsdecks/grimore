@@ -8045,3 +8045,116 @@ Three things come out of it that are worth more than a thirteenth bot rule:
    narrowing of the rule (reserve only for an answer that can point at something) rather than a new
    family member.
 
+
+## D171 — A cost paid out of the graveyard: escape, and delve
+
+**Decision: make the graveyard a thing you can spend. One primitive — exile N cards from your own
+graveyard as part of a cost — and the two printed mechanics that use it from opposite ends: escape
+(a fixed price, paid to cast the card out of the graveyard) and delve (a price chosen as the spell
+is cast, which pays generic mana). Three cards, one per deck, all three in the bottom cluster of
+the table.**
+
+Everything that paid for anything in this engine paid with something on the battlefield — tap it,
+sacrifice it, crew with it — or with a life total. `additionalCost` was one field wide
+(`{ sacrifice: 'creature' | 'another-creature' }`) and the graveyard was a place cards went. That
+left a whole shelf of printed Magic unwritable, and it left the three decks that fill a graveyard
+by playing their own game with nothing to do with one.
+
+### Two mechanics, one primitive, opposite ends of it
+
+- **Escape** (CR 702.139) is a fixed price printed on the card: Phoenix of Ash comes back for
+  {2}{R}{R} **and three other cards**, as often as the graveyard can stand it. It is an
+  *alternative* cost, so it replaces the printed one and nothing else is paid beside it — no
+  kicker, no commander tax.
+- **Delve** (CR 702.112) is a price chosen at cast time: each card exiled pays for {1}. A Gurmag
+  Angler is a seven-mana 5/5 on an empty graveyard and a one-mana 5/5 on a full one, which makes
+  it the first card in the pool whose **mana cost is a fact about the game** rather than about the
+  card.
+
+**The difference that carries the balance is at the end, not the start.** Flashback cast a card out
+of the graveyard too, and what made it fair was that the card is exiled as it leaves the stack —
+there is no third casting. An escaped permanent is ordinary: it dies into the graveyard it came
+from, ready to escape again for three more cards. So escape sets no `flashback` flag on the stack
+object, and a test asserts exactly that, because that one flag is what `onLeaveStack` reads.
+
+### Three rules that are easy to get almost right
+
+- **"Other" is load-bearing.** The card escaping is in the graveyard too and is not one of the
+  cards exiled for its own cost. A Phoenix with exactly three cards in the graveyard *including
+  itself* cannot escape, and the play is **absent** rather than offered and refused — CR 601.2h,
+  the same rule that keeps a Bone Splinters off the table with no creature to sacrifice.
+- **The cards go as the spell is cast, not when it resolves.** It is a cost: they are gone before
+  anybody may respond, a countered Angler does not give them back, and nobody can answer an escape
+  by exiling the graveyard in reply.
+- **Delve pays generic and only generic** (CR 702.112a). Seven Islands and nine cards in the
+  graveyard still cannot cast a {6}{B} creature, because no number of cards makes a {B} into a {1}.
+
+### Which cards get spent is the engine's, and the ordering rule is the only judgement in it
+
+`graveyardFodder` chooses, the way `convokePlan` chooses which creatures get tapped, and for the
+same reason: a client naming them would be choosing which of its own resources to spend, a turn
+before the engine chooses, and then the offer and the payment could disagree. The order is one
+rule — **a card nothing can use goes first**. A graveyard in this pool is not a pile: a Think Twice
+can be cast out of it, a Phoenix can escape out of it, a Gravedigger can take a creature back from
+it, so exiling the wrong three cards is paying twice for one spell. Cards with no second life of
+their own go before the ones that have one, oldest first within each group. It is the cheap
+heuristic and it is named as one: a Gravedigger *in hand* makes a dead creature worth keeping and
+nothing here knows that.
+
+**And `delvePlan` takes the fewest cards it can get away with, not the most.** The maximum is free
+in mana and expensive in everything else, and these three cards are each other's evidence: a
+graveyard emptied for an Angler is a Phoenix that cannot escape and a Think Twice that cannot be
+flashed back. So the plan walks up from nothing and stops at the first count that can be paid for.
+
+### The cards, and the slots they came out of
+
+Every cut was taken off `cast-counts` over 144 games, and every one is a card the **pool keeps a
+copy of elsewhere** — the orphanage constraint D167 named, respected rather than fought this time:
+
+| deck | in | out | why that slot |
+| --- | --- | --- | --- |
+| Arc Tempest (42%) | Phoenix of Ash | Divination (65%, 3 in the pool) | four mana for two cards in a deck whose curve stops at four |
+| Hollow Tide (41%) | Gurmag Angler | Wall of Air (79%, 2 in the pool) | three Fog Banks already hold the ground; the deck had no clock |
+| Tidal Mind (39%) | Treasure Cruise | Preordain (75%, 4 in the pool) | one card deeper for one mana, against three for one mana |
+
+All three decks are in the table's bottom cluster, all three fill a graveyard without trying, and
+each gets the half of the mechanic that suits it: the recursive threat to the deck that casts two
+spells a turn, the 5/5 to the mill deck that could never close, the three cards to the deck that
+was rebuilt for a clock and still has to find it.
+
+### Does the bot actually pay these costs? `graveyard-costs.mjs`
+
+The instrument reads the **stack**, because that is where the engine writes down how a spell was
+paid for — "(escaped, 3 cards)", "(delved 6)" — and both halves are there because an opponent is
+entitled to read them before deciding whether to answer. `cast-counts` could not have answered
+this: it counts a Phoenix cast twice and cannot say whether the second came out of the graveyard,
+and a delved Angler and a seven-mana one are the same row.
+
+Over 144 games with each deck as the subject:
+
+```
+arc-tempest:   5 escapes (Phoenix of Ash), always 3 cards
+hollow-tide:  11 delved casts (Gurmag Angler), 30 cards — 1, 2, 3 and 4 deep
+tidal-mind:   10 delved casts (Treasure Cruise), 48 cards — six of them 6 or 7 deep
+```
+
+**The escape count is the honest surprise and it is not a bug.** Five in 144 is low because three
+things have to line up: the Phoenix has to die first, the graveyard has to hold three other cards,
+and the bot needs four mana spare at **sorcery speed** on its own turn — and Arc Tempest is one of
+the three decks the reservation rule (D168) now keeps mana back in, so an escape that would spend a
+Counterspell's mana is dropped by that filter before the search ever sees it. The two interact
+exactly as written and neither is wrong; it is worth knowing that the pool's first escape card
+lives in the deck least able to use it.
+
+The delve spread is the mechanic doing what it says: the Angler is cast one to four cards deep,
+which is a deck casting it the turn it becomes affordable rather than the turn the graveyard is
+deepest, and the Cruise goes six or seven deep because {7}{U} has further to come down.
+
+**The honest limit, and where it bites.** The search prices a position by what is on the board and
+in hand; **nothing in the evaluation knows a graveyard is worth anything**, so to the bot a cost
+paid in cards is free. That is why `delvePlan` taking the minimum is not a refinement but the only
+thing protecting the resource: a maximum-delve plan would be chosen just as happily, and would
+quietly empty the zone two other mechanics in this pool are built on. A term for "cards in your own
+graveyard you could still use" is the obvious next thing to want, and on this project's record with
+evaluation terms (D68, D69, three deleted) it would have to be measured rather than argued — and
+the thing to measure it against is a Phoenix that failed to escape, not a win rate.

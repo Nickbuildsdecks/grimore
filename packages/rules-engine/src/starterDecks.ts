@@ -2240,6 +2240,53 @@ const THINK_TWICE: CardDef = {
   colors: ['U'],
 };
 
+/*
+  Three cards whose cost is partly the graveyard, which is the pool's first use of that zone as
+  something to spend rather than somewhere cards end up.
+
+  Two mechanics, one idea. Escape is a fixed price — the Phoenix comes back for {2}{R}{R} and three
+  cards, over and over, which is why it is a 2/2 rather than a 4/4. Delve is a price you choose as
+  you cast: a Gurmag Angler is a seven-mana 5/5 on an empty graveyard and a one-mana 5/5 on a full
+  one, which makes it the pool's first card whose mana cost is a fact about the game rather than
+  about the card.
+
+  The three are deliberately in the three decks that fill a graveyard on their own and sit in the
+  bottom cluster of the table: Arc Tempest casts two spells a turn, Tidal Mind mills itself with
+  Thought Scour, and Hollow Tide is a mill deck whose own library is the fuel.
+*/
+const PHOENIX_OF_ASH: CardDef = {
+  name: 'Phoenix of Ash',
+  typeLine: 'Creature — Phoenix',
+  manaCost: '{1}{R}{R}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Flying, haste\n{1}: Phoenix of Ash gets +1/+0 until end of turn.\n'
+    + 'Escape—{2}{R}{R}, Exile three other cards from your graveyard.',
+  colors: ['R'],
+};
+
+const GURMAG_ANGLER: CardDef = {
+  name: 'Gurmag Angler',
+  typeLine: 'Creature — Zombie Fish',
+  manaCost: '{6}{B}',
+  cmc: 7,
+  power: '5',
+  toughness: '5',
+  oracleText: 'Delve (Each card you exile from your graveyard while casting this spell pays for {1}.)',
+  colors: ['B'],
+};
+
+const TREASURE_CRUISE: CardDef = {
+  name: 'Treasure Cruise',
+  typeLine: 'Sorcery',
+  manaCost: '{7}{U}',
+  cmc: 8,
+  oracleText: 'Delve (Each card you exile from your graveyard while casting this spell pays for {1}.)\n'
+    + 'Draw three cards.',
+  colors: ['U'],
+};
+
 const FIREBOLT: CardDef = {
   name: 'Firebolt',
   typeLine: 'Sorcery',
@@ -3009,7 +3056,6 @@ export const TIDAL_MIND: DeckSpec = {
     */
     { card: TURN_TO_FROG, count: 1 },
     { card: CACKLING_COUNTERPART, count: 1 },
-    { card: PREORDAIN, count: 1 },
     // One mana that makes a creature untouchable by anybody, its own controller included — the
     // deck's way of protecting a flier it intends to win with, at the cost of never touching it
     // again.
@@ -3215,6 +3261,19 @@ export const TIDAL_MIND: DeckSpec = {
     { card: SEDGEMOOR_WITCH, count: 1 },
     { card: BLOODTHIRSTY_AERIALIST, count: 2 },
     { card: THORN_OF_THE_BLACK_ROSE, count: 1 },
+    /*
+      And three cards for {U} once the graveyard is deep enough (delve, CR 702.112).
+
+      The deck already plays the two cards that make delve work — a Think Twice that wants to be
+      cast twice and a graveyard it fills with Doom Blades, Murders and Unsummons — so the
+      question is only which of the two spends it. `delvePlan` takes the fewest cards it can get
+      away with for exactly that reason.
+
+      It replaced the **Preordain** (75%, and the pool runs four others, so no script loses its
+      only test). One card deeper for one mana against three cards for one mana is not a close
+      comparison in a deck that was rebuilt for a clock and still needs to find it.
+    */
+    { card: TREASURE_CRUISE, count: 1 },
   ],
 };
 
@@ -4127,7 +4186,6 @@ export const HOLLOW_TIDE: DeckSpec = {
     */
     // attack and all of them are happy to block for ever.
     { card: FOG_BANK, count: 3 },
-    { card: WALL_OF_AIR, count: 1 },
     /*
       Evolve, and the second Psychic Strike it replaced.
 
@@ -4207,6 +4265,21 @@ export const HOLLOW_TIDE: DeckSpec = {
       a clock a mill deck can afford to wait behind.
     */
     { card: CHASM_SKULKER, count: 1 },
+    /*
+      A 5/5 for one mana on a full graveyard, which is this deck's answer to the thing every
+      instrument has said about it: it mills beautifully and it cannot close (delve, CR 702.112).
+
+      Delve reads this deck's own graveyard, and a mill deck fills one on both sides of the
+      table — its own, from three Mind Sculpts, two Thought Scours and a Tome Scour it cast.
+      Printed at {6}{B} and cast for {B} about as often, which makes it the first card in the
+      pool whose mana cost is a fact about the game rather than about the card.
+
+      It replaced the **Wall of Air** (79%): the deck already holds the ground with three Fog
+      Banks, so the fourth defensive body was the slot that overlapped most, and the pool keeps
+      its Wall of Air in Skyward Writ. A deck that wins by decking somebody still has to survive
+      long enough — but a 1/5 flier was buying turns this deck had no way to spend.
+    */
+    { card: GURMAG_ANGLER, count: 1 },
   ],
 };
 
@@ -4472,7 +4545,6 @@ export const ARC_TEMPEST: DeckSpec = {
     // this is the card that keeps foretell's draw-and-scry half cast and tested. The second copy
     // is the Twincast's slot, measured above.
     { card: BEHOLD_THE_MULTIVERSE, count: 1 },
-    { card: DIVINATION, count: 1 },
     { card: FAITHLESS_LOOTING, count: 1 },
 
     // ── Five that say no ──
@@ -4522,6 +4594,23 @@ export const ARC_TEMPEST: DeckSpec = {
     */
     { card: SWERVE, count: 1 },
     { card: TWINCAST, count: 1 },
+    /*
+      And the first card in the pool whose cost is partly its own graveyard: a 2/2 flier that
+      comes back for {2}{R}{R} and three cards, as often as the graveyard can stand it
+      (escape, CR 702.139).
+
+      Here rather than in Ember Rush because the price is the graveyard and this is the deck that
+      fills one: two Think Twices, a Firebolt, a Faithless Looting and twenty-odd one-mana spells
+      put four or five cards in there by turn five, and nothing else in the list wanted them.
+      Against the three fastest decks it is the card this deck has never had — a threat that does
+      not care about a Doom Blade, in a deck whose creatures all die to one.
+
+      It replaced the **Divination** (cast in 65% of games, the deck's weakest card that is not
+      the pool's only copy of itself — three others run one, so cutting this one deletes no
+      script's coverage). Four mana for two cards in a deck whose curve stops at four was the
+      slot that bought the least.
+    */
+    { card: PHOENIX_OF_ASH, count: 1 },
   ],
 };
 

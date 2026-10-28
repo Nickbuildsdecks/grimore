@@ -1183,6 +1183,11 @@ function candidateActions(
             // cost: without this the engine would be told to cast a card that is in a graveyard
             // as though it were in hand, and would refuse its own offer.
             ...(play.flashback === true ? { flashback: true } : {}),
+            // And escape, which is flashback's zone with a cost that is partly cards: without
+            // this the engine is told to cast a card in a graveyard as though it were in hand,
+            // and the bot's own offer comes back refused. How many cards it costs is on the play
+            // as `exiles`; which ones is the engine's to pick, so it is not sent.
+            ...(play.escape === true ? { escape: true } : {}),
             // And morph, for the third time and the same reason: the face-down cast is a separate
             // play on the same card, so a cast sent without this flag is the printed one — which
             // the engine then refuses for want of mana, on turn three, which is exactly when the

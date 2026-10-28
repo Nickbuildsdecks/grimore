@@ -37,6 +37,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `held-answers.mjs` | why is the counterspell still in hand — no mana, no target, or no nerve? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
 | `held-answers.mjs` | …and what did the reservation rule change? (it is on by default, so this is the control arm) | `BOT='{"reserveForAnswers":false}' SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
 | `draw-triggers.mjs` | does "whenever you draw a card" fire in real games, and what does it add up to? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/draw-triggers.mjs` |
+| `graveyard-costs.mjs` | does the bot ever escape or delve, and how many cards does it spend? | `SUBJECT=arc-tempest SEEDS=6 node scripts/measure/graveyard-costs.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.

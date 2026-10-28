@@ -738,6 +738,17 @@ export interface AutoCastAction {
    * flashback, and on one that is not in your graveyard.
    */
   readonly flashback?: boolean;
+  /**
+   * Cast it from your graveyard for its escape cost (CR 702.139). Refused on a card with no
+   * escape, on one that is not in your graveyard, and when there are not enough *other* cards in
+   * there to pay with.
+   *
+   * Which cards get exiled does not travel on the action: it is the engine's choice, like the
+   * creatures convoke taps, and a client naming them would be a client deciding which of its own
+   * cards to spend. `graveyardFodder` is the order, and it is the same function `legalActions`
+   * used to decide this play was offerable.
+   */
+  readonly escape?: boolean;
   /** The creature sacrificed for an additional cost, when the spell asks for one. */
   readonly sacrifice?: string;
   /**

@@ -328,6 +328,13 @@ function playAction(
   */
   const withFlashback = play.flashback === true ? { flashback: true } : {}
   /*
+    And escape, which is the graveyard again with a cost that is partly cards — the same shape of
+    bug flashback taught, and the same one line to prevent it. How many cards it costs is on the
+    play as `exiles` and *which* ones is the engine's to choose, so nothing about the payment is
+    sent: the table says what it will cost and the engine spends it.
+  */
+  const withEscape = play.escape === true ? { escape: true } : {}
+  /*
     And morph, for the same reason a third time: the face-down cast is a separate play on the same
     card, so a cast sent without the flag is the printed one — which the engine refuses for want of
     mana on exactly the turn the player reached for the 2/2.
@@ -360,7 +367,8 @@ function playAction(
     // not something the spell asks for on resolution, so it travels with the cast.
     return {
       type: "auto:cast", card: play.card,
-      ...withModes, ...withX, ...withKicker, ...withFlashback, ...withFaceDown, ...withForetold,
+      ...withModes, ...withX, ...withKicker, ...withFlashback, ...withEscape, ...withFaceDown,
+      ...withForetold,
       ...withHalf, ...withDivision,
       ...withSacrifice, ...withTargets,
     }

@@ -94,6 +94,27 @@ export interface LegalPlay {
    */
   readonly flashback?: boolean;
   /**
+   * Set on a play that casts the card out of its owner's graveyard for its escape cost
+   * (CR 702.139).
+   *
+   * A separate play for the same reason flashback's is — the table draws it in the graveyard row
+   * and the cost shown is not the printed one — and a separate *flag* from flashback because the
+   * two differ at the end rather than at the start: a flashback spell is exiled as it leaves the
+   * stack and an escaped one is not.
+   */
+  readonly escape?: boolean;
+  /**
+   * How many cards this play would exile from your graveyard to pay for itself: escape's fixed
+   * count, or the number delve worked out (CR 702.112, CR 702.139).
+   *
+   * Reported because it is the half of the cost the printed mana cost does not show, and a table
+   * that showed "{B}" for a Gurmag Angler without saying "and six cards out of your graveyard"
+   * would be hiding the expensive half. Which cards they are is deliberately not here: that is
+   * the engine's choice, recomputed as the spell is cast, so naming them in the offer would be
+   * promising something the payment is not bound to.
+   */
+  readonly exiles?: number;
+  /**
    * Set on the play that casts a morph card face down as a 2/2 for {3} (CR 702.37a).
    *
    * A second play on the same card, like the kicker's, rather than a flag the table has to combine
@@ -452,6 +473,71 @@ export function convokePlan(
   return null;
 }
 
+/**
+ * The cards a cost paid out of the graveyard would take, in the order it would take them.
+ *
+ * Escape and delve both say "exile cards from your graveyard" and neither says which, so the
+ * choice is the engine's — the same arrangement convoke has for which creatures get tapped, and
+ * for the same reason: a client naming them would be a client deciding which of its own resources
+ * to spend, and the offer and the payment have to agree about a cost either way.
+ *
+ * **The order is the whole of the judgement, and it is one rule: a card nothing can use goes
+ * first.** A graveyard in this pool is not a pile — a Think Twice can be cast out of it, a
+ * Phoenix of Ash can escape out of it, a Gravedigger can take a creature back from it — so
+ * exiling the wrong three cards to escape is paying twice for one spell. Cards with no second
+ * life of their own (no flashback, no escape) go before the ones that have one, and within each
+ * group the graveyard's own order decides, oldest first. It is a heuristic and it is the cheap
+ * one: a Gravedigger in hand makes a dead creature worth keeping and nothing here knows that.
+ *
+ * `exclude` is the card doing the escaping, which is what makes "three **other** cards" mean what
+ * it says. `want` is a cap rather than a promise — a shorter list than asked for is the answer
+ * "this cost cannot be paid", and `castablePlays` reads it that way.
+ */
+export function graveyardFodder(
+  state: GameState, seat: SeatIndex, exclude: string | undefined, want: number,
+): readonly string[] {
+  if (want <= 0) return [];
+  const spare: string[] = [];
+  const useful: string[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'graveyard'))) {
+    if (id === exclude) continue;
+    const script = scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name);
+    if (script?.flashback !== undefined || script?.escape !== undefined) useful.push(id);
+    else spare.push(id);
+  }
+  return [...spare, ...useful].slice(0, want);
+}
+
+/**
+ * How few cards delve has to exile to make this spell castable, and the cost that leaves
+ * (CR 702.112).
+ *
+ * **The smallest number, not the largest**, which is the one real decision in the mechanic. Delve
+ * is free in mana and expensive in everything else: the graveyard is what the escape card and the
+ * flashback card spend, so a plan that always exiled the maximum would be paying for a Gurmag
+ * Angler with cards the deck had other uses for. So this walks up from nothing and stops at the
+ * first count that can be paid for — a spell castable without delving at all delves nothing, and
+ * one short by two mana delves twice.
+ *
+ * Only generic, because that is the rule (CR 702.112a): a card exiled this way pays for {1} and
+ * can never pay a coloured pip, so the loop stops at `cost.generic` however many cards are there.
+ *
+ * `null` means it cannot be cast even with every card in the graveyard behind it, which is a
+ * refusal to offer rather than an offer to refuse — the same shape `convokePlan` returns and for
+ * the same reason.
+ */
+export function delvePlan(
+  state: GameState, seat: SeatIndex, cost: ManaCost, sources: readonly ManaSourceEntry[],
+): { readonly exiled: readonly string[]; readonly cost: ManaCost } | null {
+  const pool = poolOf(state, seat);
+  const available = graveyardFodder(state, seat, undefined, cost.generic);
+  for (let n = 0; n <= available.length; n += 1) {
+    const left = withCostChange(cost, -n);
+    if (canAfford(pool, left, sources)) return { exiled: available.slice(0, n), cost: left };
+  }
+  return null;
+}
+
 export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[] {
   const free: ManaSourceEntry[] = [];
   const painful: ManaSourceEntry[] = [];
@@ -592,19 +678,33 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   */
   const zones = [
     ...listAt(state, zoneKey(seat, 'hand'))
-      .map((id) => ({ id, fromCommand: false, flashback: false, foretold: false, fromAdventure: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false })),
     ...listAt(state, zoneKey(seat, 'command'))
-      .map((id) => ({ id, fromCommand: true, flashback: false, foretold: false, fromAdventure: false })),
+      .map((id) => ({ id, fromCommand: true, flashback: false, escape: false, foretold: false, fromAdventure: false })),
     ...listAt(state, zoneKey(seat, 'graveyard'))
       .filter((id) => scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name)?.flashback !== undefined)
-      .map((id) => ({ id, fromCommand: false, flashback: true, foretold: false, fromAdventure: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: true, escape: false, foretold: false, fromAdventure: false })),
+    /*
+      And the second narrow list over the graveyard: a card with escape (CR 702.139).
+
+      Its own list rather than a widening of the flashback one, the way the two exile lists below
+      are two lists: the cost is different, the cards are different, and the two differ in what
+      happens at the *end* — a flashback spell is exiled as it leaves the stack and an escaped one
+      goes back to the graveyard it came from. One card could in principle have both and would be
+      offered twice, which is what the rules say happens.
+    */
+    ...listAt(state, zoneKey(seat, 'graveyard'))
+      .filter((id) => scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name)?.escape !== undefined)
+      .map((id) => ({
+        id, fromCommand: false, flashback: false, escape: true, foretold: false, fromAdventure: false,
+      })),
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => {
         const inst = state.instances[id];
         if (inst?.foretoldTurn === undefined || inst.foretoldTurn === state.turn) return false;
         return scriptFor(state.cardDefs[inst.defKey]?.name)?.foretell !== undefined;
       })
-      .map((id) => ({ id, fromCommand: false, flashback: false, foretold: true, fromAdventure: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: true, fromAdventure: false })),
     /*
       And the fifth: a creature in exile whose adventure resolved (CR 708).
 
@@ -616,7 +716,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     */
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => state.instances[id]?.onAdventure === true)
-      .map((id) => ({ id, fromCommand: false, flashback: false, foretold: false, fromAdventure: true })),
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: true })),
   ];
   /*
     One entry per castable **face**, which is where a two-faced card stops needing special cases.
@@ -635,7 +735,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       : [{ ...entry, half: undefined as number | undefined }, ...halves];
   });
 
-  for (const { id, fromCommand, flashback, foretold, fromAdventure, half } of castable) {
+  for (const { id, fromCommand, flashback, escape, foretold, fromAdventure, half } of castable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     /*
@@ -660,7 +760,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       From hand only, and never with the flashback or commander-zone pass: morph is about the card
       in your hand, and nothing in this pool has both.
     */
-    if (script?.morph !== undefined && !flashback && !fromCommand && !fromAdventure && sorcerySpeed) {
+    if (script?.morph !== undefined && !flashback && !escape && !fromCommand && !fromAdventure
+      && sorcerySpeed) {
       const faceDownCost = parseManaCost(MORPH_COST);
       if (canAfford(poolOf(state, seat), faceDownCost, sources)) {
         out.push({
@@ -713,8 +814,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       casting it and often because you cannot cast it. During your own turn only (CR 702.143a),
       which in this engine is the window a sorcery gets.
     */
-    if (script?.foretell !== undefined && !flashback && !fromCommand && !foretold && !fromAdventure
-      && sorcerySpeed) {
+    if (script?.foretell !== undefined && !flashback && !escape && !fromCommand && !foretold
+      && !fromAdventure && sorcerySpeed) {
       const cost = parseManaCost(FORETELL_COST);
       if (canAfford(poolOf(state, seat), cost, sources)) {
         out.push({
@@ -730,8 +831,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     // Flashback and foretell both replace the cost, so everything from here on — affordability, X,
     // the description — is about that cost rather than the printed one.
     const costShown = flashback ? script?.flashback?.cost ?? ''
-      : foretold ? script?.foretell?.cost ?? ''
-        : def?.manaCost ?? '';
+      // Escape replaces the printed cost like flashback and foretell, which is why it is in the
+      // same chain: the mana half of "Escape—{2}{R}{R}, Exile three other cards" is the whole of
+      // what this spell costs in mana, and the card half is counted separately below.
+      : escape ? script?.escape?.cost ?? ''
+        : foretold ? script?.foretell?.cost ?? ''
+          : def?.manaCost ?? '';
     const printed = parseManaCost(costShown);
     if (printed.unsupported !== undefined) {
       why(id, 'this cost is not one the engine can pay — move it by hand');
@@ -752,6 +857,22 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         : 'it asks for a creature to sacrifice, and you have none');
       continue;
     }
+    /*
+      And the other half of an escape cost, which is paid in cards (CR 702.139).
+
+      Checked here beside the sacrifice for the same reason and by the same rule (CR 601.2h): a
+      cost you cannot pay is not one you may pay, so a Phoenix of Ash with two other cards in the
+      graveyard is not offered at all rather than offered and refused. `graveyardFodder` is asked
+      rather than the zone being counted, because the two can differ — it excludes the card doing
+      the escaping, which is what makes "three *other* cards" mean what it says.
+    */
+    const escapeFodder = escape && script?.escape !== undefined
+      ? graveyardFodder(state, seat, id, script.escape.exile)
+      : [];
+    if (escape && script?.escape !== undefined && escapeFodder.length < script.escape.exile) {
+      why(id, `escape asks for ${script.escape.exile} other cards in your graveyard`);
+      continue;
+    }
     // The tax is generic mana on top of the printed cost (CR 903.8), and it only applies to a
     // cast from the command zone.
     const taxed: ManaCost = fromCommand && tax > 0
@@ -765,19 +886,47 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const change = costChangeFor(state, seat, def);
     const cost: ManaCost = withCostChange(taxed, change.generic);
     /*
+      Delve, which takes generic mana off the cost and pays for it out of the graveyard
+      (CR 702.112).
+
+      Before the affordability question rather than after it, because the whole point of the
+      mechanic is that the spell is affordable *because* of the cards: a Gurmag Angler asked
+      "can you pay {6}{B}" would be blocked on turn four with eleven cards in the graveyard and a
+      swamp untapped. `delvePlan` is what `castSpell` recomputes, so the offer and the payment
+      cannot disagree — the rule convoke established.
+    */
+    const delved = script?.delve === true ? delvePlan(state, seat, cost, sources) : null;
+    if (script?.delve === true && delved === null) {
+      why(id, 'not enough mana, counting every land you could tap and every card you could delve');
+      continue;
+    }
+    /** The cost actually being paid in mana: delve has already come off it. */
+    const payable: ManaCost = delved?.cost ?? cost;
+    /*
       Convoke widens what may pay for this one spell, so affordability is asked of the plan rather
       than of the lands alone — and the plan is what `castSpell` recomputes, so the offer and the
       payment cannot disagree.
     */
-    const convoked = script?.convoke === true ? convokePlan(state, seat, cost, sources) : null;
+    const convoked = script?.convoke === true ? convokePlan(state, seat, payable, sources) : null;
     if (script?.convoke === true && convoked === null) {
       why(id, 'not enough mana, counting every land you could tap and every creature you could convoke');
       continue;
     }
-    if (convoked === null && !canAfford(poolOf(state, seat), cost, sources)) {
+    if (convoked === null && !canAfford(poolOf(state, seat), payable, sources)) {
       why(id, 'not enough mana, counting every land you could still tap');
       continue;
     }
+    /*
+      The half of the cost that is paid in cards, said out loud on the play.
+
+      Escape's count is printed on the card; delve's is whatever the plan worked out, and both are
+      the same kind of thing to the player reading the offer — mana is not all this is going to
+      cost. Which cards they are is left out on purpose: they are recomputed as the spell is cast,
+      and an offer that named them would be promising something the payment is not bound to.
+    */
+    const exilesOn = escape && script?.escape !== undefined
+      ? { escape: true as const, exiles: script.escape.exile }
+      : delved !== null && delved.exiled.length > 0 ? { exiles: delved.exiled.length } : {};
     const taxOn = fromCommand && tax > 0 ? { commanderTax: tax } : {};
     // Only when it actually moved the number: a Thalia taxing a creature spell changes nothing,
     // and a note saying so would be noise on every card in the deck.
@@ -786,7 +935,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       : { costChange: cost.generic - taxed.generic, costNote: change.notes[0] ?? '' };
     // X at zero is a legal cast of an X spell and sometimes the only one available, so a cost with
     // {X} is offered whenever the rest of it can be paid; `xMax` says how high the player may go.
-    const xOn = cost.x ? { xMax: maxAffordableX(poolOf(state, seat), cost, sources) } : {};
+    const xOn = payable.x ? { xMax: maxAffordableX(poolOf(state, seat), payable, sources) } : {};
 
     // A modal spell is offered once per legal combination of modes, and a combination whose
     // targets cannot be filled is not offered at all — so "destroy target creature; or draw two
@@ -804,7 +953,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         out.push({
           kind: 'cast', card: id, name: ch.name,
           description: `Cast ${ch.name} — ${chosen.map((m) => m.description).join('; and ')}`,
-          manaCost: costShown, ...taxOn, ...changeOn, ...xOn, modes, targetSpecs: specs, candidates,
+          manaCost: costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
+          modes, targetSpecs: specs, candidates,
           ...(half === undefined ? {} : { half }),
           isManaAbility: false, sacrificeOptions: victims,
         });
@@ -834,16 +984,24 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       kind: 'cast', card: id, name: ch.name,
       description: flashback
         ? `Cast ${ch.name} from your graveyard (flashback ${costShown})`
-        : foretold
-          ? `Cast ${ch.name} from exile (foretold ${costShown})`
-          : fromAdventure
-            // Named as coming back, because that is the half of the card the player has not seen
-            // in play yet and a bare "Cast Merfolk Secretkeeper" from exile reads as a bug.
-            ? `Cast ${ch.name} from exile (back from its adventure)`
-            : fromCommand && tax > 0
-              ? `Cast ${ch.name} (+{${tax}} tax)`
-              : `Cast ${ch.name}${convokeNote}`,
-      manaCost: costShown, ...taxOn, ...changeOn, ...xOn, targetSpecs: specs, candidates,
+        : escape
+          // The cards as well as the mana, because the mana is the cheap half: a player reading
+          // "escape {2}{R}{R}" and nothing else would not know the graveyard is about to empty.
+          ? `Cast ${ch.name} from your graveyard (escape ${costShown}, exiling ${script?.escape?.exile ?? 0})`
+          : foretold
+            ? `Cast ${ch.name} from exile (foretold ${costShown})`
+            : fromAdventure
+              // Named as coming back, because that is the half of the card the player has not
+              // seen in play yet and a bare "Cast Merfolk Secretkeeper" from exile reads as a bug.
+              ? `Cast ${ch.name} from exile (back from its adventure)`
+              : fromCommand && tax > 0
+                ? `Cast ${ch.name} (+{${tax}} tax)`
+                // Delve the same way convoke is: the count, because the cards are the engine's
+                // choice and "delving 6" is what the player needs to read off the offer.
+                : `Cast ${ch.name}${convokeNote}${delved !== null && delved.exiled.length > 0
+                  ? ` (delving ${delved.exiled.length})` : ''}`,
+      manaCost: costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
+      targetSpecs: specs, candidates,
       ...(flashback ? { flashback: true } : {}),
       ...(foretold ? { foretold: true } : {}),
       ...(half === undefined ? {} : { half }),
@@ -861,7 +1019,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     */
     // A flashback casting pays the flashback cost and nothing else, so the kicker is not on offer
     // with it: the two are alternative costs, and no card in the pool has both.
-    const kicker = flashback || foretold ? undefined : script?.kicker;
+    const kicker = flashback || escape || foretold ? undefined : script?.kicker;
     if (kicker !== undefined) {
       const withKicker = parseManaCost(`${def?.manaCost ?? ''}${kicker.cost}`);
       const kickedCost: ManaCost = withCostChange(

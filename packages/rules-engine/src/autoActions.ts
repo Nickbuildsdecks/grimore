@@ -31,7 +31,8 @@ import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './s
 import { checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  convokePlan, costChangeFor, crewPlan, legalActions, manaSources, withCostChange,
+  convokePlan, costChangeFor, crewPlan, delvePlan, graveyardFodder, legalActions, manaSources,
+  withCostChange,
 } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type StackObject, type Target,
@@ -102,6 +103,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const casting: CardInstance = faceKey === undefined ? inst : { ...inst, castAs: faceKey };
   const script = scriptFor(def?.name);
   const flashback = action.flashback === true;
+  const escape = action.escape === true;
   /*
     An adventurer being cast as its creature half, out of exile, because its adventure resolved.
 
@@ -140,6 +142,27 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // card in there is the one you put there.
     if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
+    }
+  } else if (escape) {
+    /*
+      Escape, the same zone flashback casts from and a cost with cards in it (CR 702.139).
+
+      Three refusals rather than one, and the third is the one that is actually about escape: a
+      card with no escape is not castable this way at all, a card in somebody else's graveyard is
+      not yours, and a graveyard without enough *other* cards in it cannot pay the cost — which is
+      CR 601.2h and the reason `legalActions` never offered the play either. The count is asked of
+      `graveyardFodder` rather than of the zone, because that function is what will choose the
+      cards a few dozen lines down and the two must not be able to disagree.
+    */
+    if (script?.escape === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no escape`);
+    }
+    if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
+    }
+    if (graveyardFodder(state, action.by, inst.id, script.escape.exile).length < script.escape.exile) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        `escape asks for ${script.escape.exile} other cards in your graveyard`);
     }
   } else if (!foretold && !fromCommand && !fromAdventure
     && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
@@ -273,10 +296,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // and the kicker and the reason the two cannot both be paid on one casting.
   const costText = flashback
     ? script?.flashback?.cost
-    // Foretell replaces the printed cost, like flashback, which is why it is in the same chain
-    // rather than beside the kicker: a foretold spell is cast for one cost and not for two.
-    : foretold ? script?.foretell?.cost
-      : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
+    // Escape replaces it too, and the cards it also costs are paid below rather than here: this
+    // chain is about mana, and the mana half of an escape cost is all of what `payFrom` sees.
+    : escape ? script?.escape?.cost
+      // Foretell replaces the printed cost, like flashback, which is why it is in the same chain
+      // rather than beside the kicker: a foretold spell is cast for one cost and not for two.
+      : foretold ? script?.foretell?.cost
+        : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
   /*
     And what the permanents on the table have done to the cost: a Goblin Electromancer, a Thalia.
 
@@ -312,6 +338,32 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The tax is inside `toPay` now, so adding it again in `payFrom` would charge it twice.
     taxToPay = 0;
   }
+  /*
+    Delve, which pays part of the cost out of the graveyard (CR 702.112).
+
+    Recomputed here rather than carried on the action, for the reason convoke is: how many cards
+    this spell needs is a fact about the board at the moment of casting, and `delvePlan` is the
+    same function that decided to offer the cast at all. A client choosing its own number would be
+    choosing how much of its graveyard to spend — and choosing it a turn later than the engine did.
+
+    Before convoke rather than after, which matters only in principle: no card in the pool has
+    both, and the one that did would want the delve taken off the cost before the creatures were
+    counted against what is left.
+  */
+  let delved: readonly string[] = [];
+  if (script?.delve === true) {
+    const printed = parseManaCost(costText);
+    const taxed = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
+    const full = withCostChange(taxed, change.generic);
+    const plan = delvePlan(state, action.by, full, manaSources(state, action.by));
+    if (plan === null) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        `cannot pay for ${characteristics.name}, even delving your whole graveyard`);
+    }
+    delved = plan.exiled;
+    toPay = plan.cost;
+    taxToPay = 0;
+  }
   if (script?.convoke === true) {
     const printed = parseManaCost(costText);
     const taxed = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
@@ -329,6 +381,25 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   for (const id of convoked) beforePay = withInstance(beforePay, id, { tapped: true });
   const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay);
   let next = paid.state;
+  /*
+    And the half of the cost that is paid in cards, exiled now as the rest of the cost is paid.
+
+    As the spell is **cast**, not when it resolves, which is what makes this a cost: the cards are
+    gone before anybody may respond, a countered Gurmag Angler does not give them back, and a
+    Phoenix of Ash that escaped cannot be answered by somebody exiling its graveyard in reply.
+
+    Escape's cards are chosen here rather than at the top because `graveyardFodder` has to be
+    asked of the state the payment is happening in — and asked with the escaping card excluded,
+    which is the "other" in "exile three other cards".
+  */
+  const exiling = escape && script?.escape !== undefined
+    ? graveyardFodder(next, action.by, inst.id, script.escape.exile)
+    : delved;
+  for (const id of exiling) {
+    const card = next.instances[id];
+    if (card === undefined) continue;
+    next = relocate(next, card, 'exile', card.owner, 'bottom');
+  }
   if (sacrificed !== null) {
     const victim = requireInstance(next, sacrificed);
     sacrificedName = characteristicsOf(next, victim).name;
@@ -379,6 +450,16 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // And flashback, for the third time for the same reason: a player deciding whether to counter a
   // spell cast out of a graveyard should be able to see that it is never coming back.
   const flashbackText = flashback ? ' (flashback)' : '';
+  /*
+    And escape, for the fifth time and the same reason, with the part that is not the mana.
+
+    "Escaped, 3 cards" rather than "escaped": the player deciding whether to answer this is also
+    deciding whether it is coming back again, and the answer to that is how much graveyard is
+    left. Delve is in the same string for the same reason — a Gurmag Angler cast for {B} looks
+    like a misprint until the stack says where the other six mana went.
+  */
+  const escapedText = escape ? ` (escaped, ${script?.escape?.exile ?? 0} cards)` : '';
+  const delveText = delved.length > 0 ? ` (delved ${delved.length})` : '';
   // And foretell, for the fourth time and the same reason: a spell coming out of exile for a
   // cheaper cost is a spell the player deciding whether to answer it should be able to read as one.
   const foretoldText = foretold ? ' (foretold)' : '';
@@ -403,7 +484,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       creature spell and goes to the battlefield like one.
     */
     ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
-    description: `${characteristics.name}${xText}${kickedText}${flashbackText}${foretoldText}${modeText}`,
+    description: `${characteristics.name}${xText}${kickedText}${flashbackText}${escapedText}`
+      + `${delveText}${foretoldText}${modeText}`,
   };
   next = {
     ...next,
@@ -464,7 +546,7 @@ function castFaceDown(
   if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
-  if (action.flashback === true || action.kicked === true || action.x !== undefined
+  if (action.flashback === true || action.escape === true || action.kicked === true || action.x !== undefined
     || (action.modes !== undefined && action.modes.length > 0) || action.sacrifice !== undefined
     || (action.targets !== undefined && action.targets.length > 0)) {
     throw new EngineError('RULE_NOT_APPLICABLE',

@@ -4445,6 +4445,58 @@ The real cost of the reservation rule is somewhere else and nothing has measured
 Arc Tempest's windows and 12% of Skyward Writ's have nothing to point at** — a Squelch or an Essence
 Scatter holding mana up for a spell type that is not coming.
 
+### A cost paid out of the graveyard
+
+Everything that paid for anything in this engine paid with something on the battlefield — tap it,
+sacrifice it, crew with it — or with a life total. `additionalCost` was one field wide and the
+graveyard was a place cards went. So the pool had no card whose price was its own graveyard, and
+the three decks that fill one by playing their own game had nothing to do with it.
+
+**Two mechanics, one primitive, opposite ends of it.** Escape (CR 702.139) is a fixed price printed
+on the card — Phoenix of Ash comes back for {2}{R}{R} and three *other* cards, as often as the
+graveyard can stand it. Delve (CR 702.112) is a price chosen as the spell is cast: each card exiled
+pays for {1}, so a Gurmag Angler is a seven-mana 5/5 on an empty graveyard and a one-mana 5/5 on a
+full one — the first card in the pool whose mana cost is a fact about the game rather than about
+the card.
+
+The difference that carries the balance is at the **end** rather than the start. Flashback cast a
+card out of the graveyard too, and what made it fair was the exile as it leaves the stack: there is
+no third casting. An escaped permanent is ordinary — it dies back into the graveyard it came from,
+ready to go again for three more cards.
+
+Three rules are easy to get almost right, and each has a test. **"Other" is load-bearing**: a
+Phoenix with exactly three cards in the graveyard including itself cannot escape, and the play is
+absent rather than offered and refused (CR 601.2h). **The cards go as the spell is cast**, so a
+countered Angler does not give them back and nobody can answer an escape by exiling the graveyard
+in reply. And **delve pays generic only** (CR 702.112a) — seven Islands and nine cards still cannot
+cast a {6}{B} creature.
+
+**Which cards get spent is the engine's choice, and the ordering rule is the only judgement in
+either mechanic.** A graveyard in this pool is not a pile: a Think Twice can be cast out of it, a
+Phoenix can escape out of it, a Gravedigger can take a creature back from it. So `graveyardFodder`
+spends the cards with no second life of their own first, and `delvePlan` takes the **fewest** cards
+that make a spell payable rather than the most — the maximum is free in mana and expensive in
+everything else, and these three cards are each other's evidence for that.
+
+Three slots, one per deck, all three in the table's bottom cluster, every cut taken off
+`cast-counts` and every cut card still in the pool somewhere else: the **Phoenix of Ash** into Arc
+Tempest for a Divination (65%), the **Gurmag Angler** into Hollow Tide for a Wall of Air (79%, and
+the deck already holds the ground with three Fog Banks), the **Treasure Cruise** into Tidal Mind for
+a Preordain (75%, with four others in the pool).
+
+**And `graveyard-costs.mjs` says the bot pays these costs**, which no instrument here could have
+said before: it reads the stack, where the engine writes down "(escaped, 3 cards)" and "(delved 6)"
+because an opponent is entitled to read both halves of a cost before answering a spell. Over 144
+games each: 5 escapes in Arc Tempest, 11 delved Anglers in Hollow Tide (one to four cards deep),
+10 delved Cruises in Tidal Mind (six of them six or seven deep).
+
+The escape count is the honest surprise and it is not a bug: three things have to line up — the
+Phoenix has to die, the graveyard has to hold three other cards, and the bot needs four mana spare
+at *sorcery speed* — and Arc Tempest is one of the decks the reservation rule now keeps mana back
+in, so an escape that would spend a Counterspell's mana is dropped before the search sees it. The
+two features interact exactly as written, and the pool's first escape card happens to live in the
+deck least able to use it.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -4456,6 +4508,12 @@ Scatter holding mana up for a spell type that is not coming.
    nothing printed here wants one), which was the most frequent thing in the engine and the one
    nothing could read — so "whenever you draw a card" and its mirror are both a few declarative
    lines.
+   **And a cost can now be paid out of the graveyard**, which was the last zone nothing could
+   spend: `escape` is a cost and a zone (a mana string plus a count of other cards), `delve: true`
+   is a reduction chosen as the spell is cast, and `graveyardFodder` decides which cards go — so
+   every card printed with either keyword is a line or two, and the shape beyond them (a cost paid
+   by exiling cards from *somebody else's* graveyard, or from exile) is the same primitive with a
+   different zone key.
    `turned-face-up` has two cards behind it, morph has megamorph and a cost paid in life, target
    redirection has Willbender and Swerve, the three board-watching events carry *which* permanent
    they were about, and an ability on the stack can be pointed at — so exalted, evolve, "that

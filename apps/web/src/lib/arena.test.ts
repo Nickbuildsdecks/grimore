@@ -347,6 +347,26 @@ describe("costs that are choices", () => {
     })
   })
 
+  it("sends the escape flag, and nothing about which cards it will spend", () => {
+    /*
+      The same bug shape as the flashback flag above, prevented the same way — and one thing more.
+
+      An escape cost is partly cards out of the graveyard, and *which* cards is the engine's choice,
+      recomputed as the spell is cast. So the action carries the flag and no payment: a client that
+      named the three cards would be choosing which of its own resources to spend, a turn earlier
+      than the engine chooses, and the two could disagree. `exiles` on the play is there to be
+      *shown* — "exiling 3" — and never to be sent back.
+    */
+    const back = play({
+      name: "Phoenix of Ash",
+      description: "Cast Phoenix of Ash from your graveyard (escape {2}{R}{R}, exiling 3)",
+      escape: true, exiles: 3, manaCost: "{2}{R}{R}", targetSpecs: [], candidates: [],
+    })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: back }).action).toEqual({
+      type: "auto:cast", card: "c1", escape: true,
+    })
+  })
+
   it("and never sends one on the play beside it", () => {
     const mode = arenaReducer(IDLE, { kind: "choosePlay", play: play({ name: "Burst Lightning" }) }).mode
     expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({

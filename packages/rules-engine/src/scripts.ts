@@ -1501,6 +1501,54 @@ const FIREBOLT: CardScript = {
   onResolve: (c) => damageFirstTarget(c, 2),
 };
 
+/*
+  ── A cost paid out of the graveyard ───────────────────────────────────────────────────────────
+
+  Flashback above casts a card *from* the graveyard; these three pay *with* it, which is a
+  different thing and the engine's first cost taken out of a zone. Everything else that pays for
+  something spends mana, taps a permanent, sacrifices one, or pays life — the graveyard was
+  somewhere cards went and nothing more.
+
+  **Escape and delve are the same idea at opposite ends.** The Phoenix's price is printed and
+  fixed: {2}{R}{R} and three other cards, as many times as the graveyard can stand it, which is
+  what makes a 2/2 flier worth a slot and a 4/4 unprintable. The Angler and the Cruise choose
+  their price as they are cast — `delvePlan` works out the fewest cards that make the spell
+  payable, so the same card is seven mana on turn four and one mana on turn eight.
+
+  The reason the plan takes the *fewest* and not the most is these three cards together: a
+  graveyard emptied to cast an Angler is a Phoenix that cannot escape and a Think Twice that
+  cannot be flashed back, and the mana saved by delving one card further is mana that was going to
+  go unspent anyway.
+*/
+const PHOENIX_OF_ASH: CardScript = {
+  name: 'Phoenix of Ash',
+  keywords: ['flying', 'haste'],
+  escape: { cost: '{2}{R}{R}', exile: 3 },
+  abilities: [
+    {
+      cost: { mana: '{1}' },
+      description: '{1}: Phoenix of Ash gets +1/+0 until end of turn.',
+      effect: (c) => pump(c.state, [c.source], c.source, c.controller, { power: 1 }),
+    },
+  ],
+};
+
+/*
+  A 5/5 with no text at all beyond its own price, which is the honest way to show delve off: there
+  is nothing else going on, so a game where the Angler arrives on turn four is a game delve
+  decided.
+*/
+const GURMAG_ANGLER: CardScript = {
+  name: 'Gurmag Angler',
+  delve: true,
+};
+
+const TREASURE_CRUISE: CardScript = {
+  name: 'Treasure Cruise',
+  delve: true,
+  onResolve: (c) => draw(c.state, c.controller, 3),
+};
+
 // ── The library as the thing you attack ──────────────────────────────────────────────────────────
 
 /*
@@ -5670,6 +5718,7 @@ const ALL: readonly CardScript[] = [
     'equipped creature is indestructible'),
   guildgate('Rakdos Guildgate', 'B', 'R'),
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
+  PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,

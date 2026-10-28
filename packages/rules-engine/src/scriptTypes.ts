@@ -1020,6 +1020,59 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Escape: cast this from your graveyard for a cost that is partly mana and partly cards
+   * (CR 702.139).
+   *
+   * The same zone flashback cast from and a different kind of cost. Flashback replaced the mana and
+   * nothing else; escape says "Escape—{2}{R}{R}, Exile three other cards from your graveyard", and
+   * the second half of that is the engine's first cost paid out of a **zone** rather than out of
+   * the board or the mana pool. Everything already in the engine that pays a cost pays it with
+   * something on the battlefield (tap it, sacrifice it, crew with it) or with a life total; the
+   * graveyard was a place cards went, and escape is what makes it a resource.
+   *
+   * It is an **alternative cost**, so it replaces the printed one and nothing else is paid with it
+   * — no kicker, no flashback, no commander tax. And unlike flashback the card is not exiled as it
+   * leaves the stack: a Phoenix that escaped is an ordinary permanent, and when it dies it goes to
+   * the graveyard it came from, ready to escape again for the price of three more cards. That
+   * difference is the whole balance of the mechanic, and it is why escape has no `flashback` flag
+   * on the stack object.
+   *
+   * **"Other" is load-bearing.** The card being cast is in the graveyard too, and it is not one of
+   * the cards exiled for its own cost — a Phoenix of Ash with exactly three cards in the graveyard
+   * including itself cannot escape, and the engine does not offer it. That is CR 601.2h territory:
+   * a cost that cannot be paid is not a cost you may pay, so the play is absent rather than
+   * offered and refused.
+   *
+   * Which cards go is the engine's to decide, the way convoke's taps are — see `graveyardFodder`
+   * for the order and why it prefers cards nothing else in the deck can use.
+   */
+  readonly escape?: {
+    /** The mana half, in the printed `{2}{R}{R}` form. */
+    readonly cost: string;
+    /** How many *other* cards leave the graveyard with it. */
+    readonly exile: number;
+  };
+  /**
+   * Delve: each card you exile from your graveyard while casting this pays for {1} (CR 702.112).
+   *
+   * The other half of escape's idea and the opposite shape. Escape is a fixed cost paid from a
+   * fixed zone; delve is a **cost reduction of a size you choose as you cast**, which puts it in
+   * the family X belongs to rather than the family flashback belongs to. A Gurmag Angler is a
+   * {6}{B} 5/5 with eight cards in the graveyard and a {B} 5/5 with fourteen.
+   *
+   * Only generic mana, which is the rule rather than a simplification (CR 702.112a): a card
+   * exiled this way pays for {1} and can never pay a coloured pip, so delving a {6}{B} spell
+   * six times leaves {B} and never less.
+   *
+   * **The engine delves as little as it can get away with, not as much as it can.** The maximum
+   * is free in mana and expensive in everything else — a graveyard is what the escape card, the
+   * flashback card and the Gravedigger all spend — so `delvePlan` finds the *smallest* number of
+   * cards that makes the spell castable and stops there. A player at a tabletop would make that
+   * trade differently on different turns; an engine that always took the maximum would quietly
+   * empty the resource two other mechanics in this pool are built on.
+   */
+  readonly delve?: true;
+  /**
    * Foretell: {2} to exile this from your hand face down, and a cheaper cost to cast it later
    * (CR 702.143).
    *

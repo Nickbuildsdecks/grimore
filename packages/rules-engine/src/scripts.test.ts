@@ -2579,7 +2579,7 @@ describe('scry, which is the other way a player sees their own library', () => {
     [...ids(s, seat, 'library')].slice(0, n);
 
   it('asks about the top card only, and leaves it there when nothing is chosen', () => {
-    let s = withMana(1, ['Preordain'], ['Island'], [], 'tidal-mind');
+    let s = withMana(1, ['Preordain'], ['Island'], [], 'hollow-tide');
     const [top, second] = topOf(s, 1, 2);
     s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Preordain') });
     s = passBoth(s);
@@ -2596,7 +2596,7 @@ describe('scry, which is the other way a player sees their own library', () => {
   });
 
   it('puts what was chosen on the bottom, and draws what is left on top', () => {
-    let s = withMana(1, ['Preordain'], ['Island'], [], 'tidal-mind');
+    let s = withMana(1, ['Preordain'], ['Island'], [], 'hollow-tide');
     const [top, second] = topOf(s, 1, 2);
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Preordain') }));
     const library = ids(s, 1, 'library').length;
@@ -2645,7 +2645,7 @@ describe('scry, which is the other way a player sees their own library', () => {
   });
 
   it('refuses an answer naming a card that was not on the question', () => {
-    let s = withMana(1, ['Preordain'], ['Island'], [], 'tidal-mind');
+    let s = withMana(1, ['Preordain'], ['Island'], [], 'hollow-tide');
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Preordain') }));
     const deeper = ids(s, 1, 'library')[4]!;
     // Without this check a crafted answer could reach past the top of the deck — which is both a
@@ -4754,7 +4754,10 @@ describe('flashback: casting a spell out of the graveyard', () => {
       Multiverse, and every remaining spell in the deck with no flashback either targets something
       or stops to ask a question on the way down.
     */
-    let s = graveyard('Preordain', ['Island', 'Island', 'Island']);
+    // Hollow Tide rather than Tidal Mind, which traded its Preordain for a Treasure Cruise: the
+    // card this test needs is one with no flashback that needs no target and asks nothing, and
+    // the pool keeps four Preordains in three other decks.
+    let s = graveyard('Preordain', ['Island', 'Island', 'Island'], 'hollow-tide');
     const card = find(s, 0, 'hand', 'Preordain');
     s = apply(s, { type: 'card:move', by: 0, card, toZone: 'graveyard' });
     expect(s.instances[card]!.zone).toBe('graveyard');
@@ -8396,14 +8399,16 @@ describe('the creature the event was about: exalted, and evolve’s intervening-
   });
 
   it('evolves the Raptor when something bigger arrives, once per arrival', () => {
-    let s = table('hollow-tide', ['Wall of Air', 'Fog Bank'],
-      ['Island', 'Island', 'Island', 'Island', 'Island', 'Cloudfin Raptor']);
+    // A Thieving Magpie rather than the Wall of Air this test used to cast: the Wall left Hollow
+    // Tide for the Gurmag Angler, and the Magpie is the same 1/3 for the same three mana.
+    let s = table('hollow-tide', ['Thieving Magpie', 'Fog Bank'],
+      ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Cloudfin Raptor']);
     const raptor = find(s, 0, 'battlefield', 'Cloudfin Raptor');
     expect([power(s, raptor), toughness(s, raptor)]).toEqual([0, 1]);
 
     // A 1/3 is bigger on both counts, so the trigger fires and the Raptor is a 1/2.
     s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Wall of Air'),
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thieving Magpie'),
     })));
     expect([power(s, raptor), toughness(s, raptor)]).toEqual([1, 2]);
 
@@ -8432,17 +8437,17 @@ describe('the creature the event was about: exalted, and evolve’s intervening-
     /*
       The second ask, and the reason the clause is a rule rather than a filter.
 
-      The Wall of Air enters, the evolve trigger goes on the stack, and the other player bounces
-      the Wall while the trigger is still waiting. On resolution the condition is asked again,
-      there is no creature to measure, and the ability does nothing — so an Unsummon answers the
-      counter as well as the body. Checked against the version that only asked once, where the
-      Raptor would keep the +1/+1 for a creature that was never there when it resolved.
+      The Magpie enters, the evolve trigger goes on the stack, and the other player bounces it
+      while the trigger is still waiting. On resolution the condition is asked again, there is no
+      creature to measure, and the ability does nothing — so an Unsummon answers the counter as
+      well as the body. Checked against the version that only asked once, where the Raptor would
+      keep the +1/+1 for a creature that was never there when it resolved.
     */
     let s = advanceTo(arena({
       decks: { 0: 'hollow-tide', 1: 'tidal-mind' },
-      hands: { 0: ['Wall of Air'], 1: ['Unsummon'] },
+      hands: { 0: ['Thieving Magpie'], 1: ['Unsummon'] },
       battlefield: {
-        0: ['Island', 'Island', 'Island', 'Cloudfin Raptor'],
+        0: ['Island', 'Island', 'Island', 'Island', 'Cloudfin Raptor'],
         1: ['Island', 'Island'],
       },
       turn: 4, firstSeat: 0,
@@ -8452,8 +8457,8 @@ describe('the creature the event was about: exalted, and evolve’s intervening-
 
     // The Wall resolves; `passBoth` stops as soon as the stack changes, which is the trigger
     // arriving on it.
-    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Wall of Air') }));
-    const wall = find(s, 0, 'battlefield', 'Wall of Air');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thieving Magpie') }));
+    const magpie = find(s, 0, 'battlefield', 'Thieving Magpie');
     expect(stackNames(s)).toEqual(['Evolve: put a +1/+1 counter on Cloudfin Raptor.']);
 
     // Seat 1 can only tap its lands once it holds priority, so the pass comes first — a seat
@@ -8463,10 +8468,10 @@ describe('the creature the event was about: exalted, and evolve’s intervening-
 
     s = drain(apply(s, {
       type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Unsummon'),
-      targets: [{ kind: 'card', id: wall }],
+      targets: [{ kind: 'card', id: magpie }],
     }));
 
-    expect(s.instances[wall]!.zone).toBe('hand');
+    expect(s.instances[magpie]!.zone).toBe('hand');
     expect([power(s, raptor), toughness(s, raptor)]).toEqual([0, 1]);
   });
 });
@@ -10490,13 +10495,28 @@ describe('Chalice of the Void: the permanent that answers a spell by what it cos
 
   it('counters its own controller’s spell too, because that is the card', () => {
     let s = table(1, 5);
-    // A fifth Island, untapped, and a one-mana spell of seat 0's own.
-    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Preordain'), toZone: 'hand' });
-    const preordain = find(s, 0, 'hand', 'Preordain');
-    s = apply(s, { type: 'auto:cast', by: 0, card: preordain });
-    expect(stackNames(s)).toEqual(['Preordain', 'counter that spell']);
+    /*
+      A fifth Island, untapped, and a one-mana spell of seat 0's own.
+
+      An Unsummon rather than the Preordain this used to cast, which left Tidal Mind for a Treasure
+      Cruise — and an Unsummon needs something to point at, so a Raging Goblin is put on the other
+      side of the table for it. Which is incidental to the card being tested and says so: what
+      matters is that the spell cost one mana and belongs to the Chalice's own controller.
+    */
+    s = apply(s, {
+      type: 'card:move', by: 1, card: find(s, 1, 'library', 'Raging Goblin'), toZone: 'battlefield',
+    });
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Unsummon'), toZone: 'hand' });
+    const unsummon = find(s, 0, 'hand', 'Unsummon');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: unsummon, targets: [{ kind: 'card', id: goblin }],
+    });
+    expect(stackNames(s)).toEqual(['Unsummon', 'counter that spell']);
     s = drain(passBoth(s));
-    expect(namesIn(s, 0, 'graveyard')).toContain('Preordain');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Unsummon');
+    // Countered, so the Goblin is still where it was.
+    expect(s.instances[goblin]!.zone).toBe('battlefield');
   });
 
   it('misses when the counters are gone before it resolves, which is the second ask', () => {
@@ -11968,7 +11988,10 @@ describe('whenever you draw a card (CR 121.2)', () => {
   it('watches its own controller and not the other player', () => {
     let s = advanceTo(arena({
       decks: { 0: 'arc-tempest', 1: 'hollow-tide' },
-      hands: { 0: ['Divination'] },
+      // A Think Twice rather than the Divination this used to draw with: the Divination left Arc
+      // Tempest for the Phoenix of Ash, and one card drawn on the wrong side of the table proves
+      // the same thing two do.
+      hands: { 0: ['Think Twice'] },
       battlefield: {
         0: ['Island', 'Island', 'Island'],
         1: ['Island', 'Chasm Skulker'],
@@ -11977,9 +12000,9 @@ describe('whenever you draw a card (CR 121.2)', () => {
     }), 'precombat-main');
     const skulker = find(s, 1, 'battlefield', 'Chasm Skulker');
     s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Divination'),
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Think Twice'),
     })));
-    // `by` defaults to `you`, so the opponent's two cards are none of the Skulker's business.
+    // `by` defaults to `you`, so the opponent's card is none of the Skulker's business.
     expect(s.instances[skulker]!.counters['+1/+1']).toBeUndefined();
   });
 
@@ -12204,5 +12227,223 @@ describe('red-green: the thirteenth deck’s cards', () => {
     expect(namesIn(s, 0, 'exile')).toContain('Thragtusk');
     const token = find(s, 0, 'battlefield', 'Beast');
     expect([power(s, token), toughness(s, token)]).toEqual([3, 3]);
+  });
+});
+
+describe('a cost paid out of the graveyard: escape and delve', () => {
+  /*
+    The engine's first cost taken out of a *zone*, and the two mechanics printed on it.
+
+    Everything that paid for something before this spent mana, tapped a permanent, sacrificed one
+    or paid life — all of them things on the battlefield or on a life total. The graveyard was
+    somewhere cards went. Escape (CR 702.139) and delve (CR 702.112) make it a resource, and they
+    are opposite shapes of the same idea: escape's price is printed and fixed, delve's is chosen
+    as the spell is cast.
+
+    Which cards go is the engine's choice, like the creatures convoke taps — so these tests assert
+    the *count* and the *ordering rule*, and never which particular card went, except where the
+    ordering rule is the thing being tested.
+  */
+  const tempest = (hand: readonly string[], grave: readonly string[], lands: number): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'hollow-tide' },
+      hands: { 0: [...hand] },
+      graveyard: { 0: [...grave] },
+      battlefield: {
+        0: Array.from({ length: lands }, () => 'Mountain'),
+        1: ['Island'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  /*
+    Hollow Tide, for the Angler: `grave` in the graveyard and `lands` on the battlefield.
+
+    The Angler is put in hand by `arena` rather than fetched out of the library in the test, which
+    is not a style choice: `arena` fast-forwards to turn four with the tabletop's own `turn:pass`,
+    and every one of those turns draws a card — so "find it in the library" is a coin flip on
+    whether the fast-forward already drew it.
+  */
+  const tide = (grave: readonly string[], lands: readonly string[]): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'ember-rush' },
+      hands: { 0: ['Gurmag Angler'] },
+      graveyard: { 0: [...grave] },
+      battlefield: { 0: [...lands], 1: ['Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  const escapePlay = (s: GameState, name: string) =>
+    legalActions(s, 0).plays.find((play) => play.name === name && play.escape === true);
+
+  it('offers the Phoenix out of the graveyard, and says what the cards cost as well as the mana', () => {
+    // The Phoenix itself plus three others: exactly the price, which is the smallest graveyard
+    // that can pay it.
+    const s = tempest([], ['Phoenix of Ash', 'Lava Spike', 'Burst Lightning', 'Magma Jet'], 4);
+    const play = escapePlay(s, 'Phoenix of Ash');
+    expect(play).toBeDefined();
+    expect(play?.manaCost).toBe('{2}{R}{R}');
+    expect(play?.exiles).toBe(3);
+    // Both halves in the words the player reads, because the mana is the cheap half.
+    expect(play?.description).toContain('escape {2}{R}{R}, exiling 3');
+  });
+
+  it('is not offered when the graveyard is one card short, counting itself out (CR 601.2h)', () => {
+    /*
+      "Three **other** cards" is load-bearing and this is the test of it: a graveyard holding the
+      Phoenix and two more has three cards in it and cannot pay a cost of three others. A cost you
+      cannot pay is not one you may pay, so the play is absent rather than offered and refused —
+      and the engine says why, in the blocked list the table shows under an unplayable card.
+    */
+    const s = tempest([], ['Phoenix of Ash', 'Lava Spike', 'Burst Lightning'], 4);
+    expect(escapePlay(s, 'Phoenix of Ash')).toBeUndefined();
+    const card = find(s, 0, 'graveyard', 'Phoenix of Ash');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, escape: true }))
+      .toContain('escape asks for 3 other cards');
+  });
+
+  it('exiles the three as the spell is cast, before anybody may respond', () => {
+    /*
+      A cost, not an effect. The cards are gone while the Phoenix is still on the stack, so a
+      player answering the spell cannot answer the payment — the same reason the sacrifice for an
+      additional cost happens here rather than on resolution.
+    */
+    let s = tempest([], ['Phoenix of Ash', 'Lava Spike', 'Burst Lightning', 'Magma Jet'], 4);
+    const card = find(s, 0, 'graveyard', 'Phoenix of Ash');
+    s = apply(s, { type: 'auto:cast', by: 0, card, escape: true });
+
+    expect(s.stackOrder).toHaveLength(1);
+    expect(ids(s, 0, 'exile')).toHaveLength(3);
+    expect(ids(s, 0, 'graveyard')).toHaveLength(0);
+    // And the stack says so, for the player deciding whether this is worth an answer.
+    expect(s.stackObjects[s.stackOrder[0]!]?.description).toContain('escaped, 3 cards');
+  });
+
+  it('and the escaped Phoenix is an ordinary permanent, not exiled like a flashback spell', () => {
+    /*
+      The one difference between escape and flashback that matters, and the whole balance of the
+      mechanic: a flashback spell is exiled as it leaves the stack and there is no third casting.
+      An escaped creature goes to the graveyard when it dies, ready to escape again for the price
+      of three more cards — so the stack object carries no `flashback` flag, which is what
+      `onLeaveStack` reads to decide where it goes.
+    */
+    let s = tempest([], ['Phoenix of Ash', 'Lava Spike', 'Burst Lightning', 'Magma Jet'], 4);
+    const card = find(s, 0, 'graveyard', 'Phoenix of Ash');
+    s = apply(s, { type: 'auto:cast', by: 0, card, escape: true });
+    expect(s.stackObjects[card]?.flashback).toBeUndefined();
+
+    s = drain(passBoth(s));
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    const ch = characteristicsOf(s, s.instances[card]!);
+    expect([ch.power, ch.toughness]).toEqual([2, 2]);
+    expect(ch.keywords.has('flying')).toBe(true);
+
+    // Killed, and back in the graveyard rather than in exile: it can escape again.
+    s = drain(apply(s, { type: 'card:move', by: 0, card, toZone: 'graveyard' }));
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('pays with the cards nothing else can use, and leaves the flashback card alone', () => {
+    /*
+      The ordering rule in `graveyardFodder`, which is the only judgement in either mechanic: a
+      Think Twice in the graveyard is a card that can still be cast, and exiling it to escape a
+      Phoenix is paying twice for one spell.
+    */
+    let s = tempest([], ['Phoenix of Ash', 'Think Twice', 'Lava Spike', 'Burst Lightning', 'Magma Jet'], 4);
+    const card = find(s, 0, 'graveyard', 'Phoenix of Ash');
+    s = apply(s, { type: 'auto:cast', by: 0, card, escape: true });
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Think Twice']);
+    expect(namesIn(s, 0, 'exile').sort()).toEqual(['Burst Lightning', 'Lava Spike', 'Magma Jet']);
+  });
+
+  it('casts the Angler for one mana off a deep graveyard, and says how deep', () => {
+    // Printed {6}{B}: six cards out of the graveyard pay the generic, and the Swamp pays the {B}.
+    let s = tide(
+      ['Mind Sculpt', 'Mind Sculpt', 'Tome Scour', 'Thought Scour', 'Preordain', 'Divination'],
+      ['Swamp'],
+    );
+    const angler = find(s, 0, 'hand', 'Gurmag Angler');
+    const play = legalActions(s, 0).plays.find((p) => p.name === 'Gurmag Angler');
+    expect(play?.exiles).toBe(6);
+    expect(play?.description).toContain('delving 6');
+
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: angler })));
+    const ch = characteristicsOf(s, s.instances[angler]!);
+    expect([ch.power, ch.toughness]).toEqual([5, 5]);
+    expect(ids(s, 0, 'graveyard')).toHaveLength(0);
+    expect(ids(s, 0, 'exile')).toHaveLength(6);
+  });
+
+  it('delves as few cards as it can get away with, not as many as it can', () => {
+    /*
+      The one real decision in the mechanic, and the reason `delvePlan` walks up from nothing: the
+      graveyard is what the Think Twice and the Phoenix spend, so a plan that always took the
+      maximum would be paying for the Angler with cards the deck had other uses for. Four Swamps
+      means three cards, and the other six stay where they are.
+    */
+    let s = tide(
+      ['Mind Sculpt', 'Mind Sculpt', 'Tome Scour', 'Thought Scour', 'Preordain', 'Divination',
+        'Murder', 'Negate', 'Doom Blade'],
+      ['Swamp', 'Swamp', 'Swamp', 'Swamp'],
+    );
+    const play = legalActions(s, 0).plays.find((p) => p.name === 'Gurmag Angler');
+    expect(play?.exiles).toBe(3);
+
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gurmag Angler') });
+    expect(ids(s, 0, 'exile')).toHaveLength(3);
+    expect(ids(s, 0, 'graveyard')).toHaveLength(6);
+  });
+
+  it('cannot pay a coloured pip with a card, however deep the graveyard is (CR 702.112a)', () => {
+    /*
+      Delve pays for {1} and only {1}. Seven Islands and nine cards in the graveyard still cannot
+      cast a {6}{B} creature, because the {B} is not generic and no number of cards makes it one.
+    */
+    const s = tide(
+      ['Mind Sculpt', 'Mind Sculpt', 'Tome Scour', 'Thought Scour', 'Preordain', 'Divination',
+        'Murder', 'Negate', 'Doom Blade'],
+      ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island'],
+    );
+    expect(legalActions(s, 0).plays.some((p) => p.name === 'Gurmag Angler')).toBe(false);
+    expect(legalActions(s, 0).blocked.some((b) => /delve/.test(b.reason))).toBe(true);
+  });
+
+  it('draws three for one blue mana, and the Cruise is a sorcery either way', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'ember-rush' },
+      hands: { 0: ['Treasure Cruise'] },
+      graveyard: {
+        0: ['Doom Blade', 'Murder', 'Unsummon', 'Think Twice', 'Man-o\'-War', 'Ravenous Rats',
+          'Mind Rot'],
+      },
+      battlefield: { 0: ['Island'], 1: ['Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const handBefore = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Treasure Cruise'),
+    })));
+    // Three drawn, one Cruise gone from the hand it was cast out of.
+    expect(ids(s, 0, 'hand').length).toBe(handBefore - 1 + 3);
+    // Seven cards, less the seven the delve paid with, plus the Cruise itself.
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Treasure Cruise']);
+  });
+
+  it('refuses escape on a card that has none, and on somebody else’s graveyard', () => {
+    const s = tempest([], ['Lava Spike', 'Burst Lightning', 'Magma Jet', 'Think Twice'], 4);
+    const spike = find(s, 0, 'graveyard', 'Lava Spike');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: spike, escape: true }))
+      .toContain('has no escape');
+    // And the other seat's Phoenix is not in the other seat's graveyard to begin with, so the
+    // refusal that matters is the zone one: seat 1 may not escape seat 0's card.
+    const theirs = tempest([], ['Phoenix of Ash', 'Lava Spike', 'Burst Lightning', 'Magma Jet'], 4);
+    const phoenix = find(theirs, 0, 'graveyard', 'Phoenix of Ash');
+    expect(refusal(theirs, { type: 'auto:cast', by: 1, card: phoenix, escape: true }))
+      .not.toBeNull();
   });
 });
