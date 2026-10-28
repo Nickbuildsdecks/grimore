@@ -8577,3 +8577,190 @@ survive a block), evasion over bodies, and the Loxodon Warhammer package that tu
 into several poison counters through a blocker. `infect-clock` is the instrument to judge it with,
 because the number to move is the widest board and the share that connects — not the win rate, which
 is three noisy points away from anything a single card can do.
+
+## D177 — The table republished, and a bot fix that moved a deck further than any card ever has
+
+**Decision: publish the thirteen-deck table as it stands after the last three changes, and read only
+one of its thirteen moves as real — Ashen Rite's ten points, which is the sacrifice-fodder fix
+(D175) arriving in the field exactly as its own probe said it would.**
+
+Every deck against every other, both seats, 288 games each
+(`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
+
+```
+ 75%  215-73   ember-rush
+ 59%  170-118  verdant-guard
+ 58%  167-121  dawn-tithe
+ 57%  163-125  forge-alliance
+ 54%  156-132  kindle-grove
+ 51%  147-141  skyward-writ
+ 49%  142-146  ashen-rite
+ 47%  135-153  hollow-tide
+ 46%  133-155  delta-bloom
+ 43%  124-164  arc-tempest
+ 41%  117-171  rot-harvest
+ 36%  103-185  tidal-mind
+ 33%  95-193   blight-vector
+```
+
+### What changed between the two runs, which is why this comparison is worth making at all
+
+The control arm is the run D176 quotes (the one that put Blight Vector last at 31%), on **the same
+twelve seeds from 4400** — so every pairing in both arms is the same games. It already had the escape
+and delve cards in it, the two answers to a graveyard, and the Squelch narrowing (D173 says so: the
+table *was* the check that the narrowing costs nothing). The three things it does **not** have are
+**Woe Strider** in Ashen Rite (D174), the **fodder-choice fix** (D175) and the **Wall of Blossoms**
+in Blight Vector (D176).
+
+Wins per deck, control → this run, in games of 288:
+
+```
+ashen-rite      113 → 142   +29      arc-tempest     125 → 124    -1
+rot-harvest     104 → 117   +13      hollow-tide     138 → 135    -3
+blight-vector     88 →  95    +7      delta-bloom     137 → 133    -4
+forge-alliance  161 → 163    +2      verdant-guard   177 → 170    -7
+ember-rush      214 → 215    +1      kindle-grove    163 → 156    -7
+                                        skyward-writ    156 → 147    -9
+                                        tidal-mind      112 → 103    -9
+                                        dawn-tithe      178 → 167   -11
+```
+
+**One of those is outside the ±20-game floor and twelve are inside it.** Ashen Rite's +29 is the
+fodder fix, whose own probe measured **+32 of 288** on the deck in isolation — a prediction and an
+arrival that agree to three games, which is as close as this instrument gets to confirming anything.
+It moves the deck from 39% and fourth-worst to **49% and seventh**, and it is the largest move any
+single change has produced in this pool: larger than the six-slot Tidal Mind rebuild (D167) and
+larger than every card that has ever been priced here.
+
+**The second-largest move is the same fix on another deck.** Rot Harvest gained 13 games, and Rot
+Harvest is the only other deck in the pool with repeatable sacrifice outlets in it — a Vampire
+Aristocrat and a Bloodthrone Vampire, the exact two cards the fix guards. Thirteen games is inside
+the floor and means nothing on its own; it is worth writing down because it is the right *sign* on
+the right deck, and because the two decks that gained are the two decks the change was about.
+
+Everything else is noise, including dawn-tithe's −11 and tidal-mind's −9, and both of those are the
+other half of a zero-sum table: the wins Ashen Rite and Rot Harvest gained came off somebody.
+
+### Two claims in the published write-ups are now wrong, and this is the correction
+
+The previously published table said **"the bottom of that table used to be a cliff and is now a
+cluster"** and **"the spread across the whole field is thirty-six points where it was forty-eight"**.
+Neither survives this run: the spread is **forty-two points** (75% to 33%), and the bottom is two
+decks standing apart again — Tidal Mind at 36% and Blight Vector at 33%, five points below Rot
+Harvest. Both of those documents have been corrected rather than left as they were.
+
+That is not a regression so much as the field moving: the published table was a **different seed
+set** (the default 3300), so its deck-by-deck numbers carry the floor once each and comparing the two
+run-to-run carries it twice. The honest statement of what this table says about the pool is the
+shape rather than any one row — one deck clearly ahead at 75%, nine within eight points of even, and
+two that are measurably short.
+
+### And the one the table does not answer
+
+Blight Vector is still last at 33%, +7 games on a control arm whose only change for it was a card
+that had already measured level. D176's reshape is still the open question, and this run neither
+helps nor hurts it: a deck that needs ten poison counters off a board that peaks at five creatures
+was never going to be moved by one blocker, and the table has now said so twice.
+
+## D178 — The reshape Blight Vector asked for, measured and rejected — twice
+
+**Decision: revert the reshape and the smaller version of it. Four slots measured −11 and −10, the
+two-slot equipment package measured −3 and +23, and the instrument that was supposed to judge the
+shape says why neither worked: the five-wide ceiling is not a supply problem.**
+
+D176 ended with a direction rather than a list: resilience over count, evasion over bodies, and the
+Loxodon Warhammer package. This is that list, built, measured and taken back out.
+
+### What was tried
+
+Four in, four out, from `cast-counts` over 144 games:
+
+- **+1 Blight Mamba** (to four). The regeneration is pressed **406 times** off three copies — 471%,
+  the most any button in this pool is pressed, and the deck's only creature that survives a block.
+- **+1 Plague Stinger** (to four), the one infect creature four decks in the pool cannot block.
+- **+1 Loxodon Warhammer** (to two). 149% — 38 casts and 53 equips in the 61 games a copy was in
+  hand, and the deck's second-best card by use.
+- **+1 Whispersilk Cloak**, a new Equipment: {3} to cast, equip {2}, *equipped creature can't be
+  blocked and has shroud*. The pool's first card that makes anything unblockable, and in an infect
+  deck a 1/1 nobody can block is a poison counter a turn for as long as it lives.
+- Out: **2 Blossoming Defense** (44%, the deck's least-cast card), **1 Read the Bones** (62%, three
+  mana in a deck losing a race by a turn), **1 Cystbearer** (a 2/3 that holds ground, which the
+  Wall of Blossoms now does).
+
+### The measurement, which is two arms of the same sign
+
+Probing the revert, 288 games an arm: **+11 and +10**. Both inside the ±20 floor, both the *same
+sign*, which is the pattern that kills a change rather than the pattern that leaves it open — the
+old shape is better than the new one on both seed sets.
+
+**Then the narrow version, because four changes at once cannot say which one was wrong.** The
+equipment package alone — the second Warhammer and the Cloak for the two Blossoming Defenses, the
+part of the reshape with the strongest argument behind it — measured **−3 and +23** on its revert.
+Opposite signs with one arm well outside the floor is not a card that earns a slot either.
+
+One number from inside those runs is worth keeping, because it says which half of the reshape was
+the expensive one. On the same seeds: the committed deck won **114** of 288, the equipment package
+**117**, and the full reshape **103**. The four creature-and-draw slots cost about fourteen games on
+their own, and the matchup columns name the two cards it missed — the reshape is worse against
+Ember Rush, Forge Alliance and Arc Tempest, the three fastest decks it plays, which is exactly what
+cutting a 2/3 blocker and a card-draw spell does.
+
+### And `infect-clock` says the ceiling is not about the list at all
+
+The instrument D176 chose to judge this by, run on the reshaped deck against the same field:
+
+```
+                       committed      reshaped
+attack windows              530            574
+infect creatures able       736            826   (+12%)
+            ...sent         663            737
+                            90%            89%
+widest board                  5              5
+widest attack                 5              5
+```
+
+**Twelve percent more infect creatures reaching an attack step, the same ceiling, and ten fewer
+wins.** The deck is not short of creatures to draw; it is short of creatures that are still there
+next turn. Adding bodies to a board that loses them at this rate adds attack windows and nothing
+else, which is the whole result and the reason no slot change has moved this deck in nine probe
+arms.
+
+### The Cloak was built, measured in two decks and deleted
+
+`cantBeBlocked` has existed since D133 with one creature behind it that could not block either, so
+an Equipment carrying it looked like a mechanic the pool was missing rather than a slot in one deck.
+Its shroud is the half that makes it wrong in an infect deck: nine of Blight Vector's cards target,
+so a cloaked creature cannot be grown, saved or handed the Warhammer, and five mana of setup in a
+deck whose curve stops at three is a different deck's plan.
+
+So it was measured where Equipment is already the plan — **Forge Alliance**, four Equipment and a
+Balan that moves all of them at once — against that deck's **Hellrider** (32%: twelve casts in the
+thirty-seven games a copy was in hand, and the deck's second-deadest card after a pod-only Disrupt
+Decorum). The bot *likes* the Cloak there: `cast-counts` gives it **149%**, 29 casts and 26 equips
+in 37 games, which is the same usage the Loxodon Warhammer gets. It still loses:
+
+```
+revert (Hellrider back in): -2, +17, +23, +14 over four seed sets
+                            617 wins with the Cloak, 669 with the Hellrider, of 1152
+```
+
+Three arms of four say the Hellrider, and four and a half points of a deck's record is not a
+rounding error. **So the card is deleted** — definition, script and tests — which is D144's
+precedent (*built, measured, deleted*) and the rule this pool keeps: a script with no card in a deck
+has no coverage, and a card kept because it was written is a card nobody measured.
+
+One thing is worth keeping out of it, and it is about the bot rather than the card: it cast and
+equipped a Cloak at the first opportunity in nearly every game it drew one, and the games came out
+worse. `evaluate` does not know that unblockable on a 2/2 is worth less than an extra damage per
+attacker, and a card the bot reaches for eagerly while losing is a **trap** rather than an option.
+That is the second time an evasion idea has measured negative while looking obviously good (D144 was
+the first), and both were priced rather than argued.
+
+### What happens next
+
+And the reshape is not getting a third guess. The next thing for this deck is an instrument, not a
+list: **what takes its creatures away** — blockers, removal, or its own costs — because the three
+answers point at three different decks and two reshapes have now been priced on a hunch and both
+measured worse. That is #158. The one card the reshape wanted at the right price is **Rancor**
+({G}, +2/+0 and trample, and it comes back when it reaches the graveyard), which needs the
+`to-graveyard` event to grow a self-subject filter first (#157).

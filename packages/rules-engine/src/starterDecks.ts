@@ -3619,7 +3619,9 @@ export const FORGE_ALLIANCE: DeckSpec = {
     { card: AJANIS_PRIDEMATE, count: 1 },
     { card: SERRA_ANGEL, count: 2 },
     // The card this deck was already built for: every small creature it plays is another damage
-    // on the swing, and the tokens from Raise the Alarm and Secure the Wastes count too.
+    // on the swing, and the tokens from Raise the Alarm and Secure the Wastes count too. A
+    // Whispersilk Cloak was measured against this slot over four seed sets and lost 52 games of
+    // 1152 — the write-up is D178.
     { card: HELLRIDER, count: 1 },
     { card: BONESPLITTER, count: 1 },
     /*
@@ -5260,6 +5262,11 @@ export const BLIGHT_VECTOR: DeckSpec = {
       block happens, the Mamba comes back tapped, and the `-1/-1` counters it put on the blocker
       stay there for ever. In a deck of one-power creatures the card that survives combat is worth
       more than the card that wins it.
+
+      **A fourth copy was measured and is not here.** It was part of the reshape D178 rejected, and
+      `cast-counts` still says this is the deck's most-pressed card by a distance: **471%**, 126
+      casts and **406 regenerations** across the 144 games a copy was in hand. Being the best card
+      in a deck is not the same as wanting a fourth of it.
     */
     { card: BLIGHT_MAMBA, count: 3 },
     /*
@@ -5272,7 +5279,9 @@ export const BLIGHT_VECTOR: DeckSpec = {
     { card: ICHORCLAW_MYR, count: 4 },
     { card: PLAGUE_STINGER, count: 3 },
     // The only infect creature in the deck that is not a 1/1, and the only one that blocks: a 2/3
-    // holds the ground for two turns while the fliers do the work.
+    // holds the ground for two turns while the fliers do the work. Cutting the second copy was
+    // part of the reshape D178 rejected, and it is one of the two cards that reshape missed most:
+    // this deck's worst matchups are the fast ones, and a 2/3 is what it has against them.
     { card: CYSTBEARER, count: 2 },
     /*
       Two Crusaders, which is as many as the deck can cast and the best card in it.
@@ -5299,6 +5308,9 @@ export const BLIGHT_VECTOR: DeckSpec = {
     { card: VASTWOOD_FORTIFICATION, count: 1 },
     // Hexproof and +2/+2 for one mana: this deck's removal-spell answer and its combat trick in
     // the same card, and the only card in it that protects a creature somebody is trying to kill.
+    // It is the deck's least-cast card at 44% and it survived a reshape that cut it anyway (D178):
+    // a card the bot only gets to use in a third of the games it holds one is still better here
+    // than five mana of Equipment in a deck whose curve stops at three.
     { card: BLOSSOMING_DEFENSE, count: 2 },
     /*
       Two Tainted Strikes, which are the deck's reach and the card that reads the whole table.
@@ -5308,8 +5320,17 @@ export const BLIGHT_VECTOR: DeckSpec = {
       is also the only card here that can win a game the creatures have already lost.
     */
     { card: TAINTED_STRIKE, count: 2 },
-    // The equipment, and the single most poison the deck can put on anybody in one swing: +3/+0
-    // trample on a 1/1 with infect is four counters and no profitable block.
+    /*
+      The equipment, and the single most poison the deck can put on anybody in one swing: +3/+0
+      trample on a 1/1 with infect is four counters and no profitable block — and `cast-counts`
+      says the deck knows it: **149%**, 38 casts and 53 equips in the 61 games a copy was in hand,
+      second only to the Blight Mamba.
+
+      **A second copy was measured and is not here either.** Paired with a Whispersilk Cloak for
+      the two Blossoming Defenses, the package measured −3 and **+23** on its revert — opposite
+      signs with one arm well outside the floor, which is not a card that earns a slot. Five mana
+      to make one 1/1 unblockable is a different deck's plan; D178 has the whole of it.
+    */
     { card: LOXODON_WARHAMMER, count: 1 },
 
     // ── The eight that answer what gets in the way ──

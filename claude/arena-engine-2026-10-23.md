@@ -4651,6 +4651,73 @@ three instruments on two slots to find level and worse. The next pass is a resha
 `infect-clock` (widest board, share that connects) rather than by a win rate three noisy points
 away from anything one card can move.
 
+### The field re-measured, and the largest move anything has made in this pool
+
+The thirteen-deck table, re-run on the same twelve seeds as the one D176 quotes
+(`SEEDS=12 SEED0=4400`, 288 games a deck):
+
+```
+ 75%  215-73   ember-rush      47%  135-153  hollow-tide
+ 59%  170-118  verdant-guard   46%  133-155  delta-bloom
+ 58%  167-121  dawn-tithe      43%  124-164  arc-tempest
+ 57%  163-125  forge-alliance  41%  117-171  rot-harvest
+ 54%  156-132  kindle-grove    36%  103-185  tidal-mind
+ 51%  147-141  skyward-writ    33%  95-193   blight-vector
+ 49%  142-146  ashen-rite
+```
+
+The three things that changed between the two runs are Woe Strider, the sacrifice-fodder fix and
+Blight Vector's Wall of Blossoms — and **one row of thirteen moved outside the ±20-game floor**.
+Ashen Rite gained **29 games of 288** (39% → 49%, fourth-worst to seventh), which is the fodder fix
+whose own probe had measured +32 on that deck in isolation: a prediction and an arrival three games
+apart. It is the largest move any single change has made in this pool — larger than the six-slot
+Tidal Mind rebuild, larger than any card ever priced here — and it was a bot bug rather than a card.
+
+**The second-largest is the same fix on the only other deck it could touch.** Rot Harvest gained 13
+games, and Rot Harvest is the one remaining deck with repeatable sacrifice outlets in it (a Vampire
+Aristocrat and a Bloodthrone Vampire, the exact two cards the fix guards). Thirteen games is inside
+the floor and proves nothing by itself; it is the right sign on the right deck, which is the most a
+noisy instrument can offer as corroboration.
+
+Everything else moved between −11 and +2 games, noise and the other half of a zero-sum table. Two
+sentences in the published write-ups did not survive the run and have been corrected rather than
+left standing: the spread is **forty-two points** where it was described as thirty-six, and the
+bottom is two decks rather than a cluster — Tidal Mind at 36% and Blight Vector at 33%, five points
+below the deck above them. D177 has the full before-and-after, and the caveat that the previously
+published table was a different seed set, so comparing those two run-to-run carries the floor twice.
+
+### The reshape it asked for, measured and taken back out
+
+D176's direction — resilience over count, evasion over bodies, the Warhammer package — was built as
+four slots: a fourth **Blight Mamba** (471% use, 406 regenerations off three copies), a fourth
+**Plague Stinger**, a second **Loxodon Warhammer** (149%), and a new **Whispersilk Cloak** ({3},
+equip {2}, *can't be blocked and has shroud*), for the two Blossoming Defenses (44%), a Read the
+Bones (62%) and a Cystbearer.
+
+Probing the revert: **+11 and +10** of 288. Two arms, same sign, so the old shape is better than the
+new one — and the narrow version, the equipment package alone, measured **−3 and +23**, which is
+not a slot either. On the same seeds the committed deck won 114, the package 117 and the full
+reshape 103, so the four creature-and-draw slots cost about fourteen games by themselves, concentrated
+against the three fastest decks in the field. That is what cutting a 2/3 blocker does.
+
+**`infect-clock` is why neither worked, and it is one line.** The reshaped deck put **12% more
+infect creatures into attack steps** (826 able where the committed deck had 736, 89% of them sent)
+and the **widest board of infect creatures was five in both**. The deck is not short of creatures to
+draw; it is short of creatures that are still there next turn, and more bodies buy attack windows
+rather than board. Nine probe arms have now been spent on this deck's slots and the ceiling has not
+moved once, so the next thing is an instrument rather than a third guess: what *takes* its creatures
+away — blockers, removal, or its own costs — because the three answers point at three different
+decks.
+
+**And the Cloak itself was deleted after being measured in a second deck.** `cantBeBlocked` had
+existed since D133 with one creature behind it that could not block either, so an Equipment carrying
+it looked like a mechanic rather than a slot — and shroud is what makes it wrong in an infect deck,
+where nine cards target. Measured in **Forge Alliance** instead, against that deck's Hellrider
+(32% cast), the bot used the Cloak as heavily as it uses the Loxodon Warhammer (**149%**, 29 casts
+and 26 equips in 37 games) and the record went **617–669 of 1152** across four seed sets. A card the
+bot reaches for eagerly while losing is a trap rather than an option, so the definition, the script
+and the tests are gone: D144's precedent, *built, measured, deleted*.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

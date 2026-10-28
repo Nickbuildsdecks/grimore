@@ -391,36 +391,60 @@ than the ones it countered rather than more expensive. So there is nothing here 
 also why it does not read as a cheat: it counters your creatures and lets your cantrips through.
 
 **The decks are not all equally strong, and now there is a table of it.** Every deck against every
-other, both seats, 288 games each (`SEEDS=12 node scripts/measure/deck-table.mjs`):
+other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
 ```
- 75%  217-71   ember-rush
- 63%  181-107  dawn-tithe
- 62%  178-110  verdant-guard
- 58%  168-120  forge-alliance
- 57%  164-124  kindle-grove
- 53%  153-135  skyward-writ
- 42%  120-168  arc-tempest
- 41%  119-169  ashen-rite
- 41%  118-170  hollow-tide
- 41%  118-170  delta-bloom
- 39%  111-177  tidal-mind
- 39%  112-176  rot-harvest
- 39%  111-177  blight-vector
+ 75%  215-73   ember-rush
+ 59%  170-118  verdant-guard
+ 58%  167-121  dawn-tithe
+ 57%  163-125  forge-alliance
+ 54%  156-132  kindle-grove
+ 51%  147-141  skyward-writ
+ 49%  142-146  ashen-rite
+ 47%  135-153  hollow-tide
+ 46%  133-155  delta-bloom
+ 43%  124-164  arc-tempest
+ 41%  117-171  rot-harvest
+ 36%  103-185  tidal-mind
+ 33%  95-193   blight-vector
 ```
 
-**The bottom of that table used to be a cliff and is now a cluster.** Tidal Mind spent five runs
-eleven points below the next-worst deck; the six-slot rebuild described below moved it **28% → 39%**,
-and the bottom five decks are now within two points of each other. The spread across the whole field
-is thirty-six points where it was forty-eight.
+**One deck is clearly ahead, nine are within eight points of even, and two are measurably short.**
+The spread is forty-two points, and the bottom of the table is two decks rather than a cluster:
+Tidal Mind at 36% and Blight Vector at 33%, five points below the deck above them. An earlier run of
+this table read "the bottom is a cluster now" and "the spread is thirty-six points"; this run says
+neither, and the sentences have been replaced rather than left standing — a published number that
+has been re-measured is worth more corrected than defended.
 
-That run is also the first with the **mana-reservation rule** on, so the aggressive decks at the top
-each give up a point or two — their opponents now answer things. Measured both ways on the same
-seeds, the five decks that hold counterspells moved **+1 between them**: Hollow Tide +4, Tidal Mind
-+2, Arc Tempest −1, Skyward Writ −2, Delta Bloom −2. That is the point of the rule rather than a
-disappointment about it — see the window table above.
+**Only one of the thirteen rows moved for a reason.** Against the previous run on the same twelve
+seeds, Ashen Rite gained **29 games of 288** (39% → 49%, fourth-worst to seventh) and Rot Harvest 13,
+and those two decks are the only ones in the pool with repeatable sacrifice outlets in them. The
+cause is not a card: it is the fodder-choice fix (D175), which stopped a Vampire Aristocrat eating
+the engine it was standing on — the largest move any one change has made in this pool, card or
+bot rule. Every other row moved between −11 and +2 games, which is
+inside this instrument's own ±20-game noise floor — so the honest reading of the rest of the table
+is the shape, not the rows. D177 has the full before-and-after.
+
+Every run of this table since the **mana-reservation rule** went in has had it on, and the run that
+measured it both ways on the same seeds is the one worth quoting: the five decks that hold
+counterspells moved **+1 between them** — Hollow Tide +4, Tidal Mind +2, Arc Tempest −1, Skyward
+Writ −2, Delta Bloom −2. The rule is there so the decks do what they are built to do, not to make
+them win more — see the window table above.
 
 **The rest of this section is the history of that table, run by run, newest first.**
+
+**The deck at the bottom was reshaped, and the reshape measured worse.** Blight Vector's own
+instruments had been clear — it loses a race by a turn, 71% of the time to plain combat damage, and
+it never gets more than **five** infect creatures onto the table — so four slots went in at once:
+a fourth Blight Mamba and a fourth Plague Stinger, a second Loxodon Warhammer and a new Whispersilk
+Cloak, for the two Blossoming Defenses, a Read the Bones and a Cystbearer. Probing the revert:
+**+11 and +10** of 288, two arms of the same sign, so the old list is better. The equipment package
+on its own measured **−3 and +23**. And the instrument chosen to judge the shape says why: the
+reshaped deck got **12% more infect creatures into attack steps** and the widest board it ever had
+was still five. It is not short of creatures to draw; it is short of creatures that are still there
+next turn. The deck keeps its list, the Cloak was measured in a second deck and deleted, and the
+next thing for this deck is an instrument rather than a third guess — D178.
+
 
 **Six slots at once, which is what finally moved Tidal Mind.** Twelve single- and two-slot changes
 had been priced against this deck and all twelve came back inside the instrument's own noise — the
