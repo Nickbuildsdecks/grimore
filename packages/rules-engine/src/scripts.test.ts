@@ -12434,6 +12434,43 @@ describe('a cost paid out of the graveyard: escape and delve', () => {
     expect(namesIn(s, 0, 'graveyard')).toEqual(['Treasure Cruise']);
   });
 
+  it('and a countered escape does not give the three cards back', () => {
+    /*
+      The other half of "it is a cost": costs are paid whatever happens to the spell afterwards
+      (CR 601.2h), so countering an escaped Phoenix answers the creature and not the payment. The
+      card itself goes to the **graveyard** rather than to exile, which is the escape-versus-
+      flashback difference again — so the three cards are gone and the Phoenix is back where it
+      started, needing three more.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'hollow-tide' },
+      hands: { 1: ['Counterspell'] },
+      graveyard: { 0: ['Phoenix of Ash', 'Lava Spike', 'Burst Lightning', 'Magma Jet'] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'],
+        1: ['Island', 'Island'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const phoenix = find(s, 0, 'graveyard', 'Phoenix of Ash');
+    s = apply(s, { type: 'auto:cast', by: 0, card: phoenix, escape: true });
+    expect(ids(s, 0, 'exile')).toHaveLength(3);
+
+    // Seat 1 holds priority before it can tap for mana, so the pass comes first.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = tapAllLands(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Counterspell'),
+      targets: [{ kind: 'card', id: phoenix }],
+    })));
+
+    expect(s.instances[phoenix]!.zone).toBe('graveyard');
+    // Paid is paid: the cards do not come back, and the graveyard is the Phoenix alone.
+    expect(ids(s, 0, 'exile')).toHaveLength(3);
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Phoenix of Ash']);
+  });
+
   it('refuses escape on a card that has none, and on somebody else’s graveyard', () => {
     const s = tempest([], ['Lava Spike', 'Burst Lightning', 'Magma Jet', 'Think Twice'], 4);
     const spike = find(s, 0, 'graveyard', 'Lava Spike');

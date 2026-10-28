@@ -889,7 +889,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 ```
 
-The layers under them have their own suites: `packages/rules-engine` (906 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (907 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (210 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
