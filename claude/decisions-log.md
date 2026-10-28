@@ -8847,3 +8847,111 @@ play it in any case, because its own Planar Void exiles it. That is the third th
 turned out to be incompatible with inside its own deck (a Raise Dead in D172, a Naturalize's own
 resolution in the same entry, and now this), and it is the clearest argument yet that a deck running
 graveyard denial has to be built as a denial deck rather than one with a hate card in it.
+
+## D180 — The fifteenth drop-this-option rule, found by an instrument rather than by a suspicion
+
+**Decision: build `creature-fate.mjs`, and fix what its first run reported — the bot casting its own
+Naturalize on its own creature. Drop any cast that would destroy a permanent its own controller
+controls.**
+
+### The instrument #158 asked for
+
+`infect-clock` had ended on a ceiling nobody could act on: Blight Vector's board of infect creatures
+never got wider than five, and a reshape that put 12% more of them into attack steps moved it by
+nothing (D178). The missing number was what *takes them away*, and the three possible answers point
+at three different decks — blockers (evasion), removal (resilience), or its own costs (a bot rule).
+
+`creature-fate.mjs` follows every creature a deck puts onto the battlefield and records how it left,
+where it went, and how long it lived. Attribution is the same trick `killed-by` uses, with one
+addition that mattered: the cause is the **stack object that resolved on that action**, not the
+action's own card, because auto-pass resolves the top of the stack as part of applying a *pass* — a
+Doom Blade cast last turn and resolving now carries no card on the action at all. The first version
+read the action and put 22% of all departures into "a state-based action", which is true of the
+mechanism and useless as an answer. When a single action resolves several objects it says so in its
+own bucket rather than guessing: whichever end of the stack you read is wrong about half the time.
+
+### What it said, on its first run
+
+```
+blight-vector: 48 games
+  261 creatures onto the battlefield, 148 left it, widest board 7
+  they last 3.0 turns of the table (about 1.5 of its own)
+
+  47%  combat
+  47%  the opponent's card
+   9%  its own card      ← and six percent of that was one card
+```
+
+**Six percent of this deck's creatures were killed by its own Naturalize.** Nine creatures across
+48 games, every one of them a Plague Stinger: Naturalize is "destroy target artifact or
+enchantment", a Plague Stinger and an Ichorclaw Myr are **artifact creatures**, and with nothing of
+the opponent's to point at the only legal targets the engine can offer are its own. The search took
+one every time — a card spent to kill its own 1/1 — for the reason this whole family exists: with
+auto-pass on, the state after a one-mana instant can be a turn later, and two positions a turn apart
+do not compare.
+
+D89 had already fixed the creature half of exactly this (`removesACreature` plus "is there anything
+of theirs to remove"). This is the other half, and it has to read the **target** rather than the
+card, because the same Naturalize with a real target is a fine card.
+
+### The rule, and why it is a text match
+
+`destroysOneOfItsOwn`: drop an `auto:cast` whose card says "destroy target" and whose chosen target
+is a permanent this seat controls. A text match rather than a script flag, for D173's reason — the
+card's own words are what say whether it destroys — and unconditional, because nothing printed in
+this pool wants to destroy its own permanent: there is no Oblivion Ring and no "destroy target
+permanent you control". The day a card wants it (a symmetric enchantment its own controller is
+losing to), that is the line to narrow.
+
+Two tests, the second being the one that makes the first mean anything: with only its own Plague
+Stinger on the table the bot declines the Naturalize (and the table is still *offered* it, because
+the rules do allow it), and with a Bonesplitter across the table it casts it at the Bonesplitter.
+
+### What it is worth: one deck, and the right deck
+
+The fix is not behind a flag, so the measurement is the thirteen-deck table before and after on the
+same twelve seeds from 4400. Wins of 288:
+
+```
+dawn-tithe      167 → 186  +19      ember-rush      215 → 212   -3
+blight-vector    95 → 100   +5      kindle-grove    156 → 152   -4
+forge-alliance  163 → 164   +1      tidal-mind      103 →  99   -4
+skyward-writ    147 → 147    0      hollow-tide     135 → 130   -5
+                                      delta-bloom     133 → 130   -3
+                                      arc-tempest     124 → 121   -3
+                                      verdant-guard   170 → 169   -1
+                                      ashen-rite      142 → 141   -1
+                                      rot-harvest     117 → 115   -2
+```
+
+**Dawn Tithe gains 19 games (58% → 65%) and it is one of the four decks that runs a card this rule
+can fire on** — a Disenchant, beside its own Darksteel Plate, its own Angelic Gift and eight other
+artifacts and enchantments. Nineteen is at the edge of the ±20 floor rather than past it, and the
+other three affected decks moved +5, −2 and 0, so the honest summary is: *worth something to one
+deck, nothing measurable to the rest, and the play it stops is wrong whatever the table says.* That
+is the same report D173 wrote for the Squelch narrowing and the same reason it shipped.
+
+The rest of the table is noise and the other half of a zero-sum run. One ordering change is worth
+naming because it is published: **Dawn Tithe is second now** and Tidal Mind is last at 34%, one
+point below Blight Vector.
+
+### And the answer the instrument was built for, which is not a card
+
+Across four decks the split is remarkably stable — combat and the opponent's removal take roughly
+half each, everywhere:
+
+```
+                 creatures   left   widest   lifetime   combat   theirs   ours
+blight-vector          261    148        7    3.0 / 1.5    47%      47%     4%
+rot-harvest            415    228        9    3.9 / 2.0    45%      41%    14%
+skyward-writ           401    203       12    4.5 / 2.2    47%      51%     1%
+dawn-tithe             362    256        8    3.4 / 1.7    49%      41%     7%
+```
+
+So Blight Vector's ceiling is **not** a different cause from everybody else's. It is the same two
+causes at the same ratio, applied to a deck that puts **261** creatures onto the table where Skyward
+Writ puts 401 and whose creatures live **1.5 of its own turns** where Skyward Writ's live 2.2. The
+infect deck is not losing its creatures to something unusual; it has fewer of them, each one dies to
+anything, and nothing in the list replaces them. Which makes the next question for that deck
+"where do more bodies come from" — tokens, or a creature that leaves one behind — rather than
+evasion or resilience, and both of the shapes D178 priced were answers to the wrong question.

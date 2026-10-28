@@ -4658,14 +4658,17 @@ The thirteen-deck table, re-run on the same twelve seeds as the one D176 quotes
 (`SEEDS=12 SEED0=4400`, 288 games a deck):
 
 ```
- 75%  215-73   ember-rush      47%  135-153  hollow-tide
- 59%  170-118  verdant-guard   46%  133-155  delta-bloom
- 58%  167-121  dawn-tithe      43%  124-164  arc-tempest
- 57%  163-125  forge-alliance  41%  117-171  rot-harvest
- 54%  156-132  kindle-grove    36%  103-185  tidal-mind
- 51%  147-141  skyward-writ    33%  95-193   blight-vector
- 49%  142-146  ashen-rite
+ 74%  212-76   ember-rush      45%  130-158  hollow-tide
+ 65%  186-102  dawn-tithe      45%  130-158  delta-bloom
+ 59%  169-119  verdant-guard   42%  121-167  arc-tempest
+ 57%  164-124  forge-alliance  40%  115-173  rot-harvest
+ 53%  152-136  kindle-grove    35%  100-188  blight-vector
+ 51%  147-141  skyward-writ    34%  99-189   tidal-mind
+ 49%  141-147  ashen-rite
 ```
+
+(Dawn Tithe's second place is D180's 19 games, not a card: this run already has the fifteenth
+drop-this-option rule in it.)
 
 The three things that changed between the two runs are Woe Strider, the sacrifice-fodder fix and
 Blight Vector's Wall of Blossoms — and **one row of thirteen moved outside the ±20-game floor**.
@@ -4741,6 +4744,48 @@ one card in the pool that beats it. Worth nothing in a win rate and said so — 
 rare — but `cast-counts` has the number that makes the card: Kindle Grove casts its two copies
 **139 times in the 64 games it draws one**, which is 217%, and that was true before this fix as
 well. It ships on fidelity, which is the same reason the Squelch narrowing shipped.
+
+### What takes a deck's creatures away, and the bot bug it found in its first run
+
+The instrument D178 asked for. `creature-fate.mjs` follows every creature a deck puts onto the
+battlefield and says how it left, where it went and how long it lived — because the five-wide
+ceiling on Blight Vector's board had three possible causes pointing at three different decks:
+blockers (answer: evasion), removal (answer: resilience) or its own costs (answer: a bot rule).
+
+**It found the third on its first run, in a card nobody suspected.** Six percent of that deck's
+creatures were being killed by **its own Naturalize**: "destroy target artifact or enchantment" is a
+legal aim at an artifact creature, a Plague Stinger is one, and with nothing of the opponent's to
+point at the only legal targets the engine can offer are its own. So the fifteenth member of the
+drop-this-option family is `destroysOneOfItsOwn` — drop a cast whose card says "destroy target" and
+whose chosen target is a permanent this seat controls. D89 had fixed the creature half of exactly
+this; the difference is that this one has to read the *target*, because the same Naturalize with a
+real target is a fine card. Worth **+19 games of 288 to Dawn Tithe** (58% → 65%, a Disenchant beside
+its own ten artifacts and enchantments) and nothing measurable to the other three decks that can
+fire it, which is the honest report.
+
+**And the answer the instrument was built for is not a card at all.** Across four decks the causes
+split the same way — roughly half combat, half the opponent's removal, everywhere:
+
+```
+                 creatures   left   widest   lifetime (table/own)   combat   theirs   ours
+blight-vector          261    148        7            3.0 / 1.5       47%      47%      4%
+rot-harvest            415    228        9            3.9 / 2.0       45%      41%     14%
+skyward-writ           401    203       12            4.5 / 2.2       47%      51%      1%
+dawn-tithe             362    256        8            3.4 / 1.7       49%      41%      7%
+```
+
+Blight Vector's ceiling is the same two causes at the same ratio as everybody else's. What is
+different is the denominator: **261 creatures where Skyward Writ puts 401**, each living 1.5 of its
+own turns against 2.2. The infect deck is not losing creatures to something unusual — it has fewer,
+they are cheaper, and nothing in the list replaces them. So the question for it is where more bodies
+come from (tokens, or a creature that leaves one behind), and both shapes D178 priced were answers
+to a different question.
+
+Two caveats travel with the harness and are written into it: *where they went* is read in the first
+state after the creature left, so a deck running its own graveyard hate turns its own deaths into
+exiles (Blight Vector's Planar Void is why 32% of its creatures end there), and a cause is
+attributed only when **one** stack object resolved on the action — several at once goes in its own
+bucket, because whichever end of the stack you read is wrong about half the time.
 
 ## Next
 

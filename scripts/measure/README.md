@@ -39,6 +39,16 @@ arms comparable at all. They take no database and no server — just the engine.
 | `draw-triggers.mjs` | does "whenever you draw a card" fire in real games, and what does it add up to? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/draw-triggers.mjs` |
 | `graveyard-costs.mjs` | does the bot ever escape or delve, how many cards does it spend, and does the hate ever meet the cost? | `SUBJECT=arc-tempest SEEDS=6 node scripts/measure/graveyard-costs.mjs` |
 | `infect-clock.mjs` | of the infect creatures it could attack with, how many does it send? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/infect-clock.mjs` |
+| `creature-fate.mjs` | what takes its creatures away, and how long do they live? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/creature-fate.mjs` |
+
+`creature-fate` takes a `KEYWORD` as well — `KEYWORD=infect` counts only the creatures that carry
+it, which is `infect-clock`'s population measured the other way round. Two of its columns are worth
+reading with their caveats in hand. **Where they went** is read in the first state after the
+creature left the battlefield, so a deck running its own graveyard hate turns its own deaths into
+exiles (Blight Vector's Planar Void does exactly that, which is why 32% of its creatures end in
+exile). And a cause is attributed to the **one** stack object that resolved on the action: when a
+single pass resolves several, the harness says so in its own bucket rather than guessing, because
+whichever end of the stack you read is wrong about half the time.
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.

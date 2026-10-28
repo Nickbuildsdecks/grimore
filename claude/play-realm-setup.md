@@ -398,36 +398,37 @@ also why it does not read as a cheat: it counters your creatures and lets your c
 other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
 ```
- 75%  215-73   ember-rush
- 59%  170-118  verdant-guard
- 58%  167-121  dawn-tithe
- 57%  163-125  forge-alliance
- 54%  156-132  kindle-grove
+ 74%  212-76   ember-rush
+ 65%  186-102  dawn-tithe
+ 59%  169-119  verdant-guard
+ 57%  164-124  forge-alliance
+ 53%  152-136  kindle-grove
  51%  147-141  skyward-writ
- 49%  142-146  ashen-rite
- 47%  135-153  hollow-tide
- 46%  133-155  delta-bloom
- 43%  124-164  arc-tempest
- 41%  117-171  rot-harvest
- 36%  103-185  tidal-mind
- 33%  95-193   blight-vector
+ 49%  141-147  ashen-rite
+ 45%  130-158  hollow-tide
+ 45%  130-158  delta-bloom
+ 42%  121-167  arc-tempest
+ 40%  115-173  rot-harvest
+ 35%  100-188  blight-vector
+ 34%  99-189   tidal-mind
 ```
 
-**One deck is clearly ahead, nine are within eight points of even, and two are measurably short.**
-The spread is forty-two points, and the bottom of the table is two decks rather than a cluster:
-Tidal Mind at 36% and Blight Vector at 33%, five points below the deck above them. An earlier run of
-this table read "the bottom is a cluster now" and "the spread is thirty-six points"; this run says
+**One deck is clearly ahead, nine are within nine points of even, and two are measurably short.**
+The spread is forty points, and the bottom of the table is two decks rather than a cluster: Blight
+Vector at 35% and Tidal Mind at 34%, five points below the deck above them. An earlier run of this
+table read "the bottom is a cluster now" and "the spread is thirty-six points"; this run says
 neither, and the sentences have been replaced rather than left standing — a published number that
 has been re-measured is worth more corrected than defended.
 
-**Only one of the thirteen rows moved for a reason.** Against the previous run on the same twelve
-seeds, Ashen Rite gained **29 games of 288** (39% → 49%, fourth-worst to seventh) and Rot Harvest 13,
-and those two decks are the only ones in the pool with repeatable sacrifice outlets in them. The
-cause is not a card: it is the fodder-choice fix (D175), which stopped a Vampire Aristocrat eating
-the engine it was standing on — the largest move any one change has made in this pool, card or
-bot rule. Every other row moved between −11 and +2 games, which is
-inside this instrument's own ±20-game noise floor — so the honest reading of the rest of the table
-is the shape, not the rows. D177 has the full before-and-after.
+**Two rows moved for a reason, and neither of them is a card.** Ashen Rite gained **29 games of
+288** (39% → 49%, fourth-worst to seventh) when the sacrifice-fodder fix stopped a Vampire
+Aristocrat eating the engine it was standing on (D175), and Rot Harvest — the pool's only other deck
+with repeatable sacrifice outlets — gained 13 in the same run. Then **Dawn Tithe gained 19** (58% →
+65%, which is why it is second now) when the bot stopped casting its own Disenchant on its own
+permanents (D180, found by following every creature a deck plays and noticing that 6% of Blight
+Vector's were killed by its own Naturalize). Every other row in both runs moved inside this
+instrument's own ±20-game noise floor — so the honest reading of the rest of the table is the
+shape, not the rows. D177 and D180 have the full before-and-afters.
 
 Every run of this table since the **mana-reservation rule** went in has had it on, and the run that
 measured it both ways on the same seeds is the one worth quoting: the five decks that hold

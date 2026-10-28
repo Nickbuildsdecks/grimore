@@ -2434,6 +2434,39 @@ function somethingToRemove(state: GameState, seat: SeatIndex): boolean {
   return false;
 }
 
+/**
+ * Whether this cast would destroy a permanent its own controller controls.
+ *
+ * The fifteenth of the drop-this-option family, and the one an instrument found rather than a
+ * suspicion: `creature-fate.mjs` followed every creature Blight Vector put onto the battlefield and
+ * reported that **6% of them were killed by the deck's own Naturalize**. Which is exactly what the
+ * card does if you aim it badly: "destroy target artifact or enchantment" is legal against an
+ * *artifact creature*, and that deck's Plague Stingers and Ichorclaw Myrs are artifact creatures.
+ * With no artifact or enchantment of the opponent's on the table, the only legal targets the engine
+ * can offer are its own, and the search took one: a card spent to kill its own 1/1.
+ *
+ * `removesACreature` already stops a Doom Blade being cast with nothing of theirs to point at
+ * (D89). This is the other half of the same mistake, and it has to be about the *target* rather
+ * than about the card, because a Naturalize with a real target is a fine card and the same spell
+ * is both.
+ *
+ * **A text match rather than a flag**, for D173's reason: the card's own words are what say whether
+ * it destroys, and every "Destroy target …" in the pool means it. Nothing printed here wants to
+ * destroy its own permanent — there is no Oblivion Ring, no "destroy target permanent you control"
+ * — so the rule is unconditional. The day a card wants it (a symmetric enchantment its own
+ * controller is losing to, say), this is the line to narrow.
+ */
+function destroysOneOfItsOwn(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const def = state.cardDefs[state.instances[action.card]?.defKey ?? ''];
+  if (def === undefined || !/destroy target/i.test(def.oracleText ?? '')) return false;
+  return (action.targets ?? []).some((target) => {
+    if (target.kind !== 'card') return false;
+    const inst = state.instances[target.id];
+    return inst !== undefined && inst.zone === 'battlefield' && inst.zoneSeat === seat;
+  });
+}
+
 /** Whether this action casts a spell whose whole effect is keeping one of your creatures alive. */
 function castsAProtection(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -2869,6 +2902,17 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       And removal with nothing to remove, which ends up pointed at its own board.
     */
     if (castsRemoval(state, option.action) && !somethingToRemove(state, seat)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And the same spell pointed the wrong way: a "destroy target" aimed at its own board.
+
+      The fifteenth, and the only one of the family an instrument asked for by name — 6% of Blight
+      Vector's creatures were being killed by its own Naturalize, which can legally destroy an
+      artifact creature and had nothing else to point at. See `destroysOneOfItsOwn`.
+    */
+    if (destroysOneOfItsOwn(state, seat, option.action)) {
       dropped += 1;
       continue;
     }

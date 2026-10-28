@@ -1346,6 +1346,49 @@ describe('removal with nothing to remove', () => {
   });
 });
 
+describe('a Naturalize pointed at its own board', () => {
+  /*
+    The fifteenth of the "spent on nothing" family, and the first one an instrument asked for by
+    name rather than a suspicion that went looking.
+
+    `creature-fate.mjs` followed every creature Blight Vector put onto the battlefield and said that
+    **6% of them were killed by the deck's own Naturalize** — nine creatures across 48 games. The
+    card is "destroy target artifact or enchantment", which is a legal aim at an *artifact creature*,
+    and that deck's Plague Stingers and Ichorclaw Myrs are artifact creatures. With nothing of the
+    opponent's to point at, the only legal targets the engine can offer are its own, and the search
+    took one every time: a card spent to kill its own 1/1.
+
+    `removesACreature` had stopped the same mistake for creature removal in D89. This is the other
+    half of it, and it has to read the *target* rather than the card, because the same Naturalize
+    with a real target is a fine card. These two tests are the two halves of that: it declines with
+    only its own artifact on the table, and it casts the moment there is an artifact across it.
+  */
+  const board = (theirs: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'blight-vector', 1: 'forge-alliance' },
+    hands: { 0: ['Naturalize'] },
+    battlefield: { 0: ['Forest', 'Forest', 'Plague Stinger'], 1: [...theirs] },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('is not cast at its own artifact creature, and is cast the moment theirs lands', () => {
+    const alone = board(['Plains']);
+    const naturalize = find(alone, 0, 'hand', 'Naturalize');
+    // Offered, because its own Plague Stinger is a legal target and the table is never lied to
+    // about what the rules allow.
+    expect(legalActions(alone, 0).plays.some((play) => play.card === naturalize)).toBe(true);
+    const declined = botAction(alone, 0);
+    expect(declined?.type === 'auto:cast' && declined.card === naturalize).toBe(false);
+
+    const theirs = board(['Plains', 'Bonesplitter']);
+    const cast = botAction(theirs, 0);
+    expect(cast?.type).toBe('auto:cast');
+    expect(cast?.type === 'auto:cast' ? cast.card : null)
+      .toBe(find(theirs, 0, 'hand', 'Naturalize'));
+    expect(cast?.type === 'auto:cast' ? cast.targets : [])
+      .toEqual([{ kind: 'card', id: find(theirs, 1, 'battlefield', 'Bonesplitter') }]);
+  });
+});
+
 describe('the mana an answer in hand is waiting for', () => {
   /*
     The thirteenth member of the "spent on nothing" family, and the first about a *later* turn.
