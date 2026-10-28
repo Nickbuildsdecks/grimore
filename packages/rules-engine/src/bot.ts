@@ -2040,6 +2040,47 @@ function activationBuysNothing(state: GameState, seat: SeatIndex, action: Action
   return ability?.buysNothingIf !== undefined && ability.buysNothingIf(state, action.card, seat);
 }
 
+/**
+ * Whether this equip moves an Equipment sideways: off a creature you control and onto one that is
+ * no bigger.
+ *
+ * The seventeenth of the "spent on nothing" family, and the first one `wasted-plays.mjs` found
+ * rather than a hunch. That harness fingerprints everything a player would call value before and
+ * after each play and reports the ones where nothing moved; across 156 games, **124 of the 170
+ * suspects were equips** — a Basilisk Collar moved onto a Wall of Blossoms twenty-one times, onto
+ * Llanowar Elves ten, onto a Gravedigger twelve. The Equipment was already on something; the move
+ * bought nothing.
+ *
+ * The engine has refused *re-equipping the same creature* since D35, because that is a play that
+ * does nothing at all. This is the next shell out: a different creature, the same bonus, no gain.
+ *
+ * **Power is the test**, which is a proxy and the honest cost of the rule: deathtouch is worth more
+ * on a creature that will block than on a bigger one that will not, and this drops that move too.
+ * What it keeps is every first equip, every move onto something bigger, and every move off a host
+ * that is gone, tapped or no longer a creature — which is what the printed reason to move an
+ * Equipment usually is.
+ */
+function equipMovesSideways(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (action.type !== 'auto:activate') return false;
+  const inst = state.instances[action.card];
+  if (inst === undefined) return false;
+  const name = state.cardDefs[inst.defKey]?.name;
+  if (scriptFor(name)?.equipBonus === undefined) return false;
+  const hostId = inst.attachedTo;
+  if (hostId === null || hostId === undefined) return false;
+  const host = state.instances[hostId];
+  // A host that has left, or stopped being a creature this seat controls, is a reason to move.
+  if (host === undefined || host.zone !== 'battlefield' || host.zoneSeat !== seat) return false;
+  if (!characteristicsOf(state, host).isCreature) return false;
+  // And a host that is tapped cannot attack or block with the bonus on it, so moving is fair.
+  if (host.tapped) return false;
+  const target = action.targets?.[0];
+  if (target === undefined || target.kind !== 'card') return false;
+  const to = state.instances[target.id];
+  if (to === undefined) return false;
+  return characteristicsOf(state, to).power <= characteristicsOf(state, host).power;
+}
+
 /** Whether this action activates an ability whose whole effect is untapping something. */
 function untapsSomething(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
@@ -2921,6 +2962,14 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       And removal with nothing to remove, which ends up pointed at its own board.
     */
     if (castsRemoval(state, option.action) && !somethingToRemove(state, seat)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And an Equipment moved from one creature to another that is no bigger, which is the shell
+      outside D35's "not the creature it is already on". See `equipMovesSideways`.
+    */
+    if (equipMovesSideways(state, seat, option.action)) {
       dropped += 1;
       continue;
     }

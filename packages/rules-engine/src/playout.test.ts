@@ -1398,6 +1398,69 @@ describe('an adapt that would put no counters on anything', () => {
   });
 });
 
+describe('an Equipment moved onto a creature that is no bigger', () => {
+  /*
+    The seventeenth of the "spent on nothing" family, and the first one a *generic* instrument found
+    rather than a hunch about a particular card.
+
+    `wasted-plays.mjs` fingerprints everything a player would call value — life, poison, permanents,
+    power, toughness, counters, granted keywords, untapped permanents, every zone's size — before
+    each of the bot's casts and activations and again after the stack has drained, and reports the
+    plays where nothing in it moved. Across 156 games it flagged 170 suspects and **124 of them were
+    equips**: a Basilisk Collar moved onto a Wall of Blossoms twenty-one times, onto Llanowar Elves
+    ten, onto a Gravedigger twelve. The Equipment was already on a creature; the move paid mana to
+    put the same bonus somewhere else.
+
+    D35 had already stopped the inner shell of this — the engine does not *offer* an equip onto the
+    creature the Equipment is already on, because that does nothing at all. This is the shell
+    outside it: a different creature, the same bonus, no gain.
+
+    Power is the test, and the honest cost of the rule is that power is a proxy: deathtouch is worth
+    more on the creature that will block than on the bigger one that will not, and this drops that
+    move too. What it keeps is every first equip, every move onto something bigger, and every move
+    off a host that has left, tapped, or stopped being a creature — which is what the printed reason
+    to move an Equipment usually is.
+
+    Two halves, as every member of this family has.
+  */
+  /** Bonesplitter on the battlefield next to a 4/4 and a 1/1, equipped to whichever is named. */
+  const wearing = (host: 'Serra Angel' | 'Doomed Traveler'): GameState => {
+    const base = advanceTo(arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Bonesplitter', 'Serra Angel', 'Doomed Traveler'],
+        1: ['Island'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const axe = find(base, 0, 'battlefield', 'Bonesplitter');
+    return passBoth(apply(base, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: 0,
+      targets: [{ kind: 'card', id: find(base, 0, 'battlefield', host) }],
+    }));
+  };
+
+  it('is not moved off the 4/4 onto the 1/1, and is moved the other way', () => {
+    const onTheAngel = wearing('Serra Angel');
+    const axe = find(onTheAngel, 0, 'battlefield', 'Bonesplitter');
+    const traveler = find(onTheAngel, 0, 'battlefield', 'Doomed Traveler');
+    // Offered, because the rules allow it and the table is never lied to about that.
+    expect(legalActions(onTheAngel, 0).plays.some((play) => play.card === axe
+      && play.candidates[0]?.some((c) => c.kind === 'card' && c.id === traveler))).toBe(true);
+    const declined = botAction(onTheAngel, 0);
+    expect(declined?.type === 'auto:activate' && declined.card === axe).toBe(false);
+
+    // And off the 1/1 onto the 4/4, which is the move that buys two power of attack.
+    const onTheTraveler = wearing('Doomed Traveler');
+    const taken = botAction(onTheTraveler, 0);
+    expect(taken?.type).toBe('auto:activate');
+    expect(taken?.type === 'auto:activate' ? taken.card : null)
+      .toBe(find(onTheTraveler, 0, 'battlefield', 'Bonesplitter'));
+    expect(taken?.type === 'auto:activate' ? taken.targets : [])
+      .toEqual([{ kind: 'card', id: find(onTheTraveler, 0, 'battlefield', 'Serra Angel') }]);
+  });
+});
+
 describe('a Naturalize pointed at its own board', () => {
   /*
     The fifteenth of the "spent on nothing" family, and the first one an instrument asked for by

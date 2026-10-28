@@ -40,6 +40,16 @@ arms comparable at all. They take no database and no server — just the engine.
 | `graveyard-costs.mjs` | does the bot ever escape or delve, how many cards does it spend, and does the hate ever meet the cost? | `SUBJECT=arc-tempest SEEDS=6 node scripts/measure/graveyard-costs.mjs` |
 | `infect-clock.mjs` | of the infect creatures it could attack with, how many does it send? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/infect-clock.mjs` |
 | `creature-fate.mjs` | what takes its creatures away, and how long do they live? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/creature-fate.mjs` |
+| `wasted-plays.mjs` | which of the bot's plays bought nothing at all? | `SEEDS=4 node scripts/measure/wasted-plays.mjs` |
+
+`wasted-plays` is the generic form of a question sixteen bot rules had each answered once, by
+hand: a ritual into nothing, a Fog with nothing attacking, a pump that wears off, removal with
+nothing to remove, a Naturalize aimed at its own board. It fingerprints everything a player would
+call value — life, poison, permanents, power, toughness, counters, granted keywords, untapped
+permanents, every zone's size — before each cast and activation and again once the stack has
+drained, and reports the plays where nothing in it moved. Read it as a list of **suspects**: its
+five blind spots are information, later, denial, mana in the pool and where a bonus is, and they
+are documented in the file's own header. `SUBJECT=arc-tempest` narrows it to one deck's plays.
 
 `creature-fate` takes a `KEYWORD` as well — `KEYWORD=infect` counts only the creatures that carry
 it, which is `infect-clock`'s population measured the other way round. Two of its columns are worth
