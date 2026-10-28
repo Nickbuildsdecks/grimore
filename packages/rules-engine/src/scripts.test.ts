@@ -1184,8 +1184,10 @@ describe('triggers that watch the board rather than themselves', () => {
 
   it('Soul Warden gains life for another creature, and not for itself', () => {
     let s = arena({
-      decks: { 1: 'verdant-guard' }, hands: { 1: ['Soul Warden', 'Grizzly Bears'] },
-      battlefield: { 1: ['Plains', 'Forest', 'Forest'] }, turn: 2, firstSeat: 1,
+      // Dawn Tithe rather than Verdant Guard: D188 spent that deck's Soul Warden on a Topan
+      // Freeblade, and Dawn Tithe is the deck actually built around the trigger.
+      decks: { 1: 'dawn-tithe' }, hands: { 1: ['Soul Warden', 'Child of Night'] },
+      battlefield: { 1: ['Plains', 'Swamp', 'Swamp'] }, turn: 2, firstSeat: 1,
     });
     s = advanceTo(s, 'precombat-main');
     for (const id of [...ids(s, 1, 'battlefield')]) {
@@ -1199,7 +1201,7 @@ describe('triggers that watch the board rather than themselves', () => {
     expect(life(s, 1)).toBe(started);
 
     // The next creature does.
-    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Grizzly Bears') }));
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Child of Night') }));
     s = passBoth(s);
     expect(life(s, 1)).toBe(started + 1);
   });
@@ -1208,7 +1210,7 @@ describe('triggers that watch the board rather than themselves', () => {
     // `of: 'any'`: it watches every creature that enters, whoever controls it. Getting this wrong
     // is the difference between a lifegain card and a much worse one.
     let s = arena({
-      decks: { 1: 'verdant-guard' }, hands: { 0: ['Hill Giant'] },
+      decks: { 1: 'dawn-tithe' }, hands: { 0: ['Hill Giant'] },
       battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Soul Warden'] },
       turn: 2, firstSeat: 0,
     });
@@ -11497,7 +11499,7 @@ describe('a card with two halves you can cast (CR 708)', () => {
 
   it('Fire divides two damage as the caster chooses', () => {
     let s = arena({
-      decks: { 0: 'arc-tempest', 1: 'verdant-guard' },
+      decks: { 0: 'arc-tempest', 1: 'dawn-tithe' },
       hands: { 0: ['Fire // Ice'] },
       battlefield: { 0: ['Mountain', 'Island'], 1: ['Soul Warden'] },
       turn: 2, firstSeat: 0,
@@ -13077,6 +13079,186 @@ describe('Rancor, from anywhere rather than from the battlefield', () => {
     s = drain(apply(s, { type: 'card:move', by: 0, card: elves, toZone: 'graveyard' }), 40);
     expect(s.instances[rancor]!.zone).not.toBe('hand');
     expect(s.instances[rancor]!.zone).toBe('exile');
+  });
+});
+
+describe('four keywords that read the attack rather than the creature', () => {
+  /*
+    Every one of the engine's seventeen keywords is a fact about a permanent — flying, deathtouch,
+    first strike — and its combat triggers could already say "whenever this attacks". None of them
+    could say anything about the **shape of a declaration**: how many creatures were in it, how
+    their power compares, or whether this one has connected before.
+
+    These four are each a different answer to that, and three of them needed nothing the engine did
+    not already have. Battalion needed one field — `withAtLeast`, the sibling of exalted's `alone`,
+    written on the event where the declaration happens because by the time the trigger resolves two
+    of the three attackers may be gone (CR 506.4). That is the whole engine change (D188).
+  */
+
+  it('battalion fires on three attackers and not on two', () => {
+    /** Forge Alliance with the Avenger and two more bodies, in its declare-attackers step. */
+    const swinging = (others: readonly string[]): GameState => {
+      const s = advanceTo(arena({
+        decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+        battlefield: {
+          0: ['Plains', 'Plains', 'Mountain', 'Mountain', 'Firemane Avenger', ...others],
+          1: ['Island'],
+        },
+        turn: 5, firstSeat: 0,
+      }), 'declare-attackers');
+      const attackers = [...ids(s, 0, 'battlefield')]
+        .filter((id) => legalActions(s, 0).attackers.includes(id));
+      return apply(s, {
+        type: 'auto:attack', by: 0, attackers: attackers.map((attacker) => ({ attacker, defender: 1 as const })),
+      });
+    };
+
+    // Two attackers: the Avenger and one Vanguard. "At least two *other* creatures" is not met.
+    const two = drain(swinging(['Elite Vanguard']), 40);
+    expect(stackNames(two)).toEqual([]);
+    expect(life(two, 0)).toBe(20);
+
+    // Three, and the trigger is on the stack waiting to be aimed — which is the engine refusing to
+    // choose a target for a player, not a bug.
+    const three = swinging(['Elite Vanguard', 'Leonin Skyhunter']);
+    expect(stackNames(three)).toEqual(['it deals 3 damage to any target and you gain 3 life']);
+    expect(three.pendingChoice).not.toBeNull();
+    const aimed = drain(apply(three, {
+      type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    // Three damage where it was aimed, three life gained, both from one trigger.
+    expect(life(aimed, 0)).toBe(23);
+    expect(life(aimed, 1)).toBe(17);
+  });
+
+  it('mentor only offers an attacking creature smaller than itself', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      battlefield: {
+        // A 2/1 mentor, two 1-power creatures that are smaller, a 2/2 that is not, and a 1/1
+        // Traveler held back so that "attacking" can be told apart from "smaller".
+        0: ['Plains', 'Plains', 'Sunhome Stalwart', 'Doomed Traveler', 'Doomed Traveler',
+          'Monastery Swiftspear', 'Leonin Skyhunter'],
+        1: ['Island'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const stalwart = find(s, 0, 'battlefield', 'Sunhome Stalwart');
+    const travelers = [...ids(s, 0, 'battlefield')]
+      .filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Doomed Traveler');
+    const swift = find(s, 0, 'battlefield', 'Monastery Swiftspear');
+    const skyhunter = find(s, 0, 'battlefield', 'Leonin Skyhunter');
+
+    const swung = apply(s, {
+      type: 'auto:attack',
+      by: 0,
+      // Everything but the second Traveler, which stays home.
+      attackers: [stalwart, travelers[0]!, swift, skyhunter]
+        .map((attacker) => ({ attacker, defender: 1 as const })),
+    });
+    const offered = legalActions(swung, 0).mustChoose?.candidates?.[0]
+      ?.map((candidate) => (candidate.kind === 'card' ? candidate.id : 'player')) ?? [];
+    /*
+      Two candidates out of five creatures, and every exclusion is a different clause of the
+      keyword: the Skyhunter is a 2/2 and not *lesser*, the second Traveler is a 1/1 and not
+      **attacking**, and the Stalwart itself is out because mentor targets another creature.
+    */
+    expect([...offered].sort()).toEqual([travelers[0]!, swift].sort());
+    expect(offered).not.toContain(skyhunter);
+    expect(offered).not.toContain(travelers[1]!);
+
+    const resolved = drain(apply(swung, {
+      type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: travelers[0]! }],
+    }), 40);
+    // A permanent counter, which is what makes mentor different from every pump in the pool.
+    expect(resolved.instances[travelers[0]!]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('and takes the only legal target without asking, or has none at all', () => {
+    /** The mentor and one other attacker of the named card. */
+    const swinging = (friend: string): GameState => {
+      const s = advanceTo(arena({
+        decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+        battlefield: { 0: ['Plains', 'Plains', 'Sunhome Stalwart', friend], 1: ['Island'] },
+        turn: 5, firstSeat: 0,
+      }), 'declare-attackers');
+      const attackers = [...ids(s, 0, 'battlefield')]
+        .filter((id) => legalActions(s, 0).attackers.includes(id));
+      return apply(s, {
+        type: 'auto:attack',
+        by: 0,
+        attackers: attackers.map((attacker) => ({ attacker, defender: 1 as const })),
+      });
+    };
+
+    // One candidate is not a choice, so the engine takes it rather than stopping the table.
+    const smaller = swinging('Doomed Traveler');
+    expect(smaller.pendingChoice).toBeNull();
+    const counted = drain(smaller, 40);
+    expect(counted.instances[find(counted, 0, 'battlefield', 'Doomed Traveler')]!
+      .counters['+1/+1']).toBe(1);
+
+    // And with nothing smaller attacking, the trigger has no legal target at all: the engine does
+    // not offer it, nothing waits on anybody, and the Skyhunter is the 2/2 it always was.
+    const equal = drain(swinging('Leonin Skyhunter'), 40);
+    expect(equal.pendingChoice).toBeNull();
+    expect(equal.instances[find(equal, 0, 'battlefield', 'Leonin Skyhunter')]!
+      .counters['+1/+1']).toBeUndefined();
+  });
+
+  it('renown fires the first time it connects and never again', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind' },
+      battlefield: { 0: ['Plains', 'Topan Freeblade'], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const freeblade = find(s, 0, 'battlefield', 'Topan Freeblade');
+
+    /*
+      `advanceTo('end')` rather than a drain: combat damage happens in a *step*, and `drain` only
+      resolves what is on the stack. The first version of this test passed a declaration and then
+      drained, which asserts about a turn that never reached its damage step.
+    */
+    s = drain(advanceTo(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: freeblade, defender: 1 }],
+    }), 'end'), 60);
+    expect(life(s, 1)).toBe(18);
+    expect(s.instances[freeblade]!.counters['+1/+1']).toBe(1);
+    // Vigilance, so it is still untapped — the half of the card a 2/2 with renown is actually for.
+    expect(s.instances[freeblade]!.tapped).toBe(false);
+
+    // Two turns later it connects as a 3/3, and the intervening-if stops the second counter.
+    s = advanceTo(nextTurn(nextTurn(s)), 'declare-attackers');
+    s = drain(advanceTo(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: freeblade, defender: 1 }],
+    }), 'end'), 60);
+    expect(life(s, 1)).toBe(15);
+    expect(s.instances[freeblade]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('battle cry pumps every other attacker and not itself', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
+      battlefield: {
+        0: ['Mountain', 'Forest', 'Goblin Wardriver', 'Llanowar Elves', 'Centaur Courser'],
+        1: ['Island'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const driver = find(s, 0, 'battlefield', 'Goblin Wardriver');
+    const elves = find(s, 0, 'battlefield', 'Llanowar Elves');
+    const courser = find(s, 0, 'battlefield', 'Centaur Courser');
+
+    const swung = drain(apply(s, {
+      type: 'auto:attack',
+      by: 0,
+      attackers: [driver, elves, courser].map((attacker) => ({ attacker, defender: 1 as const })),
+    }), 40);
+    // +1/+0 on each other attacker, and nothing on the Wardriver: "each **other** attacking
+    // creature" is printed on it, and a battle cry that pumped itself would be a 3/2 for two.
+    expect(power(swung, elves)).toBe(2);
+    expect(power(swung, courser)).toBe(4);
+    expect(power(swung, driver)).toBe(2);
   });
 });
 

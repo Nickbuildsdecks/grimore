@@ -2396,6 +2396,68 @@ const REST_IN_PEACE: CardDef = {
   colors: ['W'],
 };
 
+/*
+  Four keywords that read the **attack** rather than the creature.
+
+  Every one of the engine's seventeen keywords is a fact about a permanent — flying, deathtouch,
+  first strike — and its combat triggers could already say "whenever this attacks". None of them
+  could say anything about the *shape* of a declaration: how many creatures were in it, how their
+  power compares, or whether this one has connected before. These four are each a different answer
+  to that, and they are in the pool together because they all pay a player for attacking with more
+  than one creature, which is the decision the bot's combat search is actually about (D188).
+*/
+const FIREMANE_AVENGER: CardDef = {
+  name: 'Firemane Avenger',
+  typeLine: 'Creature — Archon',
+  manaCost: '{2}{R}{W}',
+  cmc: 4,
+  power: '3',
+  toughness: '3',
+  oracleText:
+    'Flying\nBattalion — Whenever Firemane Avenger and at least two other creatures attack, '
+    + 'Firemane Avenger deals 3 damage to any target and you gain 3 life.',
+  colors: ['R', 'W'],
+};
+
+const SUNHOME_STALWART: CardDef = {
+  name: 'Sunhome Stalwart',
+  typeLine: 'Creature — Human Soldier',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  power: '2',
+  toughness: '1',
+  oracleText:
+    'First strike\nMentor (Whenever this creature attacks, put a +1/+1 counter on target attacking '
+    + 'creature with lesser power.)',
+  colors: ['W'],
+};
+
+const TOPAN_FREEBLADE: CardDef = {
+  name: 'Topan Freeblade',
+  typeLine: 'Creature — Human Soldier',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText:
+    'Vigilance\nRenown 1 (When this creature deals combat damage to a player, if it isn\u2019t '
+    + 'renowned, put a +1/+1 counter on it and it becomes renowned.)',
+  colors: ['W'],
+};
+
+const GOBLIN_WARDRIVER: CardDef = {
+  name: 'Goblin Wardriver',
+  typeLine: 'Creature — Goblin Warrior',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText:
+    'Battle cry (Whenever this creature attacks, each other attacking creature gets +1/+0 until '
+    + 'end of turn.)',
+  colors: ['R'],
+};
+
 const SCAVENGING_OOZE: CardDef = {
   name: 'Scavenging Ooze',
   typeLine: 'Creature — Ooze',
@@ -2905,7 +2967,28 @@ export const VERDANT_GUARD: DeckSpec = {
     // Two rather than three: the third was the slot Secure the Wastes came back into, and a deck
     // with four other mana sources on one and two does not need a third copy of the ramp.
     { card: GARRUK_WILDSPEAKER, count: 1 },
-    { card: SOUL_WARDEN, count: 1 },
+    /*
+      **Renown 1**, and the slot is the measurement rather than the theory.
+
+      It went into Skyward Writ first — the other white deck, and the one whose plan is to still be
+      alive later, which a 2/2 with vigilance that grows looked built for. `cast-counts` said no:
+      **3 casts in the 16 games it was in hand**, against 44 for a Leonin Skyhunter and 53 for an
+      Omenspeaker at the same cost. Not the mana-reservation rule either (2 casts with that rule
+      switched off) — it was simply the 61st-best card in a deck that already has two better
+      two-drops and bigger things to do by turn four.
+
+      Here, in place of the last **Soul Warden** (60%, 25 casts in 42 games it was in hand — a
+      lifegain engine in the one white deck that is not built around lifegain, and Dawn Tithe and
+      Skyward Writ both keep theirs), the same card is cast **27 times in the 42 games it was in
+      hand**. Same card, same cost, three times the usage of the Skyward Writ slot: a slot is worth
+      more than a card's text (D188).
+
+      (A first probe of this card put it in place of Verdant Guard's **Centaur Courser** instead and
+      measured 50 casts in 48 — higher again, and not the slot that shipped, because cutting the
+      Courser breaks 49 tests that use it as the board's default creature. The number quoted above
+      is the one this list actually produces.)
+    */
+    { card: TOPAN_FREEBLADE, count: 1 },
     /*
       Ainok Survivalist for the second Soul Warden, and the first morph in the pool with text on its
       back.
@@ -3721,7 +3804,17 @@ export const FORGE_ALLIANCE: DeckSpec = {
     // A two-drop that wins the fight it is in rather than trading, which is what a board of small
     // creatures is short of — and the first first-striker in the pool.
     { card: YOUTHFUL_KNIGHT, count: 1 },
-    { card: FIREBRAND_ARCHER, count: 1 },
+    /*
+      **Mentor**, in the deck with the most attackers in the pool.
+
+      It replaced a **Firebrand Archer** (63% of the games it was in hand, 20 casts in 96) — a
+      two-mana 1/2 that pings for each noncreature spell, in a deck that casts about four of them a
+      game. A two-mana 2/1 first striker that puts a permanent +1/+1 counter on a smaller attacker
+      every time it swings is the same slot spent on what this deck actually does: Elite Vanguards,
+      Doomed Travelers and the Soldier tokens from Raise the Alarm and Secure the Wastes are all
+      smaller than a 2/1. Measured at **29 casts in 96 games**.
+    */
+    { card: SUNHOME_STALWART, count: 1 },
     /*
       Two colourless {X}{X} artifacts, for a Firebrand Archer and a Monastery Swiftspear.
 
@@ -3762,7 +3855,18 @@ export const FORGE_ALLIANCE: DeckSpec = {
     // on the swing, and the tokens from Raise the Alarm and Secure the Wastes count too. A
     // Whispersilk Cloak was measured against this slot over four seed sets and lost 52 games of
     // 1152 — the write-up is D178.
-    { card: HELLRIDER, count: 1 },
+    /*
+      **Battalion**, and a like-for-like swap: it replaced this deck's **Hellrider** (28%, 7 casts
+      in 96), which is the pool's second copy — Ember Rush keeps the other, and keeps the deck
+      that wants a haste body more than a trigger.
+
+      Four mana for a 3/3 flier that, on any turn three creatures attack, throws three damage
+      anywhere and gains three life. The condition is the deck rather than a build-around: between
+      Raise the Alarm, Secure the Wastes and the Thopters a Hangarback leaves behind, three
+      attackers is an ordinary turn here. Measured at **25 casts in 96 games**, every game it was
+      in hand.
+    */
+    { card: FIREMANE_AVENGER, count: 1 },
     { card: BONESPLITTER, count: 1 },
     /*
       The two cheap Vehicles, in the deck whose creatures are tokens.
@@ -5692,7 +5796,17 @@ export const KINDLE_GROVE: DeckSpec = {
     */
     { card: THRAGTUSK, count: 2 },
     { card: SHIVAN_DRAGON, count: 1 },
-    { card: PELAKKA_WURM, count: 1 },
+    /*
+      **Battle cry**, for the seven-drop this deck almost never reached.
+
+      It replaced the **Pelakka Wurm** — 18% of the games it was in hand and **3 casts in 96**,
+      the lowest usage of any nonland card measured in this pool (Delta Bloom keeps the other copy,
+      where seven mana is reachable). A two-mana 2/2 that gives every *other* attacker +1/+0 is the
+      opposite card in every way, and it is the right opposite: this deck's whole plan is a board of
+      medium creatures walking into a block, and battle cry turns each of those blocks into a worse
+      one. Measured at **15 casts in 96 games**.
+    */
+    { card: GOBLIN_WARDRIVER, count: 1 },
     // Seven mana for a 6/5 that kills something as it lands, and then kills something every time
     // another creature of yours does. The deck's top end, and the card its ramp is for.
     { card: GRUUL_RAGEBEAST, count: 1 },

@@ -196,6 +196,22 @@ export type TriggerEvent =
        * read later to find it out.
        */
       readonly alone?: boolean;
+      /**
+       * "Whenever this creature **and at least two other creatures** attack" — battalion's clause,
+       * asked as a minimum size for the whole declaration (CR 702.102a).
+       *
+       * `alone` is the same question with the answer one, and the two are kept apart rather than
+       * folded together because `alone: true` is five entries old and means something a number
+       * cannot: *exactly* one. This is **at least** N, which is what every printed card that counts
+       * attackers says.
+       *
+       * It has to travel on the event for exactly the reason `alone` does: a creature removed from
+       * combat before the trigger resolves leaves a board that cannot be counted (CR 506.4), so the
+       * size of the declaration is only knowable where the declaration happened.
+       */
+      readonly withAtLeast?: number;
+      /** Set by the engine: how many creatures were declared as attackers in this declaration. */
+      readonly declared?: number;
       /** Set by the engine when it raises the event: *which* creature attacked. See `subject`. */
       readonly subject?: string;
     }

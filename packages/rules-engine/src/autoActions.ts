@@ -1184,6 +1184,9 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
         // attacker could have been removed from combat and the board would say the same thing
         // either way.
         alone: attacks.length === 1,
+        // And the size of it, for the cards that count rather than ask for one. Same reason:
+        // by the time a battalion trigger resolves, two of the three attackers may be gone.
+        declared: attacks.length,
         attacked: {
           defender: attack.defender,
           ...(attack.planeswalker === undefined ? {} : { planeswalker: attack.planeswalker }),

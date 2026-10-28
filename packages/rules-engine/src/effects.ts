@@ -416,6 +416,16 @@ export const REGENERATION = 'regeneration';
 export const UNEARTHED = 'unearthed';
 
 /**
+ * The marker a **renowned** creature carries (CR 702.112a).
+ *
+ * "If it isn't renowned" is an intervening-if about a state the creature holds, and the engine's
+ * answer to any such state is a counter: already per-permanent, already serialised to Redis,
+ * already visible on the card. A creature that leaves and comes back is a new object with no
+ * counters, so renown is available again — which is exactly what the rules say.
+ */
+export const RENOWNED = 'renowned';
+
+/**
  * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).
  *
  * A shield, not a trigger: it sits on the permanent and is spent the next time something would

@@ -29,7 +29,7 @@ import {
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
-  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, UNEARTHED,
+  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack,
   type EffectContext, type PumpOptions,
 } from './effects.js';
@@ -1611,6 +1611,115 @@ const WOE_STRIDER: CardScript = {
   in the engine for months, so the second answer to the graveyard is twelve lines and no engine
   change. One card asks for a new event and the other proves the vocabulary was already there.
 */
+/*
+  Four keywords that read the **attack** rather than the creature, and the one thing the trigger
+  vocabulary was missing.
+
+  The engine's seventeen keywords are all facts about a permanent — flying, deathtouch, defender —
+  and its combat triggers have always been able to say "whenever this attacks". What none of them
+  could say is anything about the *shape* of the declaration: how many creatures were in it, how
+  their power compares, or whether this one has connected before. Three of these four needed
+  nothing but a script; battalion needed one field (`withAtLeast`, D188).
+
+  They also share a reason for existing: every one of them pays the player for attacking with more
+  than one creature, which is the decision the bot's combat search is actually about.
+*/
+
+/** Battalion: whenever this and at least two other creatures attack (CR 702.102a). */
+const FIREMANE_AVENGER: CardScript = {
+  name: 'Firemane Avenger',
+  keywords: ['flying'],
+  triggers: [{
+    on: { kind: 'attacks', withAtLeast: 3 },
+    description: 'it deals 3 damage to any target and you gain 3 life',
+    targets: [ANY_TARGET],
+    effect: (c) => gainLife(damageFirstTarget(c, 3), c.controller, 3),
+  }],
+};
+
+/**
+ * Mentor: whenever this attacks, put a +1/+1 counter on target attacking creature with less power
+ * (CR 702.133a).
+ *
+ * The target filter is the card: *attacking*, and *less power than this*. Both are read off the
+ * board as the trigger goes on the stack — `state.combat.attacks` is the declaration, and the
+ * source's own power is what "lesser" is measured against — and the counter is permanent, which is
+ * what makes a one-mana 2/1 worth a slot in a deck that attacks with four creatures.
+ */
+const SUNHOME_STALWART: CardScript = {
+  name: 'Sunhome Stalwart',
+  keywords: ['first strike'],
+  triggers: [{
+    on: { kind: 'attacks' },
+    description: 'put a +1/+1 counter on target attacking creature with lesser power',
+    targets: [{
+      kind: 'creature',
+      description: 'target attacking creature with lesser power',
+      friendly: true,
+      filter: (state, candidate, controller, source) => {
+        if (candidate.kind !== 'card' || source === undefined) return false;
+        if (candidate.id === source) return false;
+        if (!state.combat.attacks.some((attack) => attack.attacker === candidate.id)) return false;
+        const mine = state.instances[source];
+        const theirs = state.instances[candidate.id];
+        if (mine === undefined || theirs === undefined) return false;
+        return characteristicsOf(state, theirs).power < characteristicsOf(state, mine).power;
+      },
+    }],
+    effect: (c) => {
+      const target = c.targets?.[0];
+      return target?.kind === 'card' ? addCounters(c.state, target.id, '+1/+1', 1) : c.state;
+    },
+  }],
+};
+
+/**
+ * Renown 1: the first time it connects with a player, it keeps a +1/+1 counter (CR 702.112a).
+ *
+ * "If it isn't renowned" is an intervening-if about a state the creature carries, so the engine's
+ * answer to renowned is a counter — the same shape monstrous and unearth use. A creature that
+ * leaves and comes back is a new object with no counters, and renown is correctly available again,
+ * which is what the rules say about any such marker.
+ */
+const TOPAN_FREEBLADE: CardScript = {
+  name: 'Topan Freeblade',
+  keywords: ['vigilance'],
+  triggers: [{
+    /*
+      No `to: 'player'` needed, which is worth knowing rather than guessing at: the engine raises
+      `combat-damage` **only** for damage that actually took a player's life total down (see
+      `dealCombatDamageTo`), so blocked damage and a swing stopped by a Fog raise nothing at all.
+      Renown wants exactly that reading.
+    */
+    on: { kind: 'combat-damage' },
+    description: 'it becomes renowned and gets a +1/+1 counter',
+    condition: (c) => (c.state.instances[c.source]?.counters[RENOWNED] ?? 0) === 0,
+    effect: (c) => addCounters(addCounters(c.state, c.source, '+1/+1', 1), c.source, RENOWNED, 1),
+  }],
+};
+
+/**
+ * Battle cry: whenever this attacks, **each other** attacking creature gets +1/+0 (CR 702.91a).
+ *
+ * The one of the four whose effect reads the declaration rather than its condition: the pump goes
+ * on every other creature in `state.combat.attacks`, which is the list as it stands when the
+ * trigger resolves. A creature that has already been removed from combat is not pumped, and that is
+ * the printed card rather than a simplification.
+ */
+const GOBLIN_WARDRIVER: CardScript = {
+  name: 'Goblin Wardriver',
+  triggers: [{
+    on: { kind: 'attacks' },
+    description: 'each other attacking creature gets +1/+0 until end of turn',
+    effect: (c) => {
+      const others = c.state.combat.attacks
+        .map((attack) => attack.attacker)
+        .filter((id) => id !== c.source);
+      return pump(c.state, others, c.source, c.controller, { power: 1 });
+    },
+  }],
+};
+
 const PLANAR_VOID: CardScript = {
   name: 'Planar Void',
   triggers: [
@@ -6221,7 +6330,7 @@ const ALL: readonly CardScript[] = [
   guildgate('Rakdos Guildgate', 'B', 'R'),
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
-  REST_IN_PEACE,
+  REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,

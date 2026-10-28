@@ -603,12 +603,15 @@ function triggerMatches(
       if (who === 'another' && isSubject) return false;
       const e = event as {
         subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean;
-        subjectIsLand?: boolean; alone?: boolean;
+        subjectIsLand?: boolean; alone?: boolean; declared?: number;
       };
       if (want.kind === 'dies' && want.nontoken === true && e.subjectIsToken === true) return false;
       // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
       // the creature, which is why the event has to carry it (CR 702.90b).
       if (want.kind === 'attacks' && want.alone === true && e.alone !== true) return false;
+      // And battalion's: at least N creatures in the declaration, counted where it happened.
+      if (want.kind === 'attacks' && want.withAtLeast !== undefined
+        && (e.declared ?? 0) < want.withAtLeast) return false;
       // "a *creature* you control enters" is what the board-watchers say, and an enchantment
       // arriving is not that. Only asked for when the trigger asks for it, so a `self` trigger on
       // a non-creature permanent still fires for its own arrival. Anything in combat is a creature
