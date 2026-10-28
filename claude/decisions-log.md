@@ -8389,3 +8389,68 @@ own ability on an empty board. A test asserts the refusal.
 
 It replaced Ashen Rite's **Thorn of the Black Rose** (65%, the deck's weakest card that is not the
 pool's only copy — Tidal Mind runs the other, so the monarch keeps its coverage).
+
+## D175 — The sacrifice outlet that was eating its own engine
+
+**Decision: rank fodder by what a creature is *worth to its own deck* rather than by its power, and
+never feed a creature with text of its own to an activated ability. The fourteenth member of the
+drop-this-option family, found by adding a card and priced at about eleven points of win rate for
+the deck that cares most.**
+
+Woe Strider went into Ashen Rite and measured **−20 and −8** against the Thorn of the Black Rose it
+replaced — a card that loses games. The obvious conclusion was that the Thorn is better, and it was
+wrong. `cast-counts` asked the other question first: **does the bot use it?** Over 144 games the
+deck cast the Strider 146 times and **activated its `{0}` outlet 348 times** — two and a half times
+a game. The card was not being ignored; it was being used wrongly.
+
+### The bug is one comparison, written for a different card
+
+The rule for an ability paid for by a sacrifice was:
+
+```
+fodder.power < source.power
+```
+
+which is a fair proxy for a **Bloodthrone Vampire** — its ability makes it bigger, so feeding it
+something smaller than itself is roughly right — and means nothing at all for a Woe Strider, whose
+`{0}` buys a scry and leaves the body alone. A Woe Strider is a 3/2, so the comparison allowed it to
+eat anything with power under three.
+
+And `cheapestCreature`, which chose *which* creature, ordered by power alone. **A Blood Artist is
+0/1 and a Goat is 0/1.** The ordering could not tell them apart, so the deck spent 144 games eating
+the three cards it is built around for a look at the top of its library.
+
+### What replaced it
+
+Two changes, both small:
+
+- **`cheapestCreature` ranks before it compares.** A token is not a card and costs nothing to lose;
+  a creature with no text is a body; a creature with text is the deck's plan. Rank first, power
+  second, so a Goat goes before a Blood Artist of the same size and a Centaur Courser goes before an
+  Izoni.
+- **A creature with text is never fed to an activated ability at all.** A token is fed freely, a
+  textless body is fed when the old arithmetic says so, and a card is not fed. The bot cannot tell
+  when eating a Blood Artist to push lethal damage is right, and the measurement says the cost of
+  guessing is enormous.
+
+### What it is worth
+
+`cast-counts`, same 144 games: the outlet goes from **348 activations to 136** — about once a game,
+which is the Goat it arrived with, and that is what the card is for.
+
+And the win rate, which is the number that makes this more than a tidy-up. The Woe Strider probe
+re-run on the same seeds measures Ashen Rite's **stock arm at 159-127 where it had been 127-160** —
+the same deck, the same opponents, the same seeds, **+32 games of 288** from the bot no longer eating
+its own Blood Artists. That is about eleven points of win rate, four times the size of any card
+change made this week, and it was found by putting in a card that looked like it lost games.
+
+**Woe Strider itself is now −4** on the first seed set against the Thorn, where it had been −20. The
+card was never the problem.
+
+### The lesson, which is the one D170 taught in the other direction
+
+A card that measures badly has two explanations and the cheap one is wrong half the time: *the card
+is bad*, or *the bot plays it badly*. D170 found an instrument that invented a problem; this found a
+card that exposed one. The order to ask them in is fixed from now on: **before pricing a slot, ask
+`cast-counts` whether the bot uses the card, and how often.** 348 activations in 144 games is not a
+number anybody has to interpret.

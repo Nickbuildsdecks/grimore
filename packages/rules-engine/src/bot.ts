@@ -233,14 +233,40 @@ function chooseTargets(state: GameState, seat: SeatIndex, play: LegalPlay): Targ
   return chosen;
 }
 
-/** The least valuable of a set of creatures, for feeding to something hungry. */
+/**
+ * Whether a creature has text of its own: a trigger, an activated ability, or a static.
+ *
+ * The question behind it is "is this a card or is it a body". A Blood Artist is 0/1 and the whole
+ * engine of its deck; a Centaur Courser is 3/3 and a body. Power cannot tell them apart and that
+ * is exactly the mistake the fodder rule below was making.
+ */
+function hasOwnText(state: GameState, id: string): boolean {
+  const script = scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name);
+  if (script === undefined) return false;
+  return (script.triggers?.length ?? 0) > 0 || (script.abilities?.length ?? 0) > 0
+    || (script.statics?.length ?? 0) > 0;
+}
+
+/**
+ * The least valuable of a set of creatures, for feeding to something hungry.
+ *
+ * **Three ranks before power, because power is a bad measure of what a creature is worth to its
+ * own deck.** A token is not a card and costs nothing to lose; a creature with no text is a body;
+ * a creature with text is the deck's plan. Ashen Rite made the point: a Woe Strider offered its
+ * `{0}` outlet a 0/1 Blood Artist and a 0/1 Goat and the old ordering could not tell them apart,
+ * so it ate whichever came first in the list — which over 144 games meant eating the three cards
+ * the rest of the deck is built around.
+ */
 function cheapestCreature(state: GameState, ids: readonly string[]): string | null {
-  let best: { id: string; power: number } | null = null;
+  let best: { id: string; rank: number; power: number } | null = null;
   for (const id of ids) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     const power = characteristicsOf(state, inst).power;
-    if (best === null || power < best.power) best = { id, power };
+    const rank = inst.isToken ? 0 : hasOwnText(state, id) ? 2 : 1;
+    if (best === null || rank < best.rank || (rank === best.rank && power < best.power)) {
+      best = { id, rank, power };
+    }
   }
   return best?.id ?? null;
 }
@@ -1224,14 +1250,29 @@ function candidateActions(
         });
         continue;
       }
-      // An ability paid for by sacrificing something is only worth it when the thing eaten is
-      // worth less than the thing fed.
+      /*
+        An ability paid for by sacrificing something is only worth it when the thing eaten is
+        worth less than the thing fed.
+
+        **And a creature with text of its own is never fed to one, which is the fourteenth member
+        of the drop-this-option family.** The comparison below is against the *source's* power,
+        which is a fair proxy for a Bloodthrone Vampire whose ability makes it bigger and means
+        nothing at all for a Woe Strider whose `{0}` buys a scry. Measured: over 144 games Ashen
+        Rite activated that outlet **348 times**, and what it was eating was its own 0/1 Blood
+        Artists — the three cards the deck is built around — for a look at the top of the library.
+
+        So a token is fed freely, a textless body is fed when the arithmetic below says so, and a
+        card with text is not fed at all. The bot cannot tell when eating a Blood Artist to push
+        lethal damage is right, and the measurement says the cost of guessing is enormous.
+      */
       if (play.sacrificeOptions.length > 0) {
         const fodder = cheapestCreature(state, play.sacrificeOptions);
         if (fodder === null) continue;
+        const token = state.instances[fodder]?.isToken === true;
+        if (!token && hasOwnText(state, fodder)) continue;
         const self = state.instances[play.card];
         const worth = self === undefined ? 0 : characteristicsOf(state, self).power;
-        if (characteristicsOf(state, state.instances[fodder]!).power >= worth) continue;
+        if (!token && characteristicsOf(state, state.instances[fodder]!).power >= worth) continue;
         out.push({
           action: {
             type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,

@@ -12789,6 +12789,42 @@ describe('Woe Strider: escape’s second card, and the outlet that comes back', 
     expect(stackNames(after).join(' | ')).toMatch(/loses 1 life and you gain 1 life/i);
   });
 
+  it('is fed the Goat and never the Blood Artist, which is what the bot used to do', () => {
+    /*
+      The fourteenth member of the drop-this-option family, and the measurement that found it.
+
+      The old fodder rule compared the victim's **power** against the power of the creature whose
+      ability it was, which is a fair proxy for a Bloodthrone Vampire that gets bigger and means
+      nothing for a Woe Strider that scries. A Blood Artist is 0/1 and a Goat is 0/1, so the
+      ordering could not tell them apart — and over 144 games Ashen Rite activated the outlet
+      **348 times**, eating the three cards the deck is built around for a look at the top of the
+      library. With the fix it activates 136 times, which is about once a game: the Goat it
+      arrived with.
+    */
+    let s = rite(['Woe Strider'], ['Swamp', 'Swamp', 'Swamp', 'Blood Artist']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Woe Strider'),
+    })));
+    const goat = find(s, 0, 'battlefield', 'Goat');
+    const chosen = botAction(s, 0);
+    expect(chosen?.type).toBe('auto:activate');
+    expect(chosen?.type === 'auto:activate' ? chosen.sacrifice : null).toBe(goat);
+  });
+
+  it('and is not activated at all when the only food is a card', () => {
+    /*
+      The other half, and the half that makes the rule a filter rather than a preference: with no
+      token on the board the bot does not eat a Blood Artist for a scry, it passes. Woe Strider is
+      put onto the battlefield here rather than cast, which is how the board gets a Woe Strider
+      with no Goat beside it — `arena` places permanents without firing an entry trigger.
+    */
+    const s = rite([], ['Swamp', 'Swamp', 'Swamp', 'Blood Artist', 'Woe Strider']);
+    const strider = find(s, 0, 'battlefield', 'Woe Strider');
+    const chosen = botAction(s, 0);
+    const fed = chosen?.type === 'auto:activate' && chosen.card === strider;
+    expect(fed).toBe(false);
+  });
+
   it('and comes back out of the graveyard for {4}{B} and three other cards', () => {
     const s = rite(
       [],
