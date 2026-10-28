@@ -8340,3 +8340,52 @@ Two tests, and the second is the one that makes the first mean anything: the sam
 with a Squelch in hand casts the creature, and with a Counterspell in hand passes. Without the
 control, a test that asserts "it cast the creature" could be passing because the board was never a
 reserving board at all.
+
+## D174 — Escape's second card, and the outlet eight cards had been waiting for
+
+**Decision: give escape a second card. Woe Strider ({2}{B} 3/2) into Ashen Rite, which needed no new
+engine vocabulary at all — a token on an entry trigger, an activated ability whose cost is
+sacrificing another creature, and a scry as its decision. The only new line in the engine is the
+0/1 Goat.**
+
+A mechanic with one card has one card's worth of coverage, and escape shipped with one. The second
+is a different *kind* of escape card, which is the reason it is worth a slot rather than a copy: a
+Phoenix of Ash escapes because it is a threat that will not stay dead, and a Woe Strider escapes
+because it is an **engine the opponent cannot answer by killing it**.
+
+### What it is for, in the deck it is in
+
+Ashen Rite has eight cards that read a creature dying — three Blood Artists, two Vampire
+Aristocrats, a Bloodthrone Vampire, a Judith and a Village Rites — and not one of them could make a
+creature die for **free**. Every outlet in the deck costs a card or a mana. A `{0}` sacrifice
+ability is the thing that list has been short of since the deck was built, and the card arrives
+**with its own first meal** in the 0/1 Goat, which is the printed joke and also why the 3/2 body is
+not the point.
+
+### `AbilityCost.sacrifice` had been there since D24 and no card had ever asked for it
+
+The engine has been able to pay for an *activated ability* by sacrificing another creature since the
+Bone Splinters went in — `sacrificeOptions` enforces the "another" clause, the choice travels on the
+action, and the victim dies as the ability is activated rather than when it resolves. Nothing had
+ever used it on an ability: Bone Splinters is a *spell* with an additional cost. So this card is the
+first user of a path that was built, tested through its spell cousin, and otherwise dead.
+
+**"Another" is the difference between an outlet and a mistake**, and it is enforced by the cost
+rather than checked in the effect: a Woe Strider that could eat itself is a card the bot feeds to its
+own ability on an empty board. A test asserts the refusal.
+
+### Five tests, and the two that are about something other than the card
+
+- the Goat arrives, 0/1, beside a 3/2;
+- the ability eats the Goat for nothing and then scries — and the Goat is **gone** rather than in a
+  graveyard, because a token that leaves the battlefield ceases to exist (CR 111.7);
+- it cannot eat itself;
+- **the free outlet reaches the payoff**: a Blood Artist's drain is on the stack after the
+  activation. Asserted on the stack rather than on a life total, because the drain targets a player
+  and following it through would mean answering a targeting question that has nothing to do with
+  this card;
+- it escapes for {4}{B} and three other cards, and **arrives with a second Goat**, because the entry
+  trigger does not care which zone the card was cast from.
+
+It replaced Ashen Rite's **Thorn of the Black Rose** (65%, the deck's weakest card that is not the
+pool's only copy — Tidal Mind runs the other, so the monarch keeps its coverage).

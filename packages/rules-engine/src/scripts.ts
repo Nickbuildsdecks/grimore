@@ -936,6 +936,11 @@ export const SQUID_TOKEN: CardDef = {
   power: '1', toughness: '1', oracleText: 'Islandwalk', colors: ['U'],
 };
 
+export const GOAT_TOKEN: CardDef = {
+  name: 'Goat', typeLine: 'Token Creature — Goat', manaCost: '', cmc: 0,
+  power: '0', toughness: '1', oracleText: '', colors: ['W'],
+};
+
 export const THOPTER_TOKEN: CardDef = {
   name: 'Thopter', typeLine: 'Token Artifact Creature — Thopter', manaCost: '', cmc: 0,
   power: '1', toughness: '1', oracleText: 'Flying', colors: [],
@@ -1541,6 +1546,50 @@ const PHOENIX_OF_ASH: CardScript = {
 const GURMAG_ANGLER: CardScript = {
   name: 'Gurmag Angler',
   delve: true,
+};
+
+/*
+  Escape's second card, and the one that shows why the mechanic is more than a discount.
+
+  A Phoenix of Ash escapes because it is a threat that will not stay dead. Woe Strider escapes
+  because it is an **engine**: a {0} sacrifice outlet is what Ashen Rite's eight death payoffs are
+  all waiting for, and a sacrifice outlet that comes back for {4}{B} and three cards is one the
+  opponent cannot answer by killing it. The Goat it arrives with is the first thing it eats, which
+  is the card's own joke and also the reason the 3/2 body is not the point.
+
+  Three pieces of vocabulary that were all already here: a token on an entry trigger, an activated
+  ability whose cost is **sacrificing another creature** (`AbilityCost.sacrifice`, which the
+  engine has had since D24 and no card had ever asked for on an *ability*), and a scry as the
+  ability's decision. The only new line in the engine for this card is the Goat.
+*/
+const WOE_STRIDER: CardScript = {
+  name: 'Woe Strider',
+  escape: { cost: '{4}{B}', exile: 3 },
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'create a 0/1 white Goat creature token',
+      effect: (c) => createToken(c.state, c.controller, GOAT_TOKEN, 1),
+    },
+  ],
+  abilities: [
+    {
+      /*
+        **"Another"**, which is the difference between a sacrifice outlet and a way to lose your
+        own engine: a Woe Strider that could eat itself would be a card the bot feeds to its own
+        ability on an empty board. `sacrificeOptions` already enforces it — the same clause Bone
+        Splinters uses — so the cost says it rather than the effect checking it.
+
+        `{0}` is the whole cost. A free, repeatable sacrifice is the thing eight Blood Artists,
+        Aristocrats and a Judith have been short of since the deck was built: every one of them
+        reads a creature dying and none of them could make one die.
+      */
+      cost: { sacrifice: 'another-creature' },
+      description: '{0}: Sacrifice another creature. Scry 1.',
+      decisions: [scry(1)],
+      effect: (c) => c.state,
+    },
+  ],
 };
 
 /*
@@ -4935,7 +4984,7 @@ const PELAKKA_WURM: CardScript = {
 export const TOKEN_DEFS: readonly CardDef[] = [
   GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN, ELEPHANT_TOKEN,
   SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN, ELEMENTAL_TOKEN,
-  ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN, THOPTER_TOKEN, SQUID_TOKEN,
+  ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN, THOPTER_TOKEN, SQUID_TOKEN, GOAT_TOKEN,
 ];
 
 /*
@@ -5792,7 +5841,7 @@ const ALL: readonly CardScript[] = [
     'equipped creature is indestructible'),
   guildgate('Rakdos Guildgate', 'B', 'R'),
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
-  PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE,
+  PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,
   ZOETIC_CAVERN, DIRGUR_NEMESIS, BATTERING_CRAGHORN, AINOK_SURVIVALIST, MASTER_OF_PEARLS,

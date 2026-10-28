@@ -2296,6 +2296,19 @@ const SCAVENGING_OOZE: CardDef = {
   colors: ['G'],
 };
 
+const WOE_STRIDER: CardDef = {
+  name: 'Woe Strider',
+  typeLine: 'Creature — Horror',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  power: '3',
+  toughness: '2',
+  oracleText: 'When Woe Strider enters the battlefield, create a 0/1 white Goat creature token.\n'
+    + '{0}: Sacrifice another creature. Scry 1.\n'
+    + 'Escape—{4}{B}, Exile three other cards from your graveyard.',
+  colors: ['B'],
+};
+
 const GURMAG_ANGLER: CardDef = {
   name: 'Gurmag Angler',
   typeLine: 'Creature — Zombie Fish',
@@ -3823,16 +3836,14 @@ export const ASHEN_RITE: DeckSpec = {
     { card: ZOMBIE_CUTTHROAT, count: 1 },
     { card: VILLAGE_RITES, count: 1 },
     /*
-      One Agonizing Demise, and Thorn of the Black Rose for the other: the crown in the deck that
-      can take it back.
-
-      Deathtouch on a 2/3 for four is a body this deck is happy to have either way, and the reason
-      it is *this* deck is three cards down the list — a Tormented Soul that cannot be blocked at
-      all. A crown that can always be taken back is worth more than a crown that has to be
-      defended, and nothing else in the pool can promise the first.
+      One Agonizing Demise. The Thorn of the Black Rose that used to sit beside it — the crown in
+      the deck that can take it back, because a Tormented Soul cannot be blocked at all — went for
+      the Woe Strider at the end of this list, and the argument for it was always better than its
+      cast count: 65%, the weakest card here that is not the pool's only copy. Tidal Mind runs the
+      other one, so the monarch keeps a card and this deck keeps the Tormented Soul that made the
+      case.
     */
     { card: AGONIZING_DEMISE, count: 1 },
-    { card: THORN_OF_THE_BLACK_ROSE, count: 1 },
     { card: BURST_LIGHTNING, count: 1 },
     // Two damage now and two more from the graveyard later, for a deck that is happy to spend its
     // whole turn on removal. One Burst Lightning stays, because the kicker is what that card is
@@ -3882,6 +3893,24 @@ export const ASHEN_RITE: DeckSpec = {
       actually put on the table.
     */
     { card: FATE_UNRAVELER, count: 1 },
+    /*
+      The free sacrifice outlet this deck has wanted since it was built, and escape's second
+      card (CR 702.139).
+
+      Eight cards here read a creature dying — three Blood Artists, two Aristocrats, a
+      Bloodthrone Vampire, a Judith and a Village Rites — and not one of them could make one die
+      for free. A Woe Strider is `{0}`: sacrifice another creature, scry 1, as many times as
+      there are bodies, and it **arrives with its own first meal** in the 0/1 Goat. Then it comes
+      back for {4}{B} and three cards out of the graveyard, which is the half that makes it an
+      engine rather than a creature: killing the outlet does not remove it.
+
+      It replaced this deck's **Thorn of the Black Rose** (65%, the deck's weakest card that is
+      not the pool's only copy of itself — Tidal Mind runs the other, so the monarch keeps its
+      coverage). A 2/3 deathtouch that draws a card a turn while it holds the crown is a fine
+      card; it is also four mana in a deck whose curve is built to spend turn three on a body it
+      intends to sacrifice.
+    */
+    { card: WOE_STRIDER, count: 1 },
   ],
 };
 

@@ -12669,3 +12669,144 @@ describe('a card put into a graveyard from anywhere (CR 400.7)', () => {
     expect(life(s, 0)).toBe(lifeBefore);
   });
 });
+
+describe('Woe Strider: escape’s second card, and the outlet that comes back', () => {
+  /*
+    A mechanic with one card has one card's worth of coverage, and escape shipped with one.
+
+    This is the second, and it is a different *kind* of escape card: a Phoenix of Ash escapes
+    because it is a threat that will not stay dead, and a Woe Strider escapes because it is an
+    engine the opponent cannot answer by killing it. Everything it needs was already in the engine
+    — a token on an entry trigger, an activated ability whose cost is sacrificing another creature,
+    and a scry as the ability's decision — so the only new line for it is the Goat.
+  */
+  /*
+    Drain the stack, answering the scry on the way.
+
+    `drain` stops as soon as something is waiting on a decision, which is right for a test that
+    wants to look at the question — and wrong for the two below, where the scry is on the way to
+    the thing being asserted. Taking nothing is a legal scry: the card stays on top.
+  */
+  const settleAll = (start: GameState): GameState => {
+    let s = start;
+    for (let i = 0; i < 8; i++) {
+      s = drain(s, 40);
+      if (s.pendingDecision === null) return s;
+      s = decide(s, []);
+    }
+    return s;
+  };
+
+  const rite = (hand: readonly string[], lands: readonly string[], grave: readonly string[] = []):
+  GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'ember-rush' },
+      hands: { 0: [...hand] },
+      ...(grave.length === 0 ? {} : { graveyard: { 0: [...grave] } }),
+      battlefield: { 0: [...lands], 1: ['Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  it('arrives with its own first meal, which is the 0/1 Goat', () => {
+    let s = rite(['Woe Strider'], ['Swamp', 'Swamp', 'Swamp']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Woe Strider'),
+    })));
+    const goat = find(s, 0, 'battlefield', 'Goat');
+    expect([power(s, goat), toughness(s, goat)]).toEqual([0, 1]);
+    const strider = find(s, 0, 'battlefield', 'Woe Strider');
+    expect([power(s, strider), toughness(s, strider)]).toEqual([3, 2]);
+  });
+
+  it('eats another creature for nothing and scries, as often as there are bodies', () => {
+    let s = rite(['Woe Strider'], ['Swamp', 'Swamp', 'Swamp']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Woe Strider'),
+    })));
+    const strider = find(s, 0, 'battlefield', 'Woe Strider');
+    const goat = find(s, 0, 'battlefield', 'Goat');
+
+    // The ability is offered with the Goat as its only victim — see the next test for why that
+    // "only" is the card rather than an accident.
+    const play = legalActions(s, 0).plays.find((p) => p.card === strider && p.abilityIndex === 0);
+    expect(play?.sacrificeOptions).toEqual([goat]);
+
+    s = apply(s, { type: 'auto:activate', by: 0, card: strider, abilityIndex: 0, sacrifice: goat });
+    /*
+      Paid as the ability is activated, so the Goat is gone while the ability is still waiting —
+      and *gone* rather than in a graveyard, because a token that leaves the battlefield ceases to
+      exist (CR 111.7). Its last state is in `vanished`, which is what lets its own death still
+      reach a Blood Artist; see the next test.
+    */
+    expect(s.instances[goat]).toBeUndefined();
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Goat');
+    s = passBoth(s);
+    // And then it asks about the top card, which is the scry.
+    expect(choices(s).length).toBeGreaterThan(0);
+    s = settleAll(s);
+    expect(s.instances[strider]!.zone).toBe('battlefield');
+  });
+
+  it('cannot eat itself, which is the difference between an outlet and a mistake', () => {
+    let s = rite(['Woe Strider'], ['Swamp', 'Swamp', 'Swamp']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Woe Strider'),
+    })));
+    const strider = find(s, 0, 'battlefield', 'Woe Strider');
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: strider, abilityIndex: 0, sacrifice: strider,
+    })).not.toBeNull();
+  });
+
+  it('feeds the eight cards that read a creature dying', () => {
+    /*
+      The reason it is in this deck rather than any other black one. A Blood Artist drains for
+      every creature that dies and the deck had no way to make one die for free — so this is the
+      combination rather than the card: `{0}`, and a point of life moves.
+    */
+    let s = rite(['Woe Strider'], ['Swamp', 'Swamp', 'Swamp', 'Blood Artist']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Woe Strider'),
+    })));
+    const strider = find(s, 0, 'battlefield', 'Woe Strider');
+    const goat = find(s, 0, 'battlefield', 'Goat');
+    const after = apply(s, {
+      type: 'auto:activate', by: 0, card: strider, abilityIndex: 0, sacrifice: goat,
+    });
+    /*
+      Asserted on the **stack** rather than on the life totals, and the reason is the card: a Blood
+      Artist's drain targets a player, so following it through to a life total means answering a
+      targeting question that has nothing to do with Woe Strider. What this test is about is that
+      the free sacrifice reached the payoff at all — the ability is on the stack, which is where a
+      trigger is observable, and its own tests cover what it does from there.
+
+      Matched on the ability's own words rather than the card's name, because that is what the
+      stack says: a triggered ability is described by what it does, which is also what the player
+      deciding whether to respond reads.
+    */
+    expect(stackNames(after).join(' | ')).toMatch(/loses 1 life and you gain 1 life/i);
+  });
+
+  it('and comes back out of the graveyard for {4}{B} and three other cards', () => {
+    const s = rite(
+      [],
+      ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'],
+      ['Woe Strider', 'Village Rites', 'Dark Ritual', 'Burst Lightning'],
+    );
+    const play = legalActions(s, 0).plays
+      .find((p) => p.name === 'Woe Strider' && p.escape === true);
+    expect(play?.manaCost).toBe('{4}{B}');
+    expect(play?.exiles).toBe(3);
+
+    const strider = find(s, 0, 'graveyard', 'Woe Strider');
+    const after = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: strider, escape: true,
+    })));
+    expect(after.instances[strider]!.zone).toBe('battlefield');
+    expect(ids(after, 0, 'exile')).toHaveLength(3);
+    // And a second Goat with it: the entry trigger does not care which zone it was cast from.
+    expect(namesIn(after, 0, 'battlefield')).toContain('Goat');
+  });
+});

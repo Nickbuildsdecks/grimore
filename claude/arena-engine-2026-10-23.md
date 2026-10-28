@@ -4584,6 +4584,30 @@ about 19 games in 144, with the rule it changes not behind a flag. It ships on t
 member of the drop-this-option family shipped on — the play was wrong — and the check that it costs
 nothing is the thirteen-deck table below.
 
+### Escape's second card, and the outlet eight cards had been waiting for
+
+A mechanic with one card has one card's worth of coverage. **Woe Strider** ({2}{B} 3/2 Horror) is
+escape's second, and a different kind of escape card: a Phoenix of Ash comes back because it is a
+threat that will not stay dead, and a Woe Strider comes back because it is an engine the opponent
+cannot answer by killing it.
+
+Ashen Rite has eight cards that read a creature dying — three Blood Artists, two Aristocrats, a
+Bloodthrone Vampire, a Judith, a Village Rites — and not one of them could make a creature die for
+**free**. `{0}: Sacrifice another creature. Scry 1.` is the thing that list has been short of since
+the deck was built, and the card **arrives with its own first meal** in the 0/1 Goat.
+
+**It needed no new engine vocabulary**, which is the other half of why it is a good second card.
+`AbilityCost.sacrifice` has been there since the Bone Splinters went in and no card had ever asked
+for it on an *ability* — Bone Splinters is a spell with an additional cost — so the path was built,
+tested through its cousin, and otherwise dead. A token on an entry trigger and a scry as an
+ability's decision were both already there too. The only new line in the engine is the Goat.
+
+Five tests, and two of them are about something other than the card: the Goat is **gone** rather
+than in a graveyard when it is eaten, because a token that leaves the battlefield ceases to exist
+(CR 111.7); and the free outlet puts a Blood Artist's drain on the stack, which is the combination
+rather than the card. It replaced the Thorn of the Black Rose (65%, and Tidal Mind runs the other,
+so the monarch keeps its coverage).
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
