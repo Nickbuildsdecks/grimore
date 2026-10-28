@@ -4616,6 +4616,27 @@ that moved the Treasure Cruise out of Tidal Mind (−9, −1, −4, −3), there
 power *is* the graveyard an escape cost exiles — and escape needs a second card. So it is kept with
 the condition written down: measure it again when the field next changes.
 
+### Blight Vector: the diagnosis was clear and the obvious fix measured level
+
+The re-run table put Blight Vector last at 31% (88-200). Measured before touching it, and the two
+instruments agreed in one voice. `killed-by`: it loses on the table's turn 20.4 **holding 2.2
+cards** — not flooding, not starving — **71% to plain combat damage**, and the games it wins it wins
+on turn 18.4 with 15.6 life left. `poison`: dealt in 81% of games, 903 counters in all, and **50 of
+its 53 wins come by poison**. The win condition D138 built the deck for is the one it wins with. It
+is losing a race by about a turn.
+
+The obvious change for that is a card that buys turns, and a **Wall of Blossoms** ({1}{G} 0/4 that
+draws a card) is the cheapest two turns in these colours — never dead in a deck whose other
+creatures all have to attack. It measured **−3 and +5**: level, and the deck's absolute level barely
+moved (34% and 39% across the two stock arms).
+
+**So the diagnosis does not translate into the obvious fix, and the sharper hypothesis is in the
+same data.** The deck goes 2-10 against Ember Rush, 3-9 against Forge Alliance and 3-9 against Dawn
+Tithe — three decks that are red and white between them — and it already runs the card none of them
+can block: a **Phyrexian Crusader**, 2/2 infect with protection from red *and* white, cast in 85% of
+games off two copies. A third is being probed against the Wall directly, which asks the question in
+one run instead of committing a card and measuring afterwards.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

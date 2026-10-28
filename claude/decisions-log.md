@@ -8510,4 +8510,25 @@ deck's creatures all have to attack to do anything; a card that only blocks is a
 others can be.
 
 It replaced the **Titanic Growth** (25%, the deck's least-cast card by ten points, and Kindle Grove
-runs the other copy). Pricing by probing the revert is running; the numbers go here when they land.
+runs the other copy).
+
+### And it measured level, which is a result rather than a disappointment
+
+Probing the revert, two seed sets: **−3 and +5** of 288. Opposite signs, both inside the floor — the
+Wall is neither better nor worse than the Titanic Growth it replaced.
+
+So the diagnosis does not translate into the obvious change. "A turn short" reads as *add a card
+that buys turns*, and the deck's absolute level barely moved: 99-189 and 112-176 across the two
+stock arms, which is 34% and 39%. Whatever is costing Blight Vector its games is not a missing
+blocker.
+
+**The sharper hypothesis is in the same data and it is about evasion rather than defence.** The deck
+goes 2-10 against Ember Rush, 3-9 against Forge Alliance and 3-9 against Dawn Tithe — three decks
+that are entirely red and white between them — and it already runs the card that cannot be blocked
+by any of them: **Phyrexian Crusader**, a 2/2 infect with protection from red *and* white, cast in
+85% of games off two copies. A third Crusader is being probed against the Wall directly, which is
+the cleaner experiment: `CHANGE='Phyrexian Crusader:+1,Wall of Blossoms:-1'` asks the question in
+one run rather than committing a card and measuring it afterwards.
+
+The Wall stays until that answers, because level is not a reason to revert and a deck list should
+not churn between two measurements.
