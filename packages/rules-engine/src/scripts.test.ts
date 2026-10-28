@@ -13872,3 +13872,104 @@ describe('cascade: a spell that casts the next one for nothing', () => {
     expect(namesIn(s, 0, 'graveyard')).not.toContain('Chalice of the Void');
   });
 });
+
+describe('storm: a spell copied for each spell cast before it this turn', () => {
+  /*
+    The second card down the path cascade built, and the first thing this engine counts about a
+    *turn*. Three things are worth a test and they are different questions: that the count is of
+    everybody's spells and resets with the turn, that the copies are the count taken **as the storm
+    spell was cast** rather than as its trigger resolves, and that a copy is not a cast — so a
+    storm count of three does not become a storm count of six through its own copies.
+  */
+  const arcBoard = (): GameState => advanceTo(arena({
+    decks: { 0: 'arc-tempest', 1: 'kindle-grove' },
+    hands: { 0: ['Grapeshot', 'Lightning Bolt', 'Burst Lightning'] },
+    battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const castAt = (s: GameState, name: string, seat: SeatIndex, at: Target): GameState =>
+    drain(apply(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', name), targets: [at] }), 40);
+
+  it('counts the spells cast before it, and deals one damage per copy', () => {
+    let s = arcBoard();
+    const them: Target = { kind: 'player', seat: 1 };
+    // Two spells first, which is the whole of what the third one is worth.
+    s = castAt(s, 'Lightning Bolt', 0, them);
+    s = castAt(s, 'Burst Lightning', 0, them);
+    expect(s.spellsCastThisTurn).toBe(2);
+    // A Bolt is three and a Burst Lightning unkicked is two.
+    expect(life(s, 1)).toBe(20 - 3 - 2);
+
+    s = castAt(s, 'Grapeshot', 0, them);
+    // One damage for the spell and one for each of the two copies.
+    expect(life(s, 1)).toBe(20 - 3 - 2 - 3);
+    // And the copies left nothing behind: a copy of a spell ceases to exist rather than going to a
+    // graveyard, so there is one Grapeshot card there and not three.
+    expect(namesIn(s, 0, 'graveyard').filter((n) => n === 'Grapeshot')).toHaveLength(1);
+  });
+
+  it('is nothing at all as the first spell of a turn', () => {
+    let s = arcBoard();
+    s = castAt(s, 'Grapeshot', 0, { kind: 'player', seat: 1 });
+    expect(life(s, 1)).toBe(19);
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('counts the other seat’s spells too, and forgets them when the turn ends', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'kindle-grove' },
+      hands: { 0: ['Grapeshot'], 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Mountain', 'Mountain'], 1: ['Mountain', 'Mountain'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    /*
+      The other seat answers with an instant in this seat's main phase, which is a spell cast this
+      turn by anybody — the rule, and the thing that makes a storm count in a pod frightening.
+
+      Priority is handed over first, because this board has auto-pass off: the seat that is not
+      the active player only gets to act once the active one has passed, which is the same
+      sequence a real table goes through.
+    */
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = castAt(s, 'Lightning Bolt', 1, { kind: 'player', seat: 0 });
+    expect(s.spellsCastThisTurn).toBe(1);
+    s = castAt(s, 'Grapeshot', 0, { kind: 'player', seat: 1 });
+    expect(life(s, 1)).toBe(18);
+
+    // And the turn ends, which is what "this turn" means.
+    const next = drain(nextTurn(s), 40);
+    expect(next.spellsCastThisTurn).toBe(0);
+  });
+
+  it('takes the count from when it was cast, not from when the trigger resolves', () => {
+    /*
+      The half that would be quietly wrong: a spell cast in response to a storm spell is not a
+      spell cast *before* it, so it must not add a copy. Built by holding the storm trigger on the
+      stack — the Grapeshot is cast, nobody passes, and the other seat answers underneath it.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'kindle-grove' },
+      hands: { 0: ['Grapeshot'], 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Mountain', 'Mountain'], 1: ['Mountain', 'Mountain'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const them: Target = { kind: 'player', seat: 1 };
+    // Cast without draining: the Grapeshot and its storm trigger are both on the stack.
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grapeshot'), targets: [them] });
+    expect(s.stackOrder.length).toBe(2);
+    // The other seat answers in that window, which moves the turn's tally to two. Priority is
+    // passed to it first, as it would be at a table.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 0 }],
+    });
+    expect(s.spellsCastThisTurn).toBe(2);
+
+    s = drain(s, 60);
+    // One damage, not two: the Bolt was cast after the Grapeshot and bought it no copies.
+    expect(life(s, 1)).toBe(19);
+    expect(life(s, 0)).toBe(17);
+  });
+});

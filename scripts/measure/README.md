@@ -43,6 +43,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `wasted-plays.mjs` | which of the bot's plays bought nothing at all? | `SEEDS=4 node scripts/measure/wasted-plays.mjs` |
 | `hidden-info.mjs` | does the computer opponent read what it cannot see? | `SEEDS=2 node scripts/measure/hidden-info.mjs` |
 | `cascade.mjs` | what does cascade actually hit, how deep does it dig, and is the free spell taken? | `SUBJECT=kindle-grove SEEDS=4 node scripts/measure/cascade.mjs` |
+| `storm.mjs` | how many spells does a turn actually hold, and what was the count on each storm spell? | `SUBJECT=arc-tempest SEEDS=4 node scripts/measure/storm.mjs` |
 
 `hidden-info` asks the fairness question, and it is the one no win rate answers: it puts the same
 position to the bot twice, the second time with **every card the acting seat cannot identify dealt
@@ -68,6 +69,16 @@ between what the keyword offers and what it is worth. It watches `pendingFreeCas
 rather than the log, so a cascade answered inside one action cannot hide from it, and it counts
 casts of cascade cards separately so a cascade that read the whole library and found nothing shows
 up as the difference.
+
+`storm` answers a question about the *pool* rather than about a card, and that is why it is worth
+keeping after the card that prompted it: how many spells a turn of this format actually holds. The
+answer is the second table in its output — 42% of turns hold no spell at all, 37% hold one, 18% hold
+two and 3% reach three — and it bounds every card that multiplies by a turn's spell count. The first
+table is the card's own number, read off `StackObject.castNumber` (the snapshot taken as the spell
+was cast, not the live total), and the first reading was **7 of 7 at nought**: every Grapeshot the
+bot cast was the first spell of its turn. That is not a sequencing mistake, which is the thing the
+instrument was then used to rule out: asked a position with a Grapeshot and a Lightning Bolt and
+three mana, the bot casts the Bolt first already.
 
 `wasted-plays` is the generic form of a question sixteen bot rules had each answered once, by
 hand: a ritual into nothing, a Fog with nothing attacking, a pump that wears off, removal with

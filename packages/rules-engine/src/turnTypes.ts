@@ -177,6 +177,16 @@ export interface StackObject {
   readonly targetSeqs?: Readonly<Record<string, number>>;
   readonly x?: number;
   /**
+   * How many spells had been cast this turn **before this one** (CR 702.40a).
+   *
+   * Storm's whole number, snapshotted as the spell is cast rather than counted when the trigger
+   * resolves — because by then the count has moved: an opponent answering a storm spell casts a
+   * spell of their own, and those were not cast "before it". Set on every spell rather than only
+   * on the ones with storm, for the usual reason: a field set in one place is a field that cannot
+   * be forgotten in another, and the number is one addition.
+   */
+  readonly castNumber?: number;
+  /**
    * How much of a divided quantity each of `targets` was assigned, position by position
    * (CR 601.2d). Absent on everything that divides nothing, which is almost everything.
    *
@@ -621,6 +631,20 @@ export interface AutomationState {
    * the table already draws one button for "I am done here", and a free cast nobody wants is the
    * same gesture as a priority nobody wants. See `castSpell`'s `free` branch and `passPriority`.
    */
+  /**
+   * How many spells have been cast this turn, by anybody (CR 702.40a).
+   *
+   * The first thing this engine counts about a *turn* rather than about a permanent or a seat, and
+   * it exists for storm: "copy this spell for each spell cast before it this turn" cannot be
+   * answered from the board, the graveyards or the stack — a Lightning Bolt cast and resolved two
+   * spells ago has left no trace anywhere else. Everybody's spells, not this seat's, which is the
+   * rule and also the thing that makes a storm count in a pod frightening.
+   *
+   * Reset in the cleanup step with the rest of what "this turn" means. The number a particular
+   * spell cares about is the one *before* it, which is why each spell also carries
+   * `StackObject.castNumber`: this field is the running total and that one is the snapshot.
+   */
+  readonly spellsCastThisTurn: number;
   readonly pendingFreeCast: {
     /** Who may cast it: the controller of the ability that offered it. */
     readonly seat: SeatIndex;

@@ -5221,6 +5221,35 @@ suite read a stopped table as "nobody has anything to do"; and a cascade into **
 target, so taking the offer opens the targeting prompt while the offer is still up, which a driver
 branch placed too early answered by pressing "Cast it" forty times.
 
+### Storm, the count of a turn's spells, and a rule deleted on a zero (D192)
+
+Cascade built the path; storm is the second card down it and cost **one new fact**:
+`GameState.spellsCastThisTurn`, a running total of everybody's spells reset in the cleanup step, plus
+`StackObject.castNumber` — the total as each spell was cast. The snapshot is the part that matters:
+a spell cast in response to a storm spell is not a spell cast *before* it (CR 702.40a), so reading
+the live total on resolution would turn every answer into a copy for the caster.
+
+**Grapeshot** ({R}, one damage, storm) goes into Arc Tempest for its second Magma Jet — not for
+Twincast, which is cast twice in 96 games but is the only card anywhere that copies a *spell* with a
+re-aim, and this pool does not keep paths with no card behind them.
+
+What the new instrument says is more interesting than the card:
+
+```
+848 turns: 42% held no spell at all, 37% one, 18% two, 3% three
+7 storm spells cast, 7 of them with a count of nought
+```
+
+**The bot cannot use the keyword.** Every Grapeshot it cast was the first spell of its turn, for one
+damage. The obvious fix — an eighteenth drop-this-option filter, "not as the first spell of a turn
+when there is another to cast" — was built, wired in and **measured at zero firings**, because the
+explanation was wrong: asked a position with a Grapeshot, a Lightning Bolt and three mana, the bot
+already casts the Bolt first. The Grapeshots at nought are the turns where nothing else was
+castable, and 42% of turns hold no spell at all. The filter is deleted and the number kept: the
+ceiling on storm here is the mana curve rather than the bot's judgement, which makes it a card for
+the two people at the table. The paired probe agrees it costs the deck nothing: 126-128 and 114-113
+on two seed sets of 288, level to within two games.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

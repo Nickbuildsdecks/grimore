@@ -540,6 +540,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The **face**, not the card: the stack object is what resolution reads the script off, and
     // the script that resolves is the half's.
     cardKey: faceKey ?? inst.defKey, targets: [...chosen], targetSeqs: targetSeqsFor(state, chosen),
+    // How many spells came before this one this turn, which is storm's whole number and has to be
+    // read now rather than when the trigger resolves. See `StackObject.castNumber`.
+    castNumber: state.spellsCastThisTurn,
     ...(action.x === undefined ? {} : { x: action.x }),
     ...(action.division === undefined ? {} : { division: [...action.division] }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
@@ -563,6 +566,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...next,
     stackObjects: { ...next.stackObjects, [object.id]: object },
     stackOrder: [...next.stackOrder, object.id],
+    // And the turn's tally, which is the thing storm counts. Incremented as the spell goes on the
+    // stack — a spell is cast once it is there with its costs paid (CR 601.2i) — and *after* the
+    // object has taken its snapshot, so a storm spell never counts itself.
+    spellsCastThisTurn: next.spellsCastThisTurn + 1,
   };
   // Prowess and friends trigger on the cast, which is why this is here and not in `resolveTop`.
   const spellKind = characteristics.isCreature ? 'creature' : 'noncreature';
@@ -647,12 +654,16 @@ function castFaceDown(
   const object: StackObject = {
     id: inst.id, kind: 'spell', source: inst.id, controller: action.by,
     cardKey: inst.defKey, targets: [], targetSeqs: {},
+    // A face-down spell counts towards the turn's tally like any other, and carries its own
+    // snapshot of it — a morph is a cast (CR 702.37a), whatever the card underneath says.
+    castNumber: next.spellsCastThisTurn,
     description: `${anonymous.name} (2/2)`,
   };
   next = {
     ...next,
     stackObjects: { ...next.stackObjects, [object.id]: object },
     stackOrder: [...next.stackOrder, object.id],
+    spellsCastThisTurn: next.spellsCastThisTurn + 1,
   };
   // A creature spell was cast, which is all a prowess or a "whenever an opponent casts a creature
   // spell" may know about it — the types come from the face-down profile, not from the card.

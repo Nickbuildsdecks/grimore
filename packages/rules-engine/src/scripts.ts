@@ -1765,6 +1765,63 @@ const BLOODBRAID_ELF: CardScript = {
   triggers: [cascade()],
 };
 
+/**
+ * Storm, written out as the triggered ability the keyword abbreviates (CR 702.40a).
+ *
+ * The second card down the path cascade built, and it needed one thing cascade did not: a count of
+ * **how many spells have been cast this turn**. Nothing else in this engine was a fact about a
+ * turn rather than about a permanent, a seat or the stack — a Lightning Bolt cast and resolved two
+ * spells ago leaves no trace in a graveyard that a Lightning Bolt cast last turn does not — so
+ * `GameState.spellsCastThisTurn` is a running total and `StackObject.castNumber` is each spell's
+ * snapshot of it.
+ *
+ * The snapshot is the half worth being careful about. The count this spell cares about is the one
+ * taken **as it was cast**, not as its trigger resolves: an opponent answering a storm spell casts
+ * a spell of their own in between, and that one was not cast "before it". Reading the live total
+ * would quietly make every answer to a storm spell a copy for its caster.
+ *
+ * Copies rather than a bigger effect, through the same `copySpellOnStack` that Twincast uses — so
+ * a copy is not cast (CR 707.10), rings no cast trigger, and is not itself a spell for the next
+ * storm count. They go on above the original and resolve first, which is the order a player sees:
+ * the copies, then the spell.
+ */
+function storm(): TriggerDef {
+  return {
+    on: { kind: 'spell-cast', self: true },
+    description: 'Storm — copy this spell for each spell cast before it this turn',
+    effect: (c) => {
+      const id = c.answering;
+      if (id === undefined) return c.state;
+      const copies = c.state.stackObjects[id]?.castNumber ?? 0;
+      let next = c.state;
+      for (let i = 0; i < copies; i += 1) next = copySpellOnStack(next, id, c.controller);
+      return next;
+    },
+  };
+}
+
+/**
+ * Grapeshot: one damage, and one more for every spell this turn.
+ *
+ * The pool's first storm card, and the one that makes the keyword legible: a {R} sorcery for one
+ * damage is unplayable on its own, and the fourth spell of a turn is four damage spread wherever
+ * you like. It is in Arc Tempest because that deck is the only one in the pool that casts three
+ * cheap spells in a turn as a matter of course — the storm count is the deck's own plan, written
+ * on a card.
+ *
+ * Each copy keeps the original's target, which is what the rules do (CR 707.10) and not a
+ * simplification of "choose new targets for each copy": the copies may be re-aimed and the engine
+ * does not offer it, so a Grapeshot pointed at a player is four damage to that player rather than
+ * one each to four creatures. The narrower reading, and the one that cannot be wrong in the
+ * player's favour.
+ */
+const GRAPESHOT: CardScript = {
+  name: 'Grapeshot',
+  targets: [ANY_TARGET],
+  triggers: [storm()],
+  onResolve: (c) => damageFirstTarget(c, 1),
+};
+
 const PLANAR_VOID: CardScript = {
   name: 'Planar Void',
   triggers: [
@@ -6397,7 +6454,7 @@ const ALL: readonly CardScript[] = [
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
-  BLOODBRAID_ELF,
+  BLOODBRAID_ELF, GRAPESHOT,
   KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,

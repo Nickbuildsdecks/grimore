@@ -1755,6 +1755,17 @@ const THALIA_GUARDIAN_OF_THRABEN: CardDef = {
   colors: ['W'],
 };
 
+const GRAPESHOT: CardDef = {
+  name: 'Grapeshot',
+  typeLine: 'Sorcery',
+  manaCost: '{R}',
+  cmc: 1,
+  oracleText:
+    'Grapeshot deals 1 damage to any target.\nStorm (When you cast this spell, copy it for each '
+    + 'spell cast before it this turn. You may choose new targets for the copies.)',
+  colors: ['R'],
+};
+
 const TWINCAST: CardDef = {
   name: 'Twincast',
   typeLine: 'Instant',
@@ -4934,7 +4945,24 @@ export const ARC_TEMPEST: DeckSpec = {
     { card: ARC_LIGHTNING, count: 1 },
     // Magma Jet over a third Lightning Strike: the scry is the half this deck is short of, since a
     // deck that needs its one Guttersnipe needs to find it.
-    { card: MAGMA_JET, count: 2 },
+    { card: MAGMA_JET, count: 1 },
+    /*
+      **Grapeshot, for the second Magma Jet**: the pool's first storm card, in the only deck that
+      casts three cheap spells in a turn as a matter of course.
+
+      {R} for one damage is unplayable on its own, which is the point — the card is the deck's own
+      plan written down, and the fourth spell of a turn is four damage. Every other card in this
+      list that rewards a turn full of spells rewards it *once* per spell (Guttersnipe, Young
+      Pyromancer, Thermo-Alchemist); this one multiplies by how many there were.
+
+      **The slot is not the obvious one, and that is worth saying.** Twincast is the least-cast
+      card in this deck by a distance — 2 casts in 96 games, 8% of the games it was in hand — and
+      cutting it would have left `copySpellOnStack`'s "you may choose new targets for the copy"
+      with no card in any deck, which is the one thing this pool does not do: a path with no card
+      behind it is a path nobody plays. So the slot is the second Magma Jet (9 casts per copy),
+      and Twincast stays in as the card that keeps that clause honest.
+    */
+    { card: GRAPESHOT, count: 1 },
     { card: BURST_LIGHTNING, count: 1 },
     // Firebolt, which is two casts out of one card — the flashback is the second trigger for every
     // creature on the board, and the pool's only burn spell that is.

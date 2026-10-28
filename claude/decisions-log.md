@@ -10034,3 +10034,74 @@ in the rules:
 
 Neither is a rules bug and both are the reason a browser suite exists: the engine was right both
 times and the table was unusable.
+
+## D192 — Storm, the first count of a turn's spells, and a rule measured at zero firings
+
+Cascade (D191) built a path: a trigger that fires from the stack, for the family of keywords
+printed as "when you cast this spell". Storm is the second card down it, and it cost one new fact
+and nothing else — which is what a path being right looks like.
+
+### The fact: how many spells have been cast this turn
+
+`GameState.spellsCastThisTurn` is a running total of everybody's spells, reset in the cleanup step
+with the rest of what "this turn" means. The first thing this engine has ever counted about a
+**turn** rather than about a permanent, a seat or the stack, and the reason it has to exist is that
+nothing else remembers: a Lightning Bolt cast and resolved two spells ago leaves exactly the same
+trace as one cast last turn.
+
+Each spell also carries `StackObject.castNumber` — the total **as that spell was cast**. The
+snapshot is the half worth being careful about, and it is not a micro-optimisation: an opponent
+answering a storm spell casts a spell of their own while the storm trigger is still on the stack,
+and that one was not cast "before it" (CR 702.40a). Reading the live total on resolution would
+quietly turn every answer to a storm spell into a copy for its caster. There is a test on exactly
+that sequence.
+
+**Grapeshot** ({R}, one damage to any target, storm) goes into Arc Tempest for its second Magma Jet.
+Each copy keeps the original's target, which is the rules' own default (CR 707.10) rather than a
+simplification of "you may choose new targets for the copies": the engine does not offer the
+re-aim, so a Grapeshot pointed at a player is four damage to that player and not one each to four
+creatures — the narrower reading, and the one that cannot be wrong in the player's favour.
+
+The slot is deliberately **not** the obvious one. Twincast is the least-cast card in Arc Tempest by
+a distance — 2 casts in 96 games — but it is the only card in any deck that copies a *spell* and
+offers "you may choose new targets for the copy", and this pool does not keep paths with no card
+behind them. So the Magma Jet went instead.
+
+### Measured: level, and the bot cannot use the keyword at all
+
+`scripts/measure/storm.mjs` is the new instrument, and it asks two things. The second is the one
+worth keeping: **how many spells a turn of this format actually holds**, read off
+`spellsCastThisTurn` as each turn ends.
+
+```
+848 turns: 42% held no spell at all, 37% one, 18% two, 3% three, one turn in 848 held four
+```
+
+And the first is the card's own number, which is where it gets interesting:
+
+```
+7 storm spells cast, 7 of them with a count of nought
+```
+
+**Every Grapeshot the bot cast was the first spell of its turn** — one mana for one damage, with the
+keyword doing nothing. The paired probe agrees that this costs nothing either way: stock against the
+revert on two seed sets of 288 is 126-128 and 114-113, which is level to within two games.
+
+### The rule that looked obvious, and fired zero times
+
+The reading above has an obvious explanation — the bot casts its cheapest spell first, so the storm
+card goes down before the spells that would have counted — and an obvious fix in the family this
+project has sixteen members of already: **drop a storm cast that is the first spell of a turn when
+there is another spell to cast first**. An eighteenth filter, about *order* rather than waste.
+
+It was written, wired in, and measured at **zero firings**: 7 of 7 still at nought. So the
+explanation was wrong, and asking the bot directly says why — given a Grapeshot, a Lightning Bolt
+and three mana, it **already** casts the Bolt first. The Grapeshots at nought are the ones cast when
+there was nothing else castable at all, which is a mana problem and not a sequencing one, and the
+same instrument says how common that is: 42% of turns in this pool hold no spell whatsoever.
+
+The filter is deleted, and this is the second rule in nine entries to be built and deleted on a zero
+(D184's `equipAddsNothing` was the first). The number is worth more than the rule would have been:
+it says the ceiling on storm in this engine is the mana curve, not the bot's judgement, and that a
+card which multiplies by a turn's spell count is a card for the two people at the table rather than
+for the computer opponent.

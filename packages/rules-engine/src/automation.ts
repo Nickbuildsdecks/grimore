@@ -524,7 +524,17 @@ export function endTurnCleanup(state: GameState): GameState {
       next = relocate(next, inst, 'battlefield', effect.controlRevertTo, 'bottom');
     }
   }
-  return { ...next, effects: expireEffects(next, 'end-of-turn'), pendingDiscard: null };
+  /*
+    And the turn's own tally of spells, which is what "this turn" means for storm (CR 702.40a).
+
+    Here rather than at the start of the next turn, with the damage and the until-end-of-turn
+    effects, because this is the step that ends the turn: a spell cast in somebody's end step was
+    cast *this* turn, and a counter reset on the untap would still be carrying it.
+  */
+  return {
+    ...next, effects: expireEffects(next, 'end-of-turn'), pendingDiscard: null,
+    spellsCastThisTurn: 0,
+  };
 }
 
 // ── Triggers ─────────────────────────────────────────────────────────────────────────────────────
