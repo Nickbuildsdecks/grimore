@@ -8532,3 +8532,48 @@ one run rather than committing a card and measuring it afterwards.
 
 The Wall stays until that answers, because level is not a reason to revert and a deck list should
 not churn between two measurements.
+
+### And the third Crusader is worse, which closes the slot-at-a-time approach
+
+**−7 and −15** of 288 against the Wall, both arms negative. So the deck does not want another
+attacker either, and the Wall — level against the Titanic Growth — is better than the alternative
+that was supposed to beat it.
+
+### `infect-clock.mjs`, and the number that explains both nulls
+
+Before reshaping anything it was worth knowing whether the problem is the cards at all. Poison only
+counts when a creature *connects*: one that stays home deals nothing, and one that is blocked deals
+its damage to the blocker as −1/−1 counters, which does not win the game. The bot's combat rule is
+"do not throw creatures away" (D40, D47) — correct for a deck that wins by damage and possibly fatal
+for a deck whose 1/1s have to get through — so the number nobody had was *of the infect creatures it
+could attack with, how many does it send?*
+
+Over 144 games, at every declare-attackers step where it held at least one:
+
+```
+530 declarations with an infect creature able to go
+  could have sent 736, sent 663 — 90%
+  sent nothing at all: 42 (8%)
+  sent every one of them: 477 (90%)
+  widest board of infect creatures: 5; widest attack: 5
+```
+
+**It attacks with everything. The bot is not the problem.** And the last line is the finding: across
+144 games, the widest board of infect creatures it ever had is **five** — an eighteen-creature deck
+that never gets more than five bodies down at once, swinging with 90% of them, needing ten poison.
+Its creatures are dying as fast as it plays them.
+
+### What this deck actually needs, and why it is not this pass's job
+
+That is an **attrition** problem, not a slot: one- and two-power creatures in a field of 3/3s and
+removal, with a ceiling of five bodies. It is D167's lesson a second time — *a shape is not priceable
+one card at a time*; Tidal Mind took six slots at once after eleven single-slot probes found
+nothing, and this deck has now spent six probe arms and three instruments on two slots and found
+level and worse.
+
+So the next pass is a **reshape measured as a shape**, with the direction the instruments point at:
+resilience over count (the three Blight Mambas regenerate and are the deck's only creatures that
+survive a block), evasion over bodies, and the Loxodon Warhammer package that turns one connection
+into several poison counters through a blocker. `infect-clock` is the instrument to judge it with,
+because the number to move is the widest board and the share that connects — not the win rate, which
+is three noisy points away from anything a single card can do.

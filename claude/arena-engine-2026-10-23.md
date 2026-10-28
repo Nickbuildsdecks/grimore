@@ -4630,12 +4630,26 @@ draws a card) is the cheapest two turns in these colours — never dead in a dec
 creatures all have to attack. It measured **−3 and +5**: level, and the deck's absolute level barely
 moved (34% and 39% across the two stock arms).
 
-**So the diagnosis does not translate into the obvious fix, and the sharper hypothesis is in the
-same data.** The deck goes 2-10 against Ember Rush, 3-9 against Forge Alliance and 3-9 against Dawn
-Tithe — three decks that are red and white between them — and it already runs the card none of them
-can block: a **Phyrexian Crusader**, 2/2 infect with protection from red *and* white, cast in 85% of
-games off two copies. A third is being probed against the Wall directly, which asks the question in
-one run instead of committing a card and measuring afterwards.
+**So the diagnosis does not translate into the obvious fix.** The sharper hypothesis was in the same
+data — the deck goes 2-10, 3-9 and 3-9 against three decks that are red and white between them, and
+it already runs the card none of them can block in **Phyrexian Crusader** (protection from red *and*
+white, cast in 85% of games off two copies) — so a third was probed against the Wall directly rather
+than committed first. It measures **−7 and −15**. The deck does not want another attacker either, and
+the Wall is better than the card that was supposed to beat it.
+
+**`infect-clock.mjs` explains both nulls in one line.** Poison only counts when a creature connects,
+and the bot's combat rule is "do not throw creatures away" — correct for a damage deck and possibly
+fatal for one whose 1/1s have to get through. Over 144 games, at every declare-attackers step where
+it held an infect creature it could send: it **sent 663 of 736 (90%)**, sent all of them in 90% of
+declarations, sent nothing in 8% — and the **widest board of infect creatures it ever had was five**.
+
+It attacks with everything; the bot is not the problem. An eighteen-creature deck that never gets
+more than five bodies down, swinging with 90% of them, needing ten poison, is an **attrition**
+problem: one- and two-power creatures in a field of 3/3s and removal. That is D167's lesson a second
+time — a shape is not priceable one card at a time — and this deck has now spent six probe arms and
+three instruments on two slots to find level and worse. The next pass is a reshape judged by
+`infect-clock` (widest board, share that connects) rather than by a win rate three noisy points
+away from anything one card can move.
 
 ## Next
 

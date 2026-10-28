@@ -38,6 +38,7 @@ arms comparable at all. They take no database and no server — just the engine.
 | `held-answers.mjs` | …and what did the reservation rule change? (it is on by default, so this is the control arm) | `BOT='{"reserveForAnswers":false}' SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
 | `draw-triggers.mjs` | does "whenever you draw a card" fire in real games, and what does it add up to? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/draw-triggers.mjs` |
 | `graveyard-costs.mjs` | does the bot ever escape or delve, how many cards does it spend, and does the hate ever meet the cost? | `SUBJECT=arc-tempest SEEDS=6 node scripts/measure/graveyard-costs.mjs` |
+| `infect-clock.mjs` | of the infect creatures it could attack with, how many does it send? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/infect-clock.mjs` |
 
 `COMMANDER` answers the one question this instrument could not ask. Every deck's write-up calls its
 commander "the half a deck list cannot be" and until D136 that was a claim rather than a number.
