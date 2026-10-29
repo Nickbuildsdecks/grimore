@@ -2738,13 +2738,23 @@ describe('spells with {X} in the cost, chosen as the spell is cast', () => {
   });
 
   it('creates X tokens, and none at all for X=0', () => {
-    // Five Plains for two casts: X=3 spends four of them and the fifth pays the {W} of the second,
-    // which is the one being asked about — nothing is created for X=0.
-    let s = withMana(1, ['Secure the Wastes', 'Secure the Wastes'],
+    /*
+      Five Plains for two casts: X=3 spends four of them and the fifth pays the {W} of the second,
+      which is the one being asked about — nothing is created for X=0.
+
+      **One copy, cast twice**, put back into hand between by hand. The deck holds a single Secure
+      the Wastes since the Boon Satyr took the second slot, and what this test is about is X rather
+      than the card: the same card cast for a different X is exactly the comparison, and a tabletop
+      move between the two is the cheapest way to make it.
+    */
+    let s = withMana(1, ['Secure the Wastes'],
       ['Plains', 'Plains', 'Plains', 'Plains', 'Plains']);
-    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Secure the Wastes'), x: 3 }));
+    const wastes = find(s, 1, 'hand', 'Secure the Wastes');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: wastes, x: 3 }));
     expect(countOf(s, 1, 'battlefield', 'Warrior')).toBe(3);
-    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Secure the Wastes'), x: 0 }));
+
+    s = apply(s, { type: 'card:move', by: 1, card: wastes, toZone: 'hand' });
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: wastes, x: 0 }));
     expect(countOf(s, 1, 'battlefield', 'Warrior')).toBe(3);
   });
 
@@ -14379,5 +14389,141 @@ describe('dash: the creature you pay less for and do not get to keep', () => {
         && t.on.kind === 'step' && t.on.step === 'end');
       expect([name, delayed.length]).toEqual([name, 1]);
     }
+  });
+});
+
+describe('bestow: the creature you may cast as an Aura, and the Aura that stands up', () => {
+  /*
+    The third alternative cost, and the one that changes what the spell **is** rather than what the
+    permanent does afterwards. A bestowed Boon Satyr is an Aura spell on the stack and an
+    Enchantment — Aura on the battlefield; it is not a creature at all until the creature it
+    enchants leaves, and then it becomes one where it stands (CR 702.103).
+  */
+  const satyr = (lands: number, mine: readonly string[] = [], theirs: readonly string[] = []): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'kindle-grove' },
+      hands: { 0: ['Boon Satyr'] },
+      battlefield: {
+        0: [...Array.from({ length: lands }, () => 'Forest'), ...mine],
+        1: [...theirs],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+  it('is offered as an Aura only with a creature to enchant, and only for the whole cost', () => {
+    // Five lands and a creature of its own to enchant: both castings.
+    expect(legalActions(satyr(5, ['Grizzly Bears']), 0).plays
+      .filter((p) => p.name === 'Boon Satyr').map((p) => p.description))
+      .toEqual([
+        'Cast Boon Satyr for its bestow cost ({3}{G}{G}, as an Aura)',
+        'Cast Boon Satyr',
+      ]);
+    // Five lands and nothing on the table: an Aura with nothing to enchant is not a cast at all
+    // (CR 601.2c), so only the creature half is offered.
+    expect(legalActions(satyr(5), 0).plays
+      .filter((p) => p.name === 'Boon Satyr').map((p) => p.manaCost))
+      .toEqual(['{1}{G}{G}']);
+    // Three lands and a creature: the bestow cost cannot be paid, so only the creature again.
+    expect(legalActions(satyr(3, ['Grizzly Bears']), 0).plays
+      .filter((p) => p.name === 'Boon Satyr').map((p) => p.manaCost))
+      .toEqual(['{1}{G}{G}']);
+  });
+
+  it('bestowed, it is an Aura and not a creature, and the Bears are 6/4', () => {
+    let s = satyr(5, ['Grizzly Bears']);
+    const card = find(s, 0, 'hand', 'Boon Satyr');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card, bestowed: true,
+      targets: [{ kind: 'card', id: bears }],
+    }), 40);
+
+    const ch = characteristicsOf(s, s.instances[card]!);
+    expect(ch.isCreature).toBe(false);
+    expect(ch.typeLine.subtypes.map((t) => t.toLowerCase())).toContain('aura');
+    expect(s.instances[card]!.attachedTo).toBe(bears);
+    // +4/+2 on the creature it enchants, which is the half of the card that is not its own body.
+    const host = characteristicsOf(s, s.instances[bears]!);
+    expect([host.power, host.toughness]).toEqual([6, 4]);
+  });
+
+  it('cast as a creature it is a 4/2 of its own, with no Aura anywhere', () => {
+    let s = satyr(3, ['Grizzly Bears']);
+    const card = find(s, 0, 'hand', 'Boon Satyr');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card }), 40);
+    const ch = characteristicsOf(s, s.instances[card]!);
+    expect(ch.isCreature).toBe(true);
+    expect([ch.power, ch.toughness]).toEqual([4, 2]);
+    expect(s.instances[card]!.attachedTo).toBeNull();
+    // And the Bears are the Bears.
+    const bears = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!);
+    expect([bears.power, bears.toughness]).toEqual([2, 2]);
+  });
+
+  it('when the creature it enchants dies, it becomes a creature instead of going to the graveyard', () => {
+    /*
+      The rule the keyword is played for (CR 702.103c), and the one thing in this engine that
+      changes a permanent's type without the permanent moving. An ordinary Aura in the same
+      position is put into its owner's graveyard by the same state-based action.
+    */
+    let s = satyr(5, ['Grizzly Bears']);
+    const card = find(s, 0, 'hand', 'Boon Satyr');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card, bestowed: true,
+      targets: [{ kind: 'card', id: bears }],
+    }), 40);
+
+    s = drain(apply(s, { type: 'card:move', by: 0, card: bears, toZone: 'graveyard' }), 40);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(s.instances[card]!.attachedTo).toBeNull();
+    const ch = characteristicsOf(s, s.instances[card]!);
+    expect(ch.isCreature).toBe(true);
+    expect([ch.power, ch.toughness]).toEqual([4, 2]);
+    // And the +4/+2 went with the attachment rather than staying in `effects` for ever.
+    expect(s.effects.some((e) => e.source === card)).toBe(false);
+  });
+
+  it('a bestowed spell is an Aura spell, so a counterspell for creatures misses it', () => {
+    /*
+      The public half of the flag: it is set as the spell is announced, so what is on the stack is
+      an Aura spell. An Essence Scatter — "counter target creature spell" — cannot be pointed at
+      it, and the engine says so by not offering the target.
+    */
+    let s = satyr(5, ['Grizzly Bears']);
+    const card = find(s, 0, 'hand', 'Boon Satyr');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card, bestowed: true,
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Grizzly Bears') }],
+    });
+    expect(stackNames(s)).toEqual(['Boon Satyr (bestowed)']);
+    expect(characteristicsOf(s, s.instances[card]!).isCreature).toBe(false);
+  });
+
+  it('countered, it is a creature card in the graveyard again', () => {
+    // The flag is cleared by the move, like `castAs` and `faceDown`: what is in the graveyard is
+    // the whole card, which is what a reanimation spell brings back.
+    let s = satyr(5, ['Grizzly Bears']);
+    const card = find(s, 0, 'hand', 'Boon Satyr');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card, bestowed: true,
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Grizzly Bears') }],
+    });
+    s = drain(apply(s, { type: 'card:move', by: 0, card, toZone: 'graveyard' }), 40);
+    expect(s.instances[card]!.bestowed).toBeUndefined();
+    expect(characteristicsOf(s, s.instances[card]!).isCreature).toBe(true);
+  });
+
+  it('refuses a bestow on a card that has none, and refuses it beside another alternative cost', () => {
+    const s = satyr(5, ['Grizzly Bears']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: bears, bestowed: true,
+    })).toMatch(/no bestow|not in your hand/);
+
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Boon Satyr'),
+      bestowed: true, dashed: true, targets: [{ kind: 'card', id: bears }],
+    })).toMatch(/alternative cost/);
   });
 });

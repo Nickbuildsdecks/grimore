@@ -10349,3 +10349,97 @@ decision a greedy player makes every turn and the second needs a plan for the tu
 
 That is also the honest limit of the comparison: a bot that does not hold mana (D108, D110, D119)
 will always prefer the keyword whose cheap half costs it nothing it was saving.
+
+## D196 — Bestow: the spell that is a different kind of thing depending on what you paid
+
+Evoke and dash (D194, D195) change what happens to the permanent after it arrives. Bestow
+(CR 702.103) changes what the spell **is**: cast a Boon Satyr for {1}{G}{G} and it is a 4/2 with
+flash; cast it for {3}{G}{G} and it is an **Aura** that gives +4/+2 — not a creature at all — until
+the creature it enchants leaves, and then it becomes the 4/2 where it stands.
+
+That last clause is the only rule in this engine that changes a permanent's type without the
+permanent moving, and it is the whole reason the keyword is played: the removal spell aimed at your
+creature leaves you a creature instead of two cards in the graveyard.
+
+### What it is, rather than what it does
+
+The fact lives on the **card**, as `CardInstance.bestowed`, and is read by `characteristicsOf` in
+the same breath as `castAs` and the face-down profile. All three answer the same question — *what
+is this object?* — and the reason they are read together is that everything downstream asks one
+function. A reader that had to know bestow exists is a reader that eventually forgets: "counter
+target creature spell" hands a card id to a filter, a board wipe walks the battlefield asking which
+permanents are creatures, and neither of them has been told anything.
+
+It is set at **cast time**, before the object reaches the stack, because the difference is public
+from the moment the spell is announced (CR 702.103b): a bestowed Boon Satyr on the stack is an Aura
+spell, so an Essence Scatter cannot be pointed at it and a prowess creature sees a noncreature
+spell. `relocate` keeps it on the stack and the battlefield and clears it everywhere else, the way
+it treats `faceDown` — the card in the graveyard afterwards is a creature card again, which is what
+a reanimation spell brings back.
+
+Three consequences came free from putting it there rather than in a continuous effect: a bestowed
+permanent is not swept by Day of Judgment (which Verdant Guard runs), it cannot attack or block,
+and layer 4 still works on top of it — something that animates an Aura makes it a creature once
+rather than twice.
+
+### Becoming a creature is a state-based action, not a replacement
+
+CR 702.103c says the Aura stops being one when the creature it enchants leaves. The engine already
+has the rule that sends an Aura with no host to the graveyard (CR 704.5m) and this is a clause
+inside it: a bestowed permanent clears its flag, drops its attachment and stays. Not a replacement
+effect, because nothing is being replaced — the Aura never begins to go anywhere, it simply stops
+meeting the condition that would send it. The pump goes with the attachment through
+`removeEffectsFrom`, the way the Equipment rule beside it already does, or a dead creature's +4/+2
+would sit in `effects` for the rest of the game.
+
+### One block for three keywords, and the one that points at something
+
+`legalActions` now offers evoke, dash and bestow from one list of alternatives, each carrying its
+cost, the sentence that says what the cheap cast costs besides mana, and — new with this one — **its
+own target specs**. A bestowed cast enchants a creature where the ordinary cast of the same card
+targets nothing, so the two plays on one card ask different questions, and an Aura with nothing to
+enchant is not offered at all (CR 601.2c). The target spec is a constant rather than a field on each
+card: every card ever printed with bestow says "enchant creature", and a field thirty cards would
+fill in identically is a field twenty-nine of them eventually get wrong.
+
+### Boon Satyr, and the slot it takes
+
+**Boon Satyr into Verdant Guard**, for the second Secure the Wastes. The deck's recurring problem is
+being two-for-oned — a Loxodon Warhammer on a creature that then dies, a Giant Growth that fizzles —
+and a bestowed Satyr is the only card in the pool that cannot be: answer the creature and the Aura
+stands up as a creature itself. The slot is a second copy rather than a card the deck only has one
+of, which is this list's own rule for a cut.
+
+### Measured: level again, and a keyword the bot never reaches for
+
+Two seed sets of 288 paired duels, probing the revert:
+
+```
+3300   with Boon Satyr 199-88   with a 2nd Secure the Wastes 202-85   -3
+5100   with Boon Satyr 189-99   with a 2nd Secure the Wastes 193-95   -4
+```
+
+Level, and the third slot in a row to come out that way — which is itself worth noticing: three
+keywords, three decks at three different places in the standings, and each new card neither helps
+nor hurts a list that was already tuned. A one-card swap is below this instrument's resolution
+unless the card is doing something the deck could not do at all.
+
+`cast-counts.mjs` over 288 games says the Satyr is one of the busiest cards in the deck — **cast 63
+times in the 66 games it reached hand, 95%** — and that **none** of those castings paid the bestow
+cost. Not one.
+
+That is the same finding evoke got (one casting in thirty-three) with the volume turned up, and the
+cause is the same and simpler than it looks: the bot casts the cheap half because the cheap half is
+cheaper. A Boon Satyr for {1}{G}{G} is a 4/2 on the board; for {3}{G}{G} it is +4/+2 on a creature
+that is already there, for two more mana. A greedy evaluation picks the body every time, and it is
+usually *right* to — bestow is for the turn you have a creature worth protecting and the mana to
+spare, which is a plan about the turn after rather than a bigger number now. No rule is written for
+it, because D193's doctrine holds: a bot rule gets written when an instrument says what it is worth,
+not when a keyword looks lonely.
+
+**And the instrument needed more seeds than usual to say even that.** The first run of `cast-counts`
+at `SEEDS=4` read "in hand 4 games" for the Satyr, which looked like a bug and was not: the subject
+deck gets one shuffle per seed per seating, so four seeds is **eight** library orders, and a card
+that happens to sit deep in all eight is never drawn. Twelve seeds is twenty-four orders and the
+same card reads 66 of 288. A per-card usage question needs more seeds than a per-deck record does,
+and that is now written in the harness's README.

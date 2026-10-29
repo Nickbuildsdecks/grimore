@@ -2018,6 +2018,17 @@ const GIANT_SPIDER: CardDef = {
   colors: ['G'],
 };
 
+const BOON_SATYR: CardDef = {
+  name: 'Boon Satyr',
+  typeLine: 'Enchantment Creature — Satyr',
+  manaCost: '{1}{G}{G}',
+  cmc: 3,
+  power: '4',
+  toughness: '2',
+  oracleText: 'Flash\nBestow {3}{G}{G}\nEnchanted creature gets +4/+2.',
+  colors: ['G'],
+};
+
 const TITANIC_GROWTH: CardDef = {
   name: 'Titanic Growth',
   typeLine: 'Instant',
@@ -3209,7 +3220,24 @@ export const VERDANT_GUARD: DeckSpec = {
     // The deck's X spell, and the two slots above it that paid for the Spiders and the Prey Upons
     // the first time round. It went out and had to come straight back: a token finisher is the
     // only thing this deck does with a flooded hand, and the X-cost test casts two of them.
-    { card: SECURE_THE_WASTES, count: 2 },
+    /*
+      Boon Satyr for the second Secure the Wastes: the first card in this pool that is a creature
+      or a pump spell, and the player picks which as they cast it.
+
+      **Bestow** (D196) is the third alternative cost and the one that changes what the spell *is*:
+      for {1}{G}{G} this is a 4/2 with flash, and for {3}{G}{G} it is an Aura giving +4/+2 that
+      becomes a 4/2 the moment the creature it enchants dies. That second half is why it goes in
+      this list rather than anywhere else — Verdant Guard's plan is a board that grows, and its
+      recurring problem is a removal spell answering two cards at once (a Loxodon Warhammer on a
+      creature that then dies, a Giant Growth that fizzles). A bestowed Satyr is the only card here
+      that cannot be two-for-oned: answer the creature and the Aura stands up as a creature itself.
+
+      The slot is a **second copy** rather than a card the deck only has one of, which is this
+      list's own rule for a cut: Secure the Wastes is the deck's instant-speed X spell and one copy
+      is still in it, so the mechanic, the script and the turn it is for are all still here.
+    */
+    { card: BOON_SATYR, count: 1 },
+    { card: SECURE_THE_WASTES, count: 1 },
     /*
       Nissa, Voice of Zendikar for the second Rampant Growth, and this deck's second planeswalker.
 

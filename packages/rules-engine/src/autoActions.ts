@@ -28,7 +28,7 @@ import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
 import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
-import { checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
+import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
   convokePlan, costChangeFor, crewPlan, delvePlan, graveyardFodder, legalActions, manaSources,
@@ -302,8 +302,18 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   */
   const evoked = action.evoked === true;
   const dashed = action.dashed === true;
-  if (evoked || dashed) {
-    const word = evoked ? 'evoke' : 'dash';
+  /*
+    And bestow, the third of the family and the one that changes what the spell is (CR 702.103b).
+
+    Validated with the other two because the refusals are the same three — no such keyword on the
+    card, not in your hand, not beside another alternative cost — and then it does one thing they
+    do not: the card is marked as an Aura **now**, before the object goes on the stack, because a
+    bestowed creature spell is an Aura spell from the moment it is announced. See
+    `CardInstance.bestowed`.
+  */
+  const bestowed = action.bestowed === true;
+  if (evoked || dashed || bestowed) {
+    const word = evoked ? 'evoke' : dashed ? 'dash' : 'bestow';
     /*
       An alternative cost is paid *instead of* another (CR 601.2f), which includes the other one
       here: a card printed with both is cast for one of them.
@@ -312,10 +322,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       not that one — and a card that has dash and not evoke would otherwise be refused for the
       keyword it does not have rather than for the two it was sent.
     */
-    if (flashback || escape || foretold || offered || kicked || (evoked && dashed)) {
+    if (flashback || escape || foretold || offered || kicked
+      || [evoked, dashed, bestowed].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
-    if ((evoked ? script?.evoke : script?.dash) === undefined) {
+    if ((evoked ? script?.evoke : dashed ? script?.dash : script?.bestow) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
     if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
@@ -323,7 +334,17 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     }
   }
 
-  const specs = modes === undefined ? spellTargets(script) : modeTargetSpecs(modesOf(script, modes));
+  /*
+    What this casting points at — which for a bestowed one is a creature to enchant rather than
+    whatever the card ordinarily targets (CR 702.103b).
+
+    The same constant `legalActions` offered the play from, so the offer and the cast cannot
+    disagree about what is being asked for: the rule convoke established and every cost since has
+    kept.
+  */
+  const specs = bestowed
+    ? [BESTOW_TARGET]
+    : modes === undefined ? spellTargets(script) : modeTargetSpecs(modesOf(script, modes));
   const chosen = action.targets ?? [];
   const check = checkTargets(state, specs, chosen, action.by, inst.id);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
@@ -388,7 +409,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
           // And dash, evoke's mirror: cheaper again, and what it costs besides the mana is the
           // permanent's stay rather than its life. Paid where the spell resolves, like evoke's.
           : dashed ? script?.dash?.cost
-            : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
+            // And bestow, which replaces the cost the way the other two do — and is the only one
+            // of the three where what you are paying for is a different kind of permanent.
+            : bestowed ? script?.bestow?.cost
+              : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
   /*
     And what the permanents on the table have done to the cost: a Goblin Electromancer, a Thalia.
 
@@ -550,6 +574,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     every zone change and setting it first would have it cleared on the way in.
   */
   if (faceKey !== undefined) next = withInstance(next, inst.id, { castAs: faceKey });
+  /*
+    And on the stack it is an **Aura spell** rather than a creature spell (CR 702.103b).
+
+    After `relocate` for the same reason `castAs` is: `relocate` is what clears this field on every
+    zone change, and setting it first would have it cleared on the way in.
+  */
+  if (bestowed) next = withInstance(next, inst.id, { bestowed: true });
   // The modes are named in the stack description, because both players can see what was chosen
   // and the one deciding whether to respond needs to know which half of the Charm is coming.
   const modeText = modes === undefined
@@ -587,6 +618,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // And dash, which the player answering it reads for the opposite reason: a creature that is
   // hasty and leaving at the end of the turn is worth a blocker and not a removal spell.
   const dashedText = dashed ? ' (dashed)' : '';
+  // And bestow, which is the one of the three the player answering it most needs: this is an Aura
+  // spell, so a counterspell for creatures does not touch it and a board wipe will not either.
+  const bestowedText = bestowed ? ' (bestowed)' : '';
   /*
     And an offered cast, for the sixth time and the same reason: a player deciding whether to answer
     this should be able to read what it cost. "(free)" when nothing was paid and "(madness {R})"
@@ -615,6 +649,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // And dash's, read at the same moment for the other consequence: haste, and a return to hand
     // scheduled as the permanent arrives.
     ...(dashed ? { dashed: true as const } : {}),
+    // And bestow's, which the resolution reads to attach the permanent rather than simply putting
+    // a creature onto the battlefield.
+    ...(bestowed ? { bestowed: true as const } : {}),
     /*
       And the other flag the destination depends on, for the same reason: an adventure that
       resolves is exiled "on an adventure" rather than put into a graveyard, and once it has left
@@ -625,7 +662,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     */
     ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
     description: `${characteristics.name}${xText}${kickedText}${flashbackText}${escapedText}`
-      + `${delveText}${foretoldText}${evokedText}${dashedText}${offeredText}${modeText}`,
+      + `${delveText}${foretoldText}${evokedText}${dashedText}${bestowedText}${offeredText}${modeText}`,
   };
   next = {
     ...next,
@@ -637,7 +674,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     spellsCastThisTurn: next.spellsCastThisTurn + 1,
   };
   // Prowess and friends trigger on the cast, which is why this is here and not in `resolveTop`.
-  const spellKind = characteristics.isCreature ? 'creature' : 'noncreature';
+  // A bestowed creature spell is an **Aura** spell (CR 702.103b), so a prowess creature sees a
+  // noncreature spell and a "whenever you cast a creature spell" trigger sees nothing at all.
+  const spellKind = !bestowed && characteristics.isCreature ? 'creature' : 'noncreature';
   next = raise(next, {
     kind: 'spell-cast',
     spell: spellKind,

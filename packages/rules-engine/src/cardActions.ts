@@ -283,6 +283,15 @@ export function relocate(
     faceDown: toZone === 'battlefield' || toZone === 'exile' || toZone === 'stack'
       ? inst.faceDown
       : false,
+    /*
+      And bestow, which is the same bit one card type along: a card cast as an Aura is one on the
+      stack and one on the battlefield, and an ordinary creature card anywhere else (CR 702.103e).
+
+      The clearing half is the one that matters. A bestowed Boon Satyr that is countered, or that
+      goes to the graveyard when its host is answered in response, is a **creature card** there —
+      which is what a reanimation spell brings back and what a graveyard-counting cost reads.
+    */
+    ...(toZone === 'battlefield' || toZone === 'stack' ? {} : { bestowed: undefined }),
     revealed: false,
     /*
       A copy stops being a copy when the permanent leaves the battlefield.

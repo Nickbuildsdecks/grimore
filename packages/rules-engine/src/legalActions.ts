@@ -30,7 +30,7 @@ import {
   FORETELL_COST, MORPH_COST, morphCostText,
   type AbilityDef, type CardScript, type TargetSpec,
 } from './scriptTypes.js';
-import { legalTargets } from './targeting.js';
+import { BESTOW_TARGET, legalTargets } from './targeting.js';
 import { PACT_KINDS } from './pacts.js';
 import { MAIN_STEPS, type DecisionZone, type Step, type Target } from './turnTypes.js';
 import type { GameState, PactKind, SeatIndex } from './types.js';
@@ -166,6 +166,14 @@ export interface LegalPlay {
    * attacks.
    */
   readonly dashed?: boolean;
+  /**
+   * Set on the play that casts the card as an **Aura** for its bestow cost (CR 702.103b).
+   *
+   * The third flag in this family and the only one that changes what the play *asks for*: this one
+   * carries a target where the card's ordinary cast carries none, so the table walks the player
+   * through choosing a creature before the cast is sent.
+   */
+  readonly bestowed?: boolean;
   /**
    * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
    * (CR 708).
@@ -948,17 +956,32 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           flag: 'evoked' as const,
           cost: script.evoke.cost,
           note: `evoke cost (${script.evoke.cost}, sacrificed as it arrives)`,
+          specs: specsFor(script),
         }]),
         ...(script?.dash === undefined ? [] : [{
           flag: 'dashed' as const,
           cost: script.dash.cost,
           note: `dash cost (${script.dash.cost}, hasty, back to your hand at end of turn)`,
+          specs: specsFor(script),
+        }]),
+        /*
+          And bestow, which is the one of the three that points at something.
+
+          So the entries carry their own target specs rather than the loop asking `specsFor`: a
+          bestowed Boon Satyr enchants a creature where the ordinary one targets nothing, and the
+          two plays on the one card have different questions to answer before they can be made.
+        */
+        ...(script?.bestow === undefined ? [] : [{
+          flag: 'bestowed' as const,
+          cost: script.bestow.cost,
+          note: `bestow cost (${script.bestow.cost}, as an Aura)`,
+          specs: [BESTOW_TARGET] as readonly TargetSpec[],
         }]),
       ];
     for (const alternative of alternatives) {
       const altChange = costChangeFor(state, seat, def);
       const altCost = withCostChange(parseManaCost(alternative.cost), altChange.generic);
-      const altTargets = playableTargets(state, specsFor(script), seat, id);
+      const altTargets = playableTargets(state, alternative.specs, seat, id);
       if (altCost.unsupported !== undefined || !altTargets.ok
         || !canAfford(poolOf(state, seat), altCost, sources)) continue;
       out.push({
@@ -968,7 +991,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         ...(altChange.generic === 0
           ? {}
           : { costChange: altChange.generic, costNote: altChange.notes[0] ?? '' }),
-        targetSpecs: specsFor(script), candidates: altTargets.candidates,
+        targetSpecs: alternative.specs, candidates: altTargets.candidates,
         isManaAbility: false, sacrificeOptions: [],
       });
     }

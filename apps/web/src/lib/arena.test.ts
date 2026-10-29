@@ -394,6 +394,27 @@ describe("costs that are choices", () => {
     })
   })
 
+  it("sends the bestow flag with the creature the Aura enchants", () => {
+    /*
+      The third of the family and the only one that also points at something: a bestowed cast is an
+      Aura spell, so the table has to walk the player through choosing a creature before anything is
+      sent — and the flag has to travel with it, or the engine is handed a creature spell with a
+      target it cannot have.
+    */
+    const bestowed = play({
+      name: "Boon Satyr",
+      description: "Cast Boon Satyr for its bestow cost ({3}{G}{G}, as an Aura)",
+      bestowed: true, manaCost: "{3}{G}{G}",
+      targetSpecs: [{ kind: "creature", description: "enchant creature" }],
+      candidates: [[{ kind: "card", id: "c9" }]],
+    })
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: bestowed }).mode
+    expect(arenaReducer(mode, { kind: "pickTarget", target: { kind: "card", id: "c9" } }).action)
+      .toEqual({
+        type: "auto:cast", card: "c1", bestowed: true, targets: [{ kind: "card", id: "c9" }],
+      })
+  })
+
   it("and never sends one on the play beside it", () => {
     const mode = arenaReducer(IDLE, { kind: "choosePlay", play: play({ name: "Burst Lightning" }) }).mode
     expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({

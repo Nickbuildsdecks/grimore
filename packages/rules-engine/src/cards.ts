@@ -178,6 +178,28 @@ export interface CardInstance {
    * there is no wait — the adventure resolved, and the creature is castable from then on.
    */
   readonly onAdventure?: true;
+  /**
+   * Set while this card is being cast — and then while it is on the battlefield — **as an Aura
+   * rather than as a creature**, because its bestow cost was paid (CR 702.103b).
+   *
+   * The engine's first permanent that is a different *kind of thing* depending on how it was cast.
+   * A Boon Satyr is an Enchantment Creature; bestowed, the same card is an Enchantment — Aura,
+   * and it is not a creature at all while it is attached to one. `characteristicsOf` reads this
+   * flag in the same breath as `castAs` and the face-down profile, for the same reason all three
+   * are read there: everything downstream asks one function what this object is, and a reader that
+   * had to know about bestow is a reader that will forget.
+   *
+   * It is set at **cast time**, not on resolution, because the difference is public from the
+   * moment the spell is announced: a bestowed Boon Satyr on the stack is an Aura spell, so
+   * "counter target creature spell" does not touch it.
+   *
+   * `relocate` keeps it on the stack and on the battlefield and clears it everywhere else, the way
+   * it treats `faceDown`: the card in the graveyard afterwards is an ordinary creature card again,
+   * which is what can be reanimated or recast. And when the creature it enchants leaves, the flag
+   * is cleared where it stands — the Aura stops being one and becomes a creature (CR 702.103c),
+   * which is the one rule in this engine that changes a permanent's type without it moving.
+   */
+  readonly bestowed?: true;
   readonly isToken: boolean;
   readonly isCommander: boolean;
   /**

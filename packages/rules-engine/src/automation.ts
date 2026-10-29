@@ -35,7 +35,7 @@ import {
   DASHED, EVOKED, REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, madnessOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
-  type EffectContext, type EffectFn,
+  type EffectContext, type EffectFn, type PumpOptions,
 } from './effects.js';
 import { manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -1184,6 +1184,28 @@ export function stateBasedActions(state: GameState): GameState {
         if (hasSubtype(ch.typeLine, 'aura')) {
           const host = inst.attachedTo === null ? undefined : next.instances[inst.attachedTo];
           if (host === undefined || host.zone !== 'battlefield') {
+            /*
+              Unless it was **bestowed**, in which case it stops being an Aura and becomes a
+              creature where it stands (CR 702.103c).
+
+              The one rule in this engine that changes a permanent's type without the permanent
+              moving, and the whole reason the keyword is played: the removal spell aimed at the
+              creature you enchanted leaves you a creature instead of two cards in the graveyard.
+              Checked here rather than as a replacement effect because it is not one — the Aura
+              never starts going to the graveyard, it simply stops meeting the condition that
+              would send it.
+
+              The pump goes with the attachment: `removeEffectsFrom` takes the bonus off by source
+              id, the way the Equipment rule below does, or a dead creature's +4/+2 would sit in
+              `effects` for the rest of the game.
+            */
+            if (inst.bestowed === true) {
+              next = removeEffectsFrom(
+                withInstance(next, inst.id, { attachedTo: null, bestowed: undefined }), inst.id,
+              );
+              changed = true;
+              continue;
+            }
             next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
             changed = true;
             continue;
@@ -2434,6 +2456,23 @@ function completeResolution(
           next = addAuraEffect(next, inst.id, object.controller, host.id, script);
         }
       }
+      /*
+        And a bestowed creature, which arrives **attached** rather than as a creature of its own
+        (CR 702.103b).
+
+        The same two lines the aura above runs, with the effect read from the bestow declaration
+        instead: a card with bestow has two bodies' worth of text, and this is the half that
+        applies to somebody else. The `bestowed` flag is already on the card — it was set as the
+        spell was announced — so nothing here has to say that this permanent is an Aura; it has
+        been one since it went on the stack.
+      */
+      if (object.bestowed === true && script?.bestow !== undefined) {
+        const host = object.targets.find((t) => t.kind === 'card');
+        if (host && host.kind === 'card') {
+          next = withInstance(next, inst.id, { attachedTo: host.id });
+          next = addBestowEffect(next, inst.id, object.controller, host.id, script.bestow.effect);
+        }
+      }
       // `relocate` above recorded the arrival; `settle` announces it, and `settle` is also where
       // this permanent's own statics are installed — see the arrivals loop there. Applying them
       // here as well was the bug: a permanent that arrived any *other* way got none.
@@ -2488,6 +2527,28 @@ function addAuraEffect(
     ...modsFrom(script.aura.effect),
   };
   return { ...state, autoSeq: seq, effects: [...state.effects, effect] };
+}
+
+/**
+ * The continuous effect a bestowed permanent gives the creature it is attached to.
+ *
+ * `addAuraEffect`'s twin rather than a parameter on it, because the two read their effect from
+ * different declarations — `aura.effect` for a card that is only ever an Aura, `bestow.effect` for
+ * one that is an Aura only when it was cast as one. Sharing the scope, the duration and the source
+ * is what matters: `removeEffectsFrom` takes this away by source id when the Aura stops being one,
+ * and it cannot tell the two apart, which is exactly right.
+ */
+function addBestowEffect(
+  state: GameState, auraId: string, controller: SeatIndex, hostId: string, effect: PumpOptions,
+): GameState {
+  const seq = state.autoSeq + 1;
+  const continuous: ContinuousEffect = {
+    id: `fx${seq}`, source: auraId, controller,
+    scope: { kind: 'cards', ids: [hostId] },
+    duration: 'permanent', createdTurn: state.turn,
+    ...modsFrom(effect),
+  };
+  return { ...state, autoSeq: seq, effects: [...state.effects, continuous] };
 }
 
 function applyStatics(

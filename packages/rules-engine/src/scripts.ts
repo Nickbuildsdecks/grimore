@@ -1951,6 +1951,31 @@ const MARDU_SCOUT: CardScript = {
   triggers: [dashReturn()],
 };
 
+/**
+ * Boon Satyr: a 4/2 with flash, or an Aura that gives +4/+2 and then stands up as a 4/2.
+ *
+ * The pool's first bestow card, and the one the keyword was printed around. Three mana for a 4/2
+ * at instant speed is a fair card on its own; five mana to make somebody else +4/+2 is a *bad*
+ * card on its own — and the two together are neither, because the player chooses which one the
+ * turn needs and never loses the card to the choice.
+ *
+ * The thing worth saying about it in this engine is what it is **not**. While it is bestowed it is
+ * not a creature: a Day of Judgment leaves it alone, "counter target creature spell" cannot touch
+ * it on the stack, and it does not attack or block. And the moment the creature it enchants dies
+ * it stops being an Aura and becomes the 4/2 — which is the one rule here that changes a
+ * permanent's type where it stands. Both halves are the engine's rather than the card's: see
+ * `CardScript.bestow`, `CardInstance.bestowed` and the state-based action in `automation.ts`.
+ *
+ * Flash is the printed keyword and it applies to **both** castings, which is the rules rather
+ * than a convenience: a bestowed Satyr at the end of an opponent's turn is +4/+2 on a blocker they
+ * have already declared, and that is what the card is for.
+ */
+const BOON_SATYR: CardScript = {
+  name: 'Boon Satyr',
+  keywords: ['flash'],
+  bestow: { cost: '{3}{G}{G}', effect: { power: 4, toughness: 2 } },
+};
+
 const PLANAR_VOID: CardScript = {
   name: 'Planar Void',
   triggers: [
@@ -6583,7 +6608,7 @@ const ALL: readonly CardScript[] = [
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
-  BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER, MULLDRIFTER, MARDU_SCOUT,
+  BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER, MULLDRIFTER, MARDU_SCOUT, BOON_SATYR,
   KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,

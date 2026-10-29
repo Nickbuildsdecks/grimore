@@ -1258,6 +1258,32 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Bestow: cast this creature as an **Aura** for a different cost, and get the creature back when
+   * the creature it enchants leaves (CR 702.103).
+   *
+   * The third way to cast one card for a different cost, and the first where what arrives is a
+   * different *kind of permanent*. Evoke and dash change what happens to the creature afterwards;
+   * this one changes what the spell **is**: a bestowed Boon Satyr is an Aura spell on the stack,
+   * so "counter target creature spell" misses it, and an Enchantment — Aura on the battlefield,
+   * so a board wipe misses it too. It is not a creature at all while it is attached.
+   *
+   * And then the half the keyword is printed for: when the enchanted creature leaves, the Aura
+   * **becomes a creature** where it stands rather than going to the graveyard (CR 702.103c). That
+   * is the only rule in this engine that changes a permanent's type without the permanent moving,
+   * and it is what makes bestow a creature with removal insurance rather than an Aura.
+   *
+   * `effect` is what the enchanted creature gets, in the same vocabulary `aura` uses — a bestowed
+   * card has two bodies' worth of text and this is the one that applies to somebody else. The
+   * target is not declared: every card printed with bestow says "enchant creature", so the engine
+   * supplies that spec rather than letting thirty cards each spell it differently.
+   */
+  readonly bestow?: {
+    /** The whole cost of a bestowed casting, in the printed `{3}{G}{G}` form. */
+    readonly cost: string;
+    /** What the enchanted creature gets while this is attached to it. */
+    readonly effect: PumpOptions;
+  };
+  /**
    * Morph: cast this face down as a 2/2 for {3}, and turn it up later for this cost (CR 702.37).
    *
    * Only the *turn-up* cost lives here. The face-down casting costs {3} for every card that has

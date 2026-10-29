@@ -241,6 +241,16 @@ export interface StackObject {
    */
   readonly dashed?: true;
   /**
+   * Whether this spell was cast for its bestow cost (CR 702.103b).
+   *
+   * Beside `evoked` and `dashed`, and read one step earlier than either: this one changes what the
+   * *spell* is rather than what the permanent does afterwards, so the card itself carries the fact
+   * from the moment it is announced (see `CardInstance.bestowed`). The flag is on the stack object
+   * too, because the resolution has to know to attach the permanent to what it targeted rather
+   * than putting an ordinary creature onto the battlefield.
+   */
+  readonly bestowed?: true;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.
@@ -917,6 +927,14 @@ export interface AutoCastAction {
    * other alternative cost for the same reason: a spell is cast for one cost.
    */
   readonly dashed?: boolean;
+  /**
+   * Cast it as an Aura for its bestow cost, enchanting the creature it targets (CR 702.103b).
+   * Refused on a card with no bestow, and refused beside every other alternative cost.
+   *
+   * The targets travel on the action as they do for any other spell that points at something: a
+   * bestowed cast **must** have one, because an Aura spell with no target is not a legal cast.
+   */
+  readonly bestowed?: boolean;
   /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *

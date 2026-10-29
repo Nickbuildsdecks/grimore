@@ -14,6 +14,16 @@ import { targetKey, type Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 /**
+ * What a bestowed casting enchants (CR 702.103b).
+ *
+ * Here rather than on each card's `bestow` declaration because it is the same on every card ever
+ * printed with the keyword: "enchant creature". A field thirty cards would fill in identically is
+ * a field twenty-nine of them eventually get wrong, and this is also the spec `castSpell` checks
+ * the action against — one constant, so the offer and the cast cannot disagree.
+ */
+export const BESTOW_TARGET: TargetSpec = { kind: 'creature', description: 'enchant creature' };
+
+/**
  * The graveyard-pointing kinds, and the printed type each one requires. `null` means any card.
  *
  * One table rather than one branch per kind, because they differ only in that word: a card in a

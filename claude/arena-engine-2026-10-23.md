@@ -5339,6 +5339,42 @@ back — and **14** of those paid the dash cost, against the Mulldrifter's **one
 number of games. Dash's choice is "spend one mana now"; evoke's is "give up a creature you could
 have had". A bot that does not hold mana (D108, D110, D119) takes the first and not the second.
 
+### Bestow, and the first permanent that changes type where it stands (D196)
+
+Evoke and dash change what happens to the permanent afterwards. Bestow (CR 702.103) changes what
+the spell **is**: a Boon Satyr for {1}{G}{G} is a 4/2 with flash, and for {3}{G}{G} it is an Aura
+giving +4/+2 that is not a creature at all — until the creature it enchants leaves, when it becomes
+the 4/2 where it stands.
+
+The fact lives on the card, as `CardInstance.bestowed`, read by `characteristicsOf` beside `castAs`
+and the face-down profile: all three answer *what is this object*, and everything downstream asks
+that one function. So "counter target creature spell" misses it on the stack, a Day of Judgment
+misses it on the battlefield, and neither of them was told anything. It is set as the spell is
+announced, because the difference is public from that moment, and cleared by `relocate` everywhere
+but the stack and the battlefield — the card in the graveyard is a creature card again.
+
+Becoming a creature is a **state-based action**, not a replacement: the rule that sends a hostless
+Aura to the graveyard (CR 704.5m) grew a clause, because nothing is being replaced — the Aura never
+begins to go anywhere, it stops meeting the condition that would send it.
+
+`legalActions` now offers all three keywords from one list of alternatives, and this is the one that
+carries **its own target specs**: a bestowed cast enchants a creature where the ordinary cast of the
+same card targets nothing, and an Aura with nothing to enchant is not a cast at all.
+
+**Boon Satyr into Verdant Guard**, for the second Secure the Wastes: the deck's recurring problem is
+being two-for-oned, and a bestowed Satyr is the only card in the pool that cannot be. The slot
+measures level (−3 and −4 on two seed sets of 288), like the other two.
+
+The usage is the finding. Over 288 games the Satyr is cast **63 times in the 66 games it reached
+hand** and **not once** for its bestow cost: the bot takes the cheap half because the cheap half is
+cheaper, and a 4/2 on the board beats +4/+2 on a creature already there for two more mana. Evoke's
+one-in-thirty-three with the volume turned up, and no rule written for it — a bot rule gets written
+when an instrument says what it is worth.
+
+And `cast-counts` needed twelve seeds rather than four to say it: the subject deck gets one shuffle
+per seed per seating, so four seeds is eight library orders, and a single card can sit deep in all
+eight. The README says so now.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -363,6 +363,13 @@ function playAction(
   // sent without the flag is the printed one at the printed price.
   const withDashed = play.dashed === true ? { dashed: true } : {}
   /*
+    And bestow, which is the one of the three that also points at something: the play carries a
+    creature to enchant, so the table walks the player through choosing one and the flag travels
+    with the targets. Without it the engine is handed a creature spell with a target it cannot
+    have.
+  */
+  const withBestowed = play.bestowed === true ? { bestowed: true } : {}
+  /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
     answer in. One tap, and the 2/2 is whatever it was all along.
@@ -384,7 +391,7 @@ function playAction(
     return {
       type: "auto:cast", card: play.card,
       ...withModes, ...withX, ...withKicker, ...withFlashback, ...withEscape, ...withFaceDown,
-      ...withForetold, ...withFree, ...withEvoked, ...withDashed,
+      ...withForetold, ...withFree, ...withEvoked, ...withDashed, ...withBestowed,
       ...withHalf, ...withDivision,
       ...withSacrifice, ...withTargets,
     }

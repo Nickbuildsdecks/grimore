@@ -62,6 +62,26 @@ export function parseTypeLine(line: string | null | undefined): TypeLine {
   };
 }
 
+/**
+ * The type line of a card whose bestow cost was paid: an Aura, and not a creature (CR 702.103b).
+ *
+ * The creature type goes and the Aura subtype arrives; everything else about the line is kept,
+ * because the card is still an Enchantment and still a Satyr on paper. Written as a function of
+ * the printed line rather than as a second type line on the script, so a card that gains bestow
+ * from somewhere else — or a bestow card whose printed line is something this pool has not seen —
+ * still reads correctly.
+ */
+function bestowTypeLine(printed: TypeLine, instance: CardInstance): TypeLine {
+  if (instance.bestowed !== true) return printed;
+  return {
+    supertypes: printed.supertypes,
+    types: printed.types.filter((t) => t.toLowerCase() !== 'creature'),
+    subtypes: printed.subtypes.some((t) => t.toLowerCase() === 'aura')
+      ? printed.subtypes
+      : [...printed.subtypes, 'Aura'],
+  };
+}
+
 export const hasType = (line: TypeLine, type: string): boolean =>
   line.types.some((t) => t.toLowerCase() === type.toLowerCase());
 export const hasSubtype = (line: TypeLine, sub: string): boolean =>
@@ -663,7 +683,21 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   const def = isFaceDownObject(instance)
     ? FACE_DOWN
     : state.cardDefs[instance.castAs ?? instance.defKey];
-  const printed = parseTypeLine(def?.typeLine);
+  /*
+    And bestow, which changes what kind of permanent this *is* (CR 702.103b).
+
+    A Boon Satyr is an Enchantment Creature — Satyr; cast for its bestow cost it is an Enchantment
+    — Aura and **not a creature**, until the creature it enchants leaves. That is a change to the
+    printed type line rather than a continuous effect, which is both what the rules say (the
+    alternative cost changes the spell's characteristics as it is announced) and the only version
+    that is read correctly everywhere: layer 4 below adds types to this result, and an Aura that
+    something animates should become a creature once rather than twice.
+
+    Here rather than in a layer, and above layer 4 rather than inside it, for the same reason the
+    face-down profile is above it: both answer "what card is this object" rather than "what has
+    been done to it".
+  */
+  const printed = bestowTypeLine(parseTypeLine(def?.typeLine), instance);
   /*
     Layer 4 first, in a pass of its own (CR 613.1c).
 

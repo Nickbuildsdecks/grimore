@@ -14,13 +14,22 @@ pnpm --filter @grimore/rules-engine build
 Every one of them is deterministic: the same seeds play the same games, which is what makes two
 arms comparable at all. They take no database and no server — just the engine.
 
+**How many seeds a question needs depends on whose question it is.** A deck's *record* against the
+field moves with every game, so twelve seeds of 288 duels is a usable number. A single *card's*
+usage does not: the subject deck is shuffled once per seed per seating, so `SEEDS=4` is eight
+library orders in total, and a card that happens to sit deep in all eight is drawn in almost no
+games and reads as dead. That happened on the first run of `cast-counts` for a Boon Satyr — "in
+hand 4 games" at four seeds, 66 of 288 at twelve, same card and same build (D196). For a per-card
+question use twelve seeds or more, and read the "in hand" column before believing the rate beside
+it.
+
 | | question | run it |
 | --- | --- | --- |
 | `deck-table.mjs` | how does every deck do against every other? | `SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs` |
 | `deck-probe.mjs` | what would this slot change be worth? | `SUBJECT=tidal-mind CHANGE='Fog Bank:+1,Cancel:-1' SEEDS=17 node scripts/measure/deck-probe.mjs` |
 | `deck-probe.mjs` | what is the **commander** worth? | `SUBJECT=dawn-tithe COMMANDER='Balan, Wandering Knight' SEEDS=15 node scripts/measure/deck-probe.mjs` |
 | `cast-counts.mjs` | which of a deck's sixty cards does the bot actually use? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/cast-counts.mjs` |
-| `cast-counts.mjs` | …and **which cost** did it pay — the printed one, or the evoke, dash, flashback or foretell? | `SUBJECT=tidal-mind SEEDS=4 node scripts/measure/cast-counts.mjs` (the block under the table) |
+| `cast-counts.mjs` | …and **which cost** did it pay — the printed one, or the evoke, dash, bestow, flashback or foretell? | `SUBJECT=tidal-mind SEEDS=12 node scripts/measure/cast-counts.mjs` (the block under the table) |
 | `cast-counts.mjs` | …and how often does it press *this* button? | `SUBJECT=delta-bloom CHANGE="Kiora's Follower:+1,Rampant Growth:-1" SEEDS=6 node scripts/measure/cast-counts.mjs` |
 | `bot-duel.mjs` | what is this change to the *opponent* worth? | `TESTED='{"lookahead":false}' SEEDS=3 node scripts/measure/bot-duel.mjs` |
 | `disagree.mjs` | does that change alter any decisions at all? | `TESTED='{"lookahead":false}' SEEDS=2 node scripts/measure/disagree.mjs` |
