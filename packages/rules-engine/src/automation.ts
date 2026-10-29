@@ -1783,6 +1783,21 @@ function settle(state: GameState, before: GameState): GameState {
         && (next.instances[id]?.counters['lore'] ?? 0) === 0) {
         next = addLore(next, id, 1);
       }
+      /*
+        And the echo a permanent owes in its controller's next upkeep (CR 702.29b).
+
+        Here for the reason the lore counter is: this loop is the one place that sees every way onto
+        the battlefield, so an echo creature reanimated or put there by an effect owes its echo
+        exactly as one that was cast does.
+
+        A flag rather than a sum over `enteredTurn`, because the rule is "since your last upkeep"
+        and that is not "this turn or last turn" in a pod: a creature that entered during an
+        opponent's turn has had no upkeep of its controller's in between, and one that entered three
+        opponents ago has had none either. See `CardInstance.echoDue`.
+      */
+      if (arrivalScript?.echo !== undefined && next.instances[id] !== undefined) {
+        next = withInstance(next, id, { echoDue: true });
+      }
     }
     next = stateBasedActions(next);
   }

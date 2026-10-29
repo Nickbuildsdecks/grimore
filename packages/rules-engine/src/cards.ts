@@ -257,6 +257,21 @@ export interface CardInstance {
    * the controller is read when the step comes round rather than when the effect was created.
    */
   readonly frozen?: boolean;
+  /**
+   * This permanent owes an echo payment in its controller's next upkeep (CR 702.29b).
+   *
+   * Echo is not "every upkeep": it is the **first** upkeep after the permanent came under your
+   * control, once, and then never again — so the trigger needs something that says whether this is
+   * that upkeep. A flag set when it arrives and cleared by the trigger that read it, rather than
+   * arithmetic on `enteredTurn`: "since your last upkeep" is not "this turn or last turn" at a
+   * four-seat table, where a permanent that entered on an opponent's turn has had no upkeep of its
+   * controller's in between.
+   *
+   * Set wherever a permanent *comes under a controller's control* — the arrivals pass, and a
+   * change of control — because the rule is about control and not about entering: a creature
+   * stolen by a Mind Control has its own echo to pay, and the Mind Control's controller pays it.
+   */
+  readonly echoDue?: true;
 }
 
 /**

@@ -12052,3 +12052,95 @@ asks for it and the other fifteen runs keep playing the way they did.
 stopped-table states each cost a reducer branch, a view field, a client mode and a driver branch.
 This one cost a prefix, because it kept the answer's *shape* — a list of ids with a count on it — and
 only widened what an id may name.
+
+## D214 — Echo, the first cost the game asks for, and the question whose "no" kills the asker
+
+Every cost this engine has implemented is one a player **reaches for**: a cast, an activation, a
+kicker, a replicate count, a ward an opponent may decline, an extort paid mid-resolution. Echo
+(CR 702.29) is the first the *game* asks for. It arrives in the controller's upkeep, before anybody
+has done anything, and declining does not mean missing out on something — it means the permanent
+goes to the graveyard. **This is the first question in this engine whose "no" destroys the thing that
+asked it.**
+
+### It needed no new machinery, which is the interesting part
+
+Three pieces, all already present, and the piece is the demonstration that they compose:
+
+- **When.** `{ kind: 'step', step: 'upkeep' }` already defaults to `of: 'you'`, so the trigger fires
+  in the controller's own upkeep and nobody else's.
+- **Once.** `TriggerDef.condition` is the intervening-if clause (checked before the trigger goes on
+  the stack and again as it resolves, CR 603.4). It reads a new instance flag, `echoDue`.
+- **The price.** `ChoiceDecisionSpec.payIfChosen` — extort's shape — is a question with a cost on one
+  of its answers, paid by the engine before the effect runs.
+
+What that composition buys for free is the half that would otherwise have been a rule: **a cost the
+seat cannot pay is not offered**, because `payIfChosen` filters the priced option out. So a player
+who cannot pay is never shown a question with one button. The permanent goes, and the engine says so
+through the same channel every other unaskable question uses. One line of card script, no new state.
+
+### The flag, and why it is a flag
+
+`CardInstance.echoDue` is set **wherever a permanent comes under a controller's control** — the
+arrivals pass, and `gainControl` — and cleared by the trigger that read it, whichever way the
+question went.
+
+Arithmetic on `enteredTurn` was the obvious alternative and it is wrong. Echo's clause is "since your
+last upkeep", and at a four-seat table that is not "this turn or last turn": a creature that entered
+during an opponent's turn has had no upkeep of its controller's in between, and one that entered
+three opponents ago has had none either. A flag says the thing the rule says.
+
+`gainControl` sets it without asking whether the card has echo, because asking would mean reading a
+script and that module sits below the one holding them. A flag on a permanent with no echo trigger is
+inert — the only reader is an echo trigger's own condition.
+
+### A test that could not be written the obvious way
+
+"Tapped out in your own upkeep" turns out to be **impossible for a creature you cast**: lands untap
+before the upkeep, so a seat with enough lands to have cast the creature can always pay for it. The
+first version of that test tapped the lands by hand during the opponent's turn and proved nothing —
+the untap step undid it.
+
+The honest scenario is a permanent that reached the battlefield **without being cast**: reanimated,
+put there by an effect, or taken off somebody. So the test puts the Marshal onto the battlefield with
+one Mountain up, and the echo is unpayable because the creature never cost anything. Which is also
+the only way it happens in a real game.
+
+### Two cards, four readings, all of them positive
+
+| | seeds 3300 | seeds 5100 |
+| --- | --- | --- |
+| Mogg War Marshal, in Ember Rush (for the 2nd Goblin Arsonist) | +8 | +6 |
+| Yavimaya Granger, in Kindle Grove (for the last Rampant Growth) | +7 | +2 |
+
+Each is stock-minus-variant out of 288 paired games, so a positive number is the echo card winning
+more than the card it replaced. Every reading is inside the ±20 floor, so none of them is a *result* —
+but all four have the same sign, which is the most a slot probe can honestly say for a card this
+small: **the slot is paid for.**
+
+The pair was chosen so the two halves of the keyword are both in the pool. Mogg War Marshal is the
+one you often **decline**: it makes a Goblin when it arrives and another when it dies, so refusing
+costs the 1/1 that asked and leaves the board the same size. Yavimaya Granger is the one you **pay**:
+its land is already on the battlefield by the time the question comes, so the three mana are spent
+either way and the only question left is whether a 2/2 is worth two more.
+
+### What is deliberately not measured, and what it would take
+
+The bot's rule is "pay", written as `best: () => 'Pay {…}'` on the card. **It is not priced head to
+head**, and D212's lesson says why that matters: a bot rule is measured with `bot-duel`, which varies
+a `BotOptions` flag and cancels the deck, the matchup and the seat. `best` receives `(state, chooser)`
+and cannot see `BotOptions`, so there is no switch to vary. Threading the options into that call is
+the change that would make every card-authored bot answer measurable — the extort `best`, the
+proliferate choice and this one — and it is a change to the decision machinery rather than a rider on
+a keyword, so it is left as an open question rather than done badly here.
+
+What *is* measured is the slot, above, and the table: `LIST=echo` plays eight Marshals through a real
+browser and requires **both** answers to be pressed, because a run that paid every time has proved
+the question and not the keyword.
+
+### The browser row earns its place for a reason no other row does
+
+Echo is the only question in this pool raised in a step a table normally passes straight through.
+Every other prompt these runs press follows something the player did. This one arrives in the upkeep,
+and the upkeep is where auto-pass lives — so a table that passed priority past its own question would
+lose the creature silently, and no engine test can see that, because no engine test passes priority
+the way a table does.

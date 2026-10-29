@@ -1229,6 +1229,31 @@ export interface CardScript {
     readonly description: string;
   };
   /**
+   * Echo: in the first upkeep after it came under your control, pay again or sacrifice it
+   * (CR 702.29).
+   *
+   * Every other cost in this engine is one a player **chooses** to pay — a cast, an activation, a
+   * kicker, a replicate, a ward, an extort. This is the first the *game* asks for: the question
+   * arrives on its own in a step nobody was planning to act in, and the consequence of declining is
+   * imposed by the rules rather than being "you do not get the thing". So it is the first question
+   * here whose "no" **destroys the permanent that asked it**.
+   *
+   * The field is read in two places and does nothing on its own. `echoDue` is set on the instance
+   * wherever a permanent comes under a controller's control, so the trigger knows which upkeep is
+   * the one; and the trigger itself is an ordinary `step` trigger built by `echo()` in `scripts.ts`,
+   * because everything it needs already existed — a question with a price on one answer
+   * (`ChoiceDecisionSpec.payIfChosen`) and an intervening-if condition (`TriggerDef.condition`).
+   *
+   * What that buys is the half nobody has to write: **a cost that cannot be paid is not offered**,
+   * so a player tapped out in their own upkeep is not asked a question with one button — the
+   * permanent simply goes, with the words said through the same channel every other unaskable
+   * question uses.
+   */
+  readonly echo?: {
+    /** The echo cost, in the printed `{2}{G}` form. Usually the card's own mana cost. */
+    readonly cost: string;
+  };
+  /**
    * Flashback: a second casting, out of the graveyard, for a different cost (CR 702.33).
    *
    * The second zone a spell is ever cast *from* in this engine — the command zone was the first,

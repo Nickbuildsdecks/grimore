@@ -942,6 +942,7 @@ LIST=suspend node scripts/e2e-solo.mjs # a deck that pays for a spell a turn bef
 LIST=dredge node scripts/e2e-solo.mjs  # a deck that buys the same spell back every draw step — 27 checks
 LIST=buyback node scripts/e2e-solo.mjs # a deck that pays to keep the spell it just cast — 26 checks
 LIST=proliferate node scripts/e2e-solo.mjs # a deck that poisons the computer and then picks it out of a list — 25 checks
+LIST=echo node scripts/e2e-solo.mjs    # a deck asked for mana in its own upkeep — 26 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1016,6 +1017,7 @@ LIST=suspend node scripts/e2e-solo.mjs           # a card exiled with time count
 LIST=dredge node scripts/e2e-solo.mjs            # a draw replaced by a mill, and the card it hands back
 LIST=buyback node scripts/e2e-solo.mjs           # the dearer of two rows on one card, and the card coming home
 LIST=proliferate node scripts/e2e-solo.mjs       # an answer with a player in it, tapped on the seat's own strip
+LIST=echo node scripts/e2e-solo.mjs              # a question raised in the upkeep, and both of its answers
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1030,7 +1032,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1084 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1090 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1200,6 +1202,14 @@ what carries the badge. It can now, and **only when a scenario asks**: turned on
 cost `LIST=cascade` its free cast, because regenerating a River Boa for {G} spends the Forest the
 four-mana Bloodbraid Elf wanted.
 
+`LIST=echo` is the thirteenth, and the only one whose question is raised in a step the table passes
+**straight through**. Every other prompt these runs press follows something the player did — a cast,
+an activation, an attack. Echo arrives in the upkeep, before anybody has acted, which is the one
+place auto-pass could swallow it: a table that passed priority past its own question would lose the
+creature silently, and no engine test can see that because no engine test passes priority the way a
+table does. Eight Mogg War Marshals, and **both** answers are required — paying taps two lands and
+keeps a 1/1, refusing puts it in the graveyard and makes a Goblin on the way out. Three runs, 26 of
+26 checks each.
 
 Two of those checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
@@ -1208,7 +1218,7 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1084 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1090 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (217 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`

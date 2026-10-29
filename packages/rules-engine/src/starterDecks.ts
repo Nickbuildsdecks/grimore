@@ -106,6 +106,43 @@ const IMPACT_TREMORS: CardDef = {
   colors: ['R'],
 };
 
+/**
+ * The echo creature you are *meant* to let die, which is why it is the keyword's best first card.
+ *
+ * Two mana buys two bodies — the Goblin it is and the Goblin it makes — and then asks for two mana
+ * again next upkeep. Declining is not a loss: the Marshal dies, makes a *second* token on the way
+ * out, and the board is the same two 1/1s it would have been. So the question it asks is a real one
+ * rather than a tax with an obvious answer, which is what makes it worth measuring (D214).
+ */
+const MOGG_WAR_MARSHAL: CardDef = {
+  name: 'Mogg War Marshal',
+  typeLine: 'Creature — Goblin Warrior',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Echo {1}{R} (At the beginning of your upkeep, if this came under your control since your last upkeep, sacrifice it unless you pay its echo cost.)\nWhen Mogg War Marshal enters the battlefield or dies, create a 1/1 red Goblin creature token.',
+  colors: ['R'],
+};
+
+/**
+ * And the echo creature you pay for: a Rampant Growth that leaves a body behind.
+ *
+ * The land is already in play by the time the upkeep comes round, so the three mana are spent
+ * whatever the answer is — the question is only whether the 2/2 is worth two more. In a deck that
+ * ramps, it usually is, which makes this the opposite half of the pair the Marshal starts.
+ */
+const YAVIMAYA_GRANGER: CardDef = {
+  name: 'Yavimaya Granger',
+  typeLine: 'Creature — Elf Scout',
+  manaCost: '{2}{G}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Echo {2}{G} (At the beginning of your upkeep, if this came under your control since your last upkeep, sacrifice it unless you pay its echo cost.)\nWhen Yavimaya Granger enters the battlefield, search your library for a basic land card, put it onto the battlefield tapped, then shuffle.',
+  colors: ['G'],
+};
+
 const GOBLIN_ARSONIST: CardDef = {
   name: 'Goblin Arsonist',
   typeLine: 'Creature — Goblin Shaman',
@@ -3071,7 +3108,16 @@ export const EMBER_RUSH: DeckSpec = {
     */
     { card: RAGING_GOBLIN, count: 1 },
     { card: MIZZIUM_MORTARS, count: 1 },
-    { card: GOBLIN_ARSONIST, count: 2 },
+    { card: GOBLIN_ARSONIST, count: 1 },
+    /*
+      The second Arsonist's slot, spent on the same two mana of goblins with **echo** on it.
+
+      Both are small red bodies that leave something behind: the Arsonist pings on the way out, the
+      Marshal makes a token coming and going. What the slot buys is the question — two mana again
+      next upkeep, or it dies and makes its second Goblin — and because declining costs almost
+      nothing, it is a question worth asking rather than a tax. See D214.
+    */
+    { card: MOGG_WAR_MARSHAL, count: 1 },
     // One Archer rather than two: the slot went to Crimson Wisps, which is a card the Archer would
     // have pinged for anyway and which gives the Dragon, the Kavu or a Hill Giant haste.
     { card: FIREBRAND_ARCHER, count: 1 },
@@ -6552,7 +6598,16 @@ export const KINDLE_GROVE: DeckSpec = {
 
     // ── Four that get to five mana a turn early ──
     { card: LLANOWAR_ELVES, count: 2 },
-    { card: RAMPANT_GROWTH, count: 1 },
+    /*
+      The last Rampant Growth's slot, spent on the same land with a 2/2 attached and **echo** on it.
+
+      A Yavimaya Granger puts a tapped basic onto the battlefield exactly as the Growth does, one
+      mana dearer, and leaves a body that asks for {2}{G} in the next upkeep. The land is already in
+      play by then, so the question is only whether the 2/2 is worth two more mana — which is the
+      opposite half of the question Mogg War Marshal asks, and the reason the keyword has two cards
+      rather than one. See D214.
+    */
+    { card: YAVIMAYA_GRANGER, count: 1 },
     /*
       The second Rampant Growth's slot, spent on the same card with **suspend** on it.
 

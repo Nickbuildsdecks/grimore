@@ -43,7 +43,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * card it will cast two turns later (`SUSPEND_LIST`), `LIST=dredge` one that keeps buying the same
  * spell back out of its graveyard (`DREDGE_LIST`), `LIST=buyback` one that pays to keep the spell
  * it just cast (`BUYBACK_LIST`), `LIST=proliferate` one that poisons the computer and then asks the
- * table to pick it out of a list of permanents (`PROLIFERATE_LIST`), and `LIST=earned` one
+ * table to pick it out of a list of permanents (`PROLIFERATE_LIST`), `LIST=echo` one that is asked
+ * for mana in its own upkeep (`ECHO_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -391,6 +392,24 @@ const PROLIFERATE_LIST = [
   '4 Glistener Elf', '4 Blight Mamba', '4 Cystbearer', '4 Ichorclaw Myr',
   '4 Vastwood Fortification', '4 Young Wolf', '4 Sol Ring',
 ].join('\n');
+
+/**
+ * A deck that is asked for mana in its own upkeep, over and over (CR 702.29).
+ *
+ * Echo is the only question in this pool the **game** asks rather than the player, and the only one
+ * raised in a step a table is normally passing straight through — which is exactly the kind of thing
+ * a browser run can check and an engine test cannot: the upkeep is where auto-pass lives.
+ *
+ * Eight Mogg War Marshals, because the question has to be reached several times for the run to see
+ * both answers: paying keeps a 1/1, declining makes a second Goblin, and the deck is happy either
+ * way. Twenty-four Mountains so the {1}{R} is affordable whenever the question comes.
+ */
+const ECHO_LIST = [
+  '24 Mountain',
+  '8 Mogg War Marshal',
+  '4 Monastery Swiftspear', '4 Goblin Arsonist', '4 Raging Goblin', '4 Borderland Marauder',
+  '4 Lightning Bolt', '4 Shock', '4 Firebrand Archer',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -458,6 +477,8 @@ const PROLIFERATE_LIST = [
         ? BUYBACK_LIST
         : LIST === 'proliferate'
         ? PROLIFERATE_LIST
+        : LIST === 'echo'
+        ? ECHO_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -609,6 +630,14 @@ const PROLIFERATE_LIST = [
      * chosen by tapping their own strip on the board.
      */
     const playersChosen = new Set();
+    /**
+     * The echo questions this run answered, by the answer it gave, under `LIST=echo`.
+     *
+     * Keyed on the whole line so the two answers count separately: the point of eight Marshals is
+     * that both are reachable, and a run that only ever paid has not seen the half where a
+     * permanent the player still wanted goes to the graveyard.
+     */
+    const echoAnswers = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -665,6 +694,9 @@ const PROLIFERATE_LIST = [
         if (typeof did === 'string' && /last time counter is gone/i.test(did)) suspendCasts.add(did);
         if (typeof did === 'string' && /^took a dredge: /.test(did)) dredgesTaken.add(did);
         if (typeof did === 'string' && /^chose a player: /.test(did)) playersChosen.add(did);
+        if (typeof did === 'string' && /^chose a word: .*Echo \{1\}\{R\}/.test(did)) {
+          echoAnswers.add(did.replace(/—.*$/, '').trim());
+        }
         if (typeof did === 'string' && /chose a play: Cast .* with buyback/i.test(did)) {
           buybackRows.add(did);
         } else if (buybackRows.size > 0 && typeof did === 'string'
@@ -744,7 +776,7 @@ const PROLIFERATE_LIST = [
     */
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
-      || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate'
+      || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -769,10 +801,17 @@ const PROLIFERATE_LIST = [
       ? buybackRows.size === 0 || castsAfterABuyback === 0
       : LIST === 'proliferate'
       ? playersChosen.size === 0
+      /*
+        Both answers, not just one. A run that paid every echo has proved the question and not the
+        keyword — the half that matters is the permanent going to the graveyard because its
+        controller said no.
+      */
+      : LIST === 'echo'
+      ? echoAnswers.size < 2
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
-      || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate')
+      || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -783,6 +822,7 @@ const PROLIFERATE_LIST = [
         : LIST === 'dredge' ? `${dredgesTaken.size} dredges, ${castsAfterADredge} casts after one`
         : LIST === 'buyback' ? `${buybackRows.size} buyback rows, ${castsAfterABuyback} casts after one`
         : LIST === 'proliferate' ? `${playersChosen.size} answers with a player in them`
+        : LIST === 'echo' ? `${echoAnswers.size} of the two echo answers`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -969,6 +1009,24 @@ const PROLIFERATE_LIST = [
       check('a player is offered as part of an answer, and chosen by tapping their own strip',
         playersChosen.size > 0, `answers with a player: ${playersChosen.size}`);
       for (const did of [...playersChosen].slice(0, 2)) console.log(`      ${did}`);
+    } else if (LIST === 'echo') {
+      /*
+        The only question in this pool the **game** asks, in the step a table passes through.
+
+        Every other prompt these runs press follows something the player did — a cast, an
+        activation, an attack. Echo arrives in the upkeep, before anybody has done anything, which
+        is the one place auto-pass could swallow it: a table that passed priority past its own
+        question would lose the creature silently, and no engine test can see that because no engine
+        test passes priority the way a table does.
+
+        Both answers are required, because they are different claims: paying taps two lands and
+        keeps a 1/1, declining puts it in the graveyard and makes a Goblin on the way out.
+      */
+      check('an echo is asked in the upkeep, and answered with a tap',
+        echoAnswers.size > 0, `echo answers: ${echoAnswers.size}`);
+      check('and both answers are reachable: paid, and refused',
+        echoAnswers.size >= 2, [...echoAnswers].join(' / '));
+      for (const did of [...echoAnswers].slice(0, 2)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

@@ -25,7 +25,7 @@ import {
   dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, firstCardTarget,
   firstPlayerTarget,
   chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
-  allowExtraLand, proliferate,
+  allowExtraLand, echoSettled, proliferate,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -6512,6 +6512,109 @@ const STEADY_PROGRESS: CardScript = {
 };
 
 /**
+ * Echo: the question the game asks, in the one upkeep it is asked (CR 702.29).
+ *
+ * The same two lines on every card with the keyword, and the first question in this engine whose
+ * **no** destroys the permanent that asked it. Everything else that can be declined leaves the
+ * table where it was: a ward unpaid counters a spell that was already on the stack, an extort
+ * declined spends nothing, an offered cast declined leaves the card where it was. Decline this and
+ * the creature you spent three mana on last turn goes to your graveyard.
+ *
+ * Three pieces, all of them already in the engine:
+ *
+ *  - **When.** `{ kind: 'step', step: 'upkeep' }` defaults to `of: 'you'`, so it is asked in the
+ *    controller's own upkeep and nobody else's — which is the whole of echo's timing except for
+ *    "the first one", below.
+ *  - **Once.** `condition` reads `echoDue`, the flag set wherever the permanent came under its
+ *    controller's control. A condition is asked twice, before the trigger goes on the stack and
+ *    again as it resolves (CR 603.4), and must not change anything — so the flag is cleared by the
+ *    `effect`, which is the half that runs.
+ *  - **The price.** `payIfChosen` is extort's shape: a question with a cost on one of its answers,
+ *    paid by the engine before the effect runs. It carries the rule nobody has to write — a cost
+ *    the seat cannot afford is **not offered**, so a player tapped out in their own upkeep is not
+ *    shown a question with one button; the permanent goes, and the engine says so.
+ *
+ * `Sacrifice it` is first because the first option is what the engine falls back on when there is
+ * no real question to ask, and that fallback has to be the outcome the rules impose. `best` is the
+ * bot's rule and it is deliberately plain: pay. A creature already on the battlefield is worth more
+ * than the mana in an upkeep nobody else is using — see D214 for the measurement.
+ */
+function echoTrigger(cost: string): TriggerDef {
+  const pay = `Pay ${cost}`;
+  return {
+    on: { kind: 'step', step: 'upkeep' },
+    description: `Echo ${cost} — pay it or sacrifice this permanent`,
+    condition: (c) => c.state.instances[c.source]?.echoDue === true,
+    decisions: [{
+      who: 'controller',
+      prompt: `Echo ${cost}: pay it, or sacrifice this permanent?`,
+      options: ['Sacrifice it', pay],
+      payIfChosen: { option: pay, cost },
+      best: () => pay,
+    }],
+    effect: (c) => {
+      // Cleared whichever way the question went: echo is asked once, and a permanent that paid is
+      // not asked again next turn (CR 702.29b).
+      const settled = echoSettled(c.state, c.source);
+      return chosenOption(c) === pay ? settled : moveToGraveyard(settled, [c.source]);
+    },
+  };
+}
+
+/**
+ * Mogg War Marshal: two mana, two goblins, and a question next upkeep.
+ *
+ * The pool's first **echo** card (CR 702.29), and the one that shows why the keyword is a question
+ * rather than a tax: the Marshal makes a Goblin when it arrives and another when it dies, so
+ * declining the echo costs the body and keeps the board. A player with two mana to spare pays and
+ * has three goblins; a player who needs the mana lets it go and still has two.
+ */
+const MOGG_WAR_MARSHAL: CardScript = {
+  name: 'Mogg War Marshal',
+  echo: { cost: '{1}{R}' },
+  triggers: [
+    echoTrigger('{1}{R}'),
+    {
+      on: { kind: 'etb' },
+      description: 'create a 1/1 red Goblin creature token',
+      effect: (c) => createToken(c.state, c.controller, GOBLIN_TOKEN, 1),
+    },
+    {
+      on: { kind: 'dies' },
+      description: 'create a 1/1 red Goblin creature token',
+      effect: (c) => createToken(c.state, c.controller, GOBLIN_TOKEN, 1),
+    },
+  ],
+};
+
+/**
+ * Yavimaya Granger: the land is yours whatever you answer.
+ *
+ * The other half of what echo asks. The Granger's work — a basic land onto the battlefield tapped —
+ * is done the moment it resolves, so by the next upkeep the three mana are spent and the only
+ * question left is whether a 2/2 is worth {2}{G}. In Kindle Grove, which ramps, it usually is.
+ *
+ * It takes the last Rampant Growth's slot, which is the fair comparison: same land, same tapped,
+ * one mana dearer, with a body and a question attached.
+ */
+const YAVIMAYA_GRANGER: CardScript = {
+  name: 'Yavimaya Granger',
+  echo: { cost: '{2}{G}' },
+  triggers: [
+    echoTrigger('{2}{G}'),
+    {
+      on: { kind: 'etb' },
+      description: 'search your library for a basic land card and put it onto the battlefield tapped',
+      decisions: [searchYourLibrary('Search your library for a basic land card', isBasicLand)],
+      effect: (c) => {
+        const found = chosenCard(c);
+        return found === null ? c.state : putOntoBattlefield(c.state, found, c.controller, { tapped: true });
+      },
+    },
+  ],
+};
+
+/**
  * Dredge on a body you were going to spend anyway, in the deck that spends bodies.
  *
  * One of the pool's two **dredge** cards (CR 702.52a), and a creature rather than the land the slot
@@ -7475,6 +7578,7 @@ const ALL: readonly CardScript[] = [
   BASILICA_SCREECHER, BASILICA_GUARDS, RIFT_BOLT, SEARCH_FOR_TOMORROW,
   SHAMBLING_SHELL, DARKBLAST, CAPSIZE, WHISPERS_OF_THE_MUSE,
   CONTAGION_CLASP, STEADY_PROGRESS,
+  MOGG_WAR_MARSHAL, YAVIMAYA_GRANGER,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

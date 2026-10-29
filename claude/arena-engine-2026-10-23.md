@@ -5908,6 +5908,43 @@ default: the first version turned it on everywhere and `LIST=cascade` stopped ca
 Elves, because regenerating a River Boa costs {G} and a Forest spent on a shield nobody needed is a
 Forest the four-mana Elf wanted.
 
+### Echo, the first cost the game asks for rather than offers (D214)
+
+Every cost in this engine is one a player reaches for: a cast, an activation, a kicker, a replicate
+count, a ward, an extort. Echo (CR 702.29) arrives on its own, in the controller's upkeep, before
+anybody has done anything — and declining it does not mean missing out on something. The permanent
+goes to the graveyard. It is the first question here whose **no** destroys the thing that asked it.
+
+It needed nothing new, which is the part worth recording. `{ kind: 'step', step: 'upkeep' }` already
+defaulted to the controller's own upkeep; `TriggerDef.condition` is the intervening-if clause, reading
+a new instance flag; and `ChoiceDecisionSpec.payIfChosen` is extort's question-with-a-price. The
+composition even carries the half that would have been a rule: a cost the seat cannot pay is **not
+offered**, so nobody is shown a question with one button — the permanent goes and the engine says so.
+
+The flag is `echoDue`, set wherever a permanent **comes under a controller's control** (the arrivals
+pass, and a change of control) and cleared by the trigger that read it. Arithmetic on `enteredTurn`
+was the obvious alternative and is wrong: "since your last upkeep" is not "this turn or last turn" at
+a four-seat table, where a creature that entered on an opponent's turn has had no upkeep of its
+controller's in between.
+
+**And one test could not be written the obvious way.** "Tapped out in your own upkeep" is impossible
+for a creature you *cast* — lands untap before the upkeep, so a seat that could cast it can always
+pay for it. The first attempt tapped the lands by hand during the opponent's turn and proved nothing,
+because the untap step undid it. The honest scenario is a permanent that reached the battlefield
+without being cast: reanimated, put there by an effect, or taken off somebody. Which is also the only
+way it happens in a real game.
+
+Mogg War Marshal went into Ember Rush and Yavimaya Granger into Kindle Grove: **+8/+6 and +7/+2** of
+288 on two seed sets — inside the ±20 floor, so not a result, but four readings with the same sign,
+which is the most a probe can honestly say for a card this small. The pair is deliberate: the Marshal
+is the echo you **decline** (it leaves a Goblin behind either way) and the Granger the one you **pay**
+(its land is already in play, so only the 2/2 is in question).
+
+The bot's rule is "pay", and it is **not priced head to head** — a card's `best` receives
+`(state, chooser)` and cannot see `BotOptions`, so there is no flag for `bot-duel` to vary. Threading
+the options into that call would make every card-authored bot answer measurable at once; D214 leaves
+it as an open question rather than doing it badly here.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

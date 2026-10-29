@@ -1227,6 +1227,16 @@ export function freezeNextUntap(state: GameState, id: string): GameState {
 export const SEAT_CHOICE = 'seat:';
 
 /**
+ * Marks an echo as settled, whether it was paid or not (CR 702.29b).
+ *
+ * Lives here rather than in the trigger that calls it because a card's script writes effects and
+ * does not reach into instances — and because the flag's two setters are in this module and in the
+ * arrivals pass, so its one clearer belongs beside them.
+ */
+export const echoSettled = (state: GameState, id: string): GameState =>
+  state.instances[id] === undefined ? state : withInstance(state, id, { echoDue: undefined });
+
+/**
  * Proliferate: one more of **each kind of counter already there**, on each thing chosen
  * (CR 701.27a).
  *
@@ -1416,11 +1426,22 @@ export function createToken(
   });
 }
 
-/** Moves a permanent to another player's battlefield, which is what gaining control is. */
+/**
+ * Moves a permanent to another player's battlefield, which is what gaining control is.
+ *
+ * And marks an echo as owed again (CR 702.29b), because echo is about **control** and not about
+ * entering: a creature with echo stolen by a Mind Control owes its echo to its new controller in
+ * their next upkeep, and a control change is not an arrival — `relocate` from one battlefield to
+ * another records no entry, which is right, so the arrivals pass never sees this.
+ *
+ * Set without asking whether the card has echo, because asking would mean reading its script and
+ * this module sits below the one that holds them. A flag on a permanent with no echo trigger is
+ * inert: the only thing in the game that reads `echoDue` is an echo trigger's own condition.
+ */
 export function gainControl(state: GameState, id: string, seat: SeatIndex): GameState {
   const inst = state.instances[id];
   if (inst === undefined || inst.zone !== 'battlefield') return state;
-  return relocate(state, inst, 'battlefield', seat, 'bottom');
+  return withInstance(relocate(state, inst, 'battlefield', seat, 'bottom'), id, { echoDue: true });
 }
 
 export function attachTo(state: GameState, auraId: string, hostId: string): GameState {

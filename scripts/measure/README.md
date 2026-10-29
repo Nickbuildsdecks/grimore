@@ -473,3 +473,13 @@ itself, in the deck with two sacrifice outlets in it, was offered **137 times**.
 what a keyword is worth, measure how often the card gets to use it — a slot probe on the land would
 have read as nothing and the honest reading of that nothing is "this card never happened", which is
 not a fact about dredge.
+
+**A bot answer written on a card cannot be priced with `bot-duel`, and saying so is better than
+pricing it with the wrong instrument.** `ChoiceDecisionSpec.best` is how a card answers its own
+question — extort's "pay", proliferate's choice of counters, echo's "pay or let it die" — and it
+receives `(state, chooser)`. It cannot see `BotOptions`, so there is **no flag to vary**, and
+`bot-duel` varies flags. The temptation is to reach for the slot probe instead and call the
+difference a fact about the rule, which is exactly what D212 had to withdraw. What a slot probe can
+honestly say about a card whose bot answer is fixed is "the slot is paid for"; the rule itself stays
+unmeasured until the options are threaded into that call (D214). An unmeasured rule declared as such
+costs nothing; a measured-looking number from the wrong harness costs a day.

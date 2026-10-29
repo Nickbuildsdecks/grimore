@@ -16599,3 +16599,151 @@ describe('proliferate: the question whose answer can be a player', () => {
     expect(chosen).not.toContain(elf);
   });
 });
+
+describe('echo: the first cost the game asks for', () => {
+  /*
+    Every other cost in this engine is one a player reaches for: a cast, an activation, a kicker, a
+    replicate, a ward, an extort. Echo (CR 702.29) arrives on its own, in a step nobody was planning
+    to act in, and the consequence of declining is imposed rather than merely missed — this is the
+    first question here whose **no** destroys the permanent that asked it.
+
+    So the tests are the four rules that make it echo rather than an upkeep tax: it is asked, it is
+    asked **once**, it is asked only in its controller's own upkeep, and a cost that cannot be paid
+    is not a question at all.
+
+    The creature is **cast** rather than placed, which matters here more than anywhere else in this
+    file: echo is owed by a permanent that *came under your control*, and a board built card by hand
+    on a tabletop has no arrivals at all — so a placed Marshal correctly owes nothing.
+  */
+  const cast = (lands: number): GameState => {
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: { 0: ['Mogg War Marshal'] },
+      battlefield: { 0: Array.from({ length: lands }, () => 'Mountain') },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    return drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Mogg War Marshal'),
+    }), 40);
+  };
+
+  /**
+   * Seat 0's next upkeep, with the echo trigger resolved far enough to be asking.
+   *
+   * Two turns, because seat 1's is in between — and then a `drain`, because echo is a **triggered
+   * ability**: it goes on the stack as the upkeep begins and asks its question when it resolves,
+   * which is one pass of priority later.
+   */
+  const myNextUpkeep = (s: GameState): GameState => drain(nextTurn(nextTurn(s)), 40);
+
+  it('asks in the controller next upkeep, and the permanent stays when it is paid', () => {
+    let s = cast(2);
+    const marshal = find(s, 0, 'battlefield', 'Mogg War Marshal');
+    // The flag is set as it arrives, which is what says *which* upkeep is echo's one.
+    expect(s.instances[marshal]!.echoDue).toBe(true);
+    // And it brought a Goblin with it, which is the half that makes declining a real answer.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Goblin');
+
+    s = myNextUpkeep(s);
+    expect(s.step).toBe('upkeep');
+    const ask = s.pendingDecision;
+    expect(ask?.seat).toBe(0);
+    expect(ask?.prompt).toContain('Echo {1}{R}');
+    expect(ask?.options).toEqual(['Sacrifice it', 'Pay {1}{R}']);
+
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Pay {1}{R}' }), 40);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Mogg War Marshal');
+    // Two Mountains tapped for it: the cost was really paid.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(2);
+    expect(s.instances[marshal]!.echoDue).toBeUndefined();
+  });
+
+  it('and goes to the graveyard when it is declined, leaving its second Goblin behind', () => {
+    let s = myNextUpkeep(cast(2));
+    const goblins = namesIn(s, 0, 'battlefield').filter((name) => name === 'Goblin').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Sacrifice it' }), 40);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Mogg War Marshal');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Mogg War Marshal');
+    /*
+      The reason declining this one is a real answer rather than a mistake: the Marshal makes a
+      Goblin on the way out too, so the board after a refusal has the same number of bodies on it as
+      the board before the question.
+    */
+    expect(namesIn(s, 0, 'battlefield').filter((name) => name === 'Goblin').length).toBe(goblins + 1);
+    // Nothing was tapped, because nothing was paid.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(0);
+  });
+
+  it('is asked once and never again, however long it lives', () => {
+    let s = myNextUpkeep(cast(2));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Pay {1}{R}' }), 40);
+    // Two turns on, in the same seat's upkeep, with the creature still there and nothing asked.
+    s = myNextUpkeep(s);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'battlefield')).toContain('Mogg War Marshal');
+  });
+
+  it('is not asked in an opponent upkeep, which is the whole of its timing', () => {
+    // One turn on is seat 1's, and seat 0's Marshal is not its business.
+    const s = nextTurn(cast(2));
+    expect(s.activeSeat).toBe(1);
+    expect(s.step).toBe('upkeep');
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'battlefield')).toContain('Mogg War Marshal');
+  });
+
+  it('is not a question at all when the mana is not there: it simply goes', () => {
+    /*
+      The half nobody had to write. `payIfChosen` does not offer an option the seat cannot afford,
+      which leaves one word — and a question with one answer is one the engine answers itself. So a
+      player who cannot pay is not shown a prompt with a single button; the creature goes, and the
+      words arrive through the channel the engine uses when nobody pressed anything.
+
+      One Mountain, and the Marshal **put** onto the battlefield rather than cast — which is the
+      only way to owe an echo you cannot pay, and a real one: a permanent reaches the battlefield
+      without being cast when it is reanimated, when an effect puts it there, and when somebody
+      takes it off you. Lands untap before the upkeep, so a seat that cast the creature can always
+      pay for it.
+    */
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      battlefield: { 0: ['Mountain'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const marshal = find(s, 0, 'library', 'Mogg War Marshal');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: marshal, toZone: 'battlefield' }), 40);
+    expect(s.instances[marshal]!.echoDue).toBe(true);
+
+    s = myNextUpkeep(s);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Mogg War Marshal');
+  });
+
+  it('the Granger keeps the land it fetched, whichever way the question goes', () => {
+    /*
+      The other card, and the other half of the keyword. A Yavimaya Granger's work is done as it
+      resolves — a basic land, tapped, on the battlefield — so the upkeep question is only about the
+      2/2. Declining does not give the land back.
+    */
+    let s = arena({
+      decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
+      hands: { 0: ['Yavimaya Granger'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Yavimaya Granger') }), 40);
+    // Its arrival searches: the basic land is chosen by name from the library it is offered out of.
+    s = drain(decide(s, ['Forest']), 40);
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Forest').length).toBe(4);
+
+    s = myNextUpkeep(s);
+    expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay {2}{G}']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Sacrifice it' }), 40);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Yavimaya Granger');
+    // The land it fetched is still there, which is what makes paying a judgement rather than a must.
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Forest').length).toBe(4);
+  });
+});
