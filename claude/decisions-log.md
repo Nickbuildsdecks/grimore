@@ -11143,3 +11143,169 @@ the wire format rather than of the engine — because `packView` deduplicates th
 and two definitions that share a name is exactly the case it had never been handed. So the browser
 proves the button and the Zombie, and the view test proves the size.
 
+## D204 — Miracle: the cast offered as the card is drawn, and the two slots that disagreed
+
+**The keyword.** Miracle is an offer rather than a cost: the engine stops the table the moment a
+card is drawn, says it was the first card drawn this turn, and names a cost that is not the card's
+own (CR 702.94a). Three keywords now share `pendingOfferedCast` — cascade, madness and miracle —
+and miracle added the one disposition the other two have no use for: **declining leaves the card
+exactly where it is**, in the hand it has just arrived in. Cascade's hit goes back to the library
+and madness's goes to the graveyard; `pendingOfferedCast.stays` is the flag that says "do not move
+it", and `settleOffer` and the decline path both read it.
+
+What the engine needed beside it was a fact it had never kept: **which draw of the turn a card
+was**. `spellsCastThisTurn` and `lifeLostThisTurn` are counts, and a count cannot tell the first
+card of a `draw(2)` from the second — so `drew` now carries `{ seat, card, nth }` and
+`cardsDrawnThisTurn` is reset in cleanup beside the other two. The printed *reveal* from hand is
+deliberately not modelled: a hidden-information gesture whose only effect is to let the offer
+happen is an interaction the table would have to stop for twice.
+
+Two cards, both put in decks that would never play them at the printed cost, which is the honest
+test of the keyword rather than of the cards: **Thunderous Wrath** ({4}{R}{R}, miracle {R}) in Arc
+Tempest and **Terminus** ({3}{W}{W}, miracle {W}) in Skyward Writ.
+
+### How narrow the window actually is
+
+`offers.mjs` over 288 games per deck, seeds 12 from 3300:
+
+| | offers | off the keyword's own card | first draws in the games | taken back, cost unpayable |
+| --- | --- | --- | --- | --- |
+| Arc Tempest | 65 | 59 Thunderous Wrath | 4829 | 2 |
+| Skyward Writ | 61 | 52 Terminus | 6519 | 12 |
+
+So one copy in sixty is offered about **once every ninety first draws**, and twelve of Skyward
+Writ's offers were taken back because {W} was not up when the card arrived — a miracle drawn on a
+turn whose mana is spent is a card you simply drew. That is the keyword, not a defect: the offer is
+made in the draw step, before the land drop.
+
+### Two slots, three instruments, and only one of them agreed with itself
+
+The thirteen-deck table at `SEEDS=12 SEED0=4400`, against the same table before these two cards
+went in, moved **exactly two rows outside the instrument's own ±20-game floor, and they are the two
+decks that got a card**:
+
+| deck | before | after | move |
+| --- | --- | --- | --- |
+| arc-tempest | 121-167 (42%) | 144-144 (50%) | **+23** |
+| skyward-writ | 144-144 (50%) | 112-176 (39%) | **−32** |
+
+Every other row moved five games or fewer. The paired probes, each swapping the one card for a
+filler inside the deck's own sixty, say:
+
+| card | seed set 3300 | seed set 4400 | the table |
+| --- | --- | --- | --- |
+| Thunderous Wrath | costs 26 | gains 14 | gains 23 |
+| Terminus | costs 32 | costs 29 | costs 32 |
+
+**Terminus is a real loss and the Wrath is not readable.** Three measurements agree on Terminus to
+within three games; the Wrath's own probe disagrees with itself in *sign* across two seed sets and
+with the table on one of them. Published both ways round rather than picking the flattering one,
+and the rule it confirms is D203's: where a paired probe and the table disagree, the table is the
+one to publish, and a one-card slot is at the edge of what either can resolve.
+
+The one cross-check worth keeping: the probe's stock arm for Skyward Writ at seed 4400 reads
+112-176, which is the table's row for that deck to the game. Two harnesses that share no code
+agreeing exactly is the best evidence either of them is measuring what it claims.
+
+### Why Terminus loses, which is a fact rather than a theory
+
+The same instrument was taught to count what an offered cast actually *cleared*, per card: how many
+creatures left each side on the action that cast it, and how often the caster was the one ahead on
+board when it was offered.
+
+```
+    52  Terminus: 32 of the caster's creatures gone, 41 of the opponent's, 9 cast while ahead on board
+    59  Thunderous Wrath: 0 of the caster's creatures gone, 4 of the opponent's, 12 cast while ahead
+```
+
+A symmetric sweeper in a deck of small white creatures spends a card to break roughly even on
+board — and **nine of the fifty-two were fired by the seat that was winning the board**, in its own
+draw step, before the turn those creatures were for. That half is the bot's, and it is D205. The
+other three-quarters is the card in that deck.
+
+### And an instrument that was six times out, one measurement after the last one
+
+`offers.mjs` reported "62 cascade cards were cast, so 60 of those found nothing at all" for Arc
+Tempest — a deck that holds no cascade card. Its `hasCascade` asked the script for a trigger that
+fires on its controller casting it, which is the shape **cascade, storm, replicate and conspire all
+share**: every Grapeshot in the deck counted as a cascade. The pool has exactly two cards with that
+trigger, one of each keyword, and the only thing that tells them apart is the card's own text, so
+the check reads the oracle text now. Same lesson as D203 one instrument later, and worth saying
+plainly: a measurement that is six times out looks exactly like a measurement.
+
+### The browser
+
+`LIST=miracle` in `scripts/e2e-solo.mjs` is sixty cards built so the turn's first draw is often a
+Thunderous Wrath — eight copies, mono-red, for the reason `LIST=costs` paid for twice. Three runs,
+**26 of 26 checks each**, and what they collected off the bar is the whole claim in one string:
+
+```
+took a free cast: Thunderous Wrath is the first card you drew this turn: you may cast it for {R} (miracle)
+```
+
+Cascade and madness make their offer on a card in **exile**; miracle makes it on a card in **hand**,
+in the draw step, before anything else can happen on the turn. That difference is invisible in the
+engine's own tests and is the sentence a player reads, which is why the check is the sentence. Two
+driver fixes came out of it: the prompt was being cut at eighty characters, which threw away the
+keyword's name at the end of it (the sentence is 88), and the fallback for a hit with modes only
+ever looked in exile, where a miracle card never is.
+
+## D205 — The bot never declined an offered cast, and the sweep it fired at its own board
+
+**The finding, from the instrument rather than from a suspicion.** Across 576 games on two decks,
+the engine made 126 offered casts and the bot took **every single one**: 65 of 65 in Arc Tempest's
+field, 61 of 61 in Skyward Writ's, nothing declined. An earlier run of the same instrument, with
+more than one copy of each card in those decks, read 99 of 99 — the ratio is what is stable. `botAction`'s own comment explains why, and it
+was written before anything had measured it: in the offer window `legalActions` narrows `plays` to
+the casts of the one card on offer, so the search picks the best of a one-element list however the
+position scores. There is no "pass" among the options.
+
+A free spell is nearly always worth casting, so for most of what gets offered this costs nothing.
+The exception is the card whose value is entirely about who is ahead when it resolves, and miracle
+is where the pool has one: **Terminus, offered in its controller's own draw step**, which is the
+one moment in the game when the board in front of it is the board that seat built.
+
+**The rule is a fact, not a weight**, which is the sixteenth member of the family that starts at
+`ritualBoughtSomething`: drop the option when a sweep that hits every creature would take more of
+this seat's creatures **and** more of its power than the opponents'. Both halves are required, and
+that is what keeps it conservative — losing a 1/1 to take a 5/5 reads as "more bodies of mine", and
+losing a 5/5 to take two 1/1s reads as "more power of mine", so only a sweep that is worse for this
+seat on both counts has no reading of the board that justifies it. Detected from the card's own
+words (`/destroy|exile|put all creatures/`) for the reason `destroysOneOfItsOwn` gives; Toxic Deluge
+is deliberately outside it, because "each creature gets -X/-X" is a sweep whose size is chosen while
+it resolves and so is not knowable from the cast.
+
+**What it is worth, measured four ways.** It changes **16 of 7192 casts** (`disagree.mjs`, 0.2% of
+casts and 0.04% of all decisions) and is level bot against bot: **470-464 of 936**. Where it is
+worth something is to the deck that holds the card — Skyward Writ's own record, same list, rule on
+against rule off:
+
+| seed set | without the rule | with it | move |
+| --- | --- | --- | --- |
+| 3300 | 93-195 | 101-187 | **+8** |
+| 4400 | 112-176 | 129-158 | **+17** |
+
+And the probe's other arm, the same list with Terminus cut for a Leonin Skyhunter, comes back
+**byte-identical with the rule on and off** (125-163 and 141-147 on the two seed sets). A rule this
+narrow should look exactly like that: nothing at all happens in a deck with no sweeper in it, and
+the one deck with a sweeper gains.
+
+**And then the table said more than the duel did.** Re-run at the same seeds with the rule on, the
+thirteen-deck standings move **two** rows outside four games, and they are the two decks in the pool
+that hold a card it can fire on: **Skyward Writ +17** (112-176 to 129-159, which is its own probe's
++17 at those seeds to the game) and **Verdant Guard +9** (176-112 to 185-103) — Day of Judgment,
+in a deck that never had a miracle card and did not change a line. Nothing else moved more than
+four. A rule that is level bot-against-bot and worth twenty-six games to the two decks that can use
+it is not a wash; it is a rule about two cards, measured on a pool where eleven decks do not hold
+them.
+
+**On by default, and not because of the record.** Level is level; what it buys is the play. A bot
+that puts its own board on the bottom of its library in its own draw step looks broken to the person
+sitting opposite, which is the same reason `ritualBoughtSomething` is kept at three games. Off is
+the control it was measured against.
+
+**What it does not fix, said plainly.** With the rule on, the Terminus slot still costs Skyward Writ
+24 games on one seed set and 12 on the other — one of those is inside the floor, the other is not.
+So the bot's share of D204's −32 is about a third of it, and the rest is a symmetric sweeper in a
+deck of small creatures. The slot is kept, with the deck at 45% rather than the 50% it had before
+miracle, and that is the first place to look if Skyward Writ needs those games back.

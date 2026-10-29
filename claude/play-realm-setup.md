@@ -424,36 +424,49 @@ check now runs in the test suite, so a future version that peeks fails before it
 other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
 ```
- 76%  218-70   ember-rush
+ 74%  213-75   ember-rush
  69%  198-90   dawn-tithe
- 61%  176-112  verdant-guard
- 56%  162-126  kindle-grove
+ 64%  185-103  verdant-guard
+ 55%  158-130  kindle-grove
  53%  154-134  forge-alliance
- 50%  144-144  skyward-writ
- 45%  130-158  rot-harvest
- 43%  124-164  ashen-rite
- 42%  121-167  arc-tempest
- 41%  119-169  hollow-tide
- 41%  119-169  delta-bloom
+ 49%  141-147  arc-tempest
+ 45%  129-159  rot-harvest
+ 45%  129-159  skyward-writ
+ 43%  123-165  ashen-rite
+ 42%  120-168  hollow-tide
+ 40%  115-173  delta-bloom
  37%  107-181  tidal-mind
- 34%  97-191   blight-vector
+ 33%  96-192   blight-vector
 ```
 
 **One deck is clearly ahead, one is clearly second, and one is measurably short.** The spread is
-forty-two points. Ember Rush is alone at 76% but no longer unchallenged — Dawn Tithe beats it 14-10
-head to head — ten decks sit between 37% and 61%, and the bottom is Blight Vector at 34%, three
+forty-one points. Ember Rush is alone at 74% but no longer unchallenged — Dawn Tithe beats it 14-10
+head to head — eleven decks sit between 33% and 69%, and the bottom is Blight Vector at 33%, four
 points below the deck above it.
 
-The row that moved is **Dawn Tithe, 65% to 69%**, which is the four embalm and eternalize cards and
-the six they cost (D203). Worth reading beside it: a paired probe of that same swap wanted to call
-it *forty-seven* games rather than eleven, on a deck whose own noise reads 55% and 62% for the same
-unchanged list on two seed sets. Verdant Guard dropped four points without changing a card at all.
-Read the order, not the numbers.
+**Three rows moved, and every one of them has a named cause.** Arc Tempest, 42% to 49%, is one
+**Thunderous Wrath** (D204). Skyward Writ, 50% to 45%, is one **Terminus** — a symmetric sweeper in
+a deck of small white creatures, and the slot is still the first place to look if that deck needs
+the games back. And Verdant Guard, 61% to 64%, did not change a card at all: it holds the pool's
+other sweeper, Day of Judgment, and the bot stopped casting sweepers into boards it was winning
+(D205). That rule is worth **+17 to Skyward Writ and +9 to Verdant Guard** here, which is the two
+decks in the pool that hold a card it can fire on and nobody else — the rest of the table moved four
+games or fewer. Read the order, not the numbers.
+
+The run before this one priced the same two miracle cards with the bot casting every offer it was
+given: Skyward Writ read **39%** there, and the paired probe said the Terminus slot cost 32 games
+where it now costs 12 to 24. A slot and a bot rule measured in the same run cannot be told apart,
+which is why they were measured in two.
 
 Earlier runs of this table read "the bottom is a cluster now", "the spread is thirty-six points" and
 "Verdant Guard and Dawn Tithe are level at 65%"; none of those is true any more, and the sentences
 have been replaced rather than left standing — a published number that has been re-measured is worth
 more corrected than defended.
+
+The row before these read **Dawn Tithe, 65% to 69%**, which was the four embalm and eternalize cards
+and the six they cost (D203); it is 69% still. Worth remembering beside the numbers above: a paired
+probe of that swap wanted to call it *forty-seven* games rather than eleven, on a deck whose own
+noise reads 55% and 62% for the same unchanged list on two seed sets.
 
 **The run before this one also had one card in it, and the table could only see half of what the
 card's own probe saw.** Verdant Guard gained a **Kitchen Finks** in place of a Pacifism (D190), and
@@ -921,6 +934,7 @@ LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser �
 LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 27-28 checks
 LIST=earned  node scripts/e2e-solo.mjs # a deck built for spectacle and overload — 26-27 checks
 LIST=graveyard node scripts/e2e-solo.mjs # a deck built to press a button in the graveyard — 27-29 checks
+LIST=miracle node scripts/e2e-solo.mjs # a deck whose first draw is often the card it is built around — 26 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -987,6 +1001,7 @@ LIST=cascade node scripts/e2e-solo.mjs           # eight Bloodbraid Elves, paste
 LIST=costs   node scripts/e2e-solo.mjs           # evoke, dash and bestow, all three pressed
 LIST=earned  node scripts/e2e-solo.mjs           # spectacle and overload, the two odd rows
 LIST=graveyard node scripts/e2e-solo.mjs         # embalm and eternalize, pressed in the graveyard
+LIST=miracle node scripts/e2e-solo.mjs           # a miracle offered in the draw step, on a card in hand
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1001,7 +1016,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1030 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1042 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1079,6 +1094,29 @@ Two things about it are worth saying rather than hiding:
   `packView` with its 4/4 and its empty mana cost intact, beside the printed card in the same
   payload. The browser proves the button and the Zombie; the view test proves the size.
 
+`LIST=miracle` is the fifth, and the only one whose scenario is a *window* rather than a row. The
+offer is made in the **draw step**, on a card that is still in the hand it was just drawn into, and
+it is gone the moment anything else happens on the turn — so there is no button to find later and
+nothing on the board to read afterwards. What the run collects instead is the sentence the bar
+showed, which carries the whole claim in one string:
+
+```
+took a free cast: Thunderous Wrath is the first card you drew this turn: you may cast it for {R} (miracle)
+```
+
+The deck is mono-red — twenty-four Mountains and **eight Thunderous Wraths** over four each of
+Lightning Bolt, Shock and five one- and two-drops — because one copy in sixty is offered about once
+every ninety first draws, which is not a scenario. Eight copies make a first draw a Wrath about one
+turn in eight, and the runs bear it out: three runs, 26 of 26 checks each, with one of them needing
+a second deal. Eight copies of a six-mana instant is not a deck anybody would build, and that is the
+point — every one of them that gets cast is cast for {R} off the top.
+
+Two things it found that nothing else would have. The driver cut the offer's prompt at eighty
+characters for its log, and the prompt is 88, so the keyword's own name at the end of it was thrown
+away and the scenario matched none of its own offers. And the driver's fallback for an offer with
+several ways to cast it only ever looked in **exile**, where cascade and madness put the card and
+where a miracle card never is.
+
 Two of those checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
 and the board has its own mana embers drifting behind it — and both are written as CSS variables a
@@ -1086,7 +1124,7 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1030 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1042 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (215 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`

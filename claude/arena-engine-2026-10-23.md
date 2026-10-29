@@ -5619,6 +5619,45 @@ layer in, to the better test: the altered definition survives `viewFor` and `pac
 and empty mana cost intact, beside the printed card in the same payload, which is the name collision
 `TokenCopyProfile.as` exists to prevent asked of the wire format rather than of the engine.
 
+### Miracle, the offer made as the card is drawn, and the sweep fired at its own board (D204, D205)
+
+The third keyword on `pendingOfferedCast`, and the first whose offer is made on a card in **hand**:
+the engine stops the table as the card is drawn, says it was the first card drawn this turn, and
+names a cost that is not the card's own. Cascade's hit goes back to the library when declined and
+madness's goes to the graveyard; miracle's **stays where it is**, which is the one disposition the
+other two have no use for and the reason `pendingOfferedCast.stays` exists.
+
+Beside it the engine keeps a fact it never had: *which* draw of the turn a card was. A count cannot
+tell the first card of a `draw(2)` from the second, so `drew` carries `{ seat, card, nth }` now and
+`cardsDrawnThisTurn` resets in cleanup beside `spellsCastThisTurn` and `lifeLostThisTurn`.
+
+**How narrow the window is, measured rather than guessed:** one copy in sixty is offered about once
+every ninety first draws, and twelve of Skyward Writ's sixty-one offers were taken back because {W}
+was not up when the card arrived — the offer happens in the draw step, before the land drop. The
+thirteen-deck table moved exactly two rows outside its own ±20-game floor and they are the two decks
+that got a card: **Arc Tempest 42% to 50%** with Thunderous Wrath, **Skyward Writ 50% to 39%** with
+Terminus. Three instruments agree on the Terminus number to within three games; the Wrath's own
+paired probe disagrees with itself in sign across two seed sets, which is D203's lesson again — the
+table is the one to publish.
+
+**Why Terminus loses is a fact the instrument can state:** across 52 casts it bottomed 32 of the
+caster's own creatures against 41 of the opponent's, and nine of those casts were fired by the seat
+that was *ahead* on board, in its own draw step, before the turn those creatures were for. Which led
+to the finding behind D205: **the bot took 126 of 126 offered casts and declined none**, because in
+the offer window the search picks the best of a one-element list. `sparesItsOwnBoard` is the
+sixteenth member of the drop-this-option family — decline a sweep that would take more of this seat's
+creatures *and* more of its power than everybody else's — and it is level bot against bot (470-464 of
+936, 16 of 7192 casts changed) while being worth **+8 and +17 of 288** to the one deck in the pool
+that holds a sweeper. The thirteen-deck table says the same thing from the other side: with the rule
+on, the two rows that move are **Skyward Writ +17** and **Verdant Guard +9** — the two decks holding
+a card it can fire on, one of which never had a miracle card at all — and nothing else moves more
+than four. Kept for the play as much as the record, the same reason `ritualBoughtSomething` is kept.
+
+**And it is driven in a browser**, where the window is the whole difficulty: `LIST=miracle` plays a
+deck whose first draw is often the card it is built around, and asserts on the sentence the bar
+showed rather than on anything left behind — because by the next move there is nothing to look at.
+Three runs, 26 of 26 checks each.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
