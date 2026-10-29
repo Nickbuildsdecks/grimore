@@ -773,6 +773,27 @@ export interface AbilityCost {
    */
   readonly removeCounter?: { readonly counter: string; readonly amount: number };
   /**
+   * "Pay {E}{E}:" — energy, which is a counter on the **player** rather than on a permanent
+   * (CR 122.1, CR 107.17).
+   *
+   * The sixth cost here that is not mana, and the first paid out of something the seat owns that
+   * is neither its life nor its cards. Energy is unlike every other resource this engine has in
+   * one way that matters: it **does not empty**. Mana drains at the end of a step, life is a
+   * number you are trying to keep, cards in a graveyard are a pile that only grows — energy is
+   * saved up deliberately over several turns and then spent all at once, which makes it the first
+   * resource in this pool with a *plan* attached to it.
+   *
+   * Stored in `Seat.counters` under the key `energy`, which that field was always for ("arbitrary
+   * named counters (energy, experience, rad, tickets, ...)") and which nothing had used until now.
+   * That is why the engine needed no new field for it: a counter on a player is a thing the state
+   * already models, and the work is in the cost, the offer and the payment.
+   *
+   * The same rule as the life and the counter above: an ability whose energy you do not have is
+   * never offered (CR 118.4), so a Longtusk Cub with one energy shows no growth ability rather
+   * than one the engine would refuse.
+   */
+  readonly energy?: number;
+  /**
    * "Activate this only from your graveyard" — unearth's zone, and the third thing a cost can be
    * paid out of the graveyard for (CR 702.84a).
    *

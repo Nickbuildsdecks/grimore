@@ -23,7 +23,9 @@ import {
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
   type AutoOrderAction,
 } from './automation.js';
-import { addCounters, addToPool, bottomPile, counterSpell, loseLife, poolOf } from './effects.js';
+import {
+  addCounters, addToPool, bottomPile, counterSpell, energyOf, loseLife, poolOf, spendEnergy,
+} from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
@@ -1137,6 +1139,19 @@ function activate(
     }
   }
 
+  /*
+    And energy, which is the same rule about a pot the **seat** owns rather than the permanent
+    (CR 122.1).
+
+    Checked here and paid below with the rest of the cost, so a client that offers the ability
+    without the energy is refused rather than quietly charged — the belt-and-braces every other
+    cost in this file has, and the reason `legalActions` not offering it is not enough on its own.
+  */
+  if (ability.cost.energy !== undefined && energyOf(state, action.by) < ability.cost.energy) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      `you do not have ${ability.cost.energy} energy to pay`);
+  }
+
   const specs = ability.targets ?? [];
   const chosen = action.targets ?? [];
   const check = checkTargets(state, specs, chosen, action.by, inst.id);
@@ -1195,6 +1210,9 @@ function activate(
   // right moment — and what stops those creatures attacking this turn, which is the price.
   for (const id of crewed) next = withInstance(next, id, { tapped: true });
   if (ability.cost.life !== undefined) next = loseLife(next, action.by, ability.cost.life);
+  // And the energy, spent as the ability is activated rather than as it resolves — so it is gone
+  // whether or not the ability is countered, and an opponent cannot drain it in response.
+  if (ability.cost.energy !== undefined) next = spendEnergy(next, action.by, ability.cost.energy);
   /*
     The counter comes off as the cost is paid, before the ability is on the stack.
 

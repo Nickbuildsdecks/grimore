@@ -31,6 +31,7 @@ import {
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
+  addEnergy, energyOf, spendEnergy,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -2017,6 +2018,146 @@ const SKEWER_THE_CRITICS: CardScript = {
  * is what both halves ask, so the one-target cast and the sweep agree about whose creatures they
  * are allowed to hit.
  */
+/*
+  ── Energy ─────────────────────────────────────────────────────────────────────────────────────
+
+  Four cards for the resource that is not mana (CR 122). Energy counters live on the **player**,
+  they are never emptied, and no card in this pool had ever used `Seat.counters` — so these four
+  are the whole of the mechanic: two that give it, two that spend it, and one that does both.
+
+  What makes them worth more than four scripts is the shape they add. Every other resource here is
+  spent on the turn you get it (mana), is a number you are trying to keep (life), or only ever
+  grows (the graveyard). Energy is the first that a deck **saves up**, which is also the first
+  thing in this pool the bot can get wrong by doing nothing.
+*/
+
+/**
+ * Aether Hub: a land that pays for one spell of any colour, once.
+ *
+ * The card that makes energy a *mana* resource as well as a counter, and the only land in the pool
+ * whose second ability has a cost besides tapping. Both abilities are mana abilities — they
+ * resolve without the stack (CR 605.3a) — so paying the energy happens where every other cost is
+ * paid, as the ability is activated.
+ */
+const AETHER_HUB: CardScript = {
+  name: 'Aether Hub',
+  triggers: [{
+    on: { kind: 'etb' },
+    description: 'When Aether Hub enters the battlefield, you get {E}.',
+    effect: (c) => addEnergy(c.state, c.controller, 1),
+  }],
+  abilities: [
+    { cost: { tap: true }, description: '{T}: Add {C}.', produces: ['C'] },
+    ...COLOURS.map((colour) => ({
+      cost: { tap: true, energy: 1 },
+      description: `{T}, Pay {E}: Add {${colour}}.`,
+      produces: [colour],
+    })),
+  ],
+};
+
+/**
+ * Longtusk Cub: the creature that pays for itself, if it connects.
+ *
+ * The other half of the mechanic — a card that *makes* energy rather than spending it — and the
+ * engine's second user of the `combat-damage` trigger, which fires only when this creature's own
+ * damage reaches a player. Two energy a hit, two energy a counter, so the Cub that gets through
+ * once grows once and the one that is blocked all game is a 2/2 for two.
+ */
+const LONGTUSK_CUB: CardScript = {
+  name: 'Longtusk Cub',
+  triggers: [{
+    on: { kind: 'combat-damage' },
+    description: 'Whenever Longtusk Cub deals combat damage to a player, you get {E}{E}.',
+    effect: (c) => addEnergy(c.state, c.controller, 2),
+  }],
+  abilities: [{
+    cost: { energy: 2 },
+    description: 'Pay {E}{E}: Put a +1/+1 counter on Longtusk Cub.',
+    effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+  }],
+};
+
+/**
+ * Bristling Hydra: three energy on arrival, and the one card here that spends energy to *survive*.
+ *
+ * Hexproof until end of turn is the rule that makes a four-mana 4/3 a real threat: the removal
+ * spell on the stack fizzles, which is a use for a resource that nothing else in this pool has —
+ * every other saved-up thing here is spent on offence.
+ */
+const BRISTLING_HYDRA: CardScript = {
+  name: 'Bristling Hydra',
+  triggers: [{
+    on: { kind: 'etb' },
+    description: 'When Bristling Hydra enters the battlefield, you get {E}{E}{E}.',
+    effect: (c) => addEnergy(c.state, c.controller, 3),
+  }],
+  abilities: [{
+    cost: { energy: 3 },
+    description: 'Pay {E}{E}{E}: Put a +1/+1 counter on Bristling Hydra. It gains hexproof until end of turn.',
+    effect: (c) => pump(
+      addCounters(c.state, c.source, '+1/+1', 1),
+      [c.source],
+      c.source,
+      c.controller,
+      { keywords: ['hexproof'], duration: 'end-of-turn' },
+    ),
+  }],
+};
+
+/**
+ * Harnessed Lightning: the first spell whose effect asks **how much of a resource to spend**.
+ *
+ * Three energy, then any amount of it as damage, which is a question the engine already had the
+ * shape for — `NumberDecisionSpec`, built for Toxic Deluge's life payment (D130) — pointed at a
+ * different pot. The energy arrives in `beforeDecisions` because the card gives it to you *first*
+ * and the number you may choose depends on what you now have: a Harnessed Lightning with no
+ * energy saved can still deal three.
+ *
+ * `best` is what the bot does with it, and it is deliberately not "spend everything": the smallest
+ * amount that kills the creature, or nothing at all when nothing it has will. Energy saved is a
+ * Bristling Hydra protected later, and this is the one card in the pool that can throw a resource
+ * away by overpaying.
+ */
+const HARNESSED_LIGHTNING: CardScript = {
+  name: 'Harnessed Lightning',
+  removesACreature: true,
+  targets: [TARGET_CREATURE],
+  beforeDecisions: (c) => addEnergy(c.state, c.controller, 3),
+  decisions: [{
+    who: 'controller',
+    prompt: 'Pay how much energy?',
+    range: (state, chooser) => ({ min: 0, max: energyOf(state, chooser) }),
+    best: (state, chooser) => {
+      /*
+        The cheapest kill, or nothing.
+
+        `state` here is the board after the three energy have arrived, so the maximum is what the
+        card actually offers. What it is looking for is the target's toughness less the damage
+        already marked on it — the same arithmetic a player does — and anything above that is
+        energy burned for no extra effect, because this damage does not carry over.
+      */
+      const max = energyOf(state, chooser);
+      for (const id of battlefield(state)) {
+        const inst = state.instances[id];
+        if (inst === undefined || inst.zoneSeat === chooser) continue;
+        const ch = characteristicsOf(state, inst);
+        if (!ch.isCreature) continue;
+        const needed = ch.toughness - (inst.damage ?? 0);
+        if (needed > 0 && needed <= max) return needed;
+      }
+      return 0;
+    },
+  }],
+  onResolve: (c) => {
+    const paid = Math.min(c.decisions[0]?.amount ?? 0, energyOf(c.state, c.controller));
+    if (paid <= 0) return c.state;
+    // Spent first, because it is the cost of the damage rather than part of it — and because a
+    // target that has left since the spell was cast should still cost the energy announced.
+    return damageFirstTarget({ ...c, state: spendEnergy(c.state, c.controller, paid) }, paid);
+  },
+};
+
 const MIZZIUM_MORTARS: CardScript = {
   name: 'Mizzium Mortars',
   targets: [{ ...TARGET_CREATURE, description: "target creature you don't control", filter: creatureYouDontControl }],
@@ -6671,6 +6812,7 @@ const ALL: readonly CardScript[] = [
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
   BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER, MULLDRIFTER, MARDU_SCOUT, BOON_SATYR,
   SKEWER_THE_CRITICS, MIZZIUM_MORTARS,
+  AETHER_HUB, LONGTUSK_CUB, BRISTLING_HYDRA, HARNESSED_LIGHTNING,
   KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,

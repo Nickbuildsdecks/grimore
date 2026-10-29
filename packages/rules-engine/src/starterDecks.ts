@@ -1766,6 +1766,51 @@ const THALIA_GUARDIAN_OF_THRABEN: CardDef = {
   colors: ['W'],
 };
 
+const AETHER_HUB: CardDef = {
+  name: 'Aether Hub',
+  typeLine: 'Land',
+  manaCost: '',
+  cmc: 0,
+  oracleText: 'When Aether Hub enters the battlefield, you get {E} (an energy counter).\n'
+    + '{T}: Add {C}.\n'
+    + '{T}, Pay {E}: Add one mana of any color.',
+  colors: [],
+};
+
+const LONGTUSK_CUB: CardDef = {
+  name: 'Longtusk Cub',
+  typeLine: 'Creature — Cat Beast',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Whenever Longtusk Cub deals combat damage to a player, you get {E}{E}.\n'
+    + 'Pay {E}{E}: Put a +1/+1 counter on Longtusk Cub.',
+  colors: ['G'],
+};
+
+const BRISTLING_HYDRA: CardDef = {
+  name: 'Bristling Hydra',
+  typeLine: 'Creature — Hydra',
+  manaCost: '{2}{G}{G}',
+  cmc: 4,
+  power: '4',
+  toughness: '3',
+  oracleText: 'When Bristling Hydra enters the battlefield, you get {E}{E}{E}.\n'
+    + 'Pay {E}{E}{E}: Put a +1/+1 counter on Bristling Hydra. It gains hexproof until end of turn.',
+  colors: ['G'],
+};
+
+const HARNESSED_LIGHTNING: CardDef = {
+  name: 'Harnessed Lightning',
+  typeLine: 'Instant',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  oracleText: 'Choose target creature. You get {E}{E}{E}, then you may pay any amount of {E}. '
+    + 'Harnessed Lightning deals that much damage to that creature.',
+  colors: ['R'],
+};
+
 const MIZZIUM_MORTARS: CardDef = {
   name: 'Mizzium Mortars',
   typeLine: 'Sorcery',
@@ -5987,9 +6032,20 @@ export const KINDLE_GROVE: DeckSpec = {
   commander: RURIC_THAR,
   cards: [
     // ── Twenty-three lands, and two of them are a card when they are not a land ──
-    { card: MOUNTAIN, count: 9 },
+    { card: MOUNTAIN, count: 8 },
     { card: FOREST, count: 9 },
     { card: GRUUL_GUILDGATE, count: 3 },
+    /*
+      And the twenty-third land is an **Aether Hub**, in for a Mountain.
+
+      Energy (D202) is the first resource in this pool that is neither mana, life, cards nor
+      counters on a permanent, and this is the card that ties it to the mana: the Hub taps for
+      colourless all game, or for either of this deck's colours once, by spending the energy it
+      arrived with. A land for a land, so the count is untouched — and in a two-colour deck whose
+      commander costs {4}{R}{G}, one guaranteed colour on the turn it matters is worth more than
+      the ninth Mountain.
+    */
+    { card: AETHER_HUB, count: 1 },
     // The cycling pair: a land that is never a dead draw, which a deck with a six-mana commander
     // and a seven-mana Ragebeast can afford to want.
     { card: FORGOTTEN_CAVE, count: 1 },
@@ -6006,8 +6062,23 @@ export const KINDLE_GROVE: DeckSpec = {
       noncreature spells, a creature that ramps is the only ramp that costs nothing.
     */
     { card: BURNING_TREE_EMISSARY, count: 2 },
-    { card: BORDERLAND_MARAUDER, count: 2 },
-    { card: AMBUSH_VIPER, count: 2 },
+    /*
+      One Borderland Marauder and one Ambush Viper rather than two of each, for the two creatures
+      that **make** and **spend** energy.
+
+      **Longtusk Cub** is a 2/2 for two that is a 3/3 the moment it connects, and this is the deck
+      that gets creatures through — Rancor, Prey Upon and a Goblin Wardriver all exist to make one
+      attack profitable. **Bristling Hydra** is the payoff: a 4/3 that arrives with three energy
+      and can spend them to grow and gain hexproof, which is the only answer to removal this deck
+      has ever had besides casting its threats one at a time.
+
+      Both cuts keep a copy, which is this list's rule: the Marauder and the Viper are still in the
+      pool and still in their own tests.
+    */
+    { card: BORDERLAND_MARAUDER, count: 1 },
+    { card: LONGTUSK_CUB, count: 1 },
+    { card: AMBUSH_VIPER, count: 1 },
+    { card: BRISTLING_HYDRA, count: 1 },
     { card: RIVER_BOA, count: 1 },
     { card: THORNWEALD_ARCHER, count: 1 },
     /*
@@ -6064,7 +6135,16 @@ export const KINDLE_GROVE: DeckSpec = {
 
     // ── Fourteen cards that are not creatures, and the commander means every one of them ──
     { card: LIGHTNING_BOLT, count: 2 },
-    { card: LIGHTNING_STRIKE, count: 2 },
+    /*
+      One Lightning Strike, and a **Harnessed Lightning** for the other: the same two mana, and the
+      first spell in the pool that asks how much of a resource to spend.
+
+      Three damage either way on an empty board, because the card gives you three energy before it
+      asks — and more than three when this deck has been saving, which is what makes it the right
+      removal spell for a list that now has two other cards putting energy in the pool.
+    */
+    { card: LIGHTNING_STRIKE, count: 1 },
+    { card: HARNESSED_LIGHTNING, count: 1 },
     { card: FLAME_SLASH, count: 1 },
     // Removal that costs a creature rather than a card, which is the red-green trade and the
     // reason this deck can run fourteen noncreature cards under its own commander.

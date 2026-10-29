@@ -20,7 +20,7 @@ import {
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
 } from './combat.js';
-import { poolOf } from './effects.js';
+import { energyOf, poolOf } from './effects.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost,
   type ManaCost, type ManaPool, type ManaType,
@@ -1365,6 +1365,10 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         const held = inst.counters[ability.cost.removeCounter.counter] ?? 0;
         if (held < ability.cost.removeCounter.amount) continue;
       }
+      // Energy is the same rule again, one zone out: the counters are on the **player** rather
+      // than on the permanent (CR 122.1), so a Longtusk Cub with one energy in the pool shows no
+      // growth ability at all instead of one that would be refused.
+      if (ability.cost.energy !== undefined && energyOf(state, seat) < ability.cost.energy) continue;
       if (ability.cost.mana
         && !canAfford(poolOf(state, seat), parseManaCost(ability.cost.mana), sources)) continue;
       // Life is a cost like any other: an ability you cannot pay for is not offered, which is why

@@ -417,6 +417,49 @@ export function gainLife(state: GameState, seat: SeatIndex, amount: number): Gam
   return replaceSeat(state, seat, { life: clampValue(s.life + amount) });
 }
 
+/**
+ * The key `Seat.counters` keeps energy under. One constant, because three files spell it.
+ *
+ * `Seat.counters` has always been "arbitrary named counters (energy, experience, rad, tickets)"
+ * and nothing had used it; energy is the first, and naming the key here is what stops the second
+ * user inventing `'Energy'` and quietly starting a separate pile.
+ */
+export const ENERGY = 'energy';
+
+/** How much energy a seat has (CR 122.1). Zero for a seat that has never been given any. */
+export function energyOf(state: GameState, seat: SeatIndex): number {
+  return state.seats[seat]?.counters[ENERGY] ?? 0;
+}
+
+/**
+ * "You get {E}{E}" — energy counters given to a player (CR 122.2).
+ *
+ * One function for both directions, with `spendEnergy` below as the named mirror, for the reason
+ * `recordLifeLost` is one function: a resource whose arithmetic is written out at each call site
+ * is one that eventually goes negative somewhere. The floor at zero is the rule rather than
+ * defensive programming — you cannot pay energy you do not have, and the cost paths refuse before
+ * they get here — but a floor that cannot be reached costs nothing and a missing one is a seat
+ * with minus three energy.
+ *
+ * Energy is **not** emptied at end of turn, which is the whole character of the resource and is
+ * why nothing in `endTurnCleanup` touches it. The absence is deliberate enough to say out loud.
+ */
+export function addEnergy(state: GameState, seat: SeatIndex, amount: number): GameState {
+  if (amount === 0) return state;
+  const s = state.seats[seat];
+  if (s === undefined) return state;
+  const next = Math.max(0, clampValue((s.counters[ENERGY] ?? 0) + amount));
+  const counters: Record<string, number> = { ...s.counters };
+  if (next === 0) delete counters[ENERGY];
+  else counters[ENERGY] = next;
+  return replaceSeat(state, seat, { counters });
+}
+
+/** "Pay {E}{E}" — the same arithmetic the other way, named for what a card says. */
+export function spendEnergy(state: GameState, seat: SeatIndex, amount: number): GameState {
+  return addEnergy(state, seat, -amount);
+}
+
 export function loseLife(state: GameState, seat: SeatIndex, amount: number): GameState {
   if (amount <= 0) return state;
   const s = state.seats[seat];
