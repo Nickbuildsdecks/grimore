@@ -1697,9 +1697,11 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
       if (spared === undefined) return seat;
       return {
         ...seat,
+        // Defaulted rather than trusted: a game stored before this field existed comes back
+        // without it, which is the convention `autoPassFor` set for every field added since.
         spared: {
-          ...seat.spared,
-          [String(action.by)]: (seat.spared[String(action.by)] ?? 0) + spared,
+          ...(seat.spared ?? {}),
+          [String(action.by)]: (seat.spared?.[String(action.by)] ?? 0) + spared,
         },
       };
     }),

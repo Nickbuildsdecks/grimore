@@ -13444,3 +13444,23 @@ a pod's politics is made of.
 The badge draws nothing at nought, like its sibling: on turn one everybody has spared everybody and
 a row saying so on every strip is noise. It is drawn in the green the table uses for what is going
 your way, beside the red of what is not.
+
+### And the browser found the bug a new field always has
+
+The first pod run after this shipped crashed the `<Board>` component: *Cannot read properties of
+undefined (reading '0')*, from `sparedYouBy`. The cause was not the field — it was a **server that
+had not restarted**, serving a view built before the field existed, and the new reader trusting it
+to be there.
+
+That is the shape of every field added to a long-lived state, and this repo already had the
+convention written down: `autoPassFor` reads its list as `(state.autoPassOff ?? [])` with a comment
+saying a game stored before the list existed comes back without it. So both of today's new fields
+now read the same way — `seat.spared ?? {}` where it is written and in the view, `me?.spared?.[...]`
+in the browser, and `next.exiled ?? []` in the two places `settle` and `relocate` touch the exile
+list (D225's field has exactly the same exposure and nothing had tested it either).
+
+Worth writing down because of *what* caught it. The engine's tests build their own state and always
+have the field; the web unit test builds its own view and always has the field; only a real browser
+against a real server that was started an hour earlier reads a view that does not. A full-stack run
+is not a slower unit test — it is the only thing in this project that sees two versions of the
+software at once, which is also exactly what a player who leaves a tab open across a deploy sees.

@@ -635,7 +635,7 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     poison: seat.poison,
     commanderDamage: seat.commanderDamage,
     damageFrom: seat.damageFrom,
-    spared: seat.spared,
+    spared: seat.spared ?? {},
     counters: seat.counters,
     eliminated: seat.eliminated,
     eliminatedReason: seat.eliminatedReason,

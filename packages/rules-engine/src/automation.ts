@@ -1674,7 +1674,7 @@ function settle(state: GameState, before: GameState): GameState {
     let pass = 0;
     pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0
       || next.dealtCombatDamage.length > 0 || next.drew.length > 0
-      || next.toGraveyard.length > 0 || next.exiled.length > 0);
+      || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0);
     pass++
   ) {
     /*
@@ -1723,7 +1723,7 @@ function settle(state: GameState, before: GameState): GameState {
       card really went. There is no printed effect that replaces being exiled, which is why
       `ReplacementEvent` has three members and not four.
     */
-    const banished = next.exiled;
+    const banished = next.exiled ?? [];
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],

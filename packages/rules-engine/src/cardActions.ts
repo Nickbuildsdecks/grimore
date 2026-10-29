@@ -221,7 +221,7 @@ export function relocate(
   if (state.automated && inst.zone !== 'exile' && toZone === 'exile') {
     next = {
       ...next,
-      exiled: [...next.exiled, {
+      exiled: [...(next.exiled ?? []), {
         card: inst.id,
         from: exileCameFrom(state, inst),
         controller: inst.zoneSeat,

@@ -454,6 +454,26 @@ async function main() {
         + 'one player — arena.test.ts pins the reducer)');
     }
 
+    /*
+      The political pair, on screen: what each seat has done to you and what it has not.
+
+      `hit you N` has been drawn since D189 and `spared you N` since D227, and neither had ever been
+      looked at by a browser — the arithmetic is pinned in `arena.test.ts` and the engine's tally in
+      `scripts.test.ts`, which between them say nothing at all about whether the badge renders on a
+      four-player board. This reads whatever is there rather than requiring both: which of the two a
+      particular game produces is a fact about the shuffle, and a pod where nobody has been hit yet
+      is a pod where the red badge is correctly absent.
+    */
+    const politics = await host.page.locator('[data-testid^="hit-me-"], [data-testid^="spared-me-"]')
+      .evaluateAll((els) => els.map((e) => (e.textContent ?? '').trim()));
+    if (politics.length > 0) {
+      check('the strips say what each seat has done to you, and what it has left alone',
+        politics.every((line) => /(hit|spared) you \d+/.test(line)), JSON.stringify(politics));
+    } else {
+      console.log('      (nobody had hit or spared anybody when the strips were read — '
+        + 'arena.test.ts and scripts.test.ts assert both tallies)');
+    }
+
     // ── Commander damage is the engine's count, with nothing to contradict it ───────────────────
     const cmdCells = await host.page.locator('[data-testid^="cmd-dmg-"]').evaluateAll((els) =>
       els.map((e) => ({ tag: e.tagName.toLowerCase(), text: (e.textContent ?? '').trim() })));

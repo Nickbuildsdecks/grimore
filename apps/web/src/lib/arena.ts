@@ -1265,7 +1265,10 @@ export function sparedYouBy(view: GameView, other: SeatIndex): number {
   const mine = view.seat
   if (mine === null || mine === other) return 0
   const me = view.seats.find((s) => s.index === mine)
-  return me?.spared[String(other)] ?? 0
+  // Optional all the way down, because a view can arrive without the field at all: a table whose
+  // server has not restarted since this shipped, or a game stored before it existed. The same
+  // reason `autoPassFor` reads its list with a default rather than trusting it to be there.
+  return me?.spared?.[String(other)] ?? 0
 }
 
 /** Whether this seat has gone back on a deal in this game. The table remembers; that is the point. */
