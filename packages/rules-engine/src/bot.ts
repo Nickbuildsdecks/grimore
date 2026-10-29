@@ -1731,34 +1731,31 @@ export interface BotOptions {
    */
   readonly holdsNinjas?: boolean;
   /**
-   * Whether to pay an **artifact** cost with an artifact that is doing nothing. Default **off**,
-   * and the default was flipped by the measurement rather than chosen.
+   * Whether to pay an **artifact** cost with an artifact that pays you for going. Default **on**,
+   * and this default has been set three times by three measurements rather than once by taste.
    *
-   * It shipped on. D221 had measured the Arcbound Ravager's outlet offered 437 times across 48
-   * games and activated **zero** times, for the opposite reason to ninjutsu's — not a zone problem
-   * where the play never came up but a judgement problem where it came up constantly and the bot
-   * declined, because the creature path refuses fodder with text of its own and every artifact in
-   * Forge Alliance has text. `spentArtifact` is the judgement that replaces that, and it is right
-   * as far as it goes.
+   * **On** (D222), because D221 had measured the Arcbound Ravager's outlet offered 437 times across
+   * 48 games and activated zero times — a judgement problem, not a zone problem: the creature path
+   * answering it refuses fodder with text of its own, and every artifact in Forge Alliance has text.
    *
-   * What it fed it on was wrong, and the instrument said so in one run. Of the four artifacts it
-   * ate across those 48 games, **four of four** were eaten on a board where this seat controlled a
-   * creature that could have carried them — and **two of the four were Loxodon Warhammers**, the
-   * deck's best card and the one D221 had already singled out for doing two things at once. One
-   * +1/+1 counter on a 1/1 is not worth a Warhammer, and the slot probe agreed: paired on the same
-   * seeds with the flag the only difference, the deck was 7 games of 288 worse with it on at one
-   * seed set and 6 at the other.
+   * **Off** (D222, same piece), because what it then fed the cost was wrong. Four artifacts eaten in
+   * 48 games, four of four with a creature standing by that could have carried them, and two of them
+   * **Loxodon Warhammers** — the deck's best card. Paired on the same seeds it cost 6 to 7 games of
+   * 288. The rule was right about *whether* to pay and wrong about *what with*.
    *
-   * The reason is not a missing clause, which is why this is a default and not a patch. There is no
-   * spent artifact in this pool to find: audited card by card, every non-creature artifact here is
-   * Equipment, a Vehicle, a mana source, a standing answer or an anthem, and all five are things
-   * you would rather keep. A syntactic test for "inert" does not exist either — the obvious one
-   * (no activated ability, no static) passes an Obelisk of Urd, whose +2/+2 lives in an
-   * enters-the-battlefield choice rather than in `statics`.
+   * **On again** (D223), because the narrowing removed that by construction. `spentArtifact` now
+   * asks whether sacrificing the artifact is a loss at all rather than whether it is idle, so the
+   * only thing it will eat is a card whose own text fires when it reaches a graveyard. The same
+   * paired probe reads **+1 and +3** of 288, and the bot ate **one** artifact in 48 games — the
+   * right one.
    *
-   * So the rule stays written, tested and switched off, the way `dredgesTightly`'s loose variant is
-   * kept: it is the half that is already done, waiting on a card worth eating. See D222 for the
-   * numbers and the task that adds one.
+   * That +1 and +3 is well inside the ±20 floor and is not the argument. The argument is D220's,
+   * the one that keeps `holdsNinjas` on: a cost printed on a card that never fires looks broken to
+   * the person sitting opposite, and this is a solo play realm before it is a benchmark. What the
+   * measurement is for here is narrower and it did its job — ruling out the harm that sent the
+   * default back last time, so the judgement is allowed to decide.
+   *
+   * Off is the bot as it was before any of this, kept as the control the probe is run against.
    */
   readonly feedsArtifacts?: boolean;
   /**
@@ -3700,15 +3697,16 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       continue;
     }
     /*
-      And the artifact cost, which is the only member of this family that is **off** by default.
+      And the artifact cost, which is the family read backwards: here the **default makes the play**
+      and `false` is the bot as it was, where every other filter is the other way round.
 
-      The others each drop a play that bought nothing, so their default drops and `false` restores
-      the bot as it was. This one drops a play that bought something and cost more: feeding was
-      measured at 7 games of 288 against the deck at one seed set and 6 at the other, with every one
-      of the four artifacts it ate having a creature standing by that could have carried it. So the
-      default is the refusal, and `true` is the opt-in. See `BotOptions.feedsArtifacts` and D222.
+      It has been both. D222 shipped it on, and the instrument found it eating two Loxodon Warhammers
+      in 48 games and costing 6 to 7 games of 288, so the default went off. D223 narrowed what counts
+      as food to a card whose own text fires when it reaches a graveyard, which removed the harm by
+      construction, and the same probe now reads **+1 and +3** — so it is on again. See
+      `BotOptions.feedsArtifacts` for why a reading that small still moved the default.
     */
-    if (opts.feedsArtifacts !== true && feedsAnArtifact(state, option.action)) {
+    if (opts.feedsArtifacts === false && feedsAnArtifact(state, option.action)) {
       dropped += 1;
       continue;
     }

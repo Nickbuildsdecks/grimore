@@ -17726,6 +17726,12 @@ describe('the artifact cost, and what the bot is willing to pay it with', () => 
     return null;
   };
 
+  /*
+    The rule under test, named rather than left to the default. It is the default now (the test
+    below is what pins that), and these cases are about *what* it eats rather than about whether
+    it is switched on — so they say so, and a later default flip cannot quietly turn them into
+    assertions about nothing.
+  */
   const ON = { feedsArtifacts: true } as const;
 
   it('eats the Wellspring, which replaces itself on the way out', () => {
@@ -17778,14 +17784,20 @@ describe('the artifact cost, and what the bot is willing to pay it with', () => 
     expect(fed(s, ON)).toBeNull();
   });
 
-  it('is off by default, because feeding has never earned one', () => {
+  it('is on by default now that there is something worth eating, and off is the control', () => {
     /*
-      The default the measurement set twice. D222 shipped it on and the slot probe sent it back at 6
-      to 7 games of 288 against; D223 removed the harm by construction, and with the narrowed rule
-      the bot ate **one** artifact in 48 games — the right one. Safe is not proven, so it stays
-      opt-in, and what it waits on is a deck with something to eat (#206).
+      The default three measurements set. D222 shipped it **on** off D221's count of 437 offers and
+      zero activations; the instrument then found it eating two Loxodon Warhammers and costing 6 to 7
+      games of 288, so it went **off**; and the narrowing here removed that by construction, with the
+      same paired probe reading **+1 and +3** — so it is **on** again.
+
+      The +1 and +3 is inside the ±20 floor and is not why. The reason is D220's, the one that keeps
+      `holdsNinjas` on: a cost printed on a card that never fires looks broken to the person sitting
+      opposite. What the probe was for was ruling out the harm, so that judgement is allowed to
+      decide — and `false` stays as the control it is run against.
     */
-    expect(fed(board(['Ichor Wellspring']), {})).toBeNull();
+    expect(fed(board(['Ichor Wellspring']), {})).toBe('Ichor Wellspring');
+    expect(fed(board(['Ichor Wellspring']), { feedsArtifacts: false })).toBeNull();
   });
 });
 

@@ -13168,3 +13168,33 @@ and it was the right one — against D222's four, of which four were mistakes:
 One in 48 is not a per-game number, and the reason is arithmetic rather than judgement: one copy of a
 two-mana artifact rarely shares a board with the Ravager. The eligibility is right and the frequency
 is a fact about a 60-card deck with one of them in it.
+
+### The slot, and the default set for the third time
+
+`deck-probe` with `BOT=` on both arms — the same slot, same direction, same seeds, priced by both
+players, which is what that argument is for and is not two probes differenced (D212):
+
+| seeds | feeding | with the Wellspring | without it | taking it out is worth |
+| --- | --- | --- | --- | --- |
+| 3300 | off | 143-145 | 142-146 | −1 |
+| 3300 | **on** | **144**-144 | 142-146 | −2 |
+| 5100 | off | 177-111 | 174-114 | −3 |
+| 5100 | **on** | **180**-108 | 174-114 | −6 |
+
+Two readings, one table. **The slot**: taking the Wellspring out costs 1 to 6 games of 288, same sign
+in all four arms, so the card is level to slightly good against a Leonin Skyhunter the bot casts 96%
+of the time it holds one. **Feeding**: the stock column with it on against the stock column with it
+off is **+1** at one seed set and **+3** at the other — against D222's **−7 and −6** for the rule
+before the narrowing.
+
+So `feedsArtifacts` goes back **on**, and the default has now been set three times by three
+measurements: on off D221's count of 437 offers and zero activations, off because of the two
+Warhammers, and on again because the narrowing removed those and the sign flipped with them.
+
+**The +1 and +3 is not the argument, and should not be read as one.** It is well inside the ±20 floor
+and the rule fires once in 48 games, so the honest description is "no longer a loss" rather than "a
+gain". The argument is D220's — the one that keeps `holdsNinjas` on: a cost printed on a card that
+never fires looks broken to the person sitting opposite, and this is a solo play realm before it is a
+benchmark. What the probe was for here was narrower and it did its job: it ruled out the harm that
+sent the default back last time, which is what lets the judgement decide. `false` stays as the
+control the probe is run against.

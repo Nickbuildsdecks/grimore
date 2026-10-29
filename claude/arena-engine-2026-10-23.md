@@ -6361,6 +6361,14 @@ cost one wasted swap before the grep. `cast-counts` named the deck's actually-de
 Decorum, 0 casts in 144 games) and it **stays**, because goad is a mechanic only a pod can use and a
 duel measurement is not a reason to delete the pod's card.
 
+Priced with `BOT=` on both arms: taking the Wellspring out costs **1 to 6** games of 288 across four
+arms, same sign every time, so the card is level to slightly good against a Skyhunter the bot casts
+96% of the time it holds one. And feeding on against feeding off reads **+1 and +3**, against D222's
+**−7 and −6** before the narrowing — so `feedsArtifacts` goes back **on**, its third default set by
+its third measurement. The +1 and +3 is inside the ±20 floor and is deliberately *not* the argument:
+that is D220's, the one that keeps `holdsNinjas` on, and the probe's job was only to rule out the
+harm so the judgement could decide.
+
 ### The bot was reading its own shuffle (D224)
 
 A fairness bug, found by accident. The search plays a candidate out with `applyAction` on the **real
