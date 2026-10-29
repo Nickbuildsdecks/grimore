@@ -18,6 +18,7 @@ import {
   type DeckSpec,
   type ZoneId,
 } from './cards.js';
+import { characteristicsOf } from './characteristics.js';
 import { FORMATS } from './formats.js';
 import {
   MAX_BAND_SIZE,
@@ -58,6 +59,26 @@ export const OPENING_HAND_SIZE = 7;
 // ---------------------------------------------------------------------------
 
 export const listAt = (state: GameState, key: string): readonly string[] => state.zones[key] ?? [];
+
+/**
+ * Which zone a card reaching exile really came from — **one** move, even when the engine made two.
+ *
+ * A replacement that exiles a card instead of putting it into a graveyard is a single zone change
+ * in the rules (CR 614.1): the graveyard is never touched. This engine performs it in two hops,
+ * because `replaceZoneChange` runs *after* the physical move and corrects it from the graveyard the
+ * card has already reached — which is a deliberate simplification everywhere else and would be a
+ * wrong answer here, reading a creature Rest in Peace exiles as a card leaving a graveyard rather
+ * than a creature leaving the battlefield.
+ *
+ * `left` is what makes the correction safe rather than a guess: it holds the cards that have left a
+ * battlefield since the last settle and is drained *before* any trigger is raised, so the only
+ * window in which it is non-empty is the replacement pass itself. A card exiled out of a graveyard
+ * by anything that resolves — an escape cost, a Planar Void's trigger, a Tormod's Crypt — sees an
+ * empty list and is recorded as what it is.
+ */
+function exileCameFrom(state: GameState, inst: CardInstance): ZoneId {
+  return inst.zone === 'graveyard' && state.left.includes(inst.id) ? 'battlefield' : inst.zone;
+}
 
 export function withZones(state: GameState, patch: Record<string, readonly string[]>): GameState {
   return { ...state, zones: { ...state.zones, ...patch } };
@@ -178,6 +199,35 @@ export function relocate(
   */
   if (state.automated && inst.zone !== 'graveyard' && toZone === 'graveyard') {
     next = { ...next, toGraveyard: [...next.toGraveyard, inst.id] };
+  }
+  /*
+    And the last of the destinations nothing could see: a card arriving in **exile**.
+
+    The widest of this family in what causes it and the narrowest in what the engine knew about it.
+    A blink, an exile-until-this-leaves, a foretell, a suspend, an escape cost, a Kalitas replacing
+    a death and a spell exiled instead of buried are seven different callers, and until this line
+    not one of them raised anything — so the pool's whole blink package happened in silence.
+
+    Three facts rather than an id, computed here because here is the last moment they are true: an
+    exile zone belongs to the card's **owner**, so the controller is gone after the move; a card in
+    exile has lost its counters, so `characteristicsOf` would answer about a different object; and a
+    creature card exiled out of a graveyard is indistinguishable afterwards from a creature that
+    was on the battlefield. See `ExiledCard`, which has one field per fact and says which printed
+    word each is for.
+
+    Moving within exile is not arriving in it — a suspended card losing its last time counter stays
+    where it is.
+  */
+  if (state.automated && inst.zone !== 'exile' && toZone === 'exile') {
+    next = {
+      ...next,
+      exiled: [...next.exiled, {
+        card: inst.id,
+        from: exileCameFrom(state, inst),
+        controller: inst.zoneSeat,
+        wasCreature: characteristicsOf(state, inst).isCreature,
+      }],
+    };
   }
   /*
     And the narrowest of them: a card going from a **hand** to a graveyard, which is a discard.

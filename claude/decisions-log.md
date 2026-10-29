@@ -13198,3 +13198,97 @@ never fires looks broken to the person sitting opposite, and this is a solo play
 benchmark. What the probe was for here was narrower and it did its job: it ruled out the harm that
 sent the default back last time, which is what lets the judgement decide. `false` stays as the
 control the probe is run against.
+
+## D225 — The last zone change nothing could read, and the card that reads it
+
+Exile was the hole in the family. `died` and `entered` were the first two events the engine ever
+raised; `left` came with the Banisher Priest; `drew` with the draw watchers (D150); `toGraveyard`
+with Planar Void and Rancor (D153, D157); `discarded` with madness (D171). That left one
+destination a card could reach with nothing in the engine able to see it — and it is the one the
+pool has been sending cards to since its first month. Journey to Nowhere, Banisher Priest, Flickerwisp
+and Cloudshift have all been exiling creatures for two hundred decisions, and no card could tell.
+
+### The event, and the one list in the family that is not a list of ids
+
+`GameState.exiled` carries three fields per entry where every sibling carries a bare id, and the
+reason is that the move destroys all three:
+
+- an exile zone belongs to the card's **owner**, so the controller of the permanent is gone
+  afterwards — and "a creature **you control**" is a question about the controller;
+- a card in exile has lost its counters, so asking `characteristicsOf` after the move answers about
+  a different object — an animated land reads as a land, a face-down 2/2 as nothing at all;
+- a creature card exiled out of a **graveyard** to pay for escape is, once it is sitting in exile,
+  indistinguishable from a creature that was on the battlefield a moment ago.
+
+So `ExiledCard` has one field per word of the printed phrase it exists for — `wasCreature`,
+`controller`, `from` — each computed in `relocate`, which is the one place a card changes zone and
+therefore the one place that cannot forget. The trigger's filters (`what`, `whose`, `from`) are the
+three questions asked of them, and there is no `who`: a card cannot watch its own exile, because a
+watcher has to be somewhere, and nothing is printed that fires from exile.
+
+### One move, even when the engine makes it in two
+
+The interaction that paid for the design, and it was a failing test before it was a feature. **Rest
+in Peace** is in Skyward Writ's sixty, and while it is out every creature you lose is exiled instead
+of buried — which the printed rulings say is a creature of yours being exiled, and which Soulherder
+counts. The first version of this said it did not.
+
+The cause is a simplification three decisions older than this one: `replaceZoneChange` runs *after*
+the physical move and corrects it from the graveyard the card has already reached, so the second hop
+read `graveyard → exile` where the rules say there was one move, `battlefield → exile`, and the
+graveyard was never touched (CR 614.1). `exileCameFrom` is the correction, and `left` is what makes
+it safe rather than a guess: that list holds cards that have left a battlefield since the last
+settle and is drained *before* any trigger is raised, so the only window in which it is non-empty is
+the replacement pass itself. An escape cost, a Planar Void's trigger and a Tormod's Crypt all see an
+empty list and are recorded as what they are.
+
+### Soulherder, and why it is this card rather than a watcher
+
+`{1}{U}` for a 1/1 that grows whenever a creature you control is exiled, and that exiles one itself
+at the beginning of your end step. Two abilities that feed each other, which is the whole reason it
+is this card: a watcher that needed another card to do anything would have been a slot waiting on a
+draw, and D221's lesson is that an option nothing fires is worth nothing. This one grows every turn
+on its own and takes a free counter from every other blink in the deck.
+
+It came in for the **Disenchant**, which `cast-counts` named as Skyward Writ's worst conversion: in
+hand in 64 of 144 games and cast 35 times, the signature of a card with no legal target half the
+time. The copy in Dawn Tithe stays, so the pool keeps Disenchant and a pasted list can still play it
+— which is the lesson D223 paid for twice (a card in **no** deck is unreachable by every path, and a
+test that names a one-of breaks when the one-of goes).
+
+### A prompt with nothing on it is not a question
+
+Found by the card and fixed generally. `obviousTargets` returned null for *any* optional spec, so
+the controller was asked even when the candidate list was empty — and a lone Soulherder would have
+put a prompt with nothing to point at in front of a player at the end of every single turn. An
+optional spec with no legal targets has exactly one legal answer, so the decision is skipped and the
+ability still goes on the stack and does as much as it can, which is nothing (CR 608.2). The modular
+trigger had been in the same position since D221 and had been papered over in the UI instead: the
+"Choose nothing" button D222 added is still the right control for a *real* "up to one", and is no
+longer the only thing standing between a player and a dead prompt.
+
+### What the bot does with it, measured rather than assumed
+
+`scripts/measure/blink-use.mjs`, 48 games of Skyward Writ against the field:
+
+| | |
+| --- | --- |
+| Soulherders cast | 18, in 15 games |
+| end steps it was asked about | 34 (2.3 per game on board) |
+| declined | 0 |
+| blinked a token, which does not come back | 1 |
+| blinked something carrying counters | 3 |
+| blinked something with nothing to re-trigger | 22 |
+| counters on it, best in a game | 2.5 average, 8 highest |
+
+Two readings. The card **works**: it is cast when drawn, it fires twice a game, and it ends games as
+a 3/3 or better with six of those counters coming from something other than its own blink. The bot
+**plays it adequately and not well**: 22 of 34 blinks had no arrival to re-trigger, which is fine
+(the counter is the point), but 4 of 34 were real losses — one token destroyed outright (CR 111.7)
+and three creatures stripped of their counters (CR 400.7).
+
+That is the next piece of work rather than this one's, and it is a *judgement* problem of a kind the
+bot has not had before: every other optional target in the pool points at the enemy, where the worst
+a bad answer does is waste the card. This one points at your own board, so a bad answer destroys a
+creature. The shape of the fix is the one `TargetSpec.friendly` already has — a fact the card
+declares and the bot's ranker reads — and the number to beat is 4 in 34.

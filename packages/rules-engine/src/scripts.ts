@@ -3465,6 +3465,73 @@ const BALL_LIGHTNING: CardScript = {
  * that was declared as an attacker or a blocker (CR 506.4). The last two are the plays people
  * actually cast this for, and neither of them was true until this card was written.
  */
+/**
+ * Soulherder: the first card in the pool that watches a move into **exile** (CR 400.7).
+ *
+ * The event is new (`to-exile`) and everything else here already existed, which is the shape this
+ * engine's card work usually takes. The blink is Cloudshift's two `relocate` calls; the optional
+ * target is modular's "up to one"; the counter is `addCounters`. What was missing was the whole
+ * reason a blink deck wants a payoff: the pool has exiled creatures since Journey to Nowhere, and
+ * no card could tell.
+ *
+ * **Two abilities that feed each other**, as printed, and that is what makes it a card rather than
+ * a watcher waiting on another one. The end step blinks a creature, which is a creature of yours
+ * reaching exile, which is a counter. So one Soulherder and one other creature is a 2/2 next turn
+ * and a 3/3 after that, with every Flickerwisp and Cloudshift in the deck a free counter on top.
+ *
+ * **"Another" is the printed word and it is load-bearing twice over.** It keeps the blink off
+ * itself, which would otherwise be a legal target that exiles the permanent the ability belongs to
+ * — and the trigger above would then try to put a counter on an object that no longer exists
+ * (CR 400.7). The event's own `who`-lessness is the other half of that; see the `to-exile`
+ * declaration.
+ *
+ * What it does **not** do is pick well. The blink is a real choice — it re-triggers an arrival, it
+ * drops an opponent's Pacifism, and it can just as easily throw away a +1/+1 counter or a token
+ * that ceases to exist — and the bot's `friendly` hint only says "point it at your own side". What
+ * it picks is a measurement, not an assumption; see the usage instrument.
+ */
+const SOULHERDER: CardScript = {
+  name: 'Soulherder',
+  triggers: [
+    {
+      on: { kind: 'to-exile', from: 'battlefield', what: 'creature', whose: 'you' },
+      description: 'put a +1/+1 counter on Soulherder',
+      effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+    },
+    {
+      on: { kind: 'step', step: 'end', of: 'you' },
+      description: 'blink another target creature you control',
+      targets: [{
+        kind: 'creature',
+        description: 'another target creature you control',
+        // "You **may**", which this engine spells as "up to one target" — the same shape modular
+        // uses, and the same reason: the effect already does nothing with no target, and a prompt
+        // with a way to decline is the honest version of a printed "may".
+        optional: true,
+        // Its own side, which is the whole card: the default aim is the enemy's board, and a
+        // Soulherder that blinked an opponent's creature would be re-triggering their arrival and
+        // growing nothing. See `TargetSpec.friendly`.
+        friendly: true,
+        filter: (state, candidate, controller, source) => candidate.kind === 'card'
+          && candidate.id !== source && creatureYouControl(state, candidate, controller),
+      }],
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        if (id === null) return c.state;
+        /*
+          "Under its **owner's** control", which is the printed wording and not the same as this
+          ability's controller. Nothing in the pool can make the two differ — no card here takes
+          control of a creature — and writing the controller in would be the kind of shortcut that
+          is invisible until the day one does.
+        */
+        const owner = c.state.instances[id]?.owner;
+        if (owner === undefined) return c.state;
+        return putOntoBattlefield(exileCard(c.state, id), id, owner);
+      },
+    },
+  ],
+};
+
 const CLOUDSHIFT: CardScript = {
   name: 'Cloudshift',
   targets: [{
@@ -7949,7 +8016,7 @@ const ALL: readonly CardScript[] = [
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
-  HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT,
+  HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT, SOULHERDER,
   YOUTHFUL_KNIGHT, BOGGART_BRUTE, ROBE_OF_MIRRORS, NIGHT_OF_SOULS_BETRAYAL,
   WALL_OF_AIR, HANNA,
   LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,

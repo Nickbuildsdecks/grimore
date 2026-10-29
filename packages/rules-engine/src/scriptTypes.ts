@@ -14,7 +14,7 @@
  * and the log records that it was not automated, which is the honest version of "the computer did
  * something you did not expect".
  */
-import type { CardDef } from './cards.js';
+import type { CardDef, ZoneId } from './cards.js';
 import type { Keyword } from './characteristics.js';
 import type { EffectFn, PumpOptions } from './effects.js';
 import type { ManaType } from './mana.js';
@@ -430,6 +430,55 @@ export type TriggerEvent =
       readonly subject?: string;
       /** Set by the engine: whose graveyard it arrived in. Nothing reads it yet; see above. */
       readonly subjectSeat?: SeatIndex;
+    }
+  /**
+   * "Whenever a creature you control is exiled" (CR 400.7) — the last zone change nothing could
+   * read.
+   *
+   * The family `to-graveyard` opened, finished. Seven callers put a card into exile — a blink, an
+   * exile-until-this-leaves, a foretell, a suspend, an escape cost, a replacement that exiles
+   * instead of burying, and a spell exiled rather than put into a graveyard — and until this event
+   * existed every one of them happened in silence, which is why the pool's whole blink package had
+   * nothing to pay it off.
+   *
+   * **No `who`, which is the one place this differs from the rest of the family**, and the reason
+   * is where a watcher has to be. `dies`, `leaves` and `to-graveyard` each let their own subject
+   * fire from the zone it has just reached, and each of those exceptions was carved for a printed
+   * card. Nothing is printed that fires from exile: a card there is gone, and a Soulherder caught
+   * by its own blink would put a counter on an object that no longer exists (CR 400.7). So the
+   * event is watched from the battlefield only.
+   *
+   * The three fields it does take are the three words of the one printed phrase it exists for, and
+   * each is a fact the move itself destroys — see `ExiledCard`, where they are recorded.
+   */
+  | {
+      readonly kind: 'to-exile';
+      /**
+       * Where it came from. `battlefield` is "a creature **you control**", which only a permanent
+       * can be: a creature card exiled out of a graveyard to pay for escape is not that, and after
+       * the move the two look identical.
+       *
+       * Two options rather than the seven zones, because the record carries the real zone and a
+       * narrower filter is a line the day a card wants one.
+       */
+      readonly from?: 'battlefield' | 'anywhere';
+      /**
+       * Set by the engine: the zone it actually came from, which is what `from` above is compared
+       * against. Separate from the filter for the reason `spell-cast` keeps `spell` and `types`
+       * apart — one is the question a card asks, the other is the answer the engine supplies, and
+       * a field that is both ends up being neither.
+       */
+      readonly cameFrom?: ZoneId;
+      /** "A **creature**", asked of what it was as it left rather than of its printed type line. */
+      readonly what?: 'creature' | 'any';
+      /** Whose it was as it left: `you` is Soulherder's word, and the default asks nothing. */
+      readonly whose?: 'you' | 'opponent' | 'any';
+      /** Set by the engine: which card was exiled, so an ability can say "that card". */
+      readonly subject?: string;
+      /** Set by the engine: who controlled it as it left — not where its exile zone is. */
+      readonly subjectSeat?: SeatIndex;
+      /** Set by the engine: whether it was a creature as it left. */
+      readonly subjectIsCreature?: boolean;
     }
   | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' }
   /**

@@ -726,6 +726,30 @@ function triggerMatches(
       if (who === 'another') return !isSubject;
       return true;
     }
+    /*
+      "Whenever a creature you control is exiled" — and the two narrower questions inside it.
+
+      There is no `who` here and the omission is the rule rather than an oversight: a card cannot
+      watch its own exile, because the watcher loop below requires a watcher to be on the
+      battlefield and a card in exile is not. `dies`, `leaves` and `to-graveyard` each carve out an
+      exception for their own subject, and each was carved for a printed card — Rancor fires from
+      the graveyard it has just reached. Nothing is printed that fires from exile, and a Soulherder
+      exiled by its own blink would put a counter on an object that no longer exists either way
+      (CR 400.7), so the two readings agree.
+
+      What is asked is the three things the event carries, each for one word of that phrase: the
+      zone it came from, so an escape cost paid out of a graveyard is not a creature you control
+      leaving the battlefield; whether it was a creature at the time; and whose it was.
+    */
+    case 'to-exile': {
+      const e = event as Extract<TriggerEvent, { kind: 'to-exile' }>;
+      if ((want.from ?? 'anywhere') === 'battlefield' && e.cameFrom !== 'battlefield') return false;
+      if ((want.what ?? 'any') === 'creature' && e.subjectIsCreature !== true) return false;
+      const whose = want.whose ?? 'any';
+      if (whose === 'any') return true;
+      if (e.subjectSeat === undefined) return false;
+      return whose === 'you' ? e.subjectSeat === sourceSeat : e.subjectSeat !== sourceSeat;
+    }
     case 'step': {
       const e = event as Extract<TriggerEvent, { kind: 'step' }>;
       if (e.step !== want.step) return false;
@@ -871,7 +895,8 @@ function raise(
   if (subject !== undefined
     && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
       || event.kind === 'blocks' || event.kind === 'becomes-blocked'
-      || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard')) {
+      || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard'
+      || event.kind === 'to-exile')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.
@@ -1138,6 +1163,13 @@ function raise(
  * creature exists has its target fixed by the rules, and stopping to ask would be a prompt with a
  * single button. Anything else goes to the controller — including "up to one" with a candidate,
  * because taking it or not is a real decision.
+ *
+ * **"Up to one" with nothing to point at is not a decision either**, and that clause is newer than
+ * the rest. An optional spec with no legal targets has exactly one legal answer — none — so asking
+ * is a prompt with nothing on it but a way out, which is what a Soulherder alone on the battlefield
+ * would have put in front of a player at the end of every turn (and a dying modular creature with
+ * no other artifact creature before it). The decision is skipped, not the ability: it still goes on
+ * the stack with no targets and does as much as it can, which is nothing (CR 608.2).
  */
 function obviousTargets(
   state: GameState, specs: readonly TargetSpec[], controller: SeatIndex, source?: string,
@@ -1145,10 +1177,13 @@ function obviousTargets(
   const chosen: Target[] = [];
   for (const spec of specs) {
     const want = Math.max(1, spec.count ?? 1);
-    if (spec.optional) return null;
     const available = legalTargets(state, spec, controller, source).filter(
       (t) => !chosen.some((c) => targetKey(c) === targetKey(t)),
     );
+    if (spec.optional) {
+      if (available.length === 0) continue;
+      return null;
+    }
     if (available.length !== want) return null;
     chosen.push(...available);
   }
@@ -1639,7 +1674,7 @@ function settle(state: GameState, before: GameState): GameState {
     let pass = 0;
     pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0
       || next.dealtCombatDamage.length > 0 || next.drew.length > 0
-      || next.toGraveyard.length > 0);
+      || next.toGraveyard.length > 0 || next.exiled.length > 0);
     pass++
   ) {
     /*
@@ -1680,9 +1715,18 @@ function settle(state: GameState, before: GameState): GameState {
       614.6), and the next card that counts graveyards as it resolves would read it.
     */
     const buried = buriedPass.unreplaced.filter((id) => !deaths.replaced.has(id));
+    /*
+      And the cards that reached exile, which needs no replacement pass of its own.
+
+      A replacement that sends a card to exile *instead* of a graveyard — Kalitas, unearth's end
+      step — has already run by the time the move happens, so what is in this list is where the
+      card really went. There is no printed effect that replaces being exiled, which is why
+      `ReplacementEvent` has three members and not four.
+    */
+    const banished = next.exiled;
     next = {
       ...next,
-      died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [],
+      died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -1771,6 +1815,25 @@ function settle(state: GameState, before: GameState): GameState {
     */
     for (const id of buried) {
       next = raise(next, { kind: 'to-graveyard' }, next.instances[id]?.zoneSeat, id);
+    }
+    /*
+      And the exiles, after the graveyards for the same reason the graveyards come after the deaths:
+      a card that was destroyed and then exiled by something else did both, and the earlier event
+      belongs underneath on the stack.
+
+      The event carries the three facts the move destroyed rather than letting `raise` read them off
+      a card sitting in exile — see `ExiledCard`. `actor` is the seat that controlled it as it left,
+      which is what makes "a creature **you** control" answerable: for every other event in this
+      loop that argument is the seat the subject belonged to, and this is the same question asked
+      before the zone change rather than after it.
+    */
+    for (const { card, from, controller, wasCreature } of banished) {
+      next = raise(
+        next,
+        { kind: 'to-exile', cameFrom: from, subjectSeat: controller, subjectIsCreature: wasCreature },
+        controller,
+        card,
+      );
     }
     for (const id of arrived) {
       const arrival = next.instances[id];

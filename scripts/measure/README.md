@@ -159,6 +159,20 @@ A registry of every card in the pool would let step 2 read the other way round, 
 not here: it would be a second list of two hundred and eighteen names to keep in step with the
 first, to save a sign flip. See D138.
 
+`blink-use` asks the three questions a *friendly* optional target raises, which no instrument here
+had asked before: is the trigger taken, what does it point at, and what did pointing there cost?
+Every other optional target in the pool aims at the enemy, where a bad answer wastes a card;
+Soulherder's end step aims at your own board, so a bad answer destroys one of your creatures — a
+token blinked never comes back, and counters and attachments are gone (CR 400.7, CR 111.7). It reads
+the bot's answer at the prompt rather than afterwards, because that is where the choice is and the
+`exiled` list is drained by `settle` inside the same action.
+
+**Which is worth knowing before trying to read that list from a harness.** Every event list on
+`GameState` is drained inside the action that filled it, so a loop standing between actions sees it
+empty every time — and an empty column looks exactly like "this never happens". The first version of
+`blink-use` printed one. What works from outside is a consequence the board keeps: counters on the
+Soulherder, compared against the blinks it was seen to take.
+
 ## Reading the numbers
 
 **The noise floor is about eighteen games in two hundred and forty.** It was established by running

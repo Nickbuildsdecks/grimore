@@ -6,7 +6,7 @@
  * whole of its turn structure — and a table running in manual mode leaves every one of these at its
  * empty value.
  */
-import type { CardInstance } from './cards.js';
+import type { CardInstance, ZoneId } from './cards.js';
 import type { ContinuousEffect } from './characteristics.js';
 import type { ManaPool } from './mana.js';
 import type { SeatIndex } from './types.js';
@@ -50,6 +50,42 @@ export const STEP_LABELS: Readonly<Record<Step, string>> = Object.freeze({
   end: 'End step',
   cleanup: 'Cleanup',
 });
+
+/**
+ * One card that reached exile, and the three facts about the moment before it did.
+ *
+ * Every other zone-change list in `GameState` is a list of ids, because every other event can be
+ * read off the card where it ended up. Exile cannot: the zone belongs to the card's **owner**
+ * rather than to whoever controlled the permanent, the counters are already gone, and a creature
+ * card exiled out of a graveyard sits in it looking exactly like a creature that was on the
+ * battlefield a moment ago. So the facts travel with the event instead of being inferred from the
+ * wreckage — one field per word of the printed phrase this exists for, "a **creature** **you
+ * control** is exiled" (CR 400.7).
+ */
+export interface ExiledCard {
+  readonly card: string;
+  /**
+   * The zone it came from, which is what tells a blink from a cost.
+   *
+   * "A creature you control is exiled" is about a permanent leaving the battlefield; a card exiled
+   * from a graveyard to pay for escape, or from a hand to foretell, is not that — and after the
+   * move the two are indistinguishable.
+   */
+  readonly from: ZoneId;
+  /**
+   * Who controlled it as it left. For a permanent that is its controller; for a card anywhere else
+   * it is the seat whose zone it was in, which is the same question that zone can answer.
+   */
+  readonly controller: SeatIndex;
+  /**
+   * Whether it was a creature as it left, asked of `characteristicsOf` before the move.
+   *
+   * Not read from the printed type line, which would call an animated land a land and a
+   * face-down 2/2 nothing at all (CR 707.2) — the question a card asks is what was on the
+   * battlefield, and that is a fact about the board rather than about the cardboard.
+   */
+  readonly wasCreature: boolean;
+}
 
 /**
  * One scheduled delayed trigger (CR 603.7).
@@ -644,6 +680,28 @@ export interface AutomationState {
    * wordings say about it.
    */
   readonly toGraveyard: readonly string[];
+  /**
+   * Cards that have reached **exile** since the last settle, with the facts the move destroys.
+   * Drained by `settle`.
+   *
+   * The seventh member of the detect-rather-than-announce family and the last zone change that was
+   * invisible to a card: a blink, a Journey to Nowhere, an escape cost, a foretell, a suspend and a
+   * spell exiled instead of buried all end up here, and until this list existed nothing in the
+   * engine could see any of them.
+   *
+   * **The only list in this family that carries more than an id**, and the reason is the one
+   * printed phrase that wants it. "Whenever a creature you control is exiled" asks three questions
+   * about the moment before the move — was it a creature, who controlled it, and did it come from
+   * the battlefield at all — and an exile zone belongs to a card's *owner*, holds the card with its
+   * counters already wiped, and keeps a creature card from a graveyard beside a creature that was
+   * on the battlefield a moment ago. So each of those three is answered in `relocate`, where it is
+   * still true, rather than guessed at afterwards from a card sitting in exile.
+   *
+   * Recorded for the reason the other six are: `relocate` is the one place a card changes zone, so
+   * it is the one place that cannot forget. Moving within exile is not arriving in it, and the
+   * initial deal is not either — the table is not automated yet while a deck is being loaded.
+   */
+  readonly exiled: readonly ExiledCard[];
   /**
    * Cards that went from a **hand** to a graveyard since the last settle: discards.
    *

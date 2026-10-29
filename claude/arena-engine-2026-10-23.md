@@ -6413,6 +6413,39 @@ by losing the shuffle. Correctness with no price to argue about, and the flat re
 apology: `hidden-info` already showed the flag moving 9 decisions of 16,804, and nine in seventeen
 thousand cannot move a win rate over 936 games.
 
+### Exile, the last zone change nothing could read (D225)
+
+`to-exile` finishes the family `died` started. Seven callers put a card into exile — a blink, an
+exile-until-this-leaves, a foretell, a suspend, an escape cost, a replacement that exiles instead of
+burying, and a spell exiled rather than buried — and not one of them raised anything, which is why
+the pool's whole blink package had no payoff.
+
+It is the only event here whose list carries more than an id, and each of the three fields is a fact
+the move destroys: an exile zone belongs to the card's **owner**, so the controller is gone; a card
+in exile has lost its counters, so asking what it was answers about a different object; and a
+creature card exiled out of a graveyard is afterwards indistinguishable from a creature that was on
+the battlefield. One field per word of "a **creature** **you control** is **exiled**".
+
+The interaction that paid for that design was a failing test first. **Rest in Peace** is in Skyward
+Writ's sixty, so while it is out every creature you lose is exiled instead of buried — a creature of
+yours being exiled, by the printed rulings. The engine said otherwise, because a replacement runs
+*after* the physical move and corrected it from the graveyard the card had already reached: two hops
+where the rules have one (CR 614.1). `exileCameFrom` fixes it, using the one list that is non-empty
+only during the replacement pass.
+
+**Soulherder** is the card, {1}{U} for a 1/1 that grows on every exile of yours and exiles one
+itself each end step — two abilities that feed each other, so it needs no other card to be worth a
+slot. It came in for the Disenchant that `cast-counts` named as this deck's worst conversion (35
+casts in the 64 games it was in hand). And the card found a general bug on the way: an optional
+target spec with no legal candidates was still being asked about, so a lone Soulherder would have
+put an empty prompt in front of a player at the end of every turn.
+
+`blink-use.mjs` is the instrument, over 48 games: 18 cast, 34 end steps asked about, 0 declined,
+best counters 2.5 average and 8 highest — and 4 blinks of 34 that cost something real (a token
+destroyed, three creatures stripped of counters). The card works; the bot's *choice* of what to
+blink is the next piece, and it is a new kind of judgement problem, because this is the pool's first
+optional target where a bad answer destroys one of your own creatures rather than wasting a card.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -6431,9 +6464,10 @@ thousand cannot move a win rate over 936 games.
    by exiling cards from *somebody else's* graveyard, or from exile) is the same primitive with a
    different zone key.
    **A card reaching a graveyard is an event too** (`to-graveyard`, carrying which card it was), so
-   "whenever another card is put into a graveyard from anywhere" is a line — and the family it
-   completes means every zone change the engine makes is now visible to a card except a move into
-   exile, which nothing printed here watches.
+   "whenever another card is put into a graveyard from anywhere" is a line. **And a card reaching
+   exile** (`to-exile`, D225), which was the last destination nothing could see and the one the pool
+   has been sending cards to since Journey to Nowhere — so the family is complete: every zone change
+   the engine makes is now visible to a card.
    `turned-face-up` has two cards behind it, morph has megamorph and a cost paid in life, target
    redirection has Willbender and Swerve, the three board-watching events carry *which* permanent
    they were about, and an ability on the stack can be pointed at — so exalted, evolve, "that

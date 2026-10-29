@@ -17654,6 +17654,32 @@ describe('modular: counters that move from a dying creature to a living one', ()
     expect(s.instances[champion]!.counters['+1/+1'] ?? 0).toBe(0);
   });
 
+  it('and does not stop to ask when there is nowhere for the counters to go', () => {
+    /*
+      "Up to one" with nothing to point at is not a decision, and this is the general rule rather
+      than a fact about modular: an optional target spec whose candidate list is empty has exactly
+      one legal answer, so `obviousTargets` fills it in instead of putting a prompt with nothing on
+      it in front of a player. Soulherder is the card that made it matter — a lone one would have
+      asked at the end of every single turn — and a dying Worker is where it is cheapest to pin.
+
+      The ability still goes on the stack and still resolves; what is skipped is the question.
+    */
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      hands: { 0: ['Arcbound Worker'] },
+      battlefield: { 0: ['Plains'], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arcbound Worker'),
+    }), 40);
+    const worker = find(s, 0, 'battlefield', 'Arcbound Worker');
+    s = drain(destroy(s, worker), 40);
+    expect(s.pendingChoice).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Arcbound Worker');
+  });
+
   it('both cards declare the keyword, so the pool can be audited for it', () => {
     expect(scriptFor('Arcbound Worker')?.modular).toEqual({ count: 1 });
     expect(scriptFor('Arcbound Ravager')?.modular).toEqual({ count: 1 });
@@ -17678,11 +17704,15 @@ describe('the artifact cost, and what the bot is willing to pay it with', () => 
     all, and the only artifact that answers no is one whose own text fires when it reaches a
     graveyard — which took a new card, because the pool had none.
 
-    The deck these tests use is their own, for a reason worth stating: Ichor Wellspring is scripted
-    and in no starter deck, because putting it in Forge Alliance turns the hidden-information audit
-    in `playout.test.ts` red. That is a pre-existing leak it happens to surface (the bot reads its
-    own library when it simulates a Mirko Vosk mill), and the card waits on that being fixed rather
-    than shipping a red audit. `deckSpecs` is how a test says what it needs.
+    The deck these tests use is their own, and the reason is the board rather than the pool: Ichor
+    Wellspring ships in Forge Alliance as a one-of, and a test that wants the Ravager, the
+    Wellspring and three different idle artifacts on the battlefield at once cannot get there from
+    sixty cards holding one of each. `deckSpecs` is how a test says what it needs.
+
+    (It was also, briefly, in no deck at all: adding it to Forge Alliance turned the
+    hidden-information audit in `playout.test.ts` red, which turned out to be a pre-existing leak it
+    happened to surface — the bot read its own library when it simulated a Mirko Vosk mill. The card
+    waited for D224's fix rather than shipping a red audit.)
   */
   const affinity = customDeck({
     id: 'ravager-and-food',
@@ -17863,5 +17893,156 @@ describe('Ichor Wellspring, the artifact that pays you for leaving', () => {
       card that draws whenever anybody else's card is binned.
     */
     expect(script?.triggers?.every((t) => t.on.who === 'self')).toBe(true);
+  });
+});
+
+describe('Soulherder, and the move into exile nothing could read', () => {
+  /*
+    The last of the zone changes. `died` and `entered` arrived with the first scripted cards,
+    `to-graveyard` with Planar Void and Rancor (D153, D157) — and exile stayed invisible for
+    nineteen decisions after that, which is why the pool's Journey to Nowhere, Banisher Priest,
+    Flickerwisp and Cloudshift have never been worth anything to a card.
+
+    Three facts travel with the event, because the move destroys all three: an exile zone belongs to
+    the card's **owner** rather than to whoever controlled the permanent, a card in exile has lost
+    its counters, and a creature card exiled out of a graveyard is afterwards indistinguishable from
+    a creature that was on the battlefield a moment ago. Each test below is one of those three.
+
+    `card:move` to exile is how most of them push the event, and that is deliberate rather than
+    lazy: it is the tabletop's own action, it goes through the same `relocate` every scripted effect
+    does, and it proves the recording is in the one place a card changes zone instead of in the
+    seven callers that happen to exile something.
+  */
+  const board = (mine: readonly string[], theirs: readonly string[] = []): GameState => arena({
+    decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+    battlefield: { 0: ['Soulherder', ...mine], 1: theirs },
+    turn: 5,
+    firstSeat: 0,
+  });
+
+  const countersOn = (s: GameState, id: string): number => s.instances[id]?.counters['+1/+1'] ?? 0;
+
+  it('grows when a creature you control is exiled', () => {
+    let s = board(['Leonin Skyhunter']);
+    const herder = find(s, 0, 'battlefield', 'Soulherder');
+    s = drain(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Leonin Skyhunter'), toZone: 'exile',
+    }), 40);
+    expect(countersOn(s, herder)).toBe(1);
+  });
+
+  it('and not when the creature was an opponent’s, which is the "you control"', () => {
+    // Journey to Nowhere and Flickerwisp both aim at the other side of the table, so a Soulherder
+    // that counted those would be growing off the deck's own removal.
+    let s = board([], ['Grizzly Bears']);
+    const herder = find(s, 0, 'battlefield', 'Soulherder');
+    s = drain(apply(s, {
+      type: 'card:move', by: 1, card: find(s, 1, 'battlefield', 'Grizzly Bears'), toZone: 'exile',
+    }), 40);
+    expect(countersOn(s, herder)).toBe(0);
+  });
+
+  it('and not when it was a creature card rather than a creature, which is the "from"', () => {
+    /*
+      The fact a card sitting in exile cannot answer. This is the shape every graveyard cost takes —
+      escape, delve, a Tormod's Crypt — and each of them exiles a creature card its controller owns
+      without any creature leaving any battlefield.
+    */
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      battlefield: { 0: ['Soulherder'] },
+      graveyard: { 0: ['Leonin Skyhunter'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    const herder = find(s, 0, 'battlefield', 'Soulherder');
+    s = drain(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'graveyard', 'Leonin Skyhunter'), toZone: 'exile',
+    }), 40);
+    expect(countersOn(s, herder)).toBe(0);
+  });
+
+  it('and not when the permanent was not a creature, which is the "creature"', () => {
+    // A Mind Stone rather than this deck's Pacifism, because an Aura placed on a board with nothing
+    // to enchant is binned by the state-based actions before the test can exile it.
+    let s = board(['Mind Stone']);
+    const herder = find(s, 0, 'battlefield', 'Soulherder');
+    s = drain(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Mind Stone'), toZone: 'exile',
+    }), 40);
+    expect(countersOn(s, herder)).toBe(0);
+  });
+
+  it('blinks another creature at your end step, and grows for its own blink', () => {
+    let s = board(['Leonin Skyhunter']);
+    const herder = find(s, 0, 'battlefield', 'Soulherder');
+    // Declared empty, because a creature that could attack means a declaration is owed and
+    // `advanceTo` will not walk past one. What this test is about is the end of the turn.
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] });
+    s = advanceTo(s, 'end');
+    // The trigger is targeted, so the table stops and asks — "up to one", pointed at its own side.
+    expect(s.pendingChoice?.seat).toBe(0);
+    s = drain(apply(s, {
+      type: 'auto:choose',
+      by: 0,
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
+    }), 40);
+    // Back on the battlefield as a new object, and the exile on the way out was a counter.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Leonin Skyhunter');
+    expect(countersOn(s, herder)).toBe(1);
+  });
+
+  it('re-triggers what the creature does on arrival, which is the whole point of a blink', () => {
+    // A Man-o'-War bounces something as it enters, and a blink is an arrival. Nothing in Soulherder
+    // says so: the return is `putOntoBattlefield`, and `settle` raises `etb` for it like any other.
+    let s = board(["Man-o'-War"], ['Grizzly Bears']);
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] });
+    s = advanceTo(s, 'end');
+    s = apply(s, {
+      type: 'auto:choose',
+      by: 0,
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', "Man-o'-War") }],
+    });
+    s = drain(s, 40);
+    // The Man-o'-War's own trigger is now asking for its bounce target.
+    expect(s.pendingChoice?.seat).toBe(0);
+    s = drain(apply(s, {
+      type: 'auto:choose',
+      by: 0,
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }],
+    }), 40);
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Grizzly Bears');
+    expect(namesIn(s, 1, 'hand')).toContain('Grizzly Bears');
+  });
+
+  it('cannot blink itself, and an end step with nothing else does not stall the table', () => {
+    /*
+      "**Another** target creature you control" is printed, and it is load-bearing twice: a
+      Soulherder that exiled itself would be putting a counter on an object that no longer exists
+      (CR 400.7), and the event's own lack of a `who` is the other half of the same answer.
+    */
+    let s = board([]);
+    const herder = find(s, 0, 'battlefield', 'Soulherder');
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] });
+    s = drain(advanceTo(s, 'end'), 40);
+    expect(s.pendingChoice).toBeNull();
+    expect(namesIn(s, 0, 'battlefield')).toContain('Soulherder');
+    expect(countersOn(s, herder)).toBe(0);
+  });
+
+  it('counts a creature Rest in Peace exiles instead of burying, which is the printed ruling', () => {
+    /*
+      The interaction nobody would guess from either card, and the one that makes recording the
+      event inside `relocate` pay for itself. Rest in Peace replaces the move, so the creature goes
+      battlefield → exile rather than battlefield → graveyard — and "a creature you control is
+      exiled" is exactly what that is. Both cards are in Skyward Writ's sixty, so a real game of
+      this deck does it.
+    */
+    let s = board(['Rest in Peace', 'Leonin Skyhunter']);
+    const herder = find(s, 0, 'battlefield', 'Soulherder');
+    const knight = find(s, 0, 'battlefield', 'Leonin Skyhunter');
+    s = drain(destroy(s, knight), 40);
+    expect(s.instances[knight]!.zone).toBe('exile');
+    expect(countersOn(s, herder)).toBe(1);
   });
 });

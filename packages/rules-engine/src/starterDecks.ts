@@ -2127,6 +2127,31 @@ const BALL_LIGHTNING: CardDef = {
   colors: ['R'],
 };
 
+/**
+ * Soulherder: the payoff the pool's blink cards have never had.
+ *
+ * Flickerwisp, Cloudshift, Journey to Nowhere and Banisher Priest have been exiling things since
+ * the engine's first month, and not one of those moves was ever worth anything beyond what it did
+ * on the spot — because nothing could see a card reach exile. This is the card that reads it.
+ *
+ * Two abilities that feed each other, which is why it is this card rather than a plain watcher: the
+ * end-step blink is its own trigger, so a Soulherder left alone on an empty-ish board still grows
+ * every turn, and every other blink in the deck is a free counter on top. Faithful to the printed
+ * card, including the "**another**" on the blink — it cannot blink itself.
+ */
+const SOULHERDER: CardDef = {
+  name: 'Soulherder',
+  typeLine: 'Creature \u2014 Spirit',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Whenever a creature you control is exiled, put a +1/+1 counter on Soulherder.\n'
+    + 'At the beginning of your end step, you may exile another target creature you control, then '
+    + 'return that card to the battlefield under its owner\'s control.',
+  colors: ['U'],
+};
+
 const CLOUDSHIFT: CardDef = {
   name: 'Cloudshift',
   typeLine: 'Instant',
@@ -5137,6 +5162,27 @@ export const SKYWARD_WRIT: DeckSpec = {
       which is exactly what a deck full of two-power fliers wants.
     */
     { card: FLICKERWISP, count: 1 },
+    /*
+      And the card that reads what every one of those blinks does, which nothing in the pool could.
+
+      Soulherder came in for the **Disenchant**, named by `cast-counts` as this deck's worst
+      conversion: in hand in 64 of 144 games and cast 35 times, which is what a card with no legal
+      target half the time looks like. The deck keeps its answers — two Counterspells, two Swords,
+      an Essence Scatter, an Unsummon, a Pacifism, a Journey, a Holy Day and a Terminus — and the
+      card it gives up is the one that needs the opponent to have played an artifact first. The copy
+      in Dawn Tithe stays, so the pool keeps Disenchant and a pasted list can still play it.
+
+      It belongs **here** rather than in any other deck for three reasons the list already contains.
+      The blink has something to blink: two Man-o'-Wars, an Omenspeaker, a Voice of All and a
+      Flickerwisp all do their work on arrival, and a Soul Warden pays a life for every one of them
+      coming back. It has something to grow into: this deck wins in the air, and a 1/1 that is a 4/4
+      by turn eight is a clock that costs two mana. And the one line nobody would guess — **Rest in
+      Peace** is in these sixty, so while it is out every creature this deck loses is exiled from
+      the battlefield instead of buried, which is a creature of yours being exiled, which is a
+      counter. That is the printed ruling rather than a quirk of this engine, and it falls out of
+      recording the event where the move happens.
+    */
+    { card: SOULHERDER, count: 1 },
     // Two Skyhunters' worth of white two-drops already fly; this one does not and does not need
     // to. Against the two colours that hold this pool's removal it simply cannot be answered, and
     // it is the only card here that proves protection does all four of its jobs.
@@ -5193,7 +5239,6 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: ESSENCE_SCATTER, count: 1 },
     { card: UNSUMMON, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
-    { card: DISENCHANT, count: 1 },
     { card: DIVE_DOWN, count: 1 },
     { card: PACIFISM, count: 1 },
     { card: JOURNEY_TO_NOWHERE, count: 1 },
