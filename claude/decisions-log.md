@@ -10443,3 +10443,28 @@ deck gets one shuffle per seed per seating, so four seeds is **eight** library o
 that happens to sit deep in all eight is never drawn. Twelve seeds is twenty-four orders and the
 same card reads 66 of 288. A per-card usage question needs more seeds than a per-deck record does,
 and that is now written in the harness's README.
+
+### And all three are driven in a browser
+
+`LIST=costs` in `scripts/e2e-solo.mjs` is the cascade scenario's idea applied to a wider question.
+Evoke, dash and bestow each add a second row to a card already in your hand, and the table is the
+only place the choice between the two rows is made: the engine's own tests build the action by
+hand, so a row offered wrongly — or a bestow that never asked which creature to enchant — would
+pass all 997 of them. The deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve
+guildgates to cast them with, pasted in as text through the path a player uses, and the run
+requires all three rows to be pressed.
+
+What it needed that the cascade scenario did not says the same thing twice: **one game is not
+enough**. Which of the three a game reaches depends on what it draws and how long it lasts. The
+first run failed on dash with 27 moves in sixteen turns — a three-colour mana base failing rather
+than a keyword, and the fix was twelve guildgates, four from each guild involved. Three runs after
+that each pressed a different *two* of the three. So the scenario deals again, up to three games,
+through the same "play again" button the rematch check presses, and three runs in a row then
+reached all three.
+
+**The tidier-looking fix was tried and made it worse**, which is the part worth keeping. Teaching
+the driver to prefer the row that pays an alternative cost turns the run into a loop: a dashed
+Mardu Scout is back in hand at the end of the turn, so the cheap row is always available and always
+cheapest. One run paid the dash cost **twenty-one times across three games and never cast the
+Mulldrifter once**. The driver's random pick is what gives the other two cards a turn, and it stays
+— the bias was reverted, and this paragraph is what is left of it.

@@ -5375,6 +5375,14 @@ And `cast-counts` needed twelve seeds rather than four to say it: the subject de
 per seed per seating, so four seeds is eight library orders, and a single card can sit deep in all
 eight. The README says so now.
 
+**All three keywords are driven in a browser**, through `LIST=costs` — the cascade scenario's idea
+applied to three cards at once: a pasted deck of Mulldrifters, Mardu Scouts and Boon Satyrs, and a
+run that requires each of the three cheap rows to be pressed. It needed one thing the cascade one did not,
+because one game is not enough: the scenario deals again, up to three games, through the rematch
+button, until all three have been taken. Biasing the driver towards the cheap row instead was tried
+and was worse — a dashed Scout comes back to hand, so "always take the cheap row" is a loop that
+paid the dash cost twenty-one times and never cast the Mulldrifter.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

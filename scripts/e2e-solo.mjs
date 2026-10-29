@@ -33,7 +33,8 @@ const OPPONENT_DECK = process.env.OPPONENT_DECK ?? 'tidal-mind';
  */
 const SOLO_POD = process.env.SOLO_POD === '1';
 /**
- * `LIST=cascade` pastes a deck built to cascade instead of Ember Rush's own sixty.
+ * `LIST=cascade` pastes a deck built to cascade instead of Ember Rush's own sixty, and
+ * `LIST=costs` one built to pay an alternative cost — see `COSTS_LIST`.
  *
  * Cascade is the one mechanic in the pool a browser suite cannot reach by playing a real game: the
  * keyword fires about once every seven games with one copy in a sixty-card deck, and what it finds
@@ -76,8 +77,44 @@ const CASCADE_LIST = [
   '4 Borderland Marauder', '4 Burning-Tree Emissary', '3 River Boa', '2 Rancor',
 ].join('\n');
 
+/**
+ * Sixty cards built to pay an **alternative cost**: eight each of the three cards that offer one.
+ *
+ * The same problem `LIST=cascade` solves and a wider version of it. Evoke, dash and bestow each add
+ * a second row to a card already in your hand, and the table is the only place the choice between
+ * the two rows is actually made — the engine's tests build the action by hand, so a row that was
+ * offered wrongly, or a bestow that never asked which creature to enchant, would pass every one of
+ * them. A normal game reaches these cards once or twice, and the driver picks a row at random, so
+ * one copy apiece is a coin flip on a coin flip.
+ *
+ * **Eight apiece**, and each count is a measurement rather than a preference. Six of each read
+ * "dash: 0" on a game of 27 moves in sixteen turns — a three-colour mana base failing rather than a
+ * keyword, which is why twelve of the twenty-four lands are guildgates, four from each of the three
+ * guilds involved. With that fixed, six still left one of the three unpressed in most single games:
+ * the cards are three colours and a game reaches what it draws. Eight of each, with Birds of
+ * Paradise and Llanowar Elves for the mana and Grizzly Bears so a bestowed Satyr always has
+ * something to enchant, is what a player building this deck would do — and the scenario deals again
+ * if a game still misses one. Every card is one the pool already scripts, which is what keeps this
+ * the pasted-list path rather than a special case.
+ */
+const COSTS_LIST = [
+  '5 Forest', '4 Island', '3 Mountain',
+  '4 Gruul Guildgate', '4 Izzet Guildgate', '4 Simic Guildgate',
+  '8 Mulldrifter', '8 Mardu Scout', '8 Boon Satyr',
+  '4 Birds of Paradise', '4 Llanowar Elves', '4 Grizzly Bears',
+].join('\n');
+
 const myMove = (page) => isMyMove(page);
-/** Aggression 1: a solo game has nobody to hold mana up against, so it always develops. */
+/**
+ * Aggression 1: a solo game has nobody to hold mana up against, so it always develops.
+ *
+ * The driver picks a random row when a card offers several, and under `LIST=costs` that was nearly
+ * replaced with a preference for the row paying an alternative cost — which made the scenario
+ * **worse** and is worth the sentence. A dashed Mardu Scout is back in hand at the end of the turn,
+ * so "always take the cheap row" is a loop: one run paid the dash cost twenty-one times across
+ * three games and never once cast the Mulldrifter, because the Scout was always the cheapest thing
+ * to do and always came back. Random picking plus dealing again reached all three in every run.
+ */
 const takeTurn = (page) => makeMove(page, 0, { aggression: 1 });
 
 async function main() {
@@ -131,6 +168,8 @@ async function main() {
         new URL('../packages/rules-engine/dist/index.js', import.meta.url));
       const asText = LIST === 'cascade'
         ? CASCADE_LIST
+        : LIST === 'costs'
+        ? COSTS_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -172,45 +211,95 @@ async function main() {
      * and left the table unable to answer it again would show up here as a one and nowhere else.
      */
     let freeCasts = 0;
+    /**
+     * How many times each alternative cost was actually paid, read off the row the driver chose.
+     *
+     * The row's own words rather than anything on the board, because the row is what is being
+     * tested: the engine already knows what an evoked Mulldrifter does, and what nothing else
+     * checks is that the table offered the cheap cast, said what it costs, and sent the flag with
+     * it. `LIST=costs` turns all three into requirements.
+     */
+    const altCasts = { evoke: 0, dash: 0, bestow: 0 };
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
-    while (moves < MAX_MOVES && !(await has(page, 'game-over'))) {
-      if (!(await myMove(page))) {
-        // The opponent moves inside the same write as the action that provoked it, so there
-        // should never be a moment where nobody is on the clock. A few ticks of grace for the
-        // socket, then it is a stall worth reporting.
-        stuck += 1;
-        if (stuck > 40) break;
-        await page.waitForTimeout(100);
-        continue;
-      }
-      stuck = 0;
-      const did = await takeTurn(page);
-      moves += 1;
-      /*
-        The damage assignment order (CR 509.2), recorded when the game happens to produce one.
+    /*
+      One game, played to its end — and under `LIST=costs`, possibly not the only one.
 
-        It needs the bots to gang up on one of this player's attackers, which they do — but only
-        when they have two creatures able to block it, so about one run in three gets there. Not a
-        required check for that reason: a check that fails for a board the game never built says
-        nothing about the code. Reported when it is reached, which is how the scry and the library
-        search are handled in the arena suite.
-      */
-      if (did === 'assigned combat damage') ordered = true;
-      if (typeof did === 'string' && /a free cast/.test(did)) freeCasts += 1;
-      if (process.env.VERBOSE === '1') console.log(`      move ${moves}: ${did}`);
-      else if (moves % 15 === 0) console.log(`      move ${moves}: ${did}`);
-      await page.waitForTimeout(60);
-      const turn = await readNumber(page, 'turn');
-      if (turn !== null && turn > lastTurn) {
-        turnsSeen += turn - lastTurn;
-        lastTurn = turn;
+      A function rather than a bare loop because the scenario needs to be able to say "deal again":
+      which of the three cheap rows a game reaches depends on what it draws and how long it lasts,
+      and three runs of this suite each pressed a different two of them. Pressing all three is a
+      claim about the *table*, not about one shuffle, so the scenario keeps dealing until it has
+      pressed all three or has played three games — which is what a person checking this by hand
+      would do, and is the same button the rematch check below presses.
+    */
+    const playOutGame = async () => {
+      while (moves < MAX_MOVES && !(await has(page, 'game-over'))) {
+        if (!(await myMove(page))) {
+          // The opponent moves inside the same write as the action that provoked it, so there
+          // should never be a moment where nobody is on the clock. A few ticks of grace for the
+          // socket, then it is a stall worth reporting.
+          stuck += 1;
+          if (stuck > 40) break;
+          await page.waitForTimeout(100);
+          continue;
+        }
+        stuck = 0;
+        const did = await takeTurn(page);
+        moves += 1;
+        /*
+          The damage assignment order (CR 509.2), recorded when the game happens to produce one.
+
+          It needs the bots to gang up on one of this player's attackers, which they do — but only
+          when they have two creatures able to block it, so about one run in three gets there. Not a
+          required check for that reason: a check that fails for a board the game never built says
+          nothing about the code. Reported when it is reached, which is how the scry and the library
+          search are handled in the arena suite.
+        */
+        if (did === 'assigned combat damage') ordered = true;
+        if (typeof did === 'string' && /a free cast/.test(did)) freeCasts += 1;
+        if (typeof did === 'string') {
+          for (const word of ['evoke', 'dash', 'bestow']) {
+            if (did.includes(`its ${word} cost`)) altCasts[word] += 1;
+          }
+        }
+        if (process.env.VERBOSE === '1') console.log(`      move ${moves}: ${did}`);
+        else if (moves % 15 === 0) console.log(`      move ${moves}: ${did}`);
+        await page.waitForTimeout(60);
+        const turn = await readNumber(page, 'turn');
+        if (turn !== null && turn > lastTurn) {
+          turnsSeen += turn - lastTurn;
+          lastTurn = turn;
+        }
+        if (turnsSeen === 3) await shot(page, 'mid-game');
       }
-      if (turnsSeen === 3) await shot(page, 'mid-game');
+    };
+
+    /** Presses "play again" and waits for a fresh seven-card hand. Used only by `LIST=costs`. */
+    const dealAgain = async () => {
+      let pressed = false;
+      for (let i = 0; i < 3 && !pressed; i += 1) {
+        pressed = await press(page, 'rematch');
+        if (!pressed) await page.waitForTimeout(250);
+      }
+      if (!pressed) return false;
+      return expectEventuallyTrue(page, async () =>
+        !(await has(page, 'game-over')) && (await cardsIn(page, 'zone-hand-0').count()) === 7);
+    };
+
+    await playOutGame();
+    let games = 1;
+    while (LIST === 'costs' && games < 3 && !Object.values(altCasts).every((n) => n > 0)) {
+      if (!(await has(page, 'game-over'))) break;
+      console.log(`      dealing again: ${JSON.stringify(altCasts)} after ${games} game(s)`);
+      if (!(await dealAgain())) break;
+      games += 1;
+      moves = 0;
+      await playOutGame();
     }
 
-    console.log(`      played ${moves} moves over ${turnsSeen} turn changes`);
+    console.log(`      played ${moves} moves over ${turnsSeen} turn changes`
+      + (games > 1 ? ` across ${games} games` : ''));
     if (ordered) {
       check('the attacker is asked which blocker the damage goes to first, and the engine takes it', true);
     } else {
@@ -230,6 +319,24 @@ async function main() {
         freeCasts > 0, `free casts offered: ${freeCasts}`);
     } else if (freeCasts > 0) {
       console.log(`      (${freeCasts} free casts were offered and answered in this game)`);
+    }
+    /*
+      The three alternative costs, each paid at least once through the table.
+
+      Required under `LIST=costs` and reported otherwise, the same rule the cascade check follows.
+      What each one proves is the half the engine's own tests cannot: the row was offered on a card
+      in hand, its words said what the cheap cast costs, the flag went with the cast (a cast sent
+      without it is refused or is the expensive one), and for bestow the table walked through
+      choosing a creature to enchant before anything was sent.
+    */
+    if (LIST === 'costs') {
+      const where = JSON.stringify(altCasts);
+      check('a Mulldrifter is cast for its evoke cost through the table', altCasts.evoke > 0, where);
+      check('a Mardu Scout is cast for its dash cost through the table', altCasts.dash > 0, where);
+      check('a Boon Satyr is cast as an Aura for its bestow cost, enchanting a creature it chose',
+        altCasts.bestow > 0, where);
+    } else if (altCasts.evoke + altCasts.dash + altCasts.bestow > 0) {
+      console.log(`      (alternative costs paid: ${JSON.stringify(altCasts)})`);
     }
     check('the opponent plays its own turns without being asked to', turnsSeen >= 4, `turns ${turnsSeen}`);
     check('the game reaches a winner', await has(page, 'game-over'),

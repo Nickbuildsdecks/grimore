@@ -906,6 +906,7 @@ node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 ch
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 22-23 checks
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 24 checks
 LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 23-24 checks
+LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 25-26 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -969,6 +970,7 @@ FORCE_MULLIGAN=1   node scripts/e2e-arena.mjs    # both players mulligan, whatev
 OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck the computer plays
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 LIST=cascade node scripts/e2e-solo.mjs           # eight Bloodbraid Elves, pasted in as text
+LIST=costs   node scripts/e2e-solo.mjs           # evoke, dash and bestow, all three pressed
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -979,6 +981,24 @@ path a player uses, and then **requires** the free cast that every other run onl
 its place immediately: it found a table that stopped dead on its own cascade offer, and a cascade
 into Rancor that asked for a target the driver answered by pressing "Cast it" forty times. Both were
 in the table rather than the rules, which is what a browser suite is for.
+
+`LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
+each add a second row to a card already in your hand**, and the table is the only place the choice
+between the two rows is made — the engine's own tests build the action by hand, so a row offered
+wrongly, or a bestow that never asked which creature to enchant, would pass all 997 of them. The
+deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
+with, and the run **requires all three rows to be pressed**.
+
+What it needed that the cascade scenario did not is **more than one game**. Which of the three a
+game reaches depends on what it draws and how long it lasts: three runs of the first version each
+pressed a different *two* of them. So the scenario deals again — up to three games, through the
+same "play again" button the rematch check presses — until all three have been taken.
+
+The obvious alternative was tried and was worse, which is worth writing down: teaching the driver
+to **prefer** the row that pays an alternative cost turned the run into a loop, because a dashed
+Mardu Scout is back in your hand at the end of the turn. One run paid the dash cost twenty-one
+times across three games and never cast the Mulldrifter at all. Random picking plus dealing again
+reached all three in every run.
 
 The layers under them have their own suites: `packages/rules-engine` (997 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
