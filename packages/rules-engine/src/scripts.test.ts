@@ -14261,3 +14261,123 @@ describe('evoke: the same card cast for two prices, and the permanent is the dif
     })).toMatch(/no evoke/);
   });
 });
+
+describe('dash: the creature you pay less for and do not get to keep', () => {
+  /*
+    Evoke's mirror. There the cheap cast buys the spell and gives up the body; here it buys the
+    body for one turn — haste, an attack, and the card back in hand at the beginning of the next
+    end step — and gives up keeping it.
+
+    Both consequences are arranged where the spell resolves rather than by anything on the stack
+    (CR 702.109a), which is the half these tests are really about: there is no window between the
+    creature arriving and it having haste, and the return survives the creature being answered.
+  */
+  const scout = (lands: readonly string[], hand: readonly string[] = ['Mardu Scout']): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...lands] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+  const mountains = (n: number): string[] => Array.from({ length: n }, () => 'Mountain');
+
+  it('is offered twice with two lands and only dashed with one', () => {
+    expect(legalActions(scout(mountains(2)), 0).plays
+      .filter((p) => p.name === 'Mardu Scout').map((p) => p.description))
+      .toEqual([
+        'Cast Mardu Scout for its dash cost ({R}, hasty, back to your hand at end of turn)',
+        'Cast Mardu Scout',
+      ]);
+    expect(legalActions(scout(mountains(1)), 0).plays
+      .filter((p) => p.name === 'Mardu Scout').map((p) => p.manaCost))
+      .toEqual(['{R}']);
+  });
+
+  it('dashed: it has haste, and the stack says which cast it was', () => {
+    let s = scout(mountains(1));
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Mardu Scout'), dashed: true });
+    expect(stackNames(s)).toEqual(['Mardu Scout (dashed)']);
+
+    s = drain(s, 40);
+    const scoutId = find(s, 0, 'battlefield', 'Mardu Scout');
+    expect(characteristicsOf(s, s.instances[scoutId]!).keywords.has('haste')).toBe(true);
+    // And it can attack the turn it arrived, which is the whole of what the mana bought.
+    // `canAttack` answers with the reason it cannot, or null when it can.
+    expect(canAttack(s, scoutId, 0)).toBeNull();
+  });
+
+  it('cast for its printed cost it is summoning sick, and it stays', () => {
+    let s = scout(mountains(2));
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Mardu Scout') }), 40);
+    const scoutId = find(s, 0, 'battlefield', 'Mardu Scout');
+    expect(characteristicsOf(s, s.instances[scoutId]!).keywords.has('haste')).toBe(false);
+    expect(canAttack(s, scoutId, 0)?.reason).toMatch(/summoning sickness/);
+
+    // And it is still there next turn, which is the difference the printed cost buys.
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[scoutId]!.zone).toBe('battlefield');
+  });
+
+  it('goes back to its owner\'s hand at the beginning of the end step', () => {
+    let s = scout(mountains(1));
+    const card = find(s, 0, 'hand', 'Mardu Scout');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, dashed: true }), 40);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+
+    // The same turn's end step, not a later one: "the next end step" is this one. Through the
+    // combat it is entitled to attack in, declaring nothing, because the return is about the step
+    // and not about what the creature did.
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] });
+    s = drain(advanceTo(s, 'end'), 40);
+    expect(s.instances[card]!.zone).toBe('hand');
+    // Which means it can be dashed again, for one mana, on the next turn — and that is the card.
+    expect(s.instances[card]!.counters['dashed'] ?? 0).toBe(0);
+  });
+
+  it('the return outlives the creature, and does nothing when it has gone', () => {
+    /*
+      A delayed ability stops belonging to its source the moment it is created (CR 603.7d), so a
+      dashed creature killed before the end step leaves the return behind — and the return, finding
+      no creature on the battlefield, does as much as it can, which is nothing. The card must not
+      come back out of the graveyard.
+    */
+    let s = scout(mountains(1), ['Mardu Scout', 'Lightning Bolt']);
+    const card = find(s, 0, 'hand', 'Mardu Scout');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, dashed: true }), 40);
+    s = drain(apply(s, { type: 'card:move', by: 0, card, toZone: 'graveyard' }), 40);
+
+    // Straight through the combat this time: with the creature gone there is no declaration owed.
+    s = drain(advanceTo(s, 'end'), 40);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('refuses a dash on a card that has none, and refuses it beside another cost', () => {
+    const s = scout(mountains(2), ['Centaur Courser']);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Centaur Courser'), dashed: true,
+    })).toMatch(/no dash/);
+
+    const both = scout(mountains(2));
+    expect(refusal(both, {
+      type: 'auto:cast', by: 0, card: find(both, 0, 'hand', 'Mardu Scout'),
+      dashed: true, evoked: true,
+    })).toMatch(/alternative cost/);
+  });
+
+  it('every card with dash carries exactly one delayed trigger, which is what schedules its return', () => {
+    /*
+      The convention the engine relies on: it schedules the return by finding the card's one
+      `delayed` end-step trigger, the way unearth's exile is found. A dash card that carried two of
+      them — or none — would schedule the wrong ability, or silently never come back.
+    */
+    for (const name of scriptedCardNames()) {
+      const script = scriptFor(name);
+      if (script?.dash === undefined) continue;
+      const delayed = (script.triggers ?? []).filter((t) => t.delayed === true
+        && t.on.kind === 'step' && t.on.step === 'end');
+      expect([name, delayed.length]).toEqual([name, 1]);
+    }
+  });
+});

@@ -10268,3 +10268,84 @@ keyword failing: it is the bot reaching a five-mana card on a turn it has five l
 happens when a card is drawn on turn six rather than turn three. The choice the keyword exists for
 is a choice about *this* turn's mana, and the measured answer is that the position comes up about
 once in a hundred games. Written down rather than tuned around.
+
+## D195 — Dash: evoke's mirror, and the first cost whose consequence nothing can respond to
+
+Evoke buys the spell and gives up the body. Dash (CR 702.109) buys the body for one turn and gives
+up keeping it: cast a Mardu Scout for {R} rather than {1}{R}, it has haste, it attacks the turn it
+arrives, and at the beginning of the next end step it goes back to its owner's hand — the same card
+again next turn, for the same one mana.
+
+### Why the two halves live in different places
+
+Evoke's sacrifice is a **triggered ability printed on the card**, so the card carries it and the
+engine's only job is to record how the spell was paid for. Dash's haste and return are part of the
+**resolution of the spell itself** (CR 702.109a) — nothing goes on the stack for either, so there is
+no window between the creature arriving and it having haste, and no trigger an opponent can counter
+to keep it on the battlefield. So `completeResolution` does both as the permanent arrives, and the
+difference from evoke is the whole of what this entry is about: the same question — "how was this
+paid for?" — answered in the same place, with one answer belonging to the card and the other to the
+rules.
+
+The return is a **delayed trigger** (D135's machinery), which is what the card says it is: once
+created it stops belonging to the permanent (CR 603.7d), so a dashed creature killed, exiled or
+bounced before the end step leaves the ability behind, and the ability does as much as it can,
+which is nothing. There is a test on exactly that — the card must not come back out of a graveyard.
+
+The ability itself lives on the card as its one `delayed` end-step trigger, found rather than
+declared, which is the arrangement unearth's exile already uses: an index written beside the keyword
+is an index that eventually disagrees with the list it points into. A test walks every scripted card
+with `dash` and asserts it carries exactly one.
+
+`DASHED` is a counter like `EVOKED`, and kept for a different reason: nothing in the rules reads it.
+The haste and the return are both arranged on arrival. What it is for is the table — a 3/1 that is
+about to vanish looks exactly like a 3/1 that is staying — and the next card to want "if its dash
+cost was paid".
+
+### One block in `legalActions`, because the two are the same shape
+
+Both are a second play on a card in hand, cheaper than printed, offered above the affordability
+check. So the evoke block became a list of alternatives with one sentence each saying what the cheap
+cast costs besides mana: "sacrificed as it arrives", "hasty, back to your hand at end of turn". A
+card printed with both would be offered twice, which is also the rule.
+
+### Mardu Scout, and the slot it takes
+
+**Mardu Scout into Kindle Grove**, for the second Centaur Courser. The deck's plan is damage now,
+and the Scout is the only card in the pool that offers the same damage every turn for one mana
+without ever being on the board to be answered. The Courser is a vanilla 3/3 in a list that already
+curves Burning-Tree Emissary into Borderland Marauder into Ambush Viper; one copy stays.
+
+It sits beside the **Hellspark Elemental** on purpose. Both are three damage that does not stay, and
+they pay for it differently: the Hellspark goes to the graveyard and costs {1}{R} to buy back once,
+the Scout goes to hand and costs {R} every turn, for ever. One list, two answers to the same
+question.
+
+### Measured: level again, and a keyword the bot actually takes
+
+Two seed sets of 288, probing the revert:
+
+```
+3300   with Mardu Scout 164-122   with a 2nd Courser 162-124   +2
+5100   with Mardu Scout 169-119   with a 2nd Courser 174-114   -5
+```
+
+Level, well inside the floor, and the slot ships on the role — the same finding the Mulldrifter
+slot got in D194, from a deck at the other end of the table.
+
+What is *not* the same is the usage, and that is the pair of numbers worth having. Over 96 games:
+
+```
+128%  cast 60 + used 0 / in hand 47 games  x1  Mardu Scout
+  14  Mardu Scout (dashed)
+```
+
+Sixty castings out of forty-seven games that had the card in hand — more than one per game, which is
+only possible because the dashed copies came back. Fourteen dashes, against the Mulldrifter's
+**one** evoke in the same number of games. The two keywords are the same engine path and the same
+kind of choice, and the bot takes one of them fourteen times as often, because dash's choice is
+"spend one mana now" and evoke's is "give up a creature you could have had" — the first is a
+decision a greedy player makes every turn and the second needs a plan for the turn after.
+
+That is also the honest limit of the comparison: a bot that does not hold mana (D108, D110, D119)
+will always prefer the keyword whose cheap half costs it nothing it was saving.

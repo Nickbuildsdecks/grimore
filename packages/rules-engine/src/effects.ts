@@ -458,6 +458,19 @@ export const UNEARTHED = 'unearthed';
 export const EVOKED = 'evoked';
 
 /**
+ * The marker a **dashed** permanent carries (CR 702.109a).
+ *
+ * `EVOKED`'s mirror and kept for a different reason. Evoke's counter is read by a trigger printed
+ * on the card; this one is read by nothing in the rules — the haste and the return are both
+ * arranged as the creature arrives, by the engine, and neither needs to ask afterwards. What it is
+ * for is the table and the next reader: a 3/1 that is about to vanish at the end step looks exactly
+ * like a 3/1 that is staying, and a game state that does not say which is a game state nobody can
+ * debug. It is also what a card wanting "if its dash cost was paid" would read, the day one is
+ * printed here.
+ */
+export const DASHED = 'dashed';
+
+/**
  * The marker a **renowned** creature carries (CR 702.112a).
  *
  * "If it isn't renowned" is an intervening-if about a state the creature holds, and the engine's

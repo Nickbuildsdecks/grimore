@@ -301,12 +301,22 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     refusal is there so that the next card to try cannot be cast for two costs at once.
   */
   const evoked = action.evoked === true;
-  if (evoked) {
-    if (script?.evoke === undefined) {
-      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no evoke`);
+  const dashed = action.dashed === true;
+  if (evoked || dashed) {
+    const word = evoked ? 'evoke' : 'dash';
+    /*
+      An alternative cost is paid *instead of* another (CR 601.2f), which includes the other one
+      here: a card printed with both is cast for one of them.
+
+      Asked before "has no evoke", because a client sending both flags has made this mistake and
+      not that one — and a card that has dash and not evoke would otherwise be refused for the
+      keyword it does not have rather than for the two it was sent.
+    */
+    if (flashback || escape || foretold || offered || kicked || (evoked && dashed)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
-    if (flashback || escape || foretold || offered || kicked) {
-      throw new EngineError('RULE_NOT_APPLICABLE', 'evoke is an alternative cost: it is paid instead of another, not beside one');
+    if ((evoked ? script?.evoke : script?.dash) === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
     if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
@@ -375,7 +385,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
         // what this casting pays. What it costs besides the mana is the permanent, and that is
         // not paid here — it is paid on the battlefield, by the card's own trigger.
         : evoked ? script?.evoke?.cost
-          : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
+          // And dash, evoke's mirror: cheaper again, and what it costs besides the mana is the
+          // permanent's stay rather than its life. Paid where the spell resolves, like evoke's.
+          : dashed ? script?.dash?.cost
+            : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
   /*
     And what the permanents on the table have done to the cost: a Goblin Electromancer, a Thalia.
 
@@ -571,6 +584,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     Mulldrifter and getting a Divination.
   */
   const evokedText = evoked ? ' (evoked)' : '';
+  // And dash, which the player answering it reads for the opposite reason: a creature that is
+  // hasty and leaving at the end of the turn is worth a blocker and not a removal spell.
+  const dashedText = dashed ? ' (dashed)' : '';
   /*
     And an offered cast, for the sixth time and the same reason: a player deciding whether to answer
     this should be able to read what it cost. "(free)" when nothing was paid and "(madness {R})"
@@ -596,6 +612,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // And the flag the permanent's own life depends on: a creature that arrives from an evoked
     // casting is marked as it lands, and nothing else remembers by then how it was paid for.
     ...(evoked ? { evoked: true as const } : {}),
+    // And dash's, read at the same moment for the other consequence: haste, and a return to hand
+    // scheduled as the permanent arrives.
+    ...(dashed ? { dashed: true as const } : {}),
     /*
       And the other flag the destination depends on, for the same reason: an adventure that
       resolves is exiled "on an adventure" rather than put into a graveyard, and once it has left
@@ -606,7 +625,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     */
     ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
     description: `${characteristics.name}${xText}${kickedText}${flashbackText}${escapedText}`
-      + `${delveText}${foretoldText}${evokedText}${offeredText}${modeText}`,
+      + `${delveText}${foretoldText}${evokedText}${dashedText}${offeredText}${modeText}`,
   };
   next = {
     ...next,

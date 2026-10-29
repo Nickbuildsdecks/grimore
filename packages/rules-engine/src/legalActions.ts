@@ -157,6 +157,16 @@ export interface LegalPlay {
    */
   readonly evoked?: boolean;
   /**
+   * Set on the play that casts the card for its dash cost: hasty now, back in hand at the end of
+   * the turn (CR 702.109a).
+   *
+   * Evoke's flag and its mirror, and a separate one for the same reason flashback and escape are
+   * separate: what the two costs *do* differs after the spell has resolved, and a table that
+   * offered one flag for both would be offering a card that sacrifices itself as a card that
+   * attacks.
+   */
+  readonly dashed?: boolean;
+  /**
    * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
    * (CR 708).
    *
@@ -900,8 +910,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     }
 
     /*
-      Evoke: a second play on the same card, and the first alternative cost that costs the card
-      itself (CR 702.74a).
+      Evoke and dash: a second play on the same card, and the two alternative costs that change
+      what the permanent does afterwards (CR 702.74a, CR 702.109a).
 
       **Above** the affordability check below, which is the whole reason it is here rather than
       beside the kicker it most resembles — and the same reason morph and foretell are up here. The
@@ -909,9 +919,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       with three lands untapped is a Divination, and a play offered only after "can you afford
       {4}{U}" had already skipped the card would be offered exactly when nobody needs it.
 
-      Which is also what makes it the kicker's opposite rather than its sibling. A kicker is a
-      second play that can only ever be *more* expensive, so offering it late costs nothing; this
-      one is cheaper, and everything cheap has to be offered before the expensive question is asked.
+      Which is also what makes these the kicker's opposite rather than its siblings. A kicker is a
+      second play that can only ever be *more* expensive, so offering it late costs nothing; these
+      are cheaper, and everything cheap has to be offered before the expensive question is asked.
 
       Its own targets, asked here rather than borrowed from below for the same reason: the code
       below has not run yet. `specsFor` and `playableTargets` are the same two calls the ordinary
@@ -919,30 +929,48 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
 
       From the hand only, and never beside a cast that has already replaced the cost: a card cast
       with flashback is cast for its flashback cost, and one offered by a cascade is cast for
-      nothing. Nothing in the pool has evoke and any of those, and a card that did would be being
-      cast for two costs at once.
+      nothing. Nothing in the pool has either keyword and any of those, and a card that did would
+      be being cast for two costs at once. A card with evoke *and* dash would be offered twice
+      here, which is also what the rules say happens.
     */
-    if (script?.evoke !== undefined && !flashback && !escape && !foretold && !fromCommand
-      && !fromAdventure && !offered) {
-      const evokeChange = costChangeFor(state, seat, def);
-      const evokeCost = withCostChange(parseManaCost(script.evoke.cost), evokeChange.generic);
-      const evokeTargets = playableTargets(state, specsFor(script), seat, id);
-      if (evokeCost.unsupported === undefined && evokeTargets.ok
-        && canAfford(poolOf(state, seat), evokeCost, sources)) {
-        out.push({
-          kind: 'cast', card: id, name: ch.name, evoked: true,
-          // What it costs in mana and what it costs in card, both said out loud: a player reading
-          // "Cast Mulldrifter for {2}{U}" and then watching it die would have been misled by the
-          // table rather than by the card.
-          description: `Cast ${ch.name} for its evoke cost (${script.evoke.cost}, sacrificed as it arrives)`,
-          manaCost: script.evoke.cost,
-          ...(evokeChange.generic === 0
-            ? {}
-            : { costChange: evokeChange.generic, costNote: evokeChange.notes[0] ?? '' }),
-          targetSpecs: specsFor(script), candidates: evokeTargets.candidates,
-          isManaAbility: false, sacrificeOptions: [],
-        });
-      }
+    const alternatives = flashback || escape || foretold || fromCommand || fromAdventure || offered
+      ? []
+      : [
+        /*
+          What each keyword costs besides the mana, said out loud on the play.
+
+          A player reading "Cast Mulldrifter for {2}{U}" and then watching it die would have been
+          misled by the table rather than by the card, and the same is true of a 3/1 that attacks
+          and then disappears. Two keywords, one shape, and the difference between them is this
+          sentence — so it lives here with the cost rather than in two copies of the code below.
+        */
+        ...(script?.evoke === undefined ? [] : [{
+          flag: 'evoked' as const,
+          cost: script.evoke.cost,
+          note: `evoke cost (${script.evoke.cost}, sacrificed as it arrives)`,
+        }]),
+        ...(script?.dash === undefined ? [] : [{
+          flag: 'dashed' as const,
+          cost: script.dash.cost,
+          note: `dash cost (${script.dash.cost}, hasty, back to your hand at end of turn)`,
+        }]),
+      ];
+    for (const alternative of alternatives) {
+      const altChange = costChangeFor(state, seat, def);
+      const altCost = withCostChange(parseManaCost(alternative.cost), altChange.generic);
+      const altTargets = playableTargets(state, specsFor(script), seat, id);
+      if (altCost.unsupported !== undefined || !altTargets.ok
+        || !canAfford(poolOf(state, seat), altCost, sources)) continue;
+      out.push({
+        kind: 'cast', card: id, name: ch.name, [alternative.flag]: true,
+        description: `Cast ${ch.name} for its ${alternative.note}`,
+        manaCost: alternative.cost,
+        ...(altChange.generic === 0
+          ? {}
+          : { costChange: altChange.generic, costNote: altChange.notes[0] ?? '' }),
+        targetSpecs: specsFor(script), candidates: altTargets.candidates,
+        isManaAbility: false, sacrificeOptions: [],
+      });
     }
 
     // Flashback and foretell both replace the cost, so everything from here on — affordability, X,

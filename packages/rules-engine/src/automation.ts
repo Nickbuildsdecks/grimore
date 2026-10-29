@@ -32,8 +32,9 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  EVOKED, REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, madnessOffer, modsFrom,
-  poolOf, removeEffectsFrom, setPool, spellLeavesStack, spendRegeneration, untapAll,
+  DASHED, EVOKED, REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, madnessOffer,
+  modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
+  spendRegeneration, untapAll,
   type EffectContext, type EffectFn,
 } from './effects.js';
 import { manaSources } from './legalActions.js';
@@ -231,6 +232,19 @@ export const stackTop = (state: GameState): StackObject | undefined => {
   const id = state.stackOrder[state.stackOrder.length - 1];
   return id === undefined ? undefined : state.stackObjects[id];
 };
+
+/**
+ * Which of a dash card's triggers is the return to hand.
+ *
+ * Found rather than declared, the way unearth's `delayedIndexOf` finds its exile: a delayed trigger
+ * is scheduled by index, and an index written beside the keyword is an index that eventually
+ * disagrees with the list it points into. A card with dash carries exactly one `delayed` trigger —
+ * `dashReturn()` is what builds it, and a test holds the rule — so the search cannot be ambiguous
+ * for anything in this pool.
+ */
+const dashReturnIndex = (script: CardScript | undefined): number =>
+  (script?.triggers ?? []).findIndex((trigger) => trigger.delayed === true
+    && trigger.on.kind === 'step' && trigger.on.step === 'end');
 
 const scriptOf = (state: GameState, instanceId: string): CardScript | undefined => {
   const inst = state.instances[instanceId];
@@ -2375,6 +2389,39 @@ function completeResolution(
         triggers (CR 603.4). A counter written afterwards would be a counter written too late.
       */
       if (object.evoked === true) next = addCounters(next, inst.id, EVOKED, 1);
+      /*
+        And dash, which is the same read with both consequences arranged on the spot (CR 702.109a).
+
+        Here rather than on the card, which is the difference from evoke: evoke's sacrifice is a
+        triggered ability printed on the card, and dash's haste and return are part of **this
+        resolution** — nothing goes on the stack for them, so there is no window for an opponent to
+        kill the creature between arriving and gaining haste.
+
+        The return is a delayed trigger because that is what the card says it is (CR 603.7): once
+        created it stops belonging to the permanent, so a dashed creature that is killed, exiled or
+        bounced before the end step leaves the ability behind doing nothing, which is the rule. The
+        ability itself lives on the card as its one `delayed` trigger — the arrangement unearth's
+        end-step exile already uses — so it gets a resolution path and a description for free.
+      */
+      if (object.dashed === true) {
+        next = addCounters(next, inst.id, DASHED, 1);
+        next = pump(next, [inst.id], inst.id, object.controller, { keywords: ['haste'] });
+        const index = dashReturnIndex(script);
+        if (index >= 0) {
+          next = scheduleDelayed(next, {
+            source: inst.id,
+            controller: object.controller,
+            abilityIndex: index,
+            step: 'end',
+            // `any` rather than `you`: "the next end step" is this turn's, and a creature dashed
+            // on somebody else's turn — which flash or a cast trigger could do — goes back at the
+            // end of *that* one, which is what the printed card says.
+            of: 'any',
+            subject: inst.id,
+            description: `return ${def?.name ?? 'it'} to its owner's hand`,
+          });
+        }
+      }
       const arrives = script?.entersWith;
       if (arrives !== undefined) {
         const amount = arrives.amount === 'x' ? (object.x ?? 0) : arrives.amount;

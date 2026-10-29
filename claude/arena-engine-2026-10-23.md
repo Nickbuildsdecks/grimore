@@ -5311,6 +5311,34 @@ so later keywords are counted without being told about). Over 96 games the Mulld
 bot reaches a five-mana card on a turn it has five lands. The choice the keyword exists for is a
 choice about this turn's mana, and it comes up about once in a hundred games.
 
+### Dash, evoke's mirror, and the keyword the bot actually takes (D195)
+
+Dash (CR 702.109) is the other half of the trade evoke makes. Evoke buys the spell and gives up the
+body; dash buys the body for one turn — haste, an attack, and back to hand at the beginning of the
+next end step — and gives up keeping it.
+
+The engine difference is where the consequence lives. Evoke's sacrifice is a **triggered ability
+printed on the card**, so the card carries it. Dash's haste and return are part of the **resolution
+of the spell** (CR 702.109a): nothing goes on the stack for either, so there is no window between
+the creature arriving and it having haste, and no trigger to counter to keep it on the battlefield.
+`completeResolution` does both as the permanent arrives. The return is a delayed trigger, so it
+outlives the creature and does nothing when the creature has gone — which is the rule (CR 603.7d)
+and has a test.
+
+In `legalActions` the two keywords are one block: both are a second play on a card in hand, cheaper
+than printed, offered above the affordability check, with one sentence each saying what the cheap
+cast costs besides mana.
+
+**Mardu Scout into Kindle Grove**, for the second Centaur Courser, beside the Hellspark Elemental it
+makes a pair with — both are three damage that does not stay, and they pay for it differently. The
+slot measures level (+2 and −5 on two seed sets of 288), like the Mulldrifter's.
+
+The usage is where the two keywords part. Over 96 games the Scout is cast **60 times in the 47 games
+it reached hand** — more than once a game, which is only possible because the dashed copies came
+back — and **14** of those paid the dash cost, against the Mulldrifter's **one** evoke in the same
+number of games. Dash's choice is "spend one mana now"; evoke's is "give up a creature you could
+have had". A bot that does not hold mana (D108, D110, D119) takes the first and not the second.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

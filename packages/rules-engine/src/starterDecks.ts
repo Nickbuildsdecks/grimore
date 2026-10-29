@@ -541,6 +541,17 @@ const GRIZZLY_BEARS: CardDef = {
   colors: ['G'],
 };
 
+const MARDU_SCOUT: CardDef = {
+  name: 'Mardu Scout',
+  typeLine: 'Creature — Human Scout',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  power: '3',
+  toughness: '1',
+  oracleText: 'Dash {R}',
+  colors: ['R'],
+};
+
 const CENTAUR_COURSER: CardDef = {
   name: 'Centaur Courser',
   typeLine: 'Creature — Centaur Warrior',
@@ -5919,7 +5930,30 @@ export const KINDLE_GROVE: DeckSpec = {
     { card: AMBUSH_VIPER, count: 2 },
     { card: RIVER_BOA, count: 1 },
     { card: THORNWEALD_ARCHER, count: 1 },
-    { card: CENTAUR_COURSER, count: 2 },
+    /*
+      Mardu Scout for the second Centaur Courser: a 3/1 that can be cast for one mana a turn,
+      for ever.
+
+      **Dash** (D195) is evoke's mirror — the cheap cast keeps the body and gives up keeping it —
+      and this is the deck that can use that half. Kindle Grove's plan is damage now, and the Scout
+      is the only card in the pool that offers the same damage every turn for one mana without ever
+      being on the board to be answered: dashed for {R} it attacks the turn it lands and is in hand
+      again at the end step, so a removal spell aimed at it has nothing to hit and a blocker has
+      nothing to trade with. Cast for its printed {1}{R} it is a 3/1 that stays, which is the other
+      half of the card and the one for a board that has stalled.
+
+      The Courser is the right slot because it is the most replaceable card in this list: a vanilla
+      3/3 for three in a deck that already runs a Burning-Tree Emissary, two Borderland Marauders
+      and two Ambush Vipers on the way up the curve. One copy stays, so the body is still there on
+      the turns the deck wants one.
+
+      It sits beside the **Hellspark Elemental** on purpose: both are three damage that does not
+      stay, and the two pay for it differently — the Hellspark goes to the graveyard and costs
+      {1}{R} to buy back once, the Scout goes to hand and costs {R} every turn. One list, two
+      answers to the same question, and the comparison is the point.
+    */
+    { card: MARDU_SCOUT, count: 1 },
+    { card: CENTAUR_COURSER, count: 1 },
     // Four damage to a creature *and* a 4/2, which is the best rate in the pool for what this deck
     // does: the removal and the body in one card, so the commander's tax never applies to it.
     { card: FLAMETONGUE_KAVU, count: 2 },

@@ -1905,6 +1905,52 @@ const MULLDRIFTER: CardScript = {
   ],
 };
 
+/**
+ * Dash's second half, written out as the delayed ability the keyword abbreviates (CR 702.109a).
+ *
+ * The return the engine schedules as a dashed creature arrives. It is a card's trigger rather than
+ * something the engine invents for the same reason unearth's exile is one: a delayed ability is put
+ * on the stack by index into its source's own triggers, so it gets a resolution path, a description
+ * and a place anybody can respond to without a second mechanism being built for it.
+ *
+ * `step: 'end'` with `of: 'any'`, which is what "the next end step" means — a creature dashed on
+ * somebody else's turn goes home at the end of that one. And the bounce is guarded the way
+ * `sacrificeSelf` is: a dashed creature that was killed, exiled or bounced before the end step
+ * leaves this ability behind, and an ability whose creature has gone does as much as it can, which
+ * is nothing (CR 608.2).
+ */
+const dashReturn = (): TriggerDef => ({
+  on: { kind: 'step', step: 'end', of: 'any' },
+  delayed: true,
+  description: 'return it to its owner\'s hand',
+  effect: (c) => {
+    const id = c.subject;
+    if (id === undefined || c.state.instances[id]?.zone !== 'battlefield') return c.state;
+    return bounceToHand(c.state, id);
+  },
+});
+
+/**
+ * Mardu Scout: a 3/1 for two, or three damage for one mana and the card back.
+ *
+ * Evoke's mirror, in the deck that wants the other half of the trade. A Mulldrifter cast cheaply
+ * gives up the body for the spell; a Mardu Scout cast cheaply **is** the body, for one turn — {R},
+ * haste, three damage, and the card is in your hand again at the end step to do it all over.
+ *
+ * That makes it a different kind of card from the Hellspark Elemental already in this list, which
+ * is the comparison worth having. The Hellspark is three damage for two mana that then goes to the
+ * graveyard, and buying it back costs another {1}{R} and the unearth. The Scout costs **one** mana
+ * a turn and keeps costing it, for ever, because nothing it does puts it anywhere but your hand —
+ * and the price of that is it can never block, never stay, and never be the board you win with.
+ * The printed body is the other choice: two mana for a 3/1 that stays, which is what you cast it as
+ * when the game has gone long enough that a 3/1 blocker matters more than three damage now.
+ */
+const MARDU_SCOUT: CardScript = {
+  name: 'Mardu Scout',
+  dash: { cost: '{R}' },
+  triggers: [dashReturn()],
+};
+
 const PLANAR_VOID: CardScript = {
   name: 'Planar Void',
   triggers: [
@@ -6537,7 +6583,7 @@ const ALL: readonly CardScript[] = [
   MUTAVAULT, CRIMSON_WISPS, LHURGOYF, THINK_TWICE, FIREBOLT,
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
-  BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER, MULLDRIFTER,
+  BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER, MULLDRIFTER, MARDU_SCOUT,
   KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,

@@ -367,6 +367,33 @@ describe("costs that are choices", () => {
     })
   })
 
+  it("sends the evoke and dash flags, which are the same card at a different price", () => {
+    /*
+      The flashback flag's bug shape with the zone taken out of it: both of these are a second play
+      on a card **in hand**, so an action sent without the flag is not refused for being in the
+      wrong place — it is quietly the expensive cast, which the player then cannot pay for. The two
+      are separate flags rather than one because what they do after the spell resolves differs: one
+      sacrifices the permanent, the other gives it haste and takes it back at end of turn.
+    */
+    const evoked = play({
+      name: "Mulldrifter",
+      description: "Cast Mulldrifter for its evoke cost ({2}{U}, sacrificed as it arrives)",
+      evoked: true, manaCost: "{2}{U}", targetSpecs: [], candidates: [],
+    })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: evoked }).action).toEqual({
+      type: "auto:cast", card: "c1", evoked: true,
+    })
+
+    const dashed = play({
+      name: "Mardu Scout",
+      description: "Cast Mardu Scout for its dash cost ({R}, hasty, back to your hand at end of turn)",
+      dashed: true, manaCost: "{R}", targetSpecs: [], candidates: [],
+    })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: dashed }).action).toEqual({
+      type: "auto:cast", card: "c1", dashed: true,
+    })
+  })
+
   it("and never sends one on the play beside it", () => {
     const mode = arenaReducer(IDLE, { kind: "choosePlay", play: play({ name: "Burst Lightning" }) }).mode
     expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({

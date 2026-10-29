@@ -1230,6 +1230,34 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Dash: cast this creature for a cheaper cost, attack with it now, and give it back at the end
+   * of the turn (CR 702.109).
+   *
+   * Evoke's mirror, and the second cost in this engine that changes what happens to the permanent
+   * afterwards. Evoke buys the spell and gives up the body; dash buys the **body, this turn** and
+   * gives up keeping it: the creature has haste, swings on the turn it arrives, and goes back to
+   * its owner's hand at the beginning of the next end step — so it is the same card again next
+   * turn, for the same price, and it can never be killed by anything that happens on somebody
+   * else's turn.
+   *
+   * Both consequences are the engine's rather than the card's, which is the difference from evoke.
+   * Evoke's sacrifice is a *triggered ability* printed on the card, so the card carries it; dash's
+   * haste and return are part of the **resolution of the spell** (CR 702.109a) — nothing goes on
+   * the stack, so nothing can be countered in between and no opponent gets a window. So
+   * `completeResolution` grants the haste and schedules the return as the permanent arrives, and
+   * what it writes on the permanent is the `DASHED` counter.
+   *
+   * The return is a **delayed trigger** (CR 603.7), which is the machinery unearth's end-step exile
+   * already uses — and like unearth's, the ability lives on the card as the script's one `delayed`
+   * trigger, so it gets a resolution path, a description and a place on the stack without a second
+   * mechanism. A card declaring `dash` must carry exactly one, which `dashReturn()` is for and
+   * which a test holds.
+   */
+  readonly dash?: {
+    /** The whole cost of a dashed casting, in the printed `{1}{R}` form. */
+    readonly cost: string;
+  };
+  /**
    * Morph: cast this face down as a 2/2 for {3}, and turn it up later for this cost (CR 702.37).
    *
    * Only the *turn-up* cost lives here. The face-down casting costs {3} for every card that has

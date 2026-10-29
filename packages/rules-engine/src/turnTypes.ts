@@ -232,6 +232,15 @@ export interface StackObject {
    */
   readonly evoked?: true;
   /**
+   * Whether this spell was cast for its dash cost (CR 702.109a).
+   *
+   * Beside `evoked` and read at the same moment, for the opposite consequence: the permanent that
+   * arrives gets haste and a return to its owner's hand at the beginning of the next end step.
+   * Both are arranged where the spell resolves, because that is the last place anything knows how
+   * it was paid for.
+   */
+  readonly dashed?: true;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.
@@ -900,6 +909,14 @@ export interface AutoCastAction {
    * arrives.
    */
   readonly evoked?: boolean;
+  /**
+   * Cast it for its dash cost: cheaper, hasty, and back in your hand at the beginning of the next
+   * end step (CR 702.109a). Refused on a card with no dash.
+   *
+   * An ordinary cast in every other way, like `evoked`, and refused beside it and beside every
+   * other alternative cost for the same reason: a spell is cast for one cost.
+   */
+  readonly dashed?: boolean;
   /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *

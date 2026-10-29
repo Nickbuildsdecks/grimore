@@ -359,6 +359,9 @@ function playAction(
     and is refused for want of mana on exactly the turn the player reached for the cheap half.
   */
   const withEvoked = play.evoked === true ? { evoked: true } : {}
+  // And dash, evoke's mirror and the same one line: the cheap cast is its own play, and a cast
+  // sent without the flag is the printed one at the printed price.
+  const withDashed = play.dashed === true ? { dashed: true } : {}
   /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
@@ -381,7 +384,7 @@ function playAction(
     return {
       type: "auto:cast", card: play.card,
       ...withModes, ...withX, ...withKicker, ...withFlashback, ...withEscape, ...withFaceDown,
-      ...withForetold, ...withFree, ...withEvoked,
+      ...withForetold, ...withFree, ...withEvoked, ...withDashed,
       ...withHalf, ...withDivision,
       ...withSacrifice, ...withTargets,
     }
