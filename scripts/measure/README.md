@@ -30,6 +30,7 @@ it.
 | `deck-probe.mjs` | what is the **commander** worth? | `SUBJECT=dawn-tithe COMMANDER='Balan, Wandering Knight' SEEDS=15 node scripts/measure/deck-probe.mjs` |
 | `cast-counts.mjs` | which of a deck's sixty cards does the bot actually use? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/cast-counts.mjs` |
 | `cast-counts.mjs` | …and **which cost** did it pay — the printed one, or the evoke, dash, bestow, spectacle, overload, flashback or foretell? | `SUBJECT=tidal-mind SEEDS=12 node scripts/measure/cast-counts.mjs` (the block under the table) |
+| `energy.mjs` | does the bot **spend** the energy it is given, or sit on it? | `SUBJECT=kindle-grove SEEDS=12 node scripts/measure/energy.mjs` |
 | `cast-counts.mjs` | …and how often does it press *this* button? | `SUBJECT=delta-bloom CHANGE="Kiora's Follower:+1,Rampant Growth:-1" SEEDS=6 node scripts/measure/cast-counts.mjs` |
 | `bot-duel.mjs` | what is this change to the *opponent* worth? | `TESTED='{"lookahead":false}' SEEDS=3 node scripts/measure/bot-duel.mjs` |
 | `disagree.mjs` | does that change alter any decisions at all? | `TESTED='{"lookahead":false}' SEEDS=2 node scripts/measure/disagree.mjs` |
