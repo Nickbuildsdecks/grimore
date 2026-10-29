@@ -12994,3 +12994,79 @@ rather than text it uses while it stays. That is #206, and it now has a specific
 hunch. What the piece delivers unconditionally is the rest: `sacrificeKind`, the bar asking for an
 artifact in the right words, the self-eating refusal, the browser row, and the unanswerable prompt it
 found on the way.
+
+## D224 — The bot was reading its own shuffle, and the check that should have caught it had not been run
+
+A real fairness bug, found by accident while doing something else, and the way it was found is worth
+as much as the fix.
+
+### What it was
+
+The search plays a candidate action out with `applyAction`, on the **real state**. So anything the
+engine *reveals* inside that line, the search learns — and a Mirko Vosk, Mind Drinker attacking
+reveals a lot: "whenever it deals damage to a player, that player reveals cards from the top of their
+library until four land cards are revealed". How many cards that is depends entirely on the order of
+a library nobody is entitled to read, and the bot was choosing its blocks on the answer.
+
+A person in that seat knows their decklist and does not know the shuffle. The bot knew both.
+
+### How it was found, which is the uncomfortable part
+
+Not by the audit. #164 built exactly the right instrument — `scripts/measure/hidden-info.mjs`, which
+sweeps all 156 deck pairings, asks 16,804 decisions three ways each, and reports how many answers
+move when the hidden cards are permuted. Run on the shipping bot it reads **9**. Nobody had run it.
+
+What stood in for it in the suite was a unit test over **three fixed pairings**, and that passed. It
+passed because those three games never reached the position, not because the position was not there:
+the leak is reachable on `hollow-tide` v `kindle-grove` at seed 4242, turn 19, and always was. Adding
+one card to Forge Alliance for an unrelated piece (#206) changed which game the third pairing plays,
+and the luck ran out. That is the whole mechanism by which this was discovered, and it is luck in the
+other direction.
+
+Then a wrong fix for the *check* was tried and measured: widen the three pairings so **every deck
+appears**. It still passed against the leaking bot. The leak is about one decision in 1,900 and seven
+games are about 800 decisions, so a bigger sample buys a coin flip rather than a check. Breadth is not
+the fix — **naming the position is**. The regression case is now first in the list so a failure says
+which game it was, and the exhaustive sweep stays as the release check.
+
+### The fix, and the line it draws
+
+`asTheySee(state, seat)` puts every hidden zone into **one canonical order** before the search looks
+at it, and `simulate` and `bestPlan` each do it once per decision rather than once per candidate.
+
+Two halves to the canonical order, and both are load-bearing:
+
+- **Sort**, which is what makes it canonical: two permutations of the same cards sort identically, so
+  the order carries no information and the audit's scramble cannot move the answer. This is the fix.
+- **Then shuffle from a constant seed**, which stops the canonical order being a lie. Sorted by key,
+  every Mountain sits in one block, and a Mirko Vosk revealing "until four lands" off an alphabetical
+  library predicts a mill wrong by the length of the deck. A fixed shuffle of the real contents is a
+  *typical* order instead — which is what a player's feel for their own deck actually is.
+
+What it deliberately does **not** do is hide the cards' identities. The contents of each pool survive
+and only the order is flattened, because that is the real line: you know your decklist, you do not
+know the shuffle. It is also the line the audit itself draws, by permuting *within* a pool rather than
+replacing cards with others — so the fix and the check agree about what hidden means without either
+being written from the other.
+
+It is applied **inside the search only**, which is `noAutoPass`'s argument word for word: the
+simulated state is scored and thrown away, never applied to the real table, so this changes what the
+bot *sees* and never how the game runs. The action it returns names instances, and those are untouched.
+
+`hiddenFrom` is a second copy of the pool definition that `playout.test.ts` already had, on purpose.
+A test that imported the implementation's idea of "hidden" would be auditing it against itself and
+would pass for any pair of matching bugs.
+
+### What it is worth, both ways
+
+| across 156 pairings, 16,804 decisions asked three ways | |
+| --- | --- |
+| decisions that changed, bot reading the shuffle | **9** |
+| decisions that changed, bot blind to it | **0** |
+
+`BotOptions.blindToShuffle` exists so that table has two rows. A test asserting "the answer does not
+change" is worth exactly as much as the proof that it could have changed, so the audit is now **two**
+tests: the sweep with the blinding on, and the named position with it off, asserting the bot *does*
+change its mind. If the second ever goes green, the first has stopped checking anything. The flag is
+a measurement control and nothing else — `false` is the bot reading the shuffle, and it must never
+reach a real table.

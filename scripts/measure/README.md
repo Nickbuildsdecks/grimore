@@ -586,3 +586,21 @@ standing answers or an anthem. It also killed the fix that looked obvious — a 
 no static" test passes an Obelisk of Urd, whose +2/+2 lives in an enters-the-battlefield choice, so the
 bot would have eaten a lord. The audit was twenty lines and it answered a question two probes and a
 duel could only hint at.
+
+**An instrument nobody runs is not a check, and a sample a one-card change can flip is not one
+either.** `hidden-info.mjs` existed for months, sweeps all 156 deck pairings and asks 16,804
+decisions three ways each. Run on the shipping bot it read **9 changed decisions** — a real leak, the
+search learning its own shuffle by simulating a Mirko Vosk mill — and nobody had run it. What stood
+in for it was a unit test over **three fixed pairings**, which passed; adding one card to one deck
+changed which games those three pairings play and turned it red, which is how the leak was finally
+seen. Widening that test to cover every deck was tried and **still passed against the leaking bot**:
+the leak is about 1 decision in 1,900 and seven games are about 800. Breadth is not the fix. What
+caught it was naming the position that reproduces (`hollow-tide` v `kindle-grove`, seed 4242) as a
+regression case, with the exhaustive sweep kept for the release loop. Three lessons, one bug: run the
+instruments you have, pin the bug you found, and do not mistake a bigger sample for a check.
+
+**Give a fairness fix a flag, so the cheat can be priced.** `BotOptions.blindToShuffle` exists for
+one reason: a test that asserts "the bot's answer does not change" is worth exactly as much as the
+proof that it *could* have changed. With the flag off the same sweep reads 9 and the same regression
+position moves; with it on both read zero. That pairing is in `playout.test.ts` as two tests rather
+than one, and `hidden-info.mjs` takes `BOT=` so it can run both arms itself.

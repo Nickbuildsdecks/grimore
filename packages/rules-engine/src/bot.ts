@@ -1030,6 +1030,95 @@ const noAutoPass = (state: GameState): GameState => ({
   autoPassOff: state.seats.map((seat) => seat.index),
 });
 
+/**
+ * The cards this seat is not entitled to know, grouped by the seat that owns them.
+ *
+ * A deliberate second copy of the same list in `playout.test.ts`, which is the specification: a
+ * test that imported this would be auditing the implementation against itself and would pass for
+ * any pair of matching bugs. Two independent statements of "what is hidden" is the point.
+ *
+ * Own library, yes — the shuffle is not yours to read. Opponents' hands, libraries and face-down
+ * permanents come as **one pool** each, because telling an opponent's hand card from their library
+ * card is itself knowledge: a Thoughtseize shows you a hand, and nothing else does.
+ */
+function hiddenFrom(state: GameState, seat: SeatIndex): string[][] {
+  const pools: string[][] = [];
+  for (const row of state.seats) {
+    const hidden: string[] = [];
+    if (row.index !== seat) hidden.push(...(state.zones[`${row.index}:hand`] ?? []));
+    hidden.push(...(state.zones[`${row.index}:library`] ?? []));
+    if (row.index !== seat) {
+      for (const id of state.zones[`${row.index}:battlefield`] ?? []) {
+        if (state.instances[id]?.faceDown === true) hidden.push(id);
+      }
+    }
+    if (hidden.length > 1) pools.push(hidden);
+  }
+  return pools;
+}
+
+/**
+ * One order for a multiset of cards, the same whatever order they arrived in.
+ *
+ * Sorted and then shuffled from a **constant** seed, and both halves are load-bearing. The sort is
+ * what makes it canonical: two permutations of the same cards sort identically, so the search
+ * cannot tell them apart and the order carries no information. The shuffle is what stops that
+ * canonical order being a lie — sorted by key, every Mountain sits in one block, and a Mirko Vosk
+ * revealing "until four lands" off an alphabetical library would predict a mill wrong by the length
+ * of the deck. A fixed shuffle of the real contents is a *typical* order instead, which is what a
+ * player's sense of their own deck actually is.
+ */
+function oneOrderOf(keys: readonly string[]): string[] {
+  const out = [...keys].sort();
+  let x = 0x9e3779b9;
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+    const j = (x >>> 0) % (i + 1);
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+/**
+ * The same position with every hidden zone put into its one canonical order, for the search to
+ * think about. **The fix for a real leak, and the one that makes the audit pass by construction.**
+ *
+ * The bot's search plays an action out with `applyAction`, on the real state — so anything the
+ * engine *reveals* during that line, the search learns. `playout.test.ts` found it: with a Mirko
+ * Vosk, Mind Drinker attacking, the bot's choice of blockers changed when its own library was
+ * permuted, because the simulated line resolved the mill ("reveal until four lands are revealed")
+ * and how many cards that takes is a fact about the shuffle. A person in that seat does not know.
+ *
+ * Reproducible without any of this: `hollow-tide` v `kindle-grove`, seed 4242, turn 19. The audit
+ * covered three fixed pairings and was passing on luck rather than on the absence of leaks.
+ *
+ * What it does **not** do is hide the cards' *identities*: the contents of each pool survive and
+ * only the order is flattened. That is the right line, and it is the line the audit itself draws by
+ * permuting within a pool rather than replacing cards. You know your own decklist. You do not know
+ * the shuffle, and neither does this.
+ *
+ * Applied inside the search only, which is `noAutoPass`'s argument word for word: the simulated
+ * state is scored and thrown away, never applied to the real table, so this changes what the bot
+ * *sees* and never how the game runs. The real action it returns is chosen by instance id, and
+ * those are untouched.
+ */
+function asTheySee(state: GameState, seat: SeatIndex): GameState {
+  const instances = { ...state.instances };
+  let changed = false;
+  for (const pool of hiddenFrom(state, seat)) {
+    const keys = pool.map((id) => state.instances[id]?.defKey);
+    if (keys.some((key) => key === undefined)) continue;
+    const canonical = oneOrderOf(keys as string[]);
+    pool.forEach((id, i) => {
+      const inst = instances[id];
+      if (inst === undefined || inst.defKey === canonical[i]) return;
+      instances[id] = { ...inst, defKey: canonical[i]! };
+      changed = true;
+    });
+  }
+  return changed ? { ...state, instances } : state;
+}
+
 function simulate(state: GameState, action: Action, stopAtAction: boolean): GameState | null {
   let next: GameState;
   try {
@@ -1650,6 +1739,15 @@ export interface BotOptions {
    * numbers and the task that adds one.
    */
   readonly feedsArtifacts?: boolean;
+  /**
+   * Whether the search is blind to the **order** of every hidden zone. Default **on**, and this one
+   * is not a judgement — it is the difference between a bot and a cheating bot.
+   *
+   * The flag exists only so the cheat can be priced, which this project requires of every rule, and
+   * `false` must never reach a real table: it is the bot reading the shuffle. See `asTheySee` for
+   * what the leak was and D224 for what it was worth.
+   */
+  readonly blindToShuffle?: boolean;
 }
 
 /**
@@ -2278,7 +2376,7 @@ function declareBySearch(
     if (opts.lookahead === false) return fallback;
     return bestPlan(state, seat, plans.map((orders) => ({
       type: 'auto:order', by: seat, orders,
-    } as Action)), stopsAtAction(opts)) ?? fallback;
+    } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false) ?? fallback;
   }
   if (kind === 'attackers') {
     const plans = attackPlans(state, seat, opts);
@@ -2286,24 +2384,28 @@ function declareBySearch(
     if (opts.lookahead === false) return fallback;
     return bestPlan(state, seat, plans.map((attackers) => ({
       type: 'auto:attack', by: seat, attackers,
-    } as Action)), stopsAtAction(opts)) ?? fallback;
+    } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false) ?? fallback;
   }
   const plans = blockPlans(state, seat);
   const fallback: Action = { type: 'auto:block', by: seat, blocks: plans[0]! };
   if (opts.lookahead === false) return fallback;
   return bestPlan(state, seat, plans.map((blocks) => ({
     type: 'auto:block', by: seat, blocks,
-  } as Action)), stopsAtAction(opts)) ?? fallback;
+  } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false) ?? fallback;
 }
 
 /** The highest-scoring of a set of declarations, or null when none of them can be applied. */
 function bestPlan(
   state: GameState, seat: SeatIndex, actions: readonly Action[], stopAtAction: boolean,
+  fair: boolean,
 ): Action | null {
   let best: Action | null = null;
   let bestScore = -Infinity;
+  // Once for the whole loop rather than once per plan: every plan is played out of the same
+  // position, and flattening a sixty-card library is not worth doing forty times over.
+  const blind = fair ? asTheySee(state, seat) : state;
   for (const action of actions) {
-    const score = scoreDeclaration(state, seat, action, stopAtAction);
+    const score = scoreDeclaration(blind, seat, action, stopAtAction);
     if (score === null) continue;
     // `>` again, so the heuristic's own plan — which is always first — wins a tie. A search that
     // changed the play for a rounding error would be impossible to reason about from a log.
@@ -3523,8 +3625,14 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
   let best: Action | null = null;
   let bestScore = -Infinity;
   let dropped = 0;
+  /*
+    The position the search thinks about, with the shuffle flattened. Once for the loop, as in
+    `bestPlan`, and deliberately *not* used by the filters below: those read the board before and
+    after, which is public either way, and `legalActions` has already run on the real state.
+  */
+  const blind = opts.blindToShuffle === false ? state : asTheySee(state, seat);
   for (const option of options) {
-    const after = simulate(state, option.action, stopsAtAction(opts));
+    const after = simulate(blind, option.action, stopsAtAction(opts));
     if (after === null) continue;
     /*
       A ritual with nothing to spend it on is not a play.

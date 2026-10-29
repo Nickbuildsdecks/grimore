@@ -10,7 +10,7 @@
 import { describe, it, expect } from "vitest";
 import {
   applyAction, botAction, createGame, customDeck, evaluate, legalActions, packView, playOut,
-  pendingDeclaration, seatToAct, unpackView, viewFor,
+  pendingDeclaration, seatToAct, STARTER_DECKS, unpackView, viewFor,
   type Action, type GameState, type SeatIndex,
 } from './index.js';
 import {
@@ -2341,10 +2341,37 @@ describe('the opponent cannot read your hand', () => {
   };
 
   it('chooses the same move when every card it cannot see is a different card', () => {
+    /*
+      Every deck at least once, which three fixed pairings did not manage.
+
+      This was three pairs and it passed on **luck**. The bot's search plays a line out with
+      `applyAction` on the real state, so anything the engine reveals inside that line it learns —
+      and with a Mirko Vosk, Mind Drinker attacking, a simulated mill ("reveal until four lands")
+      made the block depend on the acting seat's own shuffle. The leak was reachable on
+      `hollow-tide` v `kindle-grove` at seed 4242 the whole time; these three pairings happened not
+      to play that game, and adding a single card to `forge-alliance` was enough to turn the third
+      one red. A sample that a one-card deck change can flip is not a check.
+
+      Two changes, and the second is the one that works. Pairing the decks so **every one appears**
+      is worth having and is *not* enough on its own: tried alone it still passed against the leaking
+      bot, because the leak is about 1 decision in 1,900 and seven games are about 800. Widening a
+      sample does not make it a check.
+
+      What catches it is naming the game that reproduces it — `hollow-tide` v `kindle-grove` at this
+      file's own seed — as a **regression case**, first in the list so a failure says which. That is
+      the honest shape: a fixed sample for breadth, a named position for the bug.
+
+      `scripts/measure/hidden-info.mjs` is the exhaustive version, all 156 pairings and 16,804
+      decisions asked three ways each, and it belongs in the loop before a release rather than in a
+      suite that runs on every change. It read **9** changed decisions before the fix and **0**
+      after — and it existed the whole time, which is the other half of the lesson: an instrument
+      nobody runs is not a check either.
+    */
+    const ALL = Object.keys(STARTER_DECKS);
     const pairs: readonly (readonly [string, string])[] = [
-      ['ember-rush', 'tidal-mind'],
-      ['ashen-rite', 'skyward-writ'],
-      ['hollow-tide', 'forge-alliance'],
+      ['hollow-tide', 'kindle-grove'],
+      ...ALL.map((deck, i) => [deck, ALL[(i + 1) % ALL.length]!] as const)
+        .filter((_, i) => i % 2 === 0),
     ];
     const differences: string[] = [];
     let asked = 0;
@@ -2386,5 +2413,42 @@ describe('the opponent cannot read your hand', () => {
     // And the two numbers that stop the assertion above being vacuous.
     expect(asked).toBeGreaterThan(200);
     expect(moved).toBeGreaterThan(10000);
+  });
+
+  it('and the leak is really there with the blinding off, which is what makes the zero mean something', () => {
+    /*
+      The control for the test above, and the reason it is here rather than in a comment: a test that
+      asserts "no difference" is worth exactly as much as the proof that a difference was reachable.
+      This one replays the position that reproduces — `hollow-tide` v `kindle-grove` at the same seed,
+      turn 19 — with `blindToShuffle: false`, and asserts the bot **does** change its mind.
+
+      So the pair reads: with the shuffle hidden the answer is fixed, and with it visible the answer
+      moves. If this test ever goes green, the one above has stopped checking anything.
+    */
+    let s = createGame({
+      id: 'honest-hollow-tide', format: 'modern', players: PLAYERS, seed: 4242,
+    });
+    s = applyAction(s, { type: 'deck:load', by: 0, seat: 0, deckId: 'hollow-tide' }, HOST);
+    s = applyAction(s, { type: 'deck:load', by: 1, seat: 1, deckId: 'kindle-grove' }, HOST);
+    s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, HOST);
+    s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, HOST);
+
+    const peeking = { blindToShuffle: false } as const;
+    let differed = 0;
+    for (let move = 0; move < 1200 && !s.finished; move += 1) {
+      const seat = seatToAct(s);
+      if (seat === null) break;
+      const chosen = botAction(s, seat, peeking);
+      if (chosen === null) break;
+      if (s.pendingChoice === null && s.pendingDecision === null
+        && !s.seats.some((row) => row.searching)) {
+        const other = botAction(scramble(s, seat, move * 31 + 7), seat, peeking);
+        if (JSON.stringify(other) !== JSON.stringify(chosen)) differed += 1;
+      }
+      const before = s.stateVersion;
+      s = applyAction(s, chosen, HOST);
+      if (s.stateVersion === before) break;
+    }
+    expect(differed).toBeGreaterThan(0);
   });
 });

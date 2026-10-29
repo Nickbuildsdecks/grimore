@@ -6332,6 +6332,43 @@ nothing** — sends at the fewest. Second defect running that a browser row foun
 had passed, and the same shape both times: a claim about what the *player* can see, which no layer
 below the browser can make.
 
+### The bot was reading its own shuffle (D224)
+
+A fairness bug, found by accident. The search plays a candidate out with `applyAction` on the **real
+state**, so anything the engine reveals inside that line it learns — and with a Mirko Vosk, Mind
+Drinker attacking, a simulated mill ("reveal until four lands are revealed") made the bot's blocks
+depend on the order of its own library. A person in that seat knows their decklist and not the
+shuffle; the bot knew both.
+
+`asTheySee` flattens every hidden zone into **one canonical order** before the search looks at it,
+once per decision rather than once per candidate. Sorted, which is what makes it canonical — two
+permutations of the same cards sort identically, so the order carries no information — then shuffled
+from a **constant** seed, which stops the canonical order being a lie: alphabetically every Mountain
+clumps, and "reveal until four lands" off that predicts a mill wrong by the length of the deck.
+Contents survive and only order dies, which is the real line and the same one the audit draws by
+permuting *within* a pool. Inside the search only, on `noAutoPass`'s argument: the simulated state is
+scored and thrown away, so this changes what the bot sees and never how the game runs.
+
+| across 156 pairings, 16,804 decisions asked three ways | |
+| --- | --- |
+| decisions that changed, bot reading the shuffle | **9** |
+| decisions that changed, bot blind to it | **0** |
+
+**How it was found is the part worth keeping.** Not by the audit. #164 built exactly the right
+instrument — `hidden-info.mjs`, all 156 pairings — and nobody had run it; what stood in for it was a
+unit test over **three fixed pairings** that passed because those three games never reached the
+position. One card added to Forge Alliance for an unrelated piece changed which games they play, and
+the luck ran out. Then the obvious fix for the *check* was tried and thrown away: widening those
+three so every deck appears **still passed against the leaking bot**, because the leak is about one
+decision in 1,900 and seven games are about 800. Breadth is not a check; naming the position is
+(`hollow-tide` v `kindle-grove`, seed 4242, now a regression case), with the sweep kept for the
+release loop.
+
+`BotOptions.blindToShuffle` exists so that table has two rows, and the audit is now **two** tests —
+the sweep with blinding on, and the named position with it off asserting the bot *does* change its
+mind. A test that asserts "no difference" is worth exactly as much as the proof a difference was
+reachable.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

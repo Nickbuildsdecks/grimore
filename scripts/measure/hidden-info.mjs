@@ -43,6 +43,7 @@
  *
  *     pnpm --filter @grimore/rules-engine build
  *     SEEDS=2 node scripts/measure/hidden-info.mjs
+ *     SEEDS=2 BOT='{"blindToShuffle":false}' node scripts/measure/hidden-info.mjs   # the control
  */
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
@@ -50,6 +51,14 @@ import {
 
 const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 2);
+/*
+  The bot under audit, so this instrument can be its own control.
+
+  `BOT='{"blindToShuffle":false}'` is the bot that reads the shuffle — the leak D224 fixed — and it
+  is the arm that makes a zero mean something. Run both ways: 9 changed decisions with the flag off,
+  0 with it on, over the same 156 games.
+*/
+const BOT = JSON.parse(process.env.BOT ?? '{}');
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 /** How many scrambles to ask per position. More is a stronger test and a slower one. */
 const DRAWS = Number(process.env.DRAWS ?? 3);
@@ -158,7 +167,7 @@ function duel(seed, decks) {
   for (let move = 0; move < 4000 && !s.finished; move++) {
     const seat = seatsToAct(s)[0];
     if (seat === undefined) break;
-    const chosen = botAction(s, seat);
+    const chosen = botAction(s, seat, BOT);
     if (chosen === null) break;
 
     if (readingLibrary(s)) {
@@ -167,7 +176,7 @@ function duel(seed, decks) {
       const truth = JSON.stringify(chosen);
       let same = true;
       for (let draw = 0; draw < DRAWS; draw += 1) {
-        const other = botAction(scramble(s, seat, seed * 7919 + move * 31 + draw), seat);
+        const other = botAction(scramble(s, seat, seed * 7919 + move * 31 + draw), seat, BOT);
         if (JSON.stringify(other) !== truth) {
           same = false;
           if (examples.length < 12) {
