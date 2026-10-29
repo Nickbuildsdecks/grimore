@@ -6563,6 +6563,56 @@ function echoTrigger(cost: string): TriggerDef {
 }
 
 /**
+ * Level up: the one ability every leveler has (CR 702.87b).
+ *
+ * Sorcery speed, repeatable, uncapped — a mana sink that turns spare turns into a bigger creature.
+ * What the creature *becomes* is not here: the bands are printed data on the definition and are read
+ * by the layer system, because a level band is what the card **is** rather than something done to
+ * it. See `CardDef.levelBands`.
+ *
+ * `sorcerySpeed` is the whole restriction and it matters more than it looks: levelling at the end of
+ * an opponent's turn, after blockers, would make every leveler a combat trick. The printed cards say
+ * "Activate only as a sorcery" for that reason, and the engine already had the flag.
+ */
+function levelUpAbility(cost: string): AbilityDef {
+  return {
+    cost: { mana: cost },
+    sorcerySpeed: true,
+    description: `Level up ${cost} (sorcery speed)`,
+    effect: (c) => addCounters(c.state, c.source, 'level', 1),
+  };
+}
+
+/**
+ * Student of Warfare: a {W} one-drop that is a 4/4 double striker if the game goes long.
+ *
+ * The pool's first **level up** card (CR 702.87), and the cleanest demonstration of what the
+ * keyword sells: a 1/1 for one mana is a bad card and a 3/3 first striker for four mana spread over
+ * three turns is a good one, and it is the same card — the deck decides which it is with mana it
+ * had nothing else to do with.
+ *
+ * In Dawn Tithe, which is the deck most often holding mana up and doing nothing with it.
+ */
+const STUDENT_OF_WARFARE: CardScript = {
+  name: 'Student of Warfare',
+  levelUp: { cost: '{W}' },
+  abilities: [levelUpAbility('{W}')],
+};
+
+/**
+ * Beastbreaker of Bala Ged: the same bargain in green, where the mana is already there.
+ *
+ * A 2/2 for two that becomes a 4/4 and then a 6/6 trampler. The green half of the pair on purpose:
+ * Kindle Grove ramps, so it reaches the second band a turn or two before a white deck would, which
+ * is the thing a slot probe can actually see.
+ */
+const BEASTBREAKER_OF_BALA_GED: CardScript = {
+  name: 'Beastbreaker of Bala Ged',
+  levelUp: { cost: '{1}{G}' },
+  abilities: [levelUpAbility('{1}{G}')],
+};
+
+/**
  * Cumulative upkeep: an age counter first, then its cost for each one (CR 702.24).
  *
  * Echo's shape with the one thing echo did not have: a **price that climbs**. The counter goes on as
@@ -7652,6 +7702,7 @@ const ALL: readonly CardScript[] = [
   SHAMBLING_SHELL, DARKBLAST, CAPSIZE, WHISPERS_OF_THE_MUSE,
   CONTAGION_CLASP, STEADY_PROGRESS,
   MOGG_WAR_MARSHAL, YAVIMAYA_GRANGER, MYSTIC_REMORA,
+  STUDENT_OF_WARFARE, BEASTBREAKER_OF_BALA_GED,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

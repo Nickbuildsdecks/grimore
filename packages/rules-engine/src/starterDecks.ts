@@ -5777,6 +5777,54 @@ const KAMBAL: CardDef = {
   Their oracle text carries the reminder text in full, because a token whose characteristics are not
   the card's is the one case where a player cannot work out what they are getting from the card face.
 */
+/**
+ * The pool's first **level up** card, and a one-drop that is three different creatures.
+ *
+ * A 1/1 for {W} is a bad card. Three more white mana, spread over whichever turns had nothing better
+ * to do, make it a 3/3 with first strike; four more after that make it a 4/4 with double strike. The
+ * card never changes — what changes is how much of the game's spare mana went into it.
+ *
+ * The bands are printed data rather than script behaviour, which is why they are here: what a
+ * leveler *is* at each level is a line on the card, exactly as its base 1/1 is. See
+ * `CardDef.levelBands` and `CardScript.levelUp`.
+ */
+const STUDENT_OF_WARFARE: CardDef = {
+  name: 'Student of Warfare',
+  typeLine: 'Creature — Human Soldier',
+  manaCost: '{W}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Level up {W} (Activate only as a sorcery.)\nLEVEL 2-6: 3/3, first strike\nLEVEL 7+: 4/4, double strike',
+  colors: ['W'],
+  levelBands: [
+    { from: 2, power: 3, toughness: 3, keywords: ['first strike'] },
+    { from: 7, power: 4, toughness: 4, keywords: ['double strike'] },
+  ],
+};
+
+/**
+ * The same bargain in green, in the deck that has the mana to take it.
+ *
+ * A 2/2 for two that becomes a 4/4 and then a 6/6 with trample. Kindle Grove ramps, so it reaches
+ * the second band a turn or two earlier than a white deck would — which is the difference a slot
+ * probe can actually see.
+ */
+const BEASTBREAKER_OF_BALA_GED: CardDef = {
+  name: 'Beastbreaker of Bala Ged',
+  typeLine: 'Creature — Human Warrior',
+  manaCost: '{1}{G}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Level up {1}{G} (Activate only as a sorcery.)\nLEVEL 1-3: 4/4\nLEVEL 4+: 6/6, trample',
+  colors: ['G'],
+  levelBands: [
+    { from: 1, power: 4, toughness: 4 },
+    { from: 4, power: 6, toughness: 6, keywords: ['trample'] },
+  ],
+};
+
 const SACRED_CAT: CardDef = {
   name: 'Sacred Cat',
   typeLine: 'Creature \u2014 Cat',
@@ -5906,7 +5954,20 @@ export const DAWN_TITHE: DeckSpec = {
       plainly because it is uncomfortable: the archetype's best card is a one-of so that the
       archetype is a game.
     */
-    { card: AJANIS_PRIDEMATE, count: 2 },
+    { card: AJANIS_PRIDEMATE, count: 1 },
+    /*
+      The second Pridemate's slot, spent on **level up**.
+
+      Both are white creatures that get bigger, which is as close to a fair payer as this deck has:
+      the Pridemate grows when the deck does what it already does, and the Student grows when the
+      deck has mana it had nothing else to spend — which is the thing a deck that holds mana up and
+      passes has never had a use for. See D216.
+
+      Not the second Sacred Cat, which was the first choice and is load-bearing: a test embalms one
+      copy and then reads the *other* out of the library to prove the printed definition was left
+      alone, so a deck with one Cat in it has no way to make that claim.
+    */
+    { card: STUDENT_OF_WARFARE, count: 1 },
     { card: BLOODTHIRSTY_AERIALIST, count: 1 },
     /*
       The two drains, and why both: the Artist aims and the Celebrant does not.
@@ -6657,7 +6718,16 @@ export const KINDLE_GROVE: DeckSpec = {
       Emissary, or a Borderland Marauder, on turn two — and in a deck whose commander punishes
       noncreature spells, a creature that ramps is the only ramp that costs nothing.
     */
-    { card: BURNING_TREE_EMISSARY, count: 2 },
+    { card: BURNING_TREE_EMISSARY, count: 1 },
+    /*
+      The second Emissary's slot: a 2/2 for two, for a 2/2 for two.
+
+      Both cost two and both arrive as a 2/2, so the comparison is about what else the card does —
+      the Emissary refunds its mana into the next two-drop, the Beastbreaker takes every spare {1}{G}
+      afterwards and becomes a 4/4 and then a 6/6 trampler. In the deck that ramps, which is the
+      point of putting it here. See D216.
+    */
+    { card: BEASTBREAKER_OF_BALA_GED, count: 1 },
     /*
       One Borderland Marauder and one Ambush Viper rather than two of each, for the two creatures
       that **make** and **spend** energy.

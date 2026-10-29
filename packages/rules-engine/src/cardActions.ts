@@ -20,7 +20,9 @@ import {
 } from './cards.js';
 import { FORMATS } from './formats.js';
 import {
+  MAX_BAND_SIZE,
   MAX_CARD_NAME_LENGTH,
+  MAX_LEVEL_BANDS,
   MAX_CARD_TEXT_LENGTH,
   MAX_DRAW_COUNT,
   MAX_INSTANCES,
@@ -380,6 +382,41 @@ function assertCardDef(card: unknown): asserts card is CardDef {
     each face is a definition the view inlines, and a card claiming forty faces is a state that does
     not fit down the socket. No printed card has more than two.
   */
+  /*
+    Level bands, checked because a **caller-supplied** deck reaches this function (CR 711.3).
+
+    Three bounds and none of them is a rules limit. The count is a payload limit, the same as the
+    two-face cap above: no printed leveler has more than two bands and a card claiming a hundred is
+    a state that does not fit down the socket. The sizes are clamped because a 1e9/1e9 creature is
+    not a creature, it is a number that breaks every readout that prints it. And the keywords are
+    strings here rather than `Keyword`s — `characteristicsOf` filters them through `isKeyword`, so a
+    band naming nonsense grants nothing instead of being refused, which is the same tolerance
+    printed keyword lines already get.
+  */
+  if (c['levelBands'] !== undefined) {
+    const bands = c['levelBands'];
+    if (!Array.isArray(bands) || bands.length === 0 || bands.length > MAX_LEVEL_BANDS) {
+      throw new EngineError('INVALID_CARD', `card levelBands must be 1-${MAX_LEVEL_BANDS} bands`);
+    }
+    for (const raw of bands) {
+      if (typeof raw !== 'object' || raw === null) {
+        throw new EngineError('INVALID_CARD', 'each level band must be an object');
+      }
+      const band = raw as Record<string, unknown>;
+      for (const key of ['from', 'power', 'toughness']) {
+        const value = band[key];
+        if (typeof value !== 'number' || !Number.isFinite(value)
+          || value < -MAX_BAND_SIZE || value > MAX_BAND_SIZE) {
+          throw new EngineError('INVALID_CARD',
+            `level band ${key} must be a number between ${-MAX_BAND_SIZE} and ${MAX_BAND_SIZE}`);
+        }
+      }
+      if (band['keywords'] !== undefined
+        && (!Array.isArray(band['keywords']) || band['keywords'].some((k) => typeof k !== 'string'))) {
+        throw new EngineError('INVALID_CARD', 'level band keywords must be strings');
+      }
+    }
+  }
   if (c['faces'] !== undefined) {
     const faces = c['faces'] as Record<string, unknown>;
     if (typeof faces !== 'object' || faces === null
@@ -408,6 +445,23 @@ export function normaliseDef(card: CardDef): CardDef {
     ...(card.loyalty === undefined ? {} : { loyalty: card.loyalty }),
     ...(card.imageUri === undefined ? {} : { imageUri: card.imageUri }),
     ...(card.scryfallId === undefined ? {} : { scryfallId: card.scryfallId }),
+    /*
+      What this creature is at each level, which the layer system reads (CR 711.3).
+
+      Copied field by field like everything else here: this function is an allow-list, and a field
+      left out of it is a field that silently does nothing — which is exactly what happened to the
+      first level-up card, whose bands reached `cardDefs` as `undefined` and left a 1/1 at level
+      seven with no test in the suite able to say why. Printed loyalty was dropped the same way once
+      (see above), which is two for two on fields this function has quietly eaten.
+    */
+    ...(card.levelBands === undefined ? {} : {
+      levelBands: card.levelBands.map((band) => ({
+        from: band.from,
+        power: band.power,
+        toughness: band.toughness,
+        ...(band.keywords === undefined ? {} : { keywords: [...band.keywords] }),
+      })),
+    }),
     /*
       The other castable faces, normalised one level deep and no further.
 

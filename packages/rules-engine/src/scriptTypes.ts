@@ -1292,6 +1292,27 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Level up: pay to put a level counter on this creature, at sorcery speed (CR 702.87).
+   *
+   * Only the **ability** is here. What the creature *becomes* at each level is printed data and
+   * lives on the definition as `CardDef.levelBands`, read by `characteristics.ts` — the module that
+   * turns printed values into current ones, and the one place a script cannot reach back into.
+   *
+   * So this field is the cost and nothing else, and `levelUpAbility` builds the one ability every
+   * leveler has: sorcery speed, repeatable, and no cap. The counters simply accumulate, which is
+   * what the printed cards do — a Student of Warfare with nine level counters is in its last band
+   * and the tenth counter changes nothing, and that is not a rule the engine has to know.
+   *
+   * Read nowhere but the card that declares it, like `echo` and `cumulativeUpkeep`: the ability
+   * `levelUpAbility` builds, listed in `abilities`, is what the engine offers and charges for. It is
+   * here so the pool can be audited for the keyword, and so the table can say what a creature's next
+   * level costs without going through the ability list to find out.
+   */
+  readonly levelUp?: {
+    /** The level-up cost, in the printed `{W}` form. */
+    readonly cost: string;
+  };
+  /**
    * Flashback: a second casting, out of the graveyard, for a different cost (CR 702.33).
    *
    * The second zone a spell is ever cast *from* in this engine — the command zone was the first,

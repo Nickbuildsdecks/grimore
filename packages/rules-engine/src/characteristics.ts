@@ -20,7 +20,10 @@
  * created. Nothing in the pool produces that disagreement, and a card that would is better left
  * unscripted than answered plausibly and wrongly.
  */
-import { isFaceDownObject, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
+import {
+  isFaceDownObject, isFaceDownPermanent, zoneKey,
+  type CardDef, type CardInstance, type LevelBand,
+} from './cards.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 
@@ -663,6 +666,30 @@ function silenced(state: GameState, source: string | undefined): boolean {
  * Which is all of CR 613 that the cards in this pool need. What is not here is dependency ordering
  * between effects in the same layer (613.8), which no two cards in the pool argue about.
  */
+/**
+ * Which level band a permanent is in, or none (CR 711.3).
+ *
+ * Highest `from` that its level counters reach, so the bands may be written in printed order and
+ * the last one needs no upper bound. No counters means no band: a leveler with none is the creature
+ * its P/T line prints, which is also what the card says.
+ *
+ * Only on the battlefield. A leveler in a graveyard or on the stack is its printed self — level
+ * counters are on a *permanent*, and a card elsewhere that still had some would otherwise be
+ * counting them.
+ */
+function levelBandOf(def: CardDef | undefined, instance: CardInstance): LevelBand | undefined {
+  const bands = def?.levelBands;
+  if (bands === undefined || instance.zone !== 'battlefield') return undefined;
+  const level = instance.counters['level'] ?? 0;
+  if (level <= 0) return undefined;
+  let best: LevelBand | undefined;
+  for (const candidate of bands) {
+    if (candidate.from > level) continue;
+    if (best === undefined || candidate.from > best.from) best = candidate;
+  }
+  return best;
+}
+
 export function characteristicsOf(state: GameState, instance: CardInstance): Characteristics {
   /*
     Face down matters on the battlefield and on the stack, and nowhere else. A card face down in
@@ -719,7 +746,22 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let setToughness: number | null = null;
   let modPower = 0;
   let modToughness = 0;
-  const keywords = new Set<Keyword>(printedKeywords(def?.oracleText));
+  /*
+    The level band this creature is in, which is part of what the card *is* (CR 711.3).
+
+    Read here rather than installed as a continuous effect because it is not one: nothing has
+    happened to the creature — it is the card's own text, conditioned on its own counters, and a
+    Student of Warfare that loses its counters is a 1/1 again with nothing to undo.
+
+    Its keywords are seeded alongside the printed ones, which puts them at the earliest timestamp
+    and gets "loses all abilities" right for free: a Turn to Frog cast on a levelled creature clears
+    the band's first strike in the loop below, exactly as it clears a printed keyword.
+  */
+  const band = levelBandOf(def, instance);
+  const keywords = new Set<Keyword>([
+    ...printedKeywords(def?.oracleText),
+    ...(band?.keywords ?? []).filter(isKeyword),
+  ]);
   let cantAttack = false;
   let cantBlock = false;
   let mustAttack = false;
@@ -807,8 +849,13 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   const minus = instance.counters['-1/-1'] ?? 0;
   // 7a, then 7b, then 7c, then 7d: a defined size replaces the printed one, a setting effect
   // replaces either, every modification lands on top, and counters land on top of those.
-  const base = setPower ?? definedPower ?? numeric(def?.power);
-  const baseToughness = setToughness ?? definedToughness ?? numeric(def?.toughness);
+  /*
+    A level band **sets** the size (layer 7b), so it beats a characteristic-defining ability (7a)
+    and loses to a later setting effect — which in practice is every one of them, because the band's
+    timestamp is the permanent's own arrival. A Turn to Frog on a level-seven Student makes a 1/1.
+  */
+  const base = setPower ?? band?.power ?? definedPower ?? numeric(def?.power);
+  const baseToughness = setToughness ?? band?.toughness ?? definedToughness ?? numeric(def?.toughness);
   const power = base + modPower + plus - minus;
   const toughness = baseToughness + modToughness + plus - minus;
 

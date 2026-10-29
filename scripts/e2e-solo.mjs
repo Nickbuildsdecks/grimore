@@ -45,7 +45,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * it just cast (`BUYBACK_LIST`), `LIST=proliferate` one that poisons the computer and then asks the
  * table to pick it out of a list of permanents (`PROLIFERATE_LIST`), `LIST=echo` one that is asked
  * for mana in its own upkeep (`ECHO_LIST`), `LIST=upkeep` one whose upkeep question gets **dearer**
- * every turn (`UPKEEP_LIST`), and `LIST=earned` one
+ * every turn (`UPKEEP_LIST`), `LIST=level` one whose creatures grow by being paid for
+ * (`LEVEL_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -226,7 +227,7 @@ const myMove = (page) => isMyMove(page);
   is a Forest the Bloodbraid Elf needed.
 */
 const takeTurn = (page) =>
-  makeMove(page, 0, { aggression: 1, abilities: LIST === 'proliferate' });
+  makeMove(page, 0, { aggression: 1, abilities: LIST === 'proliferate' || LIST === 'level' });
 
 async function main() {
   await setShotDir(SHOT_DIR);
@@ -431,6 +432,24 @@ const UPKEEP_LIST = [
   '4 Omenspeaker', '4 Man-o\'-War', '4 Wind Drake', '4 Preordain',
   '4 Air Elemental', '4 Thieving Magpie', '2 Mulldrifter',
 ].join('\n');
+
+/**
+ * A deck whose creatures are bigger the more mana went into them (CR 702.87).
+ *
+ * Level up is the first thing in this pool where what a creature **is** depends on a count on
+ * itself, and the engine's own tests read that off `characteristicsOf` on a board built by hand.
+ * What they cannot see is the **card face**: a Student of Warfare at level two is a 3/3 on the
+ * board, and a table that drew its printed 1/1 would be showing the player a creature that does not
+ * exist — which is the sort of thing you discover by blocking wrongly.
+ *
+ * Eight Students and twenty-four Plains, so a game reaches the second band with mana left over.
+ */
+const LEVEL_LIST = [
+  '24 Plains',
+  '8 Student of Warfare',
+  '4 Soul Warden', '4 Healer\'s Hawk', '4 Topan Freeblade', '4 Guardians of Akrasa',
+  '4 Swords to Plowshares', '4 Pacifism', '4 Leonin Skyhunter',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -502,6 +521,8 @@ const UPKEEP_LIST = [
         ? ECHO_LIST
         : LIST === 'upkeep'
         ? UPKEEP_LIST
+        : LIST === 'level'
+        ? LEVEL_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -668,6 +689,15 @@ const UPKEEP_LIST = [
      * means the question was rebuilt as it climbed rather than re-rendered from the first asking.
      */
     const upkeepPrices = new Set();
+    /**
+     * Level-up activations pressed, and the **bodies the board then showed**, under `LIST=level`.
+     *
+     * The second half is the claim. An activation proves the row exists; the printed card is a 1/1
+     * and the first band is a 3/3, so a card face reading `3/3` is the only evidence that what the
+     * table draws is the creature the engine is playing with.
+     */
+    const levelPlays = new Set();
+    const levelledBodies = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -726,6 +756,20 @@ const UPKEEP_LIST = [
         if (typeof did === 'string' && /^chose a player: /.test(did)) playersChosen.add(did);
         if (typeof did === 'string' && /^chose a word: .*Echo \{1\}\{R\}/.test(did)) {
           echoAnswers.add(did.replace(/—.*$/, '').trim());
+        }
+        if (LIST === 'level' && typeof did === 'string' && /chose a play: Level up/.test(did)) {
+          levelPlays.add(did);
+          /*
+            The board, read straight after the activation rather than at the end of the game: a
+            levelled Student is a 3/3 until somebody kills it, and by the last turn it usually has
+            been. The badge is the body `cardBadges` computes, which is the engine's own
+            characteristics — so a face that says 3/3 is the layer system reaching the screen.
+          */
+          const board = await page.locator('[data-testid="zone-battlefield-0"]').innerText()
+            .catch(() => '');
+          for (const body of ['3/3', '4/4']) {
+            if (/Student of Warfare/.test(board) && board.includes(body)) levelledBodies.add(body);
+          }
         }
         if (typeof did === 'string' && /Cumulative upkeep: pay /.test(did)) {
           const price = /Cumulative upkeep: pay (\{[^ ]*?\}) for/.exec(did);
@@ -811,7 +855,7 @@ const UPKEEP_LIST = [
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
-      || LIST === 'upkeep'
+      || LIST === 'upkeep' || LIST === 'level'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -846,11 +890,14 @@ const UPKEEP_LIST = [
       // Two prices, because one price is a question and two prices are a climb.
       : LIST === 'upkeep'
       ? upkeepPrices.size < 2
+      // A pressed row and a changed face: the second is what the engine's tests cannot see.
+      : LIST === 'level'
+      ? levelPlays.size === 0 || levelledBodies.size === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
-      || LIST === 'upkeep')
+      || LIST === 'upkeep' || LIST === 'level')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -863,6 +910,7 @@ const UPKEEP_LIST = [
         : LIST === 'proliferate' ? `${playersChosen.size} answers with a player in them`
         : LIST === 'echo' ? `${echoAnswers.size} of the two echo answers`
         : LIST === 'upkeep' ? `${upkeepPrices.size} distinct upkeep prices`
+        : LIST === 'level' ? `${levelPlays.size} level-ups, ${levelledBodies.size} levelled bodies`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -1082,6 +1130,21 @@ const UPKEEP_LIST = [
         `prices: ${[...upkeepPrices].join(', ')}`);
       check('and the price on the button climbs between askings',
         upkeepPrices.size >= 2, [...upkeepPrices].join(', '));
+    } else if (LIST === 'level') {
+      /*
+        What a creature **is**, drawn on the card rather than computed in a test.
+
+        The engine's tests read the bands off `characteristicsOf`, which is the right place to pin
+        the arithmetic and the wrong place to find out what a player sees. A Student of Warfare is a
+        printed 1/1 and a level-two Student is a 3/3; a table that drew the printed body would have
+        the player blocking a 3/3 with a 2/2 and losing a creature to a number that was on screen
+        the whole time.
+      */
+      check('a level-up row is pressed on a creature on the battlefield',
+        levelPlays.size > 0, `level-ups: ${levelPlays.size}`);
+      check('and the card face shows the body the band gives it',
+        levelledBodies.size > 0, `bodies seen: ${[...levelledBodies].join(', ')}`);
+      for (const did of [...levelPlays].slice(0, 2)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

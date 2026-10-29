@@ -64,6 +64,38 @@ export interface CardDef {
    * `defKey` lookups everything else already does. See `CardInstance.castAs`.
    */
   readonly faces?: CardFaces;
+  /**
+   * What this creature **is** at each level, for a card with level up (CR 702.87, CR 711).
+   *
+   * Printed data rather than script behaviour, which is why it lives on the definition: a leveler's
+   * `LEVEL 2-6 / 3/3 / first strike` is a line on the card, exactly as its base 1/1 is, and the
+   * module that turns printed values into current ones is `characteristics.ts`. Putting it in the
+   * script instead would mean that module reading the script registry, which it cannot — the
+   * scripts import it.
+   *
+   * The ability that *adds* a counter is script behaviour and lives there, as `CardScript.levelUp`.
+   *
+   * Bands are read highest-`from`-first, so the list may be written in printed order and need not
+   * name an upper bound: a creature with seven level counters is in the `from: 7` band because no
+   * later one applies. A permanent with no level counters is in no band at all and is simply the
+   * creature its P/T line prints.
+   */
+  readonly levelBands?: readonly LevelBand[];
+}
+
+/**
+ * One level band of a leveler: what it is from this many level counters until the next band.
+ *
+ * `power` and `toughness` are numbers rather than the strings the printed line uses, because a
+ * level band has never been printed with a `*` in it and a number is what the layer needs.
+ */
+export interface LevelBand {
+  /** The lowest number of level counters this band applies at. */
+  readonly from: number;
+  readonly power: number;
+  readonly toughness: number;
+  /** Keywords the band grants, lowercased, as `printedKeywords` returns them. */
+  readonly keywords?: readonly string[];
 }
 
 /**

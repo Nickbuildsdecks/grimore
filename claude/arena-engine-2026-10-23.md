@@ -5977,6 +5977,59 @@ the one thing the engine tests cannot see: the question is rebuilt on each askin
 re-rendered the first one would offer `Pay {1}` against a cost of `{2}`, the engine would refuse, and
 the permanent would go with the player unable to see why.
 
+### Level up, a creature whose characteristics are a count on itself (D216)
+
+Every permanent in this pool is what its card prints plus whatever has been layered on it. A leveler
+(CR 702.87, CR 711.3) is the first whose **printed** characteristics depend on its own counters: a
+Student of Warfare is a 1/1, a 3/3 first striker at two level counters and a 4/4 double striker at
+seven. One card, nothing layered on it, three creatures.
+
+The bands live on the **definition**, as `CardDef.levelBands`, and the ability that adds a counter
+lives in the script, as the ability `levelUpAbility` builds. What the creature *is* at each level is
+a printed line on the card, exactly as its base 1/1 is — and that split is forced as well as tidy,
+because `characteristics.ts` **cannot read the script registry**: `scripts.ts` imports it, so the
+dependency runs one way only.
+Bands in the script would have meant either a cycle or a second mechanism for "what is this
+permanent", which is the thing the layer system exists to be.
+
+A band **sets** the size, so it is layer 7b (CR 613.4), and the two interactions that prove it are
+tests: a **pump lands on top** (a level-two Student with a Giant Growth is a 6/6, not a 3/3 and not a
+4/4) and a **later setting effect beats it** (a Turn to Frog on a level-seven Student makes a 1/1
+with no abilities, because the band's timestamp is the permanent's own arrival and every setting
+effect is later than that). The band's keywords are seeded alongside the printed ones, which gets
+"loses all abilities" right without a line of its own. And one interaction nobody planned, pinned
+because the two keywords were built two pieces apart: **proliferate finds level counters**, so a
+Student at level two proliferated is at level three and the band reads that without being told.
+
+**The slot found a field-shaped bug of a kind this pool has now had twice.** `normaliseDef` is an
+allow-list — a caller-supplied deck reaches it and a field it does not name is dropped — so the first
+level-up card arrived in `cardDefs` with `levelBands: undefined` and sat at level seven as a 1/1,
+with every engine test agreeing. Printed **loyalty** was eaten the same way once; its comment is
+still in that function. The fix is the copy plus a validation block: bands are checked for shape,
+capped at four and clamped to ±99, all payload limits rather than rules limits, because a
+caller-supplied card claiming a power of a billion breaks every readout that prints it.
+
+Student of Warfare went into Dawn Tithe and Beastbreaker of Bala Ged into Kindle Grove: **0, 0 and
++1** for the Student across three seed sets, **+4 and +4** for the Beastbreaker across two. Exactly
+zero twice is not a measurement, it is a smell — 208-80 against 208-80 reads like a swap that never
+happened — so two things were run before any of it was written down. A **third seed set**, which came
+back +1 rather than zero; and a **control that must move the number**, two Swords to Plowshares
+swapped for two Plains in the same deck on the same seeds, which moved it by **23**. The harness can
+see changes in this deck; it simply had nothing to see in this one. The honest reading is that a
+one-mana 1/1 eating spare white mana is level with a two-mana 2/2 that grows on lifegain, in a deck
+that wins 72% of its games either way. **The bot does level**: 19 Students cast and 60 level-ups
+across 48 games, counted off `auto:activate` by card name rather than inferred — which is what ruled
+out the other explanation of a zero, that the card was never played at all.
+
+`LIST=level` presses the row and then **reads the card face**, because `3/3` beside `Student of
+Warfare` is the only evidence that what the table draws is the creature the engine is playing with.
+The engine's own tests read the bands off `characteristicsOf`, which is the right place to pin the
+arithmetic and the wrong place to find out what a player sees — a table drawing the printed 1/1 would
+have somebody blocking a 3/3 with a 2/2 and losing a creature to a number that was on screen the
+whole time. It also closes a loop from D213 for free: the battlefield badges a permanent `playable`
+when it has a non-mana play, so a Student with white mana up *says* it has something to do. That
+badge was added for the Contagion Clasp and the first card to benefit from it was this one.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

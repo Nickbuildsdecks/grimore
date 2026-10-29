@@ -12220,3 +12220,90 @@ The question is rebuilt on each asking, so a table that re-rendered the first on
 `Pay {1}` against a cost of `{2}`, the engine would refuse the payment, and the permanent would go
 with the player unable to see why. Two prices in one run is that claim, and nothing weaker is worth
 a row.
+
+## D216 — Level up, a creature whose characteristics are a count on itself, and two zeros worth checking
+
+Every permanent in this pool is what its card prints plus whatever has been layered on it. A leveler
+(CR 702.87, CR 711.3) is the first whose **printed** characteristics depend on its own counters: a
+Student of Warfare is a 1/1, a 3/3 first striker at two level counters, and a 4/4 double striker at
+seven — one card, nothing layered on it, three creatures.
+
+### Where the bands live, and why not in the script
+
+On the **definition**, as `CardDef.levelBands`. The ability that adds a counter is script behaviour
+and lives in `abilities`, built by `levelUpAbility`; what the creature *is* at each level is a
+printed line on the card, exactly as its base 1/1 is.
+
+That split is forced as well as tidy. The module that turns printed values into current ones is
+`characteristics.ts`, and it **cannot read the script registry** — `scripts.ts` imports it, so the
+dependency only runs one way. Putting the bands in the script would have meant either a cycle or a
+second mechanism for "what is this permanent", which is the thing the layer system exists to be.
+
+### The layer it sits in, and the two interactions that prove it
+
+A band **sets** the size, which is layer 7b (CR 613.4). So:
+
+- A **pump lands on top of it**: a level-two Student with a Giant Growth is a 6/6, not a 3/3 and not
+  a 4/4. Written as a 7b base rather than a +2/+2 for exactly this.
+- A **later setting effect beats it**: a Turn to Frog on a level-seven Student makes a 1/1 with no
+  abilities, because the band's timestamp is the permanent's own arrival and every setting effect in
+  the game is later than that.
+
+The band's keywords are seeded alongside the printed ones, which gets "loses all abilities" right
+without a line of its own: the loop that clears keywords when it meets `losesAllAbilities` clears the
+band's first strike exactly as it clears a printed keyword.
+
+And one interaction nobody planned, pinned because the two keywords were built two pieces apart:
+**proliferate finds level counters.** A level counter is a kind of counter, so a Student at level two
+proliferated is at level three, and the band reads that without being told.
+
+### The field this slot found, and the bug it had already caused
+
+`normaliseDef` is an **allow-list**: a caller-supplied deck reaches it, and a field it does not name
+is dropped. `levelBands` was not named, so the first level-up card reached `cardDefs` with
+`levelBands: undefined` and sat there as a 1/1 at level seven, with every engine test agreeing.
+
+Printed **loyalty** was dropped the same way once — its comment is still in that function — which
+makes two for two on fields this allow-list has quietly eaten. The fix is three lines and a
+validation block: bands are checked for shape, capped at four, and clamped to ±99, all of them
+payload limits rather than rules limits, because a caller-supplied card claiming a power of a billion
+is a number that breaks every readout that prints it.
+
+### Two zeros, a third seed set, and a control
+
+| | seeds 3300 | seeds 5100 | seeds 7700 |
+| --- | --- | --- | --- |
+| Student of Warfare, in Dawn Tithe (for the 2nd Ajani's Pridemate) | 0 | 0 | +1 |
+| Beastbreaker of Bala Ged, in Kindle Grove (for the 2nd Burning-Tree Emissary) | +4 | +4 | — |
+
+**Exactly zero twice is not a measurement, it is a smell.** 208-80 against 208-80 and then 206-82
+against 206-82 reads like a swap that never happened — a `CHANGE` that silently matched nothing, or a
+variant built from the stock list. So two things were run before any of it was written down:
+
+- A **third seed set**, which came back +1. Not zero, so the first two were a coincidence rather than
+  a stuck arm.
+- A **control that must move the number**: two Swords to Plowshares swapped for two Plains in the
+  same deck, same seeds, which moved it by **23** (208 → 185). The harness can see changes in this
+  deck; it simply has nothing to see in this one.
+
+Which makes the honest reading: a one-mana 1/1 that eats spare white mana is **level** with a
+two-mana 2/2 that grows on lifegain, in a deck that wins 72% of its games either way, and the
+Beastbreaker is worth four games of 288 in the deck that ramps into it. Neither is a result; both are
+inside the ±20 floor. The slots are paid for and the keyword is in the pool.
+
+**The bot does level**: 19 Students cast and 60 level-ups across 48 games, counted off `auto:activate`
+by card name rather than inferred — which is what ruled out the other explanation of a zero, that the
+card was never played at all.
+
+### The browser row is about the card face
+
+`LIST=level` presses the row and then **reads the board**: a card face saying `3/3` beside
+`Student of Warfare` is the only evidence that what the table draws is the creature the engine is
+playing with. The engine's own tests read the bands off `characteristicsOf`, which is the right place
+to pin the arithmetic and the wrong place to find out what a player sees — a table drawing the
+printed 1/1 would have somebody blocking a 3/3 with a 2/2 and losing a creature to a number that was
+on screen the whole time.
+
+It also closes a loop from D213 without needing anything: the battlefield badges a permanent
+`playable` when it has a non-mana play, so a Student with white mana up *says* it has something to
+do. That badge was added for the Contagion Clasp and the first card to benefit from it was this one.

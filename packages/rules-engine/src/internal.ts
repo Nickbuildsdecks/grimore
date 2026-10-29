@@ -34,6 +34,15 @@ export const MAX_TOKEN_COUNT = 20;
 export const MAX_INSTANCES = 600;
 export const MAX_CARD_TEXT_LENGTH = 1000;
 export const MAX_CARD_NAME_LENGTH = 150;
+/**
+ * How many level bands a caller-supplied card may declare, and how big a band may say it is.
+ *
+ * Payload limits rather than rules limits, the same as the two-face cap: no printed leveler has
+ * more than two bands, and a band claiming a power of a billion is not a creature but a number that
+ * breaks every readout that prints it. See `normaliseDef`.
+ */
+export const MAX_LEVEL_BANDS = 4;
+export const MAX_BAND_SIZE = 99;
 
 // ---------------------------------------------------------------------------
 // PRNG (mulberry32) — small, fast, deterministic.

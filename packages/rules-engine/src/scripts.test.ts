@@ -16840,3 +16840,152 @@ describe('cumulative upkeep: the price that climbs', () => {
     expect(timesCost('{2}', 1)).toBe('{2}');
   });
 });
+
+describe('level up: a creature whose size is a count on itself', () => {
+  /*
+    Every other permanent here is what its card says plus whatever has been done to it. A leveler
+    (CR 702.87, CR 711.3) is the first whose **printed** characteristics depend on its own counters:
+    one creature at level 2, another at level 7, off the same card with nothing layered on it.
+
+    So the tests are the bands, the layer they sit in, and the two interactions a level band can get
+    wrong: a pump on top of a band, and an effect that sets the size *after* it.
+  */
+  const board = (lands: number): GameState => {
+    const s = arena({
+      decks: { 0: 'dawn-tithe', 1: 'ember-rush' },
+      battlefield: { 0: [...Array.from({ length: lands }, () => 'Plains'), 'Student of Warfare'] },
+      turn: 5, firstSeat: 0,
+    });
+    return tapAllLands(advanceTo(s, 'precombat-main'), 0);
+  };
+
+  /**
+   * Levels the Student the given number of times, paying as it goes.
+   *
+   * `passBoth` rather than `drain` between activations: a level-up ability uses the stack, and
+   * draining would keep passing priority past the end of the step — which leaves the next
+   * activation at a step where a sorcery-speed ability is correctly refused.
+   */
+  const levelTo = (s: GameState, times: number): GameState => {
+    let next = s;
+    for (let i = 0; i < times; i++) {
+      next = apply(next, {
+        type: 'auto:activate', by: 0,
+        card: find(next, 0, 'battlefield', 'Student of Warfare'), abilityIndex: 0,
+      });
+      next = passBoth(next);
+    }
+    return next;
+  };
+
+  it('is a 1/1 with no counters, a 3/3 first striker at two, and a 4/4 double striker at seven', () => {
+    let s = board(8);
+    const student = find(s, 0, 'battlefield', 'Student of Warfare');
+    const read = (): { power: number; toughness: number; keywords: Set<string> } => {
+      const ch = characteristicsOf(s, s.instances[student]!);
+      return { power: ch.power, toughness: ch.toughness, keywords: new Set(ch.keywords) };
+    };
+
+    expect(read()).toMatchObject({ power: 1, toughness: 1 });
+    expect(read().keywords.has('first strike')).toBe(false);
+
+    s = levelTo(s, 2);
+    expect(s.instances[student]!.counters['level']).toBe(2);
+    expect(read()).toMatchObject({ power: 3, toughness: 3 });
+    expect(read().keywords.has('first strike')).toBe(true);
+
+    // Seven counters is the last band: a 4/4 with double strike rather than first strike.
+    s = levelTo(s, 5);
+    expect(s.instances[student]!.counters['level']).toBe(7);
+    expect(read()).toMatchObject({ power: 4, toughness: 4 });
+    expect(read().keywords.has('double strike')).toBe(true);
+  });
+
+  it('a pump lands on top of the band rather than instead of it', () => {
+    /*
+      The band **sets** the size (layer 7b) and a Giant Growth **modifies** it (7c), so a levelled
+      3/3 with a Growth on it is a 6/6 — which is the whole reason the band is read where it is
+      rather than added as a +2/+2.
+    */
+    let s = board(8);
+    s = levelTo(s, 2);
+    const student = find(s, 0, 'battlefield', 'Student of Warfare');
+    s = pump(s, [student], student, 0, { power: 3, toughness: 3 });
+    const ch = characteristicsOf(s, s.instances[student]!);
+    expect(ch.power).toBe(6);
+    expect(ch.toughness).toBe(6);
+  });
+
+  it('loses the band to an effect that sets the size afterwards', () => {
+    /*
+      A Turn to Frog on a levelled Student makes a 1/1 with no abilities (CR 613.4c): the band's
+      timestamp is the permanent's own arrival, so every setting effect in the game is later than
+      it. Which is also why the band's keywords are seeded with the printed ones — "loses all
+      abilities" clears them in the same pass.
+    */
+    let s = arena({
+      decks: { 0: 'dawn-tithe', 1: 'tidal-mind' },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Plains', 'Student of Warfare'], 1: ['Island', 'Island'] },
+      hands: { 1: ['Turn to Frog'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    s = levelTo(s, 2);
+    const student = find(s, 0, 'battlefield', 'Student of Warfare');
+    expect(characteristicsOf(s, s.instances[student]!).power).toBe(3);
+
+    // Seat 0 keeps priority after levelling, so it passes before seat 1 can answer — and seat 1
+    // taps its own lands only once it holds priority, which is what the pass buys.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Turn to Frog'),
+      targets: [{ kind: 'card', id: student }],
+    }), 40);
+    const ch = characteristicsOf(s, s.instances[student]!);
+    expect(ch.power).toBe(1);
+    expect(ch.toughness).toBe(1);
+    expect(new Set(ch.keywords).has('first strike')).toBe(false);
+  });
+
+  it('cannot be levelled at instant speed, which is what stops it being a combat trick', () => {
+    // Levelling after blockers are declared would turn every leveler into a Giant Growth. The
+    // printed cards say "Activate only as a sorcery" and the engine refuses it on the opponent's
+    // turn for the same reason.
+    const s = nextTurn(board(8));
+    expect(s.activeSeat).toBe(1);
+    const student = find(s, 0, 'battlefield', 'Student of Warfare');
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: student, abilityIndex: 0 }))
+      .toMatch(/sorcer|your turn|priority/i);
+  });
+
+  it('counts level counters a proliferate added, because a counter is a counter', () => {
+    /*
+      Worth pinning because the two keywords were built two pieces apart and nothing connects them:
+      proliferate adds one of each kind already there (CR 701.27a), a level counter is a kind, and a
+      Student at level 2 proliferated is at level 3 — which the band reads without being told.
+    */
+    let s = board(8);
+    s = levelTo(s, 2);
+    const student = find(s, 0, 'battlefield', 'Student of Warfare');
+    s = proliferate(s, [student]);
+    expect(s.instances[student]!.counters['level']).toBe(3);
+    expect(characteristicsOf(s, s.instances[student]!).power).toBe(3);
+  });
+
+  it('the Beastbreaker reaches its second band and tramples', () => {
+    let s = arena({
+      decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
+      battlefield: { 0: [...Array.from({ length: 9 }, () => 'Forest'), 'Beastbreaker of Bala Ged'] },
+      turn: 6, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    const beast = find(s, 0, 'battlefield', 'Beastbreaker of Bala Ged');
+    for (let i = 0; i < 4; i++) {
+      s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: beast, abilityIndex: 0 }));
+    }
+    const ch = characteristicsOf(s, s.instances[beast]!);
+    expect(ch.power).toBe(6);
+    expect(ch.toughness).toBe(6);
+    expect(new Set(ch.keywords).has('trample')).toBe(true);
+  });
+});
