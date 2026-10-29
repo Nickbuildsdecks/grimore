@@ -10701,3 +10701,82 @@ suspects are a Goblin Arsonist (1 of 27) and a Flame Slash (1 of 22), and **Mizz
 in the list at all**. The sixteenth member of the "spent on nothing" family did not need writing,
 because the search already prices a sweeper against an empty board correctly. That is the first time
 one of these keywords has needed no bot work for a reason better than "it never presses it".
+
+## D199 — The two rows that behave unlike the others, driven in a browser, and four tries at one deck
+
+`LIST=costs` (D196) asks whether a second row on a card in hand can be pressed at all. Spectacle
+and overload each add something no other row has, and neither could be reached by the existing
+scenarios:
+
+- **Spectacle's row appears mid-turn.** It is not on the card until an opponent has lost life this
+  turn, and it is gone when the turn ends. Pressing it is a claim about a table that redraws its own
+  sheet while the player is looking at it.
+- **Overload's row has no targets at all.** The table has to send it the moment it is chosen; one
+  that walked the player through picking a creature would hang on a question the engine refuses.
+
+So `LIST=earned`: a mono-red sixty pasted in as text, and both rows required. What it cost to get
+the deck right is the interesting part, because every attempt failed for a reason about the *game*
+rather than about the harness.
+
+**Try one — twelve Swiftspears, nothing else to earn it.** Three games, spectacle row reached in
+none of them. An attack lands in *combat*, so the row only exists in that turn's postcombat main
+phase, which is not where most casting happens. Six Lightning Bolts earn it precombat instead, and
+a Skewer in the same hand then shows both of its rows at once.
+
+**Try two — twenty-four burn spells and no bodies.** Against Tidal Mind's Wall of Frost that is two
+decks that cannot close: one run went **450 moves of nothing but Pass** without reaching a winner,
+and a second had to be killed. The list needed a clock, and prowess creatures are the clock a list
+of twenty-four spells wants.
+
+**Try three — the clock, plus Ember Rush as the opponent.** Both at once, and the second half was
+wrong. Games came down to about **six moves**, three of them inside twenty-nine, and never saw a
+sixth land: three runs pressed the spectacle row five times between them and the overload row not
+once. One row wants a turn of combat behind it and the other wants six mana; a game short enough
+for the first is too short for the second.
+
+**Try four — Sol Rings, and the opponent back to Tidal Mind.** Eight mana rocks are what a player
+would add to a deck that means to overload on time: three Mountains and two rocks is {3}{R}{R}{R} on
+turn four, and an artifact spell is a noncreature spell, so each rock is a prowess trigger too. And
+with the clock in the list, Tidal Mind is the right opponent after all — games of 36 to 59 moves,
+**three runs out of three**, where Ember Rush managed three out of four. The stall was the missing
+clock rather than the matchup, which is only visible in hindsight and is why the Ember Rush attempt
+is written up in the file where it was made rather than deleted.
+
+The deal budget is **five games** rather than `LIST=costs`'s three, for the reason the runs showed:
+whichever row a shuffle offers, the other is usually one deal away, and a game under this list is
+short enough that a re-deal costs nothing. A required check that fails one run in four is not a
+check.
+
+## D200 — A finished game stops asking: the one outstanding question that was not a field
+
+CI failed once, on a commit that changed nothing but a browser script:
+`apps/realtime`'s whole-game test got `awaiting: { kind: 'attackers', seats: [ 1 ] }` where it
+expects null. The next commit was green and fifteen local repeats of that suite passed, so it was
+intermittent and never reproduced — but looking for a mechanism that could produce exactly that
+symptom found one, and it is a real bug that had been there since the automation layer.
+
+`engine.ts`'s game-over block is careful about this already, and says so: a resolution can be
+halfway through asking somebody a question when the last opponent dies, so ending the game sets
+`pendingDecision`, `pendingChoice`, `pendingPayment`, `pendingOfferedCast` and `pendingDiscard` to
+null and takes priority away (CR 104.1). It was found by a playout — a game that ended on a Magma
+Jet left its scry standing.
+
+Every one of those is a **field**. A combat declaration is not: `pendingDeclaration` derives it from
+the step and the combat record. So a game that ended while attackers or blockers were owed went on
+asking for them forever, and because `legalActions` withholds priority while a declaration stands,
+the table had nothing else to offer either — a game-over screen that is also demanding attackers,
+with no way out of it.
+
+One line, where the other five are set: `pendingDeclaration` returns null on a finished game. The
+test owes a declaration and then ends the game.
+
+**And the fix is a candidate rather than a confirmed cause**, which is worth keeping straight. The
+failure was never tied to either of that test's two `awaiting` assertions — they produce the
+identical CI line and mean opposite things, one being the server not having finished the turn the
+roll gave it and the other a finished table still asking — so both now carry a message naming
+themselves, and the hunt stays open with the other suspect written down: a race between `runBots`
+taking the bot's first turn and the view the test reads straight after `auto:keep`.
+
+The general lesson is the one the game-over block had already half-learned. A rule that clears
+outstanding questions has to enumerate them, and a derived question is the one that escapes the
+list — because nothing in it looks like a field to set to null.

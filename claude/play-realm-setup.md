@@ -989,7 +989,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1011 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1012 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1040,7 +1040,7 @@ The deals are budgeted at **five games** rather than the three `LIST=costs` uses
 runs showed: whichever row a shuffle happens to offer, the other is usually a deal away, and a game
 under this list is short enough that a re-deal costs almost nothing.
 
-The layers under them have their own suites: `packages/rules-engine` (1011 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1012 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (215 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`

@@ -5469,6 +5469,33 @@ They are now one `COST_FLAGS` list and one loop, with one comment that says what
 instead of eleven that each say it once. A type error is not usually a design note; this one was
 counting the shape the code had drifted into.
 
+### The two odd rows in a browser, and a finished game that was still asking (D199, D200)
+
+`LIST=earned` is the third purpose-built list in `scripts/e2e-solo.mjs`, and it exists for the two
+alternative-cost rows that behave unlike the other three: **spectacle's row appears mid-turn** (and
+is gone when the turn ends), and **overload's row has no targets at all**, so the table must send it
+on one tap rather than asking for a creature. Both are table behaviour the engine's own 1012 tests
+cannot see.
+
+Four attempts, each failing for a reason about the game: twelve Swiftspears could only earn the
+spectacle row in the *postcombat* main phase, so Bolts were added to earn it precombat; twenty-four
+burn spells with no bodies could not close a game at all (**450 moves of nothing but Pass**); the
+clock plus a fast opponent swung it the other way (three games in twenty-nine moves, never a sixth
+land, so the overload row never appeared); and the answer was eight Sol Rings plus the original
+opponent — 36-to-59-move games that press both rows, three runs out of three. The deal budget is
+five games, because whichever row a shuffle offers, the other is usually one deal away.
+
+One engine bug came out of CI while that was being built, and it had been there since the automation
+layer. `engine.ts` ends a game by setting every outstanding question to null — decision, choice,
+ward payment, offered cast, discard — because a resolution can be mid-question when the last
+opponent dies (CR 104.1). But a **combat declaration is not a field**: `pendingDeclaration` derives
+it from the step and the combat record, so a game that ended while attackers or blockers were owed
+kept asking for them, with `legalActions` withholding priority the whole time — a game-over screen
+that is also demanding attackers, and no way out. It now returns null on a finished game.
+
+A rule that clears outstanding questions has to enumerate them, and the derived one is the one that
+escapes the list.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
