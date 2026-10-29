@@ -32,7 +32,7 @@ import {
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
-  addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer,
+  addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -6563,6 +6563,100 @@ function echoTrigger(cost: string): TriggerDef {
 }
 
 /**
+ * Vanishing N: a counter off each of your upkeeps, and gone when the last one goes (CR 702.63b).
+ *
+ * Two printed abilities folded into one trigger: "remove a time counter from it" and "when the last
+ * time counter is removed from this permanent, sacrifice it". Separate on the card, and separate on
+ * the stack in a tournament — but nothing in this pool can respond between the two, because the
+ * window to do it is the window inside a single resolution, which no player ever has. One trigger
+ * says the same thing and keeps the sacrifice where a reader can see what caused it.
+ *
+ * The `condition` is the printed intervening-if, and it is not decoration: it is what a vanishing
+ * permanent **with no time counters** relies on. Entering the battlefield any way at all gives it
+ * its four, a token copy included — "enters with four time counters" is one of its own abilities, so
+ * a copy brings it along. What does not is a permanent that reached the battlefield without
+ * entering, which at this table is a card put there by hand in tabletop mode, or one that *became* a
+ * copy of a vanishing creature while already on the battlefield. Either has the ability and no
+ * clock, and without the condition the next upkeep would sacrifice it for a counter it never had.
+ *
+ * `moveToGraveyard` rather than `destroy`, because a sacrifice is not a destruction: indestructible
+ * does not save it and regeneration does not either.
+ */
+function vanishingTrigger(count: number): TriggerDef {
+  return {
+    on: { kind: 'step', step: 'upkeep' },
+    description: `Vanishing ${count} — a time counter comes off, and the last one takes it with it`,
+    condition: (c) => (c.state.instances[c.source]?.counters[TIME] ?? 0) > 0,
+    effect: (c) => {
+      const next = addCounters(c.state, c.source, TIME, -1);
+      return (next.instances[c.source]?.counters[TIME] ?? 0) > 0
+        ? next
+        : moveToGraveyard(next, [c.source]);
+    },
+  };
+}
+
+/**
+ * Fading N: the same counter off the same upkeep, sacrificed when there is **none to remove**
+ * (CR 702.32b).
+ *
+ * The whole difference from vanishing is the order of those two clauses, and it is worth a turn. A
+ * fading 3 creature removes its third counter on your third upkeep and is still on the battlefield
+ * with none; it goes on the **fourth**, when the removal is the thing that cannot happen. So fading
+ * N and vanishing N+1 hand a player the same number of turns, which is why the keyword was reprinted
+ * under the other name — see `CardScript.fading`.
+ *
+ * No `condition`, and that asymmetry *is* the keyword: vanishing asks whether there is a counter and
+ * does nothing when there is not, fading asks the same question and sacrifices. So the two cards
+ * part company exactly where a permanent has none — a Blastoderm put on the battlefield by hand goes
+ * on the next upkeep, and a Calciderm put there the same way stays forever.
+ */
+function fadingTrigger(count: number): TriggerDef {
+  return {
+    on: { kind: 'step', step: 'upkeep' },
+    description: `Fading ${count} — a fade counter comes off, or this is sacrificed`,
+    effect: (c) => ((c.state.instances[c.source]?.counters[FADE] ?? 0) > 0
+      ? addCounters(c.state, c.source, FADE, -1)
+      : moveToGraveyard(c.state, [c.source])),
+  };
+}
+
+/**
+ * Calciderm: a 5/5 for four that nothing can answer and nobody keeps.
+ *
+ * The pool's first **vanishing** card (CR 702.63), and the trade the keyword exists to sell: five
+ * power for four mana with shroud on top, in exchange for a clock the opponent can read off the
+ * card. Every removal spell in this pool is a targeted one, so shroud means the only way through it
+ * is a blocker or a sweeper — and the three turns it gets are the three turns the opponent has to
+ * find one.
+ *
+ * In Dawn Tithe, the deck that already wants to attack with white creatures and has never had a
+ * body this size.
+ */
+const CALCIDERM: CardScript = {
+  name: 'Calciderm',
+  vanishing: { count: 4 },
+  entersWith: { counter: TIME, amount: 4 },
+  triggers: [vanishingTrigger(4)],
+};
+
+/**
+ * Blastoderm: the same creature in green, a mana cheaper, with the number printed one lower.
+ *
+ * Fading 3 against Calciderm's vanishing 4, and the pair is the point: both give their controller
+ * **three** turns of a 5/5 with shroud, and only one of them says so on the card. That is the whole
+ * argument for the second keyword, and it is a test rather than a comment — see `fadingTrigger`.
+ *
+ * In Kindle Grove, which ramps, so the body lands a turn earlier than the white one does.
+ */
+const BLASTODERM: CardScript = {
+  name: 'Blastoderm',
+  fading: { count: 3 },
+  entersWith: { counter: FADE, amount: 3 },
+  triggers: [fadingTrigger(3)],
+};
+
+/**
  * Level up: the one ability every leveler has (CR 702.87b).
  *
  * Sorcery speed, repeatable, uncapped — a mana sink that turns spare turns into a bigger creature.
@@ -7703,6 +7797,7 @@ const ALL: readonly CardScript[] = [
   CONTAGION_CLASP, STEADY_PROGRESS,
   MOGG_WAR_MARSHAL, YAVIMAYA_GRANGER, MYSTIC_REMORA,
   STUDENT_OF_WARFARE, BEASTBREAKER_OF_BALA_GED,
+  CALCIDERM, BLASTODERM,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

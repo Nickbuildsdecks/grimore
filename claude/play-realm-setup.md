@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — three hundred and twenty-six, today, across thirteen starter decks. A
+cards somebody has scripted — three hundred and twenty-eight, today, across thirteen starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -755,7 +755,7 @@ along with the reason the earlier passes were boxed in: nineteen of this deck's 
 the pool's only copy of that card, so its deadest cards could not be cut without deleting a script's
 only test. Two of them moved to decks that wanted them instead.
 
-The decks share a pool of three hundred and twenty-six cards, which now includes a wrath, a
+The decks share a pool of three hundred and twenty-eight cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -945,6 +945,7 @@ LIST=proliferate node scripts/e2e-solo.mjs # a deck that poisons the computer an
 LIST=echo node scripts/e2e-solo.mjs    # a deck asked for mana in its own upkeep — 26 checks
 LIST=upkeep node scripts/e2e-solo.mjs  # a deck whose upkeep question gets dearer every turn — 26-27 checks
 LIST=level node scripts/e2e-solo.mjs   # a deck with a creature that grows by being paid for — 26 checks
+LIST=vanish node scripts/e2e-solo.mjs  # a deck whose best creatures come with a countdown on them — 26 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1022,6 +1023,7 @@ LIST=proliferate node scripts/e2e-solo.mjs       # an answer with a player in it
 LIST=echo node scripts/e2e-solo.mjs              # a question raised in the upkeep, and both of its answers
 LIST=upkeep node scripts/e2e-solo.mjs            # the same question at two different prices, as it climbs
 LIST=level node scripts/e2e-solo.mjs             # a row pressed on the battlefield, and the body the card face then shows
+LIST=vanish node scripts/e2e-solo.mjs            # a counter on the card face, read at more than one number
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1036,7 +1038,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1101 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1108 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1235,6 +1237,17 @@ first scenario that needs the driver's **battlefield abilities** turned on — o
 the first version turned it on everywhere and `LIST=cascade` stopped casting Bloodbraid Elves. Three
 runs, 26 of 26 each.
 
+`LIST=vanish` is the sixteenth, and the only one whose subject is a **number going down**. A
+Calciderm is a 5/5 with shroud that leaves after three of your turns, and the turns are counted by
+time counters that come off in the upkeep — a step the table passes straight through. So two things
+have to be true for the card to be playable at all, and neither is visible to an engine test: the
+counter has to be **on the card face**, because a 5/5 that disappears without warning cannot be
+planned around, and it has to **come down**, which only a game can show. The check is that the same
+clock was read at more than one number — not that a label exists, and not that two labels exist,
+because a Calciderm beside a Blastoderm shows `time 4` and `fade 3` on the first move of the game
+with nothing having counted down. Four Calciderms and four Blastoderms; three runs, 26 of 26 each,
+having read `fade 3, 2, 1` off one game and `time 4, 3, 2, 1` off another.
+
 Two of those checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
 and the board has its own mana embers drifting behind it — and both are written as CSS variables a
@@ -1242,7 +1255,7 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1101 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1108 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (217 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
@@ -1254,7 +1267,7 @@ decks they pasted in).
 
 - **A list of your own plays, but only the pool is automated.** Paste your decklist in the lobby and
   the table deals it (see *Play with your own list*). Every name the engine's pool has — the three
-  hundred and twenty-six cards in the thirteen starter decks, commanders included — becomes the real
+  hundred and twenty-eight cards in the thirteen starter decks, commanders included — becomes the real
   card and is fully automated. Every name it does not becomes **cardboard**: a card with a name and
   nothing else, which the tabletop plays by hand with **Move by hand** for whatever it says in
   prose, and which Arena mode refuses by name rather than dealing a game with a card nobody can do
@@ -1262,7 +1275,7 @@ decks they pasted in).
   oracle text — which means a populated `cards` table, which means a machine that can reach
   Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
   exists, the card data does not.
-- **The engine knows three hundred and twenty-six cards.** Everything in the thirteen starter decks,
+- **The engine knows three hundred and twenty-eight cards.** Everything in the thirteen starter decks,
   plus the ten castable *faces* of the seven cards printed with more than one. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent

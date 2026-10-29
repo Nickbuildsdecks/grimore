@@ -554,6 +554,21 @@ export const DASHED = 'dashed';
 export const TIME = 'time';
 
 /**
+ * The counter a **fading** permanent spends, one per upkeep, until there are none left
+ * (CR 702.32a).
+ *
+ * Its own kind rather than a time counter, because the two keywords are not the same mechanic and
+ * a card that reads both would be ambiguous — and because the printed line says "fade counter",
+ * which is what the table draws. Vanishing's clock is `TIME`, shared with suspend, where the
+ * sharing is harmless: a suspended card is in exile and a vanishing permanent is on the
+ * battlefield, so no object ever carries both for two reasons.
+ *
+ * The off-by-one between the keywords lives in the triggers, not here. See `vanishingTrigger` and
+ * `fadingTrigger`.
+ */
+export const FADE = 'fade';
+
+/**
  * The marker a **renowned** creature carries (CR 702.112a).
  *
  * "If it isn't renowned" is an intervening-if about a state the creature holds, and the engine's

@@ -1292,6 +1292,38 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Vanishing N: this permanent arrives with N time counters and spends one each of your upkeeps,
+   * and when the **last one is removed** it is sacrificed (CR 702.63).
+   *
+   * A clock the owner can read, which is the half the keyword was printed for: fading says the same
+   * thing in a way players kept miscounting, so vanishing was given the number people actually
+   * wanted — the number of your turns you get. See `fading` for the one-turn difference and
+   * `vanishingTrigger` for where it lives.
+   *
+   * Read nowhere but the card that declares it, like `echo`: the counters come from `entersWith`
+   * and the clock is the trigger `vanishingTrigger` builds. It is here so the pool can be audited
+   * for the keyword.
+   */
+  readonly vanishing?: {
+    /** Time counters it enters with, which is how many of your turns it gets. */
+    readonly count: number;
+  };
+  /**
+   * Fading N: the same clock as vanishing, sacrificed when a counter **cannot** be removed
+   * (CR 702.32).
+   *
+   * Which is one turn longer than it reads, and that is the whole history of the two keywords. A
+   * fading 3 creature spends its three counters over three of your upkeeps and is still there — it
+   * goes on the fourth, when there is nothing left to remove. So fading N and vanishing N+1 give a
+   * player exactly the same number of turns, and the second wording is the one that says so.
+   *
+   * Read nowhere but the card that declares it, like `vanishing`.
+   */
+  readonly fading?: {
+    /** Fade counters it enters with; it gets one more of your turns than this number. */
+    readonly count: number;
+  };
+  /**
    * Level up: pay to put a level counter on this creature, at sorcery speed (CR 702.87).
    *
    * Only the **ability** is here. What the creature *becomes* at each level is printed data and

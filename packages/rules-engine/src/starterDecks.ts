@@ -651,6 +651,47 @@ const GLORIOUS_ANTHEM: CardDef = {
   colors: ['W'],
 };
 
+/**
+ * The pool's first **vanishing** card: five power for four mana, on a clock both players can read.
+ *
+ * Shroud is the half that makes the clock matter. Every removal spell in this pool targets, so a
+ * Calciderm cannot be answered by any of them — the three turns it gets are the three turns the
+ * opponent has to find a blocker, a sweeper or a race. Take the shroud away and the keyword is a
+ * drawback on a card that was going to die anyway.
+ *
+ * The time counters come from `entersWith` and the clock from the script's trigger. See
+ * `CardScript.vanishing`.
+ */
+const CALCIDERM: CardDef = {
+  name: 'Calciderm',
+  typeLine: 'Creature \u2014 Beast',
+  manaCost: '{3}{W}',
+  cmc: 4,
+  power: '5',
+  toughness: '5',
+  oracleText: 'Shroud\nVanishing 4 (This permanent enters the battlefield with four time counters on it. At the beginning of your upkeep, remove a time counter from it. When the last is removed, sacrifice it.)',
+  colors: ['W'],
+};
+
+/**
+ * The same creature in green, a mana cheaper, with the number printed one lower.
+ *
+ * Fading 3 and vanishing 4 both hand their controller **three** turns of a 5/5 with shroud, because
+ * fading sacrifices when a counter cannot be removed and vanishing when the last one is. Two cards
+ * that read differently and play identically, which is the whole reason the second keyword exists.
+ * Pinned as a test rather than left as a claim — see `fadingTrigger`.
+ */
+const BLASTODERM: CardDef = {
+  name: 'Blastoderm',
+  typeLine: 'Creature \u2014 Beast',
+  manaCost: '{2}{G}{G}',
+  cmc: 4,
+  power: '5',
+  toughness: '5',
+  oracleText: 'Shroud\nFading 3 (This creature enters the battlefield with three fade counters on it. At the beginning of your upkeep, remove a fade counter from it. If you can\u2019t, sacrifice it.)',
+  colors: ['G'],
+};
+
 const SERRA_ANGEL: CardDef = {
   name: 'Serra Angel',
   typeLine: 'Creature — Angel',
@@ -4318,7 +4359,18 @@ export const FORGE_ALLIANCE: DeckSpec = {
     // between turns it back into a Shock.
     { card: GALVANIC_BLAST, count: 1 },
     { card: AJANIS_PRIDEMATE, count: 1 },
-    { card: SERRA_ANGEL, count: 2 },
+    { card: SERRA_ANGEL, count: 1 },
+    /*
+      The second Angel's slot, spent on **vanishing**.
+
+      The fairest payer this deck has for a 5/5 with shroud and three turns on it: both are the big
+      white body the curve tops out on, both are cast with the deck's whole turn, and the choice
+      between them is the one the keyword is about — four mana for more power that cannot be
+      answered and does not stay, against five for less power that flies and does. The mana
+      difference is a mana and is written here rather than hidden, because a slot's number is a fact
+      about what paid for it. See D217.
+    */
+    { card: CALCIDERM, count: 1 },
     // The card this deck was already built for: every small creature it plays is another damage
     // on the swing, and the tokens from Raise the Alarm and Secure the Wastes count too. A
     // Whispersilk Cloak was measured against this slot over four seed sets and lost 52 games of
@@ -6782,7 +6834,17 @@ export const KINDLE_GROVE: DeckSpec = {
       sacrificed, not only killed — so a removal spell spent on it trades one card for half a card
       and five life.
     */
-    { card: THRAGTUSK, count: 2 },
+    { card: THRAGTUSK, count: 1 },
+    /*
+      The second Thragtusk's slot, spent on **fading**, and chosen because the two cards answer the
+      same question in opposite directions.
+
+      Both are four-mana green fat. A removal spell spent on the Thragtusk trades for half a card
+      and five life; a removal spell spent on the Blastoderm cannot be cast at all, because every
+      one in this pool targets. What the Blastoderm gives up for that is the thing the Thragtusk
+      keeps — it is gone in three turns whatever happens. See D217.
+    */
+    { card: BLASTODERM, count: 1 },
     { card: SHIVAN_DRAGON, count: 1 },
     /*
       **Battle cry**, for the seven-drop this deck almost never reached.

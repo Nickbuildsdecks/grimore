@@ -46,7 +46,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * table to pick it out of a list of permanents (`PROLIFERATE_LIST`), `LIST=echo` one that is asked
  * for mana in its own upkeep (`ECHO_LIST`), `LIST=upkeep` one whose upkeep question gets **dearer**
  * every turn (`UPKEEP_LIST`), `LIST=level` one whose creatures grow by being paid for
- * (`LEVEL_LIST`), and `LIST=earned` one
+ * (`LEVEL_LIST`), `LIST=vanish` one whose creatures arrive on a clock the card face shows running
+ * down (`VANISH_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -450,6 +451,42 @@ const LEVEL_LIST = [
   '4 Soul Warden', '4 Healer\'s Hawk', '4 Topan Freeblade', '4 Guardians of Akrasa',
   '4 Swords to Plowshares', '4 Pacifism', '4 Leonin Skyhunter',
 ].join('\n');
+
+/**
+ * A deck whose best creatures come with a countdown printed on them (CR 702.63, CR 702.32).
+ *
+ * Both halves of the claim are things only a browser can see. The **counter is on the card face**,
+ * so a player can tell how many turns are left — a 5/5 that vanishes with no warning is a 5/5
+ * nobody can plan around. And the number has to **come down between turns**, which is the part an
+ * engine test pins on a board built by hand and cannot pin on a board a game produced.
+ *
+ * Four Calciderms and four Blastoderms, so one of the two clocks is usually running by the time the
+ * run has a few turns on it, and twenty-six lands split evenly, because a four-drop that has to land
+ * early enough for its clock to run is a four-drop worth being greedy about.
+ */
+/**
+ * Whether a set of `time N` / `fade N` readings is a **countdown** rather than a label.
+ *
+ * Two readings of the *same* clock at different numbers. Two different clocks at one number each
+ * is two creatures, not a turn passing, which is the mistake a plain `size > 1` would make: a
+ * Calciderm and a Blastoderm on the board at once give `time 4` and `fade 3` on the very first
+ * move, and nothing has counted down at all.
+ */
+const hasACountdown = (faces) => {
+  const byClock = new Map();
+  for (const face of faces) {
+    const [clock, n] = face.split(' ');
+    byClock.set(clock, (byClock.get(clock) ?? new Set()).add(n));
+  }
+  return [...byClock.values()].some((seen) => seen.size > 1);
+};
+
+const VANISH_LIST = [
+  '13 Plains', '13 Forest',
+  '4 Calciderm', '4 Blastoderm',
+  '4 Llanowar Elves', '4 Topan Freeblade', '4 Centaur Courser',
+  '4 Swords to Plowshares', '4 Giant Growth', '4 Rampant Growth', '2 Pacifism',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -523,6 +560,8 @@ const LEVEL_LIST = [
         ? UPKEEP_LIST
         : LIST === 'level'
         ? LEVEL_LIST
+        : LIST === 'vanish'
+        ? VANISH_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -698,6 +737,15 @@ const LEVEL_LIST = [
      */
     const levelPlays = new Set();
     const levelledBodies = new Set();
+    /**
+     * Every `time N` / `fade N` label read off this seat's battlefield, under `LIST=vanish`.
+     *
+     * Two claims in one set. That the clock is **on the card face at all** — a 5/5 that disappears
+     * with no warning cannot be planned around, and the engine's tests read counters out of state
+     * where no player can see them. And that it **comes down**: two readings of the same clock at
+     * different numbers is a countdown, one reading is a decoration.
+     */
+    const clockFaces = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -809,6 +857,16 @@ const LEVEL_LIST = [
           Zombies from earlier presses, and reported "no 4/4 token" on a game that had made one.
           A set, because the same token is on the board for many moves after it arrives.
         */
+        /*
+          The countdown, sampled on every move for the reason the token faces are: the counter comes
+          off in the upkeep, which is a step the table passes straight through, so the only honest
+          place to read it is wherever the run happens to be looking.
+        */
+        if (LIST === 'vanish') {
+          const board = await page.locator('[data-testid="zone-battlefield-0"]').innerText()
+            .catch(() => '');
+          for (const hit of board.matchAll(/\b(time|fade) (\d+)\b/g)) clockFaces.add(hit[0]);
+        }
         if (LIST === 'graveyard') {
           const mine = page.locator('[data-testid="zone-battlefield-0"] [data-testid^="card-"]');
           for (let i = 0; i < await mine.count(); i += 1) {
@@ -855,7 +913,7 @@ const LEVEL_LIST = [
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
-      || LIST === 'upkeep' || LIST === 'level'
+      || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -893,11 +951,14 @@ const LEVEL_LIST = [
       // A pressed row and a changed face: the second is what the engine's tests cannot see.
       : LIST === 'level'
       ? levelPlays.size === 0 || levelledBodies.size === 0
+      // Two readings of one clock, which is a countdown rather than a label.
+      : LIST === 'vanish'
+      ? !hasACountdown(clockFaces)
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
-      || LIST === 'upkeep' || LIST === 'level')
+      || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -911,6 +972,7 @@ const LEVEL_LIST = [
         : LIST === 'echo' ? `${echoAnswers.size} of the two echo answers`
         : LIST === 'upkeep' ? `${upkeepPrices.size} distinct upkeep prices`
         : LIST === 'level' ? `${levelPlays.size} level-ups, ${levelledBodies.size} levelled bodies`
+        : LIST === 'vanish' ? `clocks seen: ${[...clockFaces].join(', ') || 'none'}`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -1145,6 +1207,25 @@ const LEVEL_LIST = [
       check('and the card face shows the body the band gives it',
         levelledBodies.size > 0, `bodies seen: ${[...levelledBodies].join(', ')}`);
       for (const did of [...levelPlays].slice(0, 2)) console.log(`      ${did}`);
+    } else if (LIST === 'vanish') {
+      /*
+        A clock the player can read, and a clock that is actually running.
+
+        The first check is the one a missing readout would fail: the counters live on the instance
+        and the engine's own tests read them straight out of state, where nobody playing the game
+        can see them. A 5/5 with shroud that vanishes without warning is not the card either
+        keyword prints.
+
+        The second is what no engine test can claim, because it asks a *game* rather than a board:
+        the counter comes off in the upkeep, a step the table passes straight through, so two
+        different numbers on the same clock is the only evidence the countdown survived the
+        auto-passing the table does on the player's behalf.
+      */
+      check('a vanishing or fading creature shows its clock on the card face',
+        clockFaces.size > 0, `clocks seen: ${[...clockFaces].join(', ') || 'none'}`);
+      check('and the number comes down as the turns pass',
+        hasACountdown(clockFaces), [...clockFaces].sort().join(', '));
+      console.log(`      clocks read off the board: ${[...clockFaces].sort().join(', ')}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

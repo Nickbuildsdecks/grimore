@@ -12307,3 +12307,125 @@ on screen the whole time.
 It also closes a loop from D213 without needing anything: the battlefield badges a permanent
 `playable` when it has a non-mana play, so a Student with white mana up *says* it has something to
 do. That badge was added for the Contagion Clasp and the first card to benefit from it was this one.
+
+## D217 — Vanishing and fading, the same clock read one turn apart
+
+Every cost in this pool is now accounted for, and the two keywords here are not costs at all. A
+vanishing or fading permanent arrives with counters on it and spends one each of your upkeeps, and
+when they run out it is sacrificed. Nobody is asked anything. The only decision either keyword
+involves is the one made before it was cast.
+
+### Two sentences in a different order, and a turn between them
+
+Vanishing N (CR 702.63): remove a time counter, and **when the last one is removed**, sacrifice it.
+Fading N (CR 702.32): remove a fade counter, and **if you cannot**, sacrifice it.
+
+Read them twice and they look like the same rule. Count them and they are not:
+
+| | upkeep 1 | upkeep 2 | upkeep 3 | upkeep 4 |
+| --- | --- | --- | --- | --- |
+| Calciderm, vanishing 4 | 4 → 3 | 3 → 2 | 2 → 1 | 1 → 0, **gone** |
+| Blastoderm, fading 3 | 3 → 2 | 2 → 1 | 1 → 0 | nothing to remove, **gone** |
+
+Both give their controller **three** turns of a 5/5 with shroud, and only one of them says three on
+the card. That is the whole history of the pair — fading was printed first, players kept counting the
+printed number as the number of turns they were getting, and the keyword was reprinted under a name
+whose number means what people thought it meant.
+
+So the pool holds both, in the two colours that want a cheap enormous body: Calciderm into Forge
+Alliance for the second Serra Angel, Blastoderm into Kindle Grove for the second Thragtusk.
+
+### Where the asymmetry lives, and the one case it is visible in play
+
+In the `condition`, which vanishing has and fading does not. Vanishing's printed intervening-if is
+"if this permanent has a time counter on it"; fading has no such clause, because the absence of a
+counter is its trigger.
+
+That is a one-line difference with a real consequence for any permanent on the battlefield **with no
+counters**. Entering gives it its counters by any route, a token copy included — "enters with four
+time counters" is one of its own abilities, so a copy brings it along. What does not is a permanent
+that reached the battlefield without entering: a card put there by hand in tabletop mode, or one that
+*became* a copy of one of these while already on the battlefield. A clockless Calciderm sits there
+indefinitely; a clockless Blastoderm is sacrificed on the next upkeep. Both are what the cards say,
+and neither is a special case in the engine.
+
+### It needed nothing new, which is now the third time running
+
+`{ kind: 'step', step: 'upkeep' }` already defaults to the controller's own upkeep; `entersWith`
+already puts counters on a permanent as it arrives; `TriggerDef.condition` is the intervening-if;
+`moveToGraveyard` is the sacrifice, rather than `destroy`, because a sacrifice is not a destruction.
+Echo, cumulative upkeep and now these two are four keywords built out of one trigger shape, and the
+only new code is two small functions and a counter name.
+
+`FADE` is its own counter rather than a second user of `TIME`. The two keywords are not the same
+mechanic, the printed line says "fade counter", and the table draws the counter's name — so a
+Blastoderm showing `time 3` would be wrong on the card face even where it was right in the
+arithmetic. `TIME` stays shared with suspend, where sharing is harmless: a suspended card is in exile
+and these are on the battlefield, so no object ever carries one for two reasons.
+
+**Proliferate finds both clocks**, unplanned and correct: a time counter and a fade counter are
+counters, so one more of each kind already there buys another turn of a 5/5. That is now the third
+keyword proliferate has reached into without being told about it (level counters were the second),
+which is the argument for `proliferateCandidates` reading the counters a permanent *has* rather than
+a list of counters the engine knows about.
+
+### The seven tests passed first time, so one of them was made to fail
+
+An off-by-one that holds on the first run is either right or untested, and the two are
+indistinguishable from the green tick. So `fadingTrigger` was temporarily rewritten with vanishing's
+body — remove a counter, sacrifice when it hits zero — and the suite run again:
+
+- The central test (**both leave on the fourth upkeep**) failed, as it must: the Blastoderm died on
+  the third.
+- The clockless test (**a Calciderm stays, a Blastoderm goes**) still passed, which is worth knowing
+  about it: under vanishing's body a counter removed from nothing is still nothing, so it reads the
+  same. It discriminates the condition, not the ordering.
+
+One discriminating test is enough, and knowing which one it is was worth the two minutes.
+
+### The two slots, and the zero that came with a control already in it
+
+| | seeds 3300 | seeds 5100 |
+| --- | --- | --- |
+| Calciderm, in Forge Alliance (for the 2nd Serra Angel) | −3 | +1 |
+| Blastoderm, in Kindle Grove (for the 2nd Thragtusk) | +2 | 0 |
+
+Four readings of 288 games, every one inside the ±20 floor, and the pair for each card disagreeing in
+sign. So neither is a result, which is what a four-mana body swapped for another four-or-five-mana
+body ought to measure in decks that win around 56% and 60% of their games either way.
+
+One of them is **exactly zero**, which D216 established is a smell rather than a reading. It needs no
+separate control this time, because the other three readings are the control: the same harness, the
+same two decks and the same two swaps moved the number by −3, +1 and +2, so it can plainly see
+changes here and simply had nothing to see on that seeding.
+
+**And the bot casts them more often than what they replaced**, which is the half that rules out the
+other reading of a zero:
+
+| | cast | of games holding it |
+| --- | --- | --- |
+| Calciderm | 31 | 55 (56%) |
+| Serra Angel | 8 | 25 (32%) |
+| Blastoderm | 18 | 29 (62%) |
+| Thragtusk | 16 | 32 (50%) |
+
+Both new cards are a mana cheaper than the card whose slot they took, and that is what the counts
+show: a four-drop gets cast in a game a five-drop sits in hand for. The slots are paid for, the
+keyword is in the pool, and neither card changed what the decks win.
+
+### `LIST=vanish` reads the clock off the card, because the player has to
+
+A 5/5 with shroud that disappears without warning is not the card either keyword prints. The counters
+live on the instance and every engine test reads them straight out of state, where nobody playing the
+game can see them — so the browser row reads `fade 3`, `fade 2`, `fade 1` off the **card face** in a
+real game, and the check is not that a label exists but that the same clock was seen at more than one
+number.
+
+Two readings of one clock rather than two clocks at one reading, and that distinction is the whole
+helper: a Calciderm and a Blastoderm on the board together give `time 4` and `fade 3` on the first
+move of the game, and nothing has counted down at all. `hasACountdown` groups by clock before it
+counts, for exactly that reason.
+
+The counter comes off in the upkeep, which is the step the table passes straight through — so this
+is also the second thing `LIST=echo` established the need for: a claim about a step nobody stops in
+can only be made by watching a game play itself.

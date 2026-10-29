@@ -16989,3 +16989,148 @@ describe('level up: a creature whose size is a count on itself', () => {
     expect(new Set(ch.keywords).has('trample')).toBe(true);
   });
 });
+
+describe('vanishing and fading: the same clock, read one turn apart', () => {
+  /*
+    Two keywords that print the same sentence in a different order (CR 702.63, CR 702.32). A counter
+    comes off each of your upkeeps either way; vanishing sacrifices when the **last one is removed**
+    and fading when a counter **cannot be** removed, which is one turn later.
+
+    So the central test is not either card on its own — it is the two of them side by side on the
+    same seat's upkeeps, because the claim the pool makes is that fading 3 and vanishing 4 are the
+    same card with different words on it. That claim is the reason the second keyword was printed,
+    and a comment cannot hold it.
+
+    Both are **cast** rather than placed, for the reason echo's tests are: the counters arrive
+    through `entersWith`, which is a thing that happens as a permanent enters, and a board built card
+    by hand has no arrivals at all.
+  */
+  const castInto = (deck: string, land: string, name: string, lands: number): GameState => {
+    let s = arena({
+      decks: { 0: deck, 1: 'tidal-mind' },
+      hands: { 0: [name] },
+      battlefield: { 0: Array.from({ length: lands }, () => land) },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    return drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) }), 40);
+  };
+
+  const calciderm = (): GameState => castInto('forge-alliance', 'Plains', 'Calciderm', 4);
+  const blastoderm = (): GameState => castInto('kindle-grove', 'Forest', 'Blastoderm', 4);
+
+  /** Seat 0's next upkeep, with the clock's trigger resolved: two turns, then a drain. */
+  const myNextUpkeep = (s: GameState): GameState => drain(nextTurn(nextTurn(s)), 40);
+
+  it('a cast Calciderm arrives with four time counters, and a cast Blastoderm with three fade', () => {
+    const white = calciderm();
+    expect(white.instances[find(white, 0, 'battlefield', 'Calciderm')]!.counters['time']).toBe(4);
+
+    const green = blastoderm();
+    expect(green.instances[find(green, 0, 'battlefield', 'Blastoderm')]!.counters['fade']).toBe(3);
+  });
+
+  it('both are 5/5 with shroud, which is what makes the clock the whole drawback', () => {
+    /*
+      Printed as a keyword line, so `printedKeywords` reads it off the text like any other. It is
+      the half that makes these cards what they are: every removal spell in this pool targets, so
+      three turns of a 5/5 is three turns the opponent has to answer in combat or not at all.
+    */
+    for (const [state, name] of [[calciderm(), 'Calciderm'], [blastoderm(), 'Blastoderm']] as const) {
+      const ch = characteristicsOf(state, state.instances[find(state, 0, 'battlefield', name)]!);
+      expect(ch.power).toBe(5);
+      expect(ch.toughness).toBe(5);
+      expect(new Set(ch.keywords).has('shroud')).toBe(true);
+    }
+  });
+
+  it('vanishing 4 and fading 3 both leave on the fourth of their controller upkeeps', () => {
+    /*
+      The claim the pair exists to make, and the only one a comment could not hold.
+
+      Calciderm: 4 -> 3 -> 2 -> 1, and the fourth removal is the last counter, so it goes then.
+      Blastoderm: 3 -> 2 -> 1 -> 0, and the fourth upkeep finds nothing to remove, so it goes then.
+      Same turn, same number of attacks, two different numbers printed on the cards.
+    */
+    let white = calciderm();
+    let green = blastoderm();
+    const whiteId = find(white, 0, 'battlefield', 'Calciderm');
+    const greenId = find(green, 0, 'battlefield', 'Blastoderm');
+
+    for (const left of [3, 2, 1]) {
+      white = myNextUpkeep(white);
+      green = myNextUpkeep(green);
+      expect(namesIn(white, 0, 'battlefield')).toContain('Calciderm');
+      expect(namesIn(green, 0, 'battlefield')).toContain('Blastoderm');
+      expect(white.instances[whiteId]!.counters['time']).toBe(left);
+      // One behind the whole way, which is the off-by-one the second keyword was printed to fix.
+      expect(green.instances[greenId]!.counters['fade'] ?? 0).toBe(left - 1);
+    }
+
+    white = myNextUpkeep(white);
+    green = myNextUpkeep(green);
+    expect(namesIn(white, 0, 'battlefield')).not.toContain('Calciderm');
+    expect(namesIn(green, 0, 'battlefield')).not.toContain('Blastoderm');
+    // A sacrifice, so the card is in the graveyard rather than exiled or bounced.
+    expect(namesIn(white, 0, 'graveyard')).toContain('Calciderm');
+    expect(namesIn(green, 0, 'graveyard')).toContain('Blastoderm');
+  });
+
+  it('the clock only runs on its own controller upkeep, not on the opponent', () => {
+    // One `nextTurn` is seat 1's, where neither keyword does anything.
+    let s = drain(nextTurn(calciderm()), 40);
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[find(s, 0, 'battlefield', 'Calciderm')]!.counters['time']).toBe(4);
+  });
+
+  it('proliferate buys another turn, on either clock', () => {
+    /*
+      Not planned by either keyword and correct anyway: a time counter and a fade counter are
+      counters, so the Contagion Clasp's ability adds one more of each kind already there. The
+      permanent is on the battlefield with a counter on it, which is the whole candidacy test.
+    */
+    let s = calciderm();
+    const id = find(s, 0, 'battlefield', 'Calciderm');
+    expect(proliferateCandidates(s, 0)).toContain(id);
+    s = proliferate(s, [id]);
+    expect(s.instances[id]!.counters['time']).toBe(5);
+
+    let green = blastoderm();
+    const greenId = find(green, 0, 'battlefield', 'Blastoderm');
+    green = proliferate(green, [greenId]);
+    expect(green.instances[greenId]!.counters['fade']).toBe(4);
+  });
+
+  it('a Calciderm with no counters stays, and a Blastoderm with none goes', () => {
+    /*
+      Where the two keywords part company, and the reason vanishing has an intervening-if and fading
+      does not. A permanent that reached the battlefield **without entering** has the ability and no
+      clock — at this table that is a card put there by hand in tabletop mode, or one that became a
+      copy of one of these while already on the battlefield.
+
+      Vanishing asks "if this has a time counter" and does nothing, so it sits there indefinitely.
+      Fading asks for a counter it cannot have and sacrifices on the next upkeep. Both are what the
+      printed cards say, and neither is a special case in the engine.
+    */
+    const placed = (deck: string, name: string): GameState => arena({
+      decks: { 0: deck, 1: 'tidal-mind' },
+      battlefield: { 0: [name] },
+      turn: 5, firstSeat: 0,
+    });
+
+    let white = placed('forge-alliance', 'Calciderm');
+    expect(white.instances[find(white, 0, 'battlefield', 'Calciderm')]!.counters['time'] ?? 0).toBe(0);
+    white = myNextUpkeep(drain(white, 40));
+    expect(namesIn(white, 0, 'battlefield')).toContain('Calciderm');
+
+    let green = placed('kindle-grove', 'Blastoderm');
+    green = myNextUpkeep(drain(green, 40));
+    expect(namesIn(green, 0, 'battlefield')).not.toContain('Blastoderm');
+    expect(namesIn(green, 0, 'graveyard')).toContain('Blastoderm');
+  });
+
+  it('both keywords are declared on their scripts, so the pool can be audited for them', () => {
+    expect(scriptFor('Calciderm')?.vanishing).toEqual({ count: 4 });
+    expect(scriptFor('Blastoderm')?.fading).toEqual({ count: 3 });
+  });
+});

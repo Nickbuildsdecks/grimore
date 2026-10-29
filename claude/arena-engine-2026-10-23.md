@@ -6030,6 +6030,65 @@ whole time. It also closes a loop from D213 for free: the battlefield badges a p
 when it has a non-mana play, so a Student with white mana up *says* it has something to do. That
 badge was added for the Contagion Clasp and the first card to benefit from it was this one.
 
+### Vanishing and fading, the same clock read one turn apart (D217)
+
+Echo and cumulative upkeep are costs the game demands. These two demand nothing: a vanishing or
+fading permanent arrives with counters on it, spends one each of your upkeeps, and is sacrificed when
+they run out. The only decision either keyword involves was made before the card was cast.
+
+Vanishing N (CR 702.63) removes a time counter and sacrifices **when the last one is removed**.
+Fading N (CR 702.32) removes a fade counter and sacrifices **if it cannot**. Read twice they look
+like one rule; counted they are not — a Calciderm with vanishing 4 goes 4→3→2→1 and leaves on the
+fourth upkeep, and a Blastoderm with fading 3 goes 3→2→1→0 and leaves on the fourth upkeep too. Both
+hand their controller **three** turns of a 5/5 with shroud, and only one of them says three on the
+card. That is the whole history of the pair: fading was printed first, players counted the printed
+number as the turns they were getting, and the keyword came back under a name whose number means what
+they thought.
+
+The asymmetry lives in one line — the `condition` vanishing has and fading does not — and it is
+visible in play for any permanent on the battlefield **with no counters**. Entering gives a leveler
+its counters by any route, a token copy included, because "enters with four time counters" is one of
+its own abilities. What does not is a permanent that reached the battlefield without entering: put
+there by hand in tabletop mode, or one that *became* a copy of one of these. A clockless Calciderm
+sits there indefinitely and a clockless Blastoderm is sacrificed next upkeep, which is what the two
+cards say.
+
+**It needed nothing new, for the third keyword running.** The upkeep step trigger already defaults to
+the controller's own upkeep, `entersWith` already puts counters on an arriving permanent,
+`TriggerDef.condition` is the intervening-if, and `moveToGraveyard` is the sacrifice. `FADE` is its
+own counter rather than a second user of `TIME`, because the table draws the counter's **name** and a
+Blastoderm reading `time 3` would be wrong on the card face even where it was right in the
+arithmetic. And **proliferate finds both clocks** without being told — the third keyword it has
+reached into on its own, after level counters, which is the argument for its candidate list reading
+the counters a permanent *has* rather than a list the engine keeps.
+
+Calciderm went into Forge Alliance for the second Serra Angel and Blastoderm into Kindle Grove for
+the second Thragtusk: **−3 and +1** for the Calciderm across two seed sets, **+2 and 0** for the
+Blastoderm, every reading inside the ±20 floor and each pair disagreeing in sign. The zero needs no
+separate control, because the other three readings are one — the same harness on the same two swaps
+moved the number three times, so it can see changes here and had nothing to see on that seeding. And
+**the bot casts both more often than what they replaced** (31 Calciderms of 55 games holding one
+against 8 Serra Angels of 25; 18 Blastoderms of 29 against 16 Thragtusks of 32), which rules out the
+other reading of a zero: both new cards are a mana cheaper, and a four-drop gets cast in a game a
+five-drop sits in hand for. The payers were chosen for the argument rather than the arithmetic: the Angel is the deck's other big white body, five mana for a 4/4 that flies and
+stays against four for a 5/5 that cannot be answered and does not; and a removal spell spent on the
+Thragtusk trades for half a card and five life, while one aimed at the Blastoderm cannot be cast at
+all, because every removal spell in this pool targets.
+
+**Seven tests passed on the first run, so one of them was made to fail.** An off-by-one that holds
+first time is either right or untested and the green tick cannot tell you which, so `fadingTrigger`
+was temporarily given vanishing's body and the suite re-run: the central test failed exactly as it
+must, and the clockless test did not — under vanishing's body a counter removed from nothing is still
+nothing, so that one discriminates the condition rather than the ordering. Knowing which test carries
+the claim was worth the two minutes.
+
+`LIST=vanish` reads the clock off the **card face**, because a 5/5 with shroud that disappears with no
+warning is not the card either keyword prints — and every engine test reads these counters straight
+out of state, where nobody playing can see them. The check is not that a label exists but that the
+same clock was seen at more than one number: two clocks at one reading each is two creatures, and a
+Calciderm beside a Blastoderm shows `time 4` and `fade 3` on the first move with nothing having
+counted down at all. Across runs it has read `fade 3, 2, 1` and `time 3, 2, 1` off a real game.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
