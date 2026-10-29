@@ -18345,15 +18345,23 @@ describe('affinity, which is a cost the board decides', () => {
   it('counts the artifact creatures too, because a Frogmite is one', () => {
     /*
       The half that makes the keyword snowball, and it is the printed type line rather than a clause
-      in the script: these cards are artifact *creatures*, so each one cast makes the next cheaper.
-      Read through `characteristicsOf`, which means an animated artifact or a Vehicle counts and a
-      face-down permanent does not (CR 707.2) — the same reading the rest of the engine uses.
+      in the script: a Frogmite is an artifact *creature*, so one on the board pays for the next.
+      Read through `characteristicsOf`, which means an animated artifact or a crewed Vehicle counts
+      and a face-down permanent does not (CR 707.2) — the same reading the rest of the engine uses.
+
+      The three artifacts are deliberately one of each kind the board can hold: an **artifact
+      creature** (Etched Champion), a plain **artifact** (Ichor Wellspring) and an uncrewed
+      **Vehicle** (Sky Skiff, which is an artifact whether or not anybody is driving it). A
+      reduction of three is all three counted.
+
+      The Champion rather than the Arcbound Worker beside it in the deck, for a reason worth
+      writing down: the Worker is a printed **0/0** that is only alive because modular gives it a
+      counter as it enters, and a permanent dropped straight onto the board by `arena` never runs
+      that replacement — so it dies to state-based actions before the test has a board at all, and
+      the reduction silently reads two instead of three.
     */
-    // Four lands as well as the three artifacts, because `plays` offers what this seat can
-    // actually pay for: the reduction is the point of the test, not the mana base.
-    const s = board(['Plains', 'Plains', 'Plains', 'Plains',
-      'Frogmite', 'Ichor Wellspring', 'Sky Skiff'], 'Myr Enforcer');
-    expect(offered(s, 'Myr Enforcer').change).toBe(-3);
+    const s = board(['Plains', 'Etched Champion', 'Ichor Wellspring', 'Sky Skiff']);
+    expect(offered(s, 'Frogmite').change).toBe(-3);
   });
 
   it('is paid at what it was offered for, which is the whole reason it lives in one function', () => {
@@ -18368,28 +18376,29 @@ describe('affinity, which is a cost the board decides', () => {
     expect(power(s, find(s, 0, 'battlefield', 'Frogmite'))).toBe(2);
   });
 
-  it('and floors at nothing, so a {7} 4/4 with eight artifacts out is free', () => {
+  it('and floors at nothing, so a 2/2 with eight artifacts out is free rather than owed', () => {
     /*
       A reduction empties the generic part and no further (CR 601.2f), which the engine has done
       since D132 for taxes and reductions alike — this is the first card that can reach the floor on
       its own.
 
-      **Eight artifacts take seven off, not eight**, and that is the number worth asserting: what the
-      play reports is what the board actually did to the cost, and a printed {7} has seven to give.
-      The eighth artifact is not wasted in any way a player would notice — the spell is free either
-      way — but a table that said "{8} less" over a {7} spell would be describing a cost that does
-      not exist.
+      **Eight artifacts take four off a printed {4}, not eight**, and that is the number worth
+      asserting: what the play reports is what the board actually did to the cost. The other four
+      artifacts are not wasted in any way a player would notice — the spell is free either way —
+      but a table that said "{8} less" over a {4} spell would be describing a cost that does not
+      exist, and a cost that went negative would be worse than wrong.
     */
     const s = board(['Bonesplitter', 'Chrome Steed', 'Ichor Wellspring', 'Sky Skiff',
-      'Basilisk Collar', 'Darksteel Plate', 'Loxodon Warhammer', 'Juggernaut'], 'Myr Enforcer');
-    expect(offered(s, 'Myr Enforcer').change).toBe(-7);
+      'Basilisk Collar', 'Darksteel Plate', 'Loxodon Warhammer', 'Juggernaut']);
+    expect(offered(s, 'Frogmite').change).toBe(-4);
+    expect(offered(s, 'Frogmite').note).toBe('affinity for artifacts: {8} less');
     /*
       And it is offered with **no land on the board at all**, which is the floor doing its job and
       is also how this suite reads affordability: `plays` is the list of casts this seat can pay
-      for, so a {7} creature appearing on a board of eight artifacts and nothing else is the whole
+      for, so a {4} creature appearing on a board of eight artifacts and nothing else is the whole
       claim. The tests above needed lands for exactly that reason.
     */
-    expect(offered(s, 'Myr Enforcer').offered).toBe(true);
+    expect(offered(s, 'Frogmite').offered).toBe(true);
   });
 
   it('goes back up the moment the artifacts are answered', () => {
@@ -18435,8 +18444,13 @@ describe('affinity, which is a cost the board decides', () => {
     expect(namesIn(chaliced(1), 0, 'battlefield')).toContain('Frogmite');
   });
 
-  it('both cards declare the keyword, so the pool can be audited for it', () => {
+  it('declares the keyword on the card, so the pool can be audited for it', () => {
     expect(scriptFor('Frogmite')?.affinity).toBe('artifacts');
-    expect(scriptFor('Myr Enforcer')?.affinity).toBe('artifacts');
+    // And it is the only one: the pool had a Myr Enforcer for as long as it took the slot probe to
+    // price it, and D228 is why it does not any more.
+    const affine = Object.values(STARTER_DECKS)
+      .flatMap((deck) => deck.cards.map((entry) => entry.card.name))
+      .filter((name) => scriptFor(name)?.affinity !== undefined);
+    expect([...new Set(affine)]).toEqual(['Frogmite']);
   });
 });

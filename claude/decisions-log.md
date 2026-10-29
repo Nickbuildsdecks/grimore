@@ -13498,7 +13498,7 @@ Three details are the keyword rather than the implementation:
 
 Frogmite ({4} 2/2) and Myr Enforcer ({7} 4/4), both artifact creatures as printed — which is the
 half that makes the keyword snowball, since each one cast makes the next cheaper. Forge Alliance is
-the only list in the pool that can pay them: seventeen of its sixty cards are artifacts.
+the only list in the pool that can pay it: sixteen of its sixty cards are artifacts.
 
 The slots are the interesting part, and the first two answers were wrong:
 
@@ -13517,10 +13517,11 @@ That is D223's lesson arriving from the other side. There it was "pay from a two
 keep standing"; here the cheapest slot in the deck turned out to be the one card no test can name —
 a land.
 
-### What the slot is worth, which is not settled
+### What the slot is worth, measured, and the two wrong answers on the way
 
-The keyword is finished and the deck slot is not, and the two are worth separating because only one
-of them is a rules question.
+The keyword was finished and the deck slot was not, and they are worth separating because only one
+of them is a rules question. **The slot as first written was wrong, and the measurement is what
+said so** — which is the entry this section exists for.
 
 `cast-counts`, 144 games of Forge Alliance, "cast, of the games it was in hand":
 
@@ -13530,29 +13531,56 @@ of them is a rules question.
 ```
 
 That is castability and not value — see the lesson in `scripts/measure/README.md`, because the
-Serra Angel the Enforcer did *not* displace reads 45% and is a perfectly good card. A {7} creature
-cast a third of the time is affinity working; what it is not is evidence either way.
+Serra Angel the Enforcer did *not* displace reads 45% and is a perfectly good card. Reading 32% as
+"this card is bad" is the mistake the lesson is about, and the probe below is what kept it from
+being made here.
 
-The paired slot probe is the thing that answers it, and it does not say what the prose above
-assumed. Taking both cards back out and restoring the Plains and the Swiftspear:
+Then the paired slot probe, four shapes, 288 games per seed set against the same two sets. The
+first arm is the one that started all of this: take both cards back out and restore the Plains and
+the Swiftspear.
 
 ```
-288 games, seeds 3300:   stock 144-144   variant 143-145    the pair:  +1
-288 games, seeds 5100:   stock 159-129   variant 182-106    the pair: -23
+                                            seeds 3300   seeds 5100
+both cards out, land and Swiftspear back          +1         +23
+Myr Enforcer -> the 21st Plains                   -5         +19
+Myr Enforcer -> a second Frogmite                  0          +4
+Ajani's Pridemate -> the 21st Plains             -12         +10
 ```
 
-The first is level, well inside the ±20 floor this project puts on 288 paired games. The second is a
-clear loss, outside it, and in the same direction as that seed set's noisier 144-game reading (−9) —
-so it is not one flukey arm, and the earlier 144-game pair that disagreed on sign (+1 against −9) was
-exactly the noise the 288 convention exists to see through.
+Read by what was *cut*, that is four unrelated numbers. Read by **what the deck ends up being**, it
+is one pattern: every arm holding twenty-one lands reads positive on seeds 5100 and negative on
+3300, and inside each seed set the readings fall in the order of how many affinity cards survive —
++1, −5, −12 on one, +23, +19, +10 on the other. Steps of about six games per card kept, arrived at
+twice independently. The arm that keeps twenty lands (two Frogmites, no land back) reads 0 and +4,
+which is stock.
 
-So: **the keyword is right and the slot is wrong, or the slot's price is wrong, and those are two
-different repairs.** The two things that changed are a {7} body with a 32% conversion and the 21st
-land, and the paragraph above commits to the land being the honest half of the trade — which is an
-argument, not a number. Both are being priced separately, each against the same two seed sets:
-Myr Enforcer for a second Frogmite (same land count), and Myr Enforcer for the Plains (same body
-count). Whichever reads positive on both arms is the deck's shape, and if neither does, the two
-cards come out and affinity lives in the engine with one Frogmite to exercise it.
+So:
 
-Recorded here before the answer rather than after it, because the honest version of this entry is
-the one that says the first guess was measured and did not hold.
+- **The {7} body was not the problem.** Swapping it for a second Frogmite bought 0 and +4 — inside
+  the floor, and four of the twenty-three games. An hour was spent suspecting it on the strength of
+  a conversion rate.
+- **The land was.** Restoring it recovered nineteen of the twenty-three on the arm that failed.
+- **The claim that paid for it was wrong, and specifically so.** "A deck whose spells get cheaper as
+  the board fills needs fewer lands, which is why affinity decks run twenty rather than
+  twenty-four" is true of an affinity deck and false of this one. Forge Alliance has sixteen
+  artifacts, but its curve is twelve one-drops and seven four-drops, and the cards affinity made
+  cheaper were two of sixty. **An archetype's land count does not transfer to a deck that merely
+  contains the keyword.**
+
+What shipped in the end is the smallest shape that carries the keyword: **one Frogmite, for one
+Monastery Swiftspear, land count untouched** — one card in, one card out. It is the best pooled
+reading of the arms that keep affinity (+14 of 576) and the only one positive on the arm that
+actually failed the floor. Myr Enforcer came back out of the pool entirely, because `poolIndex` is
+built from `STARTER_DECKS` and a card in no deck is not a card the engine has.
+
+Nothing about the keyword goes untested for its absence, which is worth saying because it is the
+reason the cut was cheap: the floor is reachable with a Frogmite, where eight artifacts take **four**
+off a printed {4} and report `{8} less` beside it — a bigger overshoot than the Enforcer's, so the
+honesty of the report is tested harder than before. The browser scenario pastes sixteen Frogmites,
+which a custom list may do for any name the pool knows.
+
+**The honest shape of this entry is that the first two answers were measured and neither held.**
+None of the four arms clears the ±20 floor on its own, so "six games a card" is a consistent sign
+across four comparisons rather than a reading — the kind of thing to re-measure the next time this
+deck is balanced, and the kind of thing that would have been written up as a win if the probe had
+been skipped.

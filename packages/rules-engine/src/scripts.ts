@@ -3453,16 +3453,15 @@ const BALL_LIGHTNING: CardScript = {
 };
 
 /*
-  Affinity, which is a whole card's worth of text and two lines of script (CR 702.41a).
+  Affinity, which is a whole card's worth of text and one line of script (CR 702.41a).
 
   Nothing here does anything: the keyword is a *cost* reduction, and the one place a cost is
   computed for a seat already knows how to read it — see `costChangeFor`, where affinity sits
-  beside the permanents that change what other spells cost. So these two are declarations and the
+  beside the permanents that change what other spells cost. So this is a declaration and the
   engine does the rest, which is the shape every keyword in this file aims for and about half of
   them reach.
 */
 const FROGMITE: CardScript = { name: 'Frogmite', affinity: 'artifacts' };
-const MYR_ENFORCER: CardScript = { name: 'Myr Enforcer', affinity: 'artifacts' };
 
 /**
  * Soulherder: the first card in the pool that watches a move into **exile** (CR 400.7).
@@ -8037,7 +8036,7 @@ const ALL: readonly CardScript[] = [
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
-  HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT, SOULHERDER, FROGMITE, MYR_ENFORCER,
+  HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT, SOULHERDER, FROGMITE,
   YOUTHFUL_KNIGHT, BOGGART_BRUTE, ROBE_OF_MIRRORS, NIGHT_OF_SOULS_BETRAYAL,
   WALL_OF_AIR, HANNA,
   LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,

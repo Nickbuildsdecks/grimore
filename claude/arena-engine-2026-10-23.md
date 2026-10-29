@@ -6506,12 +6506,15 @@ row goes back up when the artifacts are answered; it moves **generic** mana only
 reported honestly — eight artifacts against a printed {7} take seven off, because that is what the
 board actually did.
 
-Frogmite and Myr Enforcer, in Forge Alliance, whose seventeen artifacts are the only board in the
-pool that can pay them. The slot argument took three tries and the first two were killed by the test
-suite rather than by judgement: both Swiftspears (a mentor test places one out of this deck), then
-the Serra Angel that `cast-counts` actually points at (45%, and two crew tests pay "crew 2" with its
-four power). What shipped is a Swiftspear and a **Plains** — the honest half of an affinity deck,
-which has always run fewer lands because its spells get cheaper as the board fills.
+One Frogmite, in Forge Alliance, whose sixteen artifacts are the only board in the pool that can
+pay it — and the slot took four probe arms to settle, because the first answer was wrong and the
+measurement is what said so. Affinity shipped with both of its famous bodies, Frogmite and the {7}
+Myr Enforcer, paid for with a Swiftspear and a **Plains**, on the argument that an affinity deck
+needs fewer lands. The paired probe priced that at −23 games of 288 on one seed set; restoring the
+land recovered nineteen of them, and swapping the Enforcer out recovered four. So the argument was
+the error, and specifically: an archetype's land count does not transfer to a deck that merely
+contains the keyword. What shipped is one card for one Swiftspear with the land count untouched, and
+Myr Enforcer is out of the pool. See D228 for all four arms.
 
 ## Next
 

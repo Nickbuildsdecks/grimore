@@ -2153,16 +2153,22 @@ const SOULHERDER: CardDef = {
 };
 
 /**
- * Frogmite and Myr Enforcer: the two bodies affinity is famous for, and the pool's first spells
- * whose cost is a fact about the board.
+ * Frogmite: the body affinity is famous for, and the pool's first spell whose cost is a fact about
+ * the board.
  *
- * A {4} 2/2 and a {7} 4/4 on paper, which is nobody's idea of a card — and that is the keyword.
- * In a deck with a dozen artifacts the Frogmite is a one-mana 2/2 and the Enforcer a two-mana 4/4,
- * and in a deck with none they are exactly what they say. Forge Alliance is the one list in the
- * pool that can pay them properly: seventeen of its sixty cards are artifacts.
+ * A {4} 2/2 on paper, which is nobody's idea of a card — and that is the keyword. In a deck with
+ * three artifacts out it is a one-mana 2/2, and in a deck with none it is exactly what it says.
+ * Forge Alliance is the one list in the pool that can pay it: sixteen of its sixty cards are
+ * artifacts, the Frogmite itself among them.
  *
- * Artifact creatures themselves, as printed, which is the half that makes the keyword snowball —
- * a Frogmite cast makes the next one cheaper.
+ * An artifact creature itself, as printed, which is the half that makes the keyword snowball in a
+ * deck built for it — each one cast makes the next cheaper. This deck runs one, for reasons that
+ * are measured rather than argued; see the slot comment in the list and D228.
+ *
+ * Myr Enforcer, the {7} 4/4 that is the keyword's other famous body, was written at the same time
+ * and is not in the pool. The paired probe would not have it: see D228 for the four arms, and note
+ * that nothing about affinity goes untested without it — the floor is reachable with a Frogmite
+ * too, where five artifacts take four off a printed {4} and the fifth takes nothing.
  */
 const FROGMITE: CardDef = {
   name: 'Frogmite',
@@ -2171,18 +2177,6 @@ const FROGMITE: CardDef = {
   cmc: 4,
   power: '2',
   toughness: '2',
-  oracleText: 'Affinity for artifacts (This spell costs {1} less to cast for each artifact you '
-    + 'control.)',
-  colors: [],
-};
-
-const MYR_ENFORCER: CardDef = {
-  name: 'Myr Enforcer',
-  typeLine: 'Artifact Creature \u2014 Myr',
-  manaCost: '{7}',
-  cmc: 7,
-  power: '4',
-  toughness: '4',
   oracleText: 'Affinity for artifacts (This spell costs {1} less to cast for each artifact you '
     + 'control.)',
   colors: [],
@@ -4475,7 +4469,7 @@ export const FORGE_ALLIANCE: DeckSpec = {
   description: 'Red-white equipment. A board of small creatures, and a sword for one of them.',
   commander: BALAN,
   cards: [
-    { card: PLAINS, count: 7 },
+    { card: PLAINS, count: 8 },
     { card: MOUNTAIN, count: 8 },
     { card: BOROS_GUILDGATE, count: 3 },
     { card: SECLUDED_STEPPE, count: 2 },
@@ -4489,31 +4483,29 @@ export const FORGE_ALLIANCE: DeckSpec = {
     */
     { card: ARCBOUND_WORKER, count: 1 },
     /*
-      Affinity, in the one deck in the pool that can pay it (D228).
+      Affinity, in the one deck in the pool that can pay it: one card, for one Monastery Swiftspear,
+      with the land count untouched (D228).
 
-      One Monastery Swiftspear and one **Plains** paid for them, and the land is the honest half of
-      the trade: a deck whose spells get cheaper as the board fills needs fewer lands to cast them,
-      which is the whole reason affinity decks run twenty rather than twenty-four. Prowess wants a
-      hand full of spells, and seventeen of this deck's sixty cards are artifacts — which is the
-      other keyword's food. A Frogmite on a board with three artifacts is a one-mana 2/2 and a Myr
-      Enforcer a four-mana 4/4, and both are artifacts themselves, so they feed the Ravager, the
-      Etched Champion's metalcraft and each other.
+      **That shape is a measurement, and the first two attempts at it were wrong.** Affinity was
+      written with both of its famous bodies — Frogmite and the {7} Myr Enforcer — and they were
+      paid for with one Swiftspear and one Plains, on the argument that a deck whose spells get
+      cheaper as the board fills needs fewer lands. That argument is true of an affinity deck and
+      false of this one. Sixteen of these sixty cards are artifacts, but the curve is twelve
+      one-drops and seven four-drops, and the cards affinity makes cheaper were two of sixty: the
+      archetype's land count does not transfer to a deck that merely contains the keyword. The
+      paired probe priced it at −23 games of 288 on one seed set, and restoring the land recovered
+      nineteen of them.
 
-      The slots `cast-counts` actually points at are **Serra Angel** (45% — ten casts in the
-      twenty-two games it was in hand, which is what five mana looks like in a deck whose curve
-      stops at four) and **Elite Vanguard** (49%), and neither was taken, because both are named by
-      tests that place them out of *this* deck's library: the crew tests pay "crew 2" with the
-      Angel's four power and the Gift tests enchant the Vanguard. That is D223's lesson arriving
-      from the other side — the cheapest slot to spend is one whose card no test needs from here,
-      and a land is the cheapest of all.
+      So: one card in, one card out, twenty-one lands either way. What `cast-counts` pointed at is
+      **Serra Angel** (45%) and **Elite Vanguard** (49%), and neither is takeable, because both are
+      named by tests that place them out of *this* deck's library — the crew tests pay "crew 2" with
+      the Angel's four power and the Gift tests enchant the Vanguard. A Swiftspear is the honest
+      price instead: prowess wants a hand full of spells, and this is a deck of artifacts.
 
-      **The price of these two slots is measured and the measurement does not agree with itself**:
-      taking both cards back out reads +1 of 288 paired games on one seed set and −23 on another,
-      the second outside this project's ±20 floor. So the shape here is provisional and D228 carries
-      the numbers; the land argument above is an argument, not a reading.
+      The Frogmite is an artifact itself, so it feeds the Ravager, the Etched Champion's metalcraft
+      and its own cost.
     */
     { card: FROGMITE, count: 1 },
-    { card: MYR_ENFORCER, count: 1 },
     { card: MONASTERY_SWIFTSPEAR, count: 1 },
     // Both copies: a vehicles test crews a Sky Skiff with two of them, and `playout.test.ts`
     // watches one die for its Spirit.

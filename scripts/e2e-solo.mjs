@@ -548,16 +548,21 @@ const BLINK_LIST = [
  * The engine's tests read `costChange` off the play and the web unit tests read the reducer; neither
  * of them can say whether the number reaches the screen, which is the only place a player meets it.
  *
- * Affinity is the card that makes it unmissable: twenty-four artifacts in sixty cards, so a Myr
- * Enforcer printed at {7} is routinely a two-mana 4/4 and a Frogmite is a one-mana 2/2. The run
- * requires a row with a reduction on it to have been **pressed**, which is the badge and the
- * payment agreeing in the one place they can disagree.
+ * Affinity is the card that makes it unmissable: forty artifacts in sixty cards, so a
+ * Frogmite printed at {4} is routinely a one-mana 2/2 and often a free one. The run requires a row
+ * with a reduction on it to have been **pressed**, which is the badge and the payment agreeing in
+ * the one place they can disagree.
+ *
+ * Sixteen Frogmites rather than a mixed pair, because a pasted list is not a deck list: the pool
+ * holds one of them (D228 took the Myr Enforcer back out on the slot probe) and a custom list can
+ * ask for any number of a name the pool knows. Sixteen of a card that pays for the next one is the
+ * fastest way to put a big reduction on the screen.
  *
  * Mono-white plus colourless, for the lesson `LIST=costs` paid for twice.
  */
 const AFFINITY_LIST = [
   '20 Plains',
-  '8 Frogmite', '8 Myr Enforcer',
+  '16 Frogmite',
   '12 Bonesplitter', '12 Sky Skiff',
 ].join('\n');
 
@@ -1432,8 +1437,8 @@ const ARTIFACT_LIST = [
         The nineteenth scenario, and the first to look at a number the table has been drawing since
         D132: what the **board** did to a cost, beside the cost printed on the card.
 
-        A row that quietly rewrote {7} to {2} would be telling the player the card says something it
-        does not, and a row that showed {7} and then charged {2} would be a table nobody could
+        A row that quietly rewrote {4} to {1} would be telling the player the card says something it
+        does not, and a row that showed {4} and then charged {1} would be a table nobody could
         trust. Both halves are checked here in one press: the badge is in the row's own text, and
         the row was taken — so the spell was cast at the number the table showed.
       */
