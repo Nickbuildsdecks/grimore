@@ -5973,6 +5973,140 @@ const HELLSPARK_ELEMENTAL: CardScript = {
   replaces: [unearthExileOnLeaving()],
 };
 
+/*
+  Embalm (CR 702.89) and eternalize (CR 702.100): the fourth and fifth things this engine can pay
+  for out of a graveyard, and the first two that give you something which is **not the card**.
+
+  Everything else that spends a graveyard gives the card back. Flashback and escape cast it, delve
+  feeds another spell with it, unearth puts the creature itself onto the battlefield for a turn.
+  These two exile the card for good and hand you a *token copy of it* instead — "except it's a white
+  Zombie with no mana cost", or a black Zombie with base power and toughness 4/4.
+
+  That exception clause is the one thing the engine did not have. `copyAsToken` already made a token
+  from the copied card's own definition, which is what a copy is (CR 707.2) — but a copy with
+  different characteristics needs a *different definition*, and a definition is keyed by the card's
+  lowercased name, so the altered one would have overwritten the printed card. `TokenCopyProfile`
+  is that: a short list of printed fields to replace, registered under the card's key plus a suffix,
+  with the token's `name` left alone so `scriptFor` still finds the copied card's abilities. Which
+  is the whole reason these keywords are worth printing: the Angel of Sanctions token exiles another
+  permanent when it arrives, exactly as the card does.
+
+  Both are activated from the graveyard like unearth (`fromGraveyard`), at sorcery speed, and both
+  pay by exiling the card — which is `exileSelf`, and the new half of the cost that matters: paid at
+  activation, so the same Sacred Cat cannot be embalmed twice by activating it again while the first
+  ability is still on the stack.
+
+  The two differ in exactly two ways — the colour and whether the body's size is replaced — so they
+  are one helper each over the same call rather than one helper with a flag, because the printed
+  reminder text is what a player reads off the table and the two are not the same sentence.
+*/
+
+const embalm = (cost: string, typeLine: string): AbilityDef => ({
+  cost: { mana: cost, fromGraveyard: true, exileSelf: true },
+  sorcerySpeed: true,
+  description: `Embalm ${cost} (${cost}, Exile this card from your graveyard: Create a token `
+    + 'that\u2019s a copy of it, except it\u2019s a white Zombie with no mana cost. '
+    + 'Embalm only as a sorcery.)',
+  effect: (c) => copyAsToken(c.state, c.controller, c.source, 1, {
+    as: 'embalmed', typeLine, manaCost: '', cmc: 0, colors: ['W'],
+  }),
+});
+
+const eternalize = (cost: string, typeLine: string): AbilityDef => ({
+  cost: { mana: cost, fromGraveyard: true, exileSelf: true },
+  sorcerySpeed: true,
+  description: `Eternalize ${cost} (${cost}, Exile this card from your graveyard: Create a token `
+    + 'that\u2019s a copy of it, except it\u2019s a black Zombie with base power and toughness 4/4 '
+    + 'and no mana cost. Eternalize only as a sorcery.)',
+  effect: (c) => copyAsToken(c.state, c.controller, c.source, 1, {
+    as: 'eternalized', typeLine, manaCost: '', cmc: 0, colors: ['B'], power: '4', toughness: '4',
+  }),
+});
+
+/**
+ * Sacred Cat: a {W} 1/1 with lifelink, and {W} later to have it again.
+ *
+ * The cheapest embalm printed and the clearest statement of what the keyword is: a one-drop that
+ * blocks, gains a life, dies, and then is a one-drop again. In Dawn Tithe because that deck reads
+ * its own life total — a lifelinking blocker is two of its cards at once, and having it twice for
+ * two mana in total is the shape its curve has never had out of a zone the list does not otherwise
+ * use at all.
+ */
+const SACRED_CAT: CardScript = {
+  name: 'Sacred Cat',
+  keywords: ['lifelink'],
+  abilities: [embalm('{W}', 'Token Creature \u2014 Zombie Cat')],
+};
+
+/**
+ * Angel of Sanctions: the card that makes embalm worth more than a body.
+ *
+ * A 3/4 flier that exiles a nonland permanent until it leaves, and then — for the same five mana
+ * out of the graveyard — a Zombie Angel that does it **again**. The token is a copy, so it has the
+ * entry trigger and the leaves trigger both, which means killing the token still gives the first
+ * permanent back. That is the printed card and it is also the thing that would have been easy to
+ * get wrong: a token built as a plain 3/4 flier would have been a strictly worse card with no
+ * error anywhere to find it.
+ *
+ * `exileUntilItLeaves` is the same helper the Banisher Priest and Banishing Light use, with
+ * Banishing Light's target: another nonland permanent, which is how the Angel answers an
+ * enchantment or an artifact as readily as a creature.
+ */
+const ANGEL_OF_SANCTIONS: CardScript = {
+  ...exileUntilItLeaves('Angel of Sanctions', {
+    kind: 'permanent',
+    description: 'another target nonland permanent an opponent controls',
+    filter: (state, candidate, controller, source) => {
+      if (candidate.kind !== 'card') return false;
+      if (candidate.id === source) return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined || inst.zoneSeat === controller) return false;
+      return !characteristicsOf(state, inst).isLand;
+    },
+  }),
+  keywords: ['flying'],
+  abilities: [embalm('{3}{W}{W}', 'Token Creature \u2014 Zombie Angel')],
+};
+
+/**
+ * Adorned Pouncer: a 1/1 double striker for two, and a 4/4 double striker for six.
+ *
+ * Eternalize's size clause is the whole card: a 1/1 with double strike is two damage, a 4/4 with
+ * double strike is eight, and the keyword is what turns the one into the other. Which also makes
+ * it the card that would catch a `power`/`toughness` override that did not reach layer 7 — the
+ * token is read as a 4/4 because its *definition* says 4/4, the way a printed card does, rather
+ * than as a 1/1 under a continuous effect that a Humble or a copy would then undo.
+ */
+const ADORNED_POUNCER: CardScript = {
+  name: 'Adorned Pouncer',
+  keywords: ['double strike'],
+  abilities: [eternalize('{4}{W}{W}', 'Token Creature \u2014 Zombie Cat')],
+};
+
+/**
+ * Sunscourge Champion: two life now, two life again later, and a 4/4 the second time.
+ *
+ * The card that makes eternalize an *input* rather than a finisher. Dawn Tithe's whole plan is that
+ * gaining life is a thing other cards read — a counter on Ajani's Pridemate, a counter on the
+ * Bloodthirsty Aerialist — so a body whose arrival gains two life is worth having twice, and the
+ * second time it arrives as a 4/4.
+ *
+ * It is also the simplest possible check that the token really is a copy: the token has the entry
+ * trigger because `scriptFor` finds this script by **name**, and the name is the one field
+ * `TokenCopyProfile` leaves alone.
+ */
+const SUNSCOURGE_CHAMPION: CardScript = {
+  name: 'Sunscourge Champion',
+  triggers: [
+    {
+      on: { kind: 'etb' },
+      description: 'you gain 2 life',
+      effect: (c) => gainLife(c.state, c.controller, 2),
+    },
+  ],
+  abilities: [eternalize('{5}{W}{W}', 'Token Creature \u2014 Zombie Human Cleric')],
+};
+
 const THICKET_BASILISK: CardScript = {
   name: 'Thicket Basilisk',
   triggers: [
@@ -6851,6 +6985,7 @@ const ALL: readonly CardScript[] = [
   guildgate('Gruul Guildgate', 'R', 'G'),
   tapLand('Hagra Broodpit', 'B'), tapLand('Vastwood Thicket', 'G'),
   SQUID, CHASM_SKULKER, FATE_UNRAVELER,
+  SACRED_CAT, ANGEL_OF_SANCTIONS, ADORNED_POUNCER, SUNSCOURGE_CHAMPION,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

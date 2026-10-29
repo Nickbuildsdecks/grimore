@@ -12871,6 +12871,196 @@ describe('unearth: the body bought back out of the graveyard for one turn', () =
   });
 });
 
+describe('embalm and eternalize: a token copy of the card, with different characteristics', () => {
+  /*
+    The fourth and fifth things payable out of a graveyard, and the first two whose product is not
+    the card.
+
+    Flashback, escape and delve cast it; unearth puts the creature itself back for a turn. These
+    exile the card for good and give you a token copy of it "except it's a white Zombie with no mana
+    cost", or a black Zombie with base power and toughness 4/4. So the tests are about the three
+    things that are new: that the exception clause reaches the token's characteristics, that it does
+    **not** reach the printed card, and that the token is still a copy — abilities and all, which
+    is what makes the Angel of Sanctions worth embalming rather than a 3/4 flier worth having.
+  */
+  const graveyard = (dead: readonly string[], lands: number): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'tidal-mind' },
+      graveyard: { 0: [...dead] },
+      battlefield: { 0: Array.from({ length: lands }, () => 'Plains') },
+      turn: 7, firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  /** The one token on a seat's battlefield, which is what either keyword has just made. */
+  const tokenOf = (s: GameState, seat: SeatIndex): string => {
+    const found = ids(s, seat, 'battlefield').filter((id) => s.instances[id]!.isToken);
+    expect(found).toHaveLength(1);
+    return found[0]!;
+  };
+
+  it('embalms a Sacred Cat into a white Zombie Cat with no mana cost, and exiles the card', () => {
+    let s = graveyard(['Sacred Cat'], 1);
+    const cat = find(s, 0, 'graveyard', 'Sacred Cat');
+    const offer = legalActions(s, 0).plays.find((play) => play.card === cat);
+    expect(offer?.kind).toBe('activate');
+    expect(offer?.fromGraveyard).toBe(true);
+    expect(offer?.manaCost).toBe('{W}');
+
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: cat, abilityIndex: 0 }), 40);
+    // The card is gone for good: exiled as the cost, not put back anywhere.
+    expect(s.instances[cat]!.zone).toBe('exile');
+
+    const token = tokenOf(s, 0);
+    const ch = characteristicsOf(s, s.instances[token]!);
+    expect(ch.name).toBe('Sacred Cat');
+    expect(ch.typeLine.types).toContain('Creature');
+    expect(ch.typeLine.subtypes).toEqual(['Zombie', 'Cat']);
+    expect([...ch.colors]).toEqual(['W']);
+    expect([ch.power, ch.toughness]).toEqual([1, 1]);
+    // Still a copy, so it still has the card's printed keyword.
+    expect(ch.keywords.has('lifelink')).toBe(true);
+    expect(s.cardDefs[s.instances[token]!.defKey]!.manaCost).toBe('');
+  });
+
+  it('and leaves the printed card alone, which is why the definition is keyed apart', () => {
+    /*
+      The bug this is the test for: a definition is keyed by the card's lowercased **name**, so an
+      altered copy registered under its own name would have rewritten the Sacred Cat every other
+      copy of the card reads — the one still in the library would have become a Zombie with no
+      mana cost too. `TokenCopyProfile.as` is the suffix that keeps the two apart.
+    */
+    let s = graveyard(['Sacred Cat'], 1);
+    const cat = find(s, 0, 'graveyard', 'Sacred Cat');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: cat, abilityIndex: 0 }), 40);
+
+    const other = find(s, 0, 'library', 'Sacred Cat');
+    const printed = s.cardDefs[s.instances[other]!.defKey]!;
+    expect(printed.manaCost).toBe('{W}');
+    expect(printed.typeLine).toBe('Creature \u2014 Cat');
+    // And the two definitions really are two entries, not one read twice.
+    expect(s.instances[other]!.defKey).not.toBe(s.instances[tokenOf(s, 0)]!.defKey);
+  });
+
+  it('cannot be embalmed twice, because the exile is the cost and not the effect', () => {
+    /*
+      Paid at activation (CR 702.89a). An effect that exiled on resolution would let the same Cat
+      be embalmed again while the first ability was still on the stack — two Cats for one card,
+      which is the kind of bug a player would only ever notice as "this deck is better than it
+      should be".
+    */
+    let s = graveyard(['Sacred Cat'], 2);
+    const cat = find(s, 0, 'graveyard', 'Sacred Cat');
+    s = apply(s, { type: 'auto:activate', by: 0, card: cat, abilityIndex: 0 });
+    // The ability is on the stack and the card is already in exile, with mana left for a second.
+    expect(s.stackOrder).toHaveLength(1);
+    expect(s.instances[cat]!.zone).toBe('exile');
+    expect(legalActions(s, 0).plays.some((play) => play.card === cat)).toBe(false);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: cat, abilityIndex: 0 }))
+      .toBe('that card is not in your graveyard');
+
+    s = drain(s, 40);
+    expect(countOf(s, 0, 'battlefield', 'Sacred Cat')).toBe(1);
+  });
+
+  it('is a sorcery-speed ability, and is not offered from the battlefield', () => {
+    // On the opponent's turn there is nothing to press, the way unearth has nothing.
+    const theirTurn = advanceTo(nextTurn(graveyard(['Sacred Cat'], 1)), 'precombat-main');
+    const inGraveyard = find(theirTurn, 0, 'graveyard', 'Sacred Cat');
+    expect(legalActions(theirTurn, 0).plays.some((play) => play.card === inGraveyard)).toBe(false);
+
+    // And a Cat on the battlefield offers nothing at all: the cost says which zone it belongs to.
+    let s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'tidal-mind' },
+      battlefield: { 0: ['Plains', 'Plains', 'Sacred Cat'] },
+      turn: 7, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const onBoard = find(s, 0, 'battlefield', 'Sacred Cat');
+    expect(legalActions(s, 0).plays.some((play) => play.card === onBoard)).toBe(false);
+  });
+
+  it('eternalizes an Adorned Pouncer into a black 4/4 Zombie that still has double strike', () => {
+    let s = graveyard(['Adorned Pouncer'], 6);
+    const pouncer = find(s, 0, 'graveyard', 'Adorned Pouncer');
+    expect(legalActions(s, 0).plays.find((play) => play.card === pouncer)?.manaCost)
+      .toBe('{4}{W}{W}');
+
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: pouncer, abilityIndex: 0 }), 40);
+    const ch = characteristicsOf(s, s.instances[tokenOf(s, 0)]!);
+    expect(ch.name).toBe('Adorned Pouncer');
+    // The size is the keyword's whole point: a 1/1 double striker is two damage, a 4/4 is eight.
+    expect([ch.power, ch.toughness]).toEqual([4, 4]);
+    expect([...ch.colors]).toEqual(['B']);
+    expect(ch.typeLine.subtypes).toEqual(['Zombie', 'Cat']);
+    expect(ch.keywords.has('double strike')).toBe(true);
+  });
+
+  it('and the eternalized body is a printed 4/4, not a 1/1 under an effect', () => {
+    // Which matters because the two are told apart by everything that reads a base value: the
+    // profile replaces the definition's power and toughness, so there is no continuous effect
+    // here for a copy or a characteristic-setting spell to peel off.
+    let s = graveyard(['Adorned Pouncer'], 6);
+    const pouncer = find(s, 0, 'graveyard', 'Adorned Pouncer');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: pouncer, abilityIndex: 0 }), 40);
+    const token = tokenOf(s, 0);
+    expect(s.effects.filter((effect) => effect.scope.kind === 'cards'
+      && effect.scope.ids.includes(token))).toEqual([]);
+    const def = s.cardDefs[s.instances[token]!.defKey]!;
+    expect([def.power, def.toughness]).toEqual(['4', '4']);
+  });
+
+  it('a Sunscourge Champion token gains the two life its printed trigger gains', () => {
+    // The entry trigger is on the token because `scriptFor` finds a script by **name**, and the
+    // name is the one printed field the profile leaves alone.
+    let s = graveyard(['Sunscourge Champion'], 7);
+    const before = life(s, 0);
+    const champion = find(s, 0, 'graveyard', 'Sunscourge Champion');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: champion, abilityIndex: 0 }), 40);
+    expect(life(s, 0)).toBe(before + 2);
+    expect(characteristicsOf(s, s.instances[tokenOf(s, 0)]!).power).toBe(4);
+  });
+
+  it('an embalmed Angel of Sanctions exiles a permanent again, and gives it back when it dies', () => {
+    /*
+      The reason either keyword is printed on a card with text rather than on a bear, and the thing
+      a token built as a plain 3/4 flier would have silently lost. Both halves of
+      "exile until ~ leaves the battlefield" are on the token: the entry exiles, and the token
+      leaving hands the permanent back.
+    */
+    // Built inline rather than through the helper, because the one thing of theirs worth exiling
+    // has to be on the board *before* the game starts: a creature walked on afterwards would
+    // raise its own entry trigger and the test would be about that instead.
+    let s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'tidal-mind' },
+      graveyard: { 0: ['Angel of Sanctions'] },
+      battlefield: {
+        0: Array.from({ length: 5 }, () => 'Plains'),
+        1: ['Wall of Frost'],
+      },
+      turn: 7, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const theirs = find(s, 1, 'battlefield', 'Wall of Frost');
+    const angel = find(s, 0, 'graveyard', 'Angel of Sanctions');
+    s = apply(s, { type: 'auto:activate', by: 0, card: angel, abilityIndex: 0 });
+    s = drain(s, 40);
+
+    const token = tokenOf(s, 0);
+    expect(characteristicsOf(s, s.instances[token]!).keywords.has('flying')).toBe(true);
+    expect(s.instances[theirs]!.zone).toBe('exile');
+    expect(s.instances[theirs]!.exiledBy).toBe(token);
+
+    // And killing the token returns it, which is the half that makes the card fair.
+    s = drain(apply(s, { type: 'card:move', by: 0, card: token, toZone: 'graveyard' }), 40);
+    expect(s.instances[theirs]!.zone).toBe('battlefield');
+    // The token itself ceased to exist rather than going anywhere (CR 111.7), so there is nothing
+    // in the graveyard to embalm a second time.
+    expect(s.instances[token]).toBeUndefined();
+  });
+});
+
 describe('monstrosity and adapt: a creature that grows once and stays grown', () => {
   /*
     Two keywords whose difference is one word of placement, and the tests are about that word.

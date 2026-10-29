@@ -23,6 +23,14 @@
  * - **Does the same card escape twice in one game?** That is the whole difference between escape
  *   and flashback — a flashback spell is exiled as it leaves the stack and there is no third
  *   casting — and a count of one per game would mean the engine was quietly treating it as one.
+ *
+ * And a fourth block, added with embalm: the costs paid out of a graveyard that are **not casts**.
+ * Unearth, embalm and eternalize are activated abilities, so nothing above sees them — they never
+ * put a spell on the stack and `cast-counts` has no row for them at all. They are read off the
+ * stack the same way the triggers are, because an activated ability is an object on it, and
+ * counted beside the one number that makes a zero legible: how many games the card reached the
+ * graveyard in. "Never used" and "never drawn" are different findings, and the second one is the
+ * commoner.
  */
 import {
   applyAction, createGame, botAction, seatsToAct, scriptFor, STARTER_DECKS,
@@ -61,6 +69,27 @@ for (const deck of Object.values(STARTER_DECKS)) {
   for both has lost the one it was built for.
 */
 const MINE = new Set((STARTER_DECKS[SUBJECT]?.cards ?? []).map((entry) => entry.card.name));
+
+/*
+  The costs paid out of a graveyard that are not casts: unearth, embalm and eternalize.
+
+  An ability rather than a spell, so none of the machinery above can see one. Found the same way
+  everything else here is — a card is watched because one of its abilities declares
+  `cost.fromGraveyard` — and the keyword's name is the first word of its own reminder text, which
+  is the only place the engine writes down which of the three it is.
+*/
+const ABILITIES = new Map();
+for (const deck of Object.values(STARTER_DECKS)) {
+  for (const entry of deck.cards) {
+    for (const ability of scriptFor(entry.card.name)?.abilities ?? []) {
+      if (ability.cost?.fromGraveyard !== true) continue;
+      ABILITIES.set(entry.card.name, ability.description.split(' ')[0].toLowerCase());
+    }
+  }
+}
+/** Per watched card: abilities activated, and the games it reached the subject's graveyard in. */
+const abilityRows = new Map();
+for (const name of ABILITIES.keys()) abilityRows.set(name, { used: 0, inYard: 0 });
 
 /*
   And the other side of the same dimension: the cards that *answer* a graveyard.
@@ -108,6 +137,9 @@ function duel(seed, decks, mine) {
   const perCard = new Map();
   /** Triggered abilities already counted, keyed by stack object. */
   const countedTriggers = new Set();
+  /** Activated abilities already counted, and which watched cards reached my graveyard. */
+  const countedAbilities = new Set();
+  const reachedYard = new Set();
   for (let move = 0; move < 4000 && !s.finished; move++) {
     for (const id of s.stackOrder) {
       const object = s.stackObjects[id];
@@ -142,6 +174,29 @@ function duel(seed, decks, mine) {
       countedTriggers.add(id);
       ANSWERS.set(name, ANSWERS.get(name) + 1);
     }
+    /*
+      The abilities, read off the stack like the triggers above. Mine only: a Sacred Cat embalmed
+      by the opponent is their deck working, and the subject's own usage is the question.
+    */
+    for (const id of s.stackOrder) {
+      const object = s.stackObjects[id];
+      if (object?.kind !== 'activated' || object.controller !== mine) continue;
+      if (countedAbilities.has(id)) continue;
+      const name = s.cardDefs[object.cardKey]?.name;
+      if (!ABILITIES.has(name)) continue;
+      countedAbilities.add(id);
+      abilityRows.get(name).used += 1;
+    }
+    /*
+      And whether the card was ever in my graveyard to be paid with at all, which is the
+      denominator. Counted once per game per card, from the zone rather than from an event: a card
+      that arrived and was embalmed on the same turn still spent a moment there.
+    */
+    for (const inst of Object.values(s.instances)) {
+      if (inst.zone !== 'graveyard' || inst.zoneSeat !== mine) continue;
+      const name = s.cardDefs[inst.defKey]?.name;
+      if (ABILITIES.has(name)) reachedYard.add(name);
+    }
     const seat = seatsToAct(s)[0];
     if (seat === undefined) break;
     const action = botAction(s, seat);
@@ -151,6 +206,7 @@ function duel(seed, decks, mine) {
     if (s.stateVersion === before) break;
   }
   if ([...perCard.values()].some((n) => n > 1)) twiceGames += 1;
+  for (const name of reachedYard) abilityRows.get(name).inYard += 1;
 }
 
 for (let i = 0; i < SEEDS; i++) {
@@ -179,6 +235,15 @@ if (WATCHED.size === 0) {
   }
   console.log('');
   console.log(`games where one card paid this way more than once: ${twiceGames} of ${games}`);
+}
+if (ABILITIES.size > 0) {
+  console.log('');
+  console.log('and the costs paid out of a graveyard that are abilities rather than casts:');
+  for (const [name, keyword] of ABILITIES) {
+    const r = abilityRows.get(name);
+    const where = MINE.has(name) ? `in ${r.inYard} games it reached the graveyard` : 'not in this deck';
+    console.log(`${String(r.used).padStart(7)}  ${name} (${keyword}) \u2014 ${where}`);
+  }
 }
 if (ANSWERS.size > 0) {
   console.log('');

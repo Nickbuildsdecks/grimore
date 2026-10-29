@@ -1253,6 +1253,13 @@ function activate(
   // on the stack (CR 702.29a) — which is why a cycling land can be cycled and then returned from
   // the graveyard by something else before the draw has even happened.
   if (ability.cost.discardSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
+  /*
+    Embalm's cost, paid the same way and for a sharper reason: exiling the card as the ability is
+    activated is what stops the same card being embalmed twice while the first ability is still on
+    the stack. See `AbilityCost.exileSelf`. The instance survives the move, in exile, which is
+    where the effect reads it from to build the token copy.
+  */
+  if (ability.cost.exileSelf) next = relocate(next, requireInstance(next, inst.id), 'exile', inst.owner, 'bottom');
 
   if (ability.produces !== undefined) {
     // A mana ability resolves immediately and never uses the stack (CR 605.3a) — which is what

@@ -5324,6 +5324,79 @@ const KAMBAL: CardDef = {
   colors: ['W', 'B'],
 };
 
+/*
+  Embalm and eternalize, and the four cards that carry them.
+
+  All four are white Amonkhet cards and all four go into one deck on purpose: a keyword spread over
+  four lists is four noisy slots, and a keyword whose whole point is "a second use of a card you
+  already spent" has to be in one list often enough to be seen. Dawn Tithe is the deck that most
+  wants what they do — its archetype is that gaining life is an **input** other cards read, so a
+  lifelinking blocker you get twice for two mana in total is two of its cards in one, and a body
+  whose arrival gains two life is worth arriving twice.
+
+  It is also the only white deck with no graveyard hate of its own. Skyward Writ runs the pool's one
+  Rest in Peace, and a symmetric graveyard hoser and six cards that need a graveyard cannot sensibly
+  be in the same sixty — which is a deckbuilding fact rather than an engine one, and the reason
+  these are here and not there.
+
+  Their oracle text carries the reminder text in full, because a token whose characteristics are not
+  the card's is the one case where a player cannot work out what they are getting from the card face.
+*/
+const SACRED_CAT: CardDef = {
+  name: 'Sacred Cat',
+  typeLine: 'Creature \u2014 Cat',
+  manaCost: '{W}',
+  cmc: 1,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Lifelink\nEmbalm {W} ({W}, Exile this card from your graveyard: Create a token '
+    + 'that\u2019s a copy of it, except it\u2019s a white Zombie Cat with no mana cost. '
+    + 'Embalm only as a sorcery.)',
+  colors: ['W'],
+};
+
+const ADORNED_POUNCER: CardDef = {
+  name: 'Adorned Pouncer',
+  typeLine: 'Creature \u2014 Cat',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  power: '1',
+  toughness: '1',
+  oracleText: 'Double strike\nEternalize {4}{W}{W} ({4}{W}{W}, Exile this card from your '
+    + 'graveyard: Create a token that\u2019s a copy of it, except it\u2019s a black Zombie Cat '
+    + 'with base power and toughness 4/4 and no mana cost. Eternalize only as a sorcery.)',
+  colors: ['W'],
+};
+
+const SUNSCOURGE_CHAMPION: CardDef = {
+  name: 'Sunscourge Champion',
+  typeLine: 'Creature \u2014 Human Cleric',
+  manaCost: '{2}{W}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'When Sunscourge Champion enters the battlefield, you gain 2 life.\n'
+    + 'Eternalize {5}{W}{W} ({5}{W}{W}, Exile this card from your graveyard: Create a token '
+    + 'that\u2019s a copy of it, except it\u2019s a black Zombie Human Cleric with base power and '
+    + 'toughness 4/4 and no mana cost. Eternalize only as a sorcery.)',
+  colors: ['W'],
+};
+
+const ANGEL_OF_SANCTIONS: CardDef = {
+  name: 'Angel of Sanctions',
+  typeLine: 'Creature \u2014 Angel',
+  manaCost: '{3}{W}{W}',
+  cmc: 5,
+  power: '3',
+  toughness: '4',
+  oracleText: 'Flying\nWhen Angel of Sanctions enters the battlefield, exile another target '
+    + 'nonland permanent an opponent controls until Angel of Sanctions leaves the battlefield.\n'
+    + 'Embalm {3}{W}{W} ({3}{W}{W}, Exile this card from your graveyard: Create a token that\u2019s '
+    + 'a copy of it, except it\u2019s a white Zombie Angel with no mana cost. '
+    + 'Embalm only as a sorcery.)',
+  colors: ['W'],
+};
+
 /**
  * Dawn Tithe: the tenth deck, and the first whose life total goes up on purpose.
  *
@@ -5376,12 +5449,12 @@ export const DAWN_TITHE: DeckSpec = {
       a 1/1 that the whole plan runs through is a 1/1 the aggro decks remove for free.
     */
     { card: SOUL_WARDEN, count: 1 },
-    { card: IMPASSIONED_ORATOR, count: 2 },
+    { card: IMPASSIONED_ORATOR, count: 1 },
     // A one-drop flier with lifelink, which is the cheapest repeatable trigger there is: it gains
     // life every time it connects and every time it blocks.
-    { card: HEALERS_HAWK, count: 2 },
+    { card: HEALERS_HAWK, count: 1 },
     // Three, and the third is one of the four slots the balance pass below bought back.
-    { card: CHILD_OF_NIGHT, count: 3 },
+    { card: CHILD_OF_NIGHT, count: 2 },
 
     // ── The payoffs: what the life is for ──
     /*
@@ -5413,7 +5486,6 @@ export const DAWN_TITHE: DeckSpec = {
     { card: ZULAPORT_CUTTHROAT, count: 1 },
     { card: VAMPIRE_NIGHTHAWK, count: 2 },
     // One five-drop, and it is the only creature here that is good without the engine running.
-    { card: SERRA_ANGEL, count: 1 },
 
     // ── The answers, three of which gain life on the way ──
     /*
@@ -5426,7 +5498,8 @@ export const DAWN_TITHE: DeckSpec = {
     */
     { card: VRASKAS_CONTEMPT, count: 1 },
     { card: SWORDS_TO_PLOWSHARES, count: 2 },
-    { card: DOOM_BLADE, count: 2 },
+    { card: DOOM_BLADE, count: 1 },
+    { card: HEALING_SALVE, count: 1 },
     { card: MURDER, count: 1 },
     { card: PACIFISM, count: 1 },
     { card: JOURNEY_TO_NOWHERE, count: 1 },
@@ -5439,7 +5512,7 @@ export const DAWN_TITHE: DeckSpec = {
     { card: BONE_SPLINTERS, count: 1 },
 
     // ── Cards, life, and the end of it ──
-    { card: REVITALIZE, count: 3 },
+    { card: REVITALIZE, count: 2 },
     /*
       One Healing Salve, and Palace Sentinels for the other — the crown, in the deck that can keep
       it (CR 720).
@@ -5451,11 +5524,34 @@ export const DAWN_TITHE: DeckSpec = {
       loses it, the Soul Wardens and the Pridemates are still a deck. The Salve was its weakest
       card and the one nothing else in the list reads.
     */
-    { card: HEALING_SALVE, count: 1 },
     { card: PALACE_SENTINELS, count: 1 },
     { card: SIGN_IN_BLOOD, count: 1 },
     { card: READ_THE_BONES, count: 1 },
     { card: MIND_STONE, count: 1 },
+    /*
+      Embalm and eternalize, and the six cards they cost.
+
+      Four cards that are each two cards, in the deck whose plan is to be gaining life while it is
+      behind on board: a {W} 1/1 lifelinker that blocks twice for two mana in total, a {1}{W} double
+      striker that comes back as a 4/4 double striker, a {2}{W} body that gains two life on arrival
+      and arrives twice, and a 3/4 flier whose Journey to Nowhere happens again after it dies.
+      Nothing in the list did that before — every card it had was spent the moment it was cast,
+      and this deck is the one that most often reaches turn eight with mana to spare and an empty
+      hand.
+
+      The six that came out are the redundant copies of what these four already are. The second
+      Healer's Hawk is the Sacred Cat and the third Child of Night is the Adorned Pouncer \u2014 the
+      same one- and two-drop lifelinkers with a second use. The second Impassioned Orator and the
+      third Revitalize are the deck's two most replaceable cards by its own notes, which is to say
+      the ones whose job is to be a card rather than to do something. The Serra Angel is the
+      five-drop flier the Angel of Sanctions is, with removal attached; and the second Doom Blade is
+      the removal spell that cannot point at a black creature, in a field where five decks are
+      black — where the Angel exiles anything, and exiles a second thing after it has died.
+    */
+    { card: SACRED_CAT, count: 2 },
+    { card: ADORNED_POUNCER, count: 2 },
+    { card: SUNSCOURGE_CHAMPION, count: 1 },
+    { card: ANGEL_OF_SANCTIONS, count: 1 },
     /*
       And no Exsanguinate, which the first version of this list had.
 

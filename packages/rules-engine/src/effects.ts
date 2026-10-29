@@ -1086,13 +1086,71 @@ export function addCounters(state: GameState, id: string, key: string, amount: n
  */
 export function copyAsToken(
   state: GameState, seat: SeatIndex, source: string, count = 1,
+  profile?: TokenCopyProfile,
 ): GameState {
   const inst = state.instances[source];
   if (inst === undefined) return state;
   const def = state.cardDefs[inst.defKey];
   if (def === undefined) return state;
-  return createToken(state, seat, def, count);
+  if (profile === undefined) return createToken(state, seat, def, count);
+  return createToken(state, seat, withProfile(def, profile), count, profileKey(def, profile));
 }
+
+/**
+ * The characteristics an embalm or eternalize token has **instead** of the copied card's
+ * (CR 702.89a, CR 702.100a).
+ *
+ * "A token that's a copy of it, except it's a white Zombie with no mana cost" is a copy effect with
+ * a list of exceptions, and the exceptions are the only thing the engine did not already have.
+ * Everything in the list is a printed characteristic, so the whole of it is one definition with
+ * some fields replaced — and then the token is an ordinary token of an ordinary card definition,
+ * read by `characteristicsOf` off its `defKey` like every other permanent.
+ *
+ * `as` is the part that is not a characteristic. `defKey` is a card's lowercased **name**, so an
+ * altered definition under its own name would overwrite the printed card in `cardDefs` — the Sacred
+ * Cat in your graveyard would become a Zombie too — or, because `createToken` keeps whatever is
+ * already registered, be silently ignored. So the altered definition is registered under the card's
+ * key plus this suffix (`sacred cat#embalmed`), which keeps the two apart while the token's `name`
+ * stays the card's name. That matters for more than the label: `scriptFor` looks a script up by
+ * **name**, which is what gives the token the copied card's abilities, exactly as the keyword says.
+ *
+ * The one thing deliberately left alone is `oracleText`, which still carries the embalm ability the
+ * token can no longer use. That is not a bug worth fixing by rewriting the text: the ability is
+ * gated on `fromGraveyard`, so it is never offered to a permanent on the battlefield, and a token
+ * never reaches a graveyard to be offered it there. Printing the card's own text on the token is
+ * also what a player wants to read.
+ */
+export interface TokenCopyProfile {
+  /** What kind of copy this is, as a suffix on the definition's key: `embalmed`, `eternalized`. */
+  readonly as: string;
+  readonly typeLine?: string;
+  readonly manaCost?: string;
+  readonly cmc?: number;
+  readonly colors?: readonly string[];
+  /** Eternalize's "base power and toughness 4/4", which is a printed value and not a pump. */
+  readonly power?: string;
+  readonly toughness?: string;
+}
+
+const profileKey = (def: CardDef, profile: TokenCopyProfile): string =>
+  `${defKeyFor(def)}#${profile.as}`;
+
+const withProfile = (def: CardDef, profile: TokenCopyProfile): CardDef => ({
+  ...def,
+  ...(profile.typeLine === undefined ? {} : { typeLine: profile.typeLine }),
+  ...(profile.manaCost === undefined ? {} : { manaCost: profile.manaCost }),
+  ...(profile.cmc === undefined ? {} : { cmc: profile.cmc }),
+  ...(profile.colors === undefined ? {} : { colors: [...profile.colors] }),
+  ...(profile.power === undefined ? {} : { power: profile.power }),
+  ...(profile.toughness === undefined ? {} : { toughness: profile.toughness }),
+  /*
+    And no other faces. A token copy of a card is a copy of the card, not of a half of it — and a
+    token that offered "cast the other half" would be offering a cast of something that is not a
+    card at all. Nothing printed with embalm has a second face, so this is a guard rather than a
+    rule anybody needs; `normaliseDef` would otherwise carry the faces straight through.
+  */
+  faces: undefined,
+});
 
 /**
  * "Enters the battlefield as a copy of any creature" — layer 1, applied to a permanent.
@@ -1119,9 +1177,16 @@ export function becomeCopyOf(state: GameState, id: string, copying: string): Gam
   });
 }
 
-export function createToken(state: GameState, seat: SeatIndex, card: CardDef, count = 1): GameState {
+/**
+ * `keyOverride` decides where the definition is registered, for a copy whose characteristics are
+ * not the copied card's — see `TokenCopyProfile`. Every other caller hands over a definition whose
+ * name is its own, and for those the key is that name.
+ */
+export function createToken(
+  state: GameState, seat: SeatIndex, card: CardDef, count = 1, keyOverride?: string,
+): GameState {
   const def = normaliseDef(card);
-  const key = defKeyFor(def);
+  const key = keyOverride ?? defKeyFor(def);
   const cardDefs = { ...state.cardDefs, [key]: state.cardDefs[key] ?? def };
   const instances = { ...state.instances };
   let seq = state.instanceSeq;

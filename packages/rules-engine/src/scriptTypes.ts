@@ -743,6 +743,23 @@ export interface AbilityCost {
    */
   readonly discardSelf?: boolean;
   /**
+   * "Exile this card from your graveyard:" — embalm's cost, and the second time the card itself is
+   * what you are paying with (CR 702.89a, CR 702.100a).
+   *
+   * `discardSelf` one zone along in the other direction: cycling spends a card out of your hand,
+   * this spends one out of your graveyard, and both are paid as the ability is activated rather
+   * than when it resolves. Paying it at activation is the whole point and not a detail — embalm
+   * exiles the card as a **cost**, so the same Sacred Cat cannot be embalmed twice by activating
+   * it again while the first ability is still on the stack. An effect that exiled on resolution
+   * would be two Cats for the price of one.
+   *
+   * Unlike `discardSelf`, the effect here *is* expected to read its own source: the card sits in
+   * exile with its instance intact, which is what `copyAsToken` copies. It is paired with
+   * `fromGraveyard`, which is what says the ability is activated from there at all — this field
+   * says what the cost spends, not where the ability is used from.
+   */
+  readonly exileSelf?: boolean;
+  /**
    * "Crew N" — tap any number of untapped creatures you control with total power N or greater
    * (CR 702.122a).
    *
