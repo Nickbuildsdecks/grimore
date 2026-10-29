@@ -14800,3 +14800,153 @@ describe('overload: the cost that stops the spell pointing at one thing', () => 
     expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(2);
   });
 });
+
+describe('energy: the resource that is not mana, life or cards', () => {
+  /*
+    Energy (CR 122) is a counter on the **player**, and these tests are as much about the resource
+    as about the four cards that use it. Three things make it unlike everything else this engine
+    can spend: it lives on the seat rather than on a permanent, it is never emptied, and it is the
+    first resource here that is saved up across turns rather than spent on the turn it arrives.
+  */
+  const table = (
+    hand: readonly string[],
+    mine: readonly string[] = [],
+    theirs: readonly string[] = [],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
+    hands: { 0: [...hand] },
+    battlefield: {
+      0: ['Forest', 'Forest', 'Mountain', 'Mountain', ...mine],
+      1: ['Island', ...theirs],
+    },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const energy = (s: GameState, seat: SeatIndex = 0): number =>
+    s.seats[seat]!.counters['energy'] ?? 0;
+
+  it('arrives with the Aether Hub, and is spent to make a colour it does not otherwise have', () => {
+    let s = table(['Aether Hub']);
+    s = drain(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Aether Hub') }), 20);
+    expect(energy(s)).toBe(1);
+
+    const hub = find(s, 0, 'battlefield', 'Aether Hub');
+    const abilities = legalActions(s, 0).plays.filter((p) => p.card === hub);
+    // Six rows: the colourless one, and one per colour — each of those costing the energy.
+    expect(abilities).toHaveLength(6);
+    expect(abilities.filter((p) => p.description.includes('Pay {E}'))).toHaveLength(5);
+
+    // Paying it takes the energy as the ability is activated, and a mana ability resolves at once.
+    const white = abilities.find((p) => p.description.includes('Add {W}'))!
+    s = apply(s, { type: 'auto:activate', by: 0, card: hub, abilityIndex: white.abilityIndex ?? 0 });
+    expect(energy(s)).toBe(0);
+    expect(s.pools['0']?.W ?? 0).toBe(1);
+  });
+
+  it('is not offered, and is refused, when the seat has none of it', () => {
+    /*
+      The rule every cost in this engine follows (CR 118.4), one zone further out than the others:
+      the counters are on the player rather than on the permanent, so this is the first time a
+      permanent's own ability is unavailable because of something held by its controller.
+    */
+    const s = table([], ['Longtusk Cub']);
+    const cub = find(s, 0, 'battlefield', 'Longtusk Cub');
+    expect(energy(s)).toBe(0);
+    expect(legalActions(s, 0).plays.filter((p) => p.card === cub)).toEqual([]);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: cub, abilityIndex: 0 }))
+      .toMatch(/do not have 2 energy/);
+  });
+
+  it('is given by a Longtusk Cub that connects, and spent to grow it', () => {
+    let s = table([], ['Longtusk Cub']);
+    const cub = find(s, 0, 'battlefield', 'Longtusk Cub');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: cub, defender: 1 }] });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(life(s, 1)).toBe(18);
+    expect(energy(s)).toBe(2);
+
+    // And the ability it pays for is on offer now that the energy is there.
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: cub, abilityIndex: 0 }), 20);
+    expect(energy(s)).toBe(0);
+    expect(s.instances[cub]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('survives the end of the turn, which is the whole character of the resource', () => {
+    /*
+      Mana empties every step and this does not (CR 122.2). Nothing in `endTurnCleanup` touches
+      energy, and this test is what says that absence is deliberate: a Cub that connects on turn
+      five has its two counters on turn six, which is the only reason a three-energy card is ever
+      castable.
+    */
+    let s = table([], ['Longtusk Cub']);
+    const cub = find(s, 0, 'battlefield', 'Longtusk Cub');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: cub, defender: 1 }] });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(energy(s)).toBe(2);
+    s = nextTurn(nextTurn(s));
+    expect(energy(s)).toBe(2);
+  });
+
+  it('pays for a Bristling Hydra to grow and to dodge the removal on the stack', () => {
+    let s = table(['Bristling Hydra'], ['Forest', 'Forest']);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bristling Hydra') }), 40);
+    const hydra = find(s, 0, 'battlefield', 'Bristling Hydra');
+    expect(energy(s)).toBe(3);
+
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: hydra, abilityIndex: 0 }), 20);
+    expect(energy(s)).toBe(0);
+    expect(s.instances[hydra]!.counters['+1/+1']).toBe(1);
+    // Hexproof until end of turn: the opponent's removal cannot be pointed at it at all.
+    expect(characteristicsOf(s, s.instances[hydra]!).keywords.has('hexproof')).toBe(true);
+  });
+
+  it('is given by a Harnessed Lightning before it asks how much of it to spend', () => {
+    let s = table(['Harnessed Lightning'], [], ['Air Elemental']);
+    const target = find(s, 1, 'battlefield', 'Air Elemental');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Harnessed Lightning'),
+      targets: [{ kind: 'card', id: target }],
+    }));
+    s = drain(s, 10);
+    /*
+      Three energy are already in the pool when the question is asked, which is why the range tops
+      out at three rather than at nought: the card gives them to you and *then* lets you spend
+      them, so a Harnessed Lightning with nothing saved is still three damage.
+    */
+    expect(energy(s)).toBe(3);
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 3 });
+
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 3 }), 40);
+    expect(energy(s)).toBe(0);
+    // A 4/4 with three damage on it lives, which is the honest half of "deals that much damage".
+    expect(damageOn(s, target)).toBe(3);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Air Elemental');
+  });
+
+  it('spends only what the kill costs, rather than everything in the pool', () => {
+    /*
+      The bot's own answer, which is the script's `best`. Overpaying is legal and the table offers
+      it, but energy kept is a Hydra protected later — so the cheapest kill is the right number,
+      and a board with nothing it can kill is worth nothing at all.
+    */
+    let s = table(['Harnessed Lightning'], [], ['Wind Drake']);
+    const drake = find(s, 1, 'battlefield', 'Wind Drake');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Harnessed Lightning'),
+      targets: [{ kind: 'card', id: drake }],
+    })), 10);
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 3 });
+    // What the bot answers, read off the action it would take rather than off the question: the
+    // script's `best` is a suggestion the engine does not store.
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', amount: 2 });
+
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 2 }), 40);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Wind Drake');
+    // One energy left over rather than none: the third was not needed, so it was not spent.
+    expect(energy(s)).toBe(1);
+  });
+});

@@ -1143,6 +1143,27 @@ function SeatStrip({
         </span>
       ) : null}
       {seat.poison > 0 ? <span className="text-[var(--g-mana-g)]">poison {seat.poison}</span> : null}
+      {/*
+        Energy, which is the one resource a player has to plan several turns ahead with.
+
+        Mana is gone at the end of the step and life is the number in bold at the front of this
+        row; energy is neither — it is saved up and spent later, so a player who cannot see it
+        cannot decide whether to spend it. Shown only once a seat has any, like the poison beside
+        it, because a row of zeroes is a row nobody reads.
+
+        Every seat's count, not only your own: energy is public (CR 122.1), and knowing that the
+        player across the table is sitting on six of it is how you decide whether to attack into
+        their Bristling Hydra.
+      */}
+      {(seat.counters['energy'] ?? 0) > 0 ? (
+        <span
+          data-testid={`energy-${seat.index}`}
+          title="Energy counters. Saved between turns, spent on abilities that ask for them."
+          className="text-[var(--g-status-info)]"
+        >
+          energy {seat.counters['energy']}
+        </span>
+      ) : null}
 
       {/*
         Damage prevention sitting on this player, which nothing else on the table shows.
