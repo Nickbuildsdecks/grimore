@@ -14950,3 +14950,50 @@ describe('energy: the resource that is not mana, life or cards', () => {
     expect(energy(s)).toBe(1);
   });
 });
+
+describe('the auto-tapper and a land whose colour costs energy', () => {
+  /*
+    The Aether Hub is the first permanent in the pool with both a free tap and a paid one, and
+    `manaSources` — the list the engine taps from on a player's behalf — had been reading only the
+    mana, the tap, the sacrifice and the life on an ability. An energy cost was invisible to it,
+    which made the Hub a land that quietly produced any colour for nothing.
+
+    Found by `scripts/measure/energy.mjs` rather than by reading the code, and found as an absence:
+    over 288 games the Hub gave out thirty-six energy and not one point of it was ever spent.
+  */
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
+    hands: { 0: ['Llanowar Elves'] },
+    // A Hub and nothing else: any green mana this seat makes has to come from it.
+    battlefield: { 0: ['Aether Hub'], 1: ['Island'] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('does not tap a Hub for a colour the seat has no energy to pay for', () => {
+    const s = table();
+    expect(s.seats[0]!.counters['energy'] ?? 0).toBe(0);
+    /*
+      The Elves cost {G} and the only untapped permanent is a Hub with no energy, so the only mana
+      this seat can make is colourless — and a cast the engine cannot pay for is one it must not
+      offer. Before the fix this play was offered, and taking it produced green out of nowhere.
+    */
+    expect(legalActions(s, 0).plays.filter((p) => p.name === 'Llanowar Elves')).toEqual([]);
+  });
+
+  it('still offers every row to the player, who may spend the energy themselves', () => {
+    /*
+      The conservative choice is about the **auto-tapper**, not about the card. A player with the
+      energy sees all six rows and may decide a colour is worth it — which is the whole judgement
+      the solver is not in a position to make, because it knows about one cost and not about the
+      next three turns.
+    */
+    let s = table();
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0
+      ? { ...seat, counters: { ...seat.counters, energy: 1 } }
+      : seat)) };
+    const hub = find(s, 0, 'battlefield', 'Aether Hub');
+    const rows = legalActions(s, 0).plays.filter((p) => p.card === hub);
+    expect(rows).toHaveLength(6);
+    expect(rows.filter((p) => p.description.includes('Pay {E}'))).toHaveLength(5);
+  });
+});

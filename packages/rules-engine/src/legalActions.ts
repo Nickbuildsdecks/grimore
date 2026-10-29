@@ -639,7 +639,7 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
     const script = scriptFor(state.cardDefs[inst.defKey]?.name);
     const ch = characteristicsOf(state, inst);
     const abilities = script?.abilities ?? [];
-    let usable: { index: number; produces: readonly ManaType[]; life: number }[] = [];
+    let usable: { index: number; produces: readonly ManaType[]; life: number; energy: number }[] = [];
     for (let i = 0; i < abilities.length; i++) {
       const ability = abilities[i]!;
       if (ability.produces === undefined || ability.produces.length === 0) continue;
@@ -651,12 +651,37 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
       // is a legal way to lose the game, so the engine stops one short of it.
       const cost = ability.cost.life ?? 0;
       if (cost > 0 && life <= cost) continue;
-      usable.push({ index: i, produces: ability.produces as readonly ManaType[], life: cost });
+      /*
+        And energy, which this list had been silently ignoring — found by `measure/energy.mjs`
+        rather than by reading, because the symptom was an absence: over 288 games the Aether Hub
+        gave out thirty-six energy and **none of it was ever spent**.
+
+        The reason is right here. A Hub's coloured rows cost `{T}` and one energy, and until this
+        line the filter only looked at mana, tap, sacrifice and life — so the auto-tapper saw five
+        free rows and would happily tap the Hub for a colour it had not paid for, with no energy at
+        all. A land that quietly makes any colour for nothing is not the card.
+      */
+      const energyCost = ability.cost.energy ?? 0;
+      if (energyCost > 0 && energyOf(state, seat) < energyCost) continue;
+      usable.push({
+        index: i, produces: ability.produces as readonly ManaType[], life: cost, energy: energyCost,
+      });
     }
-    // A permanent with both an offered tap and a paid one keeps only the offered ones. No scripted card
-    // is shaped that way; if one ever is, the conservative half of it is the half to offer, since
-    // charging life for a tap that did not need it is the one mistake that cannot be taken back.
-    if (usable.some((u) => u.life === 0)) usable = usable.filter((u) => u.life === 0);
+    /*
+      A permanent with both an offered tap and a paid one keeps only the offered ones, since
+      charging for a tap that did not need it is the one mistake that cannot be taken back.
+
+      The Aether Hub is the first card in the pool actually shaped this way — `{T}: Add {C}` beside
+      `{T}, Pay {E}: Add a colour` — and this is the line that decides what the **auto-tapper** does
+      with it: it takes the colourless row and leaves the energy alone. That is deliberately
+      conservative rather than clever. Spending a saved resource to fix a colour is a judgement
+      about the next three turns, and the auto-tapper is a solver that only knows about this cost;
+      the player keeps the choice, because `legalActions` still offers all six rows and the table
+      draws them.
+    */
+    if (usable.some((u) => u.life === 0 && u.energy === 0)) {
+      usable = usable.filter((u) => u.life === 0 && u.energy === 0);
+    }
     if (usable.length === 0) continue;
     const cost = usable[0]!.life;
     const bucket = cost > 0 ? painful : free;
