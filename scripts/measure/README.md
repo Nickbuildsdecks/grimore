@@ -606,6 +606,17 @@ is about, the *variant* column must come out identical in both arms — 151-137 
 Ravager on the board the flag cannot change anything, and any difference there would mean the two arms
 were not playing the same games. A control you get for free beats one you have to schedule.
 
+**A conversion rate is castability, not value, and the two come apart hardest on the cards you
+most want to read it about.** `cast-counts`' percentage is "cast, of the games it was in hand", and
+affinity put three numbers side by side that make the point: a Frogmite converts **94%**, a Myr
+Enforcer **32%**, and the Serra Angel the Enforcer displaced **45%**. Read as a quality score that
+says the swap made the deck worse. Read as what it is — a {7} creature is castable about a third of
+the time even with the keyword, and a five-mana flier in a deck whose curve stops at four is
+castable not much more often — it says nothing at all about which slot is better, and the paired slot
+probe is the only thing that does. Use the conversion to find a card that is **stuck** (the
+Disenchant with no target, the Ravager's row nobody presses) and the probe to find a card that is
+**bad**.
+
 **Audit the pool before writing a rule about a card type.** "Feed it a spent artifact" assumed spent
 artifacts exist. Printing every non-creature artifact in the pool with its abilities, statics and
 triggers took one script and showed there are none: all of them are Equipment, Vehicles, mana sources,

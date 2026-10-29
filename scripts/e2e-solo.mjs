@@ -540,6 +540,27 @@ const BLINK_LIST = [
   '4 Counterspell', '4 Essence Scatter', '4 Unsummon', '4 Tome Scour',
 ].join('\n');
 
+/**
+ * A deck whose spells get cheaper as the board fills, for the badge that says so.
+ *
+ * The table has drawn "what the board did to this cost" beside the printed one since D132 — a
+ * Goblin Electromancer's reduction, a Thalia's tax — and **no browser run had ever looked at it**.
+ * The engine's tests read `costChange` off the play and the web unit tests read the reducer; neither
+ * of them can say whether the number reaches the screen, which is the only place a player meets it.
+ *
+ * Affinity is the card that makes it unmissable: twenty-four artifacts in sixty cards, so a Myr
+ * Enforcer printed at {7} is routinely a two-mana 4/4 and a Frogmite is a one-mana 2/2. The run
+ * requires a row with a reduction on it to have been **pressed**, which is the badge and the
+ * payment agreeing in the one place they can disagree.
+ *
+ * Mono-white plus colourless, for the lesson `LIST=costs` paid for twice.
+ */
+const AFFINITY_LIST = [
+  '20 Plains',
+  '8 Frogmite', '8 Myr Enforcer',
+  '12 Bonesplitter', '12 Sky Skiff',
+].join('\n');
+
 const ARTIFACT_LIST = [
   '24 Plains',
   '4 Arcbound Ravager', '4 Arcbound Worker',
@@ -625,6 +646,8 @@ const ARTIFACT_LIST = [
         ? ARTIFACT_LIST
         : LIST === 'blink'
         ? BLINK_LIST
+        : LIST === 'affinity'
+        ? AFFINITY_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -829,6 +852,15 @@ const ARTIFACT_LIST = [
       bar: a Soulherder showing 2/2 is the trigger having resolved and the layer system having put
       the counter through to the screen.
     */
+    /*
+      The rows whose cost the **board** changed, in the table's own words.
+
+      The driver returns the row it pressed, and the row's text is the description, the printed cost
+      and the badge beside it — so a reduction that reached the screen is in the string and one that
+      did not is not. That is the whole claim: `costChange` is asserted in the engine's own tests,
+      and this is the only check in the project that the number is drawn.
+    */
+    const cheapRows = new Set();
     const blinkPrompts = new Set();
     const blinkDeclines = new Set();
     const herderBodies = new Set();
@@ -894,6 +926,9 @@ const ARTIFACT_LIST = [
         if (typeof did === 'string'
           && /^(fed a sacrifice outlet|backed out of a sacrifice): /.test(did)) {
           feedWords.add(did.replace(/^[^:]+: /, ''));
+        }
+        if (typeof did === 'string' && /^chose a play: .*[−-]\{\d+\}/.test(did)) {
+          cheapRows.add(did.replace(/^chose a play: /, ''));
         }
         if (typeof did === 'string' && /^aimed a trigger: .*blink/i.test(did)) {
           blinkPrompts.add(did.replace(/^aimed a trigger: /, ''));
@@ -1022,7 +1057,7 @@ const ARTIFACT_LIST = [
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
       || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact'
-      || LIST === 'blink'
+      || LIST === 'blink' || LIST === 'affinity'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -1080,12 +1115,19 @@ const ARTIFACT_LIST = [
       */
       : LIST === 'blink'
       ? blinkPrompts.size === 0 || herderBodies.size === 0
+      /*
+        One pressed row with a reduction on it. Not a count and not both cards: which of the two
+        affinity creatures a game draws first is the shuffle's business, and the claim is about the
+        badge rather than about either card.
+      */
+      : LIST === 'affinity'
+      ? cheapRows.size === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
       || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact'
-      || LIST === 'blink')
+      || LIST === 'blink' || LIST === 'affinity')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -1102,6 +1144,7 @@ const ARTIFACT_LIST = [
         : LIST === 'vanish' ? `clocks seen: ${[...clockFaces].join(', ') || 'none'}`
         : LIST === 'artifact' ? `feeding sentences: ${[...feedWords].join(' | ') || 'none'}`
         : LIST === 'blink' ? `${blinkPrompts.size} blink prompts, bodies: ${[...herderBodies].join(', ') || 'none'}`
+        : LIST === 'affinity' ? `${cheapRows.size} rows with a reduction drawn on them`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -1384,6 +1427,19 @@ const ARTIFACT_LIST = [
         console.log('      no decline this run: every end step had something worth blinking');
       }
       for (const w of [...blinkPrompts].slice(0, 2)) console.log(`      ${w}`);
+    } else if (LIST === 'affinity') {
+      /*
+        The nineteenth scenario, and the first to look at a number the table has been drawing since
+        D132: what the **board** did to a cost, beside the cost printed on the card.
+
+        A row that quietly rewrote {7} to {2} would be telling the player the card says something it
+        does not, and a row that showed {7} and then charged {2} would be a table nobody could
+        trust. Both halves are checked here in one press: the badge is in the row's own text, and
+        the row was taken — so the spell was cast at the number the table showed.
+      */
+      check('a row says what the board did to its cost, and the cast is taken at that price',
+        cheapRows.size > 0, `rows seen: ${[...cheapRows].slice(0, 3).join(' | ') || 'none'}`);
+      for (const row of [...cheapRows].slice(0, 3)) console.log(`      ${row}`);
     } else if (LIST === 'vanish') {
       /*
         A clock the player can read, and a clock that is actually running.

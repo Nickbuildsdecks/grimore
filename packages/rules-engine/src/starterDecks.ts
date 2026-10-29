@@ -2152,6 +2152,42 @@ const SOULHERDER: CardDef = {
   colors: ['U'],
 };
 
+/**
+ * Frogmite and Myr Enforcer: the two bodies affinity is famous for, and the pool's first spells
+ * whose cost is a fact about the board.
+ *
+ * A {4} 2/2 and a {7} 4/4 on paper, which is nobody's idea of a card — and that is the keyword.
+ * In a deck with a dozen artifacts the Frogmite is a one-mana 2/2 and the Enforcer a two-mana 4/4,
+ * and in a deck with none they are exactly what they say. Forge Alliance is the one list in the
+ * pool that can pay them properly: seventeen of its sixty cards are artifacts.
+ *
+ * Artifact creatures themselves, as printed, which is the half that makes the keyword snowball —
+ * a Frogmite cast makes the next one cheaper.
+ */
+const FROGMITE: CardDef = {
+  name: 'Frogmite',
+  typeLine: 'Artifact Creature \u2014 Frog',
+  manaCost: '{4}',
+  cmc: 4,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Affinity for artifacts (This spell costs {1} less to cast for each artifact you '
+    + 'control.)',
+  colors: [],
+};
+
+const MYR_ENFORCER: CardDef = {
+  name: 'Myr Enforcer',
+  typeLine: 'Artifact Creature \u2014 Myr',
+  manaCost: '{7}',
+  cmc: 7,
+  power: '4',
+  toughness: '4',
+  oracleText: 'Affinity for artifacts (This spell costs {1} less to cast for each artifact you '
+    + 'control.)',
+  colors: [],
+};
+
 const CLOUDSHIFT: CardDef = {
   name: 'Cloudshift',
   typeLine: 'Instant',
@@ -4439,7 +4475,7 @@ export const FORGE_ALLIANCE: DeckSpec = {
   description: 'Red-white equipment. A board of small creatures, and a sword for one of them.',
   commander: BALAN,
   cards: [
-    { card: PLAINS, count: 8 },
+    { card: PLAINS, count: 7 },
     { card: MOUNTAIN, count: 8 },
     { card: BOROS_GUILDGATE, count: 3 },
     { card: SECLUDED_STEPPE, count: 2 },
@@ -4452,7 +4488,33 @@ export const FORGE_ALLIANCE: DeckSpec = {
       Worker is the one that is never quite a clean trade for the opponent. See D221.
     */
     { card: ARCBOUND_WORKER, count: 1 },
-    { card: MONASTERY_SWIFTSPEAR, count: 2 },
+    /*
+      Affinity, in the one deck in the pool that can pay it (D228).
+
+      One Monastery Swiftspear and one **Plains** paid for them, and the land is the honest half of
+      the trade: a deck whose spells get cheaper as the board fills needs fewer lands to cast them,
+      which is the whole reason affinity decks run twenty rather than twenty-four. Prowess wants a
+      hand full of spells, and seventeen of this deck's sixty cards are artifacts — which is the
+      other keyword's food. A Frogmite on a board with three artifacts is a one-mana 2/2 and a Myr
+      Enforcer a four-mana 4/4, and both are artifacts themselves, so they feed the Ravager, the
+      Etched Champion's metalcraft and each other.
+
+      The slots `cast-counts` actually points at are **Serra Angel** (45% — ten casts in the
+      twenty-two games it was in hand, which is what five mana looks like in a deck whose curve
+      stops at four) and **Elite Vanguard** (49%), and neither was taken, because both are named by
+      tests that place them out of *this* deck's library: the crew tests pay "crew 2" with the
+      Angel's four power and the Gift tests enchant the Vanguard. That is D223's lesson arriving
+      from the other side — the cheapest slot to spend is one whose card no test needs from here,
+      and a land is the cheapest of all.
+
+      **The price of these two slots is measured and the measurement does not agree with itself**:
+      taking both cards back out reads +1 of 288 paired games on one seed set and −23 on another,
+      the second outside this project's ±20 floor. So the shape here is provisional and D228 carries
+      the numbers; the land argument above is an argument, not a reading.
+    */
+    { card: FROGMITE, count: 1 },
+    { card: MYR_ENFORCER, count: 1 },
+    { card: MONASTERY_SWIFTSPEAR, count: 1 },
     // Both copies: a vehicles test crews a Sky Skiff with two of them, and `playout.test.ts`
     // watches one die for its Spirit.
     { card: DOOMED_TRAVELER, count: 2 },

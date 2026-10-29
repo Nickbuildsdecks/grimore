@@ -6492,6 +6492,27 @@ land in the same tens as the damage ones — which is what makes the two badges 
 other. Information and never enforcement, like the deals: no rule reads it and the bot does not
 either.
 
+### Affinity, a cost the board decides (D228)
+
+D132's cost modification only ran one way: a permanent on the battlefield changing what *other*
+spells cost. Affinity is the mirror — a reduction printed on the card being cast, reading its own
+caster's board (CR 702.41a) — and it needed one declaration (`CardScript.affinity`) and five lines
+inside `costChangeFor`, because that function already answered "what does this cost here, for this
+seat" and is called from every place a cast cost is computed. The offer and the payment therefore
+cannot disagree, and affinity works under an alternative cost for free.
+
+Three things are the keyword rather than the code: it is counted **as the cost is computed**, so the
+row goes back up when the artifacts are answered; it moves **generic** mana only; and the floor is
+reported honestly — eight artifacts against a printed {7} take seven off, because that is what the
+board actually did.
+
+Frogmite and Myr Enforcer, in Forge Alliance, whose seventeen artifacts are the only board in the
+pool that can pay them. The slot argument took three tries and the first two were killed by the test
+suite rather than by judgement: both Swiftspears (a mentor test places one out of this deck), then
+the Serra Angel that `cast-counts` actually points at (45%, and two crew tests pay "crew 2" with its
+four power). What shipped is a Swiftspear and a **Plains** — the honest half of an affinity deck,
+which has always run fewer lands because its spells get cheaper as the board fills.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

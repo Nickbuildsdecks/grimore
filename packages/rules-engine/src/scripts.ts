@@ -3452,19 +3452,18 @@ const BALL_LIGHTNING: CardScript = {
   ],
 };
 
-/**
- * Cloudshift: a creature blinked out and straight back.
- *
- * Nothing here is new engine work and that is the point of including it: the exile and the return
- * are two `relocate` calls, and the arrival raises `etb` through `settle` exactly as a cast
- * creature's would — so Cloudshift re-triggers an enter-the-battlefield ability, saves a creature
- * from a targeted kill, and unblocks an attacker, without a single line about any of those.
- *
- * The returned permanent is a **new object** (CR 400.7): it arrives untapped, with no damage, no
- * counters and no auras, it is not what a spell on the stack targeted, and it is not the creature
- * that was declared as an attacker or a blocker (CR 506.4). The last two are the plays people
- * actually cast this for, and neither of them was true until this card was written.
- */
+/*
+  Affinity, which is a whole card's worth of text and two lines of script (CR 702.41a).
+
+  Nothing here does anything: the keyword is a *cost* reduction, and the one place a cost is
+  computed for a seat already knows how to read it — see `costChangeFor`, where affinity sits
+  beside the permanents that change what other spells cost. So these two are declarations and the
+  engine does the rest, which is the shape every keyword in this file aims for and about half of
+  them reach.
+*/
+const FROGMITE: CardScript = { name: 'Frogmite', affinity: 'artifacts' };
+const MYR_ENFORCER: CardScript = { name: 'Myr Enforcer', affinity: 'artifacts' };
+
 /**
  * Soulherder: the first card in the pool that watches a move into **exile** (CR 400.7).
  *
@@ -3535,6 +3534,19 @@ const SOULHERDER: CardScript = {
   ],
 };
 
+/**
+ * Cloudshift: a creature blinked out and straight back.
+ *
+ * Nothing here is new engine work and that is the point of including it: the exile and the return
+ * are two `relocate` calls, and the arrival raises `etb` through `settle` exactly as a cast
+ * creature's would — so Cloudshift re-triggers an enter-the-battlefield ability, saves a creature
+ * from a targeted kill, and unblocks an attacker, without a single line about any of those.
+ *
+ * The returned permanent is a **new object** (CR 400.7): it arrives untapped, with no damage, no
+ * counters and no auras, it is not what a spell on the stack targeted, and it is not the creature
+ * that was declared as an attacker or a blocker (CR 506.4). The last two are the plays people
+ * actually cast this for, and neither of them was true until this card was written.
+ */
 const CLOUDSHIFT: CardScript = {
   name: 'Cloudshift',
   targets: [{
@@ -8025,7 +8037,7 @@ const ALL: readonly CardScript[] = [
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
-  HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT, SOULHERDER,
+  HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT, SOULHERDER, FROGMITE, MYR_ENFORCER,
   YOUTHFUL_KNIGHT, BOGGART_BRUTE, ROBE_OF_MIRRORS, NIGHT_OF_SOULS_BETRAYAL,
   WALL_OF_AIR, HANNA,
   LIGHTNING_STRIKE, CANCEL, MURDER, GIANT_SPIDER, TITANIC_GROWTH, HEALERS_HAWK, LAVA_AXE,

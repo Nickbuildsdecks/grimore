@@ -13464,3 +13464,95 @@ have the field; the web unit test builds its own view and always has the field; 
 against a real server that was started an hour earlier reads a view that does not. A full-stack run
 is not a slower unit test — it is the only thing in this project that sees two versions of the
 software at once, which is also exactly what a player who leaves a tab open across a deploy sees.
+
+## D228 — Affinity: a cost the board decides, printed on the spell rather than on a permanent
+
+D132 gave the engine cost modification and only one direction of it: a permanent on the battlefield
+changing what *other* spells cost. A Goblin Electromancer is found by a pass over everybody's
+battlefield and applies to whatever matches its own predicate; a Thalia is the same machinery with
+the sign flipped. Affinity is the mirror — a reduction **printed on the card being cast**, reading
+its own caster's board (CR 702.41a).
+
+### One function, because it is one question
+
+`costChangeFor` is where they meet, and that is the whole of the design. It already answered "what
+does this cost *here*, for *this seat*", and it is called from every place a cast cost is computed:
+the printed cost, an alternative cost, and the payment that has to agree with the offer. Folding
+affinity in means the offer and the payment cannot disagree — a table that showed a Frogmite at {1}
+and then charged {4} would be a table nobody could trust — and it means affinity works under an
+alternative cost without a line of extra code.
+
+Three details are the keyword rather than the implementation:
+
+- **Counted as the cost is computed.** The number is however many artifacts the caster controls at
+  the moment somebody looks, so a Frogmite offered at {1} goes back to {4} when the artifacts are
+  answered. Nothing is stored anywhere, which is also why the test for it is two boards rather than
+  one game.
+- **Generic only** (CR 601.2f), like every other reduction here. An affinity card with a coloured
+  requirement keeps it.
+- **Floored, and the floor is reported honestly.** Eight artifacts against a printed {7} take
+  **seven** off, not eight — what the play reports is what the board actually did to the cost, and
+  a table saying "{8} less" over a {7} spell would be describing a cost that does not exist.
+
+### The two cards, and the slot argument that took three tries
+
+Frogmite ({4} 2/2) and Myr Enforcer ({7} 4/4), both artifact creatures as printed — which is the
+half that makes the keyword snowball, since each one cast makes the next cheaper. Forge Alliance is
+the only list in the pool that can pay them: seventeen of its sixty cards are artifacts.
+
+The slots are the interesting part, and the first two answers were wrong:
+
+1. **Both Monastery Swiftspears.** Rejected by the test suite: a mentor test places one out of this
+   deck's library.
+2. **The Serra Angel and a Swiftspear.** The Angel is what `cast-counts` actually points at — 45%,
+   ten casts in the twenty-two games it was in hand, which is what five mana looks like in a deck
+   whose curve stops at four. Rejected for the same reason one step along: two crew tests pay
+   "crew 2" with the Angel's four power out of *this* deck. Elite Vanguard (49%) is protected the
+   same way by the Angelic Gift tests.
+3. **A Swiftspear and a Plains**, which is what shipped. The land is the honest half: a deck whose
+   spells get cheaper as the board fills needs fewer lands to cast them, which is why affinity decks
+   have always run twenty rather than twenty-four.
+
+That is D223's lesson arriving from the other side. There it was "pay from a two-of so the tests
+keep standing"; here the cheapest slot in the deck turned out to be the one card no test can name —
+a land.
+
+### What the slot is worth, which is not settled
+
+The keyword is finished and the deck slot is not, and the two are worth separating because only one
+of them is a rules question.
+
+`cast-counts`, 144 games of Forge Alliance, "cast, of the games it was in hand":
+
+```
+ 94%  cast 34 / in hand 36 games   Frogmite
+ 32%  cast 16 / in hand 50 games   Myr Enforcer
+```
+
+That is castability and not value — see the lesson in `scripts/measure/README.md`, because the
+Serra Angel the Enforcer did *not* displace reads 45% and is a perfectly good card. A {7} creature
+cast a third of the time is affinity working; what it is not is evidence either way.
+
+The paired slot probe is the thing that answers it, and it does not say what the prose above
+assumed. Taking both cards back out and restoring the Plains and the Swiftspear:
+
+```
+288 games, seeds 3300:   stock 144-144   variant 143-145    the pair:  +1
+288 games, seeds 5100:   stock 159-129   variant 182-106    the pair: -23
+```
+
+The first is level, well inside the ±20 floor this project puts on 288 paired games. The second is a
+clear loss, outside it, and in the same direction as that seed set's noisier 144-game reading (−9) —
+so it is not one flukey arm, and the earlier 144-game pair that disagreed on sign (+1 against −9) was
+exactly the noise the 288 convention exists to see through.
+
+So: **the keyword is right and the slot is wrong, or the slot's price is wrong, and those are two
+different repairs.** The two things that changed are a {7} body with a 32% conversion and the 21st
+land, and the paragraph above commits to the land being the honest half of the trade — which is an
+argument, not a number. Both are being priced separately, each against the same two seed sets:
+Myr Enforcer for a second Frogmite (same land count), and Myr Enforcer for the Plains (same body
+count). Whichever reads positive on both arms is the deck's shape, and if neither does, the two
+cards come out and affinity lives in the engine with one Frogmite to exercise it.
+
+Recorded here before the answer rather than after it, because the honest version of this entry is
+the one that says the first guess was measured and did not hold.

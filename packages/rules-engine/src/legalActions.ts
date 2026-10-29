@@ -1763,6 +1763,32 @@ export function costChangeFor(
       }
     }
   }
+  /*
+    And the reduction printed on the **spell itself**: affinity (CR 702.41a).
+
+    The mirror of everything above it. A Goblin Electromancer is a permanent on the battlefield
+    changing what *other* spells cost; affinity is a word on the card being cast, reading its own
+    caster's board. One function answers both because the question a caller asks is the same —
+    "what does this cost here, for this seat" — and folding it in is what gets every caller at once:
+    the printed cost, an alternative cost, and the payment that has to agree with the offer.
+
+    Counted off the board rather than from a static, because that is what the keyword says: the
+    number is however many artifacts the caster controls *as the cost is computed*, so a Frogmite
+    offered at {1} with three artifacts out is offered at {4} the moment they are gone. Generic
+    only, like every other reduction here, and floored with them below.
+  */
+  const own = scriptFor(def.name)?.affinity;
+  if (own !== undefined) {
+    const n = listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst)) return false;
+      return hasType(characteristicsOf(state, inst).typeLine, 'artifact');
+    }).length;
+    if (n > 0) {
+      down += n;
+      notes.push(`affinity for artifacts: {${n}} less`);
+    }
+  }
   if (up === 0 && down === 0) return { generic: 0, notes: [] };
   return { generic: up - down, notes };
 }

@@ -1854,6 +1854,30 @@ export interface CardScript {
     readonly description: string;
   }[];
   /**
+   * **Affinity for artifacts**: this spell costs {1} less to cast for each artifact you control
+   * (CR 702.41a).
+   *
+   * `costModifiers`' mirror, and the two are worth keeping apart rather than folding together. A
+   * Goblin Electromancer is a permanent on the battlefield changing what *other* spells cost, so it
+   * is declared where it sits and found by a pass over the battlefield. Affinity is a word on the
+   * card *being cast*, reading its own caster's board — nothing on the battlefield has to be asked
+   * about it, and the only seat it can ever read is the one casting.
+   *
+   * They meet in `costChangeFor`, which is the one function that answers "what does this cost here,
+   * for this seat". That is what makes the offer and the payment agree, and what makes affinity work
+   * under an alternative cost for free.
+   *
+   * Counted **as the cost is computed**, which is what the keyword says rather than a shortcut: a
+   * Frogmite offered at {1} with three artifacts out goes back to {4} the moment they are answered,
+   * and the number is never stored anywhere. Only generic mana moves, like every other reduction
+   * (CR 601.2f), so an affinity card with a coloured requirement keeps it.
+   *
+   * A value rather than a bare `true` because the keyword is parameterised in print — affinity for
+   * artifacts, for Plains, for Slivers — and `artifacts` is the one the pool has cards for. The day
+   * another arrives it is a second member of this union rather than a second field.
+   */
+  readonly affinity?: 'artifacts';
+  /**
    * Replacement effects this permanent contributes, for an event happening to *another* object
    * (CR 614).
    *

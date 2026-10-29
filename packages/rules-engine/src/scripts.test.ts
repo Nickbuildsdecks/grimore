@@ -18296,3 +18296,147 @@ describe('who has been leaving you alone, which only legality can tell from who 
     expect(viewFor(s, null).seats.find((seat) => seat.index === 2)?.spared['0']).toBe(3);
   });
 });
+
+describe('affinity, which is a cost the board decides', () => {
+  /*
+    The mirror of D132's cost modification, and the two are worth keeping apart in the head.
+
+    A Goblin Electromancer is a permanent on the battlefield changing what *other* spells cost: it is
+    found by a pass over everybody's battlefield, and it applies to spells that match its own
+    predicate. Affinity is a word on the card *being cast*, reading its own caster's board — nothing
+    has to be asked about it, and the only seat it can ever read is the one casting (CR 702.41a).
+
+    They meet in `costChangeFor`, which is the single function that answers "what does this cost
+    here, for this seat". That is what makes the **offer and the payment agree** — a table that
+    showed a Frogmite at {1} and then charged {4} would be a table nobody could trust — and it is
+    also what makes affinity work under an alternative cost for nothing.
+  */
+  const board = (mine: readonly string[], hand = 'Frogmite'): GameState => advanceTo(arena({
+    decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+    hands: { 0: [hand] },
+    battlefield: { 0: [...mine], 1: ['Island'] },
+    turn: 6,
+    firstSeat: 0,
+  }), 'precombat-main');
+
+  /** The play as the table would show it: printed cost, and what the board did to it. */
+  const offered = (s: GameState, name: string) => {
+    const play = legalActions(s, 0).plays.find(
+      (p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', name),
+    );
+    return { change: play?.costChange, note: play?.costNote, offered: play !== undefined };
+  };
+
+  it('takes {1} off for each artifact you control', () => {
+    const s = board(['Plains', 'Bonesplitter', 'Basilisk Collar', 'Darksteel Plate']);
+    expect(offered(s, 'Frogmite')).toEqual({
+      change: -3, note: 'affinity for artifacts: {3} less', offered: true,
+    });
+  });
+
+  it('and nothing at all on an empty board, which is what the card actually says', () => {
+    // The printed {4} is the honest cost of a 2/2 in a deck with no artifacts, and the keyword is
+    // what a deck full of them buys. `costChange` is absent rather than zero: the table shows the
+    // printed cost and this beside it, and "nothing" is the absence.
+    const s = board(['Plains', 'Plains', 'Plains', 'Plains']);
+    expect(offered(s, 'Frogmite')).toEqual({ change: undefined, note: undefined, offered: true });
+  });
+
+  it('counts the artifact creatures too, because a Frogmite is one', () => {
+    /*
+      The half that makes the keyword snowball, and it is the printed type line rather than a clause
+      in the script: these cards are artifact *creatures*, so each one cast makes the next cheaper.
+      Read through `characteristicsOf`, which means an animated artifact or a Vehicle counts and a
+      face-down permanent does not (CR 707.2) — the same reading the rest of the engine uses.
+    */
+    // Four lands as well as the three artifacts, because `plays` offers what this seat can
+    // actually pay for: the reduction is the point of the test, not the mana base.
+    const s = board(['Plains', 'Plains', 'Plains', 'Plains',
+      'Frogmite', 'Ichor Wellspring', 'Sky Skiff'], 'Myr Enforcer');
+    expect(offered(s, 'Myr Enforcer').change).toBe(-3);
+  });
+
+  it('is paid at what it was offered for, which is the whole reason it lives in one function', () => {
+    let s = board(['Plains', 'Bonesplitter', 'Basilisk Collar', 'Darksteel Plate']);
+    s = advanceTo(s, 'precombat-main');
+    // One Plains for a {4} creature, because three artifacts are on the board.
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Plains'), abilityIndex: 0,
+    });
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Frogmite') }), 40);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Frogmite');
+    expect(power(s, find(s, 0, 'battlefield', 'Frogmite'))).toBe(2);
+  });
+
+  it('and floors at nothing, so a {7} 4/4 with eight artifacts out is free', () => {
+    /*
+      A reduction empties the generic part and no further (CR 601.2f), which the engine has done
+      since D132 for taxes and reductions alike — this is the first card that can reach the floor on
+      its own.
+
+      **Eight artifacts take seven off, not eight**, and that is the number worth asserting: what the
+      play reports is what the board actually did to the cost, and a printed {7} has seven to give.
+      The eighth artifact is not wasted in any way a player would notice — the spell is free either
+      way — but a table that said "{8} less" over a {7} spell would be describing a cost that does
+      not exist.
+    */
+    const s = board(['Bonesplitter', 'Chrome Steed', 'Ichor Wellspring', 'Sky Skiff',
+      'Basilisk Collar', 'Darksteel Plate', 'Loxodon Warhammer', 'Juggernaut'], 'Myr Enforcer');
+    expect(offered(s, 'Myr Enforcer').change).toBe(-7);
+    /*
+      And it is offered with **no land on the board at all**, which is the floor doing its job and
+      is also how this suite reads affordability: `plays` is the list of casts this seat can pay
+      for, so a {7} creature appearing on a board of eight artifacts and nothing else is the whole
+      claim. The tests above needed lands for exactly that reason.
+    */
+    expect(offered(s, 'Myr Enforcer').offered).toBe(true);
+  });
+
+  it('goes back up the moment the artifacts are answered', () => {
+    /*
+      Counted as the cost is computed rather than stored anywhere, which is the difference between
+      a keyword and a discount. The same hand, the same card, one Bonesplitter fewer.
+    */
+    const three = board(['Plains', 'Bonesplitter', 'Basilisk Collar', 'Darksteel Plate']);
+    expect(offered(three, 'Frogmite').change).toBe(-3);
+    const two = board(['Plains', 'Plains', 'Bonesplitter', 'Basilisk Collar']);
+    expect(offered(two, 'Frogmite').change).toBe(-2);
+  });
+
+  it('does not change the spell’s mana value, which is what a Chalice of the Void reads', () => {
+    /*
+      The rules trap affinity is famous for, and the first card in this pool that makes it visible:
+      a cost reduction changes **what you pay** and never the **mana value** (CR 202.3b). So a
+      Chalice of the Void on four counters a Frogmite cast for one mana, and a Chalice on one does
+      not — the number the Chalice reads is the {4} printed on the card.
+
+      It works because `manaValueOnStack` reads the printed cost off the card definition rather than
+      whatever was paid, which was true before affinity existed and had nothing in the pool that
+      could tell. Asserted both ways round, because a Chalice that countered everything and a
+      Chalice that countered nothing would both pass a one-sided test.
+    */
+    const chaliced = (charges: number): GameState => {
+      let s = board(['Plains', 'Bonesplitter', 'Basilisk Collar', 'Darksteel Plate']);
+      s = apply(s, {
+        type: 'card:move', by: 1, card: find(s, 1, 'library', 'Chalice of the Void'),
+        toZone: 'battlefield',
+      });
+      s = addCounters(s, find(s, 1, 'battlefield', 'Chalice of the Void'), 'charge', charges);
+      s = apply(s, {
+        type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Plains'), abilityIndex: 0,
+      });
+      return drain(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Frogmite'),
+      }), 40);
+    };
+    // Four: the printed cost, so the Chalice sees it and counters it.
+    expect(namesIn(chaliced(4), 0, 'graveyard')).toContain('Frogmite');
+    // One: what was actually paid, which the Chalice is not reading.
+    expect(namesIn(chaliced(1), 0, 'battlefield')).toContain('Frogmite');
+  });
+
+  it('both cards declare the keyword, so the pool can be audited for it', () => {
+    expect(scriptFor('Frogmite')?.affinity).toBe('artifacts');
+    expect(scriptFor('Myr Enforcer')?.affinity).toBe('artifacts');
+  });
+});
