@@ -2153,6 +2153,39 @@ const LIGHTNING_STRIKE: CardDef = {
   colors: ['R'],
 };
 
+/**
+ * The pool's first **split second** card: two damage nobody gets a word in about (CR 702.19).
+ *
+ * A Lightning Strike deals three for the same mana, which is the whole trade on the card — a damage
+ * for the certainty that while it is on the stack, nothing can be cast in reply. In a pool where
+ * every answer to a spell is a cast counterspell, that is the difference between a removal spell
+ * resolving and a removal spell being Counterspelled.
+ */
+const SUDDEN_SHOCK: CardDef = {
+  name: 'Sudden Shock',
+  typeLine: 'Instant',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  oracleText: 'Split second (As long as this spell is on the stack, players can\u2019t cast spells or activate abilities that aren\u2019t mana abilities.)\nSudden Shock deals 2 damage to any target.',
+  colors: ['R'],
+};
+
+/**
+ * The same keyword on the answer this pool has least of: a Naturalize nobody can play around.
+ *
+ * A mana dearer than Naturalize and it buys the one thing that answer needed. An Equipment about to
+ * be moved, a Chalice about to be grown, a Journey to Nowhere about to be sacrificed in response —
+ * against each of those a Naturalize is a card the opponent gets to answer, and this is not.
+ */
+const KROSAN_GRIP: CardDef = {
+  name: 'Krosan Grip',
+  typeLine: 'Instant',
+  manaCost: '{2}{G}',
+  cmc: 3,
+  oracleText: 'Split second (As long as this spell is on the stack, players can\u2019t cast spells or activate abilities that aren\u2019t mana abilities.)\nDestroy target artifact or enchantment.',
+  colors: ['G'],
+};
+
 const CANCEL: CardDef = {
   name: 'Cancel',
   typeLine: 'Instant',
@@ -5638,7 +5671,24 @@ export const ARC_TEMPEST: DeckSpec = {
     { card: FIREBALL, count: 1 },
 
     // ── Eight that find the next spell ──
-    { card: PREORDAIN, count: 2 },
+    { card: PREORDAIN, count: 1 },
+    /*
+      The second Preordain's slot, spent on **split second** — and the payer is a cantrip because
+      every burn spell in this deck is a better burn spell.
+
+      Sudden Shock was first measured against the **Lightning Strike**: same cost, same colour, same
+      card type, a damage fewer, which is as clean as a slot probe gets. It came back at **22 and 17
+      games of 288 against it** — the one slot reading in this project outside the ±20 floor on the
+      first try, and it says plainly that in this pool the window is worth less than the third
+      damage. A Bolt and a Magma Jet would say the same thing, so there is no burn slot here the
+      keyword wins.
+
+      So the committed slot is the second cantrip's, and the number for it is reported beside the
+      Lightning Strike reading rather than instead of it. Both are in D218, because a slot's number
+      is a fact about the payer and quoting only the flattering one would be the mistake D211 is
+      about.
+    */
+    { card: SUDDEN_SHOCK, count: 1 },
     // Think Twice, for the same reason as Firebolt: one card, two casts, and the second one comes
     // on a turn the hand is empty.
     { card: THINK_TWICE, count: 1 },
@@ -6601,7 +6651,16 @@ export const BLIGHT_VECTOR: DeckSpec = {
     { card: MURDER, count: 1 },
     // The charm's three modes are all live here: regenerate the team through a sweeper, kill a
     // Fog Bank, or shrink a blocker out of the way.
-    { card: GOLGARI_CHARM, count: 2 },
+    { card: GOLGARI_CHARM, count: 1 },
+    /*
+      The second Charm's slot, spent on **split second**, and chosen because the two overlap.
+
+      One of the Charm's three modes destroys an enchantment, which is half of what the Grip does —
+      so the comparison is a cheap modal answer against a dearer unconditional one that also hits
+      artifacts and cannot be responded to. The deck keeps a Charm and the pool keeps three. See
+      D218.
+    */
+    { card: KROSAN_GRIP, count: 1 },
     // A fight spell in a deck whose creatures put permanent counters on what they fight, which is
     // the one removal spell in the pool that gets *better* for being cast by this deck.
     { card: PREY_UPON, count: 1 },

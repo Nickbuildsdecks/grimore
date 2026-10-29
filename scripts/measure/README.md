@@ -483,3 +483,21 @@ difference a fact about the rule, which is exactly what D212 had to withdraw. Wh
 honestly say about a card whose bot answer is fixed is "the slot is paid for"; the rule itself stays
 unmeasured until the options are threaded into that call (D214). An unmeasured rule declared as such
 costs nothing; a measured-looking number from the wrong harness costs a day.
+
+**The cleanest payer is the one most likely to say no, and a slot reading outside the floor is an
+instruction rather than a disappointment.** Sudden Shock against Arc Tempest's Lightning Strike is
+the fairest comparison this project has run — same cost, same colour, same card type, same deck, a
+damage fewer — and it came back **−22 and −17 of 288**, the first slot reading here outside the ±20
+floor on the first try. The reflex is to re-price it against something weaker until the number looks
+level. That is fine *as long as both readings are published*: the honest conclusion was "split second
+is worth less than a damage in this pool, and the committed slot is a cantrip's at −1", not "split
+second is level". A probe that only ever reports the flattering payer is D211's mistake with extra
+steps.
+
+**Grep the tests for the payer *and* the deck before the probe runs.** The pool-keeps-a-copy rule
+(Tormod's Crypt, the second Sacred Cat) has a sharper version: a test can name a card in a
+**particular deck's** graveyard or hand, because `arena()` places cards by finding them in that
+seat's library. So a card can be safe to reduce from two to one and still unsafe to remove from one
+list — Lava Spike is escape fodder named by deck in several arc-tempest tests, and looked like the
+ideal payer right up to the point the suite went red. Checking costs one grep; not checking costs a
+probe run and a rewrite.

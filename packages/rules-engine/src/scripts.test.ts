@@ -17134,3 +17134,144 @@ describe('vanishing and fading: the same clock, read one turn apart', () => {
     expect(scriptFor('Blastoderm')?.fading).toEqual({ count: 3 });
   });
 });
+
+describe('split second: the spell nobody gets to answer', () => {
+  /*
+    Every other rule in this engine about what a player may do reads the board, the step or the
+    seat. Split second (CR 702.19) reads the **stack**: while one of these spells is on it, nobody
+    may cast anything or activate anything that is not a mana ability.
+
+    So the tests are the gate from both sides — the opponent holding a Counterspell, and the caster
+    holding anything at all — the exception the rule names, and the two things the keyword is
+    routinely mistaken for: it is not uncounterable, and it does not stop a land untapping or the
+    game moving on once the spell resolves.
+  */
+  const held = (s: GameState): boolean => s.stackOrder.length > 0;
+
+  /** Arc Tempest casts the Sudden Shock; Tidal Mind sits opposite with a Cancel in hand. */
+  const shockOnTheStack = (): GameState => {
+    let s = arena({
+      decks: { 0: 'arc-tempest', 1: 'tidal-mind' },
+      hands: { 0: ['Sudden Shock', 'Lightning Bolt'], 1: ['Cancel'] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain'],
+        1: ['Island', 'Island', 'Island', 'Wind Drake'],
+      },
+      turn: 5, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0);
+    const drake = find(s, 1, 'battlefield', 'Wind Drake');
+    return apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Sudden Shock'),
+      targets: [{ kind: 'card', id: drake }],
+    });
+  };
+
+  it('is on the stack, and the opponent cannot cast the Cancel they are holding', () => {
+    const s = shockOnTheStack();
+    expect(held(s)).toBe(true);
+    const counter = find(s, 1, 'hand', 'Cancel');
+    // Not offered…
+    expect(legalActions(s, 1).plays.some((play) => play.card === counter)).toBe(false);
+    // …and refused if sent anyway, which is the half a client cannot be trusted with.
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: counter })).not.toBeNull();
+  });
+
+  it('and says why, rather than leaving the hand grey with no explanation', () => {
+    /*
+      Read off the seat **holding priority**, which is the caster until it passes: `legalActions`
+      answers "what may you do now", and a seat that is not being asked is told nothing at all
+      rather than told it is blocked. So the reason a player actually sees is the one on their own
+      card, in their own window — here, the Lightning Bolt the caster is still holding.
+    */
+    const s = shockOnTheStack();
+    const bolt = find(s, 0, 'hand', 'Lightning Bolt');
+    const blocked = legalActions(s, 0).blocked.find((entry) => entry.card === bolt);
+    expect(blocked?.reason).toContain('split second');
+  });
+
+  it('stops the caster too, which is what makes it a rule rather than a protection', () => {
+    /*
+      Worth a test of its own because it is the half people get wrong: split second is not "your
+      spell resolves first", it is "nobody acts". The seat that cast it is holding a Lightning Bolt
+      and has mana, and cannot cast it either.
+    */
+    const s = shockOnTheStack();
+    const bolt = find(s, 0, 'hand', 'Lightning Bolt');
+    expect(legalActions(s, 0).plays.some((play) => play.card === bolt)).toBe(false);
+  });
+
+  it('but a mana ability still works, which is the exception the rule names', () => {
+    /*
+      The exception earns its place: a seat part-way through paying for something can finish. So the
+      check is that the untapped Island is still offered as a play while the Shock is on the stack —
+      and that the only plays either seat has are mana abilities.
+    */
+    const s = apply(shockOnTheStack(), { type: 'auto:pass', by: 0 });
+    // Priority is the opponent's now, with the Shock still waiting: the window a Cancel wants.
+    expect(s.priority).toBe(1);
+    expect(s.stackOrder.length).toBeGreaterThan(0);
+    const theirs = legalActions(s, 1).plays;
+    expect(theirs.length).toBeGreaterThan(0);
+    expect(theirs.every((play) => play.isManaAbility)).toBe(true);
+    // And the Cancel in their hand is still refused, in the one window they would have used it.
+    expect(legalActions(s, 1).blocked.some((e) => e.reason.includes('split second'))).toBe(true);
+  });
+
+  it('and the table opens again the moment it resolves', () => {
+    // The gate is read off the stack, so nothing has to be cleaned up: an empty stack is an open
+    // table, and the Cancel is castable again (with nothing to counter, which is the point).
+    let s = drain(shockOnTheStack(), 40);
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Wind Drake');
+    s = advanceTo(s, 'postcombat-main');
+    expect(legalActions(s, 1).blocked.some((e) => e.reason.includes('split second'))).toBe(false);
+  });
+
+  it('is not uncounterable: a Chalice set to two counters it on cast', () => {
+    /*
+      The thing the keyword is most often mistaken for. Split second stops *casting*, and a Chalice
+      of the Void is not cast in response — it is already on the battlefield and its trigger goes on
+      the stack above the spell. So the Shock is countered by a permanent that could not care less
+      about the keyword.
+    */
+    let s = arena({
+      decks: { 0: 'arc-tempest', 1: 'tidal-mind' },
+      hands: { 0: ['Sudden Shock'] },
+      battlefield: { 0: ['Mountain', 'Mountain'], 1: ['Chalice of the Void'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    const chalice = find(s, 1, 'battlefield', 'Chalice of the Void');
+    s = { ...s, instances: { ...s.instances, [chalice]: { ...s.instances[chalice]!, counters: { charge: 2 } } } };
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Sudden Shock'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Sudden Shock');
+    // Countered rather than resolved: the Chalice's controller took no damage.
+    expect(life(s, 1)).toBe(20);
+  });
+
+  it('the Grip destroys an artifact or an enchantment, same as the card it is a dearer copy of', () => {
+    let s = arena({
+      decks: { 0: 'blight-vector', 1: 'forge-alliance' },
+      hands: { 0: ['Krosan Grip'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest'], 1: ['Bonesplitter'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    const hammer = find(s, 1, 'battlefield', 'Bonesplitter');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Krosan Grip'),
+      targets: [{ kind: 'card', id: hammer }],
+    }), 40);
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Bonesplitter');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Bonesplitter');
+  });
+
+  it('both cards declare the keyword, so the pool can be audited for it', () => {
+    expect(scriptFor('Sudden Shock')?.splitSecond).toBe(true);
+    expect(scriptFor('Krosan Grip')?.splitSecond).toBe(true);
+  });
+});

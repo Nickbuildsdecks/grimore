@@ -12429,3 +12429,123 @@ counts, for exactly that reason.
 The counter comes off in the upkeep, which is the step the table passes straight through — so this
 is also the second thing `LIST=echo` established the need for: a claim about a step nobody stops in
 can only be made by watching a game play itself.
+
+## D218 — Split second, the pool's first rule about the stack
+
+Every rule in this engine about what a player may do reads the board, the step or the seat. A land
+drop reads the step and the count; a sorcery-speed ability reads the step and the stack's emptiness;
+a morph reads the hand. Split second (CR 702.19) reads **the stack itself**: while a spell with the
+keyword is on it, nobody may cast a spell or activate anything that is not a mana ability.
+
+Which makes it the first thing here whose answer to "may I?" depends on an object somebody else put
+on the stack a moment ago.
+
+### Where it goes, and why that is the whole implementation
+
+In `legalActions`, in two places, because that function is the one place that decides what a seat may
+do. `splitSecondHeld(state)` walks `stackOrder` for a **spell** whose script declares it; the cast
+loop skips every card and the activation loop skips every ability whose `produces` is undefined.
+
+Nothing else needed to know. The table reads `legalActions` and draws an empty list; the bot reads
+the same list and passes; `auto:cast` and `auto:activate` refuse because they check the same
+function. One gate, four readers, and the keyword cost about fifteen lines.
+
+Two details in the rule rather than in the code:
+
+- **Spells only.** The keyword says "while this **spell** is on the stack", so an ability on the
+  stack stops nothing, even one from a permanent whose card has the word on it. `kind === 'spell'`
+  is that sentence.
+- **Mana abilities are exempt**, and the exemption earns its keep: a seat part-way through paying for
+  something can finish. `ability.produces !== undefined` is the same flag `isManaAbility` is built
+  from, so the gate and the label can never disagree about what a mana ability is.
+
+### The hand is told why, which is where the one UI question went
+
+A hand that goes grey with no explanation is the complaint `blocked` exists to answer, so the cast
+gate records `a spell with split second is on the stack` for every card in the player's hand. It is
+the only reason in that list which is about something **on the stack** rather than about the card the
+player is holding.
+
+And it needed no client work at all, which is worth recording as a result rather than an omission:
+`reasonCannotPlay` in `apps/web` reads `blocked` straight off the view and hands it to the card
+sheet, so a new reason is **data** rather than a new path. That pass-through already has its own test;
+this keyword adds a string to a list it already renders. There is no browser row for split second for
+the same reason — the claim is a legality rule, it is pinned where legality lives, and the only thing
+the screen does with it is print a sentence it is already tested to print.
+
+### Read off the seat holding priority, which cost a test rewrite
+
+The first two tests asked `legalActions(state, 1)` while seat 0 still held priority and got an empty
+`plays` and an empty `blocked` — and passed, for the wrong reason. `legalActions` answers "what may
+you do **now**", so a seat that is not being asked is told nothing at all rather than told it is
+blocked.
+
+So the reason a player actually sees is the one on their own card in their own window, and the tests
+say so: the caster's own Lightning Bolt carries the reason while the caster still holds priority, and
+the opponent's Cancel carries it once priority has passed to them with the Shock still waiting —
+which is the one window a Cancel was ever going to be used in.
+
+### What the keyword is not, as a test rather than a comment
+
+**It is not uncounterable.** Split second stops *casting*, and plenty of things that counter a spell
+are not cast: a Chalice of the Void set to two is already on the battlefield, its trigger goes on the
+stack above the Shock, and the Shock is countered by a permanent that could not care less about the
+keyword. That is a test, because it is the thing the keyword is most often mistaken for.
+
+In this pool the practical consequence is sharper than the rule: every *cast* answer to a spell here
+is a counterspell, so against two Counterspells, a Cancel, a Disallow and a Saw It Coming, split
+second is close to "this resolves". That is the card's whole selling point and it is still not what
+the rule says.
+
+### The two slots, and the first slot reading this project has had to act on
+
+Sudden Shock against the **Lightning Strike** is as clean as a slot probe gets: same cost, same
+colour, same card type, same deck, and the only differences are a damage and the keyword. So that
+number is the keyword's price with everything else held still.
+
+It came back **−22 and −17 of 288**. One reading outside the ±20 floor, both the same sign, on the
+cleanest payer available — which is the first slot reading in this project that is a result rather
+than noise, and what it says is plain: **in this pool the window is worth less than the third
+damage.** A Lightning Bolt or a Magma Jet would say the same thing, so there is no burn slot in Arc
+Tempest that split second wins.
+
+So the slot moved, and finding where took two tries that the pool refused:
+
+- **Lava Spike** looked right — three damage but *to a player only*, so it answers nothing on the
+  board. It is **escape fodder** in several arc-tempest tests, which place it in that deck's
+  graveyard by name for Phoenix of Ash. Removing it from the deck breaks them.
+- **Lightning Strike** itself was the first choice and is the payer whose number said no.
+
+The committed slot is the **second Preordain's**, and that reading is **−1 and −1**: dead level.
+Both numbers are reported, because a slot's number is a fact about the payer (D207, D211) and quoting
+only the flattering one is exactly the mistake. Krosan Grip against the second Golgari Charm is
+**+2 and +9**, inside the floor.
+
+**And the bot casts them**, which is what makes those numbers readings rather than silence:
+
+| | cast | of games holding it |
+| --- | --- | --- |
+| Sudden Shock | 43 | 54 (80%) |
+| Lightning Strike | 48 | 60 (80%) |
+| Krosan Grip | 21 | 53 (40%) |
+| Golgari Charm | 31 | 43 (72%) |
+
+Sudden Shock is cast at exactly the rate the Lightning Strike is, so the −22 is not "the card sat in
+hand" — it is two decks playing the same number of burn spells and one of them dealing less damage.
+The Grip's 40% is the shape of a card that needs a target: it is cast when there is an artifact or
+an enchantment to kill and held when there is not, which is the Naturalize's own behaviour (52%) on
+a card that costs a mana more.
+
+**The third pool-keeps-a-copy lesson, and the first where it was the *deck* keeping it.** Tormod's
+Crypt and the second Sacred Cat taught that the pool needs a copy of what a test reads. Lava Spike
+adds the sharper version: a test can name a card in a *particular deck's* graveyard, so a card can be
+safe to reduce and still unsafe to remove from one list. Checking a payer now means grepping the
+tests for the card **and** the deck before the probe runs, not after.
+
+### What the bot does not know
+
+Split second makes an opponent's held counterspell worthless, and the bot that holds it has no idea.
+Its "keep mana up for an answer" rule (D148, D149) reads the board and its own hand; it cannot read
+"the spell about to be cast at me will not let me cast this". Nothing here tries to teach it, and
+nothing should until there is an instrument that would notice — the bot is not wrong to hold the mana,
+it is simply holding it for a spell that will not get its window.

@@ -6089,6 +6089,64 @@ same clock was seen at more than one number: two clocks at one reading each is t
 Calciderm beside a Blastoderm shows `time 4` and `fade 3` on the first move with nothing having
 counted down at all. Across runs it has read `fade 3, 2, 1` and `time 3, 2, 1` off a real game.
 
+### Split second, the pool's first rule about the stack (D218)
+
+Every rule in this engine about what a player may do reads the board, the step or the seat. Split
+second (CR 702.19) reads **the stack**: while a spell with the keyword is on it, nobody may cast a
+spell or activate anything that is not a mana ability. It is the first thing here whose answer to
+"may I?" depends on an object somebody else put on the stack a moment ago.
+
+It lives in `legalActions`, in two places, because that is the one function that decides what a seat
+may do: `splitSecondHeld` walks `stackOrder` for a **spell** whose script declares it, the cast loop
+skips every card and the activation loop skips every ability whose `produces` is undefined. Nothing
+else needed to know — the table draws an empty list, the bot passes, and `auto:cast` refuses, all off
+the same gate. Two details are the rule rather than the code: **spells only**, because the keyword
+says "while this *spell* is on the stack", so an ability on the stack stops nothing; and **mana
+abilities are exempt**, read off the same flag `isManaAbility` is built from, so the gate and the
+label can never disagree.
+
+**The hand is told why.** A hand that goes grey with no explanation is the complaint `blocked` exists
+to answer, so the gate records `a spell with split second is on the stack` — the only reason in that
+list which is about something on the stack rather than about the card the player is holding. And it
+needed no client work, which is a result rather than an omission: `reasonCannotPlay` reads `blocked`
+off the view and hands it to the card sheet, so a new reason is **data** rather than a new path, on a
+pass-through that already has its own test. That is also why there is no browser row — the claim is a
+legality rule, pinned where legality lives, and the only thing the screen does with it is print a
+sentence it is already tested to print.
+
+Two tests had to be rewritten after passing for the wrong reason. The first versions asked
+`legalActions` of the seat **not** holding priority and got an empty list both ways: that function
+answers "what may you do now", so a seat nobody is asking is told nothing rather than told it is
+blocked. The honest version reads the caster's own Lightning Bolt while the caster holds priority,
+and the opponent's Cancel once priority has passed to them with the Shock still waiting — which is
+the one window a Cancel was ever going to be used in.
+
+And one test pins what the keyword is **not**. It is not uncounterable: a Chalice of the Void set to
+two is already on the battlefield, its trigger goes on the stack above the spell, and the Shock is
+countered by a permanent that could not care less about the keyword. In this pool the practical
+consequence is sharper than the rule — every *cast* answer here is a counterspell, so against two
+Counterspells, a Cancel, a Disallow and a Saw It Coming, split second is close to "this resolves" —
+and that is still not what the rule says.
+
+**And the slot probe said no, for the first time in this project.** Sudden Shock against Arc
+Tempest's Lightning Strike is as clean as a slot probe gets — same cost, same colour, same card
+type, same deck, a damage fewer — and it came back **−22 and −17 of 288**: one reading outside the
+±20 floor, both the same sign, which says plainly that in this pool the window is worth less than
+the third damage. A Bolt or a Magma Jet would say the same, so no burn slot here wins. The committed
+slot is the **second Preordain's** instead, at **−1 and −1**, and both numbers are reported because a
+slot's number is a fact about the payer. Finding that slot took two tries the pool refused: the Lava
+Spike looked ideal (three damage, but to a player only) and turned out to be **escape fodder named by
+deck in several tests** — the third pool-keeps-a-copy lesson, and the first where it was a *deck*
+rather than the pool doing the keeping. Krosan Grip went into Blight Vector for the second Golgari
+Charm, whose three modes include destroying an enchantment, at **+2 and +9**. The bot casts Sudden
+Shock in 80% of the games it holds one, exactly the Lightning Strike's rate, so the −22 is two decks
+playing the same number of burn spells and one of them dealing less damage.
+
+Worth writing down what the bot does not know: split second makes an opponent's held counterspell
+worthless and the bot holding it has no idea, because its "keep mana up for an answer" rule reads the
+board and its own hand. Nothing here tries to teach it, and nothing should until there is an
+instrument that would notice the difference.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

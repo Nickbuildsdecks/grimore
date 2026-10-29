@@ -6563,6 +6563,39 @@ function echoTrigger(cost: string): TriggerDef {
 }
 
 /**
+ * Sudden Shock: two damage nobody gets to answer (CR 702.19).
+ *
+ * The pool's first **split second** card, and a mana dearer than the Shock it sits beside for
+ * exactly one thing: while it is on the stack nothing can be cast. In a pool whose every answer to
+ * a spell is a cast counterspell, that is the difference between killing a creature and having the
+ * removal countered — and it is a difference the player has to decide is worth a mana.
+ *
+ * Worth being clear about what it does not buy. The spell is not uncounterable: a Chalice of the
+ * Void set to one counters it on cast and could not care less about the keyword, and so would
+ * anything already on the stack. See `CardScript.splitSecond`.
+ */
+const SUDDEN_SHOCK: CardScript = {
+  name: 'Sudden Shock',
+  splitSecond: true,
+  targets: [ANY_TARGET],
+  onResolve: (c) => damageFirstTarget(c, 2),
+};
+
+/**
+ * Krosan Grip: the artifact answer that cannot be played around.
+ *
+ * The same script as Naturalize and Disenchant — one factory, three cards — with the keyword and a
+ * mana on top. What the extra mana buys is the half of the board this pool answers least well: an
+ * Equipment that is about to be moved, a Chalice that is about to be grown, a Journey to Nowhere
+ * somebody is about to sacrifice in response. Against each of those, a Naturalize is a card the
+ * opponent gets to answer and this is not.
+ */
+const KROSAN_GRIP: CardScript = {
+  ...destroyAnArtifactOrEnchantment('Krosan Grip'),
+  splitSecond: true,
+};
+
+/**
  * Vanishing N: a counter off each of your upkeeps, and gone when the last one goes (CR 702.63b).
  *
  * Two printed abilities folded into one trigger: "remove a time counter from it" and "when the last
@@ -7798,6 +7831,7 @@ const ALL: readonly CardScript[] = [
   MOGG_WAR_MARSHAL, YAVIMAYA_GRANGER, MYSTIC_REMORA,
   STUDENT_OF_WARFARE, BEASTBREAKER_OF_BALA_GED,
   CALCIDERM, BLASTODERM,
+  SUDDEN_SHOCK, KROSAN_GRIP,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

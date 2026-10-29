@@ -1292,6 +1292,28 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Split second: while this spell is on the stack, nobody may cast a spell or activate an ability
+   * that is not a mana ability (CR 702.19).
+   *
+   * The first thing in this pool that restricts what a player may do **because of what is on the
+   * stack**, which makes it the first rule here that is about the stack rather than about a card.
+   * Everything else that stops a play reads the board, the step or the seat.
+   *
+   * What it is not is uncounterable. A split-second spell can be countered by anything already on
+   * the stack, by a permanent's static answer, and by a triggered ability — Chalice of the Void
+   * counters it on cast and does not care in the slightest. In this pool, where every answer to a
+   * spell is a *cast* counterspell, that distinction has one consequence in practice and the rule
+   * still has to be the rule rather than the consequence.
+   *
+   * Mana abilities are the exception written into the rule, and they matter: a player who had to
+   * tap a land to pay for something else can still do it, which is why the gate reads
+   * `AbilityDef.produces` rather than refusing every activation.
+   *
+   * Read by `legalActions`, which is the one place that decides what a seat may do. A card declares
+   * it and nothing else needs to know.
+   */
+  readonly splitSecond?: true;
+  /**
    * Vanishing N: this permanent arrives with N time counters and spends one each of your upkeeps,
    * and when the **last one is removed** it is sacrificed (CR 702.63).
    *

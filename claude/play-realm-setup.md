@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — three hundred and twenty-eight, today, across thirteen starter decks. A
+cards somebody has scripted — three hundred and thirty, today, across thirteen starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -164,6 +164,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Keep something whose rent **goes up** | **Mystic Remora** ({U} enchantment in Tidal Mind) has **cumulative upkeep {1}**: each of your upkeeps puts an age counter on it and then asks for {1} *for every counter on it*, so it is {1}, then {2}, then {3}. While it is out, every noncreature spell an opponent casts lets you draw two cards. The question is rebuilt at the new price each time — what the button says is what you are being charged. |
 | Spend spare mana on a **bigger creature** | Two creatures have **level up**: **Student of Warfare** ({W} 1/1 in Dawn Tithe, level up {W}) and **Beastbreaker of Bala Ged** ({1}{G} 2/2 in Kindle Grove, level up {1}{G}). Tap it on your battlefield and the level-up row is there — **your own turn only**, at sorcery speed, as many times as you can pay. The counters change what the creature *is*: a Student at two is a 3/3 with first strike and at seven a 4/4 with double strike, and the card face shows the body it currently has. |
 | Play a huge creature that **does not stay** | Two creatures come with a countdown and shroud, so nothing in this pool can target them. **Calciderm** ({3}{W} 5/5 in Forge Alliance) has **vanishing 4** and **Blastoderm** ({2}{G}{G} 5/5 in Kindle Grove) has **fading 3** — and despite the different numbers both give you **three** turns of a 5/5, because vanishing goes when the last counter is removed and fading when there is none left to remove. The counter is on the card face, so count it rather than the turns. A proliferate buys one more. |
+| Cast something they **cannot answer** | Two cards have **split second**: **Sudden Shock** ({1}{R} instant in Arc Tempest, two damage) and **Krosan Grip** ({2}{G} instant in Blight Vector, destroy an artifact or enchantment). While one is on the stack nobody may cast a spell or activate anything but a mana ability — including you, which is the half people get wrong — so a hand tapped on in that window says *a spell with split second is on the stack* rather than going quietly grey. It is not uncounterable: a Chalice of the Void already on the battlefield counters it regardless. The window is not free and not always worth it: the Shock deals a damage less than the Lightning Strike beside it, and that damage measured as worth more than the keyword. |
 | Take somebody's graveyard away | Three cards answer the graveyard, and they answer it three different ways. **Planar Void** in Blight Vector is a {B} enchantment: *whenever another card is put into a graveyard from anywhere, exile that card* — so while it is on the table nobody has a graveyard at all, including its own controller. No flashback, no escape, no delve, no Raise Dead, and a Lhurgoyf stays a 0/1. It is a trigger rather than a replacement, which is exactly how the card is printed: the card really does reach the graveyard and really is exiled afterwards, so a Blood Artist still sees the creature die. **Scavenging Ooze** in Delta Bloom is the patient version — {1}{G} for a 2/2, then {G} as often as you like to exile one card from any graveyard, and if it was a creature card the Ooze gets a +1/+1 counter and you gain a life. Point it at the card somebody is about to escape or delve with and it is removal and a clock at once. **Rest in Peace** in Skyward Writ is the third and the most absolute: {1}{W}, it exiles every graveyard as it arrives, and after that *a card that would be put into a graveyard from anywhere is exiled instead*. The difference from the Void is one word and it matters at the table — “instead” means the card never reaches the graveyard, so a creature that would have died **did not die**: a Blood Artist drains for nothing, a Cruel Celebrant sees nothing, and a Gravedigger has nothing to look at. It is symmetrical and printed that way; Skyward Writ is simply the deck whose sixty cards never wanted a graveyard. In a **pod** that changes, because that deck's commander is Hanna, Ship's Navigator, who buys an artifact or enchantment back out of the graveyard this card has just turned off. |
 | Work out why your creature is bigger than its card | Three creatures are **lords**: they change the other creatures of their own type. Stromkirk Captain in Ashen Rite gives other **Vampires** +1/+1 and first strike, Knight Exemplar in Skyward Writ gives other **Knights** +1/+1 and indestructible, and Imperious Perfect in Rot Harvest gives other **Elves** +1/+1. None of them pumps itself — "other" is printed on all three. The board always shows the current size, and it changes the instant the lord arrives or leaves, with nothing to click: a Knight with three damage on it that was surviving because of the Exemplar dies the moment the Exemplar does. |
 | Attack with **three** creatures on purpose | Four cards pay you for the *shape* of an attack rather than for the creature making it, and all four decide on the attackers you **declared** — what happens to them afterwards does not change the trigger. **Firemane Avenger** ({2}{R}{W} 3/3 flier in Forge Alliance) has **battalion**: on any turn it and at least two other creatures attack, it throws three damage at anything and you gain three life. **Sunhome Stalwart** ({1}{W} 2/1 first strike, the same deck) has **mentor**: every time it attacks it puts a **permanent** +1/+1 counter on another attacking creature with less power — so a Soldier token that attacks beside it twice is a 3/3, and the table only ever offers you the creatures that are both attacking and smaller. **Goblin Wardriver** ({1}{R} 2/2 in Kindle Grove) has **battle cry**: every *other* attacker gets +1/+0 for the turn, which turns a board of medium creatures into a board of bad blocks. And **Topan Freeblade** ({1}{W} 2/2 vigilance in Verdant Guard) has **renown 1**: the first time it connects with a player it keeps a +1/+1 counter and is *renowned* forever after, so it attacks as a 2/2, comes back a 3/3 and is still untapped to block. Renown happens once — the card checks whether it is renowned already — and only on damage that actually takes life: a blocked swing, or one stopped by a Fog, gives it nothing. |
@@ -767,7 +768,7 @@ along with the reason the earlier passes were boxed in: nineteen of this deck's 
 the pool's only copy of that card, so its deadest cards could not be cut without deleting a script's
 only test. Two of them moved to decks that wanted them instead.
 
-The decks share a pool of three hundred and twenty-eight cards, which now includes a wrath, a
+The decks share a pool of three hundred and thirty cards, which now includes a wrath, a
 tapper, graveyard hate, a creature counterspell, a bounce spell, mana rocks and a bird that taps
 for any colour — the engine's vocabulary is wider than the pool, so adding a card is usually a few
 declarative lines rather than new rules. The newest three are the clearest example of both halves
@@ -1050,7 +1051,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1108 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1116 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1267,7 +1268,7 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1108 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1116 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (217 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
@@ -1279,7 +1280,7 @@ decks they pasted in).
 
 - **A list of your own plays, but only the pool is automated.** Paste your decklist in the lobby and
   the table deals it (see *Play with your own list*). Every name the engine's pool has — the three
-  hundred and twenty-eight cards in the thirteen starter decks, commanders included — becomes the real
+  hundred and thirty cards in the thirteen starter decks, commanders included — becomes the real
   card and is fully automated. Every name it does not becomes **cardboard**: a card with a name and
   nothing else, which the tabletop plays by hand with **Move by hand** for whatever it says in
   prose, and which Arena mode refuses by name rather than dealing a game with a card nobody can do
@@ -1287,7 +1288,7 @@ decks they pasted in).
   oracle text — which means a populated `cards` table, which means a machine that can reach
   Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
   exists, the card data does not.
-- **The engine knows three hundred and twenty-eight cards.** Everything in the thirteen starter decks,
+- **The engine knows three hundred and thirty cards.** Everything in the thirteen starter decks,
   plus the ten castable *faces* of the seven cards printed with more than one. It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent

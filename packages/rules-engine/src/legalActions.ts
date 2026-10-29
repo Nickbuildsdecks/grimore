@@ -804,6 +804,26 @@ interface Castable {
   readonly blocked: { card: string; reason: string }[];
 }
 
+/**
+ * Whether a spell with **split second** is on the stack (CR 702.19).
+ *
+ * The pool's first rule about the *stack* rather than about a card, a board or a step: while one of
+ * these is waiting to resolve, nobody may cast a spell or activate anything that is not a mana
+ * ability. Read here, in the one function that decides what a seat may do, so a table and a bot
+ * both see the same empty list and neither needs to know why.
+ *
+ * Spells only, and that is the rule rather than a shortcut: the keyword is printed on instants and
+ * sorceries and says "while this **spell** is on the stack", so an ability on the stack — even one
+ * from a permanent whose card has the keyword — stops nothing.
+ */
+function splitSecondHeld(state: GameState): boolean {
+  return state.stackOrder.some((stackId) => {
+    const object = state.stackObjects[stackId];
+    if (object === undefined || object.kind !== 'spell') return false;
+    return scriptFor(state.cardDefs[object.cardKey]?.name)?.splitSecond === true;
+  });
+}
+
 function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources): Castable {
   const out: LegalPlay[] = [];
   const blocked: { card: string; reason: string }[] = [];
@@ -812,6 +832,16 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     if (!blocked.some((entry) => entry.card === card)) blocked.push({ card, reason });
   };
   const sorcerySpeed = atSorcerySpeed(state, seat);
+  /*
+    Split second (CR 702.19): no casts at all while one is on the stack, whoever cast it.
+
+    Checked once rather than per card, and the hand is told **why** rather than left silent — a hand
+    that goes grey with no explanation is the complaint `blocked` exists to answer, and this is the
+    only reason in that list which is about something sitting on the stack rather than about the card
+    the player is looking at. Land drops need no mention: a land is played at sorcery speed, which
+    means an empty stack, so a split-second spell has already ruled one out.
+  */
+  const splitSecond = splitSecondHeld(state);
   const landsPlayed = state.landsPlayed[String(seat)] ?? 0;
   /** One land a turn, plus any extra drops something has handed this seat (CR 505.5b). */
   const landsAllowed = 1 + (state.extraLands[String(seat)] ?? 0);
@@ -911,6 +941,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   for (const { id, fromCommand, flashback, escape, foretold, fromAdventure, offered, half } of castable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
+    if (splitSecond) {
+      // Only the hand is worth explaining: a card in a graveyard or in exile is not drawn with a
+      // reason beside it, for the same reason none of those zones goes through `why` at all.
+      if (!fromCommand && !flashback && !escape && !foretold && !fromAdventure && !offered) {
+        why(id, 'a spell with split second is on the stack');
+      }
+      continue;
+    }
     /*
       The face being offered, if this play is for one: `def`, `ch` and `script` are the half's from
       here down, so the cost checked, the timing, the targets, the description and the affordability
@@ -1453,6 +1491,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
 }
 
 function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSources): LegalPlay[] {
+  const splitSecond = splitSecondHeld(state);
   const out: LegalPlay[] = [];
   const sorcerySpeed = atSorcerySpeed(state, seat);
 
@@ -1494,6 +1533,14 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ? 'hand'
         : ability.cost.fromGraveyard === true ? 'graveyard' : 'battlefield';
       if (wants !== zone) continue;
+      /*
+        Split second (CR 702.19): a mana ability still works, and nothing else does.
+
+        The exception is written into the rule and it earns its place — a seat that tapped a land to
+        hold up an answer can still tap the rest, and `produces` is exactly the flag that says an
+        ability is a mana ability, the same one `isManaAbility` is built from below.
+      */
+      if (splitSecond && ability.produces === undefined) continue;
       if (ability.sorcerySpeed && !sorcerySpeed) continue;
       // "Activate only if …" — monstrosity's one-shot clause, and the reason the Lion's ability
       // disappears from the table once it has been paid for. See `AbilityDef.activateOnlyIf`.
