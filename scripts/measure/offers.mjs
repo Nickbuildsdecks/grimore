@@ -20,6 +20,9 @@
  *    `candidateActions` finds no legal way to cast the card — a Prey Upon with nothing to fight,
  *    a Flame Slash with nothing to burn. That number is the gap between what the keyword offers
  *    and what it is worth.
+ * 4. **Was taking it right?** Only answerable for a card whose effect is symmetric, and then only
+ *    as a fact: how many creatures left each side on the cast, and whether the caster was the one
+ *    ahead on board when it made the offer. See `cleared`.
  *
  * It watches `pendingOfferedCast` rather than the log, which keeps it honest about one thing in
  * particular: the offer is in the *state*, so a cascade that fired and was answered inside the same
@@ -32,8 +35,8 @@
      SUBJECT=ashen-rite SEEDS=4 node scripts/measure/offers.mjs       # madness
  */
 import {
-  applyAction, canAfford, createGame, botAction, manaSources, parseManaCost, poolOf, scriptFor,
-  seatsToAct, STARTER_DECKS,
+  applyAction, canAfford, characteristicsOf, createGame, botAction, manaSources, parseManaCost,
+  poolOf, scriptFor, seatsToAct, STARTER_DECKS,
 } from '../../packages/rules-engine/dist/index.js';
 
 const SUBJECT = process.env.SUBJECT ?? 'kindle-grove';
@@ -65,8 +68,19 @@ let cascadeCasts = 0;
 let cascadeOffers = 0;
 
 /** Whether a card's script carries the keyword, asked of the script rather than of a list here. */
-const hasCascade = (name) => (scriptFor(name)?.triggers ?? [])
-  .some((t) => t.on?.kind === 'spell-cast' && t.on?.self === true);
+/**
+ * Whether a card has **cascade**, read off the card's own words.
+ *
+ * This asked the script for a trigger that fires on its controller casting it, which is the shape
+ * cascade, storm, replicate and conspire all share — so every **Grapeshot** in Arc Tempest was
+ * counted as a cascade, and the "found nothing" line below read 60 of 62 for a deck that holds no
+ * cascade card at all. The pool has exactly two cards with that trigger, one of each keyword, and
+ * the only thing that tells them apart is the text. Same lesson as D203, one instrument later: a
+ * measurement that is 6x out looks exactly like a measurement.
+ */
+const hasCascade = (s, id) => /\bcascade\b/i.test(
+  s.cardDefs[s.instances[id]?.defKey ?? '']?.oracleText ?? '',
+);
 
 /**
  * Whether a card's script carries **madness**, asked of the script the same way.
@@ -115,6 +129,33 @@ let unaffordable = 0;
 /** Turns in which a seat drew a first card: the only window a miracle can be offered in. */
 let firstDraws = 0;
 
+/**
+ * Whose board the offered cast actually cleared, by the card that was cast.
+ *
+ * "99 cast, 0 declined" says the bot always takes the offer and says nothing about whether it
+ * should have. For most of what gets offered the question barely arises — a Lightning Bolt is a
+ * Lightning Bolt whenever you cast it — but a *symmetric* card is a different offer every time it
+ * is made, and a sweeper offered in your own draw step is the worst case in the pool: your
+ * creatures are on the table and the turn that would have used them has not happened yet.
+ *
+ * So, per card: how many creatures left each side on the action that cast it, and how often it was
+ * cast while its own controller was the one ahead on board. That last number is a fact rather than
+ * a judgement, which is what a bot rule in the drop-this-option family would have to read.
+ *
+ * One caveat it shares with every instrument here: with auto-pass on, the action that casts a spell
+ * can run past the spell's own resolution, so a creature that died later in the same action is
+ * counted too. The sweeper case is not sensitive to it — nothing else in these games removes four
+ * creatures in one action — but a single creature here or there may not be the cast's doing.
+ */
+const cleared = new Map();
+
+/** Creatures this seat controls, asked of characteristics rather than of the printed type line. */
+const creaturesOf = (state, seat) => (state.zones[`${seat}:battlefield`] ?? [])
+  .filter((id) => {
+    const inst = state.instances[id];
+    return inst !== undefined && characteristicsOf(state, inst).isCreature;
+  }).length;
+
 const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
 const nameOf = (s, id) => s.cardDefs[s.instances[id]?.defKey ?? '']?.name ?? '?';
 
@@ -134,8 +175,18 @@ function duel(seed, decks) {
     if (seat === undefined) break;
     const action = botAction(s, seat);
     if (action === null) break;
-    if (action.type === 'auto:cast' && hasCascade(nameOf(s, action.card))) cascadeCasts += 1;
+    if (action.type === 'auto:cast' && hasCascade(s, action.card)) cascadeCasts += 1;
     const hands = [0, 1].map((i) => [...(s.zones[`${i}:hand`] ?? [])]);
+    /*
+      The cast of the card currently on offer, which is the only cast this block is about.
+
+      Compared by card id rather than by `pendingOfferedCast !== null`: a cascade that offers a
+      Lightning Bolt while a second trigger waits is still one offer, and the cast that answers it
+      is the cast of *that* card.
+    */
+    const offered = s.pendingOfferedCast !== null && action.type === 'auto:cast'
+      && action.card === s.pendingOfferedCast.card ? nameOf(s, action.card) : undefined;
+    const boardWas = offered === undefined ? null : [creaturesOf(s, 0), creaturesOf(s, 1)];
     const logged = s.log.length;
     const was = s;
     const before = s.stateVersion;
@@ -155,6 +206,15 @@ function duel(seed, decks) {
       698 "discards" in 96 games, ten of them "madness", and not one real discard among them. A
       card cast is the action's own card, which is the one thing here that can tell the two apart.
     */
+    if (offered !== undefined && boardWas !== null) {
+      const row = cleared.get(offered) ?? { casts: 0, mine: 0, theirs: 0, ahead: 0 };
+      row.casts += 1;
+      row.mine += Math.max(0, boardWas[seat] - creaturesOf(s, seat));
+      row.theirs += Math.max(0, boardWas[1 - seat] - creaturesOf(s, 1 - seat));
+      if (boardWas[seat] > boardWas[1 - seat]) row.ahead += 1;
+      cleared.set(offered, row);
+    }
+
     const castId = action.type === 'auto:cast' ? action.card : undefined;
     for (const entry of s.log.slice(logged)) {
       if (/could not be paid/.test(entry.message ?? '')) unaffordable += 1;
@@ -210,7 +270,7 @@ function duel(seed, decks) {
       // Cascade's own offers, counted apart from the other two keywords' so the "found nothing"
       // line below compares like with like. Without this it subtracted every madness and miracle
       // offer from the cascade casts and printed a negative number.
-      if (hasCascade(nameOf(s, now.source))) cascadeOffers += 1;
+      if (hasCascade(s, now.source)) cascadeOffers += 1;
       bump(hits, nameOf(s, now.card));
       // `bottom` is cascade's pile and is absent for the other two keywords, which read as depth
       // one: a madness or miracle offer digs through nothing at all.
@@ -261,6 +321,12 @@ console.log(`${discards} cards were discarded: ${discardsOfMadness} of them had 
 console.log(`${unaffordable} offers were taken back because the cost could not be paid`);
 console.log(`${firstDraws} turns had a first card drawn in them, which is what miracle has to hit`);
 console.log(`of those missed chances, ${affordableChances} had the madness cost payable at the time`);
+console.log('');
+console.log('what the offered casts cleared, and how many were cast from ahead on board:');
+for (const [name, row] of [...cleared].sort((a, b) => b[1].casts - a[1].casts)) {
+  console.log(`  ${String(row.casts).padStart(4)}  ${name}: ${row.mine} of the caster's creatures`
+    + ` gone, ${row.theirs} of the opponent's, ${row.ahead} cast while ahead on board`);
+}
 console.log('');
 console.log('what was offered:');
 for (const [name, n] of [...hits].sort((a, b) => b[1] - a[1])) {

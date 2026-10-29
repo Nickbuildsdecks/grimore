@@ -86,6 +86,18 @@ if (size(VARIANT) !== size(STARTER_DECKS[SUBJECT])) {
   console.log('!! the two lists are not the same size, so this measures deck size too');
 }
 
+/*
+  `BotOptions` for both seats, as JSON, so a slot can be priced with a bot rule turned on.
+
+  The question it exists for: a card the bot plays badly measures as a bad card, and the two are
+  only separable by pricing the slot twice. Terminus cost Skyward Writ thirty games of 288 with the
+  bot casting every one it was offered (D204); the same probe with `sparesItsOwnBoard` on says how
+  much of that was the card. Default empty, so a published probe means what it has always meant.
+
+    BOT='{"sparesItsOwnBoard":true}' SUBJECT=skyward-writ node scripts/measure/deck-probe.mjs
+*/
+const BOT = JSON.parse(process.env.BOT ?? '{}');
+
 function duel(seed, decks, ctx) {
   let s = createGame({ id: `g${seed}`, format: 'modern', players: PLAYERS, seed });
   const host = { isHost: true, ...ctx };
@@ -97,7 +109,7 @@ function duel(seed, decks, ctx) {
   for (let move = 0; move < 4000 && !s.finished; move++) {
     const seat = seatsToAct(s)[0];
     if (seat === undefined) break;
-    const action = botAction(s, seat);
+    const action = botAction(s, seat, BOT);
     if (action === null) break;
     const before = s.stateVersion;
     try { s = applyAction(s, action); } catch { break; }
