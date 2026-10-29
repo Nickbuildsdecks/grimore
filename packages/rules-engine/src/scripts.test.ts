@@ -17424,3 +17424,56 @@ describe('ninjutsu: the creature that arrives already attacking', () => {
     expect(scriptFor('Ninja of the Deep Hours')?.ninjutsu).toEqual({ cost: '{1}{U}' });
   });
 });
+
+describe('the bot holds a ninja instead of casting it as a two-drop', () => {
+  /*
+    The rule that makes ninjutsu happen at all (D219): without it the keyword fired **zero** times in
+    48 bot games, because the bot cast the card as a 2/2 the moment it could and it was never in hand
+    when a swap existed.
+
+    Two tests, and they are the two halves of the rule: it holds the card when a swap is coming, and
+    it does **not** hold it when one is not — because a 2/2 in hand that never gets to swap is worse
+    than a 2/2 on the board.
+  */
+  const withBoard = (mine: readonly string[], theirs: readonly string[]): GameState => {
+    const s = arena({
+      decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+      hands: { 0: ['Ninja of the Deep Hours'] },
+      battlefield: { 0: ['Island', 'Island', ...mine], 1: ['Island', ...theirs] },
+      turn: 5, firstSeat: 0,
+    });
+    return tapAllLands(advanceTo(s, 'precombat-main'), 0);
+  };
+
+  const castsTheNinja = (s: GameState, opts: Parameters<typeof botAction>[2]): boolean => {
+    const ninja = find(s, 0, 'hand', 'Ninja of the Deep Hours');
+    for (let i = 0; i < 12; i++) {
+      const action = botAction(s, 0, opts);
+      if (action === null) return false;
+      if (action.type === 'auto:cast' && action.card === ninja) return true;
+      if (action.type === 'auto:pass') return false;
+      s = apply(s, action);
+    }
+    return false;
+  };
+
+  it('holds it while an attacker of its own could get through unblocked', () => {
+    // A Hawk it controls and nothing untapped opposite: an attack next combat arrives unblocked, so
+    // the ninja has somewhere to go and the 2/2 body is the worse of the card's two uses.
+    const s = withBoard(['Healer\'s Hawk'], []);
+    expect(castsTheNinja(s, {})).toBe(false);
+    // And with the rule off — the bot as it was — it casts it, which is the control the rule is
+    // measured against.
+    expect(castsTheNinja(s, { holdsNinjas: false })).toBe(true);
+  });
+
+  it('and casts it when there is no swap coming, rather than holding it forever', () => {
+    /*
+      The half that stops the rule being a trap. With nothing of its own able to attack there is no
+      unblocked attacker to swap, now or next turn, and a card held for a moment that never arrives
+      is a card wasted — so the rule reads a creature that **exists** rather than one that might.
+    */
+    const s = withBoard([], ['Wall of Frost']);
+    expect(castsTheNinja(s, {})).toBe(true);
+  });
+});

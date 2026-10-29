@@ -6192,6 +6192,25 @@ tested and **unmeasured in bot play**, which is written down rather than papered
 needs is a holding rule, it belongs to the family of hand-taught facts D148 and D152 are about, and
 it is its own piece.
 
+**And that piece is done, in the same stretch.** `BotOptions.holdsNinjas` — on by default — drops a
+cast of a card with ninjutsu while `aSwapIsComing`: one question about the board, do I control a
+creature that could attack and that nothing untapped could block. It joins the family of filters that
+drop a play which bought nothing (the ritual, the Fog, the protection trick, the animated land), and
+it is that family turned the other way up: this drops a play that bought something **small**, because
+the card is about to buy something bigger. The second half of the rule is the half that stops it
+being a trap — with nothing able to attack, the bot casts the ninja rather than holding it for a
+moment that never comes.
+
+It creates the windows it was built for: same 48 games, same seeds, **0 ninjutsu activations becomes
+3**, and the steps holding both a ninja and an attacker through go from 0 to 2. And it costs nothing —
+`bot-duel` across every pairing, both seatings, three seed sets: **467-467 of 936**, identical to the
+identical-bots control. That identical reading is D216's smell, so a **positive control** was run on
+the same harness: `lookahead: false` came back **90-221 of 312**. The instrument is live; it has
+nothing to see in a rule that changes three plays in 48 games of one deck. Level, and what it changes
+is the play — which is `reserveForAnswers`'s summary word for word, and the reason it is kept on is
+the same: a bot that holds a card with a keyword printed on it and never uses the keyword looks broken
+to the person opposite. See D220.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -12637,3 +12637,65 @@ One more thing the window count says: even a perfect holding rule has thin groun
 of 95 steps had the card in hand at all, because it is a one-of in a sixty-card deck. The rule is
 worth building for the player's sake; expecting it to move a win rate would be the mistake D212 is
 about.
+
+## D220 — The bot holds the ninja, which is the half that makes D219 happen
+
+D219 shipped ninjutsu and measured it firing **zero** times in 48 bot games, with the windows
+counted to say why: in 95 of its own declare-blockers steps the deck had an unblocked attacker 19
+times and a Ninja of the Deep Hours in hand 2 times, and never both, because the bot cast the ninja
+as a 2/2 the moment it could. The card was never in the zone the keyword is used from.
+
+This is the rule that fixes it, and it is a **holding** rule rather than a judgement.
+
+### Where it goes, and why it is not a new kind of thing
+
+Into the family of filters that already drop "a play that bought nothing" — the ritual with nothing
+to spend it on, the Fog with nothing attacking, the protection trick with nothing to protect
+against, the animated land with nothing to attack. One more line in the same loop.
+
+But it is the family turned the other way up, and that is worth being precise about. The others drop
+a play that bought **nothing**; this drops a play that bought something **small**, because the card
+is about to buy something bigger. The protection trick's own comment already said the real reason
+those filters work — "it leaves the card in hand for the moment it is for, which is the only moment
+the search can tell cast it from pass" — and ninjutsu is that sentence with the moment named.
+
+`aSwapIsComing` is one question about the board: **do I control a creature that could attack and that
+nothing untapped could block?** Not a forecast. It does not ask whether the opponent will find a
+blocker, or whether the attack is worth making — both are facts about a turn that has not happened.
+It only has to be right often enough that the card stops being cast on turn two into an empty board,
+and it must not hold the card **forever**, which is why the condition is about a creature that exists
+rather than one that might. The second test is that half: with nothing of its own able to attack, the
+bot casts the ninja rather than keeping it for a moment that never arrives.
+
+### What it is worth: the play, and not the win rate
+
+**It creates the windows it was built for.** Same 48 games, same seeds, the flag the only difference:
+
+| | rule off (the old bot) | rule on (the default) |
+| --- | --- | --- |
+| ninjutsu activations | **0** | **3** |
+| steps with a ninja in hand | 2 | 4 |
+| steps with both a ninja and an attacker through | 0 | 2 |
+
+**And it costs nothing.** `bot-duel` across every deck pairing, both seatings, three seed sets:
+**467-467 of 936** — identical to the identical-bots control, which is also 467-467.
+
+That identical reading is exactly the smell D216 named, so it was checked rather than reported. A
+**positive control** on the same harness — `lookahead: false`, a flag the record already says matters
+— came back **90-221 of 312**. The instrument is emphatically live; it simply has nothing to see here,
+which is what you would expect of a rule that changes three plays in 48 games of one deck in a field
+of thirteen. (And most of those 936 games are mirrored: in a pairing where neither deck holds a
+ninja, the two bots are identical and the two seatings cancel exactly, which is why the control sits
+on a clean 467-467 at all.)
+
+So the honest summary is `reserveForAnswers`'s, word for word: **level, and what it changes is the
+play.** Kept on by default for the reason `ritualBoughtSomething` and `dredgesTightly` are kept — a
+bot that holds a card with a keyword printed on it and never uses the keyword looks broken to the
+person sitting opposite, and this is a solo play realm before it is a benchmark. Off is the bot as it
+was, kept as the control.
+
+### What is still thin, said plainly
+
+Two of 95 declare-blockers steps had the card in hand at all, because it is a one-of in a sixty-card
+deck. The rule is worth having for the player's sake and for the keyword's; expecting it to move a
+win rate off that base would be D212's mistake, and the numbers above are reported so nobody tries.

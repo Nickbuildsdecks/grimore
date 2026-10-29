@@ -511,3 +511,12 @@ and the two together **0**. The bot casts the card as a two-drop the moment it c
 there when the swap exists. One instrument, one run, and the difference between "the bot judges this
 badly" and "the card is in the wrong zone" — which are different pieces of work with different fixes.
 
+
+**A reading identical to the control needs a *positive* control before you call it level.** The ninja
+holding rule came back **467-467 of 936** on `bot-duel`, which is exactly what the identical-bots
+control returns — a number that could mean "the rule is level" or "the flag never reached the games".
+One more run told them apart: `lookahead: false` on the same harness is **90-221 of 312**, so the
+instrument is emphatically live and the rule really is level. The negative control (identical bots
+scoring exactly even) proves the harness is *fair*; a positive control proves it is *connected*, and
+they are different questions.
+

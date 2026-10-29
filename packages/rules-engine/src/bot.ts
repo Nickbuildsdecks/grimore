@@ -1531,6 +1531,20 @@ export interface BotOptions {
    * probes. See `dredgeIsWorthIt`.
    */
   readonly dredgesTightly?: boolean;
+  /**
+   * Whether to **hold** a card with ninjutsu instead of casting it as an ordinary creature.
+   *
+   * On by default, and it is the only reason the keyword happens at all. D219 measured the bot
+   * using ninjutsu **zero** times in 48 games, and counting the windows said why: in 95 of its own
+   * declare-blockers steps it had an unblocked attacker 19 times and a ninja in hand 2 times, and
+   * the two never coincided — because it cast the ninja as a 2/2 the moment it could. Not mana and
+   * not judgement; the card was simply never in the zone the keyword is used from.
+   *
+   * So this is a **holding** rule rather than a judgement, and it is the same family as
+   * `reserveForAnswers`: keep a resource back for the moment the card is for. Off is the bot as it
+   * was, kept as the control. See `aSwapIsComing` for what "the moment" means.
+   */
+  readonly holdsNinjas?: boolean;
 }
 
 /**
@@ -2251,6 +2265,40 @@ function preventionCanMatter(state: GameState, seat: SeatIndex, action: Action):
  *  - one **ability**, which is Samite Healer's tap. The creature is a fine play; what is spent on
  *    nothing is the tap, and a tapped 1/1 is not a blocker.
  */
+/**
+ * Whether this action casts a card that has **ninjutsu** as an ordinary creature (CR 702.49).
+ *
+ * Read off the script's own marker field, which is what that field is there for: the keyword's
+ * behaviour lives in an ability, and this is the one caller that wants to know a card *has* it
+ * without caring what it costs.
+ */
+function castsANinja(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return scriptFor(name)?.ninjutsu !== undefined;
+}
+
+/**
+ * Whether a ninjutsu swap is plausible for this seat, which is what makes holding the card right.
+ *
+ * One question about the board: **do I control a creature that could attack and that nothing
+ * untapped could block?** If so, an attack this turn or next arrives unblocked and the ninja has a
+ * place to go. If not, holding it strands it, and a 2/2 in play beats a 2/2 in hand.
+ *
+ * Deliberately not a forecast. It does not ask whether the opponent will have a blocker by then, or
+ * whether the attack is worth making — both are facts about a turn that has not happened, and the
+ * rule only has to be right often enough that the card stops being cast on turn two into an empty
+ * board. The thing it must not do is hold the card forever, which is why the condition is about a
+ * creature that exists rather than about a creature that might.
+ */
+function aSwapIsComing(state: GameState, seat: SeatIndex): boolean {
+  const foes = state.seats.filter((other) => !other.eliminated && other.index !== seat);
+  const mine = legalAttackers(state, seat);
+  if (mine.length === 0) return false;
+  return mine.some((attackerId) => foes.some((foe) => readyBlockers(state, foe.index)
+    .every((blockerId) => canBlock(state, blockerId, attackerId, foe.index) !== null)));
+}
+
 function castsAPrevention(state: GameState, action: Action): boolean {
   if (action.type === 'auto:activate') {
     const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
@@ -3387,6 +3435,23 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       card in hand for the moment it is for, which is the only moment the search can tell "cast it"
       from "pass".
     */
+    /*
+      And the ninth, which is a **holding** rule rather than a waste one: a card with ninjutsu cast
+      as a creature while a swap is coming is the card spent on the worse of its two uses.
+
+      The family's other members drop a play that bought nothing. This one drops a play that bought
+      something small, because the card is about to buy something bigger — which is the protection
+      trick's comment turned the other way up: leaving it in hand is what lets the search tell
+      "swap it in after blockers" from "cast a 2/2".
+
+      Measured because it had to be: without it the keyword fired zero times in 48 games. See
+      `BotOptions.holdsNinjas` and D219.
+    */
+    if ((opts.holdsNinjas ?? true) && castsANinja(state, option.action)
+      && aSwapIsComing(state, seat)) {
+      dropped += 1;
+      continue;
+    }
     // The eighth: a land turned into a creature with nothing to attack or block. See
     // `animationCouldMatter` for the 854 presses that bought nothing.
     if (animatesSomething(state, option.action) && !animationCouldMatter(state, seat, option.action)) {
